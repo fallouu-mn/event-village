@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { FinancialCalculatorService } from '@/lib/payments/financial-calculator.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,11 +94,35 @@ export async function GET(req: NextRequest) {
             ?.filter(o => o.order_status !== 'ANNULEE' && o.order_status !== 'REJETEE')
             .reduce((acc, o) => acc + (Number(o.total_amount) || 0), 0) || 0;
 
-        // 6. Calculs financiers nets (Déduction commission 6.5%)
+        // 6. Calculs financiers nets modulaires conformes au CDC V3.0 (Annexe C & §114)
+        // a) Billetterie : Le partenaire organisateur perçoit l'intégralité du prix facial du billet
+        const ticketingBreakdown = FinancialCalculatorService.calculateTicketingFinancials({
+            ticketFacialPrice: ticketRevenue,
+            serviceFeeRatePercent: 5.0,
+            aggregatorFeeRatePercent: 1.5,
+        });
+
+        // b) Restauration & Commandes : Taux paramétrable plateforme
+        let orderCommissionRate = 5.0; // Taux par défaut configurable en base
+        const { data: orderConfigSetting } = await supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'order_commission_config')
+            .maybeSingle();
+
+        if (orderConfigSetting?.value?.commission_rate !== undefined) {
+            orderCommissionRate = Number(orderConfigSetting.value.commission_rate);
+        }
+
+        const orderBreakdown = FinancialCalculatorService.calculateOrderFinancials({
+            orderTotalAmount: orderRevenue,
+            commissionRatePercent: orderCommissionRate,
+            aggregatorFeeRatePercent: 1.5,
+        });
+
+        // Revenu brut global et Revenu Net Partenaire cumulé
         const totalGrossRevenue = ticketRevenue + orderRevenue;
-        const platformCommissionRate = 6.5;
-        const platformFee = Math.round(totalGrossRevenue * (platformCommissionRate / 100));
-        const partnerNetRevenue = totalGrossRevenue - platformFee;
+        const partnerNetRevenue = ticketingBreakdown.partnerPayout + orderBreakdown.partnerPayout;
 
         return NextResponse.json({
             success: true,

@@ -62,6 +62,16 @@ export class PaymentService {
                     throw new Error('Cette commande est annulée ou rejetée.');
                 }
 
+                // Vérification des produits interdits / suspendus à la vente en ligne (§CDC V3.0)
+                const { data: orderItems } = await supabase
+                    .from('order_items')
+                    .select('product_id, products(status)')
+                    .eq('order_id', order.id);
+
+                if (orderItems && orderItems.some((item: any) => item.products?.status === 'SUSPENDU' || item.products?.status === 'INDISPONIBLE')) {
+                    throw new Error('Paiement en ligne refusé : La commande contient des produits interdits ou indisponibles à la vente en ligne.');
+                }
+
                 payableAmount = Number(order.balance_amount > 0 ? order.balance_amount : order.total_amount);
                 partnerId = order.partner_id;
                 orderRefId = order.id;
@@ -494,6 +504,119 @@ export class PaymentService {
             console.warn(`[PaymentService.Webhook] Paiement échoué ou annulé pour : ${order_id} (Statut: ${status})`);
             return { success: true, message: `Paiement marqué comme ${mappedStatus}.` };
         }
+    }
+
+    /**
+     * Expire automatiquement les réservations en moratoire dont la date limite est dépassée
+     */
+    public async expireOverdueMoratoriums(): Promise<{ expiredCount: number; reservationIds: string[] }> {
+        const supabase = getServiceRoleClient();
+        const today = new Date().toISOString().split('T')[0];
+
+        const { data: expiredReservations, error } = await supabase
+            .from('hall_reservations')
+            .select('id, hall_id, partner_id, client_id, moratorium_date')
+            .lt('moratorium_date', today)
+            .neq('payment_status', 'SUCCESS')
+            .eq('status', 'EN_ATTENTE');
+
+        if (error || !expiredReservations || expiredReservations.length === 0) {
+            return { expiredCount: 0, reservationIds: [] };
+        }
+
+        const ids = expiredReservations.map(r => r.id);
+
+        await supabase
+            .from('hall_reservations')
+            .update({
+                status: 'ANNULEE',
+                payment_status: 'CANCELLED',
+                updated_at: new Date().toISOString(),
+            })
+            .in('id', ids);
+
+        return { expiredCount: ids.length, reservationIds: ids };
+    }
+
+    /**
+     * Traite un remboursement (partiel ou total) et maintient strictement l'invariant Total − Payé = Solde
+     */
+    public async processRefund(params: {
+        paymentId: string;
+        refundAmount: number;
+        reason?: string;
+    }): Promise<{ success: boolean; newPaidAmount: number; newBalanceAmount: number }> {
+        const supabase = getServiceRoleClient();
+
+        const { data: payment, error } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('id', params.paymentId)
+            .single();
+
+        if (error || !payment) {
+            throw new Error('Paiement introuvable.');
+        }
+
+        if (payment.status !== 'SUCCESS') {
+            throw new Error('Seuls les paiements validés (SUCCESS) peuvent être remboursés.');
+        }
+
+        const refundAmount = Number(params.refundAmount);
+        const currentPaid = Number(payment.amount);
+
+        if (refundAmount <= 0 || refundAmount > currentPaid) {
+            throw new Error(`Le montant du remboursement (${refundAmount} FCFA) doit être compris entre 1 et ${currentPaid} FCFA.`);
+        }
+
+        // 1. Enregistrement dans la table refunds
+        await supabase.from('refunds').insert({
+            payment_id: payment.id,
+            amount: refundAmount,
+            reason: params.reason || 'Remboursement client',
+            status: 'COMPLETED',
+            processed_at: new Date().toISOString(),
+        });
+
+        let newPaid = 0;
+        let newBalance = 0;
+
+        // 2. Mise à jour de la commande (Invariant : Total - Payé = Solde)
+        if (payment.order_id) {
+            const { data: order } = await supabase
+                .from('orders')
+                .select('*')
+                .eq('id', payment.order_id)
+                .single();
+
+            if (order) {
+                const total = Number(order.total_amount);
+                const prevPaid = Number(order.paid_amount !== undefined && order.paid_amount !== null ? order.paid_amount : payment.amount);
+                newPaid = Math.max(0, prevPaid - refundAmount);
+                newBalance = total - newPaid;
+
+                const { error: oUpdateErr } = await supabase
+                    .from('orders')
+                    .update({
+                        paid_amount: newPaid,
+                        balance_amount: newBalance,
+                        payment_status: newPaid === 0 ? 'REFUNDED' : 'PARTIAL',
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', payment.order_id);
+
+                if (oUpdateErr) {
+                    console.error('[PaymentService.processRefund] Erreur update order:', oUpdateErr);
+                    throw new Error(`Échec mise à jour commande lors du remboursement: ${oUpdateErr.message}`);
+                }
+            }
+        }
+
+        return {
+            success: true,
+            newPaidAmount: newPaid,
+            newBalanceAmount: newBalance,
+        };
     }
 }
 
