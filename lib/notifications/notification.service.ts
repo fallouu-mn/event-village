@@ -311,4 +311,32 @@ export class NotificationService {
 
         return { smsSent, emailSent: true, inAppCreated };
     }
+
+    /**
+     * Crée une notification in-app générique persistante dans la table notifications
+     */
+    static async createNotification(params: {
+        userId: string;
+        title: string;
+        message: string;
+        type?: 'SYSTEM' | 'COMMUNICATION' | 'KYC' | 'RESERVATION' | 'ORDER' | 'PAYMENT' | 'ALERT';
+        data?: Record<string, any>;
+    }): Promise<boolean> {
+        try {
+            const supabase = getServiceRoleClient();
+            await supabase.from('notifications').insert({
+                user_id: params.userId,
+                type: params.type || 'SYSTEM',
+                title: params.title,
+                content: params.message,
+                channel: 'PUSH',
+                status: 'PENDING',
+                metadata: params.data || {},
+            });
+            return true;
+        } catch (err) {
+            console.warn('[NotificationService.createNotification] Error:', err);
+            return false;
+        }
+    }
 }
