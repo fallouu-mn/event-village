@@ -829,21 +829,21 @@ export default function NewEventPage() {
                     {currentStep < 5 ? (
                         <Button
                             size="sm"
+                            variant="primary"
                             onClick={() => setCurrentStep(currentStep + 1)}
-                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs flex items-center gap-1"
+                            rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
                         >
                             Suivant
-                            <ChevronRight className="w-3.5 h-3.5" />
                         </Button>
                     ) : (
                         <Button
                             size="sm"
+                            variant="primary"
                             onClick={handleSubmit}
                             isLoading={isSubmitting}
                             disabled={isSubmitting}
-                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs flex items-center gap-2 shadow-lg shadow-[#FF5722]/20"
+                            leftIcon={<Save className="w-4 h-4" />}
                         >
-                            <Save className="w-4 h-4" />
                             {isSubmitting ? 'Enregistrement...' : 'Enregistrer en Brouillon (§31)'}
                         </Button>
                     )}

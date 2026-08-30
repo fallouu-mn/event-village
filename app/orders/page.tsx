@@ -122,9 +122,9 @@ export default function OrdersPage() {
           <button
             key={tab.id}
             onClick={() => setActiveCategory(tab.id)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-200 active:scale-[0.98] ${
               activeCategory === tab.id
-                ? 'bg-[#FF5722] text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white border-transparent shadow-md shadow-[#FF5722]/30 font-bold'
                 : 'bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-800 hover:border-slate-300'
             }`}
           >

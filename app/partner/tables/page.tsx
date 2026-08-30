@@ -439,7 +439,7 @@ export default function PartnerTablesPage() {
                     <div className="flex items-center gap-3">
                         <Button
                             onClick={() => openZoneModal()}
-                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs shadow-lg shadow-[#FF5722]/20"
+                            variant="primary" size="sm"
                         >
                             <Plus className="w-4 h-4 mr-1.5" />
                             Nouvelle Zone
@@ -468,7 +468,7 @@ export default function PartnerTablesPage() {
                                     Creez votre premiere zone (Terrasse, VIP, Interieur...) pour organiser vos tables.
                                 </p>
                             </div>
-                            <Button onClick={() => openZoneModal()} className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
+                            <Button onClick={() => openZoneModal()} variant="primary" size="sm">
                                 <Plus className="w-4 h-4 mr-2" />
                                 Creer une zone
                             </Button>

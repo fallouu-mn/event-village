@@ -164,9 +164,8 @@ export default function AdminPricingSettingsPage() {
             size="sm"
             onClick={() => handleSaveSection('subscription_packs', packs, 'Packs Partenaires')}
             disabled={isSaving}
-            className="bg-[#FF5722] text-white flex items-center gap-1.5"
+            leftIcon={<Save size={14} />}
           >
-            <Save size={14} />
             <span>Enregistrer Packs</span>
           </Button>
         </div>
@@ -245,9 +244,8 @@ export default function AdminPricingSettingsPage() {
             size="sm"
             onClick={() => handleSaveSection('aggregator_fees', aggFees, 'Frais Agrégateur')}
             disabled={isSaving}
-            className="bg-[#FF5722] text-white flex items-center gap-1.5"
+            leftIcon={<Save size={14} />}
           >
-            <Save size={14} />
             <span>Enregistrer Frais</span>
           </Button>
         </div>
@@ -296,9 +294,8 @@ export default function AdminPricingSettingsPage() {
             size="sm"
             onClick={() => handleSaveSection('communication_tariffs', commTariffs, 'Tarifs Communication')}
             disabled={isSaving}
-            className="bg-[#FF5722] text-white flex items-center gap-1.5"
+            leftIcon={<Save size={14} />}
           >
-            <Save size={14} />
             <span>Enregistrer Tarifs</span>
           </Button>
         </div>

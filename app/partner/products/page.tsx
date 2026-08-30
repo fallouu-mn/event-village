@@ -155,7 +155,7 @@ export default function PartnerProductsPage() {
                         Actualiser
                     </Button>
                     <Link href="/partner/products/new">
-                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white shadow-lg shadow-[#FF5722]/20">
+                        <Button variant="primary">
                             <Plus className="w-4 h-4 mr-1.5" />
                             Creer un produit
                         </Button>
@@ -214,7 +214,7 @@ export default function PartnerProductsPage() {
                         </p>
                     </div>
                     <Link href="/partner/products/new">
-                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
+                        <Button variant="primary" size="sm">
                             <Plus className="w-4 h-4 mr-2" />
                             Creer un produit
                         </Button>

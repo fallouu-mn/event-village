@@ -164,7 +164,7 @@ export default function HomePage() {
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all duration-200 shadow-xs active:scale-95 ${
                   active
-                    ? 'bg-[#FF5722] text-white shadow-md shadow-[#FF5722]/20 font-black'
+                    ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold scale-[1.02]'
                     : 'bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-zinc-300 border border-slate-200/80 dark:border-zinc-800 hover:border-[#FF5722]/40 hover:bg-slate-50 dark:hover:bg-zinc-800'
                 }`}
               >

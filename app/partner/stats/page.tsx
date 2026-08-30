@@ -185,9 +185,9 @@ export default function PartnerStatsPage() {
                         <button
                             key={p}
                             onClick={() => setActivePeriod(p)}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all duration-200 active:scale-[0.98] ${
                                 activePeriod === p
-                                    ? 'bg-[#FF5722] text-white border-[#FF5722]'
+                                    ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white border-transparent shadow-md shadow-[#FF5722]/30 font-bold'
                                     : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-[#FF5722]/50'
                             }`}
                         >

@@ -146,10 +146,10 @@ export default function HallsCataloguePage() {
               <button
                 key={loc}
                 onClick={() => setSelectedLocation(loc)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 active:scale-[0.98] ${
                   selectedLocation === loc
-                    ? 'bg-[#FF5722] text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-200'
+                    ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
+                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                 }`}
               >
                 {loc}

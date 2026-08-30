@@ -202,7 +202,7 @@ export default function AdminFinanceReconciliationPage() {
                 type="button"
                 onClick={() => setPeriodPreset('ALL')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                  periodPreset === 'ALL' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
+                  periodPreset === 'ALL' ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold' : 'text-slate-500'
                 }`}
               >
                 Tout
@@ -211,7 +211,7 @@ export default function AdminFinanceReconciliationPage() {
                 type="button"
                 onClick={() => setPeriodPreset('30D')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                  periodPreset === '30D' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
+                  periodPreset === '30D' ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold' : 'text-slate-500'
                 }`}
               >
                 30 Jours
@@ -220,7 +220,7 @@ export default function AdminFinanceReconciliationPage() {
                 type="button"
                 onClick={() => setPeriodPreset('7D')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                  periodPreset === '7D' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
+                  periodPreset === '7D' ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold' : 'text-slate-500'
                 }`}
               >
                 7 Jours

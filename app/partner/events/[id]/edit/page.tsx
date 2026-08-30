@@ -690,15 +690,23 @@ export default function EditEventPage() {
                     )}
 
                     {currentStep < 5 ? (
-                        <Button size="sm" onClick={() => setCurrentStep(currentStep + 1)}
-                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs flex items-center gap-1">
+                        <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => setCurrentStep(currentStep + 1)}
+                            rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
+                        >
                             Suivant
-                            <ChevronRight className="w-3.5 h-3.5" />
                         </Button>
                     ) : (
-                        <Button size="sm" onClick={handleSubmit} disabled={isSubmitting} isLoading={isSubmitting}
-                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs flex items-center gap-2 shadow-lg shadow-[#FF5722]/20">
-                            <Save className="w-4 h-4" />
+                        <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={handleSubmit}
+                            disabled={isSubmitting}
+                            isLoading={isSubmitting}
+                            leftIcon={<Save className="w-4 h-4" />}
+                        >
                             {isSubmitting ? 'Enregistrement...' : 'Enregistrer les modifications'}
                         </Button>
                     )}

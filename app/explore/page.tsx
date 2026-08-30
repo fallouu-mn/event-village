@@ -308,10 +308,10 @@ export default function ExplorePage() {
                   <button
                     key={c.id}
                     onClick={() => setSelectedCategory(c.id)}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-[0.98] ${
                       selectedCategory === c.id
-                        ? 'bg-[#FF5722] text-white border-[#FF5722]'
-                        : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
+                        ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white border-transparent shadow-md shadow-[#FF5722]/30 font-bold'
+                        : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:border-[#FF5722]/50'
                     }`}
                   >
                     {c.label}

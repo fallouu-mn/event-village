@@ -262,7 +262,7 @@ export default function PartnerSubscriptionPage() {
                                         >
                                             {isCurrent && (
                                                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                                                    <span className="px-3 py-1 rounded-full text-[10px] font-black bg-[#FF5722] text-white shadow-sm">
+                                                    <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30">
                                                         Plan actuel
                                                     </span>
                                                 </div>

@@ -212,7 +212,7 @@ export default function AdminReferralAmbassadorsPage() {
                 type="button"
                 onClick={() => setFilterStatus('AMBASSADEUR')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                  filterStatus === 'AMBASSADEUR' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
+                  filterStatus === 'AMBASSADEUR' ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold' : 'text-slate-500'
                 }`}
               >
                 Ambassadeurs

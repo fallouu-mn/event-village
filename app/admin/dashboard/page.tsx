@@ -452,7 +452,7 @@ export default function AdminDashboardPage() {
               onClick={() => setActiveTab('EN_ATTENTE')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'EN_ATTENTE'
-                  ? 'bg-[#FF5722] text-white shadow-xs'
+                  ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
                   : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >

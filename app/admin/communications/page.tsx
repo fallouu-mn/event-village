@@ -275,10 +275,10 @@ export default function AdminCommunicationsPage() {
             <Button
               type="submit"
               variant="primary"
+              size="sm"
               disabled={isSending}
-              className="bg-[#FF5722] text-white flex items-center gap-1.5"
+              leftIcon={<Send size={14} />}
             >
-              <Send size={14} />
               <span>Diffuser la Campagne</span>
             </Button>
           </div>

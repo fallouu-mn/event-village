@@ -210,7 +210,7 @@ export default function PartnerHallsPage() {
                         Actualiser
                     </Button>
                     <Link href="/partner/halls/new">
-                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white flex items-center gap-2 shadow-lg shadow-[#FF5722]/20">
+                        <Button variant="primary" className="flex items-center gap-2">
                             <Plus className="w-4 h-4" />
                             Ajouter une salle
                         </Button>
@@ -279,7 +279,7 @@ export default function PartnerHallsPage() {
                         </p>
                     </div>
                     <Link href="/partner/halls/new">
-                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
+                        <Button variant="primary" size="sm">
                             <Plus className="w-4 h-4 mr-2" />
                             Creer ma premiere salle
                         </Button>

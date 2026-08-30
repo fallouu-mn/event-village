@@ -183,7 +183,7 @@ export default function PartnerEventsPage() {
                         Actualiser
                     </Button>
                     <Link href="/partner/events/new">
-                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white flex items-center gap-2 shadow-lg shadow-[#FF5722]/20">
+                        <Button variant="primary" className="flex items-center gap-2">
                             <Plus className="w-4 h-4" />
                             Créer un événement
                         </Button>
@@ -243,9 +243,9 @@ export default function PartnerEventsPage() {
                             <button
                                 key={tab}
                                 onClick={() => setSelectedStatus(tab)}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 whitespace-nowrap active:scale-[0.98] ${
                                     selectedStatus === tab
-                                        ? 'bg-[#FF5722] text-white shadow-sm'
+                                        ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold scale-[1.02]'
                                         : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
                                 }`}
                             >
@@ -293,7 +293,7 @@ export default function PartnerEventsPage() {
                         </p>
                     </div>
                     <Link href="/partner/events/new">
-                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
+                        <Button variant="primary" size="sm">
                             <Plus className="w-4 h-4 mr-2" />
                             Créer un événement maintenant
                         </Button>
@@ -361,7 +361,7 @@ export default function PartnerEventsPage() {
                                             </div>
                                             <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
                                                 <div
-                                                    className="h-full rounded-full bg-[#FF5722] transition-all"
+                                                    className="h-full rounded-full bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] transition-all"
                                                     style={{ width: `${fillPercent}%` }}
                                                 />
                                             </div>
@@ -391,9 +391,9 @@ export default function PartnerEventsPage() {
                                             </Link>
                                             <Button
                                                 size="sm"
+                                                variant="primary"
                                                 onClick={() => handleSubmitForValidation(ev.id)}
                                                 disabled={actionLoading === ev.id}
-                                                className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs"
                                             >
                                                 <Send className="w-3.5 h-3.5 mr-1" />
                                                 Soumettre (§31)
