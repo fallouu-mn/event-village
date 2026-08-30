@@ -17,7 +17,7 @@ export const ThemeToggle: React.FC<{ className?: string }> = ({ className = '' }
       type="button"
       onClick={toggleTheme}
       aria-label="Basculer le thème"
-      className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border bg-slate-100 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-[#FF6B35] dark:hover:text-[#FF6B35] active:scale-95 ${className}`}
+      className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border bg-slate-100 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] dark:hover:text-[#FF5722] active:scale-95 ${className}`}
     >
       {!mounted ? (
         <span className="w-4 h-4 rounded-full bg-slate-300 dark:bg-zinc-600 opacity-60" />

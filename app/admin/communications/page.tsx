@@ -127,7 +127,7 @@ export default function AdminCommunicationsPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -170,7 +170,7 @@ export default function AdminCommunicationsPage() {
       {/* Formulaire de Nouvelle Campagne */}
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
         <div className="flex items-center gap-2.5 border-b border-slate-200 dark:border-zinc-800 pb-3">
-          <Radio size={20} className="text-[#FF6B35]" />
+          <Radio size={20} className="text-[#FF5722]" />
           <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
             Diffuser une Nouvelle Communication
           </h2>
@@ -237,7 +237,7 @@ export default function AdminCommunicationsPage() {
                       if (e.target.checked) setSelectedChannels([...selectedChannels, 'SMS']);
                       else setSelectedChannels(selectedChannels.filter((c) => c !== 'SMS'));
                     }}
-                    className="rounded text-[#FF6B35]"
+                    className="rounded text-[#FF5722]"
                   />
                   <span>SMS (MTarget)</span>
                 </label>
@@ -249,7 +249,7 @@ export default function AdminCommunicationsPage() {
                       if (e.target.checked) setSelectedChannels([...selectedChannels, 'EMAIL']);
                       else setSelectedChannels(selectedChannels.filter((c) => c !== 'EMAIL'));
                     }}
-                    className="rounded text-[#FF6B35]"
+                    className="rounded text-[#FF5722]"
                   />
                   <span>Email</span>
                 </label>
@@ -267,7 +267,7 @@ export default function AdminCommunicationsPage() {
               placeholder="Rédigez votre message ici. Tout contenu offensant sera automatiquement bloqué."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              className="w-full p-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-[#FF6B35]"
+              className="w-full p-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-[#FF5722]"
             />
           </div>
 
@@ -276,7 +276,7 @@ export default function AdminCommunicationsPage() {
               type="submit"
               variant="primary"
               disabled={isSending}
-              className="bg-[#FF6B35] text-white flex items-center gap-1.5"
+              className="bg-[#FF5722] text-white flex items-center gap-1.5"
             >
               <Send size={14} />
               <span>Diffuser la Campagne</span>
@@ -293,7 +293,7 @@ export default function AdminCommunicationsPage() {
 
         {isLoading ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35] mb-2" />
+            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement des campagnes...</p>
           </div>
         ) : campaigns.length === 0 ? (
@@ -311,7 +311,7 @@ export default function AdminCommunicationsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <h4 className="font-black text-slate-900 dark:text-white">{camp.title}</h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35]">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/40 text-[#FF5722]">
                       {camp.sender_profile}
                     </span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">

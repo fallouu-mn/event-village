@@ -13,7 +13,7 @@ Le projet **Event Village** a fait l'objet d'un audit technique, fonctionnel, er
 
 L'ancienne interface, qui présentait un rendu de type maquette mobile restreint (`max-w-md` forcé), a été intégralement refondue dans un **Design System SaaS / Event-Tech moderne et professionnel** :
 - Dominante **Blanche** et surfaces claires en Light Mode.
-- Couleur d'accent principale **Orange Event Village** (`#FF6B35`).
+- Couleur d'accent principale **Orange Event Village** (`#FF5722`).
 - Mode Sombre (**Dark Mode**) professionnel sur base zinc profonde (`#111111`, `#161616`, `#1E1E1E`).
 - Architecture multi-dispositifs fluide avec **Sidebar + Topbar** sur Desktop (>= 1024px) et **Bottom Navigation** sur Mobile.
 - Intégration complète du module **SamirPay Cashout** (Retrait avec seuil min. 5 000 FCFA et 1% de frais).

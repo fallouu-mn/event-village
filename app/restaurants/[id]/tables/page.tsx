@@ -69,7 +69,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
       <div className="flex items-center justify-between">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF6B35] transition-all shadow-xs"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
         >
           <ChevronLeft size={16} />
           <span>Retour à l’accueil</span>
@@ -77,7 +77,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
 
         <Link
           href={`/restaurants/${restaurantId}/menu`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:text-[#FF6B35]"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:text-[#FF5722]"
         >
           <Utensils size={14} />
           <span>Consulter le menu</span>
@@ -99,12 +99,12 @@ export default function TableReservationPage({ params }: { params: { id: string 
             </div>
 
             <div className="absolute bottom-4 left-4 right-4 text-white space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF6B35]">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5722]">
                 {restaurant.partnerName}
               </span>
               <h1 className="text-xl sm:text-2xl font-black">{restaurant.name}</h1>
               <p className="text-xs text-zinc-300 flex items-center gap-1.5">
-                <MapPin size={13} className="text-[#FF6B35]" />
+                <MapPin size={13} className="text-[#FF5722]" />
                 <span>{restaurant.location}</span>
               </p>
             </div>
@@ -113,7 +113,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
           {/* Choix des Zones (Terrasse, Salle, Salon VIP) */}
           <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 space-y-4">
             <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
-              <Building size={16} className="text-[#FF6B35]" />
+              <Building size={16} className="text-[#FF5722]" />
               <span>1. Choisissez votre zone de table</span>
             </h2>
 
@@ -126,18 +126,18 @@ export default function TableReservationPage({ params }: { params: { id: string 
                     onClick={() => setSelectedZone(zone.id)}
                     className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
                       active
-                        ? 'border-[#FF6B35] bg-[#FF6B35]/5 shadow-xs'
+                        ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs'
                         : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <h3 className="text-xs font-black text-slate-900 dark:text-white">{zone.name}</h3>
-                        {active && <div className="w-2.5 h-2.5 rounded-full bg-[#FF6B35]" />}
+                        {active && <div className="w-2.5 h-2.5 rounded-full bg-[#FF5722]" />}
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-snug">{zone.description}</p>
                     </div>
-                    <span className="text-[10px] font-bold text-[#FF6B35] mt-3 block">
+                    <span className="text-[10px] font-bold text-[#FF5722] mt-3 block">
                       Max {zone.capacityMax} convives
                     </span>
                   </div>
@@ -151,7 +151,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
         <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 space-y-5 sticky top-20 shadow-md">
           <div>
             <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <Calendar size={18} className="text-[#FF6B35]" />
+              <Calendar size={18} className="text-[#FF5722]" />
               <span>Détails de la réservation</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -169,7 +169,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
                 type="date"
                 value={reservationDate}
                 onChange={(e) => setReservationDate(e.target.value)}
-                className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold focus:outline-none focus:border-[#FF6B35]"
+                className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold focus:outline-none focus:border-[#FF5722]"
               />
             </div>
 
@@ -187,7 +187,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
                   }}
                   className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                     mealSlot === 'MIDI'
-                      ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
+                      ? 'bg-[#FF5722] text-white border-[#FF5722]'
                       : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800'
                   }`}
                 >
@@ -201,7 +201,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
                   }}
                   className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                     mealSlot === 'SOIR'
-                      ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
+                      ? 'bg-[#FF5722] text-white border-[#FF5722]'
                       : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800'
                   }`}
                 >
@@ -245,7 +245,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
                   type="radio"
                   checked={isPlatformPayment}
                   onChange={() => setIsPlatformPayment(true)}
-                  className="accent-[#FF6B35]"
+                  className="accent-[#FF5722]"
                 />
                 <span>Acompte garanti en ligne ({depositFormatted})</span>
               </label>
@@ -254,7 +254,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
                   type="radio"
                   checked={!isPlatformPayment}
                   onChange={() => setIsPlatformPayment(false)}
-                  className="accent-[#FF6B35]"
+                  className="accent-[#FF5722]"
                 />
                 <span>Paiement intégral direct sur place (Espèces / Wave direct)</span>
               </label>

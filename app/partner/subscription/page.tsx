@@ -69,10 +69,10 @@ const PLAN_COLORS: Record<string, { border: string; bg: string; badge: string; t
         text: 'text-slate-700 dark:text-zinc-300',
     },
     BUSINESS: {
-        border: 'border-[#FF6B35]/50',
+        border: 'border-[#FF5722]/50',
         bg: 'bg-orange-50/30 dark:bg-orange-950/10',
-        badge: 'bg-[#FF6B35]/15 text-[#FF6B35] border border-[#FF6B35]/30',
-        text: 'text-[#FF6B35]',
+        badge: 'bg-[#FF5722]/15 text-[#FF5722] border border-[#FF5722]/30',
+        text: 'text-[#FF5722]',
     },
     PREMIUM: {
         border: 'border-violet-400/60',
@@ -119,7 +119,7 @@ export default function PartnerSubscriptionPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <CreditCard className="w-6 h-6 text-[#FF6B35]" />
+                        <CreditCard className="w-6 h-6 text-[#FF5722]" />
                         Abonnement
                     </h1>
                     <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -216,13 +216,13 @@ export default function PartnerSubscriptionPage() {
                     )}
 
                     {/* Current plan */}
-                    <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border-2 border-[#FF6B35]/40 shadow-sm space-y-3">
+                    <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border-2 border-[#FF5722]/40 shadow-sm space-y-3">
                         <div className="flex items-center justify-between">
                             <h2 className="text-sm font-black text-slate-900 dark:text-white">Plan actuel</h2>
                         </div>
                         {subscriptionData.currentPlan ? (
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF6B35] flex items-center justify-center">
+                                <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF5722] flex items-center justify-center">
                                     <Star className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -262,7 +262,7 @@ export default function PartnerSubscriptionPage() {
                                         >
                                             {isCurrent && (
                                                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                                                    <span className="px-3 py-1 rounded-full text-[10px] font-black bg-[#FF6B35] text-white shadow-sm">
+                                                    <span className="px-3 py-1 rounded-full text-[10px] font-black bg-[#FF5722] text-white shadow-sm">
                                                         Plan actuel
                                                     </span>
                                                 </div>

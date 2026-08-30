@@ -164,7 +164,7 @@ export default function PartnerEventsPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                        <Calendar className="w-8 h-8 text-[#FF6B35]" />
+                        <Calendar className="w-8 h-8 text-[#FF5722]" />
                         Événements & Billetterie
                     </h1>
                     <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
@@ -183,7 +183,7 @@ export default function PartnerEventsPage() {
                         Actualiser
                     </Button>
                     <Link href="/partner/events/new">
-                        <Button className="bg-[#FF6B35] hover:bg-[#ff5719] text-white flex items-center gap-2 shadow-lg shadow-[#FF6B35]/20">
+                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white flex items-center gap-2 shadow-lg shadow-[#FF5722]/20">
                             <Plus className="w-4 h-4" />
                             Créer un événement
                         </Button>
@@ -194,7 +194,7 @@ export default function PartnerEventsPage() {
             {/* Statistiques Rapides */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF6B35] flex items-center justify-center font-bold">
+                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF5722] flex items-center justify-center font-bold">
                         <Calendar className="w-6 h-6" />
                     </div>
                     <div>
@@ -245,7 +245,7 @@ export default function PartnerEventsPage() {
                                 onClick={() => setSelectedStatus(tab)}
                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                                     selectedStatus === tab
-                                        ? 'bg-[#FF6B35] text-white shadow-sm'
+                                        ? 'bg-[#FF5722] text-white shadow-sm'
                                         : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
                                 }`}
                             >
@@ -263,7 +263,7 @@ export default function PartnerEventsPage() {
                                 placeholder="Rechercher par titre..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF6B35]"
+                                className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF5722]"
                             />
                         </div>
                         <Button type="submit" size="sm" variant="outline">
@@ -276,12 +276,12 @@ export default function PartnerEventsPage() {
             {/* Liste des Événements */}
             {isLoading ? (
                 <div className="p-12 text-center text-slate-500 dark:text-zinc-400 flex flex-col items-center gap-3">
-                    <RefreshCw className="w-8 h-8 animate-spin text-[#FF6B35]" />
+                    <RefreshCw className="w-8 h-8 animate-spin text-[#FF5722]" />
                     <p className="text-sm font-medium">Chargement de vos événements...</p>
                 </div>
             ) : events.length === 0 ? (
                 <div className="p-12 rounded-2xl bg-white dark:bg-zinc-900 border border-dashed border-slate-300 dark:border-zinc-800 text-center space-y-4">
-                    <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center mx-auto">
+                    <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto">
                         <Calendar className="w-8 h-8" />
                     </div>
                     <div>
@@ -293,7 +293,7 @@ export default function PartnerEventsPage() {
                         </p>
                     </div>
                     <Link href="/partner/events/new">
-                        <Button className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs">
+                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
                             <Plus className="w-4 h-4 mr-2" />
                             Créer un événement maintenant
                         </Button>
@@ -309,7 +309,7 @@ export default function PartnerEventsPage() {
                         return (
                             <div
                                 key={ev.id}
-                                className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:border-[#FF6B35]/40 transition-all flex flex-col justify-between"
+                                className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:border-[#FF5722]/40 transition-all flex flex-col justify-between"
                             >
                                 <div>
                                     {/* Image Header */}
@@ -352,7 +352,7 @@ export default function PartnerEventsPage() {
                                         <div className="pt-2 border-t border-slate-100 dark:border-zinc-800 space-y-1.5">
                                             <div className="flex justify-between text-xs font-semibold">
                                                 <span className="text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
-                                                    <Ticket className="w-3.5 h-3.5 text-[#FF6B35]" />
+                                                    <Ticket className="w-3.5 h-3.5 text-[#FF5722]" />
                                                     Billets vendus
                                                 </span>
                                                 <span className="text-slate-900 dark:text-white">
@@ -361,7 +361,7 @@ export default function PartnerEventsPage() {
                                             </div>
                                             <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
                                                 <div
-                                                    className="h-full rounded-full bg-[#FF6B35] transition-all"
+                                                    className="h-full rounded-full bg-[#FF5722] transition-all"
                                                     style={{ width: `${fillPercent}%` }}
                                                 />
                                             </div>
@@ -393,7 +393,7 @@ export default function PartnerEventsPage() {
                                                 size="sm"
                                                 onClick={() => handleSubmitForValidation(ev.id)}
                                                 disabled={actionLoading === ev.id}
-                                                className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs"
+                                                className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs"
                                             >
                                                 <Send className="w-3.5 h-3.5 mr-1" />
                                                 Soumettre (§31)

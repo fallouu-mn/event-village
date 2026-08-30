@@ -67,7 +67,7 @@ function createPng(width, height, r, g, b) {
       const radius = width * 0.45;
 
       if (dist <= radius) {
-        // Orange Brand Event Village #FF6B35 (255, 107, 53)
+        // Orange Brand Event Village #FF5722 (255, 87, 34)
         // Center ticket marker design
         const innerDist = Math.sqrt(dx * dx + dy * dy);
         if (innerDist < width * 0.15) {
@@ -102,16 +102,16 @@ function createPng(width, height, r, g, b) {
 const publicDir = path.join(__dirname, '../public');
 
 // Generate 192x192 icon
-const icon192 = createPng(192, 192, 255, 107, 53);
+const icon192 = createPng(192, 192, 255, 87, 34);
 fs.writeFileSync(path.join(publicDir, 'icon-192x192.png'), icon192);
 console.log('Created public/icon-192x192.png');
 
 // Generate 512x512 icon
-const icon512 = createPng(512, 512, 255, 107, 53);
+const icon512 = createPng(512, 512, 255, 87, 34);
 fs.writeFileSync(path.join(publicDir, 'icon-512x512.png'), icon512);
 console.log('Created public/icon-512x512.png');
 
 // Generate favicon.ico (32x32)
-const icon32 = createPng(32, 32, 255, 107, 53);
+const icon32 = createPng(32, 32, 255, 87, 34);
 fs.writeFileSync(path.join(publicDir, 'favicon.ico'), icon32);
 console.log('Created public/favicon.ico');

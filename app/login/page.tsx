@@ -352,7 +352,7 @@ export default function LoginPage() {
                                         onChange={(e) => setIdentifier(e.target.value)}
                                         placeholder="ex: 77 123 45 67 ou client@email.com"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                     />
                                     <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -365,7 +365,7 @@ export default function LoginPage() {
                                     </label>
                                     <Link
                                         href="/forgot-password"
-                                        className="text-[11px] font-bold text-[#FF6B35] hover:underline"
+                                        className="text-[11px] font-bold text-[#FF5722] hover:underline"
                                     >
                                         Mot de passe oublié ?
                                     </Link>
@@ -377,7 +377,7 @@ export default function LoginPage() {
                                         onChange={(e) => setPassword(e.target.value)}
                                         placeholder="••••••••"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                     />
                                     <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -412,7 +412,7 @@ export default function LoginPage() {
                                                 onChange={(e) => setIdentifier(e.target.value)}
                                                 placeholder="77 123 45 67"
                                                 required
-                                                className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                                className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                             />
                                             <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                         </div>
@@ -472,7 +472,7 @@ export default function LoginPage() {
                                             type="button"
                                             onClick={() => handleSendOtp()}
                                             disabled={countdown > 0 || isLoading}
-                                            className="text-[#FF6B35] font-bold disabled:opacity-50 flex items-center gap-1"
+                                            className="text-[#FF5722] font-bold disabled:opacity-50 flex items-center gap-1"
                                         >
                                             <RotateCcw size={12} />
                                             <span>{countdown > 0 ? `Renvoyer (${countdown}s)` : 'Renvoyer le code'}</span>
@@ -491,7 +491,7 @@ export default function LoginPage() {
                             </span>
                             <Link
                                 href="/register"
-                                className="text-xs font-black text-[#FF6B35] hover:underline"
+                                className="text-xs font-black text-[#FF5722] hover:underline"
                             >
                                 Créer un compte Client
                             </Link>
@@ -499,12 +499,12 @@ export default function LoginPage() {
 
                         <Link
                             href="/partner/register"
-                            className="p-3 rounded-2xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/40 flex items-center justify-between group hover:border-[#FF6B35] transition-all"
+                            className="p-3 rounded-2xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/40 flex items-center justify-between group hover:border-[#FF5722] transition-all"
                         >
                             <div className="flex items-center gap-2.5">
-                                <Briefcase size={16} className="text-[#FF6B35]" />
+                                <Briefcase size={16} className="text-[#FF5722]" />
                                 <div className="text-left">
-                                    <span className="text-xs font-black text-slate-900 dark:text-white block group-hover:text-[#FF6B35] transition-colors">
+                                    <span className="text-xs font-black text-slate-900 dark:text-white block group-hover:text-[#FF5722] transition-colors">
                                         Espace Professionnel
                                     </span>
                                     <span className="text-[10px] text-slate-500 dark:text-zinc-400">
@@ -512,7 +512,7 @@ export default function LoginPage() {
                                     </span>
                                 </div>
                             </div>
-                            <ArrowRight size={14} className="text-[#FF6B35] group-hover:translate-x-0.5 transition-transform" />
+                            <ArrowRight size={14} className="text-[#FF5722] group-hover:translate-x-0.5 transition-transform" />
                         </Link>
                     </div>
                 </div>

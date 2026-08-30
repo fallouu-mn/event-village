@@ -130,7 +130,7 @@ export default function NewHallPage() {
     return (
         <div className="p-6 max-w-4xl mx-auto space-y-8">
             <div className="flex items-center justify-between">
-                <Link href="/partner/halls" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF6B35]">
+                <Link href="/partner/halls" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF5722]">
                     <ArrowLeft className="w-4 h-4" />
                     Retour aux salles
                 </Link>
@@ -138,7 +138,7 @@ export default function NewHallPage() {
 
             <div>
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                    <Building2 className="w-7 h-7 text-[#FF6B35]" />
+                    <Building2 className="w-7 h-7 text-[#FF5722]" />
                     Ajouter une Salle de Reception
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400 mt-1">
@@ -158,7 +158,7 @@ export default function NewHallPage() {
                             placeholder="Ex: Palais des Congres Teranga"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         {errors.name && <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.name}</p>}
                     </div>
@@ -173,7 +173,7 @@ export default function NewHallPage() {
                             placeholder="Decrivez les atouts, l'agencement, les possibilites..."
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                     </div>
 
@@ -235,10 +235,10 @@ export default function NewHallPage() {
                     <div className="p-5 rounded-xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/50 space-y-3">
                         <div className="flex items-center justify-between">
                             <label className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                                <Percent className="w-4 h-4 text-[#FF6B35]" />
+                                <Percent className="w-4 h-4 text-[#FF5722]" />
                                 Taux d&apos;Acompte Configurable
                             </label>
-                            <span className="text-lg font-black text-[#FF6B35]">{depositPercentage}%</span>
+                            <span className="text-lg font-black text-[#FF5722]">{depositPercentage}%</span>
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-zinc-400">
                             Pourcentage que le client doit verser pour bloquer la date. Minimum 10%, recommande 30-50%.
@@ -250,7 +250,7 @@ export default function NewHallPage() {
                             step="5"
                             value={depositPercentage}
                             onChange={(e) => setDepositPercentage(Number(e.target.value))}
-                            className="w-full accent-[#FF6B35]"
+                            className="w-full accent-[#FF5722]"
                         />
                         <div className="flex justify-between text-[10px] text-slate-400 dark:text-zinc-500 font-medium">
                             <span>10%</span>
@@ -266,7 +266,7 @@ export default function NewHallPage() {
                                     Tarif {Number(pricePerDay).toLocaleString('fr-FR')} F/jour
                                 </span>
                                 <span className="text-slate-500 dark:text-zinc-400"> → Acompte : </span>
-                                <span className="font-black text-[#FF6B35]">
+                                <span className="font-black text-[#FF5722]">
                                     {depositPreview.toLocaleString('fr-FR')} F
                                 </span>
                                 <span className="text-slate-500 dark:text-zinc-400"> — Reste : </span>

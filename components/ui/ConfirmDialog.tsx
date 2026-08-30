@@ -32,7 +32,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     ? 'text-red-500'
     : variant === 'warning'
     ? 'text-amber-500'
-    : 'text-[#FF6B35]';
+    : 'text-[#FF5722]';
 
   const buttonVariant = variant === 'danger' ? 'danger' : 'primary';
 

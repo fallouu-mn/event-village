@@ -165,7 +165,7 @@ export default function ForgotPasswordPage() {
                                         onChange={(e) => setIdentifier(e.target.value)}
                                         placeholder="ex: 77 123 45 67 ou compte@email.com"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                     />
                                     {identifier.includes('@') ? (
                                         <Mail size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
@@ -222,7 +222,7 @@ export default function ForgotPasswordPage() {
                                     type="button"
                                     onClick={handleRequestReset}
                                     disabled={countdown > 0 || isLoading}
-                                    className="text-[#FF6B35] font-bold disabled:opacity-50 flex items-center gap-1"
+                                    className="text-[#FF5722] font-bold disabled:opacity-50 flex items-center gap-1"
                                 >
                                     <RotateCcw size={12} />
                                     <span>{countdown > 0 ? `Renvoyer (${countdown}s)` : 'Renvoyer'}</span>
@@ -235,7 +235,7 @@ export default function ForgotPasswordPage() {
                     <div className="pt-4 border-t border-slate-200 dark:border-zinc-800 text-center">
                         <Link
                             href="/login"
-                            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-zinc-300 hover:text-[#FF6B35] transition-colors"
+                            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-zinc-300 hover:text-[#FF5722] transition-colors"
                         >
                             <ArrowLeft size={14} />
                             <span>Retour à la connexion</span>

@@ -95,7 +95,7 @@ export default function AdminFinanceReconciliationPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -136,7 +136,7 @@ export default function AdminFinanceReconciliationPage() {
 
         <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-1">
           <span className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Revenu Net Event Village</span>
-          <h3 className="text-xl sm:text-2xl font-black text-[#FF6B35]">
+          <h3 className="text-xl sm:text-2xl font-black text-[#FF5722]">
             {summary ? formatPrice(summary.totalPlatformNetRevenue) : '0 FCFA'}
           </h3>
           <span className="text-xs text-slate-400 block">Commissions de service 6.5%</span>
@@ -160,7 +160,7 @@ export default function AdminFinanceReconciliationPage() {
               {summary ? formatPrice(summary.totalReferralCommissions) : '0 FCFA'}
             </h4>
           </div>
-          <Users size={24} className="text-[#FF6B35]" />
+          <Users size={24} className="text-[#FF5722]" />
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between">
@@ -202,7 +202,7 @@ export default function AdminFinanceReconciliationPage() {
                 type="button"
                 onClick={() => setPeriodPreset('ALL')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                  periodPreset === 'ALL' ? 'bg-[#FF6B35] text-white' : 'text-slate-500'
+                  periodPreset === 'ALL' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
                 }`}
               >
                 Tout
@@ -211,7 +211,7 @@ export default function AdminFinanceReconciliationPage() {
                 type="button"
                 onClick={() => setPeriodPreset('30D')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                  periodPreset === '30D' ? 'bg-[#FF6B35] text-white' : 'text-slate-500'
+                  periodPreset === '30D' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
                 }`}
               >
                 30 Jours
@@ -220,7 +220,7 @@ export default function AdminFinanceReconciliationPage() {
                 type="button"
                 onClick={() => setPeriodPreset('7D')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                  periodPreset === '7D' ? 'bg-[#FF6B35] text-white' : 'text-slate-500'
+                  periodPreset === '7D' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
                 }`}
               >
                 7 Jours
@@ -231,7 +231,7 @@ export default function AdminFinanceReconciliationPage() {
 
         {isLoading ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35] mb-2" />
+            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement du rapprochement financier...</p>
           </div>
         ) : items.length === 0 ? (
@@ -270,7 +270,7 @@ export default function AdminFinanceReconciliationPage() {
                     <td className="py-3 text-right text-amber-600 dark:text-amber-400 font-mono">
                       -{formatPrice(item.aggregatorFee)}
                     </td>
-                    <td className="py-3 text-right text-[#FF6B35] font-mono font-bold">
+                    <td className="py-3 text-right text-[#FF5722] font-mono font-bold">
                       +{formatPrice(item.platformNetRevenue)}
                     </td>
                     <td className="py-3 text-right text-emerald-600 dark:text-emerald-400 font-mono font-bold">

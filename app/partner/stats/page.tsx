@@ -160,7 +160,7 @@ export default function PartnerStatsPage() {
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <BarChart3 className="w-6 h-6 text-[#FF6B35]" />
+                        <BarChart3 className="w-6 h-6 text-[#FF5722]" />
                         Statistiques
                     </h1>
                     <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -187,8 +187,8 @@ export default function PartnerStatsPage() {
                             onClick={() => setActivePeriod(p)}
                             className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
                                 activePeriod === p
-                                    ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
-                                    : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-[#FF6B35]/50'
+                                    ? 'bg-[#FF5722] text-white border-[#FF5722]'
+                                    : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-[#FF5722]/50'
                             }`}
                         >
                             {PERIOD_LABELS[p]}
@@ -242,7 +242,7 @@ export default function PartnerStatsPage() {
                     {/* KPI Summary */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {[
-                            { label: 'CA Total', value: `${totalRevenue.toLocaleString('fr-FR')} F`, icon: TrendingUp, color: 'text-[#FF6B35]', bg: 'bg-orange-50 dark:bg-orange-950/20' },
+                            { label: 'CA Total', value: `${totalRevenue.toLocaleString('fr-FR')} F`, icon: TrendingUp, color: 'text-[#FF5722]', bg: 'bg-orange-50 dark:bg-orange-950/20' },
                             { label: 'Billets vendus', value: s.tickets.sold, icon: Ticket, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/20' },
                             { label: 'Commandes', value: s.orders.total, icon: ShoppingBag, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/20' },
                             { label: 'Réservations salles', value: s.hallReservations.confirmed, icon: Building2, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/20' },
@@ -322,7 +322,7 @@ export default function PartnerStatsPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 space-y-3">
                             <h2 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                <Calendar className="w-4 h-4 text-[#FF6B35]" />
+                                <Calendar className="w-4 h-4 text-[#FF5722]" />
                                 Événements
                             </h2>
                             <div className="text-2xl font-black text-slate-900 dark:text-white">{s.events.total}</div>
@@ -338,7 +338,7 @@ export default function PartnerStatsPage() {
 
                         <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 space-y-3">
                             <h2 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                <Ticket className="w-4 h-4 text-[#FF6B35]" />
+                                <Ticket className="w-4 h-4 text-[#FF5722]" />
                                 Billetterie
                             </h2>
                             <div className="text-2xl font-black text-slate-900 dark:text-white">{s.tickets.sold} vendus</div>
@@ -360,7 +360,7 @@ export default function PartnerStatsPage() {
                     {/* Products */}
                     <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5">
                         <h2 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2 mb-3">
-                            <Users className="w-4 h-4 text-[#FF6B35]" />
+                            <Users className="w-4 h-4 text-[#FF5722]" />
                             Catalogue Produits
                         </h2>
                         <div className="flex items-center gap-4 text-sm">

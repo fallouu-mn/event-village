@@ -70,7 +70,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
       <div className="flex items-center justify-between">
         <Link
           href="/halls"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF6B35] transition-all shadow-xs"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
         >
           <ChevronLeft size={16} />
           <span>Retour au catalogue</span>
@@ -93,7 +93,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
                 alert('Lien copié !');
               }
             }}
-            className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-200 hover:text-[#FF6B35] transition-all shadow-xs"
+            className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
             aria-label="Partager"
           >
             <Share2 size={18} />
@@ -116,12 +116,12 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
             </div>
 
             <div className="absolute bottom-4 left-4 right-4 text-white space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF6B35]">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5722]">
                 {hall.partnerName}
               </span>
               <h1 className="text-xl sm:text-2xl font-black">{hall.name}</h1>
               <p className="text-xs text-zinc-300 flex items-center gap-1.5">
-                <MapPin size={13} className="text-[#FF6B35]" />
+                <MapPin size={13} className="text-[#FF5722]" />
                 <span>{hall.location}</span>
               </p>
             </div>
@@ -130,7 +130,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
           {/* Métriques clés */}
           <div className="grid grid-cols-3 gap-3">
             <div className="p-4 rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 text-center">
-              <Users size={20} className="mx-auto text-[#FF6B35] mb-1" />
+              <Users size={20} className="mx-auto text-[#FF5722] mb-1" />
               <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold block">Capacité</span>
               <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
                 {hall.capacitySeated} à {hall.capacityCocktail} pers.
@@ -138,7 +138,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
             </div>
 
             <div className="p-4 rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 text-center">
-              <Maximize size={20} className="mx-auto text-[#FF6B35] mb-1" />
+              <Maximize size={20} className="mx-auto text-[#FF5722] mb-1" />
               <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold block">Surface</span>
               <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
                 {hall.areaSqm} m²
@@ -184,7 +184,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
         <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 space-y-5 sticky top-20 shadow-md">
           <div>
             <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <CalendarIcon size={18} className="text-[#FF6B35]" />
+              <CalendarIcon size={18} className="text-[#FF5722]" />
               <span>Réserver cette salle</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -201,7 +201,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold focus:outline-none focus:border-[#FF6B35]"
+                className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold focus:outline-none focus:border-[#FF5722]"
               />
             </div>
 
@@ -217,7 +217,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
                     onClick={() => setDurationDays(d)}
                     className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                       durationDays === d
-                        ? 'bg-[#FF6B35] text-white border-[#FF6B35] shadow-xs'
+                        ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-xs'
                         : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                     }`}
                   >
@@ -234,7 +234,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
               <span>Montant total ({durationDays} jour{durationDays > 1 ? 's' : ''})</span>
               <span className="font-bold text-slate-900 dark:text-white">{totalFormatted}</span>
             </div>
-            <div className="flex justify-between text-[#FF6B35] font-black text-sm border-t border-slate-200 dark:border-zinc-800 pt-2">
+            <div className="flex justify-between text-[#FF5722] font-black text-sm border-t border-slate-200 dark:border-zinc-800 pt-2">
               <span>Acompte requis (30%)</span>
               <span>{depositFormatted}</span>
             </div>

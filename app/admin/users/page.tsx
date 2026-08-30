@@ -249,7 +249,7 @@ export default function AdminUsersManagementPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -274,7 +274,7 @@ export default function AdminUsersManagementPage() {
             variant="primary"
             size="sm"
             onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-1.5 bg-[#FF6B35] text-white"
+            className="flex items-center gap-1.5 bg-[#FF5722] text-white"
           >
             <UserPlus size={15} />
             <span>Créer un Compte / Admin</span>
@@ -311,7 +311,7 @@ export default function AdminUsersManagementPage() {
               placeholder="Rechercher par nom, email, téléphone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF6B35]"
+              className="w-full pl-8 pr-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF5722]"
             />
           </div>
 
@@ -323,7 +323,7 @@ export default function AdminUsersManagementPage() {
                 onClick={() => setRoleFilter(role)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   roleFilter === role
-                    ? 'bg-[#FF6B35] text-white shadow-xs'
+                    ? 'bg-[#FF5722] text-white shadow-xs'
                     : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -336,7 +336,7 @@ export default function AdminUsersManagementPage() {
         {/* Liste Réelle des Utilisateurs */}
         {isLoading ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35] mb-2" />
+            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement des utilisateurs...</p>
           </div>
         ) : users.length === 0 ? (
@@ -369,7 +369,7 @@ export default function AdminUsersManagementPage() {
                             : isAdmin
                             ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
                             : user.role === 'PARTENAIRE'
-                            ? 'bg-orange-100 text-[#FF6B35] dark:bg-orange-950/40'
+                            ? 'bg-orange-100 text-[#FF5722] dark:bg-orange-950/40'
                             : 'bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
                         }`}
                       >
@@ -468,7 +468,7 @@ export default function AdminUsersManagementPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Prénom <span className="text-[#FF6B35]">*</span>
+                Prénom <span className="text-[#FF5722]">*</span>
               </label>
               <div className="relative">
                 <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
@@ -478,13 +478,13 @@ export default function AdminUsersManagementPage() {
                   placeholder="Ex : Moussa"
                   value={newFirstName}
                   onChange={(e) => setNewFirstName(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/15 transition-all"
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
                 />
               </div>
             </div>
             <div>
               <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Nom <span className="text-[#FF6B35]">*</span>
+                Nom <span className="text-[#FF5722]">*</span>
               </label>
               <div className="relative">
                 <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
@@ -494,7 +494,7 @@ export default function AdminUsersManagementPage() {
                   placeholder="Ex : Diop"
                   value={newLastName}
                   onChange={(e) => setNewLastName(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/15 transition-all"
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
                 />
               </div>
             </div>
@@ -503,7 +503,7 @@ export default function AdminUsersManagementPage() {
           {/* Numéro de Téléphone (Sénégal) */}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-              Numéro de Téléphone (Sénégal) <span className="text-[#FF6B35]">*</span>
+              Numéro de Téléphone (Sénégal) <span className="text-[#FF5722]">*</span>
             </label>
             <div className="relative">
               <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-[11px] font-black text-slate-700 dark:text-zinc-300 border border-slate-300/60 dark:border-zinc-700 pointer-events-none">
@@ -516,7 +516,7 @@ export default function AdminUsersManagementPage() {
                 placeholder="77 123 45 67"
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
-                className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-mono font-bold focus:outline-none focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/15 transition-all"
+                className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-mono font-bold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
               />
             </div>
           </div>
@@ -534,14 +534,14 @@ export default function AdminUsersManagementPage() {
                   placeholder="contact@domaine.sn"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/15 transition-all"
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
                 />
               </div>
             </div>
 
             <div>
               <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Mot de passe temporaire <span className="text-[#FF6B35]">*</span>
+                Mot de passe temporaire <span className="text-[#FF5722]">*</span>
               </label>
               <div className="relative">
                 <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
@@ -551,7 +551,7 @@ export default function AdminUsersManagementPage() {
                   placeholder="••••••••••••"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full h-10 pl-9 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-mono font-bold focus:outline-none focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/15 transition-all"
+                  className="w-full h-10 pl-9 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-mono font-bold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
                 />
                 <button
                   type="button"
@@ -568,7 +568,7 @@ export default function AdminUsersManagementPage() {
           {/* Rôle Attribué (Sélecteur Compact 2x2) */}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
-              Rôle Attribué <span className="text-[#FF6B35]">*</span>
+              Rôle Attribué <span className="text-[#FF5722]">*</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {/* CONTROLEUR */}
@@ -577,19 +577,19 @@ export default function AdminUsersManagementPage() {
                 onClick={() => setNewRole('CONTROLEUR')}
                 className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
                   newRole === 'CONTROLEUR'
-                    ? 'border-[#FF6B35] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-[#FF6B35]'
+                    ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-[#FF5722]'
                     : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
                 }`}
               >
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                  newRole === 'CONTROLEUR' ? 'bg-[#FF6B35] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                  newRole === 'CONTROLEUR' ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
                 }`}>
                   <QrCode size={14} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <span className="font-black text-xs text-slate-900 dark:text-white">CONTRÔLEUR</span>
-                    {newRole === 'CONTROLEUR' && <CheckCircle2 size={13} className="text-[#FF6B35]" />}
+                    {newRole === 'CONTROLEUR' && <CheckCircle2 size={13} className="text-[#FF5722]" />}
                   </div>
                   <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
                     Scanner de billets sur site (/scan)
@@ -679,7 +679,7 @@ export default function AdminUsersManagementPage() {
 
           {/* Note Contextuelle Rapide */}
           <div className="p-2.5 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/30 flex items-center gap-2 text-[11px] text-slate-700 dark:text-zinc-300">
-            <Info size={14} className="text-[#FF6B35] flex-shrink-0" />
+            <Info size={14} className="text-[#FF5722] flex-shrink-0" />
             <p className="leading-tight">
               {newRole === 'CONTROLEUR' && (
                 <span><strong>Routage :</strong> Redirigé automatiquement vers le scanner de billets (<code>/scan</code>) dès sa connexion.</span>
@@ -713,7 +713,7 @@ export default function AdminUsersManagementPage() {
               type="submit"
               isLoading={isCreating}
               leftIcon={<UserPlus size={15} />}
-              className="rounded-xl px-5 h-10 font-black text-xs bg-[#FF6B35] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF6B35]/25"
+              className="rounded-xl px-5 h-10 font-black text-xs bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
             >
               Créer le compte {newRole}
             </Button>
@@ -748,14 +748,14 @@ export default function AdminUsersManagementPage() {
                     onClick={() => togglePermissionItem(perm)}
                     className={`p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
                       isChecked
-                        ? 'border-[#FF6B35] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white font-bold ring-1 ring-[#FF6B35]'
+                        ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white font-bold ring-1 ring-[#FF5722]'
                         : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
                     }`}
                   >
                     <span className="font-mono text-[11px] font-bold">{perm}</span>
                     <span
                       className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black transition-all ${
-                        isChecked ? 'bg-[#FF6B35] text-white shadow-xs' : 'border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
+                        isChecked ? 'bg-[#FF5722] text-white shadow-xs' : 'border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
                       }`}
                     >
                       {isChecked ? '✓' : ''}
@@ -781,7 +781,7 @@ export default function AdminUsersManagementPage() {
                 onClick={handleSavePermissions}
                 isLoading={isSavingPerms}
                 leftIcon={<ShieldCheck size={16} />}
-                className="rounded-xl px-6 font-black bg-[#FF6B35] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF6B35]/25"
+                className="rounded-xl px-6 font-black bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
               >
                 Enregistrer les permissions
               </Button>

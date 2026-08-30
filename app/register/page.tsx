@@ -249,8 +249,8 @@ export default function RegisterPage() {
                 <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-6">
                     {/* Indicateur d'étape */}
                     <div className="flex items-center justify-center gap-2">
-                        <div className={`h-2 rounded-full transition-all ${step >= 1 ? 'w-12 bg-[#FF6B35]' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
-                        <div className={`h-2 rounded-full transition-all ${step >= 2 ? 'w-12 bg-[#FF6B35]' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
+                        <div className={`h-2 rounded-full transition-all ${step >= 1 ? 'w-12 bg-[#FF5722]' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
+                        <div className={`h-2 rounded-full transition-all ${step >= 2 ? 'w-12 bg-[#FF5722]' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
                         <div className={`h-2 rounded-full transition-all ${step === 3 ? 'w-12 bg-emerald-500' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
                     </div>
 
@@ -284,7 +284,7 @@ export default function RegisterPage() {
                                             onChange={(e) => setFirstName(e.target.value)}
                                             placeholder="Moussa"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                         />
                                         <User size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -301,7 +301,7 @@ export default function RegisterPage() {
                                             onChange={(e) => setLastName(e.target.value)}
                                             placeholder="Diop"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                         />
                                         <User size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -319,7 +319,7 @@ export default function RegisterPage() {
                                         onChange={(e) => setPhone(e.target.value)}
                                         placeholder="77 123 45 67 ou +221 78 987 65 43"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                     />
                                     <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -338,7 +338,7 @@ export default function RegisterPage() {
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         placeholder="client@domaine.com"
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                     />
                                     <Mail size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -356,7 +356,7 @@ export default function RegisterPage() {
                                             onChange={(e) => setPassword(e.target.value)}
                                             placeholder="Min. 6 caractères"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                         />
                                         <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -373,7 +373,7 @@ export default function RegisterPage() {
                                             onChange={(e) => setConfirmPassword(e.target.value)}
                                             placeholder="••••••••"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                         />
                                         <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -390,7 +390,7 @@ export default function RegisterPage() {
                                         value={referralCode}
                                         onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
                                         placeholder="ex: EV-AMB-1234"
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF6B35] transition-all"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
                                     />
                                     <Gift size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -450,7 +450,7 @@ export default function RegisterPage() {
                                     type="button"
                                     onClick={handleResendOtp}
                                     disabled={countdown > 0 || isLoading}
-                                    className="text-[#FF6B35] font-bold disabled:opacity-50 flex items-center gap-1"
+                                    className="text-[#FF5722] font-bold disabled:opacity-50 flex items-center gap-1"
                                 >
                                     <RotateCcw size={12} />
                                     <span>{countdown > 0 ? `Renvoyer (${countdown}s)` : 'Renvoyer le code SMS'}</span>
@@ -482,7 +482,7 @@ export default function RegisterPage() {
                             </span>
                             <Link
                                 href="/login"
-                                className="text-xs font-black text-[#FF6B35] hover:underline"
+                                className="text-xs font-black text-[#FF5722] hover:underline"
                             >
                                 Se connecter
                             </Link>

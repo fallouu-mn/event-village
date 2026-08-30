@@ -285,7 +285,7 @@ export default function NewEventPage() {
         <div className="p-6 max-w-5xl mx-auto space-y-8">
             {/* Header */}
             <div className="flex items-center justify-between">
-                <Link href="/partner/events" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF6B35]">
+                <Link href="/partner/events" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF5722]">
                     <ArrowLeft className="w-4 h-4" />
                     Retour à mes événements
                 </Link>
@@ -296,7 +296,7 @@ export default function NewEventPage() {
 
             <div>
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                    <Calendar className="w-7 h-7 text-[#FF6B35]" />
+                    <Calendar className="w-7 h-7 text-[#FF5722]" />
                     Créer un Nouvel Événement
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400 mt-1">
@@ -318,7 +318,7 @@ export default function NewEventPage() {
                         onClick={() => setCurrentStep(step.num)}
                         className={`text-left p-2 rounded-xl text-xs font-bold transition-all ${
                             currentStep === step.num
-                                ? 'bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] border border-orange-200 dark:border-orange-900/50'
+                                ? 'bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] border border-orange-200 dark:border-orange-900/50'
                                 : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60'
                         }`}
                     >
@@ -348,7 +348,7 @@ export default function NewEventPage() {
                                     placeholder="Ex: Dakar Fashion Week 2026"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
-                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                 />
                                 {errors.title && (
                                     <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.title}</p>
@@ -364,7 +364,7 @@ export default function NewEventPage() {
                                     placeholder="Présentez le concept, les artistes, les moments forts..."
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
-                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                 />
                             </div>
 
@@ -378,7 +378,7 @@ export default function NewEventPage() {
                                         required
                                         value={startDate}
                                         onChange={(e) => setStartDate(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
                                     {errors.start_date && (
                                         <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.start_date}</p>
@@ -393,7 +393,7 @@ export default function NewEventPage() {
                                         required
                                         value={startTime}
                                         onChange={(e) => setStartTime(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
                                     {errors.start_time && (
                                         <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.start_time}</p>
@@ -410,7 +410,7 @@ export default function NewEventPage() {
                                         type="date"
                                         value={endDate}
                                         onChange={(e) => setEndDate(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
                                 </div>
                                 <div>
@@ -421,7 +421,7 @@ export default function NewEventPage() {
                                         type="time"
                                         value={endTime}
                                         onChange={(e) => setEndTime(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
                                 </div>
                             </div>
@@ -437,7 +437,7 @@ export default function NewEventPage() {
                                         placeholder="Ex: Monument de la Renaissance"
                                         value={location}
                                         onChange={(e) => setLocation(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
                                     {errors.location && (
                                         <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.location}</p>
@@ -451,7 +451,7 @@ export default function NewEventPage() {
                                         type="text"
                                         value={city}
                                         onChange={(e) => setCity(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
                                 </div>
                             </div>
@@ -472,7 +472,7 @@ export default function NewEventPage() {
                                         placeholder="Ex: 500"
                                         value={capacity}
                                         onChange={(e) => setCapacity(e.target.value === '' ? '' : Number(e.target.value))}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
                                     {errors.capacity && (
                                         <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.capacity}</p>
@@ -513,7 +513,7 @@ export default function NewEventPage() {
                                     className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700 space-y-3"
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-[#FF6B35]">Activité #{index + 1}</span>
+                                        <span className="text-xs font-bold text-[#FF5722]">Activité #{index + 1}</span>
                                         {programItems.length > 1 && (
                                             <button
                                                 type="button"
@@ -655,12 +655,12 @@ export default function NewEventPage() {
                         </h2>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF6B35] transition-all">
+                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
                                 <input
                                     type="checkbox"
                                     checked={services.ticketing}
                                     onChange={(e) => setServices({ ...services, ticketing: e.target.checked })}
-                                    className="mt-1 accent-[#FF6B35]"
+                                    className="mt-1 accent-[#FF5722]"
                                 />
                                 <div>
                                     <p className="text-xs font-bold text-slate-900 dark:text-white">Billetterie en Ligne (Ticketing)</p>
@@ -670,12 +670,12 @@ export default function NewEventPage() {
                                 </div>
                             </label>
 
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF6B35] transition-all">
+                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
                                 <input
                                     type="checkbox"
                                     checked={services.tableBooking}
                                     onChange={(e) => setServices({ ...services, tableBooking: e.target.checked })}
-                                    className="mt-1 accent-[#FF6B35]"
+                                    className="mt-1 accent-[#FF5722]"
                                 />
                                 <div>
                                     <p className="text-xs font-bold text-slate-900 dark:text-white">Réservation de Tables VIP</p>
@@ -685,12 +685,12 @@ export default function NewEventPage() {
                                 </div>
                             </label>
 
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF6B35] transition-all">
+                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
                                 <input
                                     type="checkbox"
                                     checked={services.communication}
                                     onChange={(e) => setServices({ ...services, communication: e.target.checked })}
-                                    className="mt-1 accent-[#FF6B35]"
+                                    className="mt-1 accent-[#FF5722]"
                                 />
                                 <div>
                                     <p className="text-xs font-bold text-slate-900 dark:text-white">Pack Communication Standard</p>
@@ -700,12 +700,12 @@ export default function NewEventPage() {
                                 </div>
                             </label>
 
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF6B35] transition-all">
+                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
                                 <input
                                     type="checkbox"
                                     checked={services.promotion}
                                     onChange={(e) => setServices({ ...services, promotion: e.target.checked })}
-                                    className="mt-1 accent-[#FF6B35]"
+                                    className="mt-1 accent-[#FF5722]"
                                 />
                                 <div>
                                     <p className="text-xs font-bold text-slate-900 dark:text-white">Promotion Sponsorisée</p>
@@ -748,7 +748,7 @@ export default function NewEventPage() {
                                     className="p-5 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700 space-y-3"
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-[#FF6B35]">Billet #{index + 1}</span>
+                                        <span className="text-xs font-bold text-[#FF5722]">Billet #{index + 1}</span>
                                         {ticketCategories.length > 1 && (
                                             <button
                                                 type="button"
@@ -830,7 +830,7 @@ export default function NewEventPage() {
                         <Button
                             size="sm"
                             onClick={() => setCurrentStep(currentStep + 1)}
-                            className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs flex items-center gap-1"
+                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs flex items-center gap-1"
                         >
                             Suivant
                             <ChevronRight className="w-3.5 h-3.5" />
@@ -841,7 +841,7 @@ export default function NewEventPage() {
                             onClick={handleSubmit}
                             isLoading={isSubmitting}
                             disabled={isSubmitting}
-                            className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs flex items-center gap-2 shadow-lg shadow-[#FF6B35]/20"
+                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs flex items-center gap-2 shadow-lg shadow-[#FF5722]/20"
                         >
                             <Save className="w-4 h-4" />
                             {isSubmitting ? 'Enregistrement...' : 'Enregistrer en Brouillon (§31)'}

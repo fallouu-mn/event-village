@@ -152,7 +152,7 @@ export function NotificationBell() {
             case 'PAYMENT':
                 return <DollarSign size={15} className="text-emerald-500" />;
             case 'TICKET':
-                return <Ticket size={15} className="text-[#FF6B35]" />;
+                return <Ticket size={15} className="text-[#FF5722]" />;
             case 'REFERRAL':
                 return <Gift size={15} className="text-purple-500" />;
             case 'SECURITY':
@@ -171,7 +171,7 @@ export function NotificationBell() {
         return (
             <Link
                 href="/login"
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-[#FF6B35] transition-all"
+                className="relative w-10 h-10 rounded-xl flex items-center justify-center border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all"
                 aria-label="Notifications"
             >
                 <Bell size={18} />
@@ -188,13 +188,13 @@ export function NotificationBell() {
                     setIsOpen(!isOpen);
                     if (!isOpen) fetchNotifications();
                 }}
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-[#FF6B35] hover:border-[#FF6B35]/40 transition-all focus:outline-none"
+                className="relative w-10 h-10 rounded-xl flex items-center justify-center border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] hover:border-[#FF5722]/40 transition-all focus:outline-none"
                 aria-label="Notifications"
                 aria-expanded={isOpen}
             >
                 <Bell size={18} />
                 {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF6B35] text-white text-[10px] font-black flex items-center justify-center shadow-md animate-pulse ring-2 ring-white dark:ring-[#161616]">
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF5722] text-white text-[10px] font-black flex items-center justify-center shadow-md animate-pulse ring-2 ring-white dark:ring-[#161616]">
                         {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                 )}
@@ -210,7 +210,7 @@ export function NotificationBell() {
                                 Notifications
                             </h3>
                             {unreadCount > 0 && (
-                                <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] text-[10px] font-black">
+                                <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] text-[10px] font-black">
                                     {unreadCount} non lue{unreadCount > 1 ? 's' : ''}
                                 </span>
                             )}
@@ -222,7 +222,7 @@ export function NotificationBell() {
                                     type="button"
                                     onClick={handleMarkAllAsRead}
                                     disabled={isMarkingAll}
-                                    className="text-[11px] font-bold text-slate-500 hover:text-[#FF6B35] dark:text-zinc-400 dark:hover:text-[#FF6B35] flex items-center gap-1 transition-colors"
+                                    className="text-[11px] font-bold text-slate-500 hover:text-[#FF5722] dark:text-zinc-400 dark:hover:text-[#FF5722] flex items-center gap-1 transition-colors"
                                     title="Tout marquer comme lu"
                                 >
                                     <CheckCheck size={13} />
@@ -307,7 +307,7 @@ export function NotificationBell() {
                                         </p>
 
                                         {notif.metadata?.actionUrl && (
-                                            <div className="pt-1 flex items-center gap-1 text-[10px] font-bold text-[#FF6B35]">
+                                            <div className="pt-1 flex items-center gap-1 text-[10px] font-bold text-[#FF5722]">
                                                 <span>Consulter</span>
                                                 <ExternalLink size={10} />
                                             </div>
@@ -320,7 +320,7 @@ export function NotificationBell() {
                                             type="button"
                                             onClick={(e) => handleMarkAsRead(notif, e)}
                                             title="Marquer comme lu"
-                                            className="w-2 h-2 rounded-full bg-[#FF6B35] flex-shrink-0 mt-2 hover:scale-150 transition-transform"
+                                            className="w-2 h-2 rounded-full bg-[#FF5722] flex-shrink-0 mt-2 hover:scale-150 transition-transform"
                                         />
                                     )}
                                 </div>
@@ -333,7 +333,7 @@ export function NotificationBell() {
                         <Link
                             href="/notifications"
                             onClick={() => setIsOpen(false)}
-                            className="text-xs font-bold text-[#FF6B35] hover:underline"
+                            className="text-xs font-bold text-[#FF5722] hover:underline"
                         >
                             Voir toutes les notifications
                         </Link>

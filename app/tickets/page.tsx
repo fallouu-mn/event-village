@@ -53,7 +53,7 @@ export default function TicketsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Ticket className="text-[#FF6B35]" size={28} />
+            <Ticket className="text-[#FF5722]" size={28} />
             <span>Mes Billets Électroniques</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
@@ -80,7 +80,7 @@ export default function TicketsPage() {
             onClick={() => setActiveTab(tab.id as any)}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               activeTab === tab.id
-                ? 'bg-[#FF6B35] text-white shadow-sm'
+                ? 'bg-[#FF5722] text-white shadow-sm'
                 : 'bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-800 hover:border-slate-300'
             }`}
           >

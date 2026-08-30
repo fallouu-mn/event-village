@@ -108,7 +108,7 @@ export default function NotificationsPage() {
       case 'PAYMENT':
         return <DollarSign size={18} className="text-emerald-500" />;
       case 'TICKET':
-        return <Ticket size={18} className="text-[#FF6B35]" />;
+        return <Ticket size={18} className="text-[#FF5722]" />;
       case 'REFERRAL':
         return <Gift size={18} className="text-purple-500" />;
       case 'SECURITY':
@@ -143,12 +143,12 @@ export default function NotificationsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] text-xs font-black mb-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] text-xs font-black mb-2">
             <Sparkles size={13} />
             <span>Centre de Notifications Événementielles</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Bell className="text-[#FF6B35]" size={28} />
+            <Bell className="text-[#FF5722]" size={28} />
             <span>Vos Notifications In-App</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
@@ -174,7 +174,7 @@ export default function NotificationsPage() {
               size="sm"
               onClick={markAllAsRead}
               disabled={isMarkingAll}
-              className="bg-[#FF6B35] hover:bg-[#E8551F] text-white text-xs font-bold shadow-xs"
+              className="bg-[#FF5722] hover:bg-[#E8551F] text-white text-xs font-bold shadow-xs"
             >
               <CheckCheck size={14} className="mr-1" />
               Tout marquer comme lu ({unreadCount})
@@ -199,7 +199,7 @@ export default function NotificationsPage() {
             onClick={() => setFilterType(f.id)}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
               filterType === f.id
-                ? 'bg-[#FF6B35] text-white border-[#FF6B35] shadow-xs'
+                ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-xs'
                 : 'bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700'
             }`}
           >
@@ -211,7 +211,7 @@ export default function NotificationsPage() {
       {/* Liste des Notifications */}
       {isLoading ? (
         <div className="py-16 text-center space-y-3">
-          <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35]" />
+          <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722]" />
           <p className="text-xs text-slate-400 dark:text-zinc-500">Chargement de vos notifications réelles...</p>
         </div>
       ) : filteredNotifs.length > 0 ? (
@@ -222,7 +222,7 @@ export default function NotificationsPage() {
               className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                 notif.isRead
                   ? 'bg-white dark:bg-[#1E1E1E] border-slate-200/80 dark:border-zinc-800'
-                  : 'bg-orange-50/50 dark:bg-orange-950/20 border-[#FF6B35]/30 shadow-xs'
+                  : 'bg-orange-50/50 dark:bg-orange-950/20 border-[#FF5722]/30 shadow-xs'
               }`}
             >
               <div className="flex items-start gap-3.5 flex-1 min-w-0">
@@ -236,7 +236,7 @@ export default function NotificationsPage() {
                       {notif.title}
                     </h3>
                     {!notif.isRead && (
-                      <span className="w-2 h-2 rounded-full bg-[#FF6B35] animate-pulse flex-shrink-0" />
+                      <span className="w-2 h-2 rounded-full bg-[#FF5722] animate-pulse flex-shrink-0" />
                     )}
                     <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 font-bold uppercase">
                       {notif.type}
@@ -269,7 +269,7 @@ export default function NotificationsPage() {
                     <Button
                       variant="primary"
                       size="sm"
-                      className="bg-[#FF6B35] hover:bg-[#E8551F] text-white text-xs font-bold"
+                      className="bg-[#FF5722] hover:bg-[#E8551F] text-white text-xs font-bold"
                     >
                       <span>Consulter</span>
                       <ChevronRight size={14} className="ml-1" />

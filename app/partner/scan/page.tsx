@@ -94,7 +94,7 @@ export default function PartnerScanPage() {
       <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <QrCode className="text-[#FF6B35]" size={24} />
+            <QrCode className="text-[#FF5722]" size={24} />
             <span>Contrôle & Validation des Entrées</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -112,13 +112,13 @@ export default function PartnerScanPage() {
       {/* 2. Viseur Numérique du Scanner */}
       <div className="p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center text-center relative overflow-hidden">
         {/* Viseur animé */}
-        <div className="relative w-60 h-60 rounded-3xl bg-slate-900 border-2 border-[#FF6B35] flex items-center justify-center shadow-lg overflow-hidden mb-4">
-          <div className="absolute inset-x-0 top-0 h-1 bg-[#FF6B35] shadow-[0_0_15px_#FF6B35] animate-bounce" />
+        <div className="relative w-60 h-60 rounded-3xl bg-slate-900 border-2 border-[#FF5722] flex items-center justify-center shadow-lg overflow-hidden mb-4">
+          <div className="absolute inset-x-0 top-0 h-1 bg-[#FF5722] shadow-[0_0_15px_#FF5722] animate-bounce" />
           <QrCode size={100} className="text-white/20" />
         </div>
 
         <p className="text-xs font-bold text-slate-700 dark:text-zinc-300 flex items-center gap-1.5">
-          <Camera size={16} className="text-[#FF6B35]" />
+          <Camera size={16} className="text-[#FF5722]" />
           <span>Placez le QR Code du client dans le cadre</span>
         </p>
 
@@ -135,7 +135,7 @@ export default function PartnerScanPage() {
             placeholder="Ex : EV-8849-2026-XOF"
             value={qrCodeInput}
             onChange={(e) => setQrCodeInput(e.target.value)}
-            className="flex-1 h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-mono font-bold focus:outline-none focus:border-[#FF6B35]"
+            className="flex-1 h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-mono font-bold focus:outline-none focus:border-[#FF5722]"
           />
           <Button
             variant="primary"
@@ -214,7 +214,7 @@ export default function PartnerScanPage() {
             Historique des Scans de la Session ({scanHistory.length})
           </h3>
           {stats.totalExpected > 0 && (
-            <span className="text-xs font-bold text-[#FF6B35]">
+            <span className="text-xs font-bold text-[#FF5722]">
               {stats.checkedInCount} / {stats.totalExpected} validés
             </span>
           )}

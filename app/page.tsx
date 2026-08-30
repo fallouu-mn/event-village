@@ -105,14 +105,14 @@ export default function HomePage() {
 
         {/* Contenu Hero */}
         <div className="relative z-10 max-w-2xl space-y-4 sm:space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FF6B35]/20 border border-[#FF6B35]/40 text-[#FF6B35] text-xs font-bold backdrop-blur-md">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FF5722]/20 border border-[#FF5722]/40 text-[#FF5722] text-xs font-bold backdrop-blur-md">
             <Sparkles size={14} />
             <span>La Référence Événementielle au Sénégal</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white leading-tight">
             Découvrez, réservez et vivez des{' '}
-            <span className="text-[#FF6B35]">expériences uniques</span>.
+            <span className="text-[#FF5722]">expériences uniques</span>.
           </h1>
 
           <p className="text-sm sm:text-base text-zinc-300 font-medium leading-relaxed">
@@ -128,7 +128,7 @@ export default function HomePage() {
                 placeholder="Rechercher par artiste, ville, salle..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-12 pl-10 pr-4 rounded-xl bg-white/10 dark:bg-black/40 border border-white/20 text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-[#FF6B35] backdrop-blur-md transition-all"
+                className="w-full h-12 pl-10 pr-4 rounded-xl bg-white/10 dark:bg-black/40 border border-white/20 text-white placeholder-zinc-400 text-sm focus:outline-none focus:border-[#FF5722] backdrop-blur-md transition-all"
               />
             </div>
             <Link href="/explore">
@@ -148,7 +148,7 @@ export default function HomePage() {
           <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
             Catégories d’activités
           </h2>
-          <Link href="/explore" className="text-xs font-bold text-[#FF6B35] hover:text-[#EA580C] flex items-center gap-1">
+          <Link href="/explore" className="text-xs font-bold text-[#FF5722] hover:opacity-85 flex items-center gap-1 transition-opacity">
             <span>Tout voir</span>
             <ArrowRight size={14} />
           </Link>
@@ -164,11 +164,11 @@ export default function HomePage() {
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all duration-200 shadow-xs active:scale-95 ${
                   active
-                    ? 'bg-[#FF6B35] text-white shadow-md shadow-[#FF6B35]/20 font-black'
-                    : 'bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-zinc-300 border border-slate-200/80 dark:border-zinc-800 hover:border-[#FF6B35]/40 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                    ? 'bg-[#FF5722] text-white shadow-md shadow-[#FF5722]/20 font-black'
+                    : 'bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-zinc-300 border border-slate-200/80 dark:border-zinc-800 hover:border-[#FF5722]/40 hover:bg-slate-50 dark:hover:bg-zinc-800'
                 }`}
               >
-                <Icon size={16} className={active ? 'text-white' : 'text-[#FF6B35]'} />
+                <Icon size={16} className={active ? 'text-white' : 'text-[#FF5722]'} />
                 <span>{cat.label}</span>
               </button>
             );
@@ -189,7 +189,7 @@ export default function HomePage() {
               {filteredEvents.length} événement(s) disponible(s)
             </p>
           </div>
-          <Link href="/explore" className="text-xs font-bold text-[#FF6B35] hover:underline">
+          <Link href="/explore" className="text-xs font-bold text-[#FF5722] hover:underline">
             Voir calendrier
           </Link>
         </div>

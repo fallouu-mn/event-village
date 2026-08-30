@@ -88,7 +88,7 @@ export default function AdminServicesManagementPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -147,7 +147,7 @@ export default function AdminServicesManagementPage() {
                 onClick={() => setCurrentTab(tab.key as any)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
                   active
-                    ? 'bg-[#FF6B35] text-white shadow-xs'
+                    ? 'bg-[#FF5722] text-white shadow-xs'
                     : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
                 }`}
               >
@@ -161,7 +161,7 @@ export default function AdminServicesManagementPage() {
         {/* Contenu Réel */}
         {isLoading ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35] mb-2" />
+            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement des données réelles...</p>
           </div>
         ) : items.length === 0 ? (

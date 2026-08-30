@@ -116,7 +116,7 @@ export default function HallsCataloguePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Building2 className="text-[#FF6B35]" size={28} />
+            <Building2 className="text-[#FF5722]" size={28} />
             <span>Catalogue de Salles & Réceptions</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
@@ -134,7 +134,7 @@ export default function HallsCataloguePage() {
             placeholder="Rechercher une salle par nom, hôtel, quartier..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs sm:text-sm focus:outline-none focus:border-[#FF6B35]"
+            className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs sm:text-sm focus:outline-none focus:border-[#FF5722]"
           />
         </div>
 
@@ -148,7 +148,7 @@ export default function HallsCataloguePage() {
                 onClick={() => setSelectedLocation(loc)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   selectedLocation === loc
-                    ? 'bg-[#FF6B35] text-white shadow-xs'
+                    ? 'bg-[#FF5722] text-white shadow-xs'
                     : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-200'
                 }`}
               >
@@ -182,7 +182,7 @@ export default function HallsCataloguePage() {
           {filteredHalls.map((hall) => (
             <div
               key={hall.id}
-              className="group rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 overflow-hidden shadow-xs hover:shadow-xl hover:border-[#FF6B35]/40 transition-all flex flex-col justify-between"
+              className="group rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 overflow-hidden shadow-xs hover:shadow-xl hover:border-[#FF5722]/40 transition-all flex flex-col justify-between"
             >
               <div>
                 {/* Hero Image */}
@@ -200,7 +200,7 @@ export default function HallsCataloguePage() {
                   </div>
 
                   <div className="absolute bottom-3 left-4 right-4 text-white">
-                    <span className="text-[10px] uppercase font-bold text-[#FF6B35] tracking-wider block">
+                    <span className="text-[10px] uppercase font-bold text-[#FF5722] tracking-wider block">
                       {hall.partnerName}
                     </span>
                     <h3 className="text-base sm:text-lg font-black tracking-tight leading-tight">
@@ -213,7 +213,7 @@ export default function HallsCataloguePage() {
                 <div className="p-5 space-y-3">
                   <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400">
                     <span className="flex items-center gap-1">
-                      <MapPin size={14} className="text-[#FF6B35]" />
+                      <MapPin size={14} className="text-[#FF5722]" />
                       <span>{hall.location}</span>
                     </span>
                     <span className="flex items-center gap-1 font-bold text-slate-700 dark:text-zinc-300">
@@ -243,7 +243,7 @@ export default function HallsCataloguePage() {
                   <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">
                     Tarif journalier
                   </span>
-                  <span className="text-base sm:text-lg font-black text-[#FF6B35]">
+                  <span className="text-base sm:text-lg font-black text-[#FF5722]">
                     {hall.priceFormatted}
                   </span>
                 </div>

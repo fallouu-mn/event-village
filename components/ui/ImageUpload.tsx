@@ -106,20 +106,20 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
                     onClick={() => inputRef.current?.click()}
                     className={`relative flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
                         dragOver
-                            ? 'border-[#FF6B35] bg-orange-50/50 dark:bg-orange-950/20'
-                            : 'border-slate-300 dark:border-zinc-700 hover:border-[#FF6B35]/50 bg-slate-50 dark:bg-zinc-800/50'
+                            ? 'border-[#FF5722] bg-orange-50/50 dark:bg-orange-950/20'
+                            : 'border-slate-300 dark:border-zinc-700 hover:border-[#FF5722]/50 bg-slate-50 dark:bg-zinc-800/50'
                     }`}
                 >
                     {isUploading ? (
                         <>
-                            <Loader2 size={24} className="text-[#FF6B35] animate-spin" />
+                            <Loader2 size={24} className="text-[#FF5722] animate-spin" />
                             <span className="text-xs font-semibold text-slate-500 dark:text-zinc-400">
                                 Upload en cours...
                             </span>
                         </>
                     ) : (
                         <>
-                            <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
                                 {dragOver ? <Upload size={20} /> : <ImageIcon size={20} />}
                             </div>
                             <div className="text-center">

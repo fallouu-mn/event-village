@@ -20,7 +20,7 @@ export const Badge: React.FC<BadgeProps> = ({
 }) => {
   const variants = {
     default: 'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 border-slate-200 dark:border-zinc-700',
-    brand: 'bg-[#FF6B35]/15 text-[#EA580C] dark:text-[#FF6B35] border-[#FF6B35]/30',
+    brand: 'bg-[#FF5722]/15 text-[#FF5722] dark:text-[#FF5722] border-[#FF5722]/30',
     success: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
     warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30',
     danger: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30',

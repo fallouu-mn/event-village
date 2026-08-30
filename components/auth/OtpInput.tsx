@@ -94,8 +94,8 @@ export const OtpInput: React.FC<OtpInputProps> = ({
                             hasError
                                 ? 'border-red-500 bg-red-50 dark:bg-red-950/30 text-red-600'
                                 : digit
-                                ? 'border-[#FF6B35] bg-orange-50/50 dark:bg-orange-950/20 text-[#FF6B35] shadow-xs'
-                                : 'border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-[#FF6B35]'
+                                ? 'border-[#FF5722] bg-orange-50/50 dark:bg-orange-950/20 text-[#FF5722] shadow-xs'
+                                : 'border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-[#FF5722]'
                         } disabled:opacity-50`}
                     />
                 );

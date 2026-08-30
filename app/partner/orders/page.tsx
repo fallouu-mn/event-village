@@ -209,7 +209,7 @@ export default function PartnerOrdersPage() {
                 <div>
                     <div className="flex items-center gap-2 mb-1">
                         <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                            <ShoppingBag className="w-6 h-6 text-[#FF6B35]" />
+                            <ShoppingBag className="w-6 h-6 text-[#FF5722]" />
                             Commandes
                         </h1>
                         {pendingCount > 0 && (
@@ -250,8 +250,8 @@ export default function PartnerOrdersPage() {
                         onClick={() => setActiveFilter(f)}
                         className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
                             activeFilter === f
-                                ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
-                                : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-[#FF6B35]/50'
+                                ? 'bg-[#FF5722] text-white border-[#FF5722]'
+                                : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-[#FF5722]/50'
                         }`}
                     >
                         {f === 'ALL' ? 'Toutes' : f.replace(/_/g, ' ')}
@@ -304,7 +304,7 @@ export default function PartnerOrdersPage() {
                                     onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
                                 >
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF6B35] flex items-center justify-center flex-shrink-0">
+                                        <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF5722] flex items-center justify-center flex-shrink-0">
                                             <ModeIcon size={18} />
                                         </div>
                                         <div className="min-w-0 space-y-0.5">
@@ -392,7 +392,7 @@ export default function PartnerOrdersPage() {
                                                     ))}
                                                     <div className="flex items-center justify-between px-3 py-2.5 bg-orange-50/60 dark:bg-orange-950/20 border-t border-slate-100 dark:border-zinc-800">
                                                         <span className="text-[11px] font-black text-slate-700 dark:text-zinc-300 uppercase tracking-wide">Total</span>
-                                                        <span className="text-sm font-black text-[#FF6B35]">
+                                                        <span className="text-sm font-black text-[#FF5722]">
                                                             {order.total_amount.toLocaleString('fr-FR')} FCFA
                                                         </span>
                                                     </div>
@@ -403,7 +403,7 @@ export default function PartnerOrdersPage() {
                                         {/* Delivery info */}
                                         {order.delivery_address && (
                                             <div className="flex items-start gap-2 text-xs text-slate-600 dark:text-zinc-300">
-                                                <MapPin className="w-3.5 h-3.5 text-[#FF6B35] mt-0.5 flex-shrink-0" />
+                                                <MapPin className="w-3.5 h-3.5 text-[#FF5722] mt-0.5 flex-shrink-0" />
                                                 <span>{order.delivery_address}</span>
                                             </div>
                                         )}

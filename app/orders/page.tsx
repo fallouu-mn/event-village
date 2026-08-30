@@ -78,7 +78,7 @@ export default function OrdersPage() {
   const getCategoryIcon = (type: string) => {
     switch (type) {
       case 'TICKET':
-        return <Ticket size={18} className="text-[#FF6B35]" />;
+        return <Ticket size={18} className="text-[#FF5722]" />;
       case 'HALL_RESERVATION':
         return <Building2 size={18} className="text-blue-500" />;
       case 'TABLE_RESERVATION':
@@ -95,7 +95,7 @@ export default function OrdersPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <ShoppingBag className="text-[#FF6B35]" size={28} />
+            <ShoppingBag className="text-[#FF5722]" size={28} />
             <span>Mes Commandes & Réservations</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
@@ -124,7 +124,7 @@ export default function OrdersPage() {
             onClick={() => setActiveCategory(tab.id)}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               activeCategory === tab.id
-                ? 'bg-[#FF6B35] text-white shadow-xs'
+                ? 'bg-[#FF5722] text-white shadow-xs'
                 : 'bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-800 hover:border-slate-300'
             }`}
           >
@@ -139,7 +139,7 @@ export default function OrdersPage() {
           {filteredOrders.map((order) => (
             <div
               key={order.id}
-              className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF6B35]/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+              className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -173,13 +173,13 @@ export default function OrdersPage() {
               </div>
 
               <div className="flex items-center justify-between sm:flex-col sm:items-end gap-2 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-zinc-800">
-                <span className="text-base sm:text-lg font-black text-[#FF6B35]">
+                <span className="text-base sm:text-lg font-black text-[#FF5722]">
                   {order.totalAmountFormatted}
                 </span>
 
                 <Link
                   href={order.detailsUrl}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-[#FF6B35] hover:text-white text-xs font-bold text-slate-700 dark:text-zinc-300 transition-colors"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-[#FF5722] hover:text-white text-xs font-bold text-slate-700 dark:text-zinc-300 transition-colors"
                 >
                   <span>Détails</span>
                   <ChevronRight size={14} />

@@ -202,7 +202,7 @@ export default function PartnerFinancePage() {
                 label: 'Solde Disponible',
                 value: finance.soldeDisponible,
                 icon: Wallet,
-                color: 'text-[#FF6B35]',
+                color: 'text-[#FF5722]',
                 bg: 'bg-orange-50 dark:bg-orange-950/20',
                 highlight: true,
             },
@@ -215,7 +215,7 @@ export default function PartnerFinancePage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <Wallet className="w-6 h-6 text-[#FF6B35]" />
+                        <Wallet className="w-6 h-6 text-[#FF5722]" />
                         Finances
                     </h1>
                     <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -259,7 +259,7 @@ export default function PartnerFinancePage() {
                                     key={kpi.label}
                                     className={`p-4 rounded-2xl border ${
                                         kpi.highlight
-                                            ? 'border-[#FF6B35]/40 bg-orange-50 dark:bg-orange-950/20 shadow-sm'
+                                            ? 'border-[#FF5722]/40 bg-orange-50 dark:bg-orange-950/20 shadow-sm'
                                             : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900'
                                     } space-y-2`}
                                 >
@@ -304,7 +304,7 @@ export default function PartnerFinancePage() {
 
                     {/* Breakdown toggle */}
                     <button
-                        className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF6B35] transition-colors"
+                        className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF5722] transition-colors"
                         onClick={() => setShowBreakdown(!showBreakdown)}
                     >
                         <span>Détail par canal de revenus</span>
@@ -320,7 +320,7 @@ export default function PartnerFinancePage() {
                             ].map(({ label, icon: Icon, data, note }) => (
                                 <div key={label} className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 space-y-2">
                                     <div className="flex items-center gap-2">
-                                        <Icon className="w-4 h-4 text-[#FF6B35]" />
+                                        <Icon className="w-4 h-4 text-[#FF5722]" />
                                         <span className="text-xs font-black text-slate-900 dark:text-white">{label}</span>
                                     </div>
                                     <div className="text-[11px] text-slate-500 dark:text-zinc-400 space-y-1">
@@ -349,7 +349,7 @@ export default function PartnerFinancePage() {
             <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 sm:p-6 space-y-5">
                 <div>
                     <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <Send className="w-4 h-4 text-[#FF6B35]" />
+                        <Send className="w-4 h-4 text-[#FF5722]" />
                         Demander un retrait
                     </h2>
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -370,7 +370,7 @@ export default function PartnerFinancePage() {
                                 placeholder="Ex: 50000"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-full px-4 py-2.5 pr-16 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                className="w-full px-4 py-2.5 pr-16 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">FCFA</span>
                         </div>
@@ -389,7 +389,7 @@ export default function PartnerFinancePage() {
                                 </div>
                                 <div className="flex justify-between border-t border-orange-200 dark:border-orange-900/40 pt-1">
                                     <span className="font-black text-slate-700 dark:text-zinc-200">Vous recevrez</span>
-                                    <span className="font-black text-[#FF6B35]">{netAmount.toLocaleString('fr-FR')} FCFA</span>
+                                    <span className="font-black text-[#FF5722]">{netAmount.toLocaleString('fr-FR')} FCFA</span>
                                 </div>
                             </div>
                         )}
@@ -408,7 +408,7 @@ export default function PartnerFinancePage() {
                                     onClick={() => setOperatorName(op)}
                                     className={`p-3 rounded-xl border text-xs font-bold transition-all ${
                                         operatorName === op
-                                            ? 'border-[#FF6B35] bg-orange-50 dark:bg-orange-950/20 text-[#FF6B35]'
+                                            ? 'border-[#FF5722] bg-orange-50 dark:bg-orange-950/20 text-[#FF5722]'
                                             : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-400'
                                     }`}
                                 >
@@ -429,7 +429,7 @@ export default function PartnerFinancePage() {
                             placeholder="Ex: 77 123 45 67"
                             value={phoneNumber}
                             onChange={(e) => setPhoneNumber(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         {formErrors.phoneNumber && <p className="mt-1 text-[11px] font-semibold text-red-500">{formErrors.phoneNumber}</p>}
                     </div>
@@ -442,7 +442,7 @@ export default function PartnerFinancePage() {
                                 type="text"
                                 value={firstName}
                                 onChange={(e) => setFirstName(e.target.value)}
-                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                             />
                             {formErrors.firstName && <p className="mt-1 text-[11px] font-semibold text-red-500">{formErrors.firstName}</p>}
                         </div>
@@ -452,7 +452,7 @@ export default function PartnerFinancePage() {
                                 type="text"
                                 value={lastName}
                                 onChange={(e) => setLastName(e.target.value)}
-                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                             />
                             {formErrors.lastName && <p className="mt-1 text-[11px] font-semibold text-red-500">{formErrors.lastName}</p>}
                         </div>

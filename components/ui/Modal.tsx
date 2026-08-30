@@ -74,7 +74,7 @@ export const Modal: React.FC<ModalProps> = ({
             <div className="px-5 py-4 sm:px-6 sm:py-4.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between flex-shrink-0 bg-white/95 dark:bg-[#18181C]/95 backdrop-blur-md">
               <div className="flex items-center gap-3">
                 {icon && (
-                  <div className="w-9 h-9 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center flex-shrink-0 font-bold border border-orange-200/50 dark:border-orange-900/30">
+                  <div className="w-9 h-9 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0 font-bold border border-orange-200/50 dark:border-orange-900/30">
                     {icon}
                   </div>
                 )}

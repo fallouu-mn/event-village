@@ -117,16 +117,16 @@ export const EventCalendar: React.FC<EventCalendarProps> = ({ events }) => {
                     className={clsx(
                       'text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center transition-all relative',
                       isSelected
-                        ? 'bg-[#FF6B35] text-white shadow-xs'
+                        ? 'bg-[#FF5722] text-white shadow-xs'
                         : hasEvents
-                        ? 'bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] font-black'
+                        ? 'bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] font-black'
                         : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
                     )}
                   >
                     {dayNum}
                   </span>
                   {hasEvents && (
-                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#FF6B35]" />
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#FF5722]" />
                   )}
                 </div>
               );

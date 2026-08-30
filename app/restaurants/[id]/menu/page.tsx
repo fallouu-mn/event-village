@@ -111,7 +111,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
       <div className="flex items-center justify-between">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF6B35] transition-all shadow-xs"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
         >
           <ChevronLeft size={16} />
           <span>Retour à l’accueil</span>
@@ -119,7 +119,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
 
         <Link
           href={`/restaurants/${restaurantId}/tables`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:text-[#FF6B35]"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:text-[#FF5722]"
         >
           <Utensils size={14} />
           <span>Réserver une table</span>
@@ -132,7 +132,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
         <div className="lg:col-span-2 space-y-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <Utensils className="text-[#FF6B35]" size={28} />
+              <Utensils className="text-[#FF5722]" size={28} />
               <span>Menu & Commande Traiteur</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
@@ -144,7 +144,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
           {menuItems.filter((i) => i.isDailySpecial).map((special) => (
             <div
               key={special.id}
-              className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent border-2 border-[#FF6B35]/40 flex flex-col sm:flex-row gap-5 items-center shadow-xs"
+              className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent border-2 border-[#FF5722]/40 flex flex-col sm:flex-row gap-5 items-center shadow-xs"
             >
               <div className="w-full sm:w-44 aspect-video sm:aspect-square rounded-2xl overflow-hidden bg-slate-950 flex-shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -152,14 +152,14 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
               </div>
 
               <div className="flex-1 space-y-2 text-left w-full">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FF6B35] text-white text-[10px] font-black uppercase tracking-wider">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FF5722] text-white text-[10px] font-black uppercase tracking-wider">
                   <Sparkles size={12} />
                   <span>Plat du Jour Exclusif</span>
                 </div>
                 <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">{special.name}</h3>
                 <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">{special.description}</p>
                 <div className="flex items-center justify-between pt-2">
-                  <span className="text-base font-black text-[#FF6B35]">{special.priceFormatted}</span>
+                  <span className="text-base font-black text-[#FF5722]">{special.priceFormatted}</span>
                   <div className="flex items-center gap-2">
                     {cart[special.id] ? (
                       <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl p-1">
@@ -172,7 +172,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                         <span className="text-xs font-black px-2">{cart[special.id]}</span>
                         <button
                           onClick={() => updateQuantity(special.id, 1)}
-                          className="w-7 h-7 rounded-lg bg-[#FF6B35] text-white flex items-center justify-center font-bold"
+                          className="w-7 h-7 rounded-lg bg-[#FF5722] text-white flex items-center justify-center font-bold"
                         >
                           <Plus size={14} />
                         </button>
@@ -210,7 +210,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
                     </div>
-                    <span className="text-[10px] font-bold text-[#FF6B35] uppercase tracking-wider block">
+                    <span className="text-[10px] font-bold text-[#FF5722] uppercase tracking-wider block">
                       {item.category}
                     </span>
                     <h3 className="text-sm font-black text-slate-900 dark:text-white leading-tight">{item.name}</h3>
@@ -231,7 +231,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                         <span className="text-xs font-black px-1.5">{cart[item.id]}</span>
                         <button
                           onClick={() => updateQuantity(item.id, 1)}
-                          className="w-6 h-6 rounded-lg bg-[#FF6B35] text-white flex items-center justify-center font-bold"
+                          className="w-6 h-6 rounded-lg bg-[#FF5722] text-white flex items-center justify-center font-bold"
                         >
                           <Plus size={12} />
                         </button>
@@ -257,7 +257,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
         <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 space-y-5 sticky top-20 shadow-md">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
             <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <ShoppingBag size={18} className="text-[#FF6B35]" />
+              <ShoppingBag size={18} className="text-[#FF5722]" />
               <span>Votre Panier ({totalCartCount})</span>
             </h2>
             {totalCartCount > 0 && (
@@ -303,7 +303,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                     onClick={() => setDeliveryMode('LIVRAISON')}
                     className={`py-2 rounded-xl text-[11px] font-bold border transition-all ${
                       deliveryMode === 'LIVRAISON'
-                        ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
+                        ? 'bg-[#FF5722] text-white border-[#FF5722]'
                         : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800'
                     }`}
                   >
@@ -314,7 +314,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                     onClick={() => setDeliveryMode('RETRAIT')}
                     className={`py-2 rounded-xl text-[11px] font-bold border transition-all ${
                       deliveryMode === 'RETRAIT'
-                        ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
+                        ? 'bg-[#FF5722] text-white border-[#FF5722]'
                         : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800'
                     }`}
                   >
@@ -325,7 +325,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                     onClick={() => setDeliveryMode('SUR_PLACE')}
                     className={`py-2 rounded-xl text-[11px] font-bold border transition-all ${
                       deliveryMode === 'SUR_PLACE'
-                        ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
+                        ? 'bg-[#FF5722] text-white border-[#FF5722]'
                         : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800'
                     }`}
                   >
@@ -338,7 +338,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
               <div className="pt-2 border-t border-slate-100 dark:border-zinc-800 space-y-3">
                 <div className="flex justify-between items-baseline">
                   <span className="text-xs font-bold text-slate-500">Sous-total</span>
-                  <span className="text-lg font-black text-[#FF6B35]">{totalFormatted}</span>
+                  <span className="text-lg font-black text-[#FF5722]">{totalFormatted}</span>
                 </div>
 
                 <Button

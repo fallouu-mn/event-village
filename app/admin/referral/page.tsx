@@ -112,7 +112,7 @@ export default function AdminReferralAmbassadorsPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -161,8 +161,8 @@ export default function AdminReferralAmbassadorsPage() {
         </div>
 
         <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold uppercase text-[#FF6B35]">Ambassadeurs Actifs</span>
-          <h3 className="text-2xl font-black text-[#FF6B35]">{ambassadorsCount}</h3>
+          <span className="text-[11px] font-bold uppercase text-[#FF5722]">Ambassadeurs Actifs</span>
+          <h3 className="text-2xl font-black text-[#FF5722]">{ambassadorsCount}</h3>
           <span className="text-xs text-emerald-600 font-bold">Taux VIP CDC V3 : N1 7% • N2 2%</span>
         </div>
 
@@ -194,7 +194,7 @@ export default function AdminReferralAmbassadorsPage() {
                 placeholder="Rechercher par nom, email, téléphone..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 pr-4 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF6B35]"
+                className="pl-8 pr-4 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF5722]"
               />
             </div>
 
@@ -212,7 +212,7 @@ export default function AdminReferralAmbassadorsPage() {
                 type="button"
                 onClick={() => setFilterStatus('AMBASSADEUR')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                  filterStatus === 'AMBASSADEUR' ? 'bg-[#FF6B35] text-white' : 'text-slate-500'
+                  filterStatus === 'AMBASSADEUR' ? 'bg-[#FF5722] text-white' : 'text-slate-500'
                 }`}
               >
                 Ambassadeurs
@@ -233,7 +233,7 @@ export default function AdminReferralAmbassadorsPage() {
         {/* Liste */}
         {isLoading ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35] mb-2" />
+            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement des utilisateurs réels...</p>
           </div>
         ) : usersList.length === 0 ? (
@@ -301,7 +301,7 @@ export default function AdminReferralAmbassadorsPage() {
                       className={`text-xs ${
                         isAmbassador
                           ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30'
-                          : 'text-[#FF6B35] bg-orange-50 dark:bg-orange-950/30 hover:bg-[#FF6B35] hover:text-white'
+                          : 'text-[#FF5722] bg-orange-50 dark:bg-orange-950/30 hover:bg-[#FF5722] hover:text-white'
                       }`}
                     >
                       {isAmbassador ? 'Rétrograder' : 'Promouvoir Ambassadeur ⭐'}
@@ -387,7 +387,7 @@ export default function AdminReferralAmbassadorsPage() {
                   setFeedback({ type: 'success', text: `Taux personnalisés enregistrés pour ${selectedUser.first_name} ${selectedUser.last_name}.` });
                   setSelectedUser(null);
                 }}
-                className="bg-[#FF6B35] text-white"
+                className="bg-[#FF5722] text-white"
               >
                 Enregistrer la personnalisation
               </Button>

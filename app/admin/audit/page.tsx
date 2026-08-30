@@ -87,7 +87,7 @@ export default function AdminAuditLogPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -147,7 +147,7 @@ export default function AdminAuditLogPage() {
             </div>
           </div>
 
-          <span className="text-xs font-mono font-bold text-[#FF6B35]">
+          <span className="text-xs font-mono font-bold text-[#FF5722]">
             {logs.length} entrée(s) trouvée(s)
           </span>
         </div>
@@ -155,7 +155,7 @@ export default function AdminAuditLogPage() {
         {/* Tableau des Logs */}
         {isLoading ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35] mb-2" />
+            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement du journal d&apos;audit...</p>
           </div>
         ) : logs.length === 0 ? (
@@ -186,7 +186,7 @@ export default function AdminAuditLogPage() {
                         {log.action}
                       </span>
                     </td>
-                    <td className="py-3 font-bold text-[#FF6B35]">{log.object_type}</td>
+                    <td className="py-3 font-bold text-[#FF5722]">{log.object_type}</td>
                     <td className="py-3 text-slate-400 truncate max-w-[120px]">{log.object_id || 'N/A'}</td>
                     <td className="py-3 text-right font-sans">
                       <Button

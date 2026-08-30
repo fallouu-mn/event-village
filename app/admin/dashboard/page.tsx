@@ -312,7 +312,7 @@ export default function AdminDashboardPage() {
       {/* Header avec indicateur réel */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
         <div>
-          <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
             Console Superadmin HQ
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -375,7 +375,7 @@ export default function AdminDashboardPage() {
 
         <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs">
           <span className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Revenu Net Plateforme</span>
-          <h3 className="text-xl sm:text-2xl font-black text-[#FF6B35] tracking-tight mt-1">
+          <h3 className="text-xl sm:text-2xl font-black text-[#FF5722] tracking-tight mt-1">
             {kpis ? formatPrice(kpis.netRevenue) : '0 FCFA'}
           </h3>
           <span className="text-xs text-slate-400 dark:text-zinc-500 mt-2 block">Commissions Event Village</span>
@@ -405,18 +405,18 @@ export default function AdminDashboardPage() {
       {/* Raccourci vers la Gestion des Ambassadeurs CDC V3 */}
       <Link
         href="/admin/referral"
-        className="block p-6 rounded-3xl bg-gradient-to-r from-orange-500/15 via-orange-500/5 to-transparent border-2 border-[#FF6B35]/40 hover:border-[#FF6B35] transition-all shadow-xs group"
+        className="block p-6 rounded-3xl bg-gradient-to-r from-orange-500/15 via-orange-500/5 to-transparent border-2 border-[#FF5722]/40 hover:border-[#FF5722] transition-all shadow-xs group"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#FF6B35] text-white flex items-center justify-center font-bold shadow-md shadow-[#FF6B35]/25">
+            <div className="w-12 h-12 rounded-2xl bg-[#FF5722] text-white flex items-center justify-center font-bold shadow-md shadow-[#FF5722]/25">
               <Users size={24} />
             </div>
             <div>
-              <span className="text-[11px] uppercase font-bold text-[#FF6B35] tracking-wider">
+              <span className="text-[11px] uppercase font-bold text-[#FF5722] tracking-wider">
                 Module Parrainage & Commissions CDC V3
               </span>
-              <h3 className="text-base font-black text-slate-900 dark:text-white group-hover:text-[#FF6B35] transition-colors">
+              <h3 className="text-base font-black text-slate-900 dark:text-white group-hover:text-[#FF5722] transition-colors">
                 Gestion des Ambassadeurs & Taux de Commission N1/N2
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -424,7 +424,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
           </div>
-          <span className="text-[#FF6B35] font-black text-sm group-hover:translate-x-1 transition-transform flex items-center gap-1">
+          <span className="text-[#FF5722] font-black text-sm group-hover:translate-x-1 transition-transform flex items-center gap-1">
             <span>Gérer les Ambassadeurs</span>
             <ArrowRight size={16} />
           </span>
@@ -452,7 +452,7 @@ export default function AdminDashboardPage() {
               onClick={() => setActiveTab('EN_ATTENTE')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'EN_ATTENTE'
-                  ? 'bg-[#FF6B35] text-white shadow-xs'
+                  ? 'bg-[#FF5722] text-white shadow-xs'
                   : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -495,9 +495,9 @@ export default function AdminDashboardPage() {
               type="button"
               onClick={() => fetchDashboardData()}
               title="Actualiser les données"
-              className="p-1.5 rounded-xl text-slate-400 hover:text-[#FF6B35] hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-[#FF5722] hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
             >
-              <RefreshCw size={14} className={isLoading ? 'animate-spin text-[#FF6B35]' : ''} />
+              <RefreshCw size={14} className={isLoading ? 'animate-spin text-[#FF5722]' : ''} />
             </button>
           </div>
         </div>
@@ -505,7 +505,7 @@ export default function AdminDashboardPage() {
         {/* Liste des Partenaires */}
         {isLoading ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500 space-y-2">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF6B35]" />
+            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722]" />
             <p className="text-xs">Chargement des données partenaires réelles...</p>
           </div>
         ) : partners.length === 0 ? (
@@ -532,7 +532,7 @@ export default function AdminDashboardPage() {
               return (
                 <div
                   key={partner.id}
-                  className="p-5 rounded-2xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200/80 dark:border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-[#FF6B35]/40"
+                  className="p-5 rounded-2xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200/80 dark:border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:border-[#FF5722]/40"
                 >
                   {/* Informations Partenaire */}
                   <div className="space-y-2 flex-1 min-w-0">
@@ -566,7 +566,7 @@ export default function AdminDashboardPage() {
                         {activities.map((act, idx) => (
                           <span
                             key={idx}
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/30 text-[#FF6B35]"
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/30 text-[#FF5722]"
                           >
                             {act}
                           </span>
@@ -577,7 +577,7 @@ export default function AdminDashboardPage() {
                     {/* Coordonnées & Gérant */}
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-zinc-400">
                       <span className="flex items-center gap-1">
-                        <Users size={12} className="text-[#FF6B35]" />
+                        <Users size={12} className="text-[#FF5722]" />
                         <span>Gérant: {managerName}</span>
                       </span>
 
@@ -662,7 +662,7 @@ export default function AdminDashboardPage() {
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
-            <Activity size={16} className="text-[#FF6B35]" />
+            <Activity size={16} className="text-[#FF5722]" />
             <span>Journal d’Audit & Traçabilité Supabase</span>
           </h2>
           <span className="text-[11px] text-slate-400 dark:text-zinc-500 font-medium">
@@ -694,7 +694,7 @@ export default function AdminDashboardPage() {
                     </span>
                   )}
                   {log.metadata?.updated_by && (
-                    <span className="text-[10px] text-[#FF6B35] font-bold">
+                    <span className="text-[10px] text-[#FF5722] font-bold">
                       [{log.metadata.updated_by}]
                     </span>
                   )}
@@ -772,7 +772,7 @@ export default function AdminDashboardPage() {
                 {/* Pièce d'Identité */}
                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0">
                       <FileText size={15} />
                     </div>
                     <div className="truncate">
@@ -791,7 +791,7 @@ export default function AdminDashboardPage() {
                       size="sm"
                       onClick={() => handleViewDocument(selectedPartner.id_card_url, 'Pièce d\'identité')}
                       disabled={loadingDoc === selectedPartner.id_card_url}
-                      className="text-xs font-bold text-[#FF6B35] hover:bg-orange-50 dark:hover:bg-orange-950/30 flex-shrink-0"
+                      className="text-xs font-bold text-[#FF5722] hover:bg-orange-50 dark:hover:bg-orange-950/30 flex-shrink-0"
                     >
                       {loadingDoc === selectedPartner.id_card_url ? (
                         <RefreshCw size={13} className="animate-spin mr-1" />
@@ -910,7 +910,7 @@ export default function AdminDashboardPage() {
                 onChange={(e) => setRejectionReason(e.target.value)}
                 placeholder="Ex: Document NINEA manquant ou illisible, secteur non éligible..."
                 rows={3}
-                className="w-full p-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-[#FF6B35] outline-none"
+                className="w-full p-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-[#FF5722] outline-none"
               />
             </div>
 

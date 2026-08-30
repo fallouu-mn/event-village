@@ -143,7 +143,7 @@ function ProductFormContent() {
     if (isLoadingProduct) {
         return (
             <div className="p-8 flex items-center justify-center gap-3">
-                <Loader2 className="w-5 h-5 text-[#FF6B35] animate-spin" />
+                <Loader2 className="w-5 h-5 text-[#FF5722] animate-spin" />
                 <span className="text-sm font-semibold text-slate-600 dark:text-zinc-400">
                     Chargement du produit...
                 </span>
@@ -157,7 +157,7 @@ function ProductFormContent() {
             <div className="flex items-center justify-between">
                 <Link
                     href="/partner/products"
-                    className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF6B35]"
+                    className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-[#FF5722]"
                 >
                     <ArrowLeft className="w-4 h-4" />
                     Retour aux produits
@@ -166,7 +166,7 @@ function ProductFormContent() {
 
             <div>
                 <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                    <ShoppingBag className="w-7 h-7 text-[#FF6B35]" />
+                    <ShoppingBag className="w-7 h-7 text-[#FF5722]" />
                     {isEditMode ? 'Modifier le produit' : 'Ajouter un Produit'}
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400 mt-1">
@@ -192,7 +192,7 @@ function ProductFormContent() {
                             placeholder="Ex: Thiéboudienne Royal"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         {errors.name && (
                             <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.name}</p>
@@ -209,7 +209,7 @@ function ProductFormContent() {
                             placeholder="Décrivez le produit, ses ingrédients, sa préparation..."
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         {errors.description && (
                             <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.description}</p>
@@ -227,7 +227,7 @@ function ProductFormContent() {
                             placeholder="Ex: 3500"
                             value={price}
                             onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         {errors.price && (
                             <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.price}</p>
@@ -244,16 +244,16 @@ function ProductFormContent() {
 
                     {/* Plat du jour */}
                     <div className="space-y-3">
-                        <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-[#FF6B35] transition-all">
+                        <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-[#FF5722] transition-all">
                             <input
                                 type="checkbox"
                                 checked={isDailySpecial}
                                 onChange={(e) => setIsDailySpecial(e.target.checked)}
-                                className="accent-[#FF6B35] mt-0.5"
+                                className="accent-[#FF5722] mt-0.5"
                             />
                             <div>
                                 <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                                    <CalendarDays className="w-4 h-4 text-[#FF6B35]" />
+                                    <CalendarDays className="w-4 h-4 text-[#FF5722]" />
                                     Plat du jour
                                 </p>
                                 <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -263,7 +263,7 @@ function ProductFormContent() {
                         </label>
 
                         {isDailySpecial && (
-                            <div className="ml-4 pl-4 border-l-2 border-[#FF6B35]/30">
+                            <div className="ml-4 pl-4 border-l-2 border-[#FF5722]/30">
                                 <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                                     Date du plat du jour
                                 </label>
@@ -271,7 +271,7 @@ function ProductFormContent() {
                                     type="date"
                                     value={dailySpecialDate}
                                     onChange={(e) => setDailySpecialDate(e.target.value)}
-                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                 />
                                 {errors.daily_special_date && (
                                     <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.daily_special_date}</p>
@@ -282,16 +282,16 @@ function ProductFormContent() {
 
                     {/* Gestion de stock */}
                     <div className="space-y-3">
-                        <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-[#FF6B35] transition-all">
+                        <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-[#FF5722] transition-all">
                             <input
                                 type="checkbox"
                                 checked={isStockManaged}
                                 onChange={(e) => setIsStockManaged(e.target.checked)}
-                                className="accent-[#FF6B35] mt-0.5"
+                                className="accent-[#FF5722] mt-0.5"
                             />
                             <div>
                                 <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                                    <Package className="w-4 h-4 text-[#FF6B35]" />
+                                    <Package className="w-4 h-4 text-[#FF5722]" />
                                     Gestion de stock
                                 </p>
                                 <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
@@ -301,7 +301,7 @@ function ProductFormContent() {
                         </label>
 
                         {isStockManaged && (
-                            <div className="ml-4 pl-4 border-l-2 border-[#FF6B35]/30">
+                            <div className="ml-4 pl-4 border-l-2 border-[#FF5722]/30">
                                 <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                                     Quantité en stock
                                 </label>
@@ -312,7 +312,7 @@ function ProductFormContent() {
                                     placeholder="Ex: 50"
                                     value={stockQuantity}
                                     onChange={(e) => setStockQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                 />
                                 {errors.stock_quantity && (
                                     <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.stock_quantity}</p>
@@ -346,7 +346,7 @@ export default function NewProductPage() {
         <Suspense
             fallback={
                 <div className="p-8 flex items-center justify-center gap-3">
-                    <Loader2 className="w-5 h-5 text-[#FF6B35] animate-spin" />
+                    <Loader2 className="w-5 h-5 text-[#FF5722] animate-spin" />
                     <span className="text-sm font-semibold text-slate-600 dark:text-zinc-400">
                         Chargement...
                     </span>

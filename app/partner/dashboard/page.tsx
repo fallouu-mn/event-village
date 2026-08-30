@@ -215,13 +215,13 @@ export default function PartnerDashboardPage() {
           return (
             <div
               key={i}
-              className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF6B35]/40 transition-all space-y-3"
+              className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all space-y-3"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
                   {stat.label}
                 </span>
-                <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
                   <Icon size={16} />
                 </div>
               </div>

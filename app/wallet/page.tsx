@@ -132,7 +132,7 @@ export default function WalletPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Wallet className="text-[#FF6B35]" size={28} />
+            <Wallet className="text-[#FF5722]" size={28} />
             <span>Portefeuille & Commissions Parrainage</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
@@ -153,7 +153,7 @@ export default function WalletPage() {
       {/* 2. Carte Solde & Taux Ambassadeur */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
         {/* Grand bloc Solde */}
-        <div className="md:col-span-2 p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-orange-500 via-[#FF6B35] to-amber-600 text-white shadow-xl flex flex-col justify-between relative overflow-hidden">
+        <div className="md:col-span-2 p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-orange-500 via-[#FF5722] to-amber-600 text-white shadow-xl flex flex-col justify-between relative overflow-hidden">
           <div className="relative z-10 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs uppercase font-bold tracking-wider text-orange-100">
@@ -191,7 +191,7 @@ export default function WalletPage() {
               Génération 1 (Filleuls Directs)
             </span>
             <div className="flex items-baseline justify-between mt-1">
-              <span className="text-2xl font-black text-[#FF6B35]">{referralData.rates.level1.toFixed(1)} %</span>
+              <span className="text-2xl font-black text-[#FF5722]">{referralData.rates.level1.toFixed(1)} %</span>
               <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">{referralData.network.level1Count} filleul(s)</span>
             </div>
           </div>
@@ -211,7 +211,7 @@ export default function WalletPage() {
       {/* 3. Partage du Lien de Parrainage */}
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center font-bold">
+          <div className="w-10 h-10 rounded-2xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center font-bold">
             <Gift size={20} />
           </div>
           <div>
@@ -313,7 +313,7 @@ export default function WalletPage() {
                 onClick={() => setOperatorName('WAVE')}
                 className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
                   operatorName === 'WAVE'
-                    ? 'bg-[#FF6B35] text-white border-[#FF6B35] shadow-xs'
+                    ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-xs'
                     : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800'
                 }`}
               >
@@ -389,7 +389,7 @@ export default function WalletPage() {
               <span>Frais de retrait SamirPay (1%)</span>
               <span className="font-bold text-slate-900 dark:text-white">{feeNum.toLocaleString('fr-FR')} FCFA</span>
             </div>
-            <div className="flex justify-between text-[#FF6B35] font-black border-t border-slate-200 dark:border-zinc-800 pt-1.5 text-sm">
+            <div className="flex justify-between text-[#FF5722] font-black border-t border-slate-200 dark:border-zinc-800 pt-1.5 text-sm">
               <span>Montant net versé</span>
               <span>{netNum.toLocaleString('fr-FR')} FCFA</span>
             </div>

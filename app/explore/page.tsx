@@ -143,7 +143,7 @@ export default function ExplorePage() {
               placeholder="Rechercher par titre, artiste, lieu..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-11 pl-9 pr-4 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs sm:text-sm focus:outline-none focus:border-[#FF6B35] transition-colors"
+              className="w-full h-11 pl-9 pr-4 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs sm:text-sm focus:outline-none focus:border-[#FF5722] transition-colors"
             />
           </div>
 
@@ -165,12 +165,12 @@ export default function ExplorePage() {
         <aside className="hidden lg:block bg-white dark:bg-[#1E1E1E] p-5 rounded-3xl border border-slate-200/80 dark:border-zinc-800 space-y-6 sticky top-20 shadow-xs">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
-              <Filter size={16} className="text-[#FF6B35]" />
+              <Filter size={16} className="text-[#FF5722]" />
               <span>Filtres</span>
             </h2>
             <button
               onClick={resetFilters}
-              className="text-[11px] font-bold text-[#FF6B35] hover:underline"
+              className="text-[11px] font-bold text-[#FF5722] hover:underline"
             >
               Réinitialiser
             </button>
@@ -194,7 +194,7 @@ export default function ExplorePage() {
                   onClick={() => setSelectedCategory(c.id)}
                   className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                     selectedCategory === c.id
-                      ? 'bg-[#FF6B35]/15 text-[#FF6B35] font-black'
+                      ? 'bg-[#FF5722]/15 text-[#FF5722] font-black'
                       : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-50 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -212,7 +212,7 @@ export default function ExplorePage() {
             <select
               value={selectedCity}
               onChange={(e) => setSelectedCity(e.target.value)}
-              className="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-medium focus:outline-none focus:border-[#FF6B35]"
+              className="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-medium focus:outline-none focus:border-[#FF5722]"
             >
               <option value="ALL">Tout le Sénégal</option>
               <option value="DAKAR">Dakar & Diamniadio</option>
@@ -225,7 +225,7 @@ export default function ExplorePage() {
           <div>
             <div className="flex justify-between items-center text-xs font-bold mb-2">
               <span className="text-slate-700 dark:text-zinc-300">Prix maximum</span>
-              <span className="text-[#FF6B35]">{priceMax.toLocaleString('fr-FR')} FCFA</span>
+              <span className="text-[#FF5722]">{priceMax.toLocaleString('fr-FR')} FCFA</span>
             </div>
             <input
               type="range"
@@ -234,7 +234,7 @@ export default function ExplorePage() {
               step={5000}
               value={priceMax}
               onChange={(e) => setPriceMax(Number(e.target.value))}
-              className="w-full accent-[#FF6B35]"
+              className="w-full accent-[#FF5722]"
             />
           </div>
 
@@ -246,7 +246,7 @@ export default function ExplorePage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-medium focus:outline-none focus:border-[#FF6B35]"
+              className="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-medium focus:outline-none focus:border-[#FF5722]"
             >
               <option value="RECENT">Plus récents</option>
               <option value="PRICE_ASC">Prix croissant</option>
@@ -310,7 +310,7 @@ export default function ExplorePage() {
                     onClick={() => setSelectedCategory(c.id)}
                     className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
                       selectedCategory === c.id
-                        ? 'bg-[#FF6B35] text-white border-[#FF6B35]'
+                        ? 'bg-[#FF5722] text-white border-[#FF5722]'
                         : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
                     }`}
                   >
@@ -324,7 +324,7 @@ export default function ExplorePage() {
             <div>
               <div className="flex justify-between items-center text-xs font-bold mb-2">
                 <span className="text-slate-700 dark:text-zinc-300">Prix maximum</span>
-                <span className="text-[#FF6B35]">{priceMax.toLocaleString('fr-FR')} FCFA</span>
+                <span className="text-[#FF5722]">{priceMax.toLocaleString('fr-FR')} FCFA</span>
               </div>
               <input
                 type="range"
@@ -333,7 +333,7 @@ export default function ExplorePage() {
                 step={5000}
                 value={priceMax}
                 onChange={(e) => setPriceMax(Number(e.target.value))}
-                className="w-full accent-[#FF6B35]"
+                className="w-full accent-[#FF5722]"
               />
             </div>
 

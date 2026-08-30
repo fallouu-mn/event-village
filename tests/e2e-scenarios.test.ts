@@ -160,7 +160,7 @@ test('SCENARIO 18, 19 & 20 : Responsive, PWA Manifest & Service Worker', () => {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     assert.equal(manifest.name, 'Event Village');
     assert.equal(manifest.display, 'standalone');
-    assert.equal(manifest.theme_color, '#FF6B35');
+    assert.equal(manifest.theme_color, '#FF5722');
 
     const swPath = path.join(process.cwd(), 'public/sw.js');
     assert.ok(fs.existsSync(swPath));

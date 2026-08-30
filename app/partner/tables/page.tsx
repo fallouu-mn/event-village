@@ -360,7 +360,7 @@ export default function PartnerTablesPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                        <LayoutGrid className="w-8 h-8 text-[#FF6B35]" />
+                        <LayoutGrid className="w-8 h-8 text-[#FF5722]" />
                         Tables & Zones
                     </h1>
                     <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
@@ -378,7 +378,7 @@ export default function PartnerTablesPage() {
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF6B35] flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF5722] flex items-center justify-center">
                         <MapPin className="w-6 h-6" />
                     </div>
                     <div>
@@ -439,7 +439,7 @@ export default function PartnerTablesPage() {
                     <div className="flex items-center gap-3">
                         <Button
                             onClick={() => openZoneModal()}
-                            className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs shadow-lg shadow-[#FF6B35]/20"
+                            className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs shadow-lg shadow-[#FF5722]/20"
                         >
                             <Plus className="w-4 h-4 mr-1.5" />
                             Nouvelle Zone
@@ -454,12 +454,12 @@ export default function PartnerTablesPage() {
 
                     {isLoading ? (
                         <div className="p-12 text-center flex flex-col items-center gap-3">
-                            <RefreshCw className="w-8 h-8 animate-spin text-[#FF6B35]" />
+                            <RefreshCw className="w-8 h-8 animate-spin text-[#FF5722]" />
                             <p className="text-sm font-medium text-slate-500 dark:text-zinc-400">Chargement...</p>
                         </div>
                     ) : zones.length === 0 ? (
                         <div className="p-12 rounded-2xl bg-white dark:bg-zinc-900 border border-dashed border-slate-300 dark:border-zinc-800 text-center space-y-4">
-                            <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center mx-auto">
+                            <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto">
                                 <MapPin className="w-8 h-8" />
                             </div>
                             <div>
@@ -468,7 +468,7 @@ export default function PartnerTablesPage() {
                                     Creez votre premiere zone (Terrasse, VIP, Interieur...) pour organiser vos tables.
                                 </p>
                             </div>
-                            <Button onClick={() => openZoneModal()} className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs">
+                            <Button onClick={() => openZoneModal()} className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
                                 <Plus className="w-4 h-4 mr-2" />
                                 Creer une zone
                             </Button>
@@ -482,7 +482,7 @@ export default function PartnerTablesPage() {
                                         {/* Zone Header */}
                                         <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center">
+                                                <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
                                                     <MapPin className="w-4 h-4" />
                                                 </div>
                                                 <div>
@@ -523,7 +523,7 @@ export default function PartnerTablesPage() {
                                                     {zoneTables.map((table) => (
                                                         <div
                                                             key={table.id}
-                                                            className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700 text-center space-y-1 group hover:border-[#FF6B35]/40 transition-all"
+                                                            className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700 text-center space-y-1 group hover:border-[#FF5722]/40 transition-all"
                                                         >
                                                             <p className="text-sm font-black text-slate-900 dark:text-white">
                                                                 #{table.table_number}
@@ -569,7 +569,7 @@ export default function PartnerTablesPage() {
                             type="date"
                             value={reservationDate}
                             onChange={(e) => setReservationDate(e.target.value)}
-                            className="px-4 py-2 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="px-4 py-2 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         <Button
                             variant="outline"
@@ -685,7 +685,7 @@ export default function PartnerTablesPage() {
                             placeholder="Ex: Terrasse, VIP, Interieur"
                             value={zoneName}
                             onChange={(e) => setZoneName(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         {zoneErrors.name && <p className="mt-1 text-[11px] font-semibold text-red-500">{zoneErrors.name}</p>}
                     </div>
@@ -698,7 +698,7 @@ export default function PartnerTablesPage() {
                             placeholder="Description optionnelle de la zone..."
                             value={zoneDescription}
                             onChange={(e) => setZoneDescription(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
@@ -735,7 +735,7 @@ export default function PartnerTablesPage() {
                         <select
                             value={tableZoneId}
                             onChange={(e) => setTableZoneId(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         >
                             <option value="">-- Choisir une zone --</option>
                             {zones.map((z) => (
@@ -753,7 +753,7 @@ export default function PartnerTablesPage() {
                             placeholder="Ex: 1, A1, VIP-01"
                             value={tableNumber}
                             onChange={(e) => setTableNumber(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                         />
                         {tableErrors.table_number && <p className="mt-1 text-[11px] font-semibold text-red-500">{tableErrors.table_number}</p>}
                     </div>
@@ -768,7 +768,7 @@ export default function PartnerTablesPage() {
                                 placeholder="Ex: 4"
                                 value={tableCapacity}
                                 onChange={(e) => setTableCapacity(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                             />
                             {tableErrors.capacity && <p className="mt-1 text-[11px] font-semibold text-red-500">{tableErrors.capacity}</p>}
                         </div>
@@ -782,7 +782,7 @@ export default function PartnerTablesPage() {
                                 placeholder="1"
                                 value={tableMinCapacity}
                                 onChange={(e) => setTableMinCapacity(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                             />
                         </div>
                     </div>

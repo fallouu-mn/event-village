@@ -208,7 +208,7 @@ export default function PartnerRegisterPage() {
                 <div className="flex justify-center mb-2">
                     <Logo variant="full" />
                 </div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] text-xs font-black">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] text-xs font-black">
                     <Briefcase size={14} />
                     <span>Espace Professionnel & Partenaires B2B</span>
                 </div>
@@ -237,7 +237,7 @@ export default function PartnerRegisterPage() {
                         {/* 1. Informations sur l'Établissement / Entreprise */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-3">
-                                <Building2 size={20} className="text-[#FF6B35]" />
+                                <Building2 size={20} className="text-[#FF5722]" />
                                 <h2 className="text-base font-black text-slate-900 dark:text-white">
                                     1. Structure & Activités Événementielles
                                 </h2>
@@ -254,7 +254,7 @@ export default function PartnerRegisterPage() {
                                         onChange={(e) => setCompanyName(e.target.value)}
                                         placeholder="ex: Terrou-Bi Hospitality SARL"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                     />
                                 </div>
 
@@ -267,7 +267,7 @@ export default function PartnerRegisterPage() {
                                         value={commercialName}
                                         onChange={(e) => setCommercialName(e.target.value)}
                                         placeholder="ex: Terrou-Bi Dakar"
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                     />
                                 </div>
                             </div>
@@ -286,14 +286,14 @@ export default function PartnerRegisterPage() {
                                                 onClick={() => toggleActivity(type)}
                                                 className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${
                                                     isSelected
-                                                        ? 'border-[#FF6B35] bg-[#FF6B35]/5 shadow-xs'
+                                                        ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs'
                                                         : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                                                 }`}
                                             >
                                                 <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
                                                     {ACTIVITY_LABELS[type] || type}
                                                 </span>
-                                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-[#FF6B35] bg-[#FF6B35]' : 'border-slate-300 dark:border-zinc-700'}`}>
+                                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-[#FF5722] bg-[#FF5722]' : 'border-slate-300 dark:border-zinc-700'}`}>
                                                     {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                                                 </div>
                                             </div>
@@ -312,7 +312,7 @@ export default function PartnerRegisterPage() {
                                     rows={3}
                                     placeholder="Présentez votre établissement, vos capacités d'accueil ou vos prestations événementielles..."
                                     required
-                                    className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                    className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                 />
                             </div>
 
@@ -328,7 +328,7 @@ export default function PartnerRegisterPage() {
                                             onChange={(e) => setAddress(e.target.value)}
                                             placeholder="Boulevard Martin Luther King, Dakar"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                         />
                                         <MapPin size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -344,7 +344,7 @@ export default function PartnerRegisterPage() {
                                         onChange={(e) => setCity(e.target.value)}
                                         placeholder="Dakar"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                     />
                                 </div>
                             </div>
@@ -353,7 +353,7 @@ export default function PartnerRegisterPage() {
                         {/* 2. Données du Gérant / Compte Professionnel */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-3">
-                                <User size={20} className="text-[#FF6B35]" />
+                                <User size={20} className="text-[#FF5722]" />
                                 <h2 className="text-base font-black text-slate-900 dark:text-white">
                                     2. Représentant Légal & Accès Compte
                                 </h2>
@@ -370,7 +370,7 @@ export default function PartnerRegisterPage() {
                                         onChange={(e) => setFirstName(e.target.value)}
                                         placeholder="Amadou"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                     />
                                 </div>
 
@@ -384,7 +384,7 @@ export default function PartnerRegisterPage() {
                                         onChange={(e) => setLastName(e.target.value)}
                                         placeholder="Sow"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                     />
                                 </div>
                             </div>
@@ -401,7 +401,7 @@ export default function PartnerRegisterPage() {
                                             onChange={(e) => setPhone(e.target.value)}
                                             placeholder="77 800 00 00"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                         />
                                         <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -418,7 +418,7 @@ export default function PartnerRegisterPage() {
                                             onChange={(e) => setEmail(e.target.value)}
                                             placeholder="direction@etablissement.sn"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                         />
                                         <Mail size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -437,7 +437,7 @@ export default function PartnerRegisterPage() {
                                             onChange={(e) => setPassword(e.target.value)}
                                             placeholder="Min. 6 caractères"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                         />
                                         <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -454,7 +454,7 @@ export default function PartnerRegisterPage() {
                                             onChange={(e) => setConfirmPassword(e.target.value)}
                                             placeholder="••••••••"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF6B35]"
+                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
                                         />
                                         <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -465,7 +465,7 @@ export default function PartnerRegisterPage() {
                         {/* 3. Justificatifs & Documents Légaux (Upload privé) */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-3">
-                                <Shield size={20} className="text-[#FF6B35]" />
+                                <Shield size={20} className="text-[#FF5722]" />
                                 <h2 className="text-base font-black text-slate-900 dark:text-white">
                                     3. Documents Professionnels (Bucket Privé Sécurisé)
                                 </h2>
@@ -480,7 +480,7 @@ export default function PartnerRegisterPage() {
                                         type="file"
                                         accept="image/*,application/pdf"
                                         onChange={(e) => setIdCardFile(e.target.files?.[0] || null)}
-                                        className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF6B35] file:text-white cursor-pointer"
+                                        className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF5722] file:text-white cursor-pointer"
                                     />
                                     {idCardFile && (
                                         <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
@@ -497,7 +497,7 @@ export default function PartnerRegisterPage() {
                                         type="file"
                                         accept="image/*,application/pdf"
                                         onChange={(e) => setBusinessDocFile(e.target.files?.[0] || null)}
-                                        className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF6B35] file:text-white cursor-pointer"
+                                        className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF5722] file:text-white cursor-pointer"
                                     />
                                     {businessDocFile && (
                                         <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
@@ -522,7 +522,7 @@ export default function PartnerRegisterPage() {
                 ) : (
                     /* Écran de confirmation de soumission */
                     <div className="py-10 text-center space-y-6">
-                        <div className="w-20 h-20 rounded-3xl bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center mx-auto border-2 border-orange-500 shadow-md">
+                        <div className="w-20 h-20 rounded-3xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto border-2 border-orange-500 shadow-md">
                             <Clock size={44} className="animate-pulse" />
                         </div>
 

@@ -142,7 +142,7 @@ export default function PartnerProductsPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                        <ShoppingBag className="w-8 h-8 text-[#FF6B35]" />
+                        <ShoppingBag className="w-8 h-8 text-[#FF5722]" />
                         Produits &amp; Menu
                     </h1>
                     <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
@@ -155,7 +155,7 @@ export default function PartnerProductsPage() {
                         Actualiser
                     </Button>
                     <Link href="/partner/products/new">
-                        <Button className="bg-[#FF6B35] hover:bg-[#ff5719] text-white shadow-lg shadow-[#FF6B35]/20">
+                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white shadow-lg shadow-[#FF5722]/20">
                             <Plus className="w-4 h-4 mr-1.5" />
                             Creer un produit
                         </Button>
@@ -166,7 +166,7 @@ export default function PartnerProductsPage() {
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF6B35] flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF5722] flex items-center justify-center">
                         <Package className="w-6 h-6" />
                     </div>
                     <div>
@@ -199,12 +199,12 @@ export default function PartnerProductsPage() {
             {/* Product Grid */}
             {isLoading ? (
                 <div className="p-12 text-center text-slate-500 dark:text-zinc-400 flex flex-col items-center gap-3">
-                    <RefreshCw className="w-8 h-8 animate-spin text-[#FF6B35]" />
+                    <RefreshCw className="w-8 h-8 animate-spin text-[#FF5722]" />
                     <p className="text-sm font-medium">Chargement des produits...</p>
                 </div>
             ) : products.length === 0 ? (
                 <div className="p-12 rounded-2xl bg-white dark:bg-zinc-900 border border-dashed border-slate-300 dark:border-zinc-800 text-center space-y-4">
-                    <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center mx-auto">
+                    <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto">
                         <ShoppingBag className="w-8 h-8" />
                     </div>
                     <div>
@@ -214,7 +214,7 @@ export default function PartnerProductsPage() {
                         </p>
                     </div>
                     <Link href="/partner/products/new">
-                        <Button className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs">
+                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
                             <Plus className="w-4 h-4 mr-2" />
                             Creer un produit
                         </Button>
@@ -225,7 +225,7 @@ export default function PartnerProductsPage() {
                     {products.map((product) => (
                         <div
                             key={product.id}
-                            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:border-[#FF6B35]/40 transition-all flex flex-col"
+                            className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:border-[#FF5722]/40 transition-all flex flex-col"
                         >
                             {/* Image */}
                             <div className="relative h-40 bg-slate-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
@@ -261,7 +261,7 @@ export default function PartnerProductsPage() {
                                         {product.description}
                                     </p>
                                 )}
-                                <p className="text-lg font-black text-[#FF6B35]">
+                                <p className="text-lg font-black text-[#FF5722]">
                                     {product.price.toLocaleString('fr-FR')} FCFA
                                 </p>
                             </div>
@@ -273,7 +273,7 @@ export default function PartnerProductsPage() {
                                     type="button"
                                     onClick={() => handleToggleStock(product)}
                                     disabled={toggleLoading === product.id || product.status === 'SUSPENDU' || product.status === 'EPUISE'}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#FF6B35] focus:ring-offset-2 disabled:opacity-50 ${
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#FF5722] focus:ring-offset-2 disabled:opacity-50 ${
                                         product.status === 'DISPONIBLE'
                                             ? 'bg-emerald-500'
                                             : 'bg-slate-300 dark:bg-zinc-600'

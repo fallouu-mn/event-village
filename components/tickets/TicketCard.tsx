@@ -115,7 +115,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           </div>
 
           {/* Instructions pour le porteur */}
-          <div className="p-2.5 rounded-xl bg-orange-50 dark:bg-orange-950/20 text-[#EA580C] dark:text-[#FF6B35] text-[11px] font-medium text-center border border-orange-100 dark:border-orange-900/30">
+          <div className="p-2.5 rounded-xl bg-orange-50 dark:bg-orange-950/20 text-[#FF5722] text-[11px] font-medium text-center border border-orange-100 dark:border-orange-900/30">
             Présentez ce QR Code au contrôleur à l’entrée de l’événement.
           </div>
         </div>
@@ -128,7 +128,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             onClick={() => setViewMode('qr')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               viewMode === 'qr'
-                ? 'bg-[#FF6B35] text-white shadow-xs'
+                ? 'bg-[#FF5722] text-white shadow-xs'
                 : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900'
             }`}
           >
@@ -138,7 +138,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             onClick={() => setViewMode('barcode')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               viewMode === 'barcode'
-                ? 'bg-[#FF6B35] text-white shadow-xs'
+                ? 'bg-[#FF5722] text-white shadow-xs'
                 : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900'
             }`}
           >

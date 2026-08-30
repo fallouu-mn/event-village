@@ -110,7 +110,7 @@ export default function AdminPricingSettingsPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF6B35]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -154,7 +154,7 @@ export default function AdminPricingSettingsPage() {
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
         <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <Package size={20} className="text-[#FF6B35]" />
+            <Package size={20} className="text-[#FF5722]" />
             <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
               Packs d&apos;Abonnement Partenaires (§117)
             </h2>
@@ -164,7 +164,7 @@ export default function AdminPricingSettingsPage() {
             size="sm"
             onClick={() => handleSaveSection('subscription_packs', packs, 'Packs Partenaires')}
             disabled={isSaving}
-            className="bg-[#FF6B35] text-white flex items-center gap-1.5"
+            className="bg-[#FF5722] text-white flex items-center gap-1.5"
           >
             <Save size={14} />
             <span>Enregistrer Packs</span>
@@ -179,7 +179,7 @@ export default function AdminPricingSettingsPage() {
                 key={planKey}
                 className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 space-y-3"
               >
-                <h4 className="text-sm font-black uppercase text-[#FF6B35]">{plan.name}</h4>
+                <h4 className="text-sm font-black uppercase text-[#FF5722]">{plan.name}</h4>
                 <div className="space-y-2 text-xs">
                   <div>
                     <label className="block text-slate-500 font-bold mb-1">Prix mensuel (FCFA)</label>
@@ -235,7 +235,7 @@ export default function AdminPricingSettingsPage() {
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
         <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <CreditCard size={20} className="text-[#FF6B35]" />
+            <CreditCard size={20} className="text-[#FF5722]" />
             <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
               Frais Agrégateur & Moyens de Paiement (§118)
             </h2>
@@ -245,7 +245,7 @@ export default function AdminPricingSettingsPage() {
             size="sm"
             onClick={() => handleSaveSection('aggregator_fees', aggFees, 'Frais Agrégateur')}
             disabled={isSaving}
-            className="bg-[#FF6B35] text-white flex items-center gap-1.5"
+            className="bg-[#FF5722] text-white flex items-center gap-1.5"
           >
             <Save size={14} />
             <span>Enregistrer Frais</span>
@@ -286,7 +286,7 @@ export default function AdminPricingSettingsPage() {
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
         <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <MessageSquare size={20} className="text-[#FF6B35]" />
+            <MessageSquare size={20} className="text-[#FF5722]" />
             <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
               Canaux de Communication & Marges (§119, §126)
             </h2>
@@ -296,7 +296,7 @@ export default function AdminPricingSettingsPage() {
             size="sm"
             onClick={() => handleSaveSection('communication_tariffs', commTariffs, 'Tarifs Communication')}
             disabled={isSaving}
-            className="bg-[#FF6B35] text-white flex items-center gap-1.5"
+            className="bg-[#FF5722] text-white flex items-center gap-1.5"
           >
             <Save size={14} />
             <span>Enregistrer Tarifs</span>
@@ -343,7 +343,7 @@ export default function AdminPricingSettingsPage() {
                           [channel]: { ...tariff, price: Number(e.target.value) },
                         })
                       }
-                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-[#FF6B35]"
+                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-[#FF5722]"
                     />
                   </div>
                 </div>

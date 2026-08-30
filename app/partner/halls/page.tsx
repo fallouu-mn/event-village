@@ -197,7 +197,7 @@ export default function PartnerHallsPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                        <Building2 className="w-8 h-8 text-[#FF6B35]" />
+                        <Building2 className="w-8 h-8 text-[#FF5722]" />
                         Reservation de Salles
                     </h1>
                     <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
@@ -210,7 +210,7 @@ export default function PartnerHallsPage() {
                         Actualiser
                     </Button>
                     <Link href="/partner/halls/new">
-                        <Button className="bg-[#FF6B35] hover:bg-[#ff5719] text-white flex items-center gap-2 shadow-lg shadow-[#FF6B35]/20">
+                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white flex items-center gap-2 shadow-lg shadow-[#FF5722]/20">
                             <Plus className="w-4 h-4" />
                             Ajouter une salle
                         </Button>
@@ -221,7 +221,7 @@ export default function PartnerHallsPage() {
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF6B35] flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF5722] flex items-center justify-center">
                         <Building2 className="w-6 h-6" />
                     </div>
                     <div>
@@ -264,12 +264,12 @@ export default function PartnerHallsPage() {
             {/* Liste des Salles */}
             {isLoading ? (
                 <div className="p-12 text-center text-slate-500 dark:text-zinc-400 flex flex-col items-center gap-3">
-                    <RefreshCw className="w-8 h-8 animate-spin text-[#FF6B35]" />
+                    <RefreshCw className="w-8 h-8 animate-spin text-[#FF5722]" />
                     <p className="text-sm font-medium">Chargement des salles...</p>
                 </div>
             ) : halls.length === 0 ? (
                 <div className="p-12 rounded-2xl bg-white dark:bg-zinc-900 border border-dashed border-slate-300 dark:border-zinc-800 text-center space-y-4">
-                    <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] flex items-center justify-center mx-auto">
+                    <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto">
                         <Building2 className="w-8 h-8" />
                     </div>
                     <div>
@@ -279,7 +279,7 @@ export default function PartnerHallsPage() {
                         </p>
                     </div>
                     <Link href="/partner/halls/new">
-                        <Button className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs">
+                        <Button className="bg-[#FF5722] hover:bg-[#ff5719] text-white text-xs">
                             <Plus className="w-4 h-4 mr-2" />
                             Creer ma premiere salle
                         </Button>
@@ -305,7 +305,7 @@ export default function PartnerHallsPage() {
                                                 <img src={hall.images[0]} alt={hall.name} className="w-10 h-10 rounded-lg object-cover" />
                                             )}
                                             <h3 className="text-lg font-black text-slate-900 dark:text-white">{hall.name}</h3>
-                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-[#FF6B35] border border-orange-200">
+                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-[#FF5722] border border-orange-200">
                                                 <Percent className="w-3 h-3 inline mr-0.5" />
                                                 Acompte : {hall.deposit_percentage}%
                                             </span>
