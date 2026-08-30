@@ -29,6 +29,7 @@ export async function POST(
             categoryId,
             userId: user.id,
             orderId,
+            callerRole: user.role,
         });
 
         return NextResponse.json({

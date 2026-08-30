@@ -8,6 +8,7 @@ import { samirPayClient } from '@/lib/samirpay/client';
 import { mapSamirPayStatus } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CreatePaymentInput, SamirPayWebhookSchema } from '@/lib/validations/payment';
+import { EventService } from '@/lib/events/event.service';
 import crypto from 'crypto';
 
 export interface CreatePaymentResult {
@@ -371,39 +372,17 @@ export class PaymentService {
                         })
                         .eq('id', payment.ticket_id);
                 } else if (payment.metadata?.event_id && payment.metadata?.category_id) {
-                    // Génération atomique du ticket avec QR Code unique
-                    const uniqueTicketNumber = `EV-TK-${Date.now().toString().slice(-6)}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
-                    const secureQrCode = `EV-QR-${crypto.randomUUID()}-${crypto.randomBytes(4).toString('hex')}`;
-
-                    const { data: newTicket, error: ticketError } = await supabase
-                        .from('tickets')
-                        .insert({
-                            event_id: payment.metadata.event_id,
-                            category_id: payment.metadata.category_id,
-                            user_id: payment.client_id,
-                            order_id: payment.order_id || null,
-                            ticket_number: uniqueTicketNumber,
-                            price: payment.amount,
-                            qr_code: secureQrCode,
-                            status: 'VALIDE',
-                        })
-                        .select('id')
-                        .single();
-
-                    if (!ticketError && newTicket) {
-                        confirmedTicketId = newTicket.id;
-                        // Incrémentation du compteur de tickets vendus
-                        const { error: rpcError } = await supabase.rpc('increment_sold_tickets', {
-                            cat_id: payment.metadata.category_id,
-                            qty: 1,
+                    try {
+                        const purchaseResult = await EventService.purchaseTicketAtomic({
+                            eventId: payment.metadata.event_id,
+                            categoryId: payment.metadata.category_id,
+                            userId: payment.client_id,
+                            orderId: payment.order_id || undefined,
+                            paymentConfirmed: true,
                         });
-                        if (rpcError) {
-                            // Fallback direct update
-                            await supabase
-                                .from('ticket_categories')
-                                .update({ updated_at: new Date().toISOString() })
-                                .eq('id', payment.metadata.category_id);
-                        }
+                        confirmedTicketId = purchaseResult.ticket.id;
+                    } catch (ticketError) {
+                        console.error('[PaymentService.Webhook] Erreur génération ticket via EventService:', ticketError);
                     }
                 }
             }

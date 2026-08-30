@@ -8,18 +8,18 @@ import {
     Search,
     Ticket,
     DollarSign,
-    Users,
+    CheckCircle2,
     Clock,
     MapPin,
-    AlertCircle,
-    CheckCircle2,
     Send,
     Trash2,
     Eye,
-    ChevronRight,
+    Pencil,
     RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/Toast';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface EventItem {
     id: string;
@@ -48,7 +48,8 @@ export default function PartnerEventsPage() {
     const [selectedStatus, setSelectedStatus] = useState<string>('TOUS');
     const [searchQuery, setSearchQuery] = useState('');
     const [actionLoading, setActionLoading] = useState<string | null>(null);
-    const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const toast = useToast();
+    const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; eventId: string | null }>({ isOpen: false, eventId: null });
 
     const fetchEvents = async () => {
         setIsLoading(true);
@@ -71,6 +72,7 @@ export default function PartnerEventsPage() {
 
     useEffect(() => {
         fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedStatus]);
 
     const handleSearch = (e: React.FormEvent) => {
@@ -80,7 +82,6 @@ export default function PartnerEventsPage() {
 
     const handleSubmitForValidation = async (eventId: string) => {
         setActionLoading(eventId);
-        setFeedback(null);
         try {
             const res = await fetch(`/api/partner/events/${eventId}/status`, {
                 method: 'POST',
@@ -89,40 +90,42 @@ export default function PartnerEventsPage() {
             });
             const data = await res.json();
             if (data.success) {
-                setFeedback({
-                    type: 'success',
-                    message: 'Événement soumis à l\'administration pour validation avec succès !',
-                });
+                toast.success('Événement soumis pour validation avec succès !');
                 fetchEvents();
             } else {
-                setFeedback({ type: 'error', message: data.error || 'Échec de la soumission.' });
+                toast.error(data.error || 'Échec de la soumission.');
             }
-        } catch (err: unknown) {
-            setFeedback({ type: 'error', message: 'Erreur réseau lors de la soumission.' });
+        } catch {
+            toast.error('Erreur réseau lors de la soumission.');
         } finally {
             setActionLoading(null);
         }
     };
 
-    const handleDeleteDraft = async (eventId: string) => {
-        if (!confirm('Êtes-vous sûr de vouloir supprimer ce brouillon d\'événement ?')) return;
+    const openDeleteConfirm = (eventId: string) => {
+        setDeleteConfirm({ isOpen: true, eventId });
+    };
+
+    const confirmDelete = async () => {
+        const eventId = deleteConfirm.eventId;
+        if (!eventId) return;
         setActionLoading(eventId);
-        setFeedback(null);
         try {
             const res = await fetch(`/api/partner/events/${eventId}`, {
                 method: 'DELETE',
             });
             const data = await res.json();
             if (data.success) {
-                setFeedback({ type: 'success', message: 'Brouillon supprimé.' });
+                toast.success('Brouillon supprimé.');
                 fetchEvents();
             } else {
-                setFeedback({ type: 'error', message: data.error || 'Échec de la suppression.' });
+                toast.error(data.error || 'Échec de la suppression.');
             }
-        } catch (err) {
-            setFeedback({ type: 'error', message: 'Erreur réseau lors de la suppression.' });
+        } catch {
+            toast.error('Erreur réseau lors de la suppression.');
         } finally {
             setActionLoading(null);
+            setDeleteConfirm({ isOpen: false, eventId: null });
         }
     };
 
@@ -188,24 +191,6 @@ export default function PartnerEventsPage() {
                 </div>
             </div>
 
-            {/* Notifications Feedback */}
-            {feedback && (
-                <div
-                    className={`p-4 rounded-xl flex items-center gap-3 text-sm font-medium ${
-                        feedback.type === 'success'
-                            ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                            : 'bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-800'
-                    }`}
-                >
-                    {feedback.type === 'success' ? (
-                        <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                    ) : (
-                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                    )}
-                    <span>{feedback.message}</span>
-                </div>
-            )}
-
             {/* Statistiques Rapides */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
@@ -243,7 +228,7 @@ export default function PartnerEventsPage() {
                         <DollarSign className="w-6 h-6" />
                     </div>
                     <div>
-                        <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Chiffre d'Affaires</p>
+                        <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Chiffre d&apos;Affaires</p>
                         <p className="text-2xl font-black text-slate-900 dark:text-white">{totalRevenue.toLocaleString('fr-FR')} F</p>
                     </div>
                 </div>
@@ -391,13 +376,19 @@ export default function PartnerEventsPage() {
                                             <Button
                                                 size="sm"
                                                 variant="outline"
-                                                onClick={() => handleDeleteDraft(ev.id)}
+                                                onClick={() => openDeleteConfirm(ev.id)}
                                                 disabled={actionLoading === ev.id}
                                                 className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 text-xs"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5 mr-1" />
                                                 Supprimer
                                             </Button>
+                                            <Link href={`/partner/events/${ev.id}/edit`}>
+                                                <Button size="sm" variant="outline" className="text-xs">
+                                                    <Pencil className="w-3.5 h-3.5 mr-1" />
+                                                    Modifier
+                                                </Button>
+                                            </Link>
                                             <Button
                                                 size="sm"
                                                 onClick={() => handleSubmitForValidation(ev.id)}
@@ -411,9 +402,17 @@ export default function PartnerEventsPage() {
                                     )}
 
                                     {ev.status === 'EN_ATTENTE' && (
-                                        <div className="text-xs text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5 w-full justify-center">
-                                            <Clock className="w-4 h-4" />
-                                            En cours d'examen Superadmin
+                                        <div className="flex items-center justify-between w-full">
+                                            <div className="text-xs text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                                                <Clock className="w-4 h-4" />
+                                                En examen
+                                            </div>
+                                            <Link href={`/partner/events/${ev.id}/edit`}>
+                                                <Button size="sm" variant="outline" className="text-xs">
+                                                    <Pencil className="w-3.5 h-3.5 mr-1" />
+                                                    Modifier
+                                                </Button>
+                                            </Link>
                                         </div>
                                     )}
 
@@ -429,7 +428,7 @@ export default function PartnerEventsPage() {
                                     {ev.status === 'VALIDE' && (
                                         <div className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5 w-full justify-center">
                                             <CheckCircle2 className="w-4 h-4" />
-                                            Validé par l'Administration
+                                            Validé par l&apos;Administration
                                         </div>
                                     )}
                                 </div>
@@ -438,6 +437,17 @@ export default function PartnerEventsPage() {
                     })}
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={deleteConfirm.isOpen}
+                onClose={() => setDeleteConfirm({ isOpen: false, eventId: null })}
+                onConfirm={confirmDelete}
+                title="Supprimer ce brouillon ?"
+                message="Cette action est irreversible. Le brouillon et ses categories de billets seront definitivement supprimes."
+                confirmLabel="Supprimer"
+                variant="danger"
+                isLoading={actionLoading === deleteConfirm.eventId}
+            />
         </div>
     );
 }

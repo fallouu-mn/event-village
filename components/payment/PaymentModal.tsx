@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { CheckCircle2, AlertCircle, Smartphone, CreditCard, ShieldCheck, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Smartphone, CreditCard, ShieldCheck } from 'lucide-react';
 import { usePaymentStatus } from '@/hooks/usePaymentStatus';
 
 export interface PaymentModalProps {
@@ -44,6 +44,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   }, [realtimeStatus, onPaymentSuccess]);
 
   const handleInitiatePayment = async () => {
+    if (isInitiating) return; // Protection anti-double clic
     setIsInitiating(true);
     setErrorMessage('');
 
@@ -102,7 +103,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
           <h4 className="text-lg font-black text-slate-900 dark:text-white">Paiement Validé !</h4>
           <p className="text-xs text-slate-600 dark:text-zinc-300">
-            Votre transaction de <span className="font-bold text-[#FF6B35]">{amountFormatted}</span> a été confirmée par SamirPay.
+            Votre transaction de <span className="font-bold text-[#FF5722]">{amountFormatted}</span> a été confirmée par SamirPay.
           </p>
           <span className="text-[11px] font-mono text-slate-400 dark:text-zinc-500">
             Réf : {payment?.transaction_id || activeTransactionId}
@@ -116,8 +117,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       ) : isPending ? (
         <div className="flex flex-col items-center text-center py-6 space-y-4">
           <div className="relative w-16 h-16 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-zinc-800 border-t-[#FF6B35] animate-spin" />
-            <Smartphone size={24} className="text-[#FF6B35]" />
+            <div className="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-zinc-800 border-t-[#FF5722] animate-spin" />
+            <Smartphone size={24} className="text-[#FF5722]" />
           </div>
           <div>
             <h4 className="text-base font-black text-slate-900 dark:text-white">Validation en cours...</h4>
@@ -159,7 +160,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold">Article</span>
               <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">{title}</h4>
             </div>
-            <span className="text-sm sm:text-base font-black text-[#FF6B35] px-3 py-1 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/30">
+            <span className="text-sm sm:text-base font-black text-[#FF5722] px-3 py-1 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/30">
               {amountFormatted}
             </span>
           </div>
@@ -175,11 +176,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 onClick={() => setOperator('wave')}
                 className={`p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
                   operator === 'wave'
-                    ? 'border-[#FF6B35] bg-[#FF6B35]/10 text-slate-900 dark:text-white font-bold shadow-xs'
+                    ? 'border-[#FF5722] bg-[#FF5722]/10 text-slate-900 dark:text-white font-bold shadow-xs'
                     : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                 }`}
               >
-                <Smartphone size={18} className="text-[#FF6B35]" />
+                <Smartphone size={18} className="text-[#FF5722]" />
                 <span className="text-xs">Wave Sénégal</span>
               </button>
 
@@ -188,11 +189,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 onClick={() => setOperator('om')}
                 className={`p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
                   operator === 'om'
-                    ? 'border-[#FF6B35] bg-[#FF6B35]/10 text-slate-900 dark:text-white font-bold shadow-xs'
+                    ? 'border-[#FF5722] bg-[#FF5722]/10 text-slate-900 dark:text-white font-bold shadow-xs'
                     : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                 }`}
               >
-                <Smartphone size={18} className="text-[#EA580C]" />
+                <Smartphone size={18} className="text-[#F44336]" />
                 <span className="text-xs">Orange Money</span>
               </button>
 
@@ -201,7 +202,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 onClick={() => setOperator('free')}
                 className={`p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
                   operator === 'free'
-                    ? 'border-[#FF6B35] bg-[#FF6B35]/10 text-slate-900 dark:text-white font-bold shadow-xs'
+                    ? 'border-[#FF5722] bg-[#FF5722]/10 text-slate-900 dark:text-white font-bold shadow-xs'
                     : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                 }`}
               >
@@ -214,7 +215,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 onClick={() => setOperator('card')}
                 className={`p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
                   operator === 'card'
-                    ? 'border-[#FF6B35] bg-[#FF6B35]/10 text-slate-900 dark:text-white font-bold shadow-xs'
+                    ? 'border-[#FF5722] bg-[#FF5722]/10 text-slate-900 dark:text-white font-bold shadow-xs'
                     : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                 }`}
               >
@@ -235,7 +236,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 placeholder="77 123 45 67"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-mono font-bold focus:outline-none focus:border-[#FF6B35]"
+                className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-mono font-bold focus:outline-none focus:border-[#FF5722]"
               />
             </div>
           )}
@@ -254,7 +255,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             isLoading={isInitiating}
             onClick={handleInitiatePayment}
           >
-            Confirmer & Payer {amountFormatted}
+            {isInitiating ? 'Paiement en cours...' : `Confirmer & Payer ${amountFormatted}`}
           </Button>
         </div>
       )}

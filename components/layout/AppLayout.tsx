@@ -9,7 +9,6 @@ import {
   Ticket,
   ShoppingBag,
   User,
-  Bell,
   MapPin,
   Search,
   LayoutDashboard,
@@ -48,6 +47,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const isController = rawRole === 'CONTROLEUR' || isAdmin || isPartner;
   const isAmbassador = profile?.referral_status === 'AMBASSADEUR';
 
+  const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
+
   // Navigation principale B2C
   const navItems = [
     { name: 'Accueil', href: '/', icon: Home },
@@ -63,6 +64,28 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     { name: 'Restaurants & Tables', href: '/restaurants/rest-terrou-bi/tables', icon: Utensils },
   ];
 
+  // Navigation Partenaire complète
+  const partnerNavItems = [
+    { name: 'Dashboard', href: '/partner/dashboard', icon: LayoutDashboard },
+    { name: 'Événements', href: '/partner/events', icon: Calendar },
+    { name: 'Produits & Menu', href: '/partner/products', icon: ShoppingBag },
+    { name: 'Salles de Fête', href: '/partner/halls', icon: Building2 },
+    { name: 'Tables', href: '/partner/tables', icon: Utensils },
+    { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag },
+  ];
+  const partnerSecondaryItems = [
+    { name: 'Scanner Billets', href: '/partner/scan', icon: QrCode },
+    { name: 'Calendrier', href: '/partner/calendar', icon: Calendar },
+    { name: 'Profil Partenaire', href: '/partner/profile', icon: User },
+  ];
+  const partnerMobileItems = [
+    { name: 'Dashboard', href: '/partner/dashboard', icon: LayoutDashboard },
+    { name: 'Événements', href: '/partner/events', icon: Calendar },
+    { name: 'Scanner', href: '/partner/scan', icon: QrCode },
+    { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag },
+    { name: 'Profil', href: '/partner/profile', icon: User },
+  ];
+
   // Liens Espaces Pro & Admin dynamiques selon le rôle
   const proItems: { name: string; href: string; icon: React.ComponentType<any> }[] = [];
 
@@ -76,15 +99,12 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     proItems.push({ name: 'Communications & Campagnes', href: '/admin/communications', icon: Radio });
     proItems.push({ name: 'Journal d\'Audit', href: '/admin/audit', icon: Activity });
     proItems.push({ name: 'Scanner de Contrôle', href: '/scan', icon: QrCode });
-  } else if (isPartner) {
-    proItems.push({ name: 'Dashboard Partenaire', href: '/partner/dashboard', icon: LayoutDashboard });
-    proItems.push({ name: 'Calendrier B2B', href: '/partner/calendar', icon: Calendar });
-    proItems.push({ name: 'Scanner Billets', href: '/scan', icon: QrCode });
+  } else if (isPartner && !isPartnerRoute) {
+    proItems.push({ name: 'Espace Partenaire', href: '/partner/dashboard', icon: LayoutDashboard });
   } else if (isController) {
     proItems.push({ name: 'Scanner Billets', href: '/scan', icon: QrCode });
   }
 
-  // Verrouillage : "Devenir Partenaire" est masqué pour Admin/Superadmin/Partenaire
   if (!isPartner && !isAdmin && !isController) {
     proItems.push({ name: 'Devenir Partenaire', href: '/partner/register', icon: Briefcase });
   }
@@ -107,98 +127,162 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     : 'EV';
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-[#FAFAFA] dark:bg-[#111111] text-slate-900 dark:text-zinc-100 transition-colors duration-200">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-[#F8F9FA] dark:bg-[#0F0F11] text-slate-900 dark:text-zinc-100 transition-colors duration-200">
       {/* ====================================================================
           1. SIDEBAR DESKTOP (Visible à partir de lg: 1024px)
           ==================================================================== */}
-      <aside className="hidden lg:flex flex-col w-64 xl:w-72 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#161616] p-5 sticky top-0 h-screen overflow-y-auto flex-shrink-0 z-30">
+      <aside className="hidden lg:flex flex-col w-64 xl:w-72 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#16161A] p-5 sticky top-0 h-screen overflow-y-auto flex-shrink-0 z-30 shadow-subtle">
         {/* Logo */}
         <div className="py-2 mb-6">
           <Logo variant="full" />
         </div>
 
-        {/* Navigation Principale */}
+        {/* Navigation — Partner vs B2C */}
         <div className="space-y-6 flex-1">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
-              Menu Principal
-            </span>
-            <nav className="space-y-1">
-              {navItems.map((item) => {
-                const active = isNavActive(item.href);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-150 ${
-                      active
-                        ? 'bg-[#FF6B35] text-white shadow-md shadow-[#FF6B35]/25 font-black'
-                        : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Icon size={18} className={active ? 'text-white' : 'text-slate-500 dark:text-zinc-400'} />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
+          {isPartnerRoute && isPartner ? (
+            <>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
+                  Gestion
+                </span>
+                <nav className="space-y-1">
+                  {partnerNavItems.map((item) => {
+                    const active = isNavActive(item.href);
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 active:scale-[0.98] ${
+                          active
+                            ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
+                            : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Icon size={18} className={active ? 'text-white' : 'text-slate-500 dark:text-zinc-400'} />
+                        <span>{item.name}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
+                  Outils
+                </span>
+                <nav className="space-y-1">
+                  {partnerSecondaryItems.map((item) => {
+                    const active = isNavActive(item.href);
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 active:scale-[0.98] ${
+                          active
+                            ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
+                            : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Icon size={18} className={active ? 'text-white' : 'text-slate-500 dark:text-zinc-400'} />
+                        <span>{item.name}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
+              <div>
+                <Link
+                  href="/"
+                  className="flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white transition-all duration-200"
+                >
+                  <Home size={18} />
+                  <span>Retour au site</span>
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
+                  Menu Principal
+                </span>
+                <nav className="space-y-1">
+                  {navItems.map((item) => {
+                    const active = isNavActive(item.href);
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 active:scale-[0.98] ${
+                          active
+                            ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
+                            : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Icon size={18} className={active ? 'text-white' : 'text-slate-500 dark:text-zinc-400'} />
+                        <span>{item.name}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
 
-          {/* Services & Réservations */}
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
-              Services & Espaces
-            </span>
-            <nav className="space-y-1">
-              {serviceItems.map((item) => {
-                const active = isNavActive(item.href);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-150 ${
-                      active
-                        ? 'bg-[#FF6B35] text-white shadow-md shadow-[#FF6B35]/25 font-black'
-                        : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Icon size={18} />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
+                  Services & Espaces
+                </span>
+                <nav className="space-y-1">
+                  {serviceItems.map((item) => {
+                    const active = isNavActive(item.href);
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 active:scale-[0.98] ${
+                          active
+                            ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
+                            : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Icon size={18} />
+                        <span>{item.name}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
 
-          {/* Espaces Professionnels & Administration */}
-          {proItems.length > 0 && (
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
-                Espaces Métier
-              </span>
-              <nav className="space-y-1">
-                {proItems.map((item) => {
-                  const active = isNavActive(item.href);
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-150 ${
-                        active
-                          ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md font-black'
-                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Icon size={18} className="text-[#FF6B35]" />
-                      <span>{item.name}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
+              {proItems.length > 0 && (
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
+                    Espaces Métier
+                  </span>
+                  <nav className="space-y-1">
+                    {proItems.map((item) => {
+                      const active = isNavActive(item.href);
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 active:scale-[0.98] ${
+                            active
+                              ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md font-bold'
+                              : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Icon size={18} className="text-[#FF5722]" />
+                          <span>{item.name}</span>
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -207,11 +291,11 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           {isUserLoggedIn ? (
             <div className="flex items-center justify-between w-full min-w-0">
               <Link href="/profile" className="flex items-center gap-2.5 group min-w-0 flex-1 mr-1">
-                <div className="w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] font-black text-xs flex items-center justify-center border border-orange-200 dark:border-orange-800/50 flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] font-black text-xs flex items-center justify-center border border-orange-200 dark:border-orange-800/50 flex-shrink-0 shadow-xs">
                   {initials}
                 </div>
                 <div className="leading-tight truncate min-w-0">
-                  <span className="text-xs font-bold text-slate-900 dark:text-white block group-hover:text-[#FF6B35] transition-colors truncate">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white block group-hover:text-[#FF5722] transition-colors truncate">
                     {displayName}
                   </span>
                   <span className="text-[10px] text-slate-400 dark:text-zinc-500 block truncate">
@@ -236,7 +320,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
             <div className="flex items-center justify-between w-full">
               <Link
                 href="/login"
-                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF6B35] text-xs font-black hover:bg-[#FF6B35] hover:text-white transition-all"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF5722] text-xs font-bold hover:bg-[#FF5722] hover:text-white transition-all shadow-xs"
               >
                 <LogIn size={15} />
                 <span>Se connecter</span>
@@ -252,7 +336,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           ==================================================================== */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar Header (Visible partout) */}
-        <header className="sticky top-0 z-20 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/80 dark:bg-[#161616]/80 backdrop-blur-md px-4 lg:px-8 py-3 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-20 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/85 dark:bg-[#16161A]/85 backdrop-blur-md px-4 lg:px-8 py-3 flex items-center justify-between gap-4 shadow-subtle">
           {/* Logo Mobile */}
           <div className="lg:hidden">
             <Logo variant="auto" />
@@ -260,14 +344,14 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
           {/* Localisation & Recherche Rapide Desktop */}
           <div className="hidden sm:flex items-center gap-4 flex-1 max-w-md">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-300">
-              <MapPin size={14} className="text-[#FF6B35]" />
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 text-xs font-bold text-slate-700 dark:text-zinc-300 border border-slate-200/60 dark:border-zinc-700/60">
+              <MapPin size={14} className="text-[#FF5722]" />
               <span>Dakar, Sénégal</span>
             </div>
 
             <Link
               href="/explore"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white transition-colors flex-1"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 text-xs text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white transition-colors flex-1 border border-slate-200/60 dark:border-zinc-700/60"
             >
               <Search size={14} />
               <span>Rechercher un événement, concert, restaurant...</span>
@@ -285,7 +369,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
             {isUserLoggedIn ? (
               <div className="lg:hidden flex items-center gap-2">
                 <Link href="/profile">
-                  <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-950/40 text-[#FF6B35] font-black text-xs flex items-center justify-center border border-orange-200 dark:border-orange-800/50">
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] font-black text-xs flex items-center justify-center border border-orange-200 dark:border-orange-800/50 shadow-xs">
                     {initials}
                   </div>
                 </Link>
@@ -301,7 +385,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               </div>
             ) : (
               <Link href="/login" className="lg:hidden">
-                <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF6B35] font-black text-xs flex items-center justify-center border border-orange-200 dark:border-orange-800/50">
+                <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/30 text-[#FF5722] font-black text-xs flex items-center justify-center border border-orange-200 dark:border-orange-800/50">
                   <LogIn size={16} />
                 </div>
               </Link>
@@ -318,9 +402,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       {/* ====================================================================
           3. BOTTOM NAVIGATION MOBILE (Visible uniquement < 1024px)
           ==================================================================== */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#161616]/95 backdrop-blur-lg border-t border-slate-200/80 dark:border-zinc-800/80 px-2 py-2 safe-bottom shadow-lg">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#16161A]/95 backdrop-blur-lg border-t border-slate-200/80 dark:border-zinc-800/80 px-2 py-2 safe-bottom shadow-lg">
         <div className="flex items-center justify-around">
-          {navItems.map((item) => {
+          {(isPartnerRoute && isPartner ? partnerMobileItems : navItems).map((item) => {
             const active = isNavActive(item.href);
             const Icon = item.icon;
             return (
@@ -329,14 +413,14 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 href={item.href}
                 className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all duration-150 active:scale-95 ${
                   active
-                    ? 'text-[#FF6B35] font-black'
+                    ? 'text-[#FF5722] font-bold'
                     : 'text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <Icon size={20} className={active ? 'text-[#FF6B35]' : ''} />
+                <Icon size={20} className={active ? 'text-[#FF5722]' : ''} />
                 <span className="text-[10px] mt-0.5 font-bold">{item.name}</span>
                 {active && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF6B35] mt-0.5 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF5722] mt-0.5 animate-pulse" />
                 )}
               </Link>
             );

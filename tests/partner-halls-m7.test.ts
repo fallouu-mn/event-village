@@ -86,7 +86,7 @@ test('1. CONFIGURATION SALLE (§42/§45) : Création avec acompte personnalisé 
     }
 });
 
-test('2. DISPONIBILITÉ & PROTECTION ANTI-CONFLIT (§43-§44) : Blocage strict des dates chevauchantes', async () => {
+test('2. DISPONIBILITÉ & CONCURRENCE RÉELLE (§43-§44) : Deux réservations simultanées (Promise.allSettled) sur dates chevauchantes -> 1 Succès, 1 Échec, 1 seule ligne en base', async () => {
     if (!supabaseUrl || !serviceRoleKey) return;
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
@@ -120,53 +120,69 @@ test('2. DISPONIBILITÉ & PROTECTION ANTI-CONFLIT (§43-§44) : Blocage strict d
     ]);
 
     const { data: partner } = await adminClient.from('partners').insert({
-        user_id: partnerUserId, company_name: 'Espace Calendrier Test', phone: phoneP, status: 'VALIDE'
+        user_id: partnerUserId, company_name: 'Espace Calendrier Test Concurrency', phone: phoneP, status: 'VALIDE'
     }).select('id').single();
     if (!partner?.id) throw new Error('Création partenaire échouée');
 
     const { data: hall } = await adminClient.from('halls').insert({
-        partner_id: partner.id, name: 'Salle Renaissance', capacity: 200, price_per_day: 150000, deposit_percentage: 30.0
+        partner_id: partner.id, name: 'Salle Renaissance Concurrency', capacity: 200, price_per_day: 150000, deposit_percentage: 30.0
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
 
-    let res1Id: string | null = null;
-
     try {
-        // Réservation 1 : Du 2026-11-10 au 2026-11-15 (6 jours)
-        const res1 = await HallService.createReservation({
-            hallId: hall.id,
-            clientId: client1Id,
-            startDate: '2026-11-10',
-            endDate: '2026-11-15',
-            notes: 'Mariage traditionnel',
-        });
-
-        res1Id = res1.id;
-        assert.ok(res1.id, 'Réservation 1 créée avec succès');
-
-        // Réservation 2 : Du 2026-11-12 au 2026-11-18 (Chevauchement sur le 12-15 Novembre) -> DOIT ÉCHOUER
-        let conflictThrown = false;
-        let conflictErrorMessage = '';
-        try {
-            await HallService.createReservation({
+        // EXÉCUTION CONCURRENTE RÉELLE VIA Promise.allSettled()
+        // Deux clients tentent de réserver simultanément la salle sur des dates chevauchantes :
+        // Client 1 : 2026-11-10 au 2026-11-15
+        // Client 2 : 2026-11-12 au 2026-11-18 (Chevauchement du 12 au 15)
+        const [result1, result2] = await Promise.allSettled([
+            HallService.createReservation({
+                hallId: hall.id,
+                clientId: client1Id,
+                startDate: '2026-11-10',
+                endDate: '2026-11-15',
+                notes: 'Mariage traditionnel Client 1',
+            }),
+            HallService.createReservation({
                 hallId: hall.id,
                 clientId: client2Id,
                 startDate: '2026-11-12',
                 endDate: '2026-11-18',
-                notes: 'Séminaire d\'entreprise',
-            });
-        } catch (err: unknown) {
-            conflictThrown = true;
-            conflictErrorMessage = err instanceof Error ? err.message : '';
-        }
+                notes: 'Séminaire d\'entreprise Client 2',
+            }),
+        ]);
 
-        assert.strictEqual(conflictThrown, true, 'La réservation sur une plage occupée DOIT être rejetée');
+        console.log('--- RÉSULTATS DU TEST DE CONCURRENCE RÉSERVATION SALLE ---');
+        console.log('Client 1 Result:', result1.status, result1.status === 'fulfilled' ? result1.value.id : (result1 as PromiseRejectedResult).reason.message);
+        console.log('Client 2 Result:', result2.status, result2.status === 'fulfilled' ? result2.value.id : (result2 as PromiseRejectedResult).reason.message);
+
+        // Assertion 1 : Exactement une promesse réussit et l'autre est rejetée
+        const fulfilledCount = (result1.status === 'fulfilled' ? 1 : 0) + (result2.status === 'fulfilled' ? 1 : 0);
+        const rejectedCount = (result1.status === 'rejected' ? 1 : 0) + (result2.status === 'rejected' ? 1 : 0);
+
+        assert.strictEqual(fulfilledCount, 1, 'EXACTEMENT UNE SEULE réservation concurrente sur dates chevauchantes doit réussir');
+        assert.strictEqual(rejectedCount, 1, 'EXACTEMENT UNE SEULE réservation concurrente doit être rejetée pour conflit de dates');
+
+        // Assertion 2 : Le message d'erreur explicite le conflit de dates
+        const rejectedResult = result1.status === 'rejected' ? (result1 as PromiseRejectedResult) : (result2 as PromiseRejectedResult);
         assert.ok(
-            conflictErrorMessage.includes('déjà réservée pour cette période'),
-            `Message d'erreur de conflit requis (Reçu: ${conflictErrorMessage})`
+            rejectedResult.reason.message.includes('déjà réservée pour cette période'),
+            `Le message de rejet doit expliciter le conflit de calendrier (Reçu: ${rejectedResult.reason.message})`
         );
+
+        // Assertion 3 : Relecture directe en base de données — confirmation qu'une seule réservation existe pour cette salle
+        const { data: dbReservations, error: fetchErr } = await adminClient
+            .from('hall_reservations')
+            .select('id, start_date, end_date, status')
+            .eq('hall_id', hall.id)
+            .in('status', ['EN_ATTENTE', 'CONFIRMEE']);
+
+        assert.ok(!fetchErr, 'Relecture des réservations actives en base');
+        assert.strictEqual(dbReservations?.length, 1, 'La base de données ne doit contenir STRICTEMENT qu\'une seule réservation active');
+
+        const winningReservation = result1.status === 'fulfilled' ? result1.value : (result2 as PromiseFulfilledResult<any>).value;
+        assert.strictEqual(dbReservations?.[0]?.id, winningReservation.id, 'L\'ID en base correspond à la réservation gagnante');
     } finally {
-        if (res1Id) await adminClient.from('hall_reservations').delete().eq('id', res1Id);
+        await adminClient.from('hall_reservations').delete().eq('hall_id', hall.id);
         await adminClient.from('halls').delete().eq('id', hall.id);
         await adminClient.from('partners').delete().eq('id', partner.id);
         await adminClient.from('users').delete().in('id', [partnerUserId, client1Id, client2Id]);

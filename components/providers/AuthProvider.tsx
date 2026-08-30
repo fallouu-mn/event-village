@@ -24,6 +24,9 @@ export interface PartnerProfile {
     commercial_name?: string | null;
     status: 'EN_ATTENTE' | 'VALIDE' | 'REJETE' | 'SUSPENDU';
     is_verified: boolean;
+    trial_started_at?: string | null;
+    trial_ends_at?: string | null;
+    is_founder?: boolean;
 }
 
 interface AuthContextType {
@@ -86,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (userProfile.role === 'PARTENAIRE') {
                     const { data: partnerData, error: partnerError } = await supabase
                         .from('partners')
-                        .select('id, company_name, commercial_name, status, is_verified')
+                        .select('id, company_name, commercial_name, status, is_verified, trial_started_at, trial_ends_at, is_founder')
                         .eq('user_id', userId)
                         .maybeSingle();
 

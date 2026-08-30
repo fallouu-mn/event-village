@@ -19,9 +19,8 @@ import { Button } from '@/components/ui/Button';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 
 export default function PartnerDashboardPage() {
-  const { profile, partner, user } = useAuth();
-  const effectivePartnerId = partner?.id || 'partner-dakar-001';
-  const { orders: liveOrders, connected } = usePartnerOrders(effectivePartnerId);
+  const { profile, partner, user, isLoading: isAuthLoading } = useAuth();
+  const { orders: liveOrders, connected } = usePartnerOrders(partner?.id ?? '');
 
   const [partnerMetrics, setPartnerMetrics] = React.useState<{
     grossRevenue: number;
@@ -43,10 +42,35 @@ export default function PartnerDashboardPage() {
     trialEndsAt?: string;
     status?: string;
   } | null>(null);
+  const activationCalledRef = React.useRef(false);
 
+  // Load metrics whenever the user is identified
   React.useEffect(() => {
-    if (user?.id) {
-      // 1. Activation de la période d'essai
+    if (!user?.id) return;
+    fetch('/api/partner/metrics')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.metrics) setPartnerMetrics(data.metrics);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingMetrics(false));
+  }, [user?.id]);
+
+  // Handle trial activation only once AuthProvider has finished loading.
+  // Without the isAuthLoading guard, `partner` can be null during the async
+  // hydration window, causing the activation endpoint (and its SMS) to fire
+  // on every component mount even when the trial is already active in the DB.
+  React.useEffect(() => {
+    if (isAuthLoading || !user?.id) return;
+
+    if (partner?.trial_started_at) {
+      setTrialInfo({
+        trialDays: partner.is_founder ? 90 : 60,
+        trialEndsAt: partner.trial_ends_at ?? undefined,
+        status: partner.status,
+      });
+    } else if (!activationCalledRef.current) {
+      activationCalledRef.current = true;
       fetch('/api/partner/activation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,19 +87,8 @@ export default function PartnerDashboardPage() {
           }
         })
         .catch(() => {});
-
-      // 2. Chargement des métriques réelles de ce partenaire
-      fetch('/api/partner/metrics')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success && data.metrics) {
-            setPartnerMetrics(data.metrics);
-          }
-        })
-        .catch(() => {})
-        .finally(() => setIsLoadingMetrics(false));
     }
-  }, [user?.id]);
+  }, [user?.id, isAuthLoading, partner?.trial_started_at, partner?.trial_ends_at, partner?.is_founder, partner?.status]);
 
   const isPending = partner?.status === 'EN_ATTENTE';
   const isSuspended = partner?.status === 'SUSPENDU';

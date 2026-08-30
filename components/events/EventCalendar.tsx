@@ -1,172 +1,172 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Map, Calendar as CalendarIcon, PlusSquare, ChevronLeft, ChevronRight } from 'lucide-react';
-import Link from 'next/link';
+import React, { useState, useMemo } from 'react';
+import { Calendar as CalendarIcon } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Button } from '@/components/ui/Button';
 
-export interface CalendarEventDay {
-  date: number;
-  month: number; // 11 for Dec, 0 for Jan
-  year: number;
-  eventTitle: string;
-  eventThumbnail: string;
-  eventId: string;
-  venue: string;
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start_date: string;
+  image_url?: string | null;
+  location?: string;
 }
 
-const SAMPLE_EVENTS: CalendarEventDay[] = [
-  { date: 12, month: 11, year: 2026, eventTitle: 'Concert Acoustique', eventThumbnail: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=100&auto=format&fit=crop&q=80', eventId: '1', venue: 'Dakar' },
-  { date: 15, month: 11, year: 2026, eventTitle: 'Exposition Art', eventThumbnail: 'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=100&auto=format&fit=crop&q=80', eventId: '2', venue: 'Almadies' },
-  { date: 19, month: 11, year: 2026, eventTitle: 'Post Malone Live', eventThumbnail: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=100&auto=format&fit=crop&q=80', eventId: '4', venue: 'Monument Renaissance' },
-  { date: 21, month: 11, year: 2026, eventTitle: 'Festival Dakar Vibes', eventThumbnail: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=100&auto=format&fit=crop&q=80', eventId: '6', venue: 'Dakar Arena' },
-  { date: 25, month: 11, year: 2026, eventTitle: 'Gala de Noël', eventThumbnail: 'https://images.unsplash.com/photo-1543007630-9710e4a00a20?w=100&auto=format&fit=crop&q=80', eventId: '7', venue: 'Terrou-Bi' },
-  { date: 31, month: 11, year: 2026, eventTitle: 'Réveillon Nouvel An', eventThumbnail: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?w=100&auto=format&fit=crop&q=80', eventId: '9', venue: 'King Fahd' },
-];
+interface EventCalendarProps {
+  events: CalendarEvent[];
+}
 
-export const EventCalendar: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState<number>(19);
-  const [activeMonthIndex, setActiveMonthIndex] = useState<number>(11); // 11 = Décembre
+export const EventCalendar: React.FC<EventCalendarProps> = ({ events }) => {
+  const now = new Date();
+  const [currentYear, setCurrentYear] = useState(now.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(now.getMonth());
+  const [selectedDate, setSelectedDate] = useState<number | null>(null);
+
   const daysOfWeek = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
-  const activeEvent = SAMPLE_EVENTS.find((e) => e.date === selectedDate && e.month === activeMonthIndex);
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const startDayOffset = new Date(currentYear, currentMonth, 1).getDay();
 
-  const renderMonthGrid = (monthName: string, monthIndex: number, year: number, totalDays: number, startDayOffset: number) => {
-    return (
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-black text-slate-900 dark:text-white">
-            {monthName} {year}
-          </h3>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setActiveMonthIndex(11)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                activeMonthIndex === 11
-                  ? 'bg-[#FF6B35] text-white'
-                  : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
-              }`}
-            >
-              Déc
-            </button>
-            <button
-              onClick={() => setActiveMonthIndex(0)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                activeMonthIndex === 0
-                  ? 'bg-[#FF6B35] text-white'
-                  : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
-              }`}
-            >
-              Jan
-            </button>
-          </div>
-        </div>
+  const monthName = new Date(currentYear, currentMonth).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
-        {/* Jours de la semaine */}
-        <div className="grid grid-cols-7 gap-1 text-center mb-3">
-          {daysOfWeek.map((day) => (
-            <span key={day} className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 uppercase">
-              {day}
-            </span>
-          ))}
-        </div>
+  const eventsByDay = useMemo(() => {
+    const map = new Map<number, CalendarEvent[]>();
+    for (const ev of events) {
+      const d = new Date(ev.start_date);
+      if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
+        const day = d.getDate();
+        const existing = map.get(day) || [];
+        existing.push(ev);
+        map.set(day, existing);
+      }
+    }
+    return map;
+  }, [events, currentYear, currentMonth]);
 
-        {/* Grille des dates */}
-        <div className="grid grid-cols-7 gap-y-3 gap-x-1 text-center items-center">
-          {Array.from({ length: startDayOffset }).map((_, i) => (
-            <div key={`empty-${i}`} className="h-10 w-10 mx-auto" />
-          ))}
+  const selectedEvents = selectedDate ? (eventsByDay.get(selectedDate) || []) : [];
 
-          {Array.from({ length: totalDays }).map((_, i) => {
-            const dayNum = i + 1;
-            const eventOnDay = SAMPLE_EVENTS.find(
-              (e) => e.date === dayNum && e.month === monthIndex
-            );
-            const isSelected = selectedDate === dayNum && activeMonthIndex === monthIndex;
+  const goToPrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear((y) => y - 1);
+    } else {
+      setCurrentMonth((m) => m - 1);
+    }
+    setSelectedDate(null);
+  };
 
-            return (
-              <div
-                key={`day-${dayNum}`}
-                onClick={() => {
-                  setSelectedDate(dayNum);
-                  setActiveMonthIndex(monthIndex);
-                }}
-                className="relative flex items-center justify-center h-10 w-10 mx-auto cursor-pointer select-none"
+  const goToNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear((y) => y + 1);
+    } else {
+      setCurrentMonth((m) => m + 1);
+    }
+    setSelectedDate(null);
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <div className="lg:col-span-2">
+        <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-black text-slate-900 dark:text-white capitalize">
+              {monthName}
+            </h3>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={goToPrevMonth}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
               >
-                {eventOnDay ? (
-                  <div className={`relative w-9 h-9 rounded-full overflow-hidden border-2 shadow-md hover:scale-110 transition-transform ${
-                    isSelected ? 'border-[#FF6B35] ring-2 ring-[#FF6B35]/40' : 'border-white/60 dark:border-zinc-700'
-                  }`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={eventOnDay.eventThumbnail}
-                      alt={eventOnDay.eventTitle}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                      <span className="text-[10px] font-black text-white drop-shadow">
-                        {dayNum}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
+                &larr;
+              </button>
+              <button
+                onClick={goToNextMonth}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                &rarr;
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-center mb-3">
+            {daysOfWeek.map((day) => (
+              <span key={day} className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 uppercase">
+                {day}
+              </span>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-y-3 gap-x-1 text-center items-center">
+            {Array.from({ length: startDayOffset }).map((_, i) => (
+              <div key={`empty-${i}`} className="h-10 w-10 mx-auto" />
+            ))}
+
+            {Array.from({ length: daysInMonth }).map((_, i) => {
+              const dayNum = i + 1;
+              const hasEvents = eventsByDay.has(dayNum);
+              const isSelected = selectedDate === dayNum;
+
+              return (
+                <div
+                  key={`day-${dayNum}`}
+                  onClick={() => setSelectedDate(dayNum)}
+                  className="relative flex items-center justify-center h-10 w-10 mx-auto cursor-pointer select-none"
+                >
                   <span
                     className={clsx(
-                      'text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center transition-all',
+                      'text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center transition-all relative',
                       isSelected
                         ? 'bg-[#FF6B35] text-white shadow-xs'
+                        : hasEvents
+                        ? 'bg-orange-50 dark:bg-orange-950/40 text-[#FF6B35] font-black'
                         : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
                     )}
                   >
                     {dayNum}
                   </span>
-                )}
-              </div>
-            );
-          })}
+                  {hasEvents && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#FF6B35]" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-    );
-  };
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-      {/* Colonne Gauche : Calendrier du Mois */}
-      <div className="lg:col-span-2 space-y-6">
-        {activeMonthIndex === 11
-          ? renderMonthGrid('Décembre', 11, 2026, 31, 2)
-          : renderMonthGrid('Janvier', 0, 2027, 31, 5)}
-      </div>
-
-      {/* Colonne Droite : Fiche Événement sur la Date Sélectionnée */}
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-4">
         <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-          Événements le {selectedDate} {activeMonthIndex === 11 ? 'Décembre 2026' : 'Janvier 2027'}
+          {selectedDate
+            ? `${selectedDate} ${new Date(currentYear, currentMonth).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
+            : 'Sélectionnez une date'}
         </h3>
 
-        {activeEvent ? (
+        {selectedDate && selectedEvents.length > 0 ? (
           <div className="space-y-3">
-            <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-950">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={activeEvent.eventThumbnail} alt={activeEvent.eventTitle} className="w-full h-full object-cover" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-[#FF6B35] uppercase tracking-wider block">Concert Live</span>
-              <h4 className="text-base font-black text-slate-900 dark:text-white">{activeEvent.eventTitle}</h4>
-              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">{activeEvent.venue}</p>
-            </div>
-            <Link href="/partner/scan">
-              <Button variant="primary" size="sm" fullWidth>
-                Gérer les accès de la date
-              </Button>
-            </Link>
+            {selectedEvents.map((ev) => (
+              <div key={ev.id} className="space-y-2">
+                {ev.image_url && (
+                  <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-100 dark:bg-zinc-900">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={ev.image_url} alt={ev.title} className="w-full h-full object-cover" />
+                  </div>
+                )}
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">{ev.title}</h4>
+                  {ev.location && (
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">{ev.location}</p>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="text-center py-8 text-slate-400 dark:text-zinc-500">
             <CalendarIcon size={32} className="mx-auto opacity-50 mb-2" />
-            <p className="text-xs font-bold">Aucun événement programmé</p>
-            <p className="text-[11px] mt-1">Vous pouvez ajouter un événement sur cette date.</p>
+            <p className="text-xs font-bold">
+              {selectedDate ? 'Aucun événement ce jour' : 'Cliquez sur une date'}
+            </p>
           </div>
         )}
       </div>

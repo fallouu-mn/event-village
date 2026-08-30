@@ -438,6 +438,9 @@ export class EventService {
         orderId?: string;
         aggregatorFeeRate?: number;
         serviceFeeRate?: number;
+        paymentConfirmed?: boolean;
+        callerRole?: string;
+        callerUserId?: string;
     }) {
         const supabase = getServiceRoleClient();
 
@@ -485,6 +488,49 @@ export class EventService {
             throw new Error('La vente pour cette catégorie de billet est clôturée.');
         }
 
+        // Restriction de sécurité anti-fraude & contrôle de paiement :
+        // Si le billet est payant (price > 0) et que le paiement n'est pas préalablement validé (paymentConfirmed !== true) :
+        // Un utilisateur avec le rôle CLIENT ne peut JAMAIS obtenir un billet payant sans passer par le paiement SamirPay.
+        // Seuls le personnel autorisé (SUPERADMIN, ADMIN, CONTROLEUR) ou le partenaire organisateur
+        // peuvent émettre un billet direct hors paiement en ligne (ex: billetterie guichet sur place, invitation physique).
+        const price = Number(category.price);
+        const isFree = price === 0;
+        const effectiveCallerId = params.callerUserId || params.userId;
+        let role = params.callerRole;
+        let isPartnerOwner = false;
+        let isAuthorizedStaff = false;
+
+        if (!isFree && !params.paymentConfirmed) {
+            if (!role) {
+                const { data: userRecord } = await supabase
+                    .from('users')
+                    .select('role')
+                    .eq('id', effectiveCallerId)
+                    .single();
+                role = userRecord?.role || 'CLIENT';
+            }
+
+            if (category.events?.partner_id) {
+                const { data: partnerRecord } = await supabase
+                    .from('partners')
+                    .select('user_id')
+                    .eq('id', category.events.partner_id)
+                    .single();
+                isPartnerOwner = partnerRecord?.user_id === effectiveCallerId || (role === 'PARTENAIRE' && partnerRecord?.user_id === effectiveCallerId);
+            }
+
+            isAuthorizedStaff =
+                role === 'SUPERADMIN' ||
+                role === 'ADMIN' ||
+                role === 'CONTROLEUR';
+
+            const isAuthorizedStaffOrOwner = isAuthorizedStaff || isPartnerOwner;
+
+            if (!isAuthorizedStaffOrOwner) {
+                throw new Error('Paiement requis : Les billets payants doivent obligatoirement être achetés via le parcours de paiement sécurisé (/api/payments/create).');
+            }
+        }
+
         // UPDATE atomique conditionnel : sold_quantity = sold_quantity + 1 WHERE sold_quantity < total_quantity
         const nextSold = Number(category.sold_quantity) + 1;
         if (nextSold > Number(category.total_quantity)) {
@@ -508,9 +554,9 @@ export class EventService {
         }
 
         // 2. Calcul financier conforme Annexe C (§37 CDC V3.0)
-        const price = Number(lockedCategory.price);
+        const ticketPrice = Number(lockedCategory.price);
         const financials = FinancialCalculatorService.calculateTicketingFinancials({
-            ticketFacialPrice: price,
+            ticketFacialPrice: ticketPrice,
             serviceFeeRatePercent: params.serviceFeeRate ?? 5.0,
             aggregatorFeeRatePercent: params.aggregatorFeeRate ?? 1.5,
         });
@@ -529,7 +575,7 @@ export class EventService {
                 user_id: params.userId,
                 order_id: params.orderId || null,
                 ticket_number: ticketNumber,
-                price: price,
+                price: ticketPrice,
                 qr_code: qrCode,
                 status: 'VALIDE',
             })
@@ -546,7 +592,76 @@ export class EventService {
             throw new Error(`Échec de la génération du billet: ${ticketErr?.message}`);
         }
 
-        // 4. Notification au partenaire organisateur
+        // 4. Traçabilité financière obligatoire (§76 & §160 CDC) :
+        // Si le billet payant est émis hors parcours webhook (guichet Contrôleur / invitation Partenaire),
+        // on enregistre systématiquement l'écriture financière dans la table 'payments'
+        if (!params.paymentConfirmed && ticketPrice > 0) {
+            if (isAuthorizedStaff) {
+                // Encaissement Guichet Physique (Cash / Espèces)
+                const cashTxId = `TX-CASH-${Date.now()}-${randomUUID().substring(0, 8)}`;
+                await supabase.from('payments').insert({
+                    transaction_id: cashTxId,
+                    client_id: params.userId,
+                    partner_id: category.events?.partner_id || null,
+                    ticket_id: ticket.id,
+                    payment_target: 'TICKET',
+                    amount: ticketPrice,
+                    currency: 'XOF',
+                    payment_method: 'CASH',
+                    is_platform_payment: false,
+                    offline_payment_method: 'ESPECES',
+                    aggregator: 'GUICHET_PHYSIQUE',
+                    aggregator_fee: 0,
+                    service_fee: financials.serviceFeeAmount,
+                    gross_event_village_revenue: financials.serviceFeeAmount,
+                    net_event_village_revenue: financials.serviceFeeAmount,
+                    partner_payout_amount: ticketPrice,
+                    status: 'SUCCESS',
+                    provider_status: 'GUICHET_CASH',
+                    idempotency_key: `IDEMP-CASH-${ticket.id}`,
+                    metadata: {
+                        issued_by_role: role,
+                        issued_by_user_id: params.userId,
+                        channel: 'GUICHET',
+                        event_id: params.eventId,
+                        category_id: params.categoryId,
+                    },
+                    paid_at: nowIso,
+                });
+            } else if (isPartnerOwner) {
+                // Billet Invitation / Gratuité Organisateur (Auditable par Superadmin §160)
+                const invTxId = `TX-INV-${Date.now()}-${randomUUID().substring(0, 8)}`;
+                await supabase.from('payments').insert({
+                    transaction_id: invTxId,
+                    client_id: params.userId,
+                    partner_id: category.events?.partner_id || null,
+                    ticket_id: ticket.id,
+                    payment_target: 'TICKET',
+                    amount: 0,
+                    currency: 'XOF',
+                    payment_method: 'INVITATION',
+                    is_platform_payment: false,
+                    aggregator: 'ORGANISATEUR_INVITATION',
+                    aggregator_fee: 0,
+                    service_fee: 0,
+                    gross_event_village_revenue: 0,
+                    net_event_village_revenue: 0,
+                    partner_payout_amount: 0,
+                    status: 'SUCCESS',
+                    provider_status: 'INVITATION_ORGANISATEUR',
+                    idempotency_key: `IDEMP-INV-${ticket.id}`,
+                    metadata: {
+                        issued_by_role: 'PARTENAIRE_ORGANISATEUR',
+                        is_complimentary: true,
+                        event_id: params.eventId,
+                        category_id: params.categoryId,
+                    },
+                    paid_at: nowIso,
+                });
+            }
+        }
+
+        // 5. Notification au partenaire organisateur
         if (category.events?.partner_id) {
             const { data: partner } = await supabase
                 .from('partners')
@@ -558,9 +673,9 @@ export class EventService {
                 await NotificationService.createNotification({
                     userId: partner.user_id,
                     title: 'Nouveau billet vendu !',
-                    message: `Un billet "${lockedCategory.name}" a été vendu pour votre événement "${category.events.title}" (${price} FCFA).`,
+                    message: `Un billet "${lockedCategory.name}" a été émis pour votre événement "${category.events.title}" (${ticketPrice} FCFA).`,
                     type: 'SYSTEM',
-                    data: { eventId: params.eventId, ticketId: ticket.id, price },
+                    data: { eventId: params.eventId, ticketId: ticket.id, price: ticketPrice },
                 });
             }
         }
@@ -571,4 +686,146 @@ export class EventService {
             financials,
         };
     }
+
+    /**
+     * Remboursement d'un billet (§76 CDC V3.0)
+     * Annule le ticket, régularise sold_quantity, crée une ligne refunds,
+     * et notifie le client + le partenaire organisateur.
+     */
+    public static async refundTicket(params: {
+        ticketId: string;
+        operatorId: string; // User ID de la personne qui effectue le remboursement (PARTENAIRE, ADMIN, CONTROLEUR)
+        operatorRole: string;
+        reason: string;
+    }) {
+        const supabase = getServiceRoleClient();
+
+
+        // 1. Récupération du ticket avec toutes les jointures nécessaires
+        const { data: ticket, error: ticketErr } = await supabase
+            .from('tickets')
+            .select('*, ticket_categories(*, events(id, title, partner_id, partners(user_id, phone))), payments(*)')
+            .eq('id', params.ticketId)
+            .single();
+
+        if (ticketErr || !ticket) {
+            throw new Error('Ticket introuvable.');
+        }
+
+        if (ticket.status === 'REMBOURSE') {
+            throw new Error('Ce billet a déjà été remboursé.');
+        }
+
+        if (ticket.status === 'ANNULE') {
+            throw new Error('Ce billet est annulé — il ne peut pas être remboursé.');
+        }
+
+        // 2. Vérification de l'autorisation : seul le partenaire propriétaire ou le staff peut rembourser
+        const category = ticket.ticket_categories;
+        if (!category) {
+            throw new Error('Catégorie de billet introuvable.');
+        }
+        const event = category.events;
+        const partnerUserId = event?.partners?.user_id;
+
+        const isStaff = ['ADMIN', 'SUPERADMIN', 'CONTROLEUR'].includes(params.operatorRole);
+        const isOwner = partnerUserId === params.operatorId;
+
+        if (!isStaff && !isOwner) {
+            throw new Error('Accès non autorisé : seul le partenaire organisateur ou le staff peut rembourser un billet.');
+        }
+
+        // 3. Mise à jour atomique du ticket → REMBOURSE
+        const { error: updateTicketErr } = await supabase
+            .from('tickets')
+            .update({
+                status: 'REMBOURSE',
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', params.ticketId)
+            .eq('status', ticket.status); // Guard contre une race condition
+
+        if (updateTicketErr) {
+            throw new Error(`Échec de la mise à jour du statut du billet: ${updateTicketErr.message}`);
+        }
+
+        // 4. Régularisation atomique du sold_quantity (décrémentation)
+        const currentSold = Number(category.sold_quantity);
+        if (currentSold > 0) {
+            await supabase
+                .from('ticket_categories')
+                .update({
+                    sold_quantity: currentSold - 1,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', category.id)
+                .eq('sold_quantity', currentSold); // Compare-and-swap
+        }
+
+        // 5. Recherche du paiement original associé
+        const originalPayment = Array.isArray(ticket.payments)
+            ? ticket.payments.find((p: any) => p.status === 'SUCCESS' && p.ticket_id === ticket.id)
+            : null;
+
+        // 6. Création d'une ligne refunds (traçabilité financière §76)
+        const refundTxId = `REFUND-${Date.now()}-${randomUUID().substring(0, 8)}`;
+        const refundAmount = Number(ticket.price) || 0;
+
+        if (originalPayment) {
+            const { error: refundErr } = await supabase
+                .from('refunds')
+                .insert({
+                    payment_id: originalPayment.id,
+                    refund_transaction_id: refundTxId,
+                    amount: refundAmount,
+                    reason: params.reason,
+                    status: 'PROCESSED',
+                    processed_by: params.operatorId,
+                });
+
+            if (refundErr) {
+                console.error('[EventService.refundTicket] Erreur création refund:', refundErr);
+            }
+        }
+
+        // 7. Notifications : client + partenaire
+        // Notification au client
+        await NotificationService.createNotification({
+            userId: ticket.user_id,
+            title: 'Billet Remboursé',
+            message: `Votre billet n°${ticket.ticket_number} a été remboursé${refundAmount > 0 ? ` (${refundAmount.toLocaleString('fr-FR')} FCFA)` : ''}. Motif : ${params.reason}`,
+            type: 'PAYMENT',
+            data: {
+                ticketId: ticket.id,
+                ticketNumber: ticket.ticket_number,
+                refundAmount,
+                reason: params.reason,
+            },
+        });
+
+        // Notification au partenaire
+        if (partnerUserId) {
+            await NotificationService.createNotification({
+                userId: partnerUserId,
+                title: 'Remboursement Billet Traité',
+                message: `Le billet n°${ticket.ticket_number} (${refundAmount.toLocaleString('fr-FR')} FCFA) a été remboursé. Motif : ${params.reason}`,
+                type: 'PAYMENT',
+                data: {
+                    ticketId: ticket.id,
+                    eventId: event?.id,
+                    refundAmount,
+                    processedBy: params.operatorId,
+                },
+            });
+        }
+
+        return {
+            success: true,
+            ticketId: params.ticketId,
+            refundTransactionId: refundTxId,
+            refundAmount,
+            newSoldQuantity: Math.max(0, currentSold - 1),
+        };
+    }
 }
+

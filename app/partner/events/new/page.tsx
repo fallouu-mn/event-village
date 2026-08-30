@@ -3,23 +3,18 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { z } from 'zod';
 import {
     Calendar,
     ArrowLeft,
     Plus,
     Trash2,
-    Clock,
-    MapPin,
-    Ticket,
-    Sparkles,
-    Info,
-    CheckCircle2,
-    AlertCircle,
     ChevronRight,
     Save,
-    Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ImageUpload } from '@/components/ui/ImageUpload';
+import { useToast } from '@/components/ui/Toast';
 
 interface ProgramItem {
     id: string;
@@ -37,11 +32,45 @@ interface TicketCategory {
     description: string;
 }
 
+const ticketCategorySchema = z.object({
+    name: z.string().min(1, 'Le nom du pass est requis.'),
+    price: z.number().min(0, 'Le prix doit être positif ou nul.'),
+    total_quantity: z.number().min(1, 'La quantité doit être au moins 1.'),
+    description: z.string().optional(),
+});
+
+const eventFormSchema = z.object({
+    title: z.string().min(3, 'Le titre doit contenir au moins 3 caractères.'),
+    description: z.string().optional(),
+    start_date: z.string().min(1, 'La date de début est requise.').refine(
+        (val) => {
+            if (!val) return false;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const selected = new Date(val + 'T00:00:00');
+            return selected >= today;
+        },
+        { message: 'La date de début doit être dans le futur.' }
+    ),
+    start_time: z.string().min(1, 'L\'heure de debut est requise.'),
+    end_date: z.string().optional(),
+    end_time: z.string().optional(),
+    location: z.string().min(2, 'Le lieu doit contenir au moins 2 caractères.'),
+    city: z.string().default('Dakar'),
+    capacity: z
+        .union([z.number().positive('La capacité doit être positive.'), z.literal('')])
+        .optional(),
+    ticket_categories: z.array(ticketCategorySchema).optional(),
+});
+
+type FormErrors = Record<string, string>;
+
 export default function NewEventPage() {
     const router = useRouter();
+    const toast = useToast();
     const [currentStep, setCurrentStep] = useState(1);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [errors, setErrors] = useState<FormErrors>({});
 
     // Étape 1 : Infos Générales (§30)
     const [title, setTitle] = useState('');
@@ -56,17 +85,14 @@ export default function NewEventPage() {
     const [capacity, setCapacity] = useState<number | ''>('');
 
     // Étape 2 : Programme (§32)
-    const [programItems, setProgramItems] = useState<ProgramItem[]>([
-        { id: '1', time: '18:00', title: 'Ouverture des portes & Accueil', artistOrSpeaker: 'DJ Warmup', description: 'Arrivée des participants' },
-        { id: '2', time: '20:00', title: 'Concert Principal', artistOrSpeaker: 'Artiste Tête d\'affiche', description: 'Performance live sur scène' },
-    ]);
+    const [programItems, setProgramItems] = useState<ProgramItem[]>([]);
 
     // Étape 3 : Infos Pratiques (§33)
     const [address, setAddress] = useState('');
     const [accessNotes, setAccessNotes] = useState('');
-    const [parking, setParking] = useState('Parking sécurisé gratuit');
-    const [contactPhone, setContactPhone] = useState('+221 77 000 00 00');
-    const [rules, setRules] = useState('Tenue correcte exigée. Objets tranchants et bouteilles en verre interdits.');
+    const [parking, setParking] = useState('');
+    const [contactPhone, setContactPhone] = useState('');
+    const [rules, setRules] = useState('');
 
     // Étape 4 : Services Associés (§34)
     const [services, setServices] = useState({
@@ -77,16 +103,13 @@ export default function NewEventPage() {
     });
 
     // Étape 5 : Catégories de Billets (§35)
-    const [ticketCategories, setTicketCategories] = useState<TicketCategory[]>([
-        { id: '1', name: 'Pass Standard', price: 5000, total_quantity: 100, description: 'Accès standard à l\'événement' },
-        { id: '2', name: 'Pass VIP', price: 15000, total_quantity: 25, description: 'Accès espace VIP & cocktail de bienvenue' },
-    ]);
+    const [ticketCategories, setTicketCategories] = useState<TicketCategory[]>([]);
 
     // Handlers Programme
     const addProgramItem = () => {
         setProgramItems([
             ...programItems,
-            { id: Date.now().toString(), time: '21:00', title: '', artistOrSpeaker: '', description: '' },
+            { id: Date.now().toString(), time: '', title: '', artistOrSpeaker: '', description: '' },
         ]);
     };
 
@@ -104,7 +127,7 @@ export default function NewEventPage() {
     const addTicketCategory = () => {
         setTicketCategories([
             ...ticketCategories,
-            { id: Date.now().toString(), name: 'Pass Découverte', price: 2500, total_quantity: 50, description: '' },
+            { id: Date.now().toString(), name: '', price: 0, total_quantity: 1, description: '' },
         ]);
     };
 
@@ -112,20 +135,97 @@ export default function NewEventPage() {
         setTicketCategories(ticketCategories.filter((cat) => cat.id !== id));
     };
 
-    const updateTicketCategory = (id: string, field: keyof TicketCategory, value: any) => {
+    const updateTicketCategory = (id: string, field: keyof TicketCategory, value: string | number) => {
         setTicketCategories(
             ticketCategories.map((cat) => (cat.id === id ? { ...cat, [field]: value } : cat))
         );
     };
 
+    // Validation
+    const validateForm = (): boolean => {
+        const formData: Record<string, unknown> = {
+            title,
+            description: description || undefined,
+            start_date: startDate,
+            start_time: startTime,
+            end_date: endDate || undefined,
+            end_time: endTime || undefined,
+            location,
+            city,
+            capacity: capacity === '' ? undefined : capacity,
+        };
+
+        if (services.ticketing) {
+            formData.ticket_categories = ticketCategories.map((c) => ({
+                name: c.name,
+                price: Number(c.price),
+                total_quantity: Number(c.total_quantity),
+                description: c.description || undefined,
+            }));
+        }
+
+        const result = eventFormSchema.safeParse(formData);
+        const newErrors: FormErrors = {};
+
+        if (!result.success) {
+            for (const issue of result.error.issues) {
+                const path = issue.path.join('.');
+                if (!newErrors[path]) {
+                    newErrors[path] = issue.message;
+                }
+            }
+        }
+
+        // Validate ticket_categories array items individually when ticketing is enabled
+        if (services.ticketing && ticketCategories.length > 0) {
+            ticketCategories.forEach((cat, index) => {
+                const catResult = ticketCategorySchema.safeParse({
+                    name: cat.name,
+                    price: Number(cat.price),
+                    total_quantity: Number(cat.total_quantity),
+                    description: cat.description || undefined,
+                });
+                if (!catResult.success) {
+                    for (const issue of catResult.error.issues) {
+                        const key = `ticket_categories.${index}.${issue.path.join('.')}`;
+                        if (!newErrors[key]) {
+                            newErrors[key] = issue.message;
+                        }
+                    }
+                }
+            });
+        }
+
+        setErrors(newErrors);
+
+        if (Object.keys(newErrors).length > 0) {
+            // Navigate to the step that has the first error
+            const firstErrorKey = Object.keys(newErrors)[0];
+            if (
+                firstErrorKey.startsWith('title') ||
+                firstErrorKey.startsWith('start_date') ||
+                firstErrorKey.startsWith('start_time') ||
+                firstErrorKey.startsWith('location') ||
+                firstErrorKey.startsWith('city') ||
+                firstErrorKey.startsWith('capacity') ||
+                firstErrorKey.startsWith('description')
+            ) {
+                setCurrentStep(1);
+            } else if (firstErrorKey.startsWith('ticket_categories')) {
+                setCurrentStep(5);
+            }
+            return false;
+        }
+
+        return true;
+    };
+
     // Soumission Finale
     const handleSubmit = async () => {
-        setErrorMsg(null);
         setIsSubmitting(true);
 
-        if (!title.trim() || !startDate || !startTime || !location.trim()) {
-            setErrorMsg('Veuillez remplir tous les champs obligatoires (Titre, Date, Heure, Lieu).');
-            setCurrentStep(1);
+        if (!validateForm()) {
+            toast.error('Veuillez corriger les erreurs du formulaire.');
             setIsSubmitting(false);
             return;
         }
@@ -169,12 +269,13 @@ export default function NewEventPage() {
 
             const data = await res.json();
             if (data.success) {
+                toast.success('Événement créé en brouillon avec succès !');
                 router.push('/partner/events');
             } else {
-                setErrorMsg(data.error || 'Une erreur est survenue.');
+                toast.error(data.error || 'Une erreur est survenue.');
             }
         } catch (err: unknown) {
-            setErrorMsg('Erreur réseau lors de la création.');
+            toast.error('Erreur réseau lors de la création.');
         } finally {
             setIsSubmitting(false);
         }
@@ -199,7 +300,7 @@ export default function NewEventPage() {
                     Créer un Nouvel Événement
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400 mt-1">
-                    Conforme au Cahier des Charges V3.0 (§30-§35) — L'événement sera créé en statut <strong>Brouillon</strong>.
+                    Conforme au Cahier des Charges V3.0 (§30-§35) — L&apos;événement sera créé en statut <strong>Brouillon</strong>.
                 </p>
             </div>
 
@@ -227,13 +328,6 @@ export default function NewEventPage() {
                 ))}
             </div>
 
-            {errorMsg && (
-                <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 text-xs font-semibold flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    <span>{errorMsg}</span>
-                </div>
-            )}
-
             {/* Contenu des Étapes */}
             <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-6 sm:p-8 space-y-6 shadow-sm">
                 {/* ÉTAPE 1 : INFOS GÉNÉRALES */}
@@ -246,7 +340,7 @@ export default function NewEventPage() {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
-                                    Titre de l'événement <span className="text-red-500">*</span>
+                                    Titre de l&apos;événement <span className="text-red-500">*</span>
                                 </label>
                                 <input
                                     type="text"
@@ -256,6 +350,9 @@ export default function NewEventPage() {
                                     onChange={(e) => setTitle(e.target.value)}
                                     className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
                                 />
+                                {errors.title && (
+                                    <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.title}</p>
+                                )}
                             </div>
 
                             <div>
@@ -283,6 +380,9 @@ export default function NewEventPage() {
                                         onChange={(e) => setStartDate(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
                                     />
+                                    {errors.start_date && (
+                                        <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.start_date}</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
@@ -293,6 +393,34 @@ export default function NewEventPage() {
                                         required
                                         value={startTime}
                                         onChange={(e) => setStartTime(e.target.value)}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                    />
+                                    {errors.start_time && (
+                                        <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.start_time}</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
+                                        Date de fin
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
+                                        Heure de fin
+                                    </label>
+                                    <input
+                                        type="time"
+                                        value={endTime}
+                                        onChange={(e) => setEndTime(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
                                     />
                                 </div>
@@ -311,6 +439,9 @@ export default function NewEventPage() {
                                         onChange={(e) => setLocation(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
                                     />
+                                    {errors.location && (
+                                        <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.location}</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
@@ -326,18 +457,12 @@ export default function NewEventPage() {
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
-                                        URL Image d'affiche (ou upload)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="https://images.unsplash.com/photo-..."
-                                        value={imageUrl}
-                                        onChange={(e) => setImageUrl(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
-                                    />
-                                </div>
+                                <ImageUpload
+                                    value={imageUrl}
+                                    onChange={setImageUrl}
+                                    folder="events"
+                                    label="Affiche de l'événement"
+                                />
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                                         Capacité maximale totale
@@ -349,6 +474,9 @@ export default function NewEventPage() {
                                         onChange={(e) => setCapacity(e.target.value === '' ? '' : Number(e.target.value))}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF6B35] focus:outline-none"
                                     />
+                                    {errors.capacity && (
+                                        <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.capacity}</p>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -364,7 +492,7 @@ export default function NewEventPage() {
                                     2. Programme & Déroulé (§32 CDC V3.0)
                                 </h2>
                                 <p className="text-xs text-slate-500 dark:text-zinc-400">
-                                    Définissez l'ordre chronologique des activités, passages d'artistes ou interventions.
+                                    Définissez l&apos;ordre chronologique des activités, passages d&apos;artistes ou interventions.
                                 </p>
                             </div>
                             <Button size="sm" onClick={addProgramItem} variant="outline" className="text-xs flex items-center gap-1">
@@ -374,6 +502,11 @@ export default function NewEventPage() {
                         </div>
 
                         <div className="space-y-4">
+                            {programItems.length === 0 && (
+                                <div className="text-center py-8 text-xs text-slate-400 dark:text-zinc-500">
+                                    Aucun créneau ajouté. Cliquez sur &quot;Ajouter un créneau&quot; pour commencer.
+                                </div>
+                            )}
                             {programItems.map((item, index) => (
                                 <div
                                     key={item.id}
@@ -476,6 +609,7 @@ export default function NewEventPage() {
                                     </label>
                                     <input
                                         type="text"
+                                        placeholder="Ex: Parking sécurisé gratuit"
                                         value={parking}
                                         onChange={(e) => setParking(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
@@ -490,6 +624,7 @@ export default function NewEventPage() {
                                     </label>
                                     <input
                                         type="text"
+                                        placeholder="Ex: +221 77 000 00 00"
                                         value={contactPhone}
                                         onChange={(e) => setContactPhone(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
@@ -501,6 +636,7 @@ export default function NewEventPage() {
                                     </label>
                                     <input
                                         type="text"
+                                        placeholder="Ex: Tenue correcte exigée"
                                         value={rules}
                                         onChange={(e) => setRules(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
@@ -544,7 +680,7 @@ export default function NewEventPage() {
                                 <div>
                                     <p className="text-xs font-bold text-slate-900 dark:text-white">Réservation de Tables VIP</p>
                                     <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-                                        Permet aux clients de réserver des tables exclusives pour l'événement.
+                                        Permet aux clients de réserver des tables exclusives pour l&apos;événement.
                                     </p>
                                 </div>
                             </label>
@@ -574,7 +710,7 @@ export default function NewEventPage() {
                                 <div>
                                     <p className="text-xs font-bold text-slate-900 dark:text-white">Promotion Sponsorisée</p>
                                     <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-                                        Bannière en tête d'affiche sur la page d'accueil d'Event Village.
+                                        Bannière en tête d&apos;affiche sur la page d&apos;accueil d&apos;Event Village.
                                     </p>
                                 </div>
                             </label>
@@ -601,6 +737,11 @@ export default function NewEventPage() {
                         </div>
 
                         <div className="space-y-4">
+                            {ticketCategories.length === 0 && (
+                                <div className="text-center py-8 text-xs text-slate-400 dark:text-zinc-500">
+                                    Aucune catégorie de billet ajoutée. Cliquez sur &quot;Ajouter une catégorie&quot; pour commencer.
+                                </div>
+                            )}
                             {ticketCategories.map((cat, index) => (
                                 <div
                                     key={cat.id}
@@ -631,6 +772,9 @@ export default function NewEventPage() {
                                                 onChange={(e) => updateTicketCategory(cat.id, 'name', e.target.value)}
                                                 className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
                                             />
+                                            {errors[`ticket_categories.${index}.name`] && (
+                                                <p className="mt-1 text-[11px] font-semibold text-red-500">{errors[`ticket_categories.${index}.name`]}</p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
@@ -642,6 +786,9 @@ export default function NewEventPage() {
                                                 onChange={(e) => updateTicketCategory(cat.id, 'price', Number(e.target.value))}
                                                 className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
                                             />
+                                            {errors[`ticket_categories.${index}.price`] && (
+                                                <p className="mt-1 text-[11px] font-semibold text-red-500">{errors[`ticket_categories.${index}.price`]}</p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
@@ -653,6 +800,9 @@ export default function NewEventPage() {
                                                 onChange={(e) => updateTicketCategory(cat.id, 'total_quantity', Number(e.target.value))}
                                                 className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
                                             />
+                                            {errors[`ticket_categories.${index}.total_quantity`] && (
+                                                <p className="mt-1 text-[11px] font-semibold text-red-500">{errors[`ticket_categories.${index}.total_quantity`]}</p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -689,6 +839,7 @@ export default function NewEventPage() {
                         <Button
                             size="sm"
                             onClick={handleSubmit}
+                            isLoading={isSubmitting}
                             disabled={isSubmitting}
                             className="bg-[#FF6B35] hover:bg-[#ff5719] text-white text-xs flex items-center gap-2 shadow-lg shadow-[#FF6B35]/20"
                         >

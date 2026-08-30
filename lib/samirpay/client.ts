@@ -15,46 +15,41 @@ import {
 } from './types';
 
 export class SamirPayClient {
-    private readonly cashinUrl: string;
-    private readonly cashoutUrl: string;
-    private readonly soldeUrl: string;
-    private readonly statusUrl: string;
-    private readonly apiKey: string;
-    private readonly secretKey: string;
-    private readonly timeoutMs: number;
+    private get baseUrl(): string {
+        return (process.env.SAMIRPAY_API_URL || '').replace(/\/+$/, '');
+    }
+
+    private get cashinUrl(): string {
+        return process.env.SAMIRPAY_CASHIN_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/direct/initPayment` : '');
+    }
+
+    private get cashoutUrl(): string {
+        return process.env.SAMIRPAY_CASHOUT_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/payments/send` : '');
+    }
+
+    private get soldeUrl(): string {
+        return process.env.SAMIRPAY_SOLDE_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/payments/solde` : '');
+    }
+
+    private get statusUrl(): string {
+        return process.env.SAMIRPAY_STATUS_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/direct/status` : (this.cashinUrl ? this.cashinUrl.replace(/initPayment\/?$/, 'status') : ''));
+    }
+
+    private get apiKey(): string {
+        return process.env.SAMIRPAY_API_KEY || '';
+    }
+
+    private get secretKey(): string {
+        return process.env.SAMIRPAY_SECRET_KEY || '';
+    }
+
+    private readonly timeoutMs: number = 15000;
 
     constructor() {
         // Validation stricte de l'environnement serveur
         if (typeof window !== 'undefined') {
             throw new Error('SamirPayClient ne doit JAMAIS être instancié ou exécuté côté client/navigateur.');
         }
-
-        const baseUrl = (process.env.SAMIRPAY_API_URL || '').replace(/\/+$/, '');
-
-        // 1. Récupération dynamique des URLs complètes depuis les variables d'environnement
-        const cashinUrl = process.env.SAMIRPAY_CASHIN_URL || (baseUrl ? `${baseUrl}/api/tiers/direct/initPayment` : '');
-        const cashoutUrl = process.env.SAMIRPAY_CASHOUT_URL || (baseUrl ? `${baseUrl}/api/tiers/payments/send` : '');
-        const soldeUrl = process.env.SAMIRPAY_SOLDE_URL || (baseUrl ? `${baseUrl}/api/tiers/payments/solde` : '');
-        const statusUrl = process.env.SAMIRPAY_STATUS_URL || (baseUrl ? `${baseUrl}/api/tiers/direct/status` : (cashinUrl ? cashinUrl.replace(/initPayment\/?$/, 'status') : ''));
-
-        const apiKey = process.env.SAMIRPAY_API_KEY || '';
-        const secretKey = process.env.SAMIRPAY_SECRET_KEY || '';
-
-        if (!apiKey || !secretKey) {
-            console.warn('[SamirPayClient] SAMIRPAY_API_KEY ou SAMIRPAY_SECRET_KEY manquant dans l\'environnement serveur.');
-        }
-
-        if (!cashinUrl && !baseUrl) {
-            console.warn('[SamirPayClient] SAMIRPAY_CASHIN_URL ou SAMIRPAY_API_URL manquant dans l\'environnement serveur.');
-        }
-
-        this.cashinUrl = cashinUrl;
-        this.cashoutUrl = cashoutUrl;
-        this.soldeUrl = soldeUrl;
-        this.statusUrl = statusUrl;
-        this.apiKey = apiKey;
-        this.secretKey = secretKey;
-        this.timeoutMs = 15000; // Timeout 15 secondes
     }
 
     /**

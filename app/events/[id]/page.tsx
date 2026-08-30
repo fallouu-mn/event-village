@@ -209,19 +209,19 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
               onClick={() => setSelectedTier('standard')}
               className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                 selectedTier === 'standard'
-                  ? 'border-[#FF6B35] bg-[#FF6B35]/5 shadow-xs'
+                  ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs'
                   : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
               }`}
             >
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xs font-black text-slate-900 dark:text-white">Pass Standard</h3>
-                  <span className="text-xs font-black text-[#FF6B35] mt-0.5 block">15 000 FCFA</span>
+                  <span className="text-xs font-black text-[#FF5722] mt-0.5 block">15 000 FCFA</span>
                 </div>
                 <div
                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                     selectedTier === 'standard'
-                      ? 'border-[#FF6B35] bg-[#FF6B35] text-white'
+                      ? 'border-[#FF5722] bg-[#FF5722] text-white'
                       : 'border-slate-300 dark:border-zinc-700'
                   }`}
                 >
@@ -235,7 +235,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
               onClick={() => setSelectedTier('vip')}
               className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                 selectedTier === 'vip'
-                  ? 'border-[#FF6B35] bg-[#FF6B35]/5 shadow-xs'
+                  ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs'
                   : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
               }`}
             >
@@ -245,12 +245,12 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                     <h3 className="text-xs font-black text-slate-900 dark:text-white">Pass VIP Prestige</h3>
                     <Sparkles size={12} className="text-amber-500" />
                   </div>
-                  <span className="text-xs font-black text-[#FF6B35] mt-0.5 block">35 000 FCFA</span>
+                  <span className="text-xs font-black text-[#FF5722] mt-0.5 block">35 000 FCFA</span>
                 </div>
                 <div
                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                     selectedTier === 'vip'
-                      ? 'border-[#FF6B35] bg-[#FF6B35] text-white'
+                      ? 'border-[#FF5722] bg-[#FF5722] text-white'
                       : 'border-slate-300 dark:border-zinc-700'
                   }`}
                 >

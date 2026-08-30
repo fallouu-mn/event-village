@@ -294,7 +294,17 @@ export class HallService {
             .single();
 
         if (resErr || !reservation) {
-            throw new Error(`Échec création réservation: ${resErr?.message}`);
+            const errorMsg = resErr?.message || '';
+            if (
+                errorMsg.includes('déjà réservée') ||
+                errorMsg.includes('conflictuelles') ||
+                errorMsg.includes('exclusion') ||
+                errorMsg.includes('no_overlapping_hall_reservations') ||
+                (resErr as any)?.code === '23P01'
+            ) {
+                throw new Error('La salle est déjà réservée pour cette période (dates conflictuelles).');
+            }
+            throw new Error(`Échec création réservation: ${errorMsg}`);
         }
 
         // 8. Notification au Partenaire gérant la salle
@@ -312,7 +322,18 @@ export class HallService {
     }
 
     /**
-     * Confirmation d'une réservation par le Partenaire
+     * Confirmation d'une réservation de salle (§47-§48 CDC V3.0)
+     *
+     * Deux vecteurs de confirmation sont supportés et coexistent de manière complémentaire :
+     * 1. Déclenchement automatique par paiement de l'acompte (En ligne) :
+     *    Géré directement par le webhook SamirPay (`PaymentService.handleSamirPayWebhook`).
+     *    Dès que la transaction de paiement de l'acompte passe à `SUCCESS`, la réservation
+     *    est automatiquement passée à `payment_status = 'SUCCESS'` et `status = 'CONFIRMEE'`.
+     *
+     * 2. Déclenchement discrétionnaire par le Partenaire (Manuel / Hors plateforme) :
+     *    Exécuté via cette méthode `confirmReservation`. Permet au Partenaire gestionnaire
+     *    de valider manuellement une réservation (ex: acompte réglé en espèces / virement direct
+     *    hors plateforme selon §12 de l'architecture, ou accord commercial préalable).
      */
     public static async confirmReservation(reservationId: string, partnerUserId: string) {
         const supabase = getServiceRoleClient();

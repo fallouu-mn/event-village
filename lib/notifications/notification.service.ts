@@ -186,6 +186,28 @@ export class NotificationService {
         trialEndsAt: string;
         userId?: string;
     }): Promise<NotificationResult> {
+        // Idempotency guard: if the activation notification already exists, skip entirely.
+        // This prevents duplicate SMS when the activation endpoint is called more than once
+        // (e.g. HMR-driven dashboard remounts with stale AuthProvider state).
+        if (params.userId) {
+            try {
+                const supabase = getServiceRoleClient();
+                const { data: existing } = await supabase
+                    .from('notifications')
+                    .select('id')
+                    .eq('user_id', params.userId)
+                    .eq('title', 'Période d\'Essai Activée')
+                    .limit(1);
+
+                if (existing && existing.length > 0) {
+                    return { smsSent: false, emailSent: false, inAppCreated: false };
+                }
+            } catch {
+                // If the check fails, proceed — SMS idempotency falls back to the activation
+                // route's own is_new_activation guard.
+            }
+        }
+
         const d = new Date(params.trialEndsAt);
         const formattedDate = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 

@@ -1,9 +1,18 @@
 import type { Metadata, Viewport } from 'next';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { ToastProvider } from '@/components/ui/Toast';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-sans',
+  weight: ['400', '500', '600', '700', '800'],
+});
 
 export const metadata: Metadata = {
   title: 'Event Village — Plateforme Événementielle, Ticketing & Réservations',
@@ -25,7 +34,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#FF6B35',
+  themeColor: '#FF5722',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -37,18 +46,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" suppressHydrationWarning>
+    <html lang="fr" className={plusJakartaSans.variable} suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/branding/event-village-mark.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className="min-h-screen antialiased" suppressHydrationWarning>
+      <body className="min-h-screen antialiased font-sans" suppressHydrationWarning>
         <AuthProvider>
           <ThemeProvider>
             <ServiceWorkerRegister />
-            <AppLayout>{children}</AppLayout>
+            <ToastProvider>
+              <AppLayout>{children}</AppLayout>
+            </ToastProvider>
           </ThemeProvider>
         </AuthProvider>
       </body>

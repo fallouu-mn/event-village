@@ -73,12 +73,12 @@ export async function GET(req: NextRequest) {
         if (eventIds.length > 0) {
             const { data: tickets } = await supabase
                 .from('tickets')
-                .select('id, price_paid, status')
+                .select('id, price, status')
                 .in('event_id', eventIds)
                 .neq('status', 'ANNULE');
 
             ticketsSold = tickets?.length || 0;
-            ticketRevenue = tickets?.reduce((acc, t) => acc + (Number(t.price_paid) || 0), 0) || 0;
+            ticketRevenue = tickets?.reduce((acc, t) => acc + (Number(t.price) || 0), 0) || 0;
         }
 
         // 5. Commandes de restauration / services

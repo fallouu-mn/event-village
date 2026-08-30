@@ -122,27 +122,6 @@ export default function PartnerScanPage() {
           <span>Placez le QR Code du client dans le cadre</span>
         </p>
 
-        {/* Boutons de test rapide */}
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={() => handleVerifyTicket('EV-TICKET-VAL-001')}
-            className="px-3 py-1 rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-500/30"
-          >
-            Tester Valide
-          </button>
-          <button
-            onClick={() => handleVerifyTicket('EV-TICKET-USED-002')}
-            className="px-3 py-1 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-500/30"
-          >
-            Tester Déjà Utilisé
-          </button>
-          <button
-            onClick={() => handleVerifyTicket('INVALID-CODE')}
-            className="px-3 py-1 rounded-xl bg-red-500/15 text-red-700 dark:text-red-400 text-xs font-bold border border-red-500/30"
-          >
-            Tester Invalide
-          </button>
-        </div>
       </div>
 
       {/* 3. Saisie Manuelle */}
