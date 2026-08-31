@@ -682,155 +682,277 @@ export default function AdminDashboardPage() {
       {/* ====================================================================
           MODAL DÉTAILS PARTENAIRE
           ==================================================================== */}
+      {/* ====================================================================
+          MODAL DÉTAILS PARTENAIRE (ADAPTATIF & HAUTE VISIBILITÉ)
+          ==================================================================== */}
       {selectedPartner && (
         <Modal
           isOpen={isDetailsModalOpen}
           onClose={() => setIsDetailsModalOpen(false)}
-          title={`Dossier Partenaire : ${selectedPartner.company_name}`}
+          title={`Dossier Partenaire`}
+          subtitle={`Réf: ${selectedPartner.id.slice(0, 8).toUpperCase()}`}
+          icon={<Building2 size={20} />}
+          maxWidth="3xl"
         >
-          <div className="space-y-5 text-xs">
-            <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
-              <div>
-                <span className="text-slate-400 block font-medium">Nom de l&apos;entreprise</span>
-                <span className="font-bold text-slate-900 dark:text-white">{selectedPartner.company_name}</span>
+          <div className="space-y-6 text-xs">
+            {/* Header Hero du Partenaire */}
+            <div className="p-4 sm:p-5 rounded-3xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-orange-950/60 text-[#FF5722] font-black text-lg flex items-center justify-center flex-shrink-0 border border-orange-200 dark:border-orange-800/50 shadow-xs">
+                  {selectedPartner.company_name?.slice(0, 2).toUpperCase() || 'PA'}
+                </div>
+                <div className="min-w-0 space-y-0.5">
+                  <h4 className="text-base sm:text-lg font-black text-slate-900 dark:text-white break-words leading-tight">
+                    {selectedPartner.company_name}
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium break-words">
+                    Nom commercial : <span className="font-bold text-slate-700 dark:text-zinc-300">{selectedPartner.commercial_name || selectedPartner.company_name}</span>
+                  </p>
+                </div>
               </div>
-              <div>
-                <span className="text-slate-400 block font-medium">Nom commercial</span>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  {selectedPartner.commercial_name || 'Identique'}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block font-medium">Gérant / Contact</span>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  {selectedPartner.users?.first_name} {selectedPartner.users?.last_name}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block font-medium">Téléphone</span>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  {selectedPartner.phone || selectedPartner.users?.phone || 'Non renseigné'}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block font-medium">Email</span>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  {selectedPartner.email || selectedPartner.users?.email || 'Non renseigné'}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block font-medium">Ville & Adresse</span>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  {selectedPartner.city} • {selectedPartner.address || 'Non renseignée'}
-                </span>
+
+              <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                {selectedPartner.status === 'VALIDE' && (
+                  <Badge variant="success" size="md">
+                    <CheckCircle size={13} className="mr-1" />
+                    Partenaire Validé
+                  </Badge>
+                )}
+                {selectedPartner.status === 'EN_ATTENTE' && (
+                  <Badge variant="warning" size="md">
+                    <Clock size={13} className="mr-1" />
+                    En Attente de Revue
+                  </Badge>
+                )}
+                {selectedPartner.status === 'REJETE' && (
+                  <Badge variant="danger" size="md">
+                    <XCircle size={13} className="mr-1" />
+                    Candidature Rejetée
+                  </Badge>
+                )}
+                {selectedPartner.status === 'SUSPENDU' && (
+                  <Badge variant="danger" size="md">
+                    <ShieldAlert size={13} className="mr-1" />
+                    Compte Suspendu
+                  </Badge>
+                )}
               </div>
             </div>
 
-            {/* Description */}
+            {/* Grille Informations Établissement */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 block px-1">
+                Informations Légales & Localisation
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-4 sm:p-5 rounded-3xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
+                <div className="space-y-1">
+                  <span className="text-slate-400 dark:text-zinc-500 block font-medium">Raison Sociale</span>
+                  <span className="font-bold text-slate-900 dark:text-white block break-words text-xs">
+                    {selectedPartner.company_name}
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-slate-400 dark:text-zinc-500 block font-medium">Nom Commercial</span>
+                  <span className="font-bold text-slate-900 dark:text-white block break-words text-xs">
+                    {selectedPartner.commercial_name || 'Identique à la raison sociale'}
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-slate-400 dark:text-zinc-500 block font-medium">Ville / Région</span>
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1 text-xs">
+                    <MapPin size={13} className="text-[#FF5722] flex-shrink-0" />
+                    <span className="break-words">{selectedPartner.city || 'Dakar, Sénégal'}</span>
+                  </span>
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-3 space-y-1 pt-2 border-t border-slate-200/60 dark:border-zinc-800/60">
+                  <span className="text-slate-400 dark:text-zinc-500 block font-medium">Adresse physique complète</span>
+                  <span className="font-bold text-slate-900 dark:text-white block break-words text-xs">
+                    {selectedPartner.address || 'Non renseignée par le partenaire'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Grille Contact & Représentant */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 block px-1">
+                Contact & Gérant du Compte
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 sm:p-5 rounded-3xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
+                <div className="space-y-1">
+                  <span className="text-slate-400 dark:text-zinc-500 block font-medium">Gérant / Contact Principal</span>
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs">
+                    <Users size={13} className="text-slate-400 flex-shrink-0" />
+                    <span className="break-words">
+                      {selectedPartner.users?.first_name || '—'} {selectedPartner.users?.last_name || '—'}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-slate-400 dark:text-zinc-500 block font-medium">Numéro de Téléphone</span>
+                  <a
+                    href={`tel:${selectedPartner.phone || selectedPartner.users?.phone}`}
+                    className="font-bold text-[#FF5722] hover:underline flex items-center gap-1.5 text-xs"
+                  >
+                    <Phone size={13} className="flex-shrink-0" />
+                    <span className="break-words">
+                      {selectedPartner.phone || selectedPartner.users?.phone || 'Non renseigné'}
+                    </span>
+                  </a>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-slate-400 dark:text-zinc-500 block font-medium">Adresse Email</span>
+                  <a
+                    href={`mailto:${selectedPartner.email || selectedPartner.users?.email}`}
+                    className="font-bold text-slate-900 dark:text-white hover:text-[#FF5722] flex items-center gap-1.5 text-xs group"
+                  >
+                    <Mail size={13} className="text-slate-400 group-hover:text-[#FF5722] flex-shrink-0" />
+                    <span className="break-all">
+                      {selectedPartner.email || selectedPartner.users?.email || 'Non renseigné'}
+                    </span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Description / Présentation si existante */}
             {selectedPartner.description && (
-              <div>
-                <span className="text-slate-400 block font-medium mb-1">Présentation de l&apos;activité</span>
-                <p className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300">
+              <div className="space-y-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 block px-1">
+                  Présentation de l&apos;activité
+                </span>
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 leading-relaxed break-words">
                   {selectedPartner.description}
-                </p>
+                </div>
               </div>
             )}
 
             {/* Documents Légaux (Visionneuse Sécurisée Supabase) */}
-            <div>
-              <span className="text-slate-400 block font-medium mb-2">Documents & Justificatifs Légaux</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500">
+                  Documents & Justificatifs Légaux (Bucket Privé Sécurisé)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* Pièce d'Identité */}
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0">
-                      <FileText size={15} />
+                <div className="p-4 rounded-3xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex flex-col justify-between gap-3 transition-all hover:border-orange-300 dark:hover:border-orange-800/60">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-orange-100 dark:bg-orange-950/60 text-[#FF5722] flex items-center justify-center flex-shrink-0 shadow-xs">
+                      <FileText size={18} />
                     </div>
-                    <div className="truncate">
+                    <div className="min-w-0 space-y-0.5">
                       <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">
-                        Pièce d&apos;Identité
+                        Pièce d&apos;Identité Officielle (CNI / Passeport)
                       </span>
-                      <span className="text-[10px] text-slate-400 dark:text-zinc-500">
-                        {selectedPartner.id_card_url ? 'Document téléversé' : 'Non fourni'}
+                      <span className="text-[11px] text-slate-400 dark:text-zinc-500 block">
+                        {selectedPartner.id_card_url ? 'Fichier stocké de manière chiffrée' : 'Non fourni'}
                       </span>
                     </div>
                   </div>
 
-                  {selectedPartner.id_card_url ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleViewDocument(selectedPartner.id_card_url, 'Pièce d\'identité')}
-                      disabled={loadingDoc === selectedPartner.id_card_url}
-                      className="text-xs font-bold text-[#FF5722] hover:bg-orange-50 dark:hover:bg-orange-950/30 flex-shrink-0"
-                    >
-                      {loadingDoc === selectedPartner.id_card_url ? (
-                        <RefreshCw size={13} className="animate-spin mr-1" />
-                      ) : (
-                        <ExternalLink size={13} className="mr-1" />
-                      )}
-                      <span>Voir</span>
-                    </Button>
-                  ) : (
-                    <span className="text-[11px] font-bold text-slate-400 bg-slate-100 dark:bg-zinc-800 px-2 py-1 rounded-lg">
-                      Absent
-                    </span>
-                  )}
+                  <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-800/60 flex items-center justify-between">
+                    {selectedPartner.id_card_url ? (
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-900/50">
+                        ✓ Document Reçu
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-zinc-800 px-2.5 py-1 rounded-full">
+                        Document Absent
+                      </span>
+                    )}
+
+                    {selectedPartner.id_card_url && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleViewDocument(selectedPartner.id_card_url, 'Pièce d\'identité')}
+                        disabled={loadingDoc === selectedPartner.id_card_url}
+                        className="text-xs font-bold text-[#FF5722] hover:bg-orange-50 dark:hover:bg-orange-950/30 flex-shrink-0"
+                      >
+                        {loadingDoc === selectedPartner.id_card_url ? (
+                          <RefreshCw size={13} className="animate-spin mr-1.5" />
+                        ) : (
+                          <ExternalLink size={13} className="mr-1.5" />
+                        )}
+                        <span>Consulter</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {/* NINEA / RCCM */}
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/40 text-purple-600 flex items-center justify-center flex-shrink-0">
-                      <FileText size={15} />
+                <div className="p-4 rounded-3xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex flex-col justify-between gap-3 transition-all hover:border-purple-300 dark:hover:border-purple-800/60">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center flex-shrink-0 shadow-xs">
+                      <FileText size={18} />
                     </div>
-                    <div className="truncate">
+                    <div className="min-w-0 space-y-0.5">
                       <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">
-                        NINEA / RCCM
+                        Document d&apos;Entreprise (NINEA / RCCM)
                       </span>
-                      <span className="text-[10px] text-slate-400 dark:text-zinc-500">
-                        {selectedPartner.business_doc_url ? 'Document téléversé' : 'Non fourni'}
+                      <span className="text-[11px] text-slate-400 dark:text-zinc-500 block">
+                        {selectedPartner.business_doc_url ? 'Fichier stocké de manière chiffrée' : 'Non fourni'}
                       </span>
                     </div>
                   </div>
 
-                  {selectedPartner.business_doc_url ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleViewDocument(selectedPartner.business_doc_url, 'NINEA/RCCM')}
-                      disabled={loadingDoc === selectedPartner.business_doc_url}
-                      className="text-xs font-bold text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30 flex-shrink-0"
-                    >
-                      {loadingDoc === selectedPartner.business_doc_url ? (
-                        <RefreshCw size={13} className="animate-spin mr-1" />
-                      ) : (
-                        <ExternalLink size={13} className="mr-1" />
-                      )}
-                      <span>Voir</span>
-                    </Button>
-                  ) : (
-                    <span className="text-[11px] font-bold text-slate-400 bg-slate-100 dark:bg-zinc-800 px-2 py-1 rounded-lg">
-                      Absent
-                    </span>
-                  )}
+                  <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-800/60 flex items-center justify-between">
+                    {selectedPartner.business_doc_url ? (
+                      <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-900/50">
+                        ✓ Document Reçu
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-zinc-800 px-2.5 py-1 rounded-full">
+                        Document Absent
+                      </span>
+                    )}
+
+                    {selectedPartner.business_doc_url && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleViewDocument(selectedPartner.business_doc_url, 'NINEA/RCCM')}
+                        disabled={loadingDoc === selectedPartner.business_doc_url}
+                        className="text-xs font-bold text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30 flex-shrink-0"
+                      >
+                        {loadingDoc === selectedPartner.business_doc_url ? (
+                          <RefreshCw size={13} className="animate-spin mr-1.5" />
+                        ) : (
+                          <ExternalLink size={13} className="mr-1.5" />
+                        )}
+                        <span>Consulter</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* Alerte si erreur document */}
               {docError && (
-                <div className="mt-2.5 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
-                  <AlertCircle size={14} className="flex-shrink-0" />
+                <div className="mt-2.5 p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-center gap-2.5 text-xs text-red-600 dark:text-red-400">
+                  <AlertCircle size={16} className="flex-shrink-0" />
                   <span>{docError}</span>
                 </div>
               )}
             </div>
 
             {/* Boutons d'action dans la modal */}
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-zinc-800">
-              <Button variant="secondary" onClick={() => setIsDetailsModalOpen(false)}>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-zinc-800">
+              <Button
+                variant="secondary"
+                onClick={() => setIsDetailsModalOpen(false)}
+                className="w-full sm:w-auto"
+              >
                 Fermer
               </Button>
+
               {selectedPartner.status !== 'REJETE' && (
                 <Button
                   variant="secondary"
@@ -838,19 +960,22 @@ export default function AdminDashboardPage() {
                     setIsDetailsModalOpen(false);
                     handleOpenRejectModal(selectedPartner);
                   }}
-                  className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  className="w-full sm:w-auto text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-900/50"
                 >
-                  Rejeter
+                  <XCircle size={14} className="mr-1.5 text-red-500" />
+                  Rejeter la candidature
                 </Button>
               )}
+
               {selectedPartner.status !== 'VALIDE' && (
                 <Button
                   variant="primary"
                   onClick={() => handleValidatePartner(selectedPartner)}
                   disabled={isActionLoading === selectedPartner.id}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                 >
-                  Valider la Candidature
+                  <CheckCircle2 size={14} className="mr-1.5" />
+                  Valider & Activer le Partenaire
                 </Button>
               )}
             </div>
