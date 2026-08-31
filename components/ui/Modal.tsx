@@ -10,6 +10,7 @@ export interface ModalProps {
   subtitle?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
+  footer?: React.ReactNode;
   variant?: 'default' | 'glass' | 'dark';
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
 }
@@ -21,6 +22,7 @@ export const Modal: React.FC<ModalProps> = ({
   subtitle,
   icon,
   children,
+  footer,
   variant = 'default',
   maxWidth = 'lg',
 }) => {
@@ -68,26 +70,26 @@ export const Modal: React.FC<ModalProps> = ({
       />
 
       {/* Centering Wrapper */}
-      <div className="flex min-h-full items-center justify-center p-3 sm:p-5">
-        {/* Modal Card with scrollable internal body */}
+      <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4 md:p-6">
+        {/* Modal Card with scrollable internal body and pinned footer */}
         <div
-          className={`relative z-10 w-full ${maxWidthClass} my-auto rounded-3xl max-h-[92vh] flex flex-col overflow-hidden text-left shadow-2xl transition-all animate-in fade-in zoom-in-95 duration-200 ${variantStyle}`}
+          className={`relative z-10 w-full ${maxWidthClass} my-0 sm:my-auto rounded-t-3xl sm:rounded-3xl max-h-[88vh] sm:max-h-[85vh] flex flex-col overflow-hidden text-left shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 ${variantStyle}`}
         >
           {/* Pinned Header */}
           {(title || icon) && (
-            <div className="px-5 py-4 sm:px-6 sm:py-4.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between flex-shrink-0 bg-white/95 dark:bg-[#18181C]/95 backdrop-blur-md">
-              <div className="flex items-center gap-3">
+            <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between flex-shrink-0 bg-white/95 dark:bg-[#18181C]/95 backdrop-blur-md">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
                 {icon && (
-                  <div className="w-9 h-9 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0 font-bold border border-orange-200/50 dark:border-orange-900/30">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0 font-bold border border-orange-200/50 dark:border-orange-900/30">
                     {icon}
                   </div>
                 )}
-                <div>
-                  <h3 className="text-base font-black tracking-tight text-slate-900 dark:text-white leading-tight">
+                <div className="min-w-0 truncate">
+                  <h3 className="text-sm sm:text-base font-black tracking-tight text-slate-900 dark:text-white leading-tight truncate">
                     {title}
                   </h3>
                   {subtitle && (
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 font-medium leading-tight">
+                    <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium leading-tight truncate">
                       {subtitle}
                     </p>
                   )}
@@ -105,9 +107,16 @@ export const Modal: React.FC<ModalProps> = ({
           )}
 
           {/* Scrollable Body */}
-          <div className="p-5 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
             {children}
           </div>
+
+          {/* Pinned Footer if provided */}
+          {footer && (
+            <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-100 dark:border-zinc-800/80 flex items-center justify-end gap-2.5 sm:gap-3 flex-shrink-0 bg-slate-50/95 dark:bg-[#151518]/95 backdrop-blur-md">
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </div>
