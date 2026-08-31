@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -10,10 +10,12 @@ import {
     KeyRound,
     AlertCircle,
     ArrowRight,
-    Sparkles,
     ShieldCheck,
     Briefcase,
     RotateCcw,
+    ShieldAlert,
+    Clock,
+    AlertTriangle,
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +23,11 @@ import { OtpInput } from '@/components/auth/OtpInput';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
+
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_SECONDS = 60;
+const STORAGE_KEY_LOCKOUT = 'ev_login_lockout_until';
+const STORAGE_KEY_ATTEMPTS = 'ev_login_failed_attempts';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -40,6 +47,105 @@ export default function LoginPage() {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+    // =========================================================================
+    // 🛡️ SYSTÈME ANTI-FORCE BRUTE & VERROUILLAGE SÉCURITÉ (Look Bancaire)
+    // =========================================================================
+    const [failedAttempts, setFailedAttempts] = useState(0);
+    const [isLockedOut, setIsLockedOut] = useState(false);
+    const [lockoutRemaining, setLockoutRemaining] = useState(0);
+    const [initialLockoutDuration, setInitialLockoutDuration] = useState(LOCKOUT_DURATION_SECONDS);
+
+    // 1. Initialisation au montage depuis localStorage (survit aux F5 / rechargements)
+    useEffect(() => {
+        try {
+            const storedLockout = localStorage.getItem(STORAGE_KEY_LOCKOUT);
+            const storedAttempts = localStorage.getItem(STORAGE_KEY_ATTEMPTS);
+
+            if (storedAttempts) {
+                const count = parseInt(storedAttempts, 10);
+                if (!isNaN(count)) setFailedAttempts(count);
+            }
+
+            if (storedLockout) {
+                const lockoutUntil = parseInt(storedLockout, 10);
+                const now = Date.now();
+                if (!isNaN(lockoutUntil) && lockoutUntil > now) {
+                    const remaining = Math.ceil((lockoutUntil - now) / 1000);
+                    setIsLockedOut(true);
+                    setLockoutRemaining(remaining);
+                    setInitialLockoutDuration(Math.max(LOCKOUT_DURATION_SECONDS, remaining));
+                } else {
+                    localStorage.removeItem(STORAGE_KEY_LOCKOUT);
+                    localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
+                    setFailedAttempts(0);
+                    setIsLockedOut(false);
+                }
+            }
+        } catch {}
+    }, []);
+
+    // 2. Décompte temps réel du verrouillage de sécurité
+    useEffect(() => {
+        if (!isLockedOut || lockoutRemaining <= 0) return;
+
+        const interval = setInterval(() => {
+            setLockoutRemaining((prev) => {
+                if (prev <= 1) {
+                    setIsLockedOut(false);
+                    setFailedAttempts(0);
+                    try {
+                        localStorage.removeItem(STORAGE_KEY_LOCKOUT);
+                        localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
+                    } catch {}
+                    setSuccessMessage('Accès déverrouillé. Vous pouvez à nouveau saisir vos identifiants.');
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [isLockedOut, lockoutRemaining]);
+
+    // 3. Enregistrement d'un échec de connexion
+    const recordFailedAttempt = useCallback((customError?: string) => {
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+
+        try {
+            localStorage.setItem(STORAGE_KEY_ATTEMPTS, nextAttempts.toString());
+        } catch {}
+
+        if (nextAttempts >= MAX_FAILED_ATTEMPTS) {
+            const lockoutUntil = Date.now() + LOCKOUT_DURATION_SECONDS * 1000;
+            try {
+                localStorage.setItem(STORAGE_KEY_LOCKOUT, lockoutUntil.toString());
+            } catch {}
+            setIsLockedOut(true);
+            setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
+            setInitialLockoutDuration(LOCKOUT_DURATION_SECONDS);
+            setErrorMessage(null); // L'alerte bancaire rouge prend le relais
+        } else {
+            const remaining = MAX_FAILED_ATTEMPTS - nextAttempts;
+            const attemptsWarning = `(${remaining} tentative${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''} avant verrouillage temporaire)`;
+            setErrorMessage(
+                customError ? `${customError} ${attemptsWarning}` : `Identifiant ou mot de passe incorrect. ${attemptsWarning}`
+            );
+        }
+    }, [failedAttempts]);
+
+    // 4. Réinitialisation après succès
+    const clearLockoutState = useCallback(() => {
+        try {
+            localStorage.removeItem(STORAGE_KEY_LOCKOUT);
+            localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
+        } catch {}
+        setFailedAttempts(0);
+        setIsLockedOut(false);
+        setLockoutRemaining(0);
+    }, []);
+
+    // Gestion des erreurs dans l'URL
     useEffect(() => {
         if (errorParam === 'unauthorized_admin') {
             setErrorMessage('Accès restreint aux Administrateurs et Superadministrateurs.');
@@ -59,6 +165,7 @@ export default function LoginPage() {
 
     // Redirection après connexion réussie selon le rôle
     const handlePostLoginRedirect = async (userId: string) => {
+        clearLockoutState();
         const supabase = getBrowserClient();
         const { data: profile } = await supabase
             .from('users')
@@ -117,6 +224,8 @@ export default function LoginPage() {
     // 1. Connexion classique par Mot de Passe (Email ou Téléphone)
     const handlePasswordLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isLockedOut) return;
+
         setErrorMessage(null);
         setSuccessMessage(null);
 
@@ -143,7 +252,14 @@ export default function LoginPage() {
 
                 const resolveData = await resolveRes.json();
                 if (!resolveRes.ok) {
-                    throw new Error(resolveData.error || 'Aucun compte associé à ce numéro.');
+                    if (resolveRes.status === 429) {
+                        setIsLockedOut(true);
+                        setLockoutRemaining(resolveData.remainingSeconds || LOCKOUT_DURATION_SECONDS);
+                        throw new Error(resolveData.error || 'Trop de requêtes. Verrouillage temporaire.');
+                    }
+                    recordFailedAttempt('Aucun compte associé à ce numéro de téléphone.');
+                    setIsLoading(false);
+                    return;
                 }
                 loginEmail = resolveData.email;
             }
@@ -155,7 +271,9 @@ export default function LoginPage() {
 
             if (authResult.error) {
                 if (authResult.error.message.includes('Invalid login credentials')) {
-                    throw new Error('Identifiant ou mot de passe incorrect.');
+                    recordFailedAttempt('Identifiant ou mot de passe incorrect.');
+                    setIsLoading(false);
+                    return;
                 }
                 throw authResult.error;
             }
@@ -174,6 +292,8 @@ export default function LoginPage() {
     // 2. Envoi du code OTP par SMS via MTarget
     const handleSendOtp = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
+        if (isLockedOut) return;
+
         setErrorMessage(null);
         setSuccessMessage(null);
 
@@ -195,6 +315,10 @@ export default function LoginPage() {
 
             const resolveData = await resolveRes.json();
             if (!resolveRes.ok) {
+                if (resolveRes.status === 429) {
+                    setIsLockedOut(true);
+                    setLockoutRemaining(resolveData.remainingSeconds || LOCKOUT_DURATION_SECONDS);
+                }
                 throw new Error(resolveData.error || 'Aucun compte associé à ce numéro de téléphone. Veuillez vous inscrire.');
             }
 
@@ -206,6 +330,10 @@ export default function LoginPage() {
 
             const data = await res.json();
             if (!res.ok) {
+                if (res.status === 429) {
+                    setIsLockedOut(true);
+                    setLockoutRemaining(data.remainingSeconds || LOCKOUT_DURATION_SECONDS);
+                }
                 throw new Error(data.error || 'Impossible d\'envoyer le code SMS.');
             }
 
@@ -224,6 +352,8 @@ export default function LoginPage() {
     // 3. Vérification du code OTP
     const handleVerifyOtp = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isLockedOut) return;
+
         setErrorMessage(null);
 
         if (otpCode.length !== 6) {
@@ -243,6 +373,12 @@ export default function LoginPage() {
 
             const verifyData = await res.json();
             if (!res.ok) {
+                if (res.status === 429) {
+                    setIsLockedOut(true);
+                    setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
+                } else {
+                    recordFailedAttempt('Code OTP incorrect ou expiré.');
+                }
                 throw new Error(verifyData.error || 'Code OTP incorrect.');
             }
 
@@ -263,6 +399,7 @@ export default function LoginPage() {
             if (userId) {
                 await handlePostLoginRedirect(userId);
             } else {
+                clearLockoutState();
                 window.location.href = redirectUrl || '/';
             }
         } catch (err: unknown) {
@@ -272,6 +409,11 @@ export default function LoginPage() {
             setIsLoading(false);
         }
     };
+
+    // Calcul du pourcentage restant pour la barre de décompte visuelle
+    const progressPercent = initialLockoutDuration > 0
+        ? Math.max(0, Math.min(100, (lockoutRemaining / initialLockoutDuration) * 100))
+        : 0;
 
     return (
         <div className="min-h-[85vh] flex items-center justify-center p-4 sm:p-6">
@@ -290,11 +432,75 @@ export default function LoginPage() {
                 </div>
 
                 {/* Carte Principale */}
-                <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-6">
+                <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-6 relative transition-all duration-300">
+
+                    {/* ================================================================= */}
+                    {/* 🔒 BANNIÈRE DE VERROUILLAGE SÉCURITÉ (DESIGN BANCAIRE HAUT DE GAMME) */}
+                    {/* ================================================================= */}
+                    {isLockedOut && (
+                        <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-red-500/15 via-red-500/5 to-amber-500/10 border-2 border-red-500/40 dark:border-red-500/50 shadow-xl shadow-red-500/10 animate-in fade-in duration-300 space-y-4">
+                            {/* Point lumineux pulsant */}
+                            <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 border border-red-500/30 text-[10px] font-black text-red-700 dark:text-red-300 tracking-wider uppercase">
+                                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                                <span>Verrouillé</span>
+                            </div>
+
+                            <div className="flex items-start gap-3.5 pr-20">
+                                <div className="w-11 h-11 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-600 dark:text-red-400 flex-shrink-0 shadow-inner">
+                                    <Lock size={22} className="animate-bounce duration-1000" />
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="text-sm font-black text-red-950 dark:text-red-200 tracking-tight flex items-center gap-1.5">
+                                        Protection Anti-Intrusion
+                                    </h3>
+                                    <p className="text-[11px] text-red-900/80 dark:text-red-300/80 leading-relaxed">
+                                        5 tentatives infructueuses consécutives. Par mesure de sécurité pour votre compte et votre portefeuille, la saisie est temporairement bloquée.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Boîtier Décompte en Temps Réel */}
+                            <div className="p-3.5 rounded-2xl bg-white/80 dark:bg-zinc-900/90 border border-red-200 dark:border-red-900/60 flex items-center justify-between shadow-xs">
+                                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300">
+                                    <Clock size={15} className="text-red-500 animate-spin duration-3000" />
+                                    <span>Déverrouillage automatique dans :</span>
+                                </div>
+                                <div className="px-3 py-1 rounded-xl bg-red-500 text-white font-mono text-sm font-black tracking-widest shadow-sm">
+                                    {lockoutRemaining < 10 ? `0${lockoutRemaining}s` : `${lockoutRemaining}s`}
+                                </div>
+                            </div>
+
+                            {/* Barre de progression fluide */}
+                            <div className="space-y-1">
+                                <div className="w-full h-1.5 rounded-full bg-red-200/60 dark:bg-red-950/80 overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-red-500 to-[#FF5722] transition-all duration-1000 ease-linear rounded-full"
+                                        style={{ width: `${progressPercent}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between text-[10px] text-slate-400 dark:text-zinc-500">
+                                    <span>Sécurité active</span>
+                                    <span>F5 / Rechargement bloqué</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Avertissement de tentatives restantes si > 0 et < 5 */}
+                    {!isLockedOut && failedAttempts > 0 && failedAttempts < MAX_FAILED_ATTEMPTS && (
+                        <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2.5">
+                            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" />
+                            <span>
+                                <strong>Attention :</strong> {failedAttempts}/{MAX_FAILED_ATTEMPTS} tentatives échouées. Le compte sera verrouillé à 5 erreurs.
+                            </span>
+                        </div>
+                    )}
+
                     {/* Sélecteur Mode (Mot de passe / OTP) */}
-                    <div className="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-900 text-xs font-bold">
+                    <div className={`grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-900 text-xs font-bold ${isLockedOut ? 'opacity-50 pointer-events-none' : ''}`}>
                         <button
                             type="button"
+                            disabled={isLockedOut}
                             onClick={() => {
                                 setIsOtpMode(false);
                                 setErrorMessage(null);
@@ -309,6 +515,7 @@ export default function LoginPage() {
                         </button>
                         <button
                             type="button"
+                            disabled={isLockedOut}
                             onClick={() => {
                                 setIsOtpMode(true);
                                 setErrorMessage(null);
@@ -324,8 +531,8 @@ export default function LoginPage() {
                     </div>
 
                     {/* Messages d'erreur et de succès */}
-                    {errorMessage && (
-                        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start gap-2.5">
+                    {errorMessage && !isLockedOut && (
+                        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start gap-2.5 animate-shake">
                             <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
                             <span>{errorMessage}</span>
                         </div>
@@ -348,11 +555,14 @@ export default function LoginPage() {
                                 <div className="relative">
                                     <input
                                         type="text"
+                                        disabled={isLockedOut || isLoading}
                                         value={identifier}
                                         onChange={(e) => setIdentifier(e.target.value)}
                                         placeholder="ex: 77 123 45 67 ou client@email.com"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
+                                        className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all ${
+                                            isLockedOut ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40' : ''
+                                        }`}
                                     />
                                     <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -365,7 +575,9 @@ export default function LoginPage() {
                                     </label>
                                     <Link
                                         href="/forgot-password"
-                                        className="text-[11px] font-bold text-[#FF5722] hover:underline"
+                                        className={`text-[11px] font-bold text-[#FF5722] hover:underline ${
+                                            isLockedOut ? 'pointer-events-none opacity-50' : ''
+                                        }`}
                                     >
                                         Mot de passe oublié ?
                                     </Link>
@@ -373,11 +585,14 @@ export default function LoginPage() {
                                 <div className="relative">
                                     <input
                                         type="password"
+                                        disabled={isLockedOut || isLoading}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         placeholder="••••••••"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
+                                        className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all ${
+                                            isLockedOut ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40' : ''
+                                        }`}
                                     />
                                     <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -389,9 +604,10 @@ export default function LoginPage() {
                                 size="lg"
                                 fullWidth
                                 isLoading={isLoading}
-                                leftIcon={<LogIn size={18} />}
+                                disabled={isLockedOut || isLoading}
+                                leftIcon={isLockedOut ? <Lock size={18} /> : <LogIn size={18} />}
                             >
-                                Se connecter
+                                {isLockedOut ? `Verrouillé (${lockoutRemaining}s)` : 'Se connecter'}
                             </Button>
                         </form>
                     )}
@@ -408,11 +624,14 @@ export default function LoginPage() {
                                         <div className="relative">
                                             <input
                                                 type="tel"
+                                                disabled={isLockedOut || isLoading}
                                                 value={identifier}
                                                 onChange={(e) => setIdentifier(e.target.value)}
                                                 placeholder="77 123 45 67"
                                                 required
-                                                className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
+                                                className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all ${
+                                                    isLockedOut ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40' : ''
+                                                }`}
                                             />
                                             <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                         </div>
@@ -427,9 +646,10 @@ export default function LoginPage() {
                                         size="lg"
                                         fullWidth
                                         isLoading={isLoading}
-                                        leftIcon={<KeyRound size={18} />}
+                                        disabled={isLockedOut || isLoading}
+                                        leftIcon={isLockedOut ? <Lock size={18} /> : <KeyRound size={18} />}
                                     >
-                                        Recevoir le code SMS
+                                        {isLockedOut ? `Verrouillé (${lockoutRemaining}s)` : 'Recevoir le code SMS'}
                                     </Button>
                                 </form>
                             ) : (
@@ -443,7 +663,7 @@ export default function LoginPage() {
                                     <OtpInput
                                         value={otpCode}
                                         onChange={setOtpCode}
-                                        disabled={isLoading}
+                                        disabled={isLockedOut || isLoading}
                                         hasError={!!errorMessage}
                                     />
 
@@ -453,17 +673,18 @@ export default function LoginPage() {
                                         size="lg"
                                         fullWidth
                                         isLoading={isLoading}
-                                        disabled={otpCode.length !== 6}
-                                        leftIcon={<ShieldCheck size={18} />}
+                                        disabled={isLockedOut || isLoading || otpCode.length !== 6}
+                                        leftIcon={isLockedOut ? <Lock size={18} /> : <ShieldCheck size={18} />}
                                     >
-                                        Valider et se connecter
+                                        {isLockedOut ? `Verrouillé (${lockoutRemaining}s)` : 'Valider et se connecter'}
                                     </Button>
 
                                     <div className="flex items-center justify-between text-xs pt-1">
                                         <button
                                             type="button"
+                                            disabled={isLockedOut}
                                             onClick={() => setOtpSent(false)}
-                                            className="text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white font-medium"
+                                            className="text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white font-medium disabled:opacity-50"
                                         >
                                             Modifier le numéro
                                         </button>
@@ -471,7 +692,7 @@ export default function LoginPage() {
                                         <button
                                             type="button"
                                             onClick={() => handleSendOtp()}
-                                            disabled={countdown > 0 || isLoading}
+                                            disabled={isLockedOut || countdown > 0 || isLoading}
                                             className="text-[#FF5722] font-bold disabled:opacity-50 flex items-center gap-1"
                                         >
                                             <RotateCcw size={12} />

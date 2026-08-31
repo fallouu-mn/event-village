@@ -23,6 +23,20 @@ export async function POST(req: NextRequest) {
         }
 
         const normalizedPhone = normalizePhoneNumber(rawPhone);
+
+        // Protection Anti-Force Brute (Rate Limiting)
+        const { RateLimiter } = await import('@/lib/security/rate-limiter');
+        const limitCheck = RateLimiter.isRateLimited(normalizedPhone);
+        if (limitCheck.limited) {
+            return NextResponse.json(
+                {
+                    error: `Trop de requêtes pour ce numéro. Par sécurité, veuillez patienter ${limitCheck.remainingSeconds || 60} secondes.`,
+                    remainingSeconds: limitCheck.remainingSeconds || 60,
+                },
+                { status: 429 }
+            );
+        }
+
         const supabase = getServiceRoleClient();
 
         const { data: userRow, error } = await supabase

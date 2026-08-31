@@ -39,6 +39,19 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // Protection Anti-Bombardement SMS (Rate Limiting)
+        const { RateLimiter } = await import('@/lib/security/rate-limiter');
+        const limitCheck = RateLimiter.isRateLimited(`otp_send_${normalizedPhone}`);
+        if (limitCheck.limited) {
+            return NextResponse.json(
+                {
+                    error: `Trop de demandes d'envoi SMS. Par sécurité, veuillez patienter ${limitCheck.remainingSeconds || 60} secondes.`,
+                    remainingSeconds: limitCheck.remainingSeconds || 60,
+                },
+                { status: 429 }
+            );
+        }
+
         const supabase = getServiceRoleClient();
 
         // Si demande de réinitialisation de mot de passe, vérifier l'existence du compte
