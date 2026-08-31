@@ -24,6 +24,7 @@ import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface OrderItem {
     id: string;
@@ -174,14 +175,14 @@ export default function PartnerOrdersPage() {
             });
             const data = await res.json();
             if (data.success) {
-                toast.success(`Statut mis à jour : ${confirmDialog.newStatus.replace(/_/g, ' ')}`);
+                toast.success(toastMessages.orders.statusUpdated(confirmDialog.newStatus.replace(/_/g, ' ')));
                 setConfirmDialog(prev => ({ ...prev, open: false }));
                 fetchOrders();
             } else {
-                toast.error(data.error || 'Échec de la mise à jour.');
+                toast.error(data.error || toastMessages.orders.updateError);
             }
         } catch {
-            toast.error('Erreur réseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setIsUpdating(false);
         }

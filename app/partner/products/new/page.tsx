@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { ImageUpload } from '@/components/ui/ImageUpload';
 import { useToast } from '@/components/ui/Toast';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 const productSchema = z.object({
     name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères.'),
@@ -60,11 +61,11 @@ function ProductFormContent() {
                     setIsStockManaged(p.is_stock_managed ?? false);
                     setStockQuantity(p.stock_quantity ?? '');
                 } else {
-                    toast.error(data.error || 'Impossible de charger le produit.');
+                    toast.error(data.error || toastMessages.products.notFound);
                 }
             })
             .catch(() => {
-                toast.error('Erreur réseau lors du chargement du produit.');
+                toast.error(toastMessages.common.networkError);
             })
             .finally(() => setIsLoadingProduct(false));
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,15 +127,15 @@ function ProductFormContent() {
             if (data.success) {
                 toast.success(
                     isEditMode
-                        ? 'Produit mis à jour avec succès !'
-                        : 'Produit créé avec succès !'
+                        ? toastMessages.products.updated(parsed.data.name)
+                        : toastMessages.products.created(parsed.data.name)
                 );
                 router.push('/partner/products');
             } else {
-                toast.error(data.error || 'Une erreur est survenue.');
+                toast.error(data.error || toastMessages.products.saveError);
             }
         } catch {
-            toast.error('Erreur reseau lors de l\'enregistrement.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setIsSubmitting(false);
         }

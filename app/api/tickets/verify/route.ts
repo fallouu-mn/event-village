@@ -30,18 +30,17 @@ export async function POST(req: NextRequest) {
             .select(`
                 id,
                 ticket_number,
-                qr_code_token,
+                qr_code,
                 status,
-                price_paid,
-                seat_number,
-                used_at,
+                price,
+                checked_in_at,
                 created_at,
                 event_id,
                 user_id,
-                events (id, title, start_date, location_name),
-                ticket_tiers (id, name, price)
+                events (id, title, start_date, location),
+                ticket_categories (id, name, price)
             `)
-            .or(`ticket_number.eq.${rawCode},qr_code_token.eq.${rawCode}`)
+            .or(`ticket_number.eq.${rawCode},qr_code.eq.${rawCode}`)
             .maybeSingle();
 
         if (ticketErr || !ticket) {
@@ -52,12 +51,12 @@ export async function POST(req: NextRequest) {
         }
 
         const eventData = ticket.events as any;
-        const tierData = ticket.ticket_tiers as any;
+        const categoryData = ticket.ticket_categories as any;
 
-        // 2. Si le billet a déjà été validé
+        // 2. Si le billet a déjà été validé / composté
         if (ticket.status === 'UTILISE') {
-            const checkedTime = ticket.used_at
-                ? new Date(ticket.used_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+            const checkedTime = ticket.checked_in_at
+                ? new Date(ticket.checked_in_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
                 : 'Aujourd\'hui';
 
             return NextResponse.json({
@@ -67,27 +66,27 @@ export async function POST(req: NextRequest) {
                     ticketNumber: ticket.ticket_number,
                     eventTitle: eventData?.title || 'Événement Event Village',
                     holderName: 'Porteur de Billet',
-                    category: tierData?.name || 'Pass Standard',
+                    category: categoryData?.name || 'Pass Standard',
                     checkedInAt: `Validé à ${checkedTime}`,
                 },
             });
         }
 
         // 3. Si le billet a été annulé ou remboursé
-        if (ticket.status === 'ANNULE' || ticket.status === 'REMETTRE_EN_VENTE') {
+        if (ticket.status === 'ANNULE' || ticket.status === 'REMBOURSE') {
             return NextResponse.json({
                 status: 'invalid',
                 message: 'Ce billet a été annulé ou remboursé.',
             });
         }
 
-        // 4. Validation réussie du billet
+        // 4. Validation réussie du billet (Compostage)
         const now = new Date().toISOString();
         await supabase
             .from('tickets')
             .update({
                 status: 'UTILISE',
-                used_at: now,
+                checked_in_at: now,
             })
             .eq('id', ticket.id);
 
@@ -102,7 +101,7 @@ export async function POST(req: NextRequest) {
             metadata: { ticket_number: ticket.ticket_number, event_id: ticket.event_id },
         });
 
-        // 6. Calcul des statistiques du jour pour ce contrôleur/événement
+        // 6. Calcul des statistiques du jour pour cet événement
         const { data: todayScans } = await supabase
             .from('tickets')
             .select('id')
@@ -125,7 +124,7 @@ export async function POST(req: NextRequest) {
                 ticketNumber: ticket.ticket_number,
                 eventTitle: eventData?.title || 'Événement Event Village',
                 holderName: 'Porteur Validé',
-                category: tierData?.name || 'Pass Officiel',
+                category: categoryData?.name || 'Pass Officiel',
                 checkedInAt: 'À l’instant',
             },
             stats: {

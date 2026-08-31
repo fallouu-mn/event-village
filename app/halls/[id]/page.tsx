@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ChevronLeft,
@@ -14,55 +14,120 @@ import {
   ShieldCheck,
   Clock,
   CreditCard,
-  Building2,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { PaymentModal } from '@/components/payment/PaymentModal';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 export default function HallDetailPage({ params }: { params: { id: string } }) {
-  const hallId = params.id || 'hall-terrou-bi-ocean';
+  const hallId = params.id;
+  const { user } = useAuth();
+
+  const [hall, setHall] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [startDate, setStartDate] = useState('2026-10-15');
   const [durationDays, setDurationDays] = useState(1);
   const [isLiked, setIsLiked] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeReservationId, setActiveReservationId] = useState<string | null>(null);
 
-  const hall = {
-    id: hallId,
-    name: 'Salle Océane Terrou-Bi',
-    partnerName: 'Hôtel Terrou-Bi Dakar',
-    location: 'Boulevard Martin Luther King, Dakar',
-    areaSqm: 500,
-    capacitySeated: 250,
-    capacityCocktail: 350,
-    pricePerDay: 500000,
-    priceFormatted: '500 000 FCFA',
-    depositRate: 0.30, // 30% d'acompte
-    depositAmount: 150000,
-    imageUrl: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&auto=format&fit=crop&q=80',
-    description:
-      'Située en bordure de mer, la Salle Océane offre un cadre prestigieux pour vos conférences, galas de fin d’année, réceptions de mariage et séminaires d’entreprise. Équipée d’une régie son & lumière de pointe et d’un accès direct à une terrasse panoramique.',
-    amenities: [
-      'Climatisation centrale',
-      'Vidéoprojecteur laser 4K & Écran géant',
-      'Régie sonorisation et micros HF',
-      'Wifi fibre très haut débit',
-      'Terrasse extérieure privative vue sur mer',
-      'Espace traiteur et cuisine de préparation',
-      'Service de sécurité & Agent d’accueil',
-      'Parking surveillé 150 places',
-    ],
-  };
+  useEffect(() => {
+    async function loadHall() {
+      if (!hallId) return;
+      try {
+        setIsLoading(true);
+        setError(null);
+        const res = await fetch(`/api/halls/${hallId}`);
+        if (!res.ok) throw new Error('Salle introuvable.');
+        const data = await res.json();
+        setHall(data.hall);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Erreur chargement salle');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadHall();
+  }, [hallId]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 pb-20">
+        <Skeleton className="h-9 w-40 rounded-xl" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <Skeleton className="w-full aspect-[16/9] rounded-3xl" />
+            <div className="grid grid-cols-3 gap-3">
+              <Skeleton className="h-20 rounded-2xl" />
+              <Skeleton className="h-20 rounded-2xl" />
+              <Skeleton className="h-20 rounded-2xl" />
+            </div>
+          </div>
+          <Skeleton className="h-96 rounded-3xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !hall) {
+    return (
+      <div className="max-w-md mx-auto min-h-[50vh] flex flex-col items-center justify-center text-center p-6 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/40 text-red-500 flex items-center justify-center">
+          <AlertCircle size={32} />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 dark:text-white">Salle introuvable</h2>
+        <p className="text-xs text-slate-500">{error || 'Cette salle n’existe pas ou a été désactivée.'}</p>
+        <Link href="/halls">
+          <Button variant="primary" size="md">Retour au catalogue</Button>
+        </Link>
+      </div>
+    );
+  }
 
   // Calculs dynamiques
   const totalAmount = hall.pricePerDay * durationDays;
-  const depositAmount = Math.round(totalAmount * hall.depositRate);
+  const depositAmount = Math.round(totalAmount * (hall.depositRate || 0.3));
   const balanceAmount = totalAmount - depositAmount;
 
   const totalFormatted = `${totalAmount.toLocaleString('fr-FR')} FCFA`;
   const depositFormatted = `${depositAmount.toLocaleString('fr-FR')} FCFA`;
   const balanceFormatted = `${balanceAmount.toLocaleString('fr-FR')} FCFA`;
+
+  const handleStartBooking = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      const res = await fetch('/api/halls/reserve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hallId: hall.id,
+          startDate,
+          durationDays,
+          clientId: user?.id,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Impossible de réserver cette salle.');
+      }
+
+      setActiveReservationId(data.reservation.id);
+      setIsPaymentOpen(true);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erreur lors de la réservation.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 pb-20">
@@ -149,7 +214,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
               <ShieldCheck size={20} className="mx-auto text-emerald-500 mb-1" />
               <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold block">Acompte</span>
               <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-                30% requis
+                {hall.depositPercentage}% requis
               </span>
             </div>
           </div>
@@ -170,7 +235,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
               Équipements & Prestations incluses
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {hall.amenities.map((item, i) => (
+              {hall.amenities.map((item: string, i: number) => (
                 <div key={i} className="flex items-center gap-2 text-xs text-slate-700 dark:text-zinc-300">
                   <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
                   <span>{item}</span>
@@ -235,7 +300,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
               <span className="font-bold text-slate-900 dark:text-white">{totalFormatted}</span>
             </div>
             <div className="flex justify-between text-[#FF5722] font-black text-sm border-t border-slate-200 dark:border-zinc-800 pt-2">
-              <span>Acompte requis (30%)</span>
+              <span>Acompte requis ({hall.depositPercentage}%)</span>
               <span>{depositFormatted}</span>
             </div>
             <div className="flex justify-between text-[11px] text-slate-400 dark:text-zinc-500">
@@ -257,7 +322,8 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
             variant="primary"
             size="lg"
             fullWidth
-            onClick={() => setIsPaymentOpen(true)}
+            isLoading={isSubmitting}
+            onClick={handleStartBooking}
             leftIcon={<CreditCard size={18} />}
           >
             Verser l’acompte ({depositFormatted})
@@ -265,19 +331,21 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* Modale de Paiement SamirPay */}
-      <PaymentModal
-        isOpen={isPaymentOpen}
-        onClose={() => setIsPaymentOpen(false)}
-        targetType="HALL_RESERVATION"
-        targetId="c9b74052-b883-4ee9-b1d5-d860d5bdf1e8"
-        amountFormatted={depositFormatted}
-        title={`${hall.name} (Acompte 30%)`}
-        onPaymentSuccess={() => {
-          setIsPaymentOpen(false);
-          window.location.href = '/orders';
-        }}
-      />
+      {/* Modale de Paiement SamirPay avec VRAI targetId de réservation */}
+      {activeReservationId && (
+        <PaymentModal
+          isOpen={isPaymentOpen}
+          onClose={() => setIsPaymentOpen(false)}
+          targetType="HALL_RESERVATION"
+          targetId={activeReservationId}
+          amountFormatted={depositFormatted}
+          title={`${hall.name} (Acompte ${hall.depositPercentage}%)`}
+          onPaymentSuccess={() => {
+            setIsPaymentOpen(false);
+            window.location.href = '/orders';
+          }}
+        />
+      )}
     </div>
   );
 }

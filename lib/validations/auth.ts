@@ -129,9 +129,14 @@ export const RegisterPartnerSchema = z.object({
     // Identifiants légaux optionnels
     ninea: z.string().optional(),
     rccm: z.string().optional(),
+
+    // Documents Professionnels Obligatoires (Bucket Privé Sécurisé)
+    idCardUrl: z.string().min(3, "La pièce d'identité du gérant (CNI ou Passeport) est obligatoire"),
+    businessDocUrl: z.string().min(3, "Le document d'entreprise (RCCM ou NINEA) est obligatoire"),
 }).refine((data) => data.password === data.confirmPassword, {
     message: 'Les mots de passe ne correspondent pas',
     path: ['confirmPassword'],
 });
 
 export type RegisterPartnerInput = z.infer<typeof RegisterPartnerSchema>;
+

@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { ImageUpload } from '@/components/ui/ImageUpload';
 import { useToast } from '@/components/ui/Toast';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface ProgramItem {
     id: string;
@@ -103,7 +104,7 @@ export default function EditEventPage() {
                 const res = await fetch(`/api/partner/events/${eventId}`);
                 const data = await res.json();
                 if (!data.success || !data.event) {
-                    toast.error(data.error || 'Evenement introuvable.');
+                    toast.error(data.error || toastMessages.events.notFound);
                     router.push('/partner/events');
                     return;
                 }
@@ -169,7 +170,7 @@ export default function EditEventPage() {
                     );
                 }
             } catch {
-                toast.error('Erreur reseau lors du chargement.');
+                toast.error(toastMessages.common.networkError);
                 router.push('/partner/events');
             } finally {
                 setIsLoadingEvent(false);
@@ -286,7 +287,7 @@ export default function EditEventPage() {
         setIsSubmitting(true);
 
         if (!validateForm()) {
-            toast.error('Veuillez corriger les erreurs du formulaire.');
+            toast.error(toastMessages.events.formErrors);
             setIsSubmitting(false);
             return;
         }
@@ -331,13 +332,13 @@ export default function EditEventPage() {
 
             const data = await res.json();
             if (data.success) {
-                toast.success('Evenement mis a jour avec succes !');
+                toast.success(toastMessages.events.updated(title));
                 router.push('/partner/events');
             } else {
-                toast.error(data.error || 'Echec de la mise a jour.');
+                toast.error(data.error || toastMessages.events.updateError);
             }
         } catch {
-            toast.error('Erreur reseau lors de la mise a jour.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setIsSubmitting(false);
         }

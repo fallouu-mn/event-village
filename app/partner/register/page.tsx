@@ -80,26 +80,13 @@ export default function PartnerRegisterPage() {
         e.preventDefault();
         setErrorMessage(null);
 
-        // Validation Zod
-        const parseResult = RegisterPartnerSchema.safeParse({
-            companyName: companyName.trim(),
-            commercialName: commercialName.trim() || undefined,
-            description: description.trim(),
-            address: address.trim(),
-            city: city.trim(),
-            activities: selectedActivities,
-            firstName: firstName.trim(),
-            lastName: lastName.trim(),
-            phone: phone.trim(),
-            email: email.trim().toLowerCase(),
-            password,
-            confirmPassword,
-            ninea: ninea.trim() || undefined,
-            rccm: rccm.trim() || undefined,
-        });
-
-        if (!parseResult.success) {
-            setErrorMessage(parseResult.error.errors[0]?.message || 'Veuillez vérifier les informations du formulaire.');
+        // 1. Vérification préalable de la présence des deux documents obligatoires
+        if (!idCardFile) {
+            setErrorMessage("La pièce d'identité du gérant (CNI ou Passeport) est obligatoire pour valider votre dossier.");
+            return;
+        }
+        if (!businessDocFile) {
+            setErrorMessage("Le document officiel d'entreprise (Extrait RCCM ou Attestation NINEA) est obligatoire.");
             return;
         }
 
@@ -107,55 +94,63 @@ export default function PartnerRegisterPage() {
         const normalizedPhone = normalizePhoneNumber(phone.trim());
 
         try {
-            // 1. Upload serveur sécurisé des documents justificatifs si fournis
-            let idCardUrl: string | null = null;
-            let businessDocUrl: string | null = null;
+            // 2. Upload sécurisé de la pièce d'identité du gérant dans le bucket privé
+            const idCardFormData = new FormData();
+            idCardFormData.append('file', idCardFile);
+            idCardFormData.append('docType', 'id_card');
 
-            if (idCardFile) {
-                try {
-                    const formData = new FormData();
-                    formData.append('file', idCardFile);
-                    formData.append('docType', 'id_card');
+            const idCardRes = await fetch('/api/partner/documents/upload', {
+                method: 'POST',
+                body: idCardFormData,
+            });
+            const idCardData = await idCardRes.json();
+            if (!idCardRes.ok || !idCardData.success || !idCardData.filePath) {
+                throw new Error(idCardData.error || "Échec du téléversement de la pièce d'identité du gérant.");
+            }
+            const idCardUrl = idCardData.filePath as string;
 
-                    const uploadRes = await fetch('/api/partner/documents/upload', {
-                        method: 'POST',
-                        body: formData,
-                    });
+            // 3. Upload sécurisé du document d'entreprise dans le bucket privé
+            const busFormData = new FormData();
+            busFormData.append('file', businessDocFile);
+            busFormData.append('docType', 'business_doc');
 
-                    if (uploadRes.ok) {
-                        const uploadData = await uploadRes.json();
-                        if (uploadData.success) {
-                            idCardUrl = uploadData.filePath;
-                        }
-                    }
-                } catch (upErr) {
-                    console.warn('[PartnerRegister] Erreur upload pièce identité:', upErr);
-                }
+            const busRes = await fetch('/api/partner/documents/upload', {
+                method: 'POST',
+                body: busFormData,
+            });
+            const busData = await busRes.json();
+            if (!busRes.ok || !busData.success || !busData.filePath) {
+                throw new Error(busData.error || "Échec du téléversement du document d'immatriculation d'entreprise.");
+            }
+            const businessDocUrl = busData.filePath as string;
+
+            // 4. Validation Zod stricte incluant les URLs des justificatifs obligatoires
+            const parseResult = RegisterPartnerSchema.safeParse({
+                companyName: companyName.trim(),
+                commercialName: commercialName.trim() || undefined,
+                description: description.trim(),
+                address: address.trim(),
+                city: city.trim(),
+                activities: selectedActivities,
+                firstName: firstName.trim(),
+                lastName: lastName.trim(),
+                phone: phone.trim(),
+                email: email.trim().toLowerCase(),
+                password,
+                confirmPassword,
+                ninea: ninea.trim() || undefined,
+                rccm: rccm.trim() || undefined,
+                idCardUrl,
+                businessDocUrl,
+            });
+
+            if (!parseResult.success) {
+                setErrorMessage(parseResult.error.errors[0]?.message || 'Veuillez vérifier les informations du formulaire.');
+                setIsLoading(false);
+                return;
             }
 
-            if (businessDocFile) {
-                try {
-                    const formData = new FormData();
-                    formData.append('file', businessDocFile);
-                    formData.append('docType', 'business_doc');
-
-                    const uploadRes = await fetch('/api/partner/documents/upload', {
-                        method: 'POST',
-                        body: formData,
-                    });
-
-                    if (uploadRes.ok) {
-                        const uploadData = await uploadRes.json();
-                        if (uploadData.success) {
-                            businessDocUrl = uploadData.filePath;
-                        }
-                    }
-                } catch (upErr) {
-                    console.warn('[PartnerRegister] Erreur upload document entreprise:', upErr);
-                }
-            }
-
-            // 2. Appel de la route API serveur d'inscription partenaire
+            // 5. Appel de la route API serveur d'inscription partenaire
             const res = await fetch('/api/partner/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -464,44 +459,77 @@ export default function PartnerRegisterPage() {
 
                         {/* 3. Justificatifs & Documents Légaux (Upload privé) */}
                         <div className="space-y-4">
-                            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-3">
-                                <Shield size={20} className="text-[#FF5722]" />
-                                <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                    3. Documents Professionnels (Bucket Privé Sécurisé)
-                                </h2>
+                            <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
+                                <div className="flex items-center gap-2">
+                                    <Shield size={20} className="text-[#FF5722]" />
+                                    <h2 className="text-base font-black text-slate-900 dark:text-white">
+                                        3. Documents Professionnels (Bucket Privé Sécurisé)
+                                    </h2>
+                                </div>
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400">
+                                    Obligatoire
+                                </span>
                             </div>
 
+                            <p className="text-xs text-slate-500 dark:text-zinc-400">
+                                Conformément à la réglementation sénégalaise et au protocole de sécurité Event Village, le dépôt de ces deux pièces est obligatoire pour l&apos;audit et la validation de votre compte.
+                            </p>
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="p-4 rounded-2xl border border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900/50 space-y-2">
-                                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                                        Pièce d&apos;Identité du Gérant (CNI / Passeport)
-                                    </span>
+                                <div className={`p-4 rounded-2xl border border-dashed transition-colors space-y-2.5 ${
+                                    idCardFile
+                                        ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20'
+                                        : 'border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900/50 hover:border-[#FF5722]'
+                                }`}>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                                            Pièce d&apos;Identité du Gérant *
+                                        </span>
+                                        <span className="text-[10px] text-slate-400">CNI ou Passeport</span>
+                                    </div>
                                     <input
                                         type="file"
+                                        required
                                         accept="image/*,application/pdf"
                                         onChange={(e) => setIdCardFile(e.target.files?.[0] || null)}
                                         className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF5722] file:text-white cursor-pointer"
                                     />
-                                    {idCardFile && (
-                                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-                                            <CheckCircle2 size={12} /> {idCardFile.name}
+                                    {idCardFile ? (
+                                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                            <CheckCircle2 size={12} /> Document sélectionné : {idCardFile.name}
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] text-red-500 font-medium block">
+                                            * Fichier requis (PDF, JPEG, PNG - Max 10 Mo)
                                         </span>
                                     )}
                                 </div>
 
-                                <div className="p-4 rounded-2xl border border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900/50 space-y-2">
-                                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                                        Registre de Commerce / NINEA
-                                    </span>
+                                <div className={`p-4 rounded-2xl border border-dashed transition-colors space-y-2.5 ${
+                                    businessDocFile
+                                        ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20'
+                                        : 'border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900/50 hover:border-[#FF5722]'
+                                }`}>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                                            Document d&apos;Entreprise (RCCM / NINEA) *
+                                        </span>
+                                        <span className="text-[10px] text-slate-400">Extrait officiel</span>
+                                    </div>
                                     <input
                                         type="file"
+                                        required
                                         accept="image/*,application/pdf"
                                         onChange={(e) => setBusinessDocFile(e.target.files?.[0] || null)}
                                         className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF5722] file:text-white cursor-pointer"
                                     />
-                                    {businessDocFile && (
-                                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-                                            <CheckCircle2 size={12} /> {businessDocFile.name}
+                                    {businessDocFile ? (
+                                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                            <CheckCircle2 size={12} /> Document sélectionné : {businessDocFile.name}
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] text-red-500 font-medium block">
+                                            * Fichier requis (PDF, JPEG, PNG - Max 10 Mo)
                                         </span>
                                     )}
                                 </div>

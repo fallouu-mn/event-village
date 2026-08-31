@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { ImageUpload } from '@/components/ui/ImageUpload';
 import { useToast } from '@/components/ui/Toast';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 const hallSchema = z.object({
     name: z.string().min(3, 'Le nom doit contenir au moins 3 caracteres.'),
@@ -111,13 +112,13 @@ export default function NewHallPage() {
 
             const data = await res.json();
             if (data.success) {
-                toast.success('Salle creee avec succes !');
+                toast.success(toastMessages.halls.created(parsed.data.name));
                 router.push('/partner/halls');
             } else {
-                toast.error(data.error || 'Echec de la creation.');
+                toast.error(data.error || toastMessages.halls.createError);
             }
         } catch {
-            toast.error('Erreur reseau lors de la creation.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setIsSubmitting(false);
         }

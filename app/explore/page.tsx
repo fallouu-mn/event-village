@@ -1,99 +1,42 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Filter, SlidersHorizontal, Calendar, MapPin, X, Sparkles } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 export default function ExplorePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedCity, setSelectedCity] = useState<string>('ALL');
-  const [priceMax, setPriceMax] = useState<number>(50000);
+  const [priceMax, setPriceMax] = useState<number>(100000);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const [sortBy, setSortBy] = useState<'RECENT' | 'PRICE_ASC' | 'PRICE_DESC'>('RECENT');
+  const [events, setEvents] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const allEvents = [
-    {
-      id: 'evt-justice-tour',
-      title: 'Justice Tour — Live from Paris',
-      subtitle: 'Justin Bieber',
-      imageUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80',
-      dateFormatted: '15 Sep 2026',
-      dayNumber: '15',
-      monthShort: 'SEP',
-      timeFormatted: '22:00',
-      venue: 'Dakar Arena, Diamniadio',
-      category: 'CONCERT',
-      city: 'DAKAR',
-      price: 15000,
-      priceFormatted: '15 000 FCFA',
-    },
-    {
-      id: 'evt-post-malone',
-      title: 'Twelve Carat Tour Live',
-      subtitle: 'Post Malone',
-      imageUrl: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=800&auto=format&fit=crop&q=80',
-      dateFormatted: '19 Déc 2026',
-      dayNumber: '19',
-      monthShort: 'DÉC',
-      timeFormatted: '21:00',
-      venue: 'Monument de la Renaissance',
-      category: 'CONCERT',
-      city: 'DAKAR',
-      price: 25000,
-      priceFormatted: '25 000 FCFA',
-    },
-    {
-      id: 'evt-dakar-food-fest',
-      title: 'Grand Festival Culinaire & Saveurs Teranga',
-      subtitle: 'Dakar Food Festival',
-      imageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80',
-      dateFormatted: '02 Oct 2026',
-      dayNumber: '02',
-      monthShort: 'OCT',
-      timeFormatted: '12:00',
-      venue: 'Esplanade Terrou-Bi, Dakar',
-      category: 'FOOD',
-      city: 'DAKAR',
-      price: 5000,
-      priceFormatted: '5 000 FCFA',
-    },
-    {
-      id: 'evt-soiree-gala-prestige',
-      title: 'Nuit de l’Excellence & Gala Annuel',
-      subtitle: 'Club VIP Dakar',
-      imageUrl: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&auto=format&fit=crop&q=80',
-      dateFormatted: '10 Nov 2026',
-      dayNumber: '10',
-      monthShort: 'NOV',
-      timeFormatted: '20:00',
-      venue: 'Palais des Congrès, King Fahd',
-      category: 'SALLE',
-      city: 'DAKAR',
-      price: 50000,
-      priceFormatted: '50 000 FCFA',
-    },
-    {
-      id: 'evt-saint-louis-jazz',
-      title: 'Festival International de Jazz de Saint-Louis',
-      subtitle: 'Édition 2026',
-      imageUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop&q=80',
-      dateFormatted: '25 Déc 2026',
-      dayNumber: '25',
-      monthShort: 'DÉC',
-      timeFormatted: '19:30',
-      venue: 'Place Faidherbe, Saint-Louis',
-      category: 'FESTIVAL',
-      city: 'SAINT_LOUIS',
-      price: 20000,
-      priceFormatted: '20 000 FCFA',
-    },
-  ];
+  useEffect(() => {
+    async function loadEvents() {
+      try {
+        setIsLoading(true);
+        const res = await fetch('/api/events');
+        if (res.ok) {
+          const data = await res.json();
+          setEvents(data.events || []);
+        }
+      } catch (err) {
+        console.error('[ExplorePage] Erreur chargement:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadEvents();
+  }, []);
 
   // Filtrage
-  let filtered = allEvents.filter((evt) => {
+  let filtered = events.filter((evt) => {
     const matchCategory = selectedCategory === 'ALL' || evt.category === selectedCategory;
     const matchCity = selectedCity === 'ALL' || evt.city === selectedCity;
     const matchPrice = evt.price <= priceMax;
@@ -117,7 +60,7 @@ export default function ExplorePage() {
     setSearchQuery('');
     setSelectedCategory('ALL');
     setSelectedCity('ALL');
-    setPriceMax(50000);
+    setPriceMax(100000);
     setSortBy('RECENT');
   };
 
@@ -263,7 +206,17 @@ export default function ExplorePage() {
             </span>
           </div>
 
-          {filtered.length > 0 ? (
+          {isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="space-y-3 p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800">
+                  <Skeleton className="w-full aspect-[16/10] rounded-2xl" />
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+              ))}
+            </div>
+          ) : filtered.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
               {filtered.map((evt) => (
                 <EventCard key={evt.id} {...evt} />

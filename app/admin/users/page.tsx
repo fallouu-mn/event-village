@@ -31,6 +31,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
+import { useToast } from '@/components/ui/Toast';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/admin-auth';
 
 interface UserItem {
@@ -46,11 +47,11 @@ interface UserItem {
 }
 
 export default function AdminUsersManagementPage() {
+  const toast = useToast();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Modal Création Utilisateur / Admin
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -92,7 +93,6 @@ export default function AdminUsersManagementPage() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCreating(true);
-    setFeedback(null);
 
     try {
       const res = await fetch('/api/admin/users', {
@@ -111,10 +111,7 @@ export default function AdminUsersManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la création.');
 
-      setFeedback({
-        type: 'success',
-        text: `Compte ${newRole} créé avec succès pour ${newFirstName} ${newLastName}.`,
-      });
+      toast.success(`Le compte ${newRole} de ${newFirstName} ${newLastName} a été créé avec succès.`);
       setIsCreateModalOpen(false);
       setNewFirstName('');
       setNewLastName('');
@@ -124,7 +121,7 @@ export default function AdminUsersManagementPage() {
       await fetchUsers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la création.';
-      setFeedback({ type: 'error', text: msg });
+      toast.error(msg);
     } finally {
       setIsCreating(false);
     }
@@ -145,14 +142,15 @@ export default function AdminUsersManagementPage() {
 
       if (!res.ok) throw new Error('Erreur lors du changement de statut.');
 
-      setFeedback({
-        type: 'success',
-        text: `Statut de ${user.first_name} ${user.last_name} mis à jour : ${newStatus}`,
-      });
+      toast.success(
+        newStatus === 'ACTIF'
+          ? `Le compte de ${user.first_name} ${user.last_name} a été réactivé avec succès.`
+          : `Le compte de ${user.first_name} ${user.last_name} a été suspendu.`
+      );
       await fetchUsers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de l\'opération.';
-      setFeedback({ type: 'error', text: msg });
+      toast.error(msg);
     }
   };
 
@@ -190,14 +188,11 @@ export default function AdminUsersManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour des permissions.');
 
-      setFeedback({
-        type: 'success',
-        text: `Permissions de l'administrateur ${selectedAdmin.first_name} ${selectedAdmin.last_name} enregistrées.`,
-      });
+      toast.success(`Les permissions de l'administrateur ${selectedAdmin.first_name} ${selectedAdmin.last_name} ont été enregistrées.`);
       setIsPermModalOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
-      setFeedback({ type: 'error', text: msg });
+      toast.error(msg);
     } finally {
       setIsSavingPerms(false);
     }
@@ -218,7 +213,6 @@ export default function AdminUsersManagementPage() {
     );
     if (!confirmDelete) return;
 
-    setFeedback(null);
     try {
       const res = await fetch(`/api/admin/users?userId=${user.id}`, {
         method: 'DELETE',
@@ -226,14 +220,11 @@ export default function AdminUsersManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression.');
 
-      setFeedback({
-        type: 'success',
-        text: `Le compte de ${user.first_name} ${user.last_name} a été définitivement supprimé.`,
-      });
+      toast.success(`Le compte de ${user.first_name} ${user.last_name} a été définitivement supprimé.`);
       await fetchUsers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la suppression.';
-      setFeedback({ type: 'error', text: msg });
+      toast.error(msg);
     }
   };
 
@@ -258,11 +249,11 @@ export default function AdminUsersManagementPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
-            onClick={() => fetchUsers()}
+            onClick={fetchUsers}
             disabled={isLoading}
             className="flex items-center gap-1.5"
           >
@@ -281,25 +272,6 @@ export default function AdminUsersManagementPage() {
           </Button>
         </div>
       </div>
-
-      {/* Message Toast */}
-      {feedback && (
-        <div
-          className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold ${
-            feedback.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-            <span>{feedback.text}</span>
-          </div>
-          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-slate-700">
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Filtres & Recherche */}
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">

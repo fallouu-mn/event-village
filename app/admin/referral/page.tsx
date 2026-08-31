@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
+import { useToast } from '@/components/ui/Toast';
 
 export interface RealUserRow {
   id: string;
@@ -36,13 +37,13 @@ export interface RealUserRow {
 }
 
 export default function AdminReferralAmbassadorsPage() {
+  const toast = useToast();
   const [usersList, setUsersList] = useState<RealUserRow[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'STANDARD' | 'AMBASSADEUR'>('ALL');
   const [selectedUser, setSelectedUser] = useState<RealUserRow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Chargement des utilisateurs réels depuis Supabase
   const fetchUsers = useCallback(async () => {
@@ -67,7 +68,6 @@ export default function AdminReferralAmbassadorsPage() {
   // Bascule du statut Ambassadeur (STANDARD <-> AMBASSADEUR)
   const handleToggleAmbassador = async (user: RealUserRow) => {
     setIsUpdating(user.id);
-    setFeedback(null);
 
     const newReferralStatus = user.referral_status === 'AMBASSADEUR' ? 'STANDARD' : 'AMBASSADEUR';
 
@@ -84,14 +84,15 @@ export default function AdminReferralAmbassadorsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour.');
 
-      setFeedback({
-        type: 'success',
-        text: `Statut Ambassadeur de ${user.first_name} ${user.last_name} mis à jour : ${newReferralStatus}`,
-      });
+      toast.success(
+        newReferralStatus === 'AMBASSADEUR'
+          ? `Le statut Ambassadeur a bien été attribué à ${user.first_name} ${user.last_name}.`
+          : `Le statut Ambassadeur a été retiré pour ${user.first_name} ${user.last_name}.`
+      );
       await fetchUsers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la mise à jour.';
-      setFeedback({ type: 'error', text: msg });
+      toast.error(msg);
     } finally {
       setIsUpdating(null);
     }
@@ -132,25 +133,6 @@ export default function AdminReferralAmbassadorsPage() {
           <span>Actualiser</span>
         </Button>
       </div>
-
-      {/* Notification Toast */}
-      {feedback && (
-        <div
-          className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold ${
-            feedback.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-            <span>{feedback.text}</span>
-          </div>
-          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-slate-700">
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Grille des Règles Officielles CDC V3 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -384,7 +366,7 @@ export default function AdminReferralAmbassadorsPage() {
               <Button
                 variant="primary"
                 onClick={() => {
-                  setFeedback({ type: 'success', text: `Taux personnalisés enregistrés pour ${selectedUser.first_name} ${selectedUser.last_name}.` });
+                  toast.success(`Les taux personnalisés ont bien été enregistrés pour ${selectedUser.first_name} ${selectedUser.last_name}.`);
                   setSelectedUser(null);
                 }}
                 className="bg-[#FF5722] text-white"

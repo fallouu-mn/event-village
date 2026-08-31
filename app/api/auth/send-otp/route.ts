@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mTargetService } from '@/lib/sms/mtarget.service';
+import { NotificationService } from '@/lib/notifications/notification.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { otpMemoryCache } from '@/lib/sms/otp-cache';
@@ -12,11 +13,11 @@ function generateOtpCode(): string {
 
 /**
  * POST /api/auth/send-otp
- * Génère un code OTP sécurisé et l'envoie par SMS via MTarget
+ * Génère un code OTP sécurisé et l'envoie par SMS via MTarget / NotificationService
  */
 export async function POST(req: NextRequest) {
     try {
-        let body: { phone?: string };
+        let body: { phone?: string; purpose?: string; type?: string };
         try {
             body = await req.json();
         } catch {
@@ -24,6 +25,8 @@ export async function POST(req: NextRequest) {
         }
 
         const rawPhone = body.phone?.trim();
+        const purpose = (body.purpose || body.type || 'AUTH').toUpperCase();
+
         if (!rawPhone) {
             return NextResponse.json({ error: 'Numéro de téléphone requis.' }, { status: 400 });
         }
@@ -36,6 +39,26 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        const supabase = getServiceRoleClient();
+
+        // Si demande de réinitialisation de mot de passe, vérifier l'existence du compte
+        let userEmail: string | undefined;
+        if (purpose === 'PASSWORD_RESET') {
+            const { data: userRecord } = await supabase
+                .from('users')
+                .select('id, email, phone')
+                .eq('phone', normalizedPhone)
+                .maybeSingle();
+
+            if (!userRecord) {
+                return NextResponse.json(
+                    { error: 'Aucun compte n\'est associé à ce numéro de téléphone.' },
+                    { status: 404 }
+                );
+            }
+            userEmail = userRecord.email || undefined;
+        }
+
         // 1. Génération du code OTP à 6 chiffres
         const otpCode = generateOtpCode();
         const expiresAt = Date.now() + 10 * 60 * 1000; // Valide 10 minutes
@@ -45,7 +68,6 @@ export async function POST(req: NextRequest) {
 
         // 3. Sauvegarde en base de données Supabase (si table otp_codes existante)
         try {
-            const supabase = getServiceRoleClient();
             await (supabase.from('otp_codes') as any).insert({
                 phone: normalizedPhone,
                 code: otpCode,
@@ -56,16 +78,32 @@ export async function POST(req: NextRequest) {
             // Fallback silencieux
         }
 
-        // 4. Envoi effectif du SMS par MTarget
-        const sendResult = await mTargetService.sendOtp(normalizedPhone, otpCode);
-        console.log(`[API /api/auth/send-otp] MTarget Result pour ${normalizedPhone}:`, sendResult);
+        // 4. Envoi effectif du SMS
+        let sendSuccess = false;
+        let errorMessage: string | undefined;
 
-        if (!sendResult.success) {
-            console.error('[API send-otp] Échec MTarget:', sendResult.error);
+        if (purpose === 'PASSWORD_RESET') {
+            const notifRes = await NotificationService.sendPasswordResetNotification({
+                phone: normalizedPhone,
+                resetCode: otpCode,
+                email: userEmail,
+            });
+            sendSuccess = notifRes.smsSent || notifRes.emailSent;
+            if (!sendSuccess) {
+                errorMessage = 'Impossible d\'envoyer le SMS de réinitialisation.';
+            }
+        } else {
+            const sendResult = await mTargetService.sendOtp(normalizedPhone, otpCode);
+            sendSuccess = sendResult.success;
+            errorMessage = sendResult.error;
+        }
+
+        if (!sendSuccess) {
+            console.error('[API send-otp] Échec envoi SMS:', errorMessage);
             return NextResponse.json(
                 {
-                    error: sendResult.error || 'Impossible d\'envoyer le SMS.',
-                    recipient: sendResult.recipient,
+                    error: errorMessage || 'Impossible d\'envoyer le SMS.',
+                    recipient: normalizedPhone,
                 },
                 { status: 502 }
             );
@@ -73,8 +111,10 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: `Code de confirmation envoyé par SMS au ${normalizedPhone}.`,
-            recipient: sendResult.recipient,
+            message: purpose === 'PASSWORD_RESET'
+                ? `Code de réinitialisation envoyé par SMS au ${normalizedPhone}.`
+                : `Code de confirmation envoyé par SMS au ${normalizedPhone}.`,
+            recipient: normalizedPhone,
         });
     } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : 'Erreur interne du serveur';

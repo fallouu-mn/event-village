@@ -1,51 +1,64 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Ticket, Sparkles, Filter } from 'lucide-react';
+import { Ticket, Sparkles } from 'lucide-react';
 import { TicketCard } from '@/components/tickets/TicketCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 export default function TicketsPage() {
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'ALL' | 'UPCOMING' | 'PAST'>('UPCOMING');
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const myTickets = [
-    {
-      id: 'tkt-justice-001',
-      ticketNumber: 'EV-8849-2026-XOF',
-      eventTitle: 'Justice Tour — Live from Paris',
-      eventSubtitle: 'Justin Bieber',
-      eventImageUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80',
-      dateFormatted: '15 Sep 2026',
-      timeFormatted: '22:00',
-      venue: 'Dakar Arena, Diamniadio',
-      seat: 'Pass VIP — Accès Carré Or',
-      qrCodeValue: 'EV-TICKET-VAL-99283749281-CONFIRMED',
-      status: 'VALIDE' as const,
-      isUpcoming: true,
-    },
-    {
-      id: 'tkt-dakar-food-002',
-      ticketNumber: 'EV-3312-2026-XOF',
-      eventTitle: 'Grand Festival Culinaire & Saveurs Teranga',
-      eventSubtitle: 'Dakar Food Festival',
-      eventImageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80',
-      dateFormatted: '02 Oct 2026',
-      timeFormatted: '12:00',
-      venue: 'Esplanade Terrou-Bi, Dakar',
-      seat: 'Entrée Générale + Dégustation',
-      qrCodeValue: 'EV-TICKET-VAL-11928374829-CONFIRMED',
-      status: 'VALIDE' as const,
-      isUpcoming: true,
-    },
-  ];
+  useEffect(() => {
+    async function loadTickets() {
+      if (!user?.id) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        setIsLoading(true);
+        const res = await fetch(`/api/tickets?userId=${user.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setTickets(data.tickets || []);
+        }
+      } catch (err) {
+        console.error('[TicketsPage] Erreur chargement billets:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    if (!isAuthLoading) {
+      loadTickets();
+    }
+  }, [user?.id, isAuthLoading]);
 
-  const filteredTickets = myTickets.filter((t) => {
+  const filteredTickets = tickets.filter((t) => {
     if (activeTab === 'UPCOMING') return t.isUpcoming;
     if (activeTab === 'PAST') return !t.isUpcoming;
     return true;
   });
+
+  if (!isAuthLoading && !isAuthenticated) {
+    return (
+      <div className="max-w-md mx-auto min-h-[50vh] flex flex-col items-center justify-center text-center p-6 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
+          <Ticket size={32} />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 dark:text-white">Connexion requise</h2>
+        <p className="text-xs text-slate-500">Connectez-vous pour retrouver vos billets électroniques sécurisés.</p>
+        <Link href="/login">
+          <Button variant="primary" size="md">Se connecter</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-16">
@@ -90,7 +103,12 @@ export default function TicketsPage() {
       </div>
 
       {/* 3. Grille des Billets */}
-      {filteredTickets.length > 0 ? (
+      {isLoading || isAuthLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+          <Skeleton className="h-64 rounded-3xl" />
+          <Skeleton className="h-64 rounded-3xl" />
+        </div>
+      ) : filteredTickets.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           {filteredTickets.map((ticket) => (
             <TicketCard key={ticket.id} {...ticket} />

@@ -189,6 +189,16 @@ export class PaymentService {
                     throw new Error('Plan d\'abonnement introuvable.');
                 }
 
+                const { data: partnerRec } = await supabase
+                    .from('partners')
+                    .select('id')
+                    .eq('user_id', userId)
+                    .maybeSingle();
+
+                if (partnerRec) {
+                    partnerId = partnerRec.id;
+                }
+
                 payableAmount = Number(plan.price);
                 subscriptionRefId = plan.id;
                 description = `Abonnement ${plan.name}`;
@@ -207,11 +217,19 @@ export class PaymentService {
         const serviceFeeRate = 0.05;
         const aggregatorFeeRate = 0.015;
 
-        const serviceFee = Math.round(payableAmount * serviceFeeRate * 100) / 100;
         const aggregatorFee = Math.round(payableAmount * aggregatorFeeRate * 100) / 100;
-        const grossRevenue = serviceFee;
-        const netRevenue = Math.max(0, grossRevenue - aggregatorFee);
-        const partnerPayout = Math.max(0, payableAmount - serviceFee);
+        let serviceFee = Math.round(payableAmount * serviceFeeRate * 100) / 100;
+        let grossRevenue = serviceFee;
+        let netRevenue = Math.max(0, grossRevenue - aggregatorFee);
+        let partnerPayout = Math.max(0, payableAmount - serviceFee);
+
+        // Cas particulier : Les abonnements vont à 100% à la plateforme Event Village
+        if (input.targetType === 'SUBSCRIPTION') {
+            serviceFee = 0;
+            grossRevenue = payableAmount;
+            netRevenue = Math.max(0, grossRevenue - aggregatorFee);
+            partnerPayout = 0;
+        }
 
         // 3. Génération d'identifiants uniques
         const now = Date.now();
@@ -360,7 +378,7 @@ export class PaymentService {
         if (mappedStatus === 'SUCCESS') {
             let confirmedTicketId = payment.ticket_id;
 
-            // Génération sécurisée et garantie du ticket si nécessaire
+            // 4.1 Génération sécurisée et garantie du ticket si nécessaire
             if (payment.payment_target === 'TICKET') {
                 if (payment.ticket_id) {
                     // Ticket pré-existant -> passer à VALIDE
@@ -387,9 +405,55 @@ export class PaymentService {
                 }
             }
 
+            // 4.2 Activation de l'abonnement si payment_target === 'SUBSCRIPTION'
+            if (payment.payment_target === 'SUBSCRIPTION' || payment.subscription_plan_id) {
+                const planId = payment.subscription_plan_id || payment.metadata?.target_id;
+                if (planId) {
+                    const { data: plan } = await supabase
+                        .from('subscription_plans')
+                        .select('*')
+                        .eq('id', planId)
+                        .maybeSingle();
+
+                    let targetPartnerId = payment.partner_id;
+                    if (!targetPartnerId && payment.client_id) {
+                        const { data: partnerRec } = await supabase
+                            .from('partners')
+                            .select('id, trial_ends_at')
+                            .eq('user_id', payment.client_id)
+                            .maybeSingle();
+                        if (partnerRec) targetPartnerId = partnerRec.id;
+                    }
+
+                    if (targetPartnerId && plan) {
+                        const now = new Date();
+                        const durationDays = plan.billing_period === 'YEARLY' ? 365 : 30;
+                        const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+                        await supabase
+                            .from('partners')
+                            .update({
+                                subscription_plan_id: plan.id,
+                                status: 'VALIDE',
+                                trial_ends_at: expiresAt.toISOString(),
+                                updated_at: now.toISOString(),
+                            })
+                            .eq('id', targetPartnerId);
+
+                        await supabase.from('notifications').insert({
+                            user_id: payment.client_id,
+                            type: 'SUBSCRIPTION_ACTIVATED',
+                            title: 'Abonnement activé',
+                            content: `Votre pack ${plan.name} a été activé avec succès pour ${durationDays} jours.`,
+                            channel: 'PUSH',
+                            status: 'PENDING',
+                            metadata: { plan_id: plan.id, payment_id: payment.id },
+                        });
+                    }
+                }
+            }
+
             // Mise à jour de la transaction de paiement vers SUCCESS
-            // Note : Cette mise à jour déclenche automatiquement le trigger trg_payment_success_referrals
-            // qui calcule les commissions de parrainage N1 et N2 sur le Revenu Net Event Village éligible.
             const { error: updatePaymentError } = await supabase
                 .from('payments')
                 .update({
@@ -445,7 +509,7 @@ export class PaymentService {
                     .eq('id', payment.table_reservation_id);
             }
 
-            // Notification client
+            // Notification client de succès
             await supabase.from('notifications').insert({
                 user_id: payment.client_id,
                 type: 'PAYMENT_SUCCESS',
@@ -460,6 +524,10 @@ export class PaymentService {
             return { success: true, message: 'Paiement validé avec succès.' };
         } else {
             // Statut FAILED ou CANCELLED
+            if (payment.status === 'FAILED' || payment.status === 'CANCELLED') {
+                return { success: true, message: `Paiement déjà marqué comme ${payment.status}.` };
+            }
+
             await supabase
                 .from('payments')
                 .update({
@@ -470,15 +538,60 @@ export class PaymentService {
                 })
                 .eq('id', payment.id);
 
+            // Rollback et libération des ressources selon le CDC
             if (payment.order_id) {
                 await supabase
                     .from('orders')
                     .update({
                         payment_status: 'FAILED',
+                        order_status: 'ANNULEE',
                         updated_at: new Date().toISOString(),
                     })
                     .eq('id', payment.order_id);
             }
+
+            if (payment.hall_reservation_id) {
+                await supabase
+                    .from('hall_reservations')
+                    .update({
+                        payment_status: 'FAILED',
+                        status: 'ANNULEE',
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', payment.hall_reservation_id);
+            }
+
+            if (payment.table_reservation_id) {
+                await supabase
+                    .from('table_reservations')
+                    .update({
+                        payment_status: 'FAILED',
+                        status: 'ANNULEE',
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', payment.table_reservation_id);
+            }
+
+            if (payment.ticket_id) {
+                await supabase
+                    .from('tickets')
+                    .update({
+                        status: 'ANNULE',
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', payment.ticket_id);
+            }
+
+            // Notification client d'échec
+            await supabase.from('notifications').insert({
+                user_id: payment.client_id,
+                type: 'PAYMENT_FAILED',
+                title: 'Échec du paiement',
+                content: `Votre tentative de paiement de ${payment.amount} ${payment.currency} n'a pas pu aboutir.`,
+                channel: 'PUSH',
+                status: 'PENDING',
+                metadata: { payment_id: payment.id, order_id: payment.external_order_id },
+            });
 
             console.warn(`[PaymentService.Webhook] Paiement échoué ou annulé pour : ${order_id} (Statut: ${status})`);
             return { success: true, message: `Paiement marqué comme ${mappedStatus}.` };
@@ -524,6 +637,7 @@ export class PaymentService {
         paymentId: string;
         refundAmount: number;
         reason?: string;
+        processedBy?: string;
     }): Promise<{ success: boolean; newPaidAmount: number; newBalanceAmount: number }> {
         const supabase = getServiceRoleClient();
 
@@ -537,25 +651,52 @@ export class PaymentService {
             throw new Error('Paiement introuvable.');
         }
 
-        if (payment.status !== 'SUCCESS') {
-            throw new Error('Seuls les paiements validés (SUCCESS) peuvent être remboursés.');
+        if (payment.status !== 'SUCCESS' && payment.status !== 'PARTIAL') {
+            throw new Error('Seuls les paiements validés (SUCCESS ou PARTIAL) peuvent être remboursés.');
         }
 
         const refundAmount = Number(params.refundAmount);
-        const currentPaid = Number(payment.amount);
+        const originalAmount = Number(payment.amount);
 
-        if (refundAmount <= 0 || refundAmount > currentPaid) {
-            throw new Error(`Le montant du remboursement (${refundAmount} FCFA) doit être compris entre 1 et ${currentPaid} FCFA.`);
+        // Récupération des remboursements déjà traités pour ce paiement
+        const { data: existingRefunds } = await supabase
+            .from('refunds')
+            .select('amount')
+            .eq('payment_id', payment.id)
+            .eq('status', 'PROCESSED');
+
+        const alreadyRefunded = (existingRefunds || []).reduce((sum: number, r: any) => sum + Number(r.amount), 0);
+        const remainingRefundable = Math.max(0, originalAmount - alreadyRefunded);
+
+        if (refundAmount <= 0 || refundAmount > remainingRefundable) {
+            throw new Error(`Le montant du remboursement (${refundAmount} FCFA) doit être compris entre 1 et ${remainingRefundable} FCFA.`);
         }
 
-        // 1. Enregistrement dans la table refunds
-        await supabase.from('refunds').insert({
+        // 1. Enregistrement conforme dans la table refunds avec l'enum PROCESSED et ID unique
+        const refundTxId = `REFUND-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const { error: refundErr } = await supabase.from('refunds').insert({
             payment_id: payment.id,
+            refund_transaction_id: refundTxId,
             amount: refundAmount,
             reason: params.reason || 'Remboursement client',
-            status: 'COMPLETED',
-            processed_at: new Date().toISOString(),
+            status: 'PROCESSED',
+            processed_by: params.processedBy || null,
         });
+
+        if (refundErr) {
+            console.error('[PaymentService.processRefund] Erreur insertion refund:', refundErr);
+            throw new Error(`Échec enregistrement du remboursement: ${refundErr.message}`);
+        }
+
+        // Mise à jour du statut du paiement (REFUNDED si intégralité remboursée, PARTIAL sinon)
+        const isFullRefund = (alreadyRefunded + refundAmount) >= originalAmount;
+        await supabase
+            .from('payments')
+            .update({
+                status: isFullRefund ? 'REFUNDED' : 'PARTIAL',
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', payment.id);
 
         let newPaid = 0;
         let newBalance = 0;

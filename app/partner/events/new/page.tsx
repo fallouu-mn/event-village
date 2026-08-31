@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { ImageUpload } from '@/components/ui/ImageUpload';
 import { useToast } from '@/components/ui/Toast';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface ProgramItem {
     id: string;
@@ -225,7 +226,7 @@ export default function NewEventPage() {
         setIsSubmitting(true);
 
         if (!validateForm()) {
-            toast.error('Veuillez corriger les erreurs du formulaire.');
+            toast.error(toastMessages.events.formErrors);
             setIsSubmitting(false);
             return;
         }
@@ -269,13 +270,13 @@ export default function NewEventPage() {
 
             const data = await res.json();
             if (data.success) {
-                toast.success('Événement créé en brouillon avec succès !');
+                toast.success(toastMessages.events.createdDraft);
                 router.push('/partner/events');
             } else {
-                toast.error(data.error || 'Une erreur est survenue.');
+                toast.error(data.error || toastMessages.events.createError);
             }
         } catch (err: unknown) {
-            toast.error('Erreur réseau lors de la création.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setIsSubmitting(false);
         }

@@ -18,12 +18,13 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/Toast';
 
 export default function AdminServicesManagementPage() {
+  const toast = useToast();
   const [currentTab, setCurrentTab] = useState<'events' | 'halls' | 'tables' | 'products' | 'orders'>('events');
   const [items, setItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchServices = useCallback(async () => {
     setIsLoading(true);
@@ -45,7 +46,6 @@ export default function AdminServicesManagementPage() {
   }, [fetchServices]);
 
   const handleUpdateStatus = async (table: 'events' | 'halls' | 'products', id: string, newStatus: string) => {
-    setFeedback(null);
     try {
       const res = await fetch('/api/admin/services', {
         method: 'PATCH',
@@ -56,11 +56,11 @@ export default function AdminServicesManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour.');
 
-      setFeedback({ type: 'success', text: 'Statut du service mis à jour avec succès.' });
+      toast.success('Le statut du service a été mis à jour avec succès.');
       await fetchServices();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la mise à jour.';
-      setFeedback({ type: 'error', text: msg });
+      toast.error(msg);
     }
   };
 
@@ -108,25 +108,6 @@ export default function AdminServicesManagementPage() {
           <span>Actualiser</span>
         </Button>
       </div>
-
-      {/* Message Toast */}
-      {feedback && (
-        <div
-          className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold ${
-            feedback.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-            <span>{feedback.text}</span>
-          </div>
-          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-slate-700">
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Onglets de Services */}
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">

@@ -23,6 +23,7 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface FinanceData {
     grossRevenue: number;
@@ -159,16 +160,16 @@ export default function PartnerFinancePage() {
             });
             const data = await res.json();
             if (data.success) {
-                toast.success(data.message || 'Demande de retrait soumise avec succès !');
+                toast.success(toastMessages.finance.withdrawalSuccess(amountNum));
                 setShowConfirm(false);
                 setAmount('');
                 fetchFinance();
             } else {
-                toast.error(data.error || 'Échec du retrait.');
+                toast.error(data.error || toastMessages.finance.withdrawalError);
                 setShowConfirm(false);
             }
         } catch {
-            toast.error('Erreur réseau.');
+            toast.error(toastMessages.common.networkError);
             setShowConfirm(false);
         } finally {
             setIsSubmitting(false);

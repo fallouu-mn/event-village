@@ -27,6 +27,8 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { useToast } from '@/components/ui/Toast';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface PartnerActivity {
   activity_type: string;
@@ -105,11 +107,11 @@ const ACTIVITY_LABELS: Record<string, string> = {
 export default function AdminDashboardPage() {
   const [kpis, setKpis] = useState<AdminKPIs | null>(null);
   const [partners, setPartners] = useState<PartnerItem[]>([]);
+  const toast = useToast();
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [activeTab, setActiveTab] = useState<'EN_ATTENTE' | 'VALIDE' | 'REJETE' | 'ALL'>('EN_ATTENTE');
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
-  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Modal Détails Partenaire
   const [selectedPartner, setSelectedPartner] = useState<PartnerItem | null>(null);
@@ -134,9 +136,8 @@ export default function AdminDashboardPage() {
         throw new Error(data.error || `Impossible de générer le lien de consultation (${docName}).`);
       }
       window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Fichier introuvable sur le stockage sécurisé.';
-      setDocError(msg);
+    } catch {
+      toast.error(toastMessages.admin.docLoadError);
     } finally {
       setLoadingDoc(null);
     }
@@ -180,7 +181,6 @@ export default function AdminDashboardPage() {
   // Validation d'un partenaire avec mise à jour optimiste instantanée
   const handleValidatePartner = async (partner: PartnerItem) => {
     setIsActionLoading(partner.id);
-    setFeedbackMessage(null);
 
     // Mise à jour optimiste de l'UI
     setPartners((prev) => {
@@ -209,17 +209,14 @@ export default function AdminDashboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la validation.');
 
-      setFeedbackMessage({
-        type: 'success',
-        text: `Le partenaire "${partner.company_name}" a été validé avec succès.`,
-      });
+      toast.success(toastMessages.admin.partnerValidated(partner.company_name));
       if (selectedPartner?.id === partner.id) {
         setIsDetailsModalOpen(false);
       }
       await fetchDashboardData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la validation.';
-      setFeedbackMessage({ type: 'error', text: msg });
+      toast.error(msg);
       await fetchDashboardData();
     } finally {
       setIsActionLoading(null);
@@ -238,7 +235,6 @@ export default function AdminDashboardPage() {
     if (!partnerToReject) return;
     const targetPartner = partnerToReject;
     setIsActionLoading(targetPartner.id);
-    setFeedbackMessage(null);
 
     // Mise à jour optimiste
     setPartners((prev) => {
@@ -272,16 +268,13 @@ export default function AdminDashboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors du rejet.');
 
-      setFeedbackMessage({
-        type: 'success',
-        text: `La demande du partenaire "${targetPartner.company_name}" a été rejetée.`,
-      });
+      toast.success(toastMessages.admin.partnerRejected(targetPartner.company_name));
       setIsRejectModalOpen(false);
       setPartnerToReject(null);
       await fetchDashboardData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec du rejet.';
-      setFeedbackMessage({ type: 'error', text: msg });
+      toast.error(msg);
       await fetchDashboardData();
     } finally {
       setIsActionLoading(null);
@@ -338,28 +331,6 @@ export default function AdminDashboardPage() {
           </span>
         </div>
       </div>
-
-      {/* Message de notification / Toast */}
-      {feedbackMessage && (
-        <div
-          className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold ${
-            feedbackMessage.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {feedbackMessage.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-            <span>{feedbackMessage.text}</span>
-          </div>
-          <button
-            onClick={() => setFeedbackMessage(null)}
-            className="text-slate-400 hover:text-slate-700 dark:hover:text-white"
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* KPIs Financiers & Opérationnels Réels (CDC V3) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -18,8 +18,10 @@ import {
     RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface EventItem {
     id: string;
@@ -90,13 +92,13 @@ export default function PartnerEventsPage() {
             });
             const data = await res.json();
             if (data.success) {
-                toast.success('Événement soumis pour validation avec succès !');
+                toast.success(toastMessages.events.submitted());
                 fetchEvents();
             } else {
-                toast.error(data.error || 'Échec de la soumission.');
+                toast.error(data.error || toastMessages.events.submitError);
             }
         } catch {
-            toast.error('Erreur réseau lors de la soumission.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setActionLoading(null);
         }
@@ -116,13 +118,13 @@ export default function PartnerEventsPage() {
             });
             const data = await res.json();
             if (data.success) {
-                toast.success('Brouillon supprimé.');
+                toast.success(toastMessages.events.deleted);
                 fetchEvents();
             } else {
-                toast.error(data.error || 'Échec de la suppression.');
+                toast.error(data.error || toastMessages.events.deleteError);
             }
         } catch {
-            toast.error('Erreur réseau lors de la suppression.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setActionLoading(null);
             setDeleteConfirm({ isOpen: false, eventId: null });
@@ -140,23 +142,6 @@ export default function PartnerEventsPage() {
         const catRev = ev.ticket_categories?.reduce((s, c) => s + (c.sold_quantity || 0) * Number(c.price || 0), 0) || 0;
         return acc + catRev;
     }, 0);
-
-    const getStatusBadge = (status: EventItem['status']) => {
-        switch (status) {
-            case 'BROUILLON':
-                return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border border-slate-300 dark:border-zinc-700">Brouillon</span>;
-            case 'EN_ATTENTE':
-                return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/60 animate-pulse">En attente de validation</span>;
-            case 'VALIDE':
-                return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800/60">Validé (Prêt)</span>;
-            case 'PUBLIE':
-                return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60">En ligne (Publié)</span>;
-            case 'SUSPENDU':
-                return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-red-100 dark:bg-red-950/40 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800/60">Suspendu</span>;
-            case 'TERMINE':
-                return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-100 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800/60">Terminé</span>;
-        }
-    };
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-8">
@@ -326,7 +311,9 @@ export default function PartnerEventsPage() {
                                                 <span className="text-xs text-slate-400 font-medium">Image non définie</span>
                                             </div>
                                         )}
-                                        <div className="absolute top-3 right-3">{getStatusBadge(ev.status)}</div>
+                                        <div className="absolute top-3 right-3">
+                                            <StatusBadge status={ev.status} size="sm" />
+                                        </div>
                                     </div>
 
                                     {/* Contenu */}

@@ -1,95 +1,42 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, MapPin, Users, Building2, Check, ArrowRight, Sparkles } from 'lucide-react';
+import { Search, MapPin, Users, Building2, Check, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-
-export interface HallItem {
-  id: string;
-  name: string;
-  partnerName: string;
-  location: string;
-  capacityMin: number;
-  capacityMax: number;
-  areaSqm: number;
-  pricePerDay: number;
-  priceFormatted: string;
-  imageUrl: string;
-  amenities: string[];
-  isAvailable: boolean;
-}
-
-const SAMPLE_HALLS: HallItem[] = [
-  {
-    id: 'hall-dakar-arena-vip',
-    name: 'Grand Salon Prestige Dakar Arena',
-    partnerName: 'Dakar Arena Diamniadio',
-    location: 'Diamniadio, Dakar',
-    capacityMin: 200,
-    capacityMax: 800,
-    areaSqm: 1200,
-    pricePerDay: 750000,
-    priceFormatted: '750 000 FCFA / jour',
-    imageUrl: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&auto=format&fit=crop&q=80',
-    amenities: ['Climatisation', 'Vidéoprojecteur 4K', 'Sonorisation Pro', 'Parking 200 places', 'Loge VIP'],
-    isAvailable: true,
-  },
-  {
-    id: 'hall-terrou-bi-ocean',
-    name: 'Salle Océane Terrou-Bi',
-    partnerName: 'Hôtel Terrou-Bi Dakar',
-    location: 'Boulevard Martin Luther King, Dakar',
-    capacityMin: 80,
-    capacityMax: 350,
-    areaSqm: 500,
-    pricePerDay: 500000,
-    priceFormatted: '500 000 FCFA / jour',
-    imageUrl: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&auto=format&fit=crop&q=80',
-    amenities: ['Vue Mer Panoramique', 'Traiteur Intégré', 'Terrasse Privée', 'Climatisation'],
-    isAvailable: true,
-  },
-  {
-    id: 'hall-radisson-almadies',
-    name: 'Espace Événementiel Les Almadies',
-    partnerName: 'Radisson Blu Resort',
-    location: 'Les Almadies, Dakar',
-    capacityMin: 50,
-    capacityMax: 200,
-    areaSqm: 320,
-    pricePerDay: 350000,
-    priceFormatted: '350 000 FCFA / jour',
-    imageUrl: 'https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=800&auto=format&fit=crop&q=80',
-    amenities: ['Éclairage Scénique', 'Wifi Haut Débit', 'Service Voiturier'],
-    isAvailable: true,
-  },
-  {
-    id: 'hall-saly-palm-beach',
-    name: 'Palais des Congrès Saly',
-    partnerName: 'Palm Beach Resort',
-    location: 'Saly Portudal, Mbour',
-    capacityMin: 150,
-    capacityMax: 600,
-    areaSqm: 850,
-    pricePerDay: 600000,
-    priceFormatted: '600 000 FCFA / jour',
-    imageUrl: 'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?w=800&auto=format&fit=crop&q=80',
-    amenities: ['Plage Privée', 'Sonorisation', 'Piscine Extérieure', 'Hébergement Partenaire'],
-    isAvailable: true,
-  },
-];
+import { Skeleton } from '@/components/ui/Skeleton';
 
 export default function HallsCataloguePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('Toutes');
   const [selectedCapacity, setSelectedCapacity] = useState('Toutes');
+  const [halls, setHalls] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const locations = ['Toutes', 'Diamniadio', 'Dakar Centre', 'Les Almadies', 'Saly'];
   const capacityFilters = ['Toutes', '< 200 pers', '200 - 500 pers', '500+ pers'];
 
-  const filteredHalls = SAMPLE_HALLS.filter((hall) => {
+  useEffect(() => {
+    async function loadHalls() {
+      try {
+        setIsLoading(true);
+        const res = await fetch('/api/halls');
+        if (res.ok) {
+          const data = await res.json();
+          setHalls(data.halls || []);
+        }
+      } catch (err) {
+        console.error('[HallsPage] Erreur chargement salles:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadHalls();
+  }, []);
+
+  const filteredHalls = halls.filter((hall) => {
     const matchesSearch =
       hall.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       hall.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -177,7 +124,17 @@ export default function HallsCataloguePage() {
       </div>
 
       {/* 3. Grille des Salles */}
-      {filteredHalls.length > 0 ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="space-y-3 p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800">
+              <Skeleton className="w-full aspect-[16/9] rounded-2xl" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          ))}
+        </div>
+      ) : filteredHalls.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {filteredHalls.map((hall) => (
             <div
@@ -224,7 +181,7 @@ export default function HallsCataloguePage() {
 
                   {/* Équipements */}
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {hall.amenities.map((amenity, i) => (
+                    {hall.amenities.map((amenity: string, i: number) => (
                       <span
                         key={i}
                         className="text-[11px] px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-medium flex items-center gap-1"

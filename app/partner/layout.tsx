@@ -2,11 +2,18 @@
 
 import React from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { redirect } from 'next/navigation';
+import { redirect, usePathname } from 'next/navigation';
 
 export default function PartnerLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const { profile, isLoading, isAuthenticated } = useAuth();
 
+  // 1. /partner/register est une page publique d'inscription / candidature
+  if (pathname === '/partner/register' || pathname.startsWith('/partner/register/')) {
+    return <>{children}</>;
+  }
+
+  // 2. État de chargement du profil
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -20,10 +27,25 @@ export default function PartnerLayout({ children }: { children: React.ReactNode 
     );
   }
 
+  // 3. Utilisateur non authentifié -> redirection vers /login
   if (!isAuthenticated || !profile) {
-    redirect('/login');
+    redirect(`/login?redirect=${encodeURIComponent(pathname)}`);
   }
 
+  // 4. Scanner / Composteur QR Code accessible aux Contrôleurs, Partenaires et Admins
+  if (pathname === '/partner/scan' || pathname.startsWith('/partner/scan/')) {
+    if (
+      profile.role !== 'CONTROLEUR' &&
+      profile.role !== 'PARTENAIRE' &&
+      profile.role !== 'ADMIN' &&
+      profile.role !== 'SUPERADMIN'
+    ) {
+      redirect('/');
+    }
+    return <>{children}</>;
+  }
+
+  // 5. Reste de l'Espace Partenaire réservé aux rôles PARTENAIRE, ADMIN, SUPERADMIN
   if (profile.role !== 'PARTENAIRE' && profile.role !== 'ADMIN' && profile.role !== 'SUPERADMIN') {
     redirect('/');
   }

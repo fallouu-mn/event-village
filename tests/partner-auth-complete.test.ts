@@ -6,8 +6,8 @@ import { SensitiveActionService } from '../lib/security/sensitive-action.service
 import { NotificationService } from '../lib/notifications/notification.service';
 import { AdminService } from '../lib/admin/admin.service';
 
-test('1. Register Partenaire : Schéma strict et statut initial EN_ATTENTE', () => {
-    const rawPayload = {
+test('1. Register Partenaire : Schéma strict avec documents obligatoires (Bucket Privé) et statut initial EN_ATTENTE', () => {
+    const validPayload = {
         companyName: 'Traiteur Royal Dakar',
         commercialName: 'Royal Buffet',
         description: 'Service traiteur haut de gamme',
@@ -20,14 +20,28 @@ test('1. Register Partenaire : Schéma strict et statut initial EN_ATTENTE', () 
         email: 'aminata@royal.sn',
         password: 'Password123!',
         confirmPassword: 'Password123!',
+        idCardUrl: 'pending_registrations/id_card_aminata_123.pdf',
+        businessDocUrl: 'pending_registrations/business_rccm_royal_123.pdf',
     };
 
-    const parsed = RegisterPartnerSchema.safeParse(rawPayload);
+    const parsed = RegisterPartnerSchema.safeParse(validPayload);
     assert.strictEqual(parsed.success, true);
     if (parsed.success) {
         assert.strictEqual(parsed.data.activities.length, 2);
         assert.strictEqual(normalizePhoneNumber(parsed.data.phone), '+221774567890');
+        assert.strictEqual(parsed.data.idCardUrl, 'pending_registrations/id_card_aminata_123.pdf');
+        assert.strictEqual(parsed.data.businessDocUrl, 'pending_registrations/business_rccm_royal_123.pdf');
     }
+
+    // Rejet si pièce d'identité manquante
+    const payloadWithoutIdCard = { ...validPayload, idCardUrl: undefined };
+    const parsedNoId = RegisterPartnerSchema.safeParse(payloadWithoutIdCard);
+    assert.strictEqual(parsedNoId.success, false, 'Le schéma doit rejeter une inscription sans pièce d\'identité.');
+
+    // Rejet si document d'entreprise manquant
+    const payloadWithoutBusinessDoc = { ...validPayload, businessDocUrl: undefined };
+    const parsedNoBus = RegisterPartnerSchema.safeParse(payloadWithoutBusinessDoc);
+    assert.strictEqual(parsedNoBus.success, false, 'Le schéma doit rejeter une inscription sans document d\'entreprise.');
 });
 
 test('2. OTP Validation : Code conforme et vérification', () => {

@@ -14,8 +14,10 @@ import {
     XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface Product {
     id: string;
@@ -46,7 +48,7 @@ export default function PartnerProductsPage() {
                 setProducts(data.products || []);
             }
         } catch {
-            toast.error('Erreur lors du chargement des produits.');
+            toast.error(toastMessages.products.loadError);
         } finally {
             setIsLoading(false);
         }
@@ -71,12 +73,12 @@ export default function PartnerProductsPage() {
                 setProducts((prev) =>
                     prev.map((p) => (p.id === product.id ? { ...p, status: newStatus } : p))
                 );
-                toast.success(`Produit ${newStatus === 'DISPONIBLE' ? 'remis en stock' : 'mis en rupture'}.`);
+                toast.success(newStatus === 'DISPONIBLE' ? toastMessages.products.stockIn(product.name) : toastMessages.products.stockOut(product.name));
             } else {
-                toast.error(data.error || 'Echec du changement de statut.');
+                toast.error(data.error || toastMessages.products.statusError);
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setToggleLoading(null);
         }
@@ -90,13 +92,13 @@ export default function PartnerProductsPage() {
             const res = await fetch(`/api/partner/products/${productId}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.success) {
-                toast.success('Produit supprime.');
+                toast.success(toastMessages.products.deleted);
                 setProducts((prev) => prev.filter((p) => p.id !== productId));
             } else {
-                toast.error(data.error || 'Echec de la suppression.');
+                toast.error(data.error || toastMessages.products.deleteError);
             }
         } catch {
-            toast.error('Erreur reseau lors de la suppression.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setDeleteLoading(false);
             setDeleteConfirm({ isOpen: false, productId: null });
@@ -106,35 +108,6 @@ export default function PartnerProductsPage() {
     const totalProducts = products.length;
     const inStock = products.filter((p) => p.status === 'DISPONIBLE').length;
     const dailySpecials = products.filter((p) => p.is_daily_special).length;
-
-    const getStatusBadge = (status: Product['status']) => {
-        switch (status) {
-            case 'DISPONIBLE':
-                return (
-                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60">
-                        En stock
-                    </span>
-                );
-            case 'INDISPONIBLE':
-                return (
-                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800/60">
-                        Rupture
-                    </span>
-                );
-            case 'EPUISE':
-                return (
-                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border border-slate-300 dark:border-zinc-700">
-                        Epuise
-                    </span>
-                );
-            case 'SUSPENDU':
-                return (
-                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800/60">
-                        Suspendu
-                    </span>
-                );
-        }
-    };
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-8">
@@ -247,7 +220,7 @@ export default function PartnerProductsPage() {
                                             <Star size={10} /> Plat du jour
                                         </span>
                                     )}
-                                    {getStatusBadge(product.status)}
+                                    <StatusBadge status={product.status} size="sm" />
                                 </div>
                             </div>
 

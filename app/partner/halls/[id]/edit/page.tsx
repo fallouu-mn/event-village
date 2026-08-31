@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { ImageUpload } from '@/components/ui/ImageUpload';
 import { useToast } from '@/components/ui/Toast';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 const hallSchema = z.object({
     name: z.string().min(3, 'Le nom doit contenir au moins 3 caracteres.'),
@@ -81,12 +82,12 @@ export default function EditHallPage() {
                     );
                     setHasActiveReservations(active.length > 0);
                 } else {
-                    toast.error(data.error || 'Impossible de charger la salle.');
+                    toast.error(data.error || toastMessages.halls.notFound);
                     router.push('/partner/halls');
                 }
             })
             .catch(() => {
-                toast.error('Erreur reseau lors du chargement.');
+                toast.error(toastMessages.common.networkError);
                 router.push('/partner/halls');
             })
             .finally(() => setIsLoading(false));
@@ -153,13 +154,13 @@ export default function EditHallPage() {
 
             const data = await res.json();
             if (data.success) {
-                toast.success('Salle mise a jour avec succes !');
+                toast.success(toastMessages.halls.updated(parsed.data.name));
                 router.push('/partner/halls');
             } else {
-                toast.error(data.error || 'Echec de la modification.');
+                toast.error(data.error || toastMessages.halls.updateError);
             }
         } catch {
-            toast.error('Erreur reseau lors de la modification.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setIsSubmitting(false);
         }

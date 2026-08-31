@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ShoppingBag,
@@ -10,67 +10,44 @@ import {
   Calendar,
   CreditCard,
   ChevronRight,
-  ExternalLink,
 } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 export default function OrdersPage() {
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
+  const [orders, setOrders] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const myOrders = [
-    {
-      id: 'ord-001',
-      orderNumber: 'CMD-2026-8891',
-      type: 'TICKET',
-      title: 'Justice Tour — Pass VIP Prestige',
-      itemCount: 1,
-      totalAmountFormatted: '35 000 FCFA',
-      status: 'CONFIRMEE',
-      paymentMethod: 'WAVE (SamirPay)',
-      dateFormatted: '22 Août 2026',
-      detailsUrl: '/tickets',
-    },
-    {
-      id: 'ord-002',
-      orderNumber: 'CMD-2026-7734',
-      type: 'HALL_RESERVATION',
-      title: 'Location Salle Palais des Congrès (Acompte 30%)',
-      itemCount: 1,
-      totalAmountFormatted: '150 000 FCFA',
-      status: 'CONFIRMEE',
-      paymentMethod: 'ORANGE_MONEY (SamirPay)',
-      dateFormatted: '19 Août 2026',
-      detailsUrl: '/halls/hall-palais-congres',
-    },
-    {
-      id: 'ord-003',
-      orderNumber: 'CMD-2026-5512',
-      type: 'TABLE_RESERVATION',
-      title: 'Réservation Table VIP — Terrou-Bi (4 personnes)',
-      itemCount: 1,
-      totalAmountFormatted: '20 000 FCFA',
-      status: 'CONFIRMEE',
-      paymentMethod: 'WAVE (SamirPay)',
-      dateFormatted: '15 Août 2026',
-      detailsUrl: '/restaurants/rest-terrou-bi/tables',
-    },
-    {
-      id: 'ord-004',
-      orderNumber: 'CMD-2026-4401',
-      type: 'FOOD_ORDER',
-      title: 'Commande Traiteur — 2x Thiéboudienne Royale & Boissons',
-      itemCount: 3,
-      totalAmountFormatted: '14 000 FCFA',
-      status: 'LIVREE',
-      paymentMethod: 'WAVE (SamirPay)',
-      dateFormatted: '12 Août 2026',
-      detailsUrl: '/restaurants/rest-dakar-grill/menu',
-    },
-  ];
+  useEffect(() => {
+    async function loadOrders() {
+      if (!user?.id) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        setIsLoading(true);
+        const res = await fetch(`/api/orders?userId=${user.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setOrders(data.orders || []);
+        }
+      } catch (err) {
+        console.error('[OrdersPage] Erreur chargement commandes:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    if (!isAuthLoading) {
+      loadOrders();
+    }
+  }, [user?.id, isAuthLoading]);
 
-  const filteredOrders = myOrders.filter((o) => {
+  const filteredOrders = orders.filter((o) => {
     if (activeCategory === 'ALL') return true;
     return o.type === activeCategory;
   });
@@ -88,6 +65,21 @@ export default function OrdersPage() {
         return <ShoppingBag size={18} className="text-slate-500" />;
     }
   };
+
+  if (!isAuthLoading && !isAuthenticated) {
+    return (
+      <div className="max-w-md mx-auto min-h-[50vh] flex flex-col items-center justify-center text-center p-6 space-y-4">
+        <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
+          <ShoppingBag size={32} />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 dark:text-white">Connexion requise</h2>
+        <p className="text-xs text-slate-500">Connectez-vous pour suivre vos commandes et réservations.</p>
+        <Link href="/login">
+          <Button variant="primary" size="md">Se connecter</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-16">
@@ -114,7 +106,6 @@ export default function OrdersPage() {
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-zinc-800 pb-3">
         {[
           { id: 'ALL', label: 'Toutes les commandes' },
-          { id: 'TICKET', label: 'Billetterie' },
           { id: 'TABLE_RESERVATION', label: 'Tables Restaurants' },
           { id: 'HALL_RESERVATION', label: 'Salles & Espaces' },
           { id: 'FOOD_ORDER', label: 'Repas & Menus' },
@@ -134,7 +125,13 @@ export default function OrdersPage() {
       </div>
 
       {/* 3. Liste des Commandes */}
-      {filteredOrders.length > 0 ? (
+      {isLoading || isAuthLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-28 rounded-3xl" />
+          <Skeleton className="h-28 rounded-3xl" />
+          <Skeleton className="h-28 rounded-3xl" />
+        </div>
+      ) : filteredOrders.length > 0 ? (
         <div className="space-y-4">
           {filteredOrders.map((order) => (
             <div
@@ -181,7 +178,7 @@ export default function OrdersPage() {
                   href={order.detailsUrl}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-[#FF5722] hover:text-white text-xs font-bold text-slate-700 dark:text-zinc-300 transition-colors"
                 >
-                  <span>Détails</span>
+                  <span>Consulter</span>
                   <ChevronRight size={14} />
                 </Link>
               </div>

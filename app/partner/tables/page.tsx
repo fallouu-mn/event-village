@@ -17,9 +17,11 @@ import {
 } from 'lucide-react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface Zone {
     id: string;
@@ -120,7 +122,7 @@ export default function PartnerTablesPage() {
             if (zData.success) setZones(zData.zones || []);
             if (tData.success) setTables(tData.tables || []);
         } catch {
-            toast.error('Erreur lors du chargement.');
+            toast.error(toastMessages.tables.loadError);
         } finally {
             setIsLoading(false);
         }
@@ -133,7 +135,7 @@ export default function PartnerTablesPage() {
             const data = await res.json();
             if (data.success) setReservations(data.reservations || []);
         } catch {
-            toast.error('Erreur chargement reservations.');
+            toast.error(toastMessages.tables.loadReservationsError);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -192,14 +194,14 @@ export default function PartnerTablesPage() {
             const data = await res.json();
 
             if (data.success || data.zone) {
-                toast.success(isEdit ? 'Zone mise a jour !' : 'Zone creee !');
+                toast.success(isEdit ? toastMessages.tables.zoneUpdated(parsed.data.name) : toastMessages.tables.zoneCreated(parsed.data.name));
                 setZoneModal({ isOpen: false });
                 fetchZonesAndTables();
             } else {
-                toast.error(data.error || 'Echec de l\'operation.');
+                toast.error(data.error || toastMessages.tables.operationError);
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setZoneSaving(false);
         }
@@ -262,14 +264,14 @@ export default function PartnerTablesPage() {
             const data = await res.json();
 
             if (data.success || data.table) {
-                toast.success(isEdit ? 'Table mise a jour !' : 'Table creee !');
+                toast.success(isEdit ? toastMessages.tables.tableUpdated(parsed.data.table_number) : toastMessages.tables.tableCreated(parsed.data.table_number));
                 setTableModal({ isOpen: false });
                 fetchZonesAndTables();
             } else {
-                toast.error(data.error || 'Echec de l\'operation.');
+                toast.error(data.error || toastMessages.tables.operationError);
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setTableSaving(false);
         }
@@ -284,13 +286,13 @@ export default function PartnerTablesPage() {
             const res = await fetch(`/api/partner/tables/${deleteConfirm.id}?type=${typeParam}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.success) {
-                toast.success(`${deleteConfirm.type === 'zone' ? 'Zone' : 'Table'} supprimee.`);
+                toast.success(deleteConfirm.type === 'zone' ? toastMessages.tables.zoneDeleted : toastMessages.tables.tableDeleted);
                 fetchZonesAndTables();
             } else {
-                toast.error(data.error || 'Echec de la suppression.');
+                toast.error(data.error || toastMessages.tables.deleteError);
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setDeleteLoading(false);
             setDeleteConfirm({ isOpen: false, type: 'zone', id: null, label: '' });
@@ -310,10 +312,10 @@ export default function PartnerTablesPage() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    toast.success('Reservation confirmee !');
+                    toast.success(toastMessages.tables.reservationConfirmed);
                     fetchReservations(reservationDate);
                 } else {
-                    toast.error(data.error || 'Echec.');
+                    toast.error(data.error || toastMessages.tables.operationError);
                 }
             } else {
                 const res = await fetch(`/api/partner/tables/reservations/${resAction.id}`, {
@@ -323,14 +325,14 @@ export default function PartnerTablesPage() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    toast.success('Reservation annulee.');
+                    toast.success(toastMessages.tables.reservationCancelled);
                     fetchReservations(reservationDate);
                 } else {
-                    toast.error(data.error || 'Echec.');
+                    toast.error(data.error || toastMessages.tables.operationError);
                 }
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setResActionLoading(false);
             setResAction({ isOpen: false, type: 'confirm', id: null });
@@ -606,19 +608,7 @@ export default function PartnerTablesPage() {
                                                 {getZoneName(res.zone_id)}
                                             </span>
                                         </div>
-                                        <span
-                                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                res.status === 'CONFIRMEE'
-                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                                    : res.status === 'EN_ATTENTE'
-                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 animate-pulse'
-                                                    : res.status === 'ANNULEE'
-                                                    ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300'
-                                                    : 'bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-zinc-300'
-                                            }`}
-                                        >
-                                            {res.status}
-                                        </span>
+                                        <StatusBadge status={res.status} size="sm" />
                                     </div>
 
                                     <div className="space-y-1 text-xs text-slate-600 dark:text-zinc-400">

@@ -63,7 +63,7 @@ export default function ForgotPasswordPage() {
                 const res = await fetch('/api/auth/send-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone: normalizedPhone }),
+                    body: JSON.stringify({ phone: normalizedPhone, purpose: 'PASSWORD_RESET' }),
                 });
 
                 const data = await res.json();
@@ -105,6 +105,14 @@ export default function ForgotPasswordPage() {
             const verifyData = await res.json();
             if (!res.ok) {
                 throw new Error(verifyData.error || 'Code de vérification incorrect.');
+            }
+
+            if (verifyData.token_hash) {
+                const supabase = getBrowserClient();
+                await supabase.auth.verifyOtp({
+                    token_hash: verifyData.token_hash,
+                    type: 'magiclink',
+                });
             }
 
             router.push('/reset-password');

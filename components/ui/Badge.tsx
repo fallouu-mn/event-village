@@ -20,7 +20,7 @@ export const Badge: React.FC<BadgeProps> = ({
 }) => {
   const variants = {
     default: 'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 border-slate-200 dark:border-zinc-700',
-    brand: 'bg-[#FF5722]/15 text-[#FF5722] dark:text-[#FF5722] border-[#FF5722]/30',
+    brand: 'bg-[#FF5722]/15 text-[#FF5722] dark:text-[#FF5722] border-[#FF5722]/30 font-black',
     success: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
     warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30',
     danger: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30',
@@ -51,16 +51,19 @@ export const Badge: React.FC<BadgeProps> = ({
 export interface StatusBadgeProps {
   status: string;
   className?: string;
+  size?: 'sm' | 'md';
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = '' }) => {
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = '', size = 'sm' }) => {
   const norm = (status || '').toUpperCase();
 
   let variant: BadgeVariant = 'neutral';
   let label = status;
 
   switch (norm) {
+    // 🟢 SUCCÈS / VALIDÉ / CONFIRMÉ / PAYÉ / DISPONIBLE / EN LIGNE
     case 'VALIDE':
+    case 'PUBLIE':
     case 'CONFIRMEE':
     case 'CONFIRME':
     case 'SUCCESS':
@@ -69,19 +72,29 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
     case 'DISPONIBLE':
     case 'LIVREE':
       variant = 'success';
-      label = norm === 'SUCCESS' ? 'PAYÉ' : norm;
+      if (norm === 'SUCCESS') label = 'PAYÉ';
+      else if (norm === 'PUBLIE') label = 'EN LIGNE';
+      else label = norm.replace(/_/g, ' ');
       break;
 
+    // 🟠 EN ATTENTE / TRANSITION / MORATOIRE / BROUILLON / PARTIEL
     case 'PENDING':
     case 'EN_ATTENTE':
     case 'PROCESSING':
     case 'EN_PREPARATION':
+    case 'PRETE':
     case 'EN_LIVRAISON':
     case 'BROUILLON':
+    case 'MORATOIRE':
+    case 'PARTIAL':
       variant = 'warning';
-      label = norm === 'PENDING' ? 'EN ATTENTE' : norm.replace('_', ' ');
+      if (norm === 'PENDING') label = 'EN ATTENTE';
+      else if (norm === 'PARTIAL') label = 'PARTIEL';
+      else if (norm === 'MORATOIRE') label = 'MORATOIRE 48H';
+      else label = norm.replace(/_/g, ' ');
       break;
 
+    // 🔴 REJET / ANNULATION / ÉCHEC / SUSPENSION / RUPTURE
     case 'FAILED':
     case 'ECHEC':
     case 'REJETE':
@@ -91,26 +104,40 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
     case 'CANCELLED':
     case 'SUSPENDU':
     case 'EPUISE':
+    case 'INDISPONIBLE':
+    case 'REFUNDED':
+    case 'REMBOURSE':
       variant = 'danger';
-      label = norm.replace('_', ' ');
+      if (norm === 'REFUNDED' || norm === 'REMBOURSE') label = 'REMBOURSÉ';
+      else if (norm === 'CANCELLED') label = 'ANNULÉ';
+      else label = norm.replace(/_/g, ' ');
       break;
 
+    // 🔵 INFO / UTILISÉ / TERMINÉ / OCCUPÉ
     case 'UTILISE':
     case 'TERMINE':
     case 'TERMINEE':
+    case 'OCCUPE':
       variant = 'info';
-      label = norm.replace('_', ' ');
+      if (norm === 'UTILISE') label = 'COMPOSTÉ';
+      else label = norm.replace(/_/g, ' ');
       break;
 
+    // ⭐ IDENTITÉ / AMBASSADEUR / PREMIUM
     case 'AMBASSADEUR':
       variant = 'brand';
       label = '⭐ AMBASSADEUR';
       break;
+    case 'PREMIUM':
+    case 'FOUNDER':
+      variant = 'brand';
+      label = norm;
+      break;
 
     default:
       variant = 'neutral';
-      label = status;
+      label = status || 'NON DÉFINI';
   }
 
-  return <Badge variant={variant} className={className}>{label}</Badge>;
+  return <Badge variant={variant} size={size} className={className}>{label}</Badge>;
 };

@@ -16,8 +16,10 @@ import {
     Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { toastMessages } from '@/lib/messages/toast-messages';
 
 interface HallReservation {
     id: string;
@@ -70,7 +72,7 @@ export default function PartnerHallsPage() {
                 setHalls(data.halls || []);
             }
         } catch {
-            toast.error('Erreur lors du chargement des salles.');
+            toast.error(toastMessages.halls.loadError);
         } finally {
             setIsLoading(false);
         }
@@ -93,13 +95,13 @@ export default function PartnerHallsPage() {
             });
             const data = await res.json();
             if (data.success) {
-                toast.success('Reservation confirmee avec succes !');
+                toast.success(toastMessages.halls.reservationConfirmed);
                 fetchHalls();
             } else {
-                toast.error(data.error || 'Echec de la confirmation.');
+                toast.error(data.error || toastMessages.halls.confirmError);
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setActionLoading(null);
             setConfirmAction({ isOpen: false, type: 'confirm', id: null });
@@ -118,13 +120,13 @@ export default function PartnerHallsPage() {
             });
             const data = await res.json();
             if (data.success) {
-                toast.success('Reservation annulee.');
+                toast.success(toastMessages.halls.reservationCancelled);
                 fetchHalls();
             } else {
-                toast.error(data.error || 'Echec de l\'annulation.');
+                toast.error(data.error || toastMessages.halls.cancelError);
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setActionLoading(null);
             setConfirmAction({ isOpen: false, type: 'cancel', id: null });
@@ -139,13 +141,13 @@ export default function PartnerHallsPage() {
             const res = await fetch(`/api/partner/halls/${hallId}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.success) {
-                toast.success('Salle supprimee.');
+                toast.success(toastMessages.halls.deleted);
                 setHalls((prev) => prev.filter((h) => h.id !== hallId));
             } else {
-                toast.error(data.error || 'Echec de la suppression.');
+                toast.error(data.error || toastMessages.halls.deleteError);
             }
         } catch {
-            toast.error('Erreur reseau.');
+            toast.error(toastMessages.common.networkError);
         } finally {
             setActionLoading(null);
             setConfirmAction({ isOpen: false, type: 'delete', id: null });
@@ -364,19 +366,7 @@ export default function PartnerHallsPage() {
                                                         <span className="text-slate-900 dark:text-white">
                                                             {res.start_date} → {res.end_date}
                                                         </span>
-                                                        <span
-                                                            className={`px-2 py-0.5 rounded-full text-[10px] ${
-                                                                res.status === 'CONFIRMEE'
-                                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                                                    : res.status === 'EN_ATTENTE'
-                                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 animate-pulse'
-                                                                    : res.status === 'ANNULEE'
-                                                                    ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300'
-                                                                    : 'bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-zinc-300'
-                                                            }`}
-                                                        >
-                                                            {res.status}
-                                                        </span>
+                                                        <StatusBadge status={res.status} size="sm" />
                                                     </div>
 
                                                     <div className="space-y-1 text-slate-600 dark:text-zinc-400">
