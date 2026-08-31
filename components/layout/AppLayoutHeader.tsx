@@ -2,13 +2,18 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Search, LogIn, LogOut } from 'lucide-react';
+import { Search, LogIn, LogOut, Menu, X } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useAuth } from '@/components/providers/AuthProvider';
 
-export default function AppLayoutHeader() {
+interface AppLayoutHeaderProps {
+  isMobileMenuOpen?: boolean;
+  onMenuToggle?: () => void;
+}
+
+export default function AppLayoutHeader({ isMobileMenuOpen = false, onMenuToggle }: AppLayoutHeaderProps) {
   const { user, profile, isAuthenticated, signOut } = useAuth();
 
   const isUserLoggedIn = isAuthenticated || !!user;
@@ -23,12 +28,24 @@ export default function AppLayoutHeader() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#16161A] px-4 lg:px-8 py-3 flex items-center justify-between gap-4 shadow-subtle">
-      {/* Logo Mobile */}
-      <div className="lg:hidden">
-        <Logo variant="auto" />
+      {/* Left: Hamburger + Logo (Mobile) */}
+      <div className="flex items-center gap-1.5">
+        {onMenuToggle && (
+          <button
+            type="button"
+            onClick={onMenuToggle}
+            className="lg:hidden w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors active:scale-95"
+            aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+          >
+            {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        )}
+        <div className="lg:hidden">
+          <Logo variant="auto" />
+        </div>
       </div>
 
-      {/* Recherche Rapide Desktop */}
+      {/* Centre: Recherche Rapide (Desktop + Tablette) */}
       <div className="hidden sm:flex items-center flex-1 max-w-lg">
         <Link
           href="/explore"
@@ -39,7 +56,7 @@ export default function AppLayoutHeader() {
         </Link>
       </div>
 
-      {/* Actions Droite */}
+      {/* Right: Actions */}
       <div className="flex items-center gap-2 sm:gap-3">
         <NotificationBell />
 

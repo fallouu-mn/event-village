@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -25,6 +25,13 @@ import {
   Radio,
   Sliders,
   Activity,
+  ShieldCheck,
+  ArrowLeft,
+  FileText,
+  Megaphone,
+  Award,
+  X,
+  Search,
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
@@ -39,7 +46,7 @@ const AppLayoutHeader = dynamic(() => import('./AppLayoutHeader'), {
 
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
-  const { user, profile, isAuthenticated, signOut } = useAuth();
+  const { user, profile, isAuthenticated, isLoading, signOut } = useAuth();
 
   const isUserLoggedIn = isAuthenticated || !!user;
   const rawRole = profile?.role || (user?.user_metadata?.role as string) || '';
@@ -53,6 +60,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const isAmbassador = profile?.referral_status === 'AMBASSADEUR';
 
   const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
+  const isAdminRoute = pathname.startsWith('/admin/') || pathname === '/admin';
 
   // Navigation principale B2C
   const navItems = [
@@ -79,16 +87,27 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag },
   ];
   const partnerSecondaryItems = [
+    { name: 'Finances', href: '/partner/finance', icon: DollarSign },
+    { name: 'Statistiques', href: '/partner/stats', icon: Activity },
     { name: 'Scanner Billets', href: '/partner/scan', icon: QrCode },
     { name: 'Calendrier', href: '/partner/calendar', icon: Calendar },
+    { name: 'Abonnement', href: '/partner/subscription', icon: Briefcase },
     { name: 'Profil Partenaire', href: '/partner/profile', icon: User },
   ];
   const partnerMobileItems = [
     { name: 'Dashboard', href: '/partner/dashboard', icon: LayoutDashboard },
     { name: 'Événements', href: '/partner/events', icon: Calendar },
     { name: 'Scanner', href: '/partner/scan', icon: QrCode },
-    { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag },
+    { name: 'Finances', href: '/partner/finance', icon: DollarSign },
     { name: 'Profil', href: '/partner/profile', icon: User },
+  ];
+
+  const adminMobileItems = [
+    { name: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
+    { name: 'Partenaires', href: '/admin/dashboard', icon: Briefcase },
+    { name: 'Utilisateurs', href: '/admin/users', icon: Users },
+    { name: 'Finance', href: '/admin/finance', icon: DollarSign },
+    { name: 'Audit', href: '/admin/audit', icon: Activity },
   ];
 
   // Liens Espaces Pro & Admin dynamiques selon le rôle
@@ -114,10 +133,81 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     proItems.push({ name: 'Devenir Partenaire', href: '/partner/register', icon: Briefcase });
   }
 
+  const adminNavGroups = isAdmin ? [
+    {
+      label: 'Gestion',
+      items: [
+        { name: 'Utilisateurs', href: '/admin/users', icon: Users },
+        { name: 'Services & Catalogue', href: '/admin/services', icon: Building2 },
+      ],
+    },
+    {
+      label: 'Finances',
+      items: [
+        { name: 'Finance', href: '/admin/finance', icon: DollarSign },
+        { name: 'Tarification', href: '/admin/pricing', icon: Sliders },
+      ],
+    },
+    {
+      label: 'Engagement',
+      items: [
+        { name: 'Parrainage', href: '/admin/referral', icon: Award },
+        { name: 'Communications', href: '/admin/communications', icon: Megaphone },
+      ],
+    },
+    {
+      label: 'Système',
+      items: [
+        { name: 'Journal d\'Audit', href: '/admin/audit', icon: FileText },
+        { name: 'Scanner', href: '/scan', icon: QrCode },
+      ],
+    },
+  ] : [];
+
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { setIsMobileMenuOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+      const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsMobileMenuOpen(false); };
+      document.addEventListener('keydown', onEsc);
+      return () => { document.body.style.overflow = ''; document.removeEventListener('keydown', onEsc); };
+    }
+  }, [isMobileMenuOpen]);
+
+  const canShowRoleNav = mounted && !isLoading;
+
   const isNavActive = (href: string) => {
     if (href === '/') return pathname === '/';
     return pathname.startsWith(href);
   };
+
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
+
+  const renderDrawerLink = (item: { name: string; href: string; icon: React.ComponentType<any> }) => {
+    const active = isNavActive(item.href);
+    const Icon = item.icon;
+    return (
+      <Link key={item.href} href={item.href} onClick={closeMobileMenu}
+        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all ${
+          active ? 'bg-[#FF5722]/10 text-[#FF5722] font-semibold' : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800/50'
+        }`}>
+        <Icon size={18} className={active ? 'text-[#FF5722]' : 'text-slate-400 dark:text-zinc-500'} />
+        <span>{item.name}</span>
+      </Link>
+    );
+  };
+
+  const renderDrawerSection = (label: string, items: { name: string; href: string; icon: React.ComponentType<any> }[]) => (
+    <div key={label}>
+      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-zinc-600 px-3 block mb-1.5">{label}</span>
+      <div className="space-y-0.5">{items.map(renderDrawerLink)}</div>
+    </div>
+  );
 
   const userFirst = profile?.first_name || (user?.user_metadata?.first_name as string) || '';
   const userLast = profile?.last_name || (user?.user_metadata?.last_name as string) || '';
@@ -144,7 +234,72 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
         {/* Navigation — Partner vs B2C */}
         <div className="space-y-6 flex-1">
-          {isPartnerRoute && isPartner ? (
+          {canShowRoleNav && isAdminRoute && isAdmin ? (
+            <div className="space-y-4">
+              {/* Badge Administration */}
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100/60 dark:from-zinc-800/80 dark:to-zinc-800/40 border border-slate-200/50 dark:border-zinc-700/40">
+                <ShieldCheck size={14} className="text-[#FF5722] flex-shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-zinc-400">Administration</span>
+              </div>
+
+              {/* Dashboard — lien principal */}
+              <div>
+                <Link
+                  href="/admin/dashboard"
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-150 ${
+                    isNavActive('/admin/dashboard')
+                      ? 'bg-[#FF5722]/10 text-[#FF5722] dark:bg-[#FF5722]/15 font-semibold'
+                      : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-50 dark:hover:bg-zinc-800/50 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <LayoutDashboard size={17} className={isNavActive('/admin/dashboard') ? 'text-[#FF5722]' : 'text-slate-400 dark:text-zinc-500'} />
+                  <span>Dashboard</span>
+                </Link>
+              </div>
+
+              <div className="h-px bg-slate-200/50 dark:bg-zinc-800/50 mx-3" />
+
+              {/* Sections groupées */}
+              {adminNavGroups.map((group) => (
+                <div key={group.label}>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/70 dark:text-zinc-600 px-3 block mb-1.5">
+                    {group.label}
+                  </span>
+                  <nav className="space-y-0.5">
+                    {group.items.map((item) => {
+                      const active = isNavActive(item.href);
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 ${
+                            active
+                              ? 'bg-[#FF5722]/10 text-[#FF5722] dark:bg-[#FF5722]/15 font-semibold'
+                              : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-50 dark:hover:bg-zinc-800/50 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Icon size={17} className={active ? 'text-[#FF5722]' : 'text-slate-400 dark:text-zinc-500'} />
+                          <span>{item.name}</span>
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                </div>
+              ))}
+
+              {/* Retour au site */}
+              <div className="pt-2 mt-2 border-t border-slate-100 dark:border-zinc-800/50">
+                <Link
+                  href="/"
+                  className="flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium text-slate-400 dark:text-zinc-500 hover:bg-slate-50 dark:hover:bg-zinc-800/50 hover:text-slate-600 dark:hover:text-zinc-300 transition-all duration-150"
+                >
+                  <ArrowLeft size={17} />
+                  <span>Retour au site</span>
+                </Link>
+              </div>
+            </div>
+          ) : canShowRoleNav && isPartnerRoute && isPartner ? (
             <>
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 px-3 block mb-2">
@@ -337,11 +492,124 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       </aside>
 
       {/* ====================================================================
+          1b. MOBILE DRAWER (Visible uniquement < 1024px, toggle hamburger)
+          ==================================================================== */}
+      <div
+        className={`lg:hidden fixed inset-0 z-50 transition-opacity duration-300 ${
+          isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        aria-hidden={!isMobileMenuOpen}
+      >
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeMobileMenu} />
+
+        {/* Panel */}
+        <div
+          className={`absolute top-0 left-0 bottom-0 w-[85vw] max-w-[320px] bg-white dark:bg-[#16161A] shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
+            isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          {/* Drawer Header */}
+          <div className="px-5 py-4 border-b border-slate-200/50 dark:border-zinc-800/50 flex items-center justify-between flex-shrink-0">
+            <Logo variant="full" />
+            <button
+              type="button"
+              onClick={closeMobileMenu}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 transition-colors"
+              aria-label="Fermer le menu"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Search (visible sur petit écran < sm) */}
+          <div className="px-4 pt-3 pb-1 sm:hidden">
+            <Link
+              href="/explore"
+              onClick={closeMobileMenu}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 text-xs text-slate-400 dark:text-zinc-500 border border-slate-200/60 dark:border-zinc-700/60"
+            >
+              <Search size={14} />
+              <span>Rechercher...</span>
+            </Link>
+          </div>
+
+          {/* Navigation — contexte rôle */}
+          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
+            {canShowRoleNav && isAdminRoute && isAdmin ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800/60">
+                  <ShieldCheck size={14} className="text-[#FF5722]" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-zinc-400">Administration</span>
+                </div>
+
+                {renderDrawerLink({ name: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard })}
+                <div className="h-px bg-slate-200/50 dark:bg-zinc-800/50 mx-3" />
+                {adminNavGroups.map(group => renderDrawerSection(group.label, group.items))}
+
+                <div className="pt-2 border-t border-slate-100 dark:border-zinc-800/50">
+                  {renderDrawerLink({ name: 'Retour au site', href: '/', icon: ArrowLeft })}
+                </div>
+              </>
+            ) : canShowRoleNav && isPartnerRoute && isPartner ? (
+              <>
+                {renderDrawerSection('Gestion', partnerNavItems)}
+                {renderDrawerSection('Outils', partnerSecondaryItems)}
+                <div className="pt-2 border-t border-slate-100 dark:border-zinc-800/50">
+                  {renderDrawerLink({ name: 'Retour au site', href: '/', icon: Home })}
+                </div>
+              </>
+            ) : (
+              <>
+                {renderDrawerSection('Menu Principal', navItems)}
+                {renderDrawerSection('Services & Espaces', serviceItems)}
+                {proItems.length > 0 && renderDrawerSection('Espaces Métier', proItems)}
+              </>
+            )}
+          </nav>
+
+          {/* Drawer Footer — Profil */}
+          <div className="px-4 py-3 border-t border-slate-200 dark:border-zinc-800 flex-shrink-0">
+            {isUserLoggedIn ? (
+              <div className="flex items-center justify-between">
+                <Link href="/profile" onClick={closeMobileMenu} className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] font-black text-xs flex items-center justify-center border border-orange-200 dark:border-orange-800/50 flex-shrink-0">
+                    {initials}
+                  </div>
+                  <div className="leading-tight truncate min-w-0">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">{displayName}</span>
+                    <span className="text-[10px] text-slate-400 dark:text-zinc-500 block">{profile?.role || 'CLIENT'}</span>
+                  </div>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => { closeMobileMenu(); signOut(); }}
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all flex-shrink-0"
+                  aria-label="Se déconnecter"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                onClick={closeMobileMenu}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#FF5722] text-white text-sm font-bold hover:bg-[#E64A19] transition-colors"
+              >
+                <LogIn size={16} />
+                <span>Se connecter</span>
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ====================================================================
           2. ZONE PRINCIPALE (HEADER + CONTENU RESPONSIVE)
           ==================================================================== */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar Header — client-only pour éviter les conflits d'hydratation avec les extensions navigateur */}
-        <AppLayoutHeader />
+        <AppLayoutHeader isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen(v => !v)} />
 
         {/* Contenu de la Page (Largeur fluide, jamais de max-w-md forcé sur desktop) */}
         <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
@@ -354,7 +622,12 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           ==================================================================== */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white dark:bg-[#16161A] border-t border-slate-200/80 dark:border-zinc-800/80 px-2 py-2 safe-bottom shadow-lg">
         <div className="flex items-center justify-around">
-          {(isPartnerRoute && isPartner ? partnerMobileItems : navItems).map((item) => {
+          {(canShowRoleNav && isPartnerRoute && isPartner
+              ? partnerMobileItems
+              : canShowRoleNav && isAdminRoute && isAdmin
+              ? adminMobileItems
+              : navItems
+            ).map((item) => {
             const active = isNavActive(item.href);
             const Icon = item.icon;
             return (

@@ -16,6 +16,8 @@ import {
     RotateCcw,
     Clock,
     AlertTriangle,
+    Eye,
+    EyeOff,
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
@@ -39,6 +41,7 @@ export default function LoginPage() {
     const [isOtpMode, setIsOtpMode] = useState(false);
     const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [otpCode, setOtpCode] = useState('');
     const [otpSent, setOtpSent] = useState(false);
     const [countdown, setCountdown] = useState(0);
@@ -585,18 +588,28 @@ export default function LoginPage() {
                                 </div>
                                 <div className="relative">
                                     <input
-                                        type="password"
+                                        type={showPassword ? 'text' : 'password'}
                                         disabled={isLockedOut || isLoading}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         placeholder="••••••••"
                                         required
+                                        autoComplete="current-password"
                                         className={clsx(
-                                            'w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all',
+                                            'w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all',
                                             isLockedOut && 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40'
                                         )}
                                     />
-                                    <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword((v) => !v)}
+                                        disabled={isLockedOut || isLoading}
+                                        aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                                        className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                        tabIndex={-1}
+                                    >
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
                                 </div>
                             </div>
 

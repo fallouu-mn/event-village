@@ -80,11 +80,16 @@ export const ForgotPasswordSchema = z.object({
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 
 /**
- * Schéma de Réinitialisation de Mot de Passe
+ * Schéma de Réinitialisation de Mot de Passe — Niveau Bancaire
+ * Exige : 8+ caractères, 1 majuscule, 1 chiffre, 1 caractère spécial
  */
 export const ResetPasswordSchema = z.object({
-    password: z.string().min(6, 'Le nouveau mot de passe doit contenir au moins 6 caractères'),
-    confirmPassword: z.string().min(6, 'Veuillez confirmer le mot de passe'),
+    password: z.string()
+        .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
+        .regex(/[A-Z]/, 'Le mot de passe doit contenir au moins une majuscule')
+        .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre')
+        .regex(/[^A-Za-z0-9]/, 'Le mot de passe doit contenir au moins un caractère spécial (!@#$...)'),
+    confirmPassword: z.string().min(8, 'Veuillez confirmer le mot de passe'),
 }).refine((data) => data.password === data.confirmPassword, {
     message: 'Les mots de passe ne correspondent pas',
     path: ['confirmPassword'],

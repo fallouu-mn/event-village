@@ -136,11 +136,12 @@ export async function POST(req: NextRequest) {
             metadata: { ip: clientIp },
         });
 
-        // 6. Notification 1 : Confirmation d'inscription reçue (Email + SMS)
+        // 6. Triple Notification CDC : SMS + Email + In-App (partenaire + superadmins)
         await NotificationService.sendPartnerRegistrationNotification({
             email: effectiveEmail,
             phone: normalizedPhone,
             companyName: data.companyName.trim(),
+            partnerName: `${data.firstName.trim()} ${data.lastName.trim()}`,
             userId: userId,
         });
 

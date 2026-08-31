@@ -46,8 +46,7 @@ export async function middleware(req: NextRequest) {
     const isAuthPage =
         pathname === '/login' ||
         pathname === '/register' ||
-        pathname === '/forgot-password' ||
-        pathname === '/reset-password';
+        pathname === '/forgot-password';
 
     // 3. Extraction du token de session depuis les cookies
     const token = req.cookies.get('sb-access-token')?.value;

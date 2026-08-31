@@ -23,7 +23,11 @@ export async function PATCH(
             return NextResponse.json({ error: 'ID partenaire requis.' }, { status: 400 });
         }
 
-        let body: { status?: 'VALIDE' | 'REJETE' | 'SUSPENDU' | 'EN_ATTENTE'; rejectionReason?: string };
+        let body: {
+            status?: 'VALIDE' | 'REJETE' | 'SUSPENDU' | 'EN_ATTENTE';
+            reason?: string;          // champ principal (suspension, rejet)
+            rejectionReason?: string; // alias rétrocompatible
+        };
         try {
             body = await req.json();
         } catch {
@@ -31,7 +35,8 @@ export async function PATCH(
         }
 
         const newStatus = body.status;
-        const rejectionReason = body.rejectionReason?.trim();
+        // Priorité au champ `reason`, fallback sur `rejectionReason` pour rétrocompat
+        const effectiveReason = (body.reason ?? body.rejectionReason)?.trim() || null;
 
         if (!newStatus || !['VALIDE', 'REJETE', 'SUSPENDU', 'EN_ATTENTE'].includes(newStatus)) {
             return NextResponse.json({ error: 'Statut partenaire invalide.' }, { status: 400 });
@@ -63,11 +68,15 @@ export async function PATCH(
             updated_at: new Date().toISOString(),
         };
 
-        if (newStatus === 'REJETE' && rejectionReason) {
-            partnerUpdatePayload.rejection_reason = rejectionReason;
+        if (newStatus === 'REJETE' && effectiveReason) {
+            partnerUpdatePayload.rejection_reason = effectiveReason;
         }
-        if (newStatus === 'SUSPENDU' && rejectionReason) {
-            partnerUpdatePayload.suspended_reason = rejectionReason;
+        if (newStatus === 'SUSPENDU' && effectiveReason) {
+            partnerUpdatePayload.suspended_reason = effectiveReason;
+        }
+        if (newStatus === 'VALIDE' && oldStatus === 'SUSPENDU') {
+            // Réactivation : effacer l'ancienne raison de suspension
+            partnerUpdatePayload.suspended_reason = null;
         }
 
         const { error: updatePartnerErr } = await (supabase.from('partners') as any)
@@ -105,19 +114,35 @@ export async function PATCH(
             new_value: { status: newStatus, is_verified: isVerified },
             metadata: {
                 company_name: companyName,
-                rejection_reason: rejectionReason || null,
+                reason: effectiveReason || null,
+                old_status: oldStatus,
                 updated_by: auth.user!.role,
             },
         });
 
-        // 5. Notifications Multi-Canaux (SMS + Email + In-App via NotificationService)
-        if (newStatus === 'VALIDE' || newStatus === 'REJETE') {
+        // 5. Triple Notification CDC : SMS + Email + In-App (partenaire concerné)
+        const partnerUser = (currentPartner.users as { first_name?: string; last_name?: string } | null);
+        const partnerName = [partnerUser?.first_name, partnerUser?.last_name].filter(Boolean).join(' ') || companyName;
+
+        // Réactivation : SUSPENDU → VALIDE (flux différent de la validation initiale EN_ATTENTE → VALIDE)
+        const isReactivation = newStatus === 'VALIDE' && oldStatus === 'SUSPENDU';
+
+        if (isReactivation) {
+            await NotificationService.sendReactivationNotification({
+                email: currentPartner.email || '',
+                phone: partnerPhone,
+                companyName: companyName,
+                partnerName,
+                userId: userId,
+            });
+        } else if (newStatus === 'VALIDE' || newStatus === 'REJETE') {
             await NotificationService.sendAdminValidationNotification({
                 email: currentPartner.email || '',
                 phone: partnerPhone,
                 companyName: companyName,
+                partnerName,
                 approved: newStatus === 'VALIDE',
-                rejectionReason: rejectionReason,
+                rejectionReason: effectiveReason ?? undefined,
                 userId: userId,
             });
         } else if (newStatus === 'SUSPENDU') {
@@ -125,7 +150,8 @@ export async function PATCH(
                 email: currentPartner.email || '',
                 phone: partnerPhone,
                 companyName: companyName,
-                reason: rejectionReason || 'Non-respect des conditions d\'utilisation',
+                partnerName,
+                reason: effectiveReason || "Non-respect des conditions d'utilisation",
                 userId: userId,
             });
         }
@@ -137,7 +163,7 @@ export async function PATCH(
                 id: partnerId,
                 status: newStatus,
                 is_verified: isVerified,
-                rejection_reason: rejectionReason,
+                rejection_reason: effectiveReason ?? null,
             },
         });
     } catch (err: unknown) {

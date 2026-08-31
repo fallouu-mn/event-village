@@ -141,7 +141,7 @@ export default function PartnerDashboardPage() {
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            {partner?.company_name || 'Dakar Event Production'}
+            {partner?.company_name || profile?.first_name || 'Espace Partenaire'}
           </h1>
         </div>
 

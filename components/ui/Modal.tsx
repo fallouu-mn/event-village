@@ -62,18 +62,16 @@ export const Modal: React.FC<ModalProps> = ({
   }[variant];
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-950/60 dark:bg-black/80 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+        className="absolute inset-0 bg-slate-950/60 dark:bg-black/80 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
         onClick={onClose}
       />
 
-      {/* Centering Wrapper */}
-      <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4 md:p-6">
-        {/* Modal Card with scrollable internal body and pinned footer */}
+      {/* Modal Card with scrollable internal body and pinned footer */}
         <div
-          className={`relative z-10 w-full ${maxWidthClass} my-0 sm:my-auto rounded-t-3xl sm:rounded-3xl max-h-[88vh] sm:max-h-[85vh] flex flex-col overflow-hidden text-left shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 ${variantStyle}`}
+          className={`relative z-10 w-full ${maxWidthClass} rounded-t-3xl sm:rounded-3xl max-h-[88dvh] sm:max-h-[85dvh] flex flex-col overflow-hidden text-left shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 ${variantStyle}`}
         >
           {/* Pinned Header */}
           {(title || icon) && (
@@ -107,7 +105,7 @@ export const Modal: React.FC<ModalProps> = ({
           )}
 
           {/* Scrollable Body */}
-          <div className="p-4 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0 overscroll-contain">
             {children}
           </div>
 
@@ -118,7 +116,6 @@ export const Modal: React.FC<ModalProps> = ({
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 };

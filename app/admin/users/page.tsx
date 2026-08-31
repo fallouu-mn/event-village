@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/admin-auth';
@@ -63,6 +64,10 @@ export default function AdminUsersManagementPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [newRole, setNewRole] = useState<'ADMIN' | 'SUPERADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Dialog de confirmation suppression
+  const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Modal Permissions Granulaires pour Admin
   const [selectedAdmin, setSelectedAdmin] = useState<UserItem | null>(null);
@@ -207,24 +212,28 @@ export default function AdminUsersManagementPage() {
   };
 
   // Suppression définitive d'un compte utilisateur
-  const handleDeleteUser = async (user: UserItem) => {
-    const confirmDelete = window.confirm(
-      `Êtes-vous sûr de vouloir supprimer définitivement le compte de ${user.first_name} ${user.last_name} (${user.phone}) ? Cette action est irréversible.`
-    );
-    if (!confirmDelete) return;
+  const handleDeleteUser = (user: UserItem) => {
+    setUserToDelete(user);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    setIsDeleting(true);
     try {
-      const res = await fetch(`/api/admin/users?userId=${user.id}`, {
+      const res = await fetch(`/api/admin/users?userId=${userToDelete.id}`, {
         method: 'DELETE',
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression.');
 
-      toast.success(`Le compte de ${user.first_name} ${user.last_name} a été définitivement supprimé.`);
+      toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement supprimé.`);
+      setUserToDelete(null);
       await fetchUsers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la suppression.';
       toast.error(msg);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -761,6 +770,21 @@ export default function AdminUsersManagementPage() {
           </div>
         </Modal>
       )}
+
+      {/* ConfirmDialog Suppression */}
+      <ConfirmDialog
+        isOpen={!!userToDelete}
+        onClose={() => setUserToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        variant="danger"
+        title="Supprimer ce compte ?"
+        message={userToDelete
+          ? `Vous allez supprimer définitivement le compte de ${userToDelete.first_name} ${userToDelete.last_name} (${userToDelete.phone}). Cette action est irréversible.`
+          : ''}
+        confirmLabel="Supprimer définitivement"
+        cancelLabel="Annuler"
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

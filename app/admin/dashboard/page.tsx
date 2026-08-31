@@ -738,46 +738,43 @@ export default function AdminDashboardPage() {
         >
           <div className="space-y-4 text-xs">
             {/* Header Hero du Partenaire */}
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-950/60 text-[#FF5722] font-black text-base flex items-center justify-center flex-shrink-0 border border-orange-200 dark:border-orange-800/50 shadow-xs">
-                  {selectedPartner.company_name?.slice(0, 2).toUpperCase() || 'PA'}
-                </div>
-                <div className="min-w-0 space-y-0.5">
-                  <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white break-words leading-tight">
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-orange-100 dark:bg-orange-950/60 text-[#FF5722] font-black text-base flex items-center justify-center flex-shrink-0 border border-orange-200 dark:border-orange-800/50 shadow-xs">
+                {selectedPartner.company_name?.slice(0, 2).toUpperCase() || 'PA'}
+              </div>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-tight break-all">
                     {selectedPartner.company_name}
                   </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium break-words">
-                    Nom commercial : <span className="font-bold text-slate-700 dark:text-zinc-300">{selectedPartner.commercial_name || selectedPartner.company_name}</span>
-                  </p>
+                  {selectedPartner.status === 'VALIDE' && (
+                    <Badge variant="success" size="sm">
+                      <CheckCircle size={11} className="mr-1" />
+                      Validé
+                    </Badge>
+                  )}
+                  {selectedPartner.status === 'EN_ATTENTE' && (
+                    <Badge variant="warning" size="sm">
+                      <Clock size={11} className="mr-1" />
+                      En Attente
+                    </Badge>
+                  )}
+                  {selectedPartner.status === 'REJETE' && (
+                    <Badge variant="danger" size="sm">
+                      <XCircle size={11} className="mr-1" />
+                      Rejeté
+                    </Badge>
+                  )}
+                  {selectedPartner.status === 'SUSPENDU' && (
+                    <Badge variant="danger" size="sm">
+                      <ShieldAlert size={11} className="mr-1" />
+                      Suspendu
+                    </Badge>
+                  )}
                 </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                {selectedPartner.status === 'VALIDE' && (
-                  <Badge variant="success" size="sm">
-                    <CheckCircle size={12} className="mr-1" />
-                    Partenaire Validé
-                  </Badge>
-                )}
-                {selectedPartner.status === 'EN_ATTENTE' && (
-                  <Badge variant="warning" size="sm">
-                    <Clock size={12} className="mr-1" />
-                    En Attente
-                  </Badge>
-                )}
-                {selectedPartner.status === 'REJETE' && (
-                  <Badge variant="danger" size="sm">
-                    <XCircle size={12} className="mr-1" />
-                    Rejeté
-                  </Badge>
-                )}
-                {selectedPartner.status === 'SUSPENDU' && (
-                  <Badge variant="danger" size="sm">
-                    <ShieldAlert size={12} className="mr-1" />
-                    Suspendu
-                  </Badge>
-                )}
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium">
+                  Nom commercial : <span className="font-bold text-slate-700 dark:text-zinc-300">{selectedPartner.commercial_name || selectedPartner.company_name}</span>
+                </p>
               </div>
             </div>
 
