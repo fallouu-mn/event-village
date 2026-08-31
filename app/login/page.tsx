@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { clsx } from 'clsx';
 import {
     LogIn,
     Phone,
@@ -13,7 +14,6 @@ import {
     ShieldCheck,
     Briefcase,
     RotateCcw,
-    ShieldAlert,
     Clock,
     AlertTriangle,
 } from 'lucide-react';
@@ -107,9 +107,15 @@ export default function LoginPage() {
         return () => clearInterval(interval);
     }, [isLockedOut, lockoutRemaining]);
 
-    // 3. Enregistrement d'un échec de connexion
+    // 3. Enregistrement garanti d'un échec de connexion (lecture directe localStorage)
     const recordFailedAttempt = useCallback((customError?: string) => {
-        const nextAttempts = failedAttempts + 1;
+        let currentAttempts = 0;
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY_ATTEMPTS);
+            if (stored) currentAttempts = parseInt(stored, 10) || 0;
+        } catch {}
+
+        const nextAttempts = currentAttempts + 1;
         setFailedAttempts(nextAttempts);
 
         try {
@@ -132,7 +138,7 @@ export default function LoginPage() {
                 customError ? `${customError} ${attemptsWarning}` : `Identifiant ou mot de passe incorrect. ${attemptsWarning}`
             );
         }
-    }, [failedAttempts]);
+    }, []);
 
     // 4. Réinitialisation après succès
     const clearLockoutState = useCallback(() => {
@@ -182,7 +188,6 @@ export default function LoginPage() {
             return;
         }
 
-        // Synchroniser le cookie de session sb-access-token
         const sessionRes = await supabase.auth.getSession();
         const activeToken = sessionRes.data.session?.access_token;
         if (activeToken) {
@@ -190,7 +195,6 @@ export default function LoginPage() {
             document.cookie = `sb-access-token=${encodeURIComponent(activeToken)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
         }
 
-        // Rafraîchir immédiatement le state utilisateur dans AuthProvider
         await refreshProfile();
         router.refresh();
 
@@ -221,7 +225,7 @@ export default function LoginPage() {
         }, 400);
     };
 
-    // 1. Connexion classique par Mot de Passe (Email ou Téléphone)
+    // 1. Connexion par Mot de Passe
     const handlePasswordLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isLockedOut) return;
@@ -243,7 +247,6 @@ export default function LoginPage() {
 
             if (!isEmail) {
                 const normalizedPhone = normalizePhoneNumber(identifier.trim());
-                // Résolution serveur sécurisée du compte associé au numéro de téléphone
                 const resolveRes = await fetch('/api/auth/resolve-phone', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -284,12 +287,12 @@ export default function LoginPage() {
         } catch (err: unknown) {
             console.error('[LoginPage] Erreur connexion mot de passe:', err);
             const msg = err instanceof Error ? err.message : 'Échec de la connexion. Veuillez réessayer.';
-            setErrorMessage(msg);
+            recordFailedAttempt(msg);
             setIsLoading(false);
         }
     };
 
-    // 2. Envoi du code OTP par SMS via MTarget
+    // 2. Envoi du code OTP par SMS
     const handleSendOtp = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (isLockedOut) return;
@@ -306,7 +309,6 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            // Vérifier d'abord si le compte existe avant d'envoyer un SMS
             const resolveRes = await fetch('/api/auth/resolve-phone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -384,7 +386,6 @@ export default function LoginPage() {
 
             const supabase = getBrowserClient();
 
-            // Établissement de la session Supabase avec le token hash
             if (verifyData.token_hash) {
                 const { error: otpAuthError } = await supabase.auth.verifyOtp({
                     token_hash: verifyData.token_hash,
@@ -410,7 +411,6 @@ export default function LoginPage() {
         }
     };
 
-    // Calcul du pourcentage restant pour la barre de décompte visuelle
     const progressPercent = initialLockoutDuration > 0
         ? Math.max(0, Math.min(100, (lockoutRemaining / initialLockoutDuration) * 100))
         : 0;
@@ -434,12 +434,9 @@ export default function LoginPage() {
                 {/* Carte Principale */}
                 <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-6 relative transition-all duration-300">
 
-                    {/* ================================================================= */}
                     {/* 🔒 BANNIÈRE DE VERROUILLAGE SÉCURITÉ (DESIGN BANCAIRE HAUT DE GAMME) */}
-                    {/* ================================================================= */}
                     {isLockedOut && (
                         <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-red-500/15 via-red-500/5 to-amber-500/10 border-2 border-red-500/40 dark:border-red-500/50 shadow-xl shadow-red-500/10 animate-in fade-in duration-300 space-y-4">
-                            {/* Point lumineux pulsant */}
                             <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 border border-red-500/30 text-[10px] font-black text-red-700 dark:text-red-300 tracking-wider uppercase">
                                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
                                 <span>Verrouillé</span>
@@ -497,7 +494,7 @@ export default function LoginPage() {
                     )}
 
                     {/* Sélecteur Mode (Mot de passe / OTP) */}
-                    <div className={`grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-900 text-xs font-bold ${isLockedOut ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div className={clsx('grid grid-cols-2 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-900 text-xs font-bold', isLockedOut && 'opacity-50 pointer-events-none')}>
                         <button
                             type="button"
                             disabled={isLockedOut}
@@ -505,11 +502,12 @@ export default function LoginPage() {
                                 setIsOtpMode(false);
                                 setErrorMessage(null);
                             }}
-                            className={`py-2 rounded-xl transition-all ${
+                            className={clsx(
+                                'py-2 rounded-xl transition-all',
                                 !isOtpMode
                                     ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-xs'
                                     : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
+                            )}
                         >
                             Mot de passe
                         </button>
@@ -520,11 +518,12 @@ export default function LoginPage() {
                                 setIsOtpMode(true);
                                 setErrorMessage(null);
                             }}
-                            className={`py-2 rounded-xl transition-all ${
+                            className={clsx(
+                                'py-2 rounded-xl transition-all',
                                 isOtpMode
                                     ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-xs'
                                     : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
+                            )}
                         >
                             Code SMS (OTP)
                         </button>
@@ -560,9 +559,10 @@ export default function LoginPage() {
                                         onChange={(e) => setIdentifier(e.target.value)}
                                         placeholder="ex: 77 123 45 67 ou client@email.com"
                                         required
-                                        className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all ${
-                                            isLockedOut ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40' : ''
-                                        }`}
+                                        className={clsx(
+                                            'w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all',
+                                            isLockedOut && 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40'
+                                        )}
                                     />
                                     <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -575,9 +575,10 @@ export default function LoginPage() {
                                     </label>
                                     <Link
                                         href="/forgot-password"
-                                        className={`text-[11px] font-bold text-[#FF5722] hover:underline ${
-                                            isLockedOut ? 'pointer-events-none opacity-50' : ''
-                                        }`}
+                                        className={clsx(
+                                            'text-[11px] font-bold text-[#FF5722] hover:underline',
+                                            isLockedOut && 'pointer-events-none opacity-50'
+                                        )}
                                     >
                                         Mot de passe oublié ?
                                     </Link>
@@ -590,9 +591,10 @@ export default function LoginPage() {
                                         onChange={(e) => setPassword(e.target.value)}
                                         placeholder="••••••••"
                                         required
-                                        className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all ${
-                                            isLockedOut ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40' : ''
-                                        }`}
+                                        className={clsx(
+                                            'w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all',
+                                            isLockedOut && 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40'
+                                        )}
                                     />
                                     <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                 </div>
@@ -629,9 +631,10 @@ export default function LoginPage() {
                                                 onChange={(e) => setIdentifier(e.target.value)}
                                                 placeholder="77 123 45 67"
                                                 required
-                                                className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all ${
-                                                    isLockedOut ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40' : ''
-                                                }`}
+                                                className={clsx(
+                                                    'w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all',
+                                                    isLockedOut && 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-zinc-800/40'
+                                                )}
                                             />
                                             <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                         </div>
