@@ -18,7 +18,7 @@ export async function getServerSessionUser(req: NextRequest): Promise<ServerUser
     try {
         const supabase = getServiceRoleClient();
 
-        // 1. Extraction du token
+        // 1. Extraction du token JWT — seule source d'identité autorisée (jamais x-user-id)
         const authHeader = req.headers.get('authorization');
         let token: string | undefined;
         if (authHeader?.startsWith('Bearer ')) {
@@ -30,18 +30,12 @@ export async function getServerSessionUser(req: NextRequest): Promise<ServerUser
                 req.cookies.get('supabase-auth-token')?.value;
         }
 
-        let authId: string | undefined = req.headers.get('x-user-id') || undefined;
+        if (!token) return null;
 
-        if (!authId && token) {
-            const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-            if (!authErr && user) {
-                authId = user.id;
-            }
-        }
+        const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+        if (authErr || !user) return null;
 
-        if (!authId) {
-            return null;
-        }
+        const authId = user.id;
 
         // 2. Récupération des données du profil public.users
         const { data: profile, error: profErr } = await supabase

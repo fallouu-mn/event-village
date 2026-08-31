@@ -26,85 +26,89 @@ export async function GET(request: NextRequest) {
 
         const partnerId = partner.id;
 
-        // 1. Revenus billetterie (tickets VALIDE ou UTILISE pour les événements du partenaire)
-        const { data: events } = await supabase
-            .from('events')
-            .select('id')
-            .eq('partner_id', partnerId);
+        // Lancer toutes les requêtes indépendantes en parallèle — configs financières incluses
+        const [eventsRes, ordersRes, hallsRes, orderConfigRes, hallConfigRes, withdrawalsRes] = await Promise.all([
+            supabase.from('events').select('id').eq('partner_id', partnerId),
+            supabase.from('orders')
+                .select('total_amount, paid_amount, order_status')
+                .eq('partner_id', partnerId)
+                .in('order_status', ['CONFIRMEE', 'EN_PREPARATION', 'PRETE', 'EN_LIVRAISON', 'LIVREE']),
+            supabase.from('hall_reservations')
+                .select('deposit_amount')
+                .eq('partner_id', partnerId)
+                .eq('status', 'CONFIRMEE'),
+            supabase.from('platform_settings')
+                .select('value')
+                .eq('key', 'order_commission_config')
+                .maybeSingle(),
+            supabase.from('platform_settings')
+                .select('value')
+                .eq('key', 'hall_fee_config')
+                .maybeSingle(),
+            supabase.from('withdrawals')
+                .select('id, gross_amount, fee_amount, net_amount, status, withdrawal_method, payment_details, created_at, processed_at')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false }),
+        ]);
 
-        const eventIds = events?.map((e: { id: string }) => e.id) || [];
+        const eventIds = eventsRes.data?.map((e: { id: string }) => e.id) || [];
         let ticketRevenue = 0;
-
         if (eventIds.length > 0) {
             const { data: tickets } = await supabase
                 .from('tickets')
-                .select('price, status')
+                .select('price')
                 .in('event_id', eventIds)
                 .in('status', ['VALIDE', 'UTILISE']);
             ticketRevenue = tickets?.reduce((s: number, t: { price: number }) => s + Number(t.price || 0), 0) || 0;
         }
 
-        // 2. Revenus commandes (montants encaissés sur commandes actives)
-        const { data: orders } = await supabase
-            .from('orders')
-            .select('total_amount, paid_amount, order_status')
-            .eq('partner_id', partnerId)
-            .in('order_status', ['CONFIRMEE', 'EN_PREPARATION', 'PRETE', 'EN_LIVRAISON', 'LIVREE']);
+        const orders = ordersRes.data || [];
+        const hallReservations = hallsRes.data || [];
+        const withdrawalsData = withdrawalsRes.data || [];
 
-        const orderRevenue = orders?.reduce((s: number, o: { paid_amount: number; total_amount: number }) =>
-            s + Number(o.paid_amount || o.total_amount || 0), 0) || 0;
-
-        // 3. Revenus salles (acomptes reçus sur réservations confirmées)
-        const { data: hallReservations } = await supabase
-            .from('hall_reservations')
-            .select('deposit_amount, status')
-            .eq('partner_id', partnerId)
-            .eq('status', 'CONFIRMEE');
-
-        const hallRevenue = hallReservations?.reduce((s: number, r: { deposit_amount: number }) =>
-            s + Number(r.deposit_amount || 0), 0) || 0;
-
-        // 4. Taux de commission configurable (plateforme)
-        let orderCommissionRate = 5.0;
-        const { data: configSetting } = await supabase
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'order_commission_config')
-            .maybeSingle();
-        if (configSetting?.value?.commission_rate !== undefined) {
-            orderCommissionRate = Number(configSetting.value.commission_rate);
+        // Taux financiers — lecture DB obligatoire, échec bloquant si absent (FIN-1)
+        if (!orderConfigRes.data?.value?.commission_rate) {
+            return NextResponse.json(
+                { error: 'Configuration financière manquante: order_commission_config. Contactez le superadmin.' },
+                { status: 500 }
+            );
+        }
+        if (!hallConfigRes.data?.value?.aggregator_fee_rate) {
+            return NextResponse.json(
+                { error: 'Configuration financière manquante: hall_fee_config. Contactez le superadmin.' },
+                { status: 500 }
+            );
         }
 
-        // 5. Calculs financiers (CDC V3.0 — server-side uniquement)
-        // Billetterie : l'organisateur perçoit 100% du prix facial, les frais service 5% sont payés par l'acheteur
+        const orderCommissionRate = Number(orderConfigRes.data.value.commission_rate);
+        const hallAggregatorFeeRate = Number(hallConfigRes.data.value.aggregator_fee_rate);
+
+        const orderRevenue = orders.reduce((s: number, o: { paid_amount: number; total_amount: number }) =>
+            s + Number(o.paid_amount || o.total_amount || 0), 0);
+        const hallRevenue = hallReservations.reduce((s: number, r: { deposit_amount: number }) =>
+            s + Number(r.deposit_amount || 0), 0);
+
+        // 5. Calculs financiers (CDC V3.0 — server-side, taux 100% issus de la DB)
         const ticketCalc = FinancialCalculatorService.calculateTicketingFinancials({
             ticketFacialPrice: ticketRevenue,
         });
 
-        // Commandes : commission EV déduite du montant de la commande
         const orderCalc = FinancialCalculatorService.calculateOrderFinancials({
             orderTotalAmount: orderRevenue,
             commissionRatePercent: orderCommissionRate,
         });
 
-        // Salles : frais agrégateur sur l'acompte (depositPercentage=100 car on a déjà les montants d'acompte)
         const hallCalc = FinancialCalculatorService.calculateHallFinancials({
             hallTotalAmount: hallRevenue,
             depositPercentage: 100,
+            aggregatorFeeRatePercent: hallAggregatorFeeRate,
         });
 
         const grossRevenue = ticketRevenue + orderRevenue + hallRevenue;
         const netRevenue = ticketCalc.partnerPayout + orderCalc.partnerPayout + hallCalc.partnerPayout;
         const evCommission = grossRevenue - netRevenue;
 
-        // 6. Retraits du partenaire (par son user_id)
-        const { data: withdrawalsData } = await supabase
-            .from('withdrawals')
-            .select('id, gross_amount, fee_amount, net_amount, status, withdrawal_method, payment_details, created_at, processed_at')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false });
-
-        const withdrawals = withdrawalsData || [];
+        const withdrawals = withdrawalsData;
         const paidWithdrawals = withdrawals.filter((w: { status: string }) => w.status === 'PAID');
         const pendingWithdrawalsArr = withdrawals.filter((w: { status: string }) => ['PENDING', 'PROCESSING'].includes(w.status));
 
@@ -136,7 +140,7 @@ export async function GET(request: NextRequest) {
                     halls: {
                         grossRevenue: hallRevenue,
                         netRevenue: hallCalc.partnerPayout,
-                        commissionRate: 1.5,
+                        aggregatorFeeRate: hallAggregatorFeeRate,
                     },
                 },
             },

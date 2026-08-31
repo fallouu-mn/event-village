@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { Calendar, Plus, RefreshCw } from 'lucide-react';
 import { EventCalendar, type CalendarEvent } from '@/components/events/EventCalendar';
 import { Button } from '@/components/ui/Button';
+import { useToast } from '@/components/ui/Toast';
 
 export default function PartnerCalendarPage() {
+  const toast = useToast();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -26,7 +28,7 @@ export default function PartnerCalendarPage() {
           );
         }
       })
-      .catch(() => {})
+      .catch(() => { toast.error('Impossible de charger le calendrier des événements.'); })
       .finally(() => setIsLoading(false));
   }, []);
 

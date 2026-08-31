@@ -17,6 +17,7 @@ import {
     X,
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { getBrowserClient } from '@/lib/supabase/client';
 
 export interface InAppNotification {
     id: string;
@@ -60,13 +61,45 @@ export function NotificationBell() {
         }
     }, [isUserLoggedIn]);
 
+    // Chargement initial + abonnement Supabase Realtime sur INSERT notifications
     useEffect(() => {
+        if (!isUserLoggedIn || !user?.id) return;
         fetchNotifications();
-        // Polling toutes les 45 secondes si l'utilisateur est connecté
-        if (!isUserLoggedIn) return;
-        const interval = setInterval(fetchNotifications, 45000);
-        return () => clearInterval(interval);
-    }, [fetchNotifications, isUserLoggedIn]);
+
+        const supabase = getBrowserClient();
+        const channel = supabase
+            .channel(`notifications-bell-${user.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${user.id}`,
+                },
+                (payload) => {
+                    const n = payload.new as Record<string, unknown>;
+                    const newNotif: InAppNotification = {
+                        id: n.id as string,
+                        userId: n.user_id as string,
+                        type: n.type as string,
+                        title: n.title as string,
+                        content: n.content as string,
+                        channel: n.channel as string | undefined,
+                        status: n.status as string,
+                        isRead: (n.is_read as boolean) || false,
+                        readAt: n.read_at as string | undefined,
+                        metadata: n.metadata as Record<string, unknown> | undefined,
+                        createdAt: n.created_at as string,
+                    };
+                    setNotifications((prev) => [newNotif, ...prev.slice(0, 19)]);
+                    setUnreadCount((prev) => prev + 1);
+                }
+            )
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [isUserLoggedIn, user?.id, fetchNotifications]);
 
     // Fermeture du dropdown au clic en dehors
     useEffect(() => {

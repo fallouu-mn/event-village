@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(result, { status: 201 });
     } catch (error: unknown) {
-        console.error('[API /api/payments/create] Erreur:', error);
+        console.error('[API /api/payments/create] Erreur:', error instanceof Error ? error.message : 'unknown');
 
         const errorMessage = error instanceof Error ? error.message : 'Erreur interne du serveur lors de la création du paiement.';
 

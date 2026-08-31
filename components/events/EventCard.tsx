@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Calendar, MapPin, Heart, ArrowRight } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/Badge';
 
@@ -41,11 +42,12 @@ export const EventCard: React.FC<EventCardProps> = ({
     <div className="group relative bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800/80 rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:border-[#FF5722]/40 transition-all duration-300 flex flex-col">
       {/* 1. Zone Image Hero */}
       <div className="relative w-full aspect-[16/10] overflow-hidden bg-slate-950">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <Image
           src={imageUrl}
           alt={title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          fill
+          className="object-cover group-hover:scale-105 transition-transform duration-500"
+          sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
 

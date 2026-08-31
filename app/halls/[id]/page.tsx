@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   ChevronLeft,
   Share2,
@@ -21,10 +23,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PaymentModal } from '@/components/payment/PaymentModal';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { useToast } from '@/components/ui/Toast';
 
 export default function HallDetailPage({ params }: { params: { id: string } }) {
   const hallId = params.id;
   const { user } = useAuth();
+  const router = useRouter();
+  const toast = useToast();
 
   const [hall, setHall] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -123,7 +128,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
       setActiveReservationId(data.reservation.id);
       setIsPaymentOpen(true);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Erreur lors de la réservation.');
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de la réservation.');
     } finally {
       setIsSubmitting(false);
     }
@@ -155,7 +160,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
                 navigator.share({ title: hall.name, url: window.location.href });
               } else {
                 navigator.clipboard.writeText(window.location.href);
-                alert('Lien copié !');
+                toast.success('Lien copié !');
               }
             }}
             className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
@@ -172,8 +177,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
         <div className="lg:col-span-2 space-y-6">
           {/* Hero Image */}
           <div className="relative w-full aspect-[16/9] rounded-3xl overflow-hidden shadow-xl border border-slate-200 dark:border-zinc-800 bg-slate-950">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={hall.imageUrl} alt={hall.name} className="w-full h-full object-cover" />
+            <Image src={hall.imageUrl} alt={hall.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 66vw" priority />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
 
             <div className="absolute top-4 right-4">
@@ -331,6 +335,20 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
+      {/* CTA Mobile — visible uniquement sur mobile */}
+      <div className="fixed bottom-0 left-0 w-full z-50 p-4 bg-white dark:bg-[#1E1E1E] border-t border-slate-200 dark:border-zinc-800 lg:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+        <Button
+          variant="primary"
+          size="lg"
+          fullWidth
+          isLoading={isSubmitting}
+          onClick={handleStartBooking}
+          leftIcon={<CreditCard size={18} />}
+        >
+          Verser l&apos;acompte ({depositFormatted})
+        </Button>
+      </div>
+
       {/* Modale de Paiement SamirPay avec VRAI targetId de réservation */}
       {activeReservationId && (
         <PaymentModal
@@ -342,7 +360,7 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
           title={`${hall.name} (Acompte ${hall.depositPercentage}%)`}
           onPaymentSuccess={() => {
             setIsPaymentOpen(false);
-            window.location.href = '/orders';
+            router.push('/orders');
           }}
         />
       )}

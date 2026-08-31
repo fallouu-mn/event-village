@@ -6,32 +6,33 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/referrals/my-stats
  * Fournit les métriques et commissions de parrainage réelles de l'utilisateur connecté (0 mock)
+ * Toutes les colonnes sont alignées sur le schéma réel de la DB (0001_initial_schema.sql)
  */
 export async function GET(req: NextRequest) {
     try {
         const supabase = getServiceRoleClient();
 
-        // 1. Extraction du token / user authentifié
+        // 1. Authentification — JWT uniquement, x-user-id interdit (spoofable)
         const authHeader = req.headers.get('authorization');
         let token: string | undefined;
         if (authHeader?.startsWith('Bearer ')) token = authHeader.substring(7);
         else token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
 
-        let userId = req.headers.get('x-user-id') || undefined;
-
-        if (!userId && token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            if (user) userId = user.id;
-        }
-
-        if (!userId) {
+        if (!token) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
 
-        // 2. Profil utilisateur
+        const { data: { user: jwtUser }, error: jwtErr } = await supabase.auth.getUser(token);
+        if (jwtErr || !jwtUser) {
+            return NextResponse.json({ error: 'Token invalide ou expiré.' }, { status: 401 });
+        }
+
+        const userId = jwtUser.id;
+
+        // 2. Profil utilisateur (inclut referral_code depuis migration 0011)
         const { data: profile, error: uErr } = await supabase
             .from('users')
-            .select('id, first_name, last_name, phone, role, referral_status')
+            .select('id, first_name, last_name, phone, role, referral_status, referral_code')
             .eq('id', userId)
             .maybeSingle();
 
@@ -40,40 +41,63 @@ export async function GET(req: NextRequest) {
         }
 
         const isAmbassador = profile.referral_status === 'AMBASSADEUR';
+
+        // Fallback au cas où le trigger 0011 n'aurait pas encore tourné
         const cleanPhone = (profile.phone || '').replace(/\D/g, '');
-        const referralCode = `EV-${cleanPhone.slice(-6) || profile.id.slice(0, 6).toUpperCase()}`;
+        const referralCode: string =
+            (profile.referral_code as string | null) ||
+            `EV-${cleanPhone.slice(-6) || profile.id.slice(0, 6).toUpperCase()}`;
 
-        // 3. Filleuls N1 et N2
-        const { data: relationships } = await supabase
+        // 3. Taux dynamiques depuis referral_config (seeded par migration 0011)
+        const { data: rateConfig } = await supabase
+            .from('referral_config')
+            .select('rate_n1, rate_n2')
+            .eq('sponsor_status', profile.referral_status)
+            .eq('referral_type', 'CLIENT_TO_CLIENT')
+            .eq('is_active', true)
+            .maybeSingle();
+
+        // Fallback conservateur uniquement si la table n'est pas encore peuplée
+        const rateN1: number = rateConfig?.rate_n1 ?? (isAmbassador ? 7.0 : 4.0);
+        const rateN2: number = rateConfig?.rate_n2 ?? (isAmbassador ? 2.0 : 1.5);
+
+        // 4. Filleuls N1 directs (sponsor_id = userId dans referral_relationships)
+        const { data: n1Relationships } = await supabase
             .from('referral_relationships')
-            .select('id, referred_id, level, created_at')
-            .eq('referrer_id', userId);
+            .select('id, referred_id, created_at')
+            .eq('sponsor_id', userId);
 
-        const n1Count = relationships?.filter(r => r.level === 1).length || 0;
-        const n2Count = relationships?.filter(r => r.level === 2).length || 0;
+        const n1Count = n1Relationships?.length || 0;
+        const n1FilleulIds = n1Relationships?.map((r: { referred_id: string }) => r.referred_id) || [];
 
-        // 4. Commissions de parrainage réelles
+        // 5. Filleuls N2 (sous-filleuls : filleuls des filleuls N1)
+        let n2Count = 0;
+        if (n1FilleulIds.length > 0) {
+            const { data: n2Relationships } = await supabase
+                .from('referral_relationships')
+                .select('id, referred_id, created_at')
+                .in('sponsor_id', n1FilleulIds);
+            n2Count = n2Relationships?.length || 0;
+        }
+
+        // 6. Commissions réelles (colonnes : sponsor_id, amount, generation, status)
         const { data: commissions } = await supabase
             .from('referral_commissions')
-            .select('id, commission_amount, level, status, created_at')
-            .eq('referrer_id', userId)
+            .select('id, amount, generation, status, created_at')
+            .eq('sponsor_id', userId)
             .order('created_at', { ascending: false });
 
-        const totalEarned = commissions?.reduce((acc, c) => acc + (Number(c.commission_amount) || 0), 0) || 0;
+        const totalEarned = commissions?.reduce((acc: number, c: { amount: unknown }) => acc + (Number(c.amount) || 0), 0) || 0;
 
-        // 5. Retraits de fonds effectués
+        // 7. Retraits effectués (statuts non REJECTED)
         const { data: withdrawals } = await supabase
             .from('withdrawals')
             .select('id, amount, status')
             .eq('user_id', userId)
             .neq('status', 'REJECTED');
 
-        const totalWithdrawn = withdrawals?.reduce((acc, w) => acc + (Number(w.amount) || 0), 0) || 0;
+        const totalWithdrawn = withdrawals?.reduce((acc: number, w: { amount: unknown }) => acc + (Number(w.amount) || 0), 0) || 0;
         const availableBalance = Math.max(0, totalEarned - totalWithdrawn);
-
-        // Taux en vigueur selon le statut
-        const rateN1 = isAmbassador ? 7.0 : 4.0;
-        const rateN2 = isAmbassador ? 2.0 : 1.5;
 
         return NextResponse.json({
             success: true,
@@ -94,6 +118,7 @@ export async function GET(req: NextRequest) {
                 totalEarned,
                 totalWithdrawn,
             },
+            // Les 10 dernières commissions — champs réels : amount, generation ('N1'|'N2')
             recentCommissions: commissions?.slice(0, 10) || [],
         });
     } catch (err: unknown) {

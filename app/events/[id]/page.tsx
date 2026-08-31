@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   ChevronLeft,
   Share2,
@@ -18,8 +20,11 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PaymentModal } from '@/components/payment/PaymentModal';
+import { useToast } from '@/components/ui/Toast';
 
 export default function EventDetailPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const toast = useToast();
   const [isLiked, setIsLiked] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -116,7 +121,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                 navigator.share({ title: event.title, url: window.location.href });
               } else {
                 navigator.clipboard.writeText(window.location.href);
-                alert('Lien copié dans le presse-papier !');
+                toast.success('Lien copié dans le presse-papier !');
               }
             }}
             className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
@@ -133,11 +138,13 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         <div className="lg:col-span-2 space-y-6">
           {/* Hero Poster Immersif */}
           <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] rounded-3xl overflow-hidden shadow-xl border border-slate-200 dark:border-zinc-800 bg-slate-950">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src={event.posterUrl}
               alt={event.title}
-              className="w-full h-full object-cover"
+              fill
+              className="object-cover"
+              sizes="(max-width: 1024px) 100vw, 66vw"
+              priority
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
 
@@ -201,9 +208,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           {event.organizer && (
             <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-700 shadow-sm">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={event.organizer.avatar} alt={event.organizer.name} className="w-full h-full object-cover" />
+                <div className="w-12 h-12 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-700 shadow-sm relative">
+                  <Image src={event.organizer.avatar} alt={event.organizer.name} fill className="object-cover" sizes="48px" />
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Organisateur</span>
@@ -324,6 +330,21 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         </div>
       </div>
 
+      {/* CTA Mobile — visible uniquement sur mobile */}
+      {selectedCategory && !selectedCategory.isSoldOut && (
+        <div className="fixed bottom-0 left-0 w-full z-50 p-4 bg-white dark:bg-[#1E1E1E] border-t border-slate-200 dark:border-zinc-800 lg:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            onClick={() => setIsPaymentOpen(true)}
+            leftIcon={<Ticket size={18} />}
+          >
+            Acheter ({selectedCategory.priceFormatted})
+          </Button>
+        </div>
+      )}
+
       {/* Modale de Paiement SamirPay avec VRAI category_id */}
       {selectedCategory && (
         <PaymentModal
@@ -335,7 +356,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           title={`${event.title} (${selectedCategory.name})`}
           onPaymentSuccess={() => {
             setIsPaymentOpen(false);
-            window.location.href = '/tickets';
+            router.push('/tickets');
           }}
         />
       )}

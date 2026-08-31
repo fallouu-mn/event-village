@@ -27,9 +27,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 }) => {
   const [operator, setOperator] = useState<'wave' | 'om' | 'free' | 'card'>('wave');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneError, setPhoneError] = useState('');
   const [isInitiating, setIsInitiating] = useState(false);
   const [activeTransactionId, setActiveTransactionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const isPhoneValid = operator === 'card' || /^(7[0-8])\d{7}$/.test(phoneNumber.replace(/\s/g, ''));
+  const phoneSanitized = phoneNumber.replace(/\s/g, '');
 
   // Hook Supabase Realtime écoutant le changement de statut en base
   const { payment, status: realtimeStatus, connected } = usePaymentStatus(activeTransactionId);
@@ -44,7 +48,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   }, [realtimeStatus, onPaymentSuccess]);
 
   const handleInitiatePayment = async () => {
-    if (isInitiating) return; // Protection anti-double clic
+    if (isInitiating) return;
+
+    if (operator !== 'card' && !isPhoneValid) {
+      setPhoneError('Entrez un numéro sénégalais valide (7X XXX XX XX).');
+      return;
+    }
+    setPhoneError('');
     setIsInitiating(true);
     setErrorMessage('');
 
@@ -57,7 +67,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         body: JSON.stringify({
           targetType,
           targetId,
-          customerPhone: phoneNumber || '770000000',
+          customerPhone: phoneSanitized,
         }),
       });
 
@@ -233,11 +243,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               </label>
               <input
                 type="tel"
+                inputMode="tel"
+                autoComplete="tel"
                 placeholder="77 123 45 67"
                 value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-mono font-bold focus:outline-none focus:border-[#FF5722]"
+                onChange={(e) => {
+                  setPhoneNumber(e.target.value);
+                  setPhoneError('');
+                }}
+                className={`w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border text-xs font-mono font-bold focus:outline-none ${
+                  phoneError
+                    ? 'border-red-400 focus:border-red-500'
+                    : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722]'
+                }`}
               />
+              {phoneError && (
+                <p className="text-[11px] text-red-500 mt-1">{phoneError}</p>
+              )}
             </div>
           )}
 
@@ -253,6 +275,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             fullWidth
             size="lg"
             isLoading={isInitiating}
+            disabled={operator !== 'card' && !isPhoneValid}
             onClick={handleInitiatePayment}
           >
             {isInitiating ? 'Paiement en cours...' : `Confirmer & Payer ${amountFormatted}`}

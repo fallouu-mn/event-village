@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
         const events = await EventService.getPartnerEvents(user.id, { status, search });
         return NextResponse.json({ success: true, events });
     } catch (error: unknown) {
-        console.error('[API partner/events GET] Error:', error);
+        console.error('[API partner/events GET] Error:', error instanceof Error ? error.message : 'unknown');
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Erreur lors de la récupération des événements.' },
             { status: 500 }
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true, event }, { status: 201 });
     } catch (error: unknown) {
-        console.error('[API partner/events POST] Error:', error);
+        console.error('[API partner/events POST] Error:', error instanceof Error ? error.message : 'unknown');
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Erreur lors de la création de l\'événement.' },
             { status: 400 }

@@ -15,60 +15,57 @@ export async function GET(req: NextRequest) {
     try {
         const supabase = getServiceRoleClient();
 
-        // 1. Partenaires par statut
-        const { data: partners, error: pErr } = await supabase
-            .from('partners')
-            .select('id, status');
+        // Toutes les requêtes sont indépendantes — lancement en parallèle
+        const [partnersRes, usersRes, paymentsRes, commissionsRes, ticketsRes, auditLogsRes, platformRateRes] = await Promise.all([
+            supabase.from('partners').select('id, status'),
+            supabase.from('users').select('id, role, referral_status'),
+            supabase.from('payments').select('amount').eq('status', 'SUCCESS'),
+            supabase.from('referral_commissions').select('amount'),
+            supabase.from('tickets').select('*', { count: 'exact', head: true }),
+            supabase.from('audit_logs')
+                .select('id, action, object_type, user_role, created_at, user_id')
+                .order('created_at', { ascending: false })
+                .limit(10),
+            supabase.from('platform_settings').select('value').eq('key', 'platform_commission_rate').maybeSingle(),
+        ]);
 
-        const totalPartners = partners?.length || 0;
-        const pendingPartners = partners?.filter(p => p.status === 'EN_ATTENTE').length || 0;
-        const validatedPartners = partners?.filter(p => p.status === 'VALIDE').length || 0;
-        const rejectedPartners = partners?.filter(p => p.status === 'REJETE').length || 0;
+        const partners = partnersRes.data || [];
+        const users = usersRes.data || [];
+        const payments = paymentsRes.data || [];
+        const commissions = commissionsRes.data || [];
+        const auditLogs = auditLogsRes.data || [];
 
-        // 2. Utilisateurs et Ambassadeurs
-        const { data: users, error: uErr } = await supabase
-            .from('users')
-            .select('id, role, status, referral_status');
+        const totalPartners = partners.length;
+        const pendingPartners = partners.filter(p => p.status === 'EN_ATTENTE').length;
+        const validatedPartners = partners.filter(p => p.status === 'VALIDE').length;
+        const rejectedPartners = partners.filter(p => p.status === 'REJETE').length;
 
-        const totalUsers = users?.length || 0;
-        const activeAmbassadors = users?.filter(u => u.referral_status === 'AMBASSADEUR').length || 0;
-        const clientsCount = users?.filter(u => u.role === 'CLIENT').length || 0;
-        const controllersCount = users?.filter(u => u.role === 'CONTROLEUR').length || 0;
-        const adminsCount = users?.filter(u => u.role === 'ADMIN' || u.role === 'SUPERADMIN').length || 0;
+        const totalUsers = users.length;
+        const activeAmbassadors = users.filter(u => u.referral_status === 'AMBASSADEUR').length;
+        const clientsCount = users.filter(u => u.role === 'CLIENT').length;
+        const controllersCount = users.filter(u => u.role === 'CONTROLEUR').length;
+        const adminsCount = users.filter(u => u.role === 'ADMIN' || u.role === 'SUPERADMIN').length;
 
-        // 3. Commandes & Volume Financier (Paiements Réels)
-        const { data: payments } = await supabase
-            .from('payments')
-            .select('amount, status')
-            .eq('status', 'SUCCESS');
+        // Taux de commission EV — lecture DB obligatoire, échec bloquant si absent (FIN-1)
+        if (!platformRateRes.data?.value?.rate) {
+            return NextResponse.json(
+                { error: 'Configuration financière critique manquante: platform_commission_rate. Configurez-la via l\'interface admin.' },
+                { status: 500 }
+            );
+        }
+        const evCommissionRate = Number(platformRateRes.data.value.rate) / 100;
 
-        const totalVolume = payments?.reduce((acc, p) => acc + Number(p.amount || 0), 0) || 0;
-        
-        // Commissions Net Event Village (estimé à 6.5% ou selon transactions réelles)
-        const { data: commissions } = await supabase
-            .from('referral_commissions')
-            .select('amount, eligible_net_revenue');
-
-        const totalCommissions = commissions?.reduce((acc, c) => acc + Number(c.amount || 0), 0) || 0;
-        const netRevenue = totalVolume > 0 ? Math.round(totalVolume * 0.065) : 0;
-
-        // 4. Billets émis
-        const { count: totalTickets } = await supabase
-            .from('tickets')
-            .select('*', { count: 'exact', head: true });
-
-        // 5. Derniers Logs d'Audit (10 plus récents)
-        const { data: auditLogs } = await supabase
-            .from('audit_logs')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(10);
+        const totalVolume = payments.reduce((acc, p) => acc + Number(p.amount || 0), 0);
+        const totalCommissions = commissions.reduce((acc, c) => acc + Number(c.amount || 0), 0);
+        const netRevenue = totalVolume > 0 ? Math.round(totalVolume * evCommissionRate) : 0;
+        const totalTickets = ticketsRes.count || 0;
 
         return NextResponse.json({
             success: true,
             kpis: {
                 totalVolume,
                 netRevenue,
+                totalCommissions,
                 validatedPartners,
                 pendingPartners,
                 rejectedPartners,
@@ -78,9 +75,9 @@ export async function GET(req: NextRequest) {
                 controllersCount,
                 adminsCount,
                 activeAmbassadors,
-                totalTickets: totalTickets || 0,
+                totalTickets,
             },
-            recentAuditLogs: auditLogs || [],
+            recentAuditLogs: auditLogs,
         });
     } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';

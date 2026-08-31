@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
     ShoppingBag,
     Plus,
@@ -203,10 +204,12 @@ export default function PartnerProductsPage() {
                             {/* Image */}
                             <div className="relative h-40 bg-slate-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
                                 {product.images && product.images.length > 0 ? (
-                                    <img
+                                    <Image
                                         src={product.images[0]}
                                         alt={product.name}
-                                        className="w-full h-full object-cover"
+                                        fill
+                                        className="object-cover"
+                                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                     />
                                 ) : (
                                     <div className="text-center p-4">

@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Search, MapPin, Users, Building2, Check, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 
 export default function HallsCataloguePage() {
@@ -14,27 +15,27 @@ export default function HallsCataloguePage() {
   const [selectedCapacity, setSelectedCapacity] = useState('Toutes');
   const [halls, setHalls] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const locations = ['Toutes', 'Diamniadio', 'Dakar Centre', 'Les Almadies', 'Saly'];
   const capacityFilters = ['Toutes', '< 200 pers', '200 - 500 pers', '500+ pers'];
 
-  useEffect(() => {
-    async function loadHalls() {
-      try {
-        setIsLoading(true);
-        const res = await fetch('/api/halls');
-        if (res.ok) {
-          const data = await res.json();
-          setHalls(data.halls || []);
-        }
-      } catch (err) {
-        console.error('[HallsPage] Erreur chargement salles:', err);
-      } finally {
-        setIsLoading(false);
-      }
+  const loadHalls = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const res = await fetch('/api/halls');
+      if (!res.ok) throw new Error('Impossible de charger les salles.');
+      const data = await res.json();
+      setHalls(data.halls || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de charger les salles.');
+    } finally {
+      setIsLoading(false);
     }
-    loadHalls();
   }, []);
+
+  useEffect(() => { loadHalls(); }, [loadHalls]);
 
   const filteredHalls = halls.filter((hall) => {
     const matchesSearch =
@@ -124,7 +125,9 @@ export default function HallsCataloguePage() {
       </div>
 
       {/* 3. Grille des Salles */}
-      {isLoading ? (
+      {error ? (
+        <ErrorState description={error} onRetry={loadHalls} />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="space-y-3 p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800">
@@ -144,17 +147,20 @@ export default function HallsCataloguePage() {
               <div>
                 {/* Hero Image */}
                 <div className="relative w-full aspect-[16/9] overflow-hidden bg-slate-950">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <Image
                     src={hall.imageUrl}
                     alt={hall.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                    sizes="(max-width: 768px) 100vw, 50vw"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
 
-                  <div className="absolute top-3 right-3">
-                    <Badge variant="success" size="sm">Disponible</Badge>
-                  </div>
+                  {hall.isAvailable && (
+                    <div className="absolute top-3 right-3">
+                      <Badge variant="success" size="sm">Disponible</Badge>
+                    </div>
+                  )}
 
                   <div className="absolute bottom-3 left-4 right-4 text-white">
                     <span className="text-[10px] uppercase font-bold text-[#FF5722] tracking-wider block">

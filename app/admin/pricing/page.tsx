@@ -25,9 +25,9 @@ export default function AdminPricingSettingsPage() {
 
   // États locaux éditables
   const [packs, setPacks] = useState<any>({
-    starter: { name: 'Starter', price: 0, commission_rate: 8.0, max_events: 2 },
-    business: { name: 'Business', price: 25000, commission_rate: 6.5, max_events: 10 },
-    premium: { name: 'Premium', price: 75000, commission_rate: 5.0, max_events: 999 },
+    starter: { name: 'Starter', price: 0, commission_rate: 0, max_events: 2 },
+    business: { name: 'Business', price: 0, commission_rate: 0, max_events: 10 },
+    premium: { name: 'Premium', price: 0, commission_rate: 0, max_events: 999 },
   });
 
   const [aggFees, setAggFees] = useState<any>({

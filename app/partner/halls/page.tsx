@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
     Building2,
     Plus,
@@ -304,7 +305,9 @@ export default function PartnerHallsPage() {
                                     <div className="space-y-1 flex-1">
                                         <div className="flex items-center gap-3 flex-wrap">
                                             {hall.images?.[0] && (
-                                                <img src={hall.images[0]} alt={hall.name} className="w-10 h-10 rounded-lg object-cover" />
+                                                <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                                                    <Image src={hall.images[0]} alt={hall.name} fill className="object-cover" sizes="40px" />
+                                                </div>
                                             )}
                                             <h3 className="text-lg font-black text-slate-900 dark:text-white">{hall.name}</h3>
                                             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-[#FF5722] border border-orange-200">

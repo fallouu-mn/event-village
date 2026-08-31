@@ -27,6 +27,7 @@ export default function AdminFinanceReconciliationPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [periodPreset, setPeriodPreset] = useState<'ALL' | '7D' | '30D'>('ALL');
   const [isLoading, setIsLoading] = useState(true);
+  const [platformCommissionRate, setPlatformCommissionRate] = useState<number | null>(null);
 
   const fetchReconciliation = useCallback(async () => {
     setIsLoading(true);
@@ -63,6 +64,16 @@ export default function AdminFinanceReconciliationPage() {
   useEffect(() => {
     fetchReconciliation();
   }, [fetchReconciliation]);
+
+  useEffect(() => {
+    fetch('/api/admin/pricing')
+      .then((res) => res.json())
+      .then((data) => {
+        const rate = data?.settings?.platform_commission_rate?.rate;
+        if (rate !== undefined) setPlatformCommissionRate(Number(rate));
+      })
+      .catch(() => {});
+  }, []);
 
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA';
@@ -139,7 +150,9 @@ export default function AdminFinanceReconciliationPage() {
           <h3 className="text-xl sm:text-2xl font-black text-[#FF5722]">
             {summary ? formatPrice(summary.totalPlatformNetRevenue) : '0 FCFA'}
           </h3>
-          <span className="text-xs text-slate-400 block">Commissions de service 6.5%</span>
+          <span className="text-xs text-slate-400 block">
+            {platformCommissionRate !== null ? `Commissions de service ${platformCommissionRate}%` : 'Commissions de service EV'}
+          </span>
         </div>
 
         <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-1">

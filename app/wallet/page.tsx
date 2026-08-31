@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useToast } from '@/components/ui/Toast';
 import {
   ChevronLeft,
   Gift,
@@ -22,6 +23,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 
 export default function WalletPage() {
   const { profile } = useAuth();
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('15000');
@@ -41,16 +43,16 @@ export default function WalletPage() {
     finances: { availableBalance: number; totalEarned: number; totalWithdrawn: number };
     recentCommissions: Array<{
       id: string;
-      commission_amount: number;
-      level: number;
+      amount: number;
+      generation: 'N1' | 'N2';
       status: string;
       created_at: string;
     }>;
   }>({
-    referralCode: 'EV-REVIEWS',
-    referralLink: 'https://eventvillage.sn/r/EV-REVIEWS',
+    referralCode: '',
+    referralLink: '',
     isAmbassador: false,
-    rates: { level1: 4.0, level2: 1.5 },
+    rates: { level1: 0, level2: 0 },
     network: { level1Count: 0, level2Count: 0, totalReferred: 0 },
     finances: { availableBalance: 0, totalEarned: 0, totalWithdrawn: 0 },
     recentCommissions: [],
@@ -69,12 +71,13 @@ export default function WalletPage() {
           }
         }
       })
-      .catch(() => {});
+      .catch(() => { toast.error('Impossible de charger vos données de parrainage.'); });
   }, [profile]);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(referralData.referralLink);
     setCopied(true);
+    toast.success('Lien de parrainage copié !');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -122,6 +125,7 @@ export default function WalletPage() {
     }
   };
 
+  const canWithdraw = referralData.finances.availableBalance >= 5000;
   const grossNum = Number(withdrawAmount) || 0;
   const feeNum = Math.round(grossNum * 0.01);
   const netNum = grossNum - feeNum;
@@ -145,6 +149,8 @@ export default function WalletPage() {
           size="md"
           leftIcon={<ArrowDownToLine size={16} />}
           onClick={() => setIsWithdrawModalOpen(true)}
+          disabled={!canWithdraw}
+          title={!canWithdraw ? 'Solde minimum requis : 5 000 FCFA' : undefined}
         >
           Retirer mes gains
         </Button>
@@ -178,6 +184,7 @@ export default function WalletPage() {
               onClick={() => setIsWithdrawModalOpen(true)}
               leftIcon={<ArrowDownToLine size={15} />}
               className="bg-white text-slate-900 hover:bg-orange-50"
+              disabled={!canWithdraw}
             >
               Demander un virement Wave / OM
             </Button>
@@ -255,13 +262,13 @@ export default function WalletPage() {
               <div key={comm.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-3">
                   <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-black ${
-                    comm.level === 1 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                    comm.generation === 'N1' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                   }`}>
-                    N{comm.level}
+                    {comm.generation}
                   </span>
                   <div>
                     <span className="font-bold text-slate-900 dark:text-white block">
-                      Commission Parrainage Niveau {comm.level}
+                      Commission Parrainage {comm.generation}
                     </span>
                     <span className="text-[11px] text-slate-400">
                       {new Date(comm.created_at).toLocaleDateString('fr-FR', {
@@ -275,7 +282,7 @@ export default function WalletPage() {
                   </div>
                 </div>
                 <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm font-mono">
-                  + {comm.commission_amount.toLocaleString('fr-FR')} FCFA
+                  + {comm.amount.toLocaleString('fr-FR')} FCFA
                 </span>
               </div>
             ))

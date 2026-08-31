@@ -25,50 +25,37 @@ export async function GET(request: NextRequest) {
         if (!partner) return NextResponse.json({ error: "Profil introuvable." }, { status: 404 });
         const partnerId = partner.id;
 
-        // Événements du partenaire
+        // Construire les queries filtrables par période
         let eventsQ = supabase.from("events").select("id,status,created_at").eq("partner_id", partnerId);
         if (from) eventsQ = eventsQ.gte('created_at', from);
         if (to) eventsQ = eventsQ.lte('created_at', to);
-        const eventsRes = await eventsQ;
+
+        let hallResQ = supabase.from("hall_reservations").select("id,status,total_amount,deposit_amount,created_at").eq("partner_id", partnerId);
+        if (from) hallResQ = hallResQ.gte('created_at', from);
+        if (to) hallResQ = hallResQ.lte('created_at', to);
+
+        let orderQ = supabase.from("orders").select("id,order_status,total_amount,paid_amount,created_at").eq("partner_id", partnerId);
+        if (from) orderQ = orderQ.gte('created_at', from);
+        if (to) orderQ = orderQ.lte('created_at', to);
+
+        // Toutes les requêtes indépendantes en parallèle — tickets lancé après car dépend de eventIds
+        const [eventsRes, hallResRes, orderRes, productsRes] = await Promise.all([
+            eventsQ,
+            hallResQ,
+            orderQ,
+            supabase.from("products").select("id,status").eq("partner_id", partnerId),
+        ]);
 
         const events = eventsRes.data || [];
         const eventIds = events.map((e: { id: string }) => e.id);
 
-        // Tickets vendus pour ces événements
         let ticketsRes: { data: Array<{ id: string; price: number; status: string }> | null } = { data: [] };
         if (eventIds.length > 0) {
-            let tQ = supabase
-                .from("tickets")
-                .select("id,price,status,created_at")
-                .in('event_id', eventIds);
+            let tQ = supabase.from("tickets").select("id,price,status,created_at").in('event_id', eventIds);
             if (from) tQ = tQ.gte('created_at', from);
             if (to) tQ = tQ.lte('created_at', to);
             ticketsRes = await tQ;
         }
-
-        // Réservations de salles
-        let hallResQ = supabase
-            .from("hall_reservations")
-            .select("id,status,total_amount,deposit_amount,created_at")
-            .eq("partner_id", partnerId);
-        if (from) hallResQ = hallResQ.gte('created_at', from);
-        if (to) hallResQ = hallResQ.lte('created_at', to);
-        const hallResRes = await hallResQ;
-
-        // Commandes
-        let orderQ = supabase
-            .from("orders")
-            .select("id,order_status,total_amount,paid_amount,created_at")
-            .eq("partner_id", partnerId);
-        if (from) orderQ = orderQ.gte('created_at', from);
-        if (to) orderQ = orderQ.lte('created_at', to);
-        const orderRes = await orderQ;
-
-        // Produits (non filtré par date — donne l'état actuel)
-        const productsRes = await supabase
-            .from("products")
-            .select("id,status,price,name")
-            .eq("partner_id", partnerId);
 
         const tickets = ticketsRes.data || [];
         const reservations = hallResRes.data || [];

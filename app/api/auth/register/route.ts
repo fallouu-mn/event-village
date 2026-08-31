@@ -30,21 +30,42 @@ export async function POST(req: NextRequest) {
         const normalizedPhone = normalizePhoneNumber(phone.trim());
         const effectiveEmail = email?.trim().toLowerCase() || `${normalizedPhone.replace('+', '')}@eventvillage.sn`;
 
-        // Détection automatique du numéro racine Superadmin (+221770000000 / 770000000)
+        // Détection Superadmin — exclusivement via SUPERADMIN_PHONE (virgule-séparé), jamais de numéro en dur
         const cleanDigits = normalizedPhone.replace(/\D/g, '');
-        const superadminDigits = (process.env.SUPERADMIN_PHONE || '770000000').replace(/\D/g, '');
-        const isSuperadminNumber =
-            cleanDigits === '221770000000' ||
-            cleanDigits === '770000000' ||
-            cleanDigits === '221773780756' ||
-            cleanDigits === '773780756' ||
-            (superadminDigits && cleanDigits.endsWith(superadminDigits));
+        const superadminNumbers = (process.env.SUPERADMIN_PHONE || '')
+            .split(',')
+            .map(n => n.replace(/\D/g, '').trim())
+            .filter(n => n.length > 0);
+
+        const isSuperadminNumber = superadminNumbers.length > 0 && superadminNumbers.some(n =>
+            cleanDigits === n ||
+            cleanDigits === `221${n}` ||
+            `221${cleanDigits}` === n
+        );
 
         const assignedRole: 'SUPERADMIN' | 'CLIENT' = isSuperadminNumber ? 'SUPERADMIN' : 'CLIENT';
 
+        // 2. Générer et envoyer le SMS OTP EN PREMIER — aucun compte ne sera créé si la livraison échoue
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiresAt = Date.now() + 10 * 60 * 1000;
+
+        try {
+            await mTargetService.sendOtp(normalizedPhone, otpCode);
+        } catch (smsErr) {
+            const smsMsg = smsErr instanceof Error ? smsErr.message : 'Échec envoi SMS';
+            console.error('[API /api/auth/register] Échec envoi SMS OTP:', smsMsg);
+            return NextResponse.json(
+                { error: 'Impossible d\'envoyer le code de vérification SMS. Vérifiez votre numéro et réessayez.' },
+                { status: 503 }
+            );
+        }
+
+        // SMS envoyé avec succès — on peut maintenant stocker le code en mémoire
+        otpMemoryCache.set(normalizedPhone, { code: otpCode, expiresAt: otpExpiresAt, attempts: 0 });
+
         const supabaseAdmin = getServiceRoleClient();
 
-        // 2. Création de l'utilisateur avec Supabase Admin API
+        // 3. Création de l'utilisateur avec Supabase Admin API
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: effectiveEmail,
             password: password,
@@ -93,29 +114,60 @@ export async function POST(req: NextRequest) {
             console.warn('[API /api/auth/register] Exception insertion profile users:', profileErr);
         }
 
-        // 4. Envoi du SMS OTP via MTarget
-        try {
-            const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-            const expiresAt = Date.now() + 10 * 60 * 1000;
-
-            // Enregistrer dans le cache mémoire pour vérification immédiate
-            otpMemoryCache.set(normalizedPhone, { code: otpCode, expiresAt, attempts: 0 });
-
-            // Sauvegarder dans la table otp_codes si possible
+        // 4. Lien de parrainage : créer referral_relationships si referralCode fourni
+        if (referralCode?.trim()) {
             try {
-                await (supabaseAdmin.from('otp_codes') as any).insert({
-                    phone: normalizedPhone,
-                    code: otpCode,
-                    expires_at: new Date(expiresAt).toISOString(),
-                    verified: false,
-                });
-            } catch {}
+                const code = referralCode.trim().toUpperCase();
+                const { data: sponsor } = await supabaseAdmin
+                    .from('users')
+                    .select('id, referral_status')
+                    .eq('referral_code', code)
+                    .neq('id', userId)
+                    .maybeSingle();
 
-            // Envoi par SMS via MTarget
-            const smsResult = await mTargetService.sendOtp(normalizedPhone, otpCode);
-            console.log('[API /api/auth/register] Résultat envoi SMS MTarget:', smsResult);
-        } catch (smsErr) {
-            console.warn('[API /api/auth/register] Exception envoi SMS OTP:', smsErr);
+                if (sponsor) {
+                    const { data: config } = await supabaseAdmin
+                        .from('referral_config')
+                        .select('rate_n1, rate_n2, duration_months')
+                        .eq('sponsor_status', sponsor.referral_status)
+                        .eq('referral_type', 'CLIENT_TO_CLIENT')
+                        .eq('is_active', true)
+                        .maybeSingle();
+
+                    if (config) {
+                        const expiresAt = new Date();
+                        expiresAt.setMonth(expiresAt.getMonth() + (config.duration_months as number));
+
+                        await supabaseAdmin.from('referral_relationships').insert({
+                            sponsor_id: sponsor.id,
+                            referred_id: userId,
+                            referral_type: 'CLIENT_TO_CLIENT',
+                            sponsor_status_at_creation: sponsor.referral_status,
+                            rate_n1_at_creation: config.rate_n1,
+                            rate_n2_at_creation: config.rate_n2,
+                            duration_months: config.duration_months,
+                            expires_at: expiresAt.toISOString(),
+                            is_active: true,
+                        });
+                    }
+                }
+            } catch (refErr) {
+                console.warn('[API /api/auth/register] Erreur création relation parrainage:', refErr);
+            }
+        }
+
+        // 5. Persister le code OTP en base maintenant qu'on a le userId
+        try {
+            await (supabaseAdmin.from('otp_codes') as any).insert({
+                user_id: userId,
+                phone: normalizedPhone,
+                code: otpCode,
+                expires_at: new Date(otpExpiresAt).toISOString(),
+                verified: false,
+            });
+        } catch (dbErr) {
+            // Non-bloquant : le cache mémoire suffit pour la vérification immédiate
+            console.warn('[API /api/auth/register] Impossible de persister otp_codes en DB:', dbErr instanceof Error ? dbErr.message : 'unknown');
         }
 
         return NextResponse.json({

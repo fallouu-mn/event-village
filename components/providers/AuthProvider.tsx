@@ -70,7 +70,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const supabase = getBrowserClient();
 
-            // 1. Récupération du profil public.users
             const { data: userData, error: userError } = await supabase
                 .from('users')
                 .select('*')
@@ -81,28 +80,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 console.error('[AuthProvider] Erreur chargement profil user:', userError);
             }
 
+            let partnerData: PartnerProfile | null = null;
             if (userData) {
                 const userProfile = userData as UserProfile;
-                setProfile(userProfile);
-
-                // 2. Si le rôle est PARTENAIRE, charger les informations du partenaire
                 if (userProfile.role === 'PARTENAIRE') {
-                    const { data: partnerData, error: partnerError } = await supabase
+                    const { data } = await supabase
                         .from('partners')
                         .select('id, company_name, commercial_name, status, is_verified, trial_started_at, trial_ends_at, is_founder')
                         .eq('user_id', userId)
                         .maybeSingle();
-
-                    if (!partnerError && partnerData) {
-                        setPartner(partnerData as PartnerProfile);
-                    }
-                } else {
-                    setPartner(null);
+                    partnerData = data ? (data as unknown as PartnerProfile) : null;
                 }
+                // Both setters called consecutively — React 18 batches into a single re-render.
+                setProfile(userProfile);
+                setPartner(partnerData);
             } else if (currentSession?.user) {
-                // Fallback structuré depuis les métadonnées si le trigger PostgreSQL n'a pas encore fini
                 const meta = currentSession.user.user_metadata || {};
-                const fallbackProfile: UserProfile = {
+                setProfile({
                     id: currentSession.user.id,
                     first_name: meta.first_name || 'Utilisateur',
                     last_name: meta.last_name || 'Event Village',
@@ -111,8 +105,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     role: meta.role || 'CLIENT',
                     status: 'ACTIF',
                     referral_status: 'STANDARD',
-                };
-                setProfile(fallbackProfile);
+                });
+                setPartner(null);
             }
         } catch (err) {
             console.error('[AuthProvider] Erreur globale fetchUserProfile:', err);
@@ -128,27 +122,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         const supabase = getBrowserClient();
 
-        // 1. Initialiser la session actuelle
-        supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-            setSession(initialSession);
-            setUser(initialSession?.user ?? null);
-            syncAuthCookie(initialSession?.access_token);
-
-            if (initialSession?.user) {
-                fetchUserProfile(initialSession.user.id, initialSession).finally(() => {
-                    setIsLoading(false);
-                });
-            } else {
-                setProfile(null);
-                setPartner(null);
-                setIsLoading(false);
-            }
-        }).catch((err) => {
-            console.warn('[AuthProvider] Initial session fetch notice:', err);
-            setIsLoading(false);
-        });
-
-        // 2. Écouter les changements d'état d'authentification
+        // onAuthStateChange fires INITIAL_SESSION immediately on subscribe with the current
+        // session — no need for a separate getSession() call that would double fetchUserProfile.
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, newSession) => {
                 setSession(newSession);

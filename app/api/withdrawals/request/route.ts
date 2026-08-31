@@ -15,6 +15,15 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // Seuls les rôles éligibles aux commissions peuvent retirer
+        const ELIGIBLE_ROLES = ['CLIENT', 'PARTENAIRE', 'AMBASSADEUR'];
+        if (!ELIGIBLE_ROLES.includes(user.role)) {
+            return NextResponse.json(
+                { success: false, error: 'Votre rôle ne permet pas d\'effectuer un retrait.' },
+                { status: 403 }
+            );
+        }
+
         const body = await req.json();
         const parseResult = RequestWithdrawalSchema.safeParse(body);
         if (!parseResult.success) {

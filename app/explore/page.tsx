@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, SlidersHorizontal, Calendar, MapPin, X, Sparkles } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 
 export default function ExplorePage() {
@@ -16,24 +16,24 @@ export default function ExplorePage() {
   const [sortBy, setSortBy] = useState<'RECENT' | 'PRICE_ASC' | 'PRICE_DESC'>('RECENT');
   const [events, setEvents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadEvents() {
-      try {
-        setIsLoading(true);
-        const res = await fetch('/api/events');
-        if (res.ok) {
-          const data = await res.json();
-          setEvents(data.events || []);
-        }
-      } catch (err) {
-        console.error('[ExplorePage] Erreur chargement:', err);
-      } finally {
-        setIsLoading(false);
-      }
+  const loadEvents = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const res = await fetch('/api/events');
+      if (!res.ok) throw new Error('Impossible de charger les événements.');
+      const data = await res.json();
+      setEvents(data.events || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de charger les événements.');
+    } finally {
+      setIsLoading(false);
     }
-    loadEvents();
   }, []);
+
+  useEffect(() => { loadEvents(); }, [loadEvents]);
 
   // Filtrage
   let filtered = events.filter((evt) => {
@@ -206,7 +206,9 @@ export default function ExplorePage() {
             </span>
           </div>
 
-          {isLoading ? (
+          {error ? (
+            <ErrorState description={error} onRetry={loadEvents} />
+          ) : isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="space-y-3 p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800">

@@ -48,6 +48,8 @@ export default function RootLayout({
   return (
     <html lang="fr" className={plusJakartaSans.variable} suppressHydrationWarning>
       <head>
+        {/* Script bloquant anti-FOUC : applique le thème AVANT le premier paint */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('ev-theme');if(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark');}catch(e){}` }} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/branding/event-village-mark.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />

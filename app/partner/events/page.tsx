@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
     Calendar,
     Plus,
@@ -300,10 +301,12 @@ export default function PartnerEventsPage() {
                                     {/* Image Header */}
                                     <div className="relative h-44 bg-slate-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
                                         {ev.image_url ? (
-                                            <img
+                                            <Image
                                                 src={ev.image_url}
                                                 alt={ev.title}
-                                                className="w-full h-full object-cover"
+                                                fill
+                                                className="object-cover"
+                                                sizes="(max-width: 768px) 100vw, 50vw"
                                             />
                                         ) : (
                                             <div className="text-center p-4">

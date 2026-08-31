@@ -12,26 +12,22 @@ export async function GET(req: NextRequest) {
     try {
         const supabase = getServiceRoleClient();
 
-        // 1. Extraction et vérification de la session
+        // 1. Authentification — JWT uniquement, x-user-id interdit (spoofable)
         const authHeader = req.headers.get('authorization');
         let token: string | undefined;
         if (authHeader?.startsWith('Bearer ')) token = authHeader.substring(7);
         else token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
 
-        // Fallback header de test interne si présent
-        let userId = req.headers.get('x-user-id') || undefined;
-
-        if (!userId && token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            if (user) userId = user.id;
+        if (!token) {
+            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
 
-        if (!userId) {
-            return NextResponse.json(
-                { error: 'Authentification requise.' },
-                { status: 401 }
-            );
+        const { data: { user: jwtUser }, error: jwtErr } = await supabase.auth.getUser(token);
+        if (jwtErr || !jwtUser) {
+            return NextResponse.json({ error: 'Token invalide ou expiré.' }, { status: 401 });
         }
+
+        const userId = jwtUser.id;
 
         // 2. Récupération de la fiche partenaire liée à cet utilisateur
         const { data: partner, error: pErr } = await supabase
@@ -57,67 +53,69 @@ export async function GET(req: NextRequest) {
 
         const partnerId = partner.id;
 
-        // 3. Événements du partenaire (Isolation stricte partner_id)
-        const { data: events } = await supabase
-            .from('events')
-            .select('id, title, status')
-            .eq('partner_id', partnerId);
+        // Lancer events, orders et configs financières en parallèle
+        const [eventsRes, ordersRes, orderConfigRes, ticketConfigRes] = await Promise.all([
+            supabase.from('events').select('id, status').eq('partner_id', partnerId),
+            supabase.from('orders')
+                .select('id, order_number, total_amount, order_status, delivery_mode, created_at')
+                .eq('partner_id', partnerId)
+                .order('created_at', { ascending: false })
+                .limit(10),
+            supabase.from('platform_settings').select('value').eq('key', 'order_commission_config').maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', 'ticketing_fee_config').maybeSingle(),
+        ]);
 
-        const activeEventsCount = events?.filter(e => e.status === 'PUBLIE').length || 0;
-        const eventIds = events?.map(e => e.id) || [];
+        const events = eventsRes.data || [];
+        const orders = ordersRes.data || [];
 
-        // 4. Billets vendus pour ces événements
+        const activeEventsCount = events.filter(e => e.status === 'PUBLIE').length;
+        const eventIds = events.map(e => e.id);
+
         let ticketsSold = 0;
         let ticketRevenue = 0;
-
         if (eventIds.length > 0) {
             const { data: tickets } = await supabase
                 .from('tickets')
                 .select('id, price, status')
                 .in('event_id', eventIds)
                 .neq('status', 'ANNULE');
-
             ticketsSold = tickets?.length || 0;
             ticketRevenue = tickets?.reduce((acc, t) => acc + (Number(t.price) || 0), 0) || 0;
         }
 
-        // 5. Commandes de restauration / services
-        const { data: orders } = await supabase
-            .from('orders')
-            .select('id, order_number, total_amount, order_status, delivery_mode, created_at')
-            .eq('partner_id', partnerId)
-            .order('created_at', { ascending: false })
-            .limit(10);
-
-        const ordersCount = orders?.length || 0;
+        const ordersCount = orders.length;
         const orderRevenue = orders
-            ?.filter(o => o.order_status !== 'ANNULEE' && o.order_status !== 'REJETEE')
-            .reduce((acc, o) => acc + (Number(o.total_amount) || 0), 0) || 0;
+            .filter(o => o.order_status !== 'ANNULEE' && o.order_status !== 'REJETEE')
+            .reduce((acc, o) => acc + (Number(o.total_amount) || 0), 0);
 
-        // 6. Calculs financiers nets modulaires conformes au CDC V3.0 (Annexe C & §114)
-        // a) Billetterie : Le partenaire organisateur perçoit l'intégralité du prix facial du billet
+        // Taux financiers — lecture DB obligatoire, pas de fallback silencieux
+        if (!orderConfigRes.data?.value?.commission_rate) {
+            return NextResponse.json(
+                { error: 'Configuration financière manquante: order_commission_config. Contactez le superadmin.' },
+                { status: 500 }
+            );
+        }
+        if (!ticketConfigRes.data?.value?.service_fee_rate) {
+            return NextResponse.json(
+                { error: 'Configuration financière manquante: ticketing_fee_config. Contactez le superadmin.' },
+                { status: 500 }
+            );
+        }
+
+        const orderCommissionRate = Number(orderConfigRes.data.value.commission_rate);
+        const ticketServiceFeeRate = Number(ticketConfigRes.data.value.service_fee_rate);
+        const ticketAggregatorFeeRate = Number(ticketConfigRes.data.value.aggregator_fee_rate);
+
         const ticketingBreakdown = FinancialCalculatorService.calculateTicketingFinancials({
             ticketFacialPrice: ticketRevenue,
-            serviceFeeRatePercent: 5.0,
-            aggregatorFeeRatePercent: 1.5,
+            serviceFeeRatePercent: ticketServiceFeeRate,
+            aggregatorFeeRatePercent: ticketAggregatorFeeRate,
         });
-
-        // b) Restauration & Commandes : Taux paramétrable plateforme
-        let orderCommissionRate = 5.0; // Taux par défaut configurable en base
-        const { data: orderConfigSetting } = await supabase
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'order_commission_config')
-            .maybeSingle();
-
-        if (orderConfigSetting?.value?.commission_rate !== undefined) {
-            orderCommissionRate = Number(orderConfigSetting.value.commission_rate);
-        }
 
         const orderBreakdown = FinancialCalculatorService.calculateOrderFinancials({
             orderTotalAmount: orderRevenue,
             commissionRatePercent: orderCommissionRate,
-            aggregatorFeeRatePercent: 1.5,
+            aggregatorFeeRatePercent: ticketAggregatorFeeRate,
         });
 
         // Revenu brut global et Revenu Net Partenaire cumulé

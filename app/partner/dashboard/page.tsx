@@ -15,12 +15,14 @@ import {
 } from 'lucide-react';
 import { usePartnerOrders } from '@/hooks/usePartnerOrders';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { useToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 
 export default function PartnerDashboardPage() {
   const { profile, partner, user, isLoading: isAuthLoading } = useAuth();
   const { orders: liveOrders, connected } = usePartnerOrders(partner?.id ?? '');
+  const toast = useToast();
 
   const [partnerMetrics, setPartnerMetrics] = React.useState<{
     grossRevenue: number;
@@ -52,7 +54,7 @@ export default function PartnerDashboardPage() {
       .then((data) => {
         if (data.success && data.metrics) setPartnerMetrics(data.metrics);
       })
-      .catch(() => {})
+      .catch(() => { toast.error('Impossible de charger les métriques. Vérifiez votre connexion.'); })
       .finally(() => setIsLoadingMetrics(false));
   }, [user?.id]);
 
@@ -86,7 +88,7 @@ export default function PartnerDashboardPage() {
             });
           }
         })
-        .catch(() => {});
+        .catch(() => { toast.error('Activation de la période d\'essai échouée. Contactez le support si le problème persiste.'); });
     }
   }, [user?.id, isAuthLoading, partner?.trial_started_at, partner?.trial_ends_at, partner?.is_founder, partner?.status]);
 
@@ -210,34 +212,53 @@ export default function PartnerDashboardPage() {
 
       {/* 2. Cartes KPIs / Statistiques */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, i) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={i}
-              className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all space-y-3"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
-                  {stat.label}
-                </span>
-                <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
-                  <Icon size={16} />
+        {isLoadingMetrics ? (
+          <>
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-2.5 w-28 bg-slate-100 dark:bg-zinc-800 rounded animate-pulse" />
+                  <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 animate-pulse" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-7 w-36 bg-slate-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
+                  <div className="h-2.5 w-24 bg-slate-100 dark:bg-zinc-800 rounded animate-pulse" />
                 </div>
               </div>
+            ))}
+          </>
+        ) : (
+          <>
+            {stats.map((stat, i) => {
+              const Icon = stat.icon;
+              return (
+                <div
+                  key={i}
+                  className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
+                      {stat.label}
+                    </span>
+                    <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
+                      <Icon size={16} />
+                    </div>
+                  </div>
 
-              <div className="space-y-1">
-                <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {stat.value}
+                  <div className="space-y-1">
+                    <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                      {stat.value}
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                      <span>{stat.change}</span>
+                      <span className="text-slate-400 dark:text-zinc-500 font-normal">vs mois précédent</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                  <span>{stat.change}</span>
-                  <span className="text-slate-400 dark:text-zinc-500 font-normal">vs mois précédent</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </>
+        )}
       </div>
 
       {/* 3. Commandes & Transactions en Direct (Supabase Realtime) */}

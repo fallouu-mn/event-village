@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   ChevronLeft,
   Utensils,
@@ -13,10 +15,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PaymentModal } from '@/components/payment/PaymentModal';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { useToast } from '@/components/ui/Toast';
 
 export default function TableReservationPage({ params }: { params: { id: string } }) {
   const restaurantId = params.id;
   const { user } = useAuth();
+  const router = useRouter();
+  const toast = useToast();
 
   const [partnerId, setPartnerId] = useState<string>(restaurantId);
   const [partnerName, setPartnerName] = useState('Restaurant & Lounge');
@@ -26,7 +31,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
 
   const [selectedZone, setSelectedZone] = useState('TERRASSE');
   const [guestCount, setGuestCount] = useState(4);
-  const [reservationDate, setReservationDate] = useState('2026-09-20');
+  const [reservationDate, setReservationDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [mealSlot, setMealSlot] = useState<'MIDI' | 'SOIR'>('SOIR');
   const [reservationTime, setReservationTime] = useState('20:30');
   const [isPlatformPayment, setIsPlatformPayment] = useState(true);
@@ -91,11 +96,11 @@ export default function TableReservationPage({ params }: { params: { id: string 
       if (isPlatformPayment) {
         setIsPaymentOpen(true);
       } else {
-        alert('Votre réservation sur place a été enregistrée avec succès !');
-        window.location.href = '/orders';
+        toast.success('Votre réservation sur place a été enregistrée avec succès !');
+        router.push('/orders');
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Erreur lors de la réservation.');
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de la réservation.');
     } finally {
       setIsSubmitting(false);
     }
@@ -128,11 +133,13 @@ export default function TableReservationPage({ params }: { params: { id: string 
         <div className="lg:col-span-2 space-y-6">
           {/* Hero */}
           <div className="relative w-full aspect-[16/9] rounded-3xl overflow-hidden shadow-xl border border-slate-200 dark:border-zinc-800 bg-slate-950">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&auto=format&fit=crop&q=80"
               alt={partnerName}
-              className="w-full h-full object-cover"
+              fill
+              className="object-cover"
+              sizes="(max-width: 1024px) 100vw, 66vw"
+              priority
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
 
@@ -324,6 +331,20 @@ export default function TableReservationPage({ params }: { params: { id: string 
         </div>
       </div>
 
+      {/* CTA Mobile — visible uniquement sur mobile */}
+      <div className="fixed bottom-0 left-0 w-full z-50 p-4 bg-white dark:bg-[#1E1E1E] border-t border-slate-200 dark:border-zinc-800 lg:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+        <Button
+          variant="primary"
+          size="lg"
+          fullWidth
+          isLoading={isSubmitting}
+          onClick={handleStartBooking}
+          leftIcon={<Utensils size={18} />}
+        >
+          {isPlatformPayment ? `Acompte (${depositFormatted})` : 'Confirmer la table'}
+        </Button>
+      </div>
+
       {/* Modale de Paiement SamirPay avec VRAI targetId de réservation */}
       {activeReservationId && (
         <PaymentModal
@@ -335,7 +356,7 @@ export default function TableReservationPage({ params }: { params: { id: string 
           title={`Table ${partnerName} (${guestCount} pers.)`}
           onPaymentSuccess={() => {
             setIsPaymentOpen(false);
-            window.location.href = '/orders';
+            router.push('/orders');
           }}
         />
       )}

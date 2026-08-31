@@ -139,10 +139,9 @@ export default function PartnerOrdersPage() {
         }
     }, []);
 
-    // Realtime subscription
+    // Realtime subscription — fetchOrders() est géré par l'effet filtre ci-dessous
     useEffect(() => {
         if (!partner?.id) return;
-        fetchOrders();
 
         const supabase = getBrowserClient();
         const channel = supabase

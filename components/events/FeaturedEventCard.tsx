@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export interface FeaturedEventCardProps {
   id: string;
@@ -33,11 +34,12 @@ export const FeaturedEventCard: React.FC<FeaturedEventCardProps> = ({
     >
       {/* Container Image */}
       <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-950">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <Image
           src={imageUrl}
           alt={title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          fill
+          className="object-cover group-hover:scale-105 transition-transform duration-500"
+          sizes="(max-width: 640px) 100vw, 50vw"
         />
 
         {/* Gradient Overlay */}
@@ -52,12 +54,13 @@ export const FeaturedEventCard: React.FC<FeaturedEventCardProps> = ({
         {/* Floating Capsule Info Bar (Bottom inside image as in reference mockup) */}
         <div className="absolute bottom-3 inset-x-3 p-2 px-3 rounded-full bg-black/60 backdrop-blur-xl border border-white/20 flex items-center justify-between shadow-2xl">
           <div className="flex items-center gap-2.5 min-w-0 pr-2">
-            <div className="w-8 h-8 rounded-full overflow-hidden border border-white/50 flex-shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-white/50 flex-shrink-0 relative">
+              <Image
                 src={artistAvatarUrl}
                 alt={artistName}
-                className="w-full h-full object-cover"
+                fill
+                className="object-cover"
+                sizes="32px"
               />
             </div>
             <div className="min-w-0">

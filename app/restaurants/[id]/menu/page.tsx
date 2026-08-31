@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   ChevronLeft,
   Utensils,
@@ -16,10 +18,13 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PaymentModal } from '@/components/payment/PaymentModal';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { useToast } from '@/components/ui/Toast';
 
 export default function RestaurantMenuPage({ params }: { params: { id: string } }) {
   const restaurantId = params.id;
   const { user } = useAuth();
+  const router = useRouter();
+  const toast = useToast();
 
   const [partnerId, setPartnerId] = useState<string>(restaurantId);
   const [partnerName, setPartnerName] = useState('Restaurant & Traiteur');
@@ -97,7 +102,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
       setActiveOrderId(data.order.id);
       setIsPaymentOpen(true);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Erreur lors de la validation.');
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de la validation.');
     } finally {
       setIsSubmitting(false);
     }
@@ -154,9 +159,8 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                   key={special.id}
                   className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent border-2 border-[#FF5722]/40 flex flex-col sm:flex-row gap-5 items-center shadow-xs"
                 >
-                  <div className="w-full sm:w-44 aspect-video sm:aspect-square rounded-2xl overflow-hidden bg-slate-950 flex-shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={special.imageUrl} alt={special.name} className="w-full h-full object-cover" />
+                  <div className="w-full sm:w-44 aspect-video sm:aspect-square rounded-2xl overflow-hidden bg-slate-950 flex-shrink-0 relative">
+                    <Image src={special.imageUrl} alt={special.name} fill className="object-cover" sizes="(max-width: 640px) 100vw, 176px" />
                   </div>
 
                   <div className="flex-1 space-y-2 text-left w-full">
@@ -214,9 +218,8 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
                       className="p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs flex flex-col justify-between"
                     >
                       <div className="space-y-2">
-                        <div className="w-full aspect-[16/10] rounded-2xl overflow-hidden bg-slate-950 mb-2">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                        <div className="w-full aspect-[16/10] rounded-2xl overflow-hidden bg-slate-950 mb-2 relative">
+                          <Image src={item.imageUrl} alt={item.name} fill className="object-cover" sizes="(max-width: 640px) 100vw, 50vw" />
                         </div>
                         <span className="text-[10px] font-bold text-[#FF5722] uppercase tracking-wider block">
                           {item.category}
@@ -379,6 +382,22 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
         </div>
       </div>
 
+      {/* CTA Mobile — visible uniquement sur mobile */}
+      {totalCartCount > 0 && (
+        <div className="fixed bottom-0 left-0 w-full z-50 p-4 bg-white dark:bg-[#1E1E1E] border-t border-slate-200 dark:border-zinc-800 lg:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            isLoading={isSubmitting}
+            onClick={handleCheckout}
+            leftIcon={<ShoppingBag size={18} />}
+          >
+            Payer ({totalCartCount} article{totalCartCount > 1 ? 's' : ''} — {totalFormatted})
+          </Button>
+        </div>
+      )}
+
       {/* Modale de Paiement SamirPay avec VRAI order_id */}
       {activeOrderId && (
         <PaymentModal
@@ -391,7 +410,7 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
           onPaymentSuccess={() => {
             setIsPaymentOpen(false);
             setCart({});
-            window.location.href = '/orders';
+            router.push('/orders');
           }}
         />
       )}
