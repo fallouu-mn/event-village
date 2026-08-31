@@ -2,7 +2,7 @@ import React from 'react';
 import { clsx } from 'clsx';
 
 export const Skeleton: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={clsx('ev-skel', className)} />
+  <div className={clsx('animate-pulse rounded-xl bg-slate-200/80 dark:bg-zinc-800/80 ev-skel', className)} />
 );
 
 export const EventCardSkeleton: React.FC = () => (
