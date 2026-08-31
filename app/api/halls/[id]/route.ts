@@ -14,6 +14,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             return NextResponse.json({ error: 'ID salle requis.' }, { status: 400 });
         }
 
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(hallId);
+        if (!isUuid) {
+            return NextResponse.json({ error: 'Salle introuvable.' }, { status: 404 });
+        }
+
         const supabase = getServiceRoleClient();
 
         const { data: hall, error } = await supabase

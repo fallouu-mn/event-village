@@ -29,37 +29,52 @@ export async function GET(req: NextRequest) {
 
         const userId = jwtUser.id;
 
-        // 2. Profil utilisateur (inclut referral_code depuis migration 0011)
+        // 2. Profil utilisateur réel
         const { data: profile, error: uErr } = await supabase
             .from('users')
-            .select('id, first_name, last_name, phone, role, referral_status, referral_code')
+            .select('id, first_name, last_name, phone, role, referral_status')
             .eq('id', userId)
             .maybeSingle();
 
         if (uErr || !profile) {
-            return NextResponse.json({ error: 'Profil utilisateur introuvable.' }, { status: 404 });
+            return NextResponse.json({
+                success: false,
+                error: 'Profil utilisateur introuvable.',
+                referralCode: '',
+                referralLink: '',
+                isAmbassador: false,
+                rates: { level1: 5.0, level2: 2.0 },
+                network: { level1Count: 0, level2Count: 0, totalReferred: 0 },
+                finances: { availableBalance: 0, totalEarned: 0, totalWithdrawn: 0 },
+                recentCommissions: [],
+            }, { status: 200 });
         }
 
         const isAmbassador = profile.referral_status === 'AMBASSADEUR';
 
-        // Fallback au cas où le trigger 0011 n'aurait pas encore tourné
+        // Code de parrainage dynamique
         const cleanPhone = (profile.phone || '').replace(/\D/g, '');
         const referralCode: string =
-            (profile.referral_code as string | null) ||
             `EV-${cleanPhone.slice(-6) || profile.id.slice(0, 6).toUpperCase()}`;
 
-        // 3. Taux dynamiques depuis referral_config (seeded par migration 0011)
-        const { data: rateConfig } = await supabase
-            .from('referral_config')
-            .select('rate_n1, rate_n2')
-            .eq('sponsor_status', profile.referral_status)
-            .eq('referral_type', 'CLIENT_TO_CLIENT')
-            .eq('is_active', true)
-            .maybeSingle();
+        // 3. Taux dynamiques depuis referral_config
+        let rateN1 = isAmbassador ? 7.0 : 5.0;
+        let rateN2 = isAmbassador ? 2.0 : 2.0;
 
-        // Fallback conservateur uniquement si la table n'est pas encore peuplée
-        const rateN1: number = rateConfig?.rate_n1 ?? (isAmbassador ? 7.0 : 4.0);
-        const rateN2: number = rateConfig?.rate_n2 ?? (isAmbassador ? 2.0 : 1.5);
+        try {
+            const { data: rateConfig } = await supabase
+                .from('referral_config')
+                .select('rate_n1, rate_n2')
+                .eq('sponsor_status', profile.referral_status || 'STANDARD')
+                .eq('referral_type', 'CLIENT_TO_CLIENT')
+                .eq('is_active', true)
+                .maybeSingle();
+
+            if (rateConfig) {
+                rateN1 = Number(rateConfig.rate_n1) || rateN1;
+                rateN2 = Number(rateConfig.rate_n2) || rateN2;
+            }
+        } catch {}
 
         // 4. Filleuls N1 directs (sponsor_id = userId dans referral_relationships)
         const { data: n1Relationships } = await supabase

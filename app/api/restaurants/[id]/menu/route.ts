@@ -12,28 +12,49 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         const partnerIdOrSlug = params.id;
         const supabase = getServiceRoleClient();
 
-        // 1. Recherche du partenaire
-        let partnerId = partnerIdOrSlug;
-        const { data: partner } = await supabase
-            .from('partners')
-            .select('id, company_name, commercial_name')
-            .or(`id.eq.${partnerIdOrSlug}`)
-            .maybeSingle();
+        // 1. Détection format UUID pour éviter toute erreur de syntaxe SQL PostgreSQL
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(partnerIdOrSlug);
 
-        if (partner) {
-            partnerId = partner.id;
+        let partner: { id: string; company_name: string; commercial_name?: string | null } | null = null;
+
+        if (isUuid) {
+            const { data } = await supabase
+                .from('partners')
+                .select('id, company_name, commercial_name')
+                .eq('id', partnerIdOrSlug)
+                .maybeSingle();
+            partner = data;
         } else {
-            // S'il s'agit d'un slug ou si ID non trouvé, récupérer le premier partenaire traiteur/restaurant
+            const cleanSlug = partnerIdOrSlug.replace(/^(rest|restaurant)-/, '').replace(/-/g, ' ');
+            const { data } = await supabase
+                .from('partners')
+                .select('id, company_name, commercial_name')
+                .or(`commercial_name.ilike.%${cleanSlug}%,company_name.ilike.%${cleanSlug}%`)
+                .limit(1)
+                .maybeSingle();
+            partner = data;
+        }
+
+        // Si aucun partenaire spécifique trouvé, chercher le premier partenaire disponible
+        if (!partner) {
             const { data: fallbackPartner } = await supabase
                 .from('partners')
                 .select('id, company_name, commercial_name')
                 .limit(1)
                 .maybeSingle();
-
-            if (fallbackPartner) {
-                partnerId = fallbackPartner.id;
-            }
+            partner = fallbackPartner;
         }
+
+        // Si aucun partenaire n'existe en base
+        if (!partner) {
+            return NextResponse.json({
+                partnerId: null,
+                partnerName: 'Restaurant & Traiteur',
+                menuItems: [],
+            });
+        }
+
+        const partnerId = partner.id;
 
         // 2. Récupération des produits disponibles
         const { data: products, error } = await supabase

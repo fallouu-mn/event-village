@@ -14,6 +14,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             return NextResponse.json({ error: 'ID événement requis.' }, { status: 400 });
         }
 
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId);
+        if (!isUuid) {
+            return NextResponse.json({ error: 'Événement introuvable.' }, { status: 404 });
+        }
+
         const supabase = getServiceRoleClient();
 
         const { data: event, error } = await supabase

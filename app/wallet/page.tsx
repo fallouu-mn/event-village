@@ -59,20 +59,23 @@ export default function WalletPage() {
   });
 
   useEffect(() => {
+    if (!profile?.id) return;
+
     fetch('/api/referrals/my-stats')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
       .then((data) => {
-        if (data.success) {
+        if (data?.success) {
           setReferralData(data);
-          if (profile) {
-            setFirstName(profile.first_name || '');
-            setLastName(profile.last_name || '');
-            setPhone(profile.phone || '');
-          }
+          setFirstName(profile.first_name || '');
+          setLastName(profile.last_name || '');
+          setPhone(profile.phone || '');
         }
       })
-      .catch(() => { toast.error('Impossible de charger vos données de parrainage.'); });
-  }, [profile]);
+      .catch(() => {});
+  }, [profile?.id, profile?.first_name, profile?.last_name, profile?.phone]);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(referralData.referralLink);
