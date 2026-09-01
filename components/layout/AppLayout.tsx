@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -36,13 +35,7 @@ import {
 import { Logo } from '@/components/ui/Logo';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { useAuth } from '@/components/providers/AuthProvider';
-
-const AppLayoutHeader = dynamic(() => import('./AppLayoutHeader'), {
-  ssr: false,
-  loading: () => (
-    <div className="sticky top-0 z-20 h-16 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#16161A] shadow-subtle" />
-  ),
-});
+import { AppLayoutHeader } from './AppLayoutHeader';
 
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();

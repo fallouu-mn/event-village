@@ -5,7 +5,9 @@ import Link from 'next/link';
 import {
   Sparkles, Compass, Building2, Utensils, ArrowRight,
   Music, Flame, Calendar, Search, Ticket, Users,
-  MapPin, ChevronRight,
+  MapPin, ChevronRight, Phone, Mail, Heart,
+  Handshake, TrendingUp, CheckCircle2,
+  HelpCircle, X, Gift, Share2, Banknote, UserPlus,
 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
@@ -19,11 +21,20 @@ const CATEGORIES = [
   { id: 'SALLE',   label: 'Salles & Fêtes',    icon: Building2, color: 'from-sky-500 to-blue-600' },
 ];
 
+const STEPS = [
+  { num: 1, title: 'Choisis ton événement',      desc: 'Parcours les soirées, concerts et festivals et ouvre celui qui te plaît.' },
+  { num: 2, title: 'Clique sur « Acheter »',     desc: 'Sélectionne ton billet et la quantité. Pas besoin de compte.' },
+  { num: 3, title: 'Ton email puis le paiement', desc: 'Wave ou Orange Money. Garde ton email : c\'est ta clé.' },
+  { num: 4, title: 'Reçois ton billet (QR)',      desc: 'Il s\'affiche après le paiement et arrive par email en PDF.' },
+  { num: 5, title: 'Retrouve-le le Jour J',       desc: 'Dans ton email, ou sur « Mes billets » si tu crées un compte.' },
+];
+
 export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchQuery, setSearchQuery]           = useState('');
   const [events, setEvents]                     = useState<any[]>([]);
   const [isLoading, setIsLoading]               = useState(true);
+  const [showHowTo, setShowHowTo]               = useState(false);
 
   useEffect(() => {
     async function loadEvents() {
@@ -43,6 +54,14 @@ export default function HomePage() {
     loadEvents();
   }, []);
 
+  useEffect(() => {
+    if (showHowTo) {
+      const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowHowTo(false); };
+      document.addEventListener('keydown', onEsc);
+      return () => document.removeEventListener('keydown', onEsc);
+    }
+  }, [showHowTo]);
+
   const filteredEvents = events.filter((evt) => {
     const matchCategory = selectedCategory === 'ALL' || evt.category === selectedCategory;
     const matchSearch   =
@@ -54,35 +73,31 @@ export default function HomePage() {
   });
 
   return (
-    <div className="space-y-12 pb-16">
+    <>
+    <div className="space-y-16 sm:space-y-20 pb-24">
 
       {/* ================================================================
           1. HERO CINÉMATIQUE
           ================================================================ */}
-      <section className="relative rounded-3xl overflow-hidden text-white" style={{ minHeight: 520 }}>
+      <section className="relative rounded-3xl overflow-hidden text-white" style={{ minHeight: 480 }}>
 
-        {/* Background — slow zoom */}
         <div
           className="absolute inset-0 bg-cover bg-center ev-hero-zoom"
           style={{ backgroundImage: "url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1600&auto=format&fit=crop&q=80')" }}
         />
 
-        {/* Gradient overlays */}
         <div className="absolute inset-0 bg-gradient-to-br from-black/95 via-black/70 to-[#FF5722]/15" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 
-        {/* Ambient glow orbs */}
         <div className="absolute top-1/4 right-[15%] w-80 h-80 rounded-full bg-[#FF5722]/10 blur-3xl ev-float pointer-events-none" />
         <div className="absolute bottom-1/4 right-[35%] w-52 h-52 rounded-full bg-[#FF3D68]/08 blur-2xl ev-float-alt pointer-events-none" />
 
-        {/* Content */}
         <div
-          className="relative z-10 flex flex-col justify-between p-6 sm:p-10 lg:p-14"
-          style={{ minHeight: 520 }}
+          className="relative z-10 flex flex-col justify-between p-5 sm:p-10 lg:p-14"
+          style={{ minHeight: 480 }}
         >
-          <div className="max-w-2xl space-y-6">
+          <div className="max-w-2xl space-y-5">
 
-            {/* Animated live badge */}
             <div
               className="ev-fade-up inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#FF5722]/40 bg-[#FF5722]/12 text-[#FF8A65] text-xs font-bold backdrop-blur-sm"
               style={{ animationDelay: '0ms' }}
@@ -91,16 +106,15 @@ export default function HomePage() {
               La Référence Événementielle au Sénégal
             </div>
 
-            {/* Headline — two lines staggered */}
             <div>
               <h1
-                className="ev-fade-up text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.08]"
+                className="ev-fade-up text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.08]"
                 style={{ animationDelay: '100ms' }}
               >
                 Découvrez, réservez
               </h1>
               <h1
-                className="ev-fade-up text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.08] mt-1"
+                className="ev-fade-up text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.08] mt-1"
                 style={{ animationDelay: '200ms' }}
               >
                 et vivez des{' '}
@@ -116,7 +130,6 @@ export default function HomePage() {
               location de salles et commandes traiteur.
             </p>
 
-            {/* Search + CTA */}
             <div
               className="ev-fade-up flex flex-col sm:flex-row gap-3"
               style={{ animationDelay: '420ms' }}
@@ -147,9 +160,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Trust strip — bottom of hero */}
           <div
-            className="ev-fade-up flex flex-wrap items-center gap-6 sm:gap-10 pt-10 mt-auto"
+            className="ev-fade-up flex flex-wrap items-center gap-4 sm:gap-10 pt-8 mt-auto"
             style={{ animationDelay: '580ms' }}
           >
             {[
@@ -193,34 +205,37 @@ export default function HomePage() {
           </Link>
         </div>
 
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-          {CATEGORIES.map((cat, i) => {
-            const active = selectedCategory === cat.id;
-            const Icon   = cat.icon;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                style={{ animationDelay: `${i * 55}ms` }}
-                className={`ev-fade-up flex-shrink-0 flex flex-col items-center gap-2.5 p-4 rounded-3xl border transition-all duration-300 w-[104px] sm:w-[116px] ${
-                  active
-                    ? 'bg-gradient-to-br from-[#FF6A3D] to-[#FF3D68] border-transparent text-white shadow-xl shadow-[#FF5722]/35 scale-[1.04]'
-                    : 'bg-white dark:bg-[#1E1E1E] border-slate-200/80 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-[#FF5722]/30 hover:shadow-md hover:-translate-y-1'
-                }`}
-              >
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-                  active
-                    ? 'bg-white/20'
-                    : `bg-gradient-to-br ${cat.color}`
-                }`}>
-                  <Icon size={19} className="text-white" />
-                </div>
-                <span className="text-[11px] font-bold text-center leading-tight">
-                  {cat.label}
-                </span>
-              </button>
-            );
-          })}
+        <div className="relative">
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+            {CATEGORIES.map((cat, i) => {
+              const active = selectedCategory === cat.id;
+              const Icon   = cat.icon;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  style={{ animationDelay: `${i * 55}ms` }}
+                  className={`ev-fade-up flex-shrink-0 flex flex-col items-center gap-2.5 p-4 rounded-3xl border transition-all duration-300 w-[104px] sm:w-[116px] ${
+                    active
+                      ? 'bg-gradient-to-br from-[#FF6A3D] to-[#FF3D68] border-transparent text-white shadow-xl shadow-[#FF5722]/35 scale-[1.04]'
+                      : 'bg-white dark:bg-[#1E1E1E] border-slate-200/80 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-[#FF5722]/30 hover:shadow-md hover:-translate-y-1'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                    active
+                      ? 'bg-white/20'
+                      : `bg-gradient-to-br ${cat.color}`
+                  }`}>
+                    <Icon size={19} className="text-white" />
+                  </div>
+                  <span className="text-[11px] font-bold text-center leading-tight">
+                    {cat.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="absolute right-0 top-0 bottom-1 w-8 bg-gradient-to-l from-[#F8F9FA] dark:from-[#0F0F11] to-transparent pointer-events-none sm:hidden" />
         </div>
       </section>
 
@@ -265,21 +280,30 @@ export default function HomePage() {
             ))}
           </div>
         ) : (
-          <div className="py-20 bg-white dark:bg-[#1E1E1E] rounded-3xl border border-dashed border-slate-200 dark:border-zinc-800 flex flex-col items-center justify-center gap-5">
-            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center">
-              <Calendar size={28} className="text-slate-400" />
+          <div className="py-16 bg-white dark:bg-[#1A1A1A] rounded-3xl border border-dashed border-slate-200 dark:border-zinc-800 flex flex-col items-center justify-center gap-5">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#FF6A3D]/10 to-[#FF3D68]/10 flex items-center justify-center">
+              <Calendar size={28} className="text-[#FF5722]" />
             </div>
             <div className="text-center px-6">
-              <p className="text-sm font-bold text-slate-900 dark:text-white">
-                Aucun événement disponible
+              <p className="text-base font-black text-slate-900 dark:text-white">
+                Bientôt disponible
               </p>
-              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1.5 leading-relaxed">
-                Revenez bientôt ou explorez nos salles et restaurants.
+              <p className="text-sm text-slate-500 dark:text-zinc-400 mt-2 leading-relaxed max-w-sm">
+                De nouveaux événements arrivent très prochainement. Explorez nos salles et restaurants en attendant.
               </p>
             </div>
-            <Link href="/explore">
-              <Button variant="outline" size="sm">Explorer les services</Button>
-            </Link>
+            <div className="flex gap-3">
+              <Link href="/explore">
+                <Button variant="primary" size="sm" leftIcon={<Compass size={14} />}>
+                  Explorer
+                </Button>
+              </Link>
+              <Link href="/halls">
+                <Button variant="outline" size="sm" leftIcon={<Building2 size={14} />}>
+                  Voir les salles
+                </Button>
+              </Link>
+            </div>
           </div>
         )}
       </section>
@@ -299,11 +323,10 @@ export default function HomePage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-          {/* Salles */}
           <Link href="/halls" className="group block">
             <div
               className="relative rounded-3xl overflow-hidden text-white shadow-2xl"
-              style={{ minHeight: 300 }}
+              style={{ minHeight: 280 }}
             >
               <div
                 className="absolute inset-0 bg-cover bg-center transition-transform duration-700 ease-out group-hover:scale-105"
@@ -311,7 +334,7 @@ export default function HomePage() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/96 via-black/50 to-black/10" />
 
-              <div className="absolute inset-0 flex flex-col justify-between p-7 sm:p-8">
+              <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-8">
                 <span className="inline-flex items-center self-start px-2.5 py-1 rounded-lg bg-white/12 backdrop-blur-md text-[10px] font-bold uppercase tracking-wider">
                   <Building2 size={10} className="mr-1.5 text-[#FF8A65]" />
                   Espaces & Réceptions
@@ -333,11 +356,10 @@ export default function HomePage() {
             </div>
           </Link>
 
-          {/* Restaurants */}
           <Link href="/explore" className="group block">
             <div
               className="relative rounded-3xl overflow-hidden text-white shadow-2xl"
-              style={{ minHeight: 300 }}
+              style={{ minHeight: 280 }}
             >
               <div
                 className="absolute inset-0 bg-cover bg-center transition-transform duration-700 ease-out group-hover:scale-105"
@@ -345,7 +367,7 @@ export default function HomePage() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/96 via-black/50 to-black/10" />
 
-              <div className="absolute inset-0 flex flex-col justify-between p-7 sm:p-8">
+              <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-8">
                 <span className="inline-flex items-center self-start px-2.5 py-1 rounded-lg bg-white/12 backdrop-blur-md text-[10px] font-bold uppercase tracking-wider">
                   <Utensils size={10} className="mr-1.5 text-emerald-400" />
                   Gastronomie & Tables
@@ -370,7 +392,281 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ================================================================
+          5. AMBASSADEUR — INVITEZ VOS AMIS
+          ================================================================ */}
+      <section className="relative rounded-3xl overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-500 via-[#FF5722] to-[#FF3D68]" />
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMS41IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDYpIi8+PC9zdmc+')] opacity-60" />
+
+        <div className="relative z-10 px-6 py-10 sm:px-10 sm:py-14">
+          <div className="max-w-3xl mx-auto flex flex-col lg:flex-row items-center gap-8">
+
+            <div className="flex-1 space-y-4 text-center lg:text-left">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur-sm text-white/90 text-xs font-bold">
+                <Gift size={14} />
+                Programme Ambassadeur
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight">
+                Invitez vos amis,<br />
+                <span className="text-amber-200">empochez de l&apos;argent.</span>
+              </h2>
+              <p className="text-sm text-white/80 leading-relaxed max-w-md mx-auto lg:mx-0">
+                Partagez votre lien de parrainage. Chaque ami qui achete un billet
+                vous rapporte une commission directe sur votre portefeuille Event Village.
+              </p>
+
+              <div className="grid grid-cols-3 gap-3 pt-2 max-w-sm mx-auto lg:mx-0">
+                {[
+                  { icon: Share2, label: 'Partagez', sub: 'Votre lien unique' },
+                  { icon: UserPlus, label: 'Invitez', sub: 'Amis & famille' },
+                  { icon: Banknote, label: 'Gagnez', sub: 'Commission directe' },
+                ].map((s, i) => (
+                  <div key={i} className="text-center p-3 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/10">
+                    <s.icon size={20} className="text-amber-200 mx-auto mb-1.5" />
+                    <p className="text-[11px] font-black text-white leading-none">{s.label}</p>
+                    <p className="text-[9px] text-white/60 mt-0.5">{s.sub}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 w-full lg:w-auto">
+              <Link href="/profile">
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="w-full lg:w-auto h-[52px] px-10 font-black rounded-2xl bg-white text-[#FF5722] hover:bg-white/90 shadow-xl shadow-black/20 border-0"
+                  leftIcon={<Gift size={18} />}
+                >
+                  Devenir Ambassadeur
+                </Button>
+              </Link>
+              <p className="text-[10px] text-white/50 text-center lg:text-left">
+                Gratuit — activez le parrainage depuis votre profil
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ================================================================
+          6. CTA PARTENAIRE
+          ================================================================ */}
+      <section className="relative rounded-3xl overflow-hidden bg-white dark:bg-[#1A1A1A] border border-slate-200/80 dark:border-zinc-800">
+        <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-[#FF5722]/5 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 rounded-full bg-[#FF3D68]/5 blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row items-center gap-8 p-6 sm:p-10 lg:p-12">
+          <div className="flex-1 space-y-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FF5722]/10 text-[#FF5722] text-xs font-bold">
+              <Handshake size={14} />
+              Espace Partenaire
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
+              Vous organisez des événements ?<br />
+              <span className="ev-gradient-text">Rejoignez Event Village.</span>
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-zinc-400 leading-relaxed max-w-lg">
+              Vendez vos billets, gérez vos réservations de tables et louez vos salles
+              depuis un tableau de bord professionnel. Commission transparente, paiements
+              Wave & Orange Money, analytics en temps réel.
+            </p>
+            <ul className="space-y-2.5 pt-2">
+              {[
+                'Tableau de bord complet avec statistiques',
+                'Billetterie avec QR code intégré',
+                'Gestion des réservations de tables',
+                'Paiements sécurisés Wave & Orange Money',
+              ].map((feature, i) => (
+                <li key={i} className="flex items-center gap-2.5 text-sm text-slate-700 dark:text-zinc-300">
+                  <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
+                  {feature}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex flex-col gap-3 w-full lg:w-auto">
+            <Link href="/register?role=partner">
+              <Button
+                variant="primary"
+                size="md"
+                className="w-full lg:w-auto h-[52px] px-10 font-black rounded-2xl shadow-xl shadow-[#FF5722]/30"
+                leftIcon={<TrendingUp size={18} />}
+              >
+                Devenir Partenaire
+              </Button>
+            </Link>
+            <p className="text-[10px] text-slate-400 dark:text-zinc-600 text-center lg:text-left">
+              Inscription gratuite — aucun frais fixe
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ================================================================
+          7. FOOTER
+          ================================================================ */}
+      <footer className="border-t border-slate-200 dark:border-zinc-800 pt-10">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 sm:gap-6">
+
+          <div className="col-span-2 sm:col-span-1">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF6A3D] to-[#FF3D68] flex items-center justify-center">
+                <Heart size={14} className="text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-black text-slate-900 dark:text-white leading-none">EVENT VILLAGE</p>
+                <p className="text-[8px] font-bold text-slate-400 dark:text-zinc-500 tracking-wider uppercase mt-0.5">Plateforme Événementielle</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-zinc-500 leading-relaxed">
+              La référence événementielle au Sénégal. Billetterie, salles, restaurants.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3">
+              Plateforme
+            </h4>
+            <ul className="space-y-2">
+              {[
+                { label: 'Explorer', href: '/explore' },
+                { label: 'Salles de fête', href: '/halls' },
+                { label: 'Restaurants', href: '/restaurants' },
+                { label: 'Mes billets', href: '/tickets' },
+              ].map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="text-xs text-slate-500 dark:text-zinc-500 hover:text-[#FF5722] transition-colors">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3">
+              Partenaires
+            </h4>
+            <ul className="space-y-2">
+              {[
+                { label: 'Devenir partenaire', href: '/register?role=partner' },
+                { label: 'Espace partenaire', href: '/partner/dashboard' },
+                { label: 'Tarifs & commission', href: '/partner/dashboard' },
+              ].map((link) => (
+                <li key={link.label}>
+                  <Link href={link.href} className="text-xs text-slate-500 dark:text-zinc-500 hover:text-[#FF5722] transition-colors">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3">
+              Contact
+            </h4>
+            <ul className="space-y-2.5">
+              <li className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-500">
+                <Phone size={12} className="text-[#FF5722] flex-shrink-0" />
+                +221 78 XXX XX XX
+              </li>
+              <li className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-500">
+                <Mail size={12} className="text-[#FF5722] flex-shrink-0" />
+                contact@eventvillage.sn
+              </li>
+              <li className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-500">
+                <MapPin size={12} className="text-[#FF5722] flex-shrink-0" />
+                Dakar, Sénégal
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-10 pt-6 border-t border-slate-200/60 dark:border-zinc-800/60 pb-20 sm:pb-4">
+          <p className="text-[11px] text-slate-400 dark:text-zinc-600">
+            &copy; {new Date().getFullYear()} Event Village. Tous droits réservés.
+          </p>
+          <div className="flex items-center gap-4">
+            <Link href="/legal" className="text-[11px] text-slate-400 dark:text-zinc-600 hover:text-[#FF5722] transition-colors">
+              Mentions légales
+            </Link>
+            <Link href="/privacy" className="text-[11px] text-slate-400 dark:text-zinc-600 hover:text-[#FF5722] transition-colors">
+              Confidentialité
+            </Link>
+            <Link href="/cgv" className="text-[11px] text-slate-400 dark:text-zinc-600 hover:text-[#FF5722] transition-colors">
+              CGV
+            </Link>
+          </div>
+        </div>
+      </footer>
 
     </div>
+
+    {/* ==================================================================
+        FLOATING — Bouton + Popover "Comment ça marche ?" (style paskclab)
+        ================================================================== */}
+    <div className="fixed bottom-20 lg:bottom-6 right-4 z-40 flex flex-col items-end gap-3">
+
+      {showHowTo && (
+        <div className="w-[340px] sm:w-[380px] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl shadow-black/20 border border-slate-200/80 dark:border-zinc-700/60 overflow-hidden animate-[slideUp_0.25s_ease-out]">
+
+          <div className="flex items-start justify-between px-5 pt-5 pb-2">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">En 5 étapes</p>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white mt-0.5">Obtenir ton billet</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowHowTo(false)}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors mt-1"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="px-5 pb-3 space-y-4">
+            {STEPS.map((step) => (
+              <div key={step.num} className="flex items-start gap-3.5">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center flex-shrink-0">
+                  <span className="text-sm font-black text-white">{step.num}</span>
+                </div>
+                <div className="flex-1 pt-0.5">
+                  <p className="text-[13px] font-extrabold text-slate-900 dark:text-white leading-snug">{step.title}</p>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 leading-relaxed">{step.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="px-5 pb-5 pt-2">
+            <Link href="/explore" onClick={() => setShowHowTo(false)}>
+              <button
+                type="button"
+                className="w-full h-[46px] rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-bold hover:bg-slate-800 dark:hover:bg-zinc-100 transition-colors"
+              >
+                Voir les événements &rarr;
+              </button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setShowHowTo(!showHowTo)}
+        className="flex items-center gap-2 pl-2.5 pr-4 py-2 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-700/60 shadow-lg shadow-black/10 text-[13px] font-semibold text-slate-700 dark:text-zinc-200 hover:shadow-xl active:scale-95 transition-all duration-200"
+      >
+        <span className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center flex-shrink-0">
+          <HelpCircle size={15} className="text-white" />
+        </span>
+        {showHowTo ? 'Fermer' : 'Comment ça marche ?'}
+      </button>
+    </div>
+    </>
   );
 }

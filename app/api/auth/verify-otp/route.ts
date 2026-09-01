@@ -31,6 +31,19 @@ export async function POST(req: NextRequest) {
 
         const normalizedPhone = normalizePhoneNumber(rawPhone);
 
+        // Protection Anti-Force Brute serveur (Rate Limiting)
+        const { RateLimiter } = await import('@/lib/security/rate-limiter');
+        const limitCheck = RateLimiter.isRateLimited(`otp_verify_${normalizedPhone}`);
+        if (limitCheck.limited) {
+            return NextResponse.json(
+                {
+                    error: `Trop de tentatives de vérification. Veuillez patienter ${limitCheck.remainingSeconds || 60} secondes.`,
+                    remainingSeconds: limitCheck.remainingSeconds || 60,
+                },
+                { status: 429 }
+            );
+        }
+
         // 1. Vérification dans le cache mémoire
         let isValid = false;
         const cached = otpMemoryCache.get(normalizedPhone);
@@ -85,12 +98,14 @@ export async function POST(req: NextRequest) {
         }
 
         if (!isValid) {
+            RateLimiter.recordFailedAttempt(`otp_verify_${normalizedPhone}`);
             return NextResponse.json(
                 { error: 'Code de vérification incorrect ou expiré.' },
                 { status: 400 }
             );
         }
 
+        RateLimiter.resetAttempts(`otp_verify_${normalizedPhone}`);
         // 3. Récupération du profil utilisateur et génération de session
         const supabase = getServiceRoleClient();
         const { data: userProfile } = await supabase

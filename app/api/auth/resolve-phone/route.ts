@@ -51,12 +51,14 @@ export async function POST(req: NextRequest) {
         }
 
         if (!userRow) {
+            RateLimiter.recordFailedAttempt(normalizedPhone);
             return NextResponse.json(
                 { error: 'Aucun compte n\'est associé à ce numéro de téléphone. Veuillez vous inscrire.' },
                 { status: 404 }
             );
         }
 
+        RateLimiter.resetAttempts(normalizedPhone);
         return NextResponse.json({
             success: true,
             email: userRow.email || `${normalizedPhone.replace('+', '')}@eventvillage.sn`,

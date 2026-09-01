@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        RateLimiter.recordFailedAttempt(`otp_send_${normalizedPhone}`);
         return NextResponse.json({
             success: true,
             message: purpose === 'PASSWORD_RESET'

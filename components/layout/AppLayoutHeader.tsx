@@ -8,12 +8,12 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useAuth } from '@/components/providers/AuthProvider';
 
-interface AppLayoutHeaderProps {
+export interface AppLayoutHeaderProps {
   isMobileMenuOpen?: boolean;
   onMenuToggle?: () => void;
 }
 
-export default function AppLayoutHeader({ isMobileMenuOpen = false, onMenuToggle }: AppLayoutHeaderProps) {
+export function AppLayoutHeader({ isMobileMenuOpen = false, onMenuToggle }: AppLayoutHeaderProps) {
   const { user, profile, isAuthenticated, signOut } = useAuth();
 
   const isUserLoggedIn = isAuthenticated || !!user;
@@ -92,3 +92,5 @@ export default function AppLayoutHeader({ isMobileMenuOpen = false, onMenuToggle
     </header>
   );
 }
+
+export default AppLayoutHeader;
