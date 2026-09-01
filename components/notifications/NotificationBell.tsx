@@ -36,6 +36,7 @@ export interface InAppNotification {
 export function NotificationBell() {
     const router = useRouter();
     const { user, isAuthenticated } = useAuth();
+    const [mounted, setMounted] = useState<boolean>(false);
     const [notifications, setNotifications] = useState<InAppNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState<number>(0);
     const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -44,7 +45,11 @@ export function NotificationBell() {
     const [filter, setFilter] = useState<'ALL' | 'UNREAD'>('ALL');
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const isUserLoggedIn = isAuthenticated || !!user;
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const isUserLoggedIn = mounted && (isAuthenticated || !!user);
 
     const fetchNotifications = useCallback(async () => {
         if (!isUserLoggedIn) return;
@@ -200,24 +205,16 @@ export function NotificationBell() {
         return true;
     });
 
-    if (!isUserLoggedIn) {
-        return (
-            <Link
-                href="/login"
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all"
-                aria-label="Notifications"
-            >
-                <Bell size={18} />
-            </Link>
-        );
-    }
-
     return (
         <div className="relative" ref={dropdownRef}>
             {/* Bouton Cloche Navbar */}
             <button
                 type="button"
                 onClick={() => {
+                    if (!isUserLoggedIn) {
+                        router.push('/login');
+                        return;
+                    }
                     setIsOpen(!isOpen);
                     if (!isOpen) fetchNotifications();
                 }}
@@ -226,7 +223,7 @@ export function NotificationBell() {
                 aria-expanded={isOpen}
             >
                 <Bell size={18} />
-                {unreadCount > 0 && (
+                {mounted && unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF5722] text-white text-[10px] font-black flex items-center justify-center shadow-md animate-pulse ring-2 ring-white dark:ring-[#161616]">
                         {unreadCount > 99 ? '99+' : unreadCount}
                     </span>

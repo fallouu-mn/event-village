@@ -41,17 +41,22 @@ import { NotificationBell } from '@/components/notifications/NotificationBell';
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
   const { user, profile, isAuthenticated, isLoading, signOut } = useAuth();
+  const [mounted, setMounted] = useState(false);
 
-  const isUserLoggedIn = isAuthenticated || !!user;
-  const rawRole = profile?.role || (user?.user_metadata?.role as string) || '';
-  const cleanPhone = (profile?.phone || (user?.user_metadata?.phone as string) || '').replace(/\D/g, '');
-  const isSuperadminNumber = cleanPhone === '221770000000' || cleanPhone === '770000000' || cleanPhone === '221773780756' || cleanPhone === '773780756';
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isUserLoggedIn = mounted && (isAuthenticated || !!user);
+  const rawRole = mounted ? (profile?.role || (user?.user_metadata?.role as string) || '') : '';
+  const cleanPhone = mounted ? (profile?.phone || (user?.user_metadata?.phone as string) || '').replace(/\D/g, '') : '';
+  const isSuperadminNumber = mounted && (cleanPhone === '221770000000' || cleanPhone === '770000000' || cleanPhone === '221773780756' || cleanPhone === '773780756');
 
   const isSuperAdmin = rawRole === 'SUPERADMIN' || isSuperadminNumber;
   const isAdmin = isSuperAdmin || rawRole === 'ADMIN';
   const isPartner = rawRole === 'PARTENAIRE';
   const isController = rawRole === 'CONTROLEUR' || isAdmin || isPartner;
-  const isAmbassador = profile?.referral_status === 'AMBASSADEUR';
+  const isAmbassador = mounted && (profile?.referral_status === 'AMBASSADEUR');
 
   const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
   const isAdminRoute = pathname.startsWith('/admin/') || pathname === '/admin';
@@ -159,9 +164,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   ] : [];
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
   useEffect(() => { setIsMobileMenuOpen(false); }, [pathname]);
 
   useEffect(() => {

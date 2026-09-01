@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { clsx } from 'clsx';
@@ -31,7 +31,7 @@ const LOCKOUT_DURATION_SECONDS = 60;
 const STORAGE_KEY_LOCKOUT = 'ev_login_lockout_until';
 const STORAGE_KEY_ATTEMPTS = 'ev_login_failed_attempts';
 
-export default function LoginPage() {
+function LoginPageContent() {
     const router = useRouter();
     const { refreshProfile } = useAuth();
     const searchParams = useSearchParams();
@@ -757,3 +757,12 @@ export default function LoginPage() {
         </div>
     );
 }
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-[#FF5722] border-t-transparent animate-spin" /></div>}>
+            <LoginPageContent />
+        </Suspense>
+    );
+}
+

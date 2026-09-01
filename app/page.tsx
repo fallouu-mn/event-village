@@ -7,7 +7,6 @@ import {
   Music, Flame, Calendar, Search, Ticket, Users,
   MapPin, ChevronRight, Phone, Mail, Heart,
   Handshake, TrendingUp, CheckCircle2,
-  HelpCircle, X,
 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
@@ -21,20 +20,11 @@ const CATEGORIES = [
   { id: 'SALLE',   label: 'Salles & Fêtes',    icon: Building2, color: 'from-sky-500 to-blue-600' },
 ];
 
-const STEPS = [
-  { num: 1, title: 'Choisis ton événement',      desc: 'Parcours les soirées, concerts et festivals et ouvre celui qui te plaît.' },
-  { num: 2, title: 'Clique sur « Acheter »',     desc: 'Sélectionne ton billet et la quantité. Pas besoin de compte.' },
-  { num: 3, title: 'Ton email puis le paiement', desc: 'Wave ou Orange Money. Garde ton email : c\'est ta clé.' },
-  { num: 4, title: 'Reçois ton billet (QR)',      desc: 'Il s\'affiche après le paiement et arrive par email en PDF.' },
-  { num: 5, title: 'Retrouve-le le Jour J',       desc: 'Dans ton email, ou sur « Mes billets » si tu crées un compte.' },
-];
-
 export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchQuery, setSearchQuery]           = useState('');
   const [events, setEvents]                     = useState<any[]>([]);
   const [isLoading, setIsLoading]               = useState(true);
-  const [showHowTo, setShowHowTo]               = useState(false);
 
   useEffect(() => {
     async function loadEvents() {
@@ -54,14 +44,6 @@ export default function HomePage() {
     loadEvents();
   }, []);
 
-  useEffect(() => {
-    if (showHowTo) {
-      const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowHowTo(false); };
-      document.addEventListener('keydown', onEsc);
-      return () => document.removeEventListener('keydown', onEsc);
-    }
-  }, [showHowTo]);
-
   const filteredEvents = events.filter((evt) => {
     const matchCategory = selectedCategory === 'ALL' || evt.category === selectedCategory;
     const matchSearch   =
@@ -73,7 +55,6 @@ export default function HomePage() {
   });
 
   return (
-    <>
     <div className="space-y-16 sm:space-y-20 pb-24">
 
       {/* ================================================================
@@ -161,7 +142,7 @@ export default function HomePage() {
           </div>
 
           <div
-            className="ev-fade-up flex flex-wrap items-center gap-4 sm:gap-10 pt-8 mt-auto"
+            className="ev-fade-up flex flex-wrap items-center gap-4 sm:gap-8 pt-8 mt-auto"
             style={{ animationDelay: '580ms' }}
           >
             {[
@@ -176,7 +157,7 @@ export default function HomePage() {
                 </div>
                 <div>
                   <p className="text-sm font-black text-white leading-none">{item.label}</p>
-                  <p className="text-[10px] text-zinc-500 mt-0.5">{item.sub}</p>
+                  <p className="text-[10px] text-zinc-400 mt-0.5">{item.sub}</p>
                 </div>
               </div>
             ))}
@@ -546,69 +527,6 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
-
     </div>
-
-    {/* ==================================================================
-        FLOATING — Bouton + Popover "Comment ça marche ?" (style paskclab)
-        ================================================================== */}
-    <div className="fixed bottom-20 lg:bottom-6 right-4 z-40 flex flex-col items-end gap-3">
-
-      {showHowTo && (
-        <div className="w-[340px] sm:w-[380px] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl shadow-black/20 border border-slate-200/80 dark:border-zinc-700/60 overflow-hidden animate-[slideUp_0.25s_ease-out]">
-
-          <div className="flex items-start justify-between px-5 pt-5 pb-2">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">En 5 étapes</p>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white mt-0.5">Obtenir ton billet</h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowHowTo(false)}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors mt-1"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="px-5 pb-3 space-y-4">
-            {STEPS.map((step) => (
-              <div key={step.num} className="flex items-start gap-3.5">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center flex-shrink-0">
-                  <span className="text-sm font-black text-white">{step.num}</span>
-                </div>
-                <div className="flex-1 pt-0.5">
-                  <p className="text-[13px] font-extrabold text-slate-900 dark:text-white leading-snug">{step.title}</p>
-                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 leading-relaxed">{step.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="px-5 pb-5 pt-2">
-            <Link href="/explore" onClick={() => setShowHowTo(false)}>
-              <button
-                type="button"
-                className="w-full h-[46px] rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-bold hover:bg-slate-800 dark:hover:bg-zinc-100 transition-colors"
-              >
-                Voir les événements &rarr;
-              </button>
-            </Link>
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setShowHowTo(!showHowTo)}
-        className="flex items-center gap-2 pl-2.5 pr-4 py-2 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-700/60 shadow-lg shadow-black/10 text-[13px] font-semibold text-slate-700 dark:text-zinc-200 hover:shadow-xl active:scale-95 transition-all duration-200"
-      >
-        <span className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center flex-shrink-0">
-          <HelpCircle size={15} className="text-white" />
-        </span>
-        {showHowTo ? 'Fermer' : 'Comment ça marche ?'}
-      </button>
-    </div>
-    </>
   );
 }
