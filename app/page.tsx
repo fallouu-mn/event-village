@@ -7,7 +7,7 @@ import {
   Music, Flame, Calendar, Search, Ticket, Users,
   MapPin, ChevronRight, Phone, Mail, Heart,
   Handshake, TrendingUp, CheckCircle2,
-  HelpCircle, X, Gift, Share2, Banknote, UserPlus,
+  HelpCircle, X,
 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
@@ -393,65 +393,7 @@ export default function HomePage() {
       </section>
 
       {/* ================================================================
-          5. AMBASSADEUR — INVITEZ VOS AMIS
-          ================================================================ */}
-      <section className="relative rounded-3xl overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-500 via-[#FF5722] to-[#FF3D68]" />
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMS41IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDYpIi8+PC9zdmc+')] opacity-60" />
-
-        <div className="relative z-10 px-6 py-10 sm:px-10 sm:py-14">
-          <div className="max-w-3xl mx-auto flex flex-col lg:flex-row items-center gap-8">
-
-            <div className="flex-1 space-y-4 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur-sm text-white/90 text-xs font-bold">
-                <Gift size={14} />
-                Programme Ambassadeur
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight">
-                Invitez vos amis,<br />
-                <span className="text-amber-200">empochez de l&apos;argent.</span>
-              </h2>
-              <p className="text-sm text-white/80 leading-relaxed max-w-md mx-auto lg:mx-0">
-                Partagez votre lien de parrainage. Chaque ami qui achete un billet
-                vous rapporte une commission directe sur votre portefeuille Event Village.
-              </p>
-
-              <div className="grid grid-cols-3 gap-3 pt-2 max-w-sm mx-auto lg:mx-0">
-                {[
-                  { icon: Share2, label: 'Partagez', sub: 'Votre lien unique' },
-                  { icon: UserPlus, label: 'Invitez', sub: 'Amis & famille' },
-                  { icon: Banknote, label: 'Gagnez', sub: 'Commission directe' },
-                ].map((s, i) => (
-                  <div key={i} className="text-center p-3 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/10">
-                    <s.icon size={20} className="text-amber-200 mx-auto mb-1.5" />
-                    <p className="text-[11px] font-black text-white leading-none">{s.label}</p>
-                    <p className="text-[9px] text-white/60 mt-0.5">{s.sub}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 w-full lg:w-auto">
-              <Link href="/profile">
-                <Button
-                  variant="primary"
-                  size="md"
-                  className="w-full lg:w-auto h-[52px] px-10 font-black rounded-2xl bg-white text-[#FF5722] hover:bg-white/90 shadow-xl shadow-black/20 border-0"
-                  leftIcon={<Gift size={18} />}
-                >
-                  Devenir Ambassadeur
-                </Button>
-              </Link>
-              <p className="text-[10px] text-white/50 text-center lg:text-left">
-                Gratuit — activez le parrainage depuis votre profil
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================================================================
-          6. CTA PARTENAIRE
+          5. CTA PARTENAIRE
           ================================================================ */}
       <section className="relative rounded-3xl overflow-hidden bg-white dark:bg-[#1A1A1A] border border-slate-200/80 dark:border-zinc-800">
         <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-[#FF5722]/5 blur-3xl pointer-events-none" />
