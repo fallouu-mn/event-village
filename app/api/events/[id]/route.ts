@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getCategoryLabel } from '@/lib/constants/event-categories';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * GET /api/events/[id]
- * Récupère le détail complet d'un événement publié et ses catégories de billets
- */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     try {
         const eventId = params.id;
@@ -25,20 +22,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             .from('events')
             .select(`
                 id,
+                slug,
                 title,
+                category,
                 description,
                 location,
                 city,
+                latitude,
+                longitude,
                 start_date,
                 start_time,
                 end_date,
                 end_time,
                 image_url,
+                gallery_urls,
+                capacity,
                 status,
+                program,
+                practical_info,
                 created_at,
                 partner_id,
                 partners(id, company_name, commercial_name, logo_url),
-                ticket_categories(id, name, price, total_quantity, sold_quantity, description)
+                ticket_categories(id, name, price, total_quantity, sold_quantity, description, is_active, is_visible, sale_start, sale_end, max_per_order)
             `)
             .eq('id', eventId)
             .maybeSingle();
@@ -58,36 +63,77 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
         const partnerData = Array.isArray(event.partners) ? event.partners[0] : event.partners;
 
+        const activeTicketCategories = (event.ticket_categories || [])
+            .filter((cat: any) => cat.is_active !== false && cat.is_visible !== false)
+            .map((cat: any) => {
+                const price = Number(cat.price);
+                const now = new Date();
+                const saleStarted = !cat.sale_start || new Date(cat.sale_start) <= now;
+                const saleEnded = cat.sale_end ? new Date(cat.sale_end) < now : false;
+
+                return {
+                    id: cat.id,
+                    name: cat.name,
+                    price,
+                    priceFormatted: price === 0 ? 'Gratuit' : `${price.toLocaleString('fr-FR')} FCFA`,
+                    isFree: price === 0,
+                    totalQuantity: cat.total_quantity,
+                    soldQuantity: cat.sold_quantity || 0,
+                    isSoldOut: (cat.sold_quantity || 0) >= cat.total_quantity,
+                    saleOpen: saleStarted && !saleEnded,
+                    saleStarted,
+                    saleEnded,
+                    saleStart: cat.sale_start || null,
+                    saleEnd: cat.sale_end || null,
+                    maxPerOrder: cat.max_per_order ?? 10,
+                    description: cat.description || '',
+                    perks: cat.name.toUpperCase().includes('VIP')
+                        ? ['Accès Carré VIP', 'Coupe-file & Entrée prioritaire', 'Billet électronique QR sécurisé']
+                        : ['Accès général fosse & gradins', 'Billet électronique QR sécurisé'],
+                };
+            });
+
+        const practicalInfo = event.practical_info as {
+            address?: string;
+            accessNotes?: string;
+            parking?: string;
+            contactPhone?: string;
+            rules?: string;
+        } | null;
+
         return NextResponse.json({
             event: {
                 id: event.id,
+                slug: event.slug || event.id,
                 title: event.title,
+                category: event.category || null,
+                categoryLabel: getCategoryLabel(event.category),
                 description: event.description || 'Aucune description disponible pour cet événement.',
                 subtitle: partnerData?.commercial_name || partnerData?.company_name || 'Organisateur Officiel',
                 organizer: {
                     id: partnerData?.id,
                     name: partnerData?.commercial_name || partnerData?.company_name || 'Organisateur Officiel',
-                    avatar: partnerData?.logo_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
+                    avatar: partnerData?.logo_url || null,
                 },
-                posterUrl: event.image_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1200&auto=format&fit=crop&q=80',
+                posterUrl: event.image_url || null,
+                galleryUrls: event.gallery_urls || [],
                 dateFormatted,
                 time: timeFormatted,
                 venue: event.location || 'Dakar, Sénégal',
-                category: 'CONCERT',
+                city: event.city || null,
+                latitude: event.latitude || null,
+                longitude: event.longitude || null,
+                capacity: event.capacity || null,
                 status: event.status,
-                categories: (event.ticket_categories || []).map((cat: any) => ({
-                    id: cat.id,
-                    name: cat.name,
-                    price: Number(cat.price),
-                    priceFormatted: `${Number(cat.price).toLocaleString('fr-FR')} FCFA`,
-                    totalQuantity: cat.total_quantity,
-                    soldQuantity: cat.sold_quantity,
-                    isSoldOut: (cat.sold_quantity || 0) >= cat.total_quantity,
-                    description: cat.description || '',
-                    perks: cat.name.toUpperCase().includes('VIP')
-                        ? ['Accès Carré VIP', 'Coupe-file & Entrée prioritaire', 'Billet électronique QR sécurisé']
-                        : ['Accès général fosse & gradins', 'Billet électronique QR sécurisé'],
-                })),
+                program: (event.program as any[]) || [],
+                practicalInfo: {
+                    address: practicalInfo?.address || null,
+                    accessNotes: practicalInfo?.accessNotes || null,
+                    parking: practicalInfo?.parking || null,
+                    contactPhone: practicalInfo?.contactPhone || null,
+                    rules: practicalInfo?.rules || null,
+                },
+                categories: activeTicketCategories,
             },
         });
     } catch (err: unknown) {

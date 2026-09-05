@@ -25,6 +25,7 @@ import { OtpInput } from '@/components/auth/OtpInput';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { resolvePostLoginRoute } from '@/lib/auth/resolve-post-login-route';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 60;
@@ -162,6 +163,13 @@ function LoginPageContent() {
             setErrorMessage('Accès restreint aux Partenaires professionnels validés.');
         } else if (errorParam === 'unauthorized_scanner') {
             setErrorMessage('Accès restreint aux Contrôleurs autorisés.');
+        } else if (errorParam === 'account_deactivated') {
+            setErrorMessage('Votre compte contrôleur a été désactivé ou révoqué par l\'organisateur.');
+        }
+
+        const messageParam = searchParams.get('message');
+        if (messageParam === 'account_activated') {
+            setSuccessMessage('Compte activé avec succès. Connectez-vous avec votre mot de passe.');
         }
     }, [errorParam]);
 
@@ -191,37 +199,20 @@ function LoginPageContent() {
             return;
         }
 
-        const sessionRes = await supabase.auth.getSession();
-        const activeToken = sessionRes.data.session?.access_token;
-        if (activeToken) {
-            const maxAge = 60 * 60 * 24 * 7;
-            document.cookie = `sb-access-token=${encodeURIComponent(activeToken)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+        const role = userProfile?.role;
+
+        // Pour les rôles non-CLIENT (contrôleur, partenaire, admin), forcer un refresh du
+        // JWT avant la navigation. Si le rôle a été promu côté serveur (ex: invitation
+        // contrôleur), raw_user_meta_data a pu être mis à jour après l'émission du token
+        // courant. refreshSession() garantit que le middleware lira le bon role dans le JWT.
+        if (role && role !== 'CLIENT') {
+            await supabase.auth.refreshSession();
         }
 
         await refreshProfile();
         router.refresh();
 
-        const role = userProfile?.role;
-        let target = redirectUrl && redirectUrl !== '/' ? redirectUrl : '/';
-
-        if (!redirectUrl || redirectUrl === '/') {
-            switch (role) {
-                case 'SUPERADMIN':
-                case 'ADMIN':
-                    target = '/admin';
-                    break;
-                case 'PARTENAIRE':
-                    target = '/partner';
-                    break;
-                case 'CONTROLEUR':
-                    target = '/scan';
-                    break;
-                case 'CLIENT':
-                default:
-                    target = '/';
-                    break;
-            }
-        }
+        const target = resolvePostLoginRoute(role, redirectUrl);
 
         setTimeout(() => {
             window.location.href = target;

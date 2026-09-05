@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,55 +9,20 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
     try {
+        const authUser = await getAuthenticatedUser(req);
+        if (!authUser) {
+            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
+        }
+
         const supabase = getServiceRoleClient();
-
-        // 1. Extraction du token de session
-        const authHeader = req.headers.get('authorization');
-        let token: string | undefined;
-
-        if (authHeader?.startsWith('Bearer ')) {
-            token = authHeader.substring(7);
-        } else {
-            token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
-            if (!token) {
-                for (const cookie of req.cookies.getAll()) {
-                    if (cookie.name.includes('-auth-token')) {
-                        try {
-                            const parsed = JSON.parse(cookie.value);
-                            token = parsed.access_token || parsed[0];
-                        } catch {
-                            token = cookie.value;
-                        }
-                        if (token) break;
-                    }
-                }
-            }
-        }
-
-        if (!token) {
-            return NextResponse.json(
-                { error: 'Authentification requise.' },
-                { status: 401 }
-            );
-        }
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !user) {
-            return NextResponse.json(
-                { error: 'Session invalide ou expirée.' },
-                { status: 401 }
-            );
-        }
-
         const { searchParams } = new URL(req.url);
         const unreadOnly = searchParams.get('unread') === 'true';
         const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
 
-        // 2. Requête des notifications de l'utilisateur
         let query = supabase
             .from('notifications')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('user_id', authUser.id)
             .order('created_at', { ascending: false })
             .limit(limit);
 
@@ -72,11 +37,10 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Erreur lors de la récupération des notifications.' }, { status: 500 });
         }
 
-        // 3. Calcul du nombre de non-lues
         const { count: unreadCount } = await supabase
             .from('notifications')
             .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
+            .eq('user_id', authUser.id)
             .neq('status', 'READ');
 
         return NextResponse.json({
@@ -108,34 +72,18 @@ export async function GET(req: NextRequest) {
  */
 export async function PATCH(req: NextRequest) {
     try {
-        const supabase = getServiceRoleClient();
-
-        const authHeader = req.headers.get('authorization');
-        let token: string | undefined;
-
-        if (authHeader?.startsWith('Bearer ')) {
-            token = authHeader.substring(7);
-        } else {
-            token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
-        }
-
-        if (!token) {
+        const authUser = await getAuthenticatedUser(req);
+        if (!authUser) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Session invalide.' }, { status: 401 });
-        }
-
+        const supabase = getServiceRoleClient();
         const now = new Date().toISOString();
+
         const { error: updateError } = await supabase
             .from('notifications')
-            .update({
-                status: 'READ',
-                read_at: now,
-            })
-            .eq('user_id', user.id)
+            .update({ status: 'READ', read_at: now })
+            .eq('user_id', authUser.id)
             .neq('status', 'READ');
 
         if (updateError) {

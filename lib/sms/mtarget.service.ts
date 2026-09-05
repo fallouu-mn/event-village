@@ -162,7 +162,38 @@ export class MTargetService {
      * Envoi spécifique d'un code OTP (utilisé par le Hook Supabase Auth)
      */
     async sendOtp(phone: string, otpCode: string): Promise<MTargetSendResult> {
-        const message = `Votre code de vérification Event Village est : ${otpCode}. Valable 10 minutes.`;
+        const message = `Votre code de verification Event Village est : ${otpCode}. Valable 10 minutes.`;
+        return this.sendSms(phone, message);
+    }
+
+    async sendControllerInvite(phone: string, otpCode: string, setupLink: string, firstName?: string): Promise<MTargetSendResult> {
+        const greeting = firstName && firstName.trim() ? `Bonjour ${firstName.trim()}, vous etes invite` : `Vous etes invite`;
+        const message = `Event Village : ${greeting} comme controleur. Code : ${otpCode} (valable 24h). Activez votre compte : ${setupLink}`;
+        return this.sendSms(phone, message);
+    }
+
+    async sendControllerActivationConfirmation(phone: string): Promise<MTargetSendResult> {
+        const message = `Event Village : Votre compte controleur est active avec succes. Vous pouvez desormais vous connecter et scanner les billets.`;
+        return this.sendSms(phone, message);
+    }
+
+    async sendControllerRevocationNotice(phone: string, eventTitle: string): Promise<MTargetSendResult> {
+        const message = `Event Village : Votre acces controleur pour l'evenement "${eventTitle}" a pris fin.`;
+        return this.sendSms(phone, message);
+    }
+
+    async sendControllerAllEventsRevokedNotice(phone: string): Promise<MTargetSendResult> {
+        const message = `Event Village : Vos affectations en tant que controleur ont ete retirees par l'organisateur. Vous n'avez plus d'evenement actif.`;
+        return this.sendSms(phone, message);
+    }
+
+    async sendControllerAccountDeletedNotice(phone: string): Promise<MTargetSendResult> {
+        const message = `Event Village : Votre compte controleur a ete desactive de l'equipe organisatrice.`;
+        return this.sendSms(phone, message);
+    }
+
+    async sendControllerAssignmentsUpdatedNotice(phone: string, eventCount: number): Promise<MTargetSendResult> {
+        const message = `Event Village : Vos affectations de controleur ont ete mises a jour (${eventCount} evenement(s) assigne(s)).`;
         return this.sendSms(phone, message);
     }
 

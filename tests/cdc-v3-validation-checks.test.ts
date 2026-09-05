@@ -254,6 +254,7 @@ test('4. VRAI CONTRÔLE BACKEND PRODUIT INTERDIT : Refus de paiement et aucune l
             await paymentService.createPayment(authClient.user.id, {
                 targetType: 'ORDER',
                 targetId: order!.id,
+                operator: 'WAVE',
             });
         } catch (err: unknown) {
             threwError = true;

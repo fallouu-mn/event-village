@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export interface AdminAuthResult {
@@ -46,54 +47,34 @@ export async function verifyAdminAuth(
     try {
         const supabase = getServiceRoleClient();
 
-        // 1. Extraction du token depuis Authorization header ou cookies
-        const authHeader = req.headers.get('authorization');
-        let token: string | undefined;
-
-        if (authHeader?.startsWith('Bearer ')) {
-            token = authHeader.substring(7);
-        } else {
-            token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
-
-            if (!token) {
-                // Recherche dans les cookies auth standard Supabase (sb-<ref>-auth-token)
-                for (const cookie of req.cookies.getAll()) {
-                    if (cookie.name.startsWith('sb-') && cookie.name.includes('-auth-token')) {
-                        try {
-                            const raw = decodeURIComponent(cookie.value);
-                            if (raw.startsWith('[')) {
-                                const parsed = JSON.parse(raw);
-                                if (Array.isArray(parsed) && parsed[0]) token = parsed[0];
-                            } else if (raw.startsWith('{')) {
-                                const parsed = JSON.parse(raw);
-                                if (parsed.access_token) token = parsed.access_token;
-                            } else {
-                                token = cookie.value;
-                            }
-                        } catch {
-                            token = cookie.value;
-                        }
-                        if (token) break;
-                    }
-                }
-            }
-        }
-
+        // 1. Extraction de l'utilisateur via @supabase/ssr (gere les cookies chunkes)
         let userId: string | undefined;
 
-        if (token) {
+        const authHeader = req.headers.get('authorization');
+        if (authHeader?.startsWith('Bearer ')) {
+            const token = authHeader.substring(7);
             const { data: userData, error } = await supabase.auth.getUser(token);
             if (!error && userData?.user) {
                 userId = userData.user.id;
             }
         }
 
-        // Si aucun token valide n'est trouvé, fallback sur la session active ou mock de développement contrôlé
         if (!userId) {
-            // Tentative de résolution via l'ID passé en header interne de test
-            const debugAdminId = req.headers.get('x-admin-user-id');
-            if (debugAdminId) {
-                userId = debugAdminId;
+            const ssrClient = createServerClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                {
+                    cookies: {
+                        getAll() {
+                            return req.cookies.getAll();
+                        },
+                        setAll() {},
+                    },
+                }
+            );
+            const { data: { user } } = await ssrClient.auth.getUser();
+            if (user) {
+                userId = user.id;
             }
         }
 

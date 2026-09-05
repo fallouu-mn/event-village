@@ -288,11 +288,13 @@ test('3. PROTECTION ANTI-SURVENTE (RACE CONDITION) : Deux paiements réels concu
         const payRes1 = await paymentService.createPayment(buyer1Id, {
             targetType: 'TICKET',
             targetId: category.id,
+            operator: 'WAVE',
             customerPhone: phoneBuyer1,
         });
         const payRes2 = await paymentService.createPayment(buyer2Id, {
             targetType: 'TICKET',
             targetId: category.id,
+            operator: 'WAVE',
             customerPhone: phoneBuyer2,
         });
 
@@ -603,6 +605,7 @@ test('5. SÉCURITÉ ANTI-BILLET GRATUIT & VALIDATION PAR WEBHOOK SAMIRPAY : Bloc
             createPaymentRes = await paymentService.createPayment(clientId, {
                 targetType: 'TICKET',
                 targetId: paidCat.id,
+                operator: 'WAVE',
                 customerPhone: phoneClient,
             });
         } finally {

@@ -49,6 +49,25 @@ export function NotificationBell() {
         setMounted(true);
     }, []);
 
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isOpen) setIsOpen(false);
+        };
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        if (isOpen) {
+            window.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isOpen]);
+
     const isUserLoggedIn = mounted && (isAuthenticated || !!user);
 
     const fetchNotifications = useCallback(async () => {
@@ -82,7 +101,7 @@ export function NotificationBell() {
                     table: 'notifications',
                     filter: `user_id=eq.${user.id}`,
                 },
-                (payload) => {
+                (payload: any) => {
                     const n = payload.new as Record<string, unknown>;
                     const newNotif: InAppNotification = {
                         id: n.id as string,
@@ -232,7 +251,7 @@ export function NotificationBell() {
 
             {/* Dropdown Flottant */}
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div className="fixed inset-x-3 top-14 sm:static sm:absolute sm:right-0 sm:left-auto sm:inset-x-auto sm:top-full mt-2 sm:w-96 max-h-[80vh] flex flex-col rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                     {/* Header */}
                     <div className="p-3.5 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-900/50">
                         <div className="flex items-center gap-2">

@@ -16,7 +16,8 @@ export interface EventCardProps {
   monthShort?: string;
   timeFormatted: string;
   venue: string;
-  category: string;
+  category?: string | null;
+  categoryLabel?: string;
   priceFormatted: string;
   status?: string;
   attendeesCount?: number;
@@ -33,9 +34,11 @@ export const EventCard: React.FC<EventCardProps> = ({
   timeFormatted,
   venue,
   category,
+  categoryLabel,
   priceFormatted,
   status = 'PUBLIE',
 }) => {
+  const displayCategory = categoryLabel || category || 'Événement';
   const [isLiked, setIsLiked] = useState(false);
 
   return (
@@ -43,7 +46,7 @@ export const EventCard: React.FC<EventCardProps> = ({
       {/* 1. Zone Image Hero */}
       <div className="relative w-full aspect-[16/10] overflow-hidden bg-slate-950">
         <Image
-          src={imageUrl}
+          src={imageUrl || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&auto=format&fit=crop&q=80'}
           alt={title}
           fill
           className="object-cover group-hover:scale-105 transition-transform duration-500"
@@ -54,7 +57,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         {/* Badge Catégorie Haut Gauche */}
         <div className="absolute top-3 left-3">
           <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/90 dark:bg-zinc-900/90 text-slate-900 dark:text-white backdrop-blur-md shadow-sm">
-            {category}
+            {displayCategory}
           </span>
         </div>
 
@@ -87,7 +90,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         <div>
           <div className="flex items-center justify-between gap-2 mb-1">
             <span className="text-[11px] font-bold text-[#FF5722] uppercase tracking-wider">
-              {subtitle || category}
+              {subtitle || displayCategory}
             </span>
             {status !== 'PUBLIE' && <StatusBadge status={status} />}
           </div>

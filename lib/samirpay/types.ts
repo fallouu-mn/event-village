@@ -11,10 +11,14 @@ export interface SamirPayCustomer {
 
 export interface SamirPayInitPaymentRequest {
     amount: number;
-    currency?: string; // Par défaut 'XOF'
-    order_id: string; // Référence unique côté Event Village
+    currency?: string;
+    order_id: string;
+    operatorName: string;
     description?: string;
     customer?: SamirPayCustomer;
+    // Formats téléphone redondants requis par SamirPay pour le Push USSD Orange Money
+    barePhone?: string;      // ex: 771234567  (sans indicatif)
+    fullIntlPhone?: string;  // ex: +221771234567 (E.164)
     return_url?: string;
     cancel_url?: string;
     callback_url?: string;
@@ -28,10 +32,13 @@ export interface SamirPayInitPaymentResponse {
     order_id?: string;
     payment_url?: string;
     token?: string;
+    urls?: Record<string, string>;
     data?: {
         transaction_id?: string;
         order_id?: string;
         payment_url?: string;
+        url?: string;
+        urls?: Record<string, string>;
         [key: string]: unknown;
     };
     [key: string]: unknown;

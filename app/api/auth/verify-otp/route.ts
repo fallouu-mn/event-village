@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
         // Protection Anti-Force Brute serveur (Rate Limiting)
         const { RateLimiter } = await import('@/lib/security/rate-limiter');
-        const limitCheck = RateLimiter.isRateLimited(`otp_verify_${normalizedPhone}`);
+        const limitCheck = await RateLimiter.isRateLimited(`otp_verify_${normalizedPhone}`);
         if (limitCheck.limited) {
             return NextResponse.json(
                 {
@@ -98,14 +98,15 @@ export async function POST(req: NextRequest) {
         }
 
         if (!isValid) {
-            RateLimiter.recordFailedAttempt(`otp_verify_${normalizedPhone}`);
+            await RateLimiter.recordFailedAttempt(`otp_verify_${normalizedPhone}`);
             return NextResponse.json(
                 { error: 'Code de vérification incorrect ou expiré.' },
                 { status: 400 }
             );
         }
 
-        RateLimiter.resetAttempts(`otp_verify_${normalizedPhone}`);
+        await RateLimiter.resetAttempts(`otp_verify_${normalizedPhone}`);
+
         // 3. Récupération du profil utilisateur et génération de session
         const supabase = getServiceRoleClient();
         const { data: userProfile } = await supabase
@@ -119,6 +120,15 @@ export async function POST(req: NextRequest) {
                 { error: 'Aucun compte n\'est associé à ce numéro de téléphone. Veuillez vous inscrire.' },
                 { status: 404 }
             );
+        }
+
+        // Confirmer le téléphone dans auth.users si pas encore fait (H3: partenaire OTP)
+        if (userProfile?.id) {
+            try {
+                await supabase.auth.admin.updateUserById(userProfile.id, { phone_confirm: true });
+            } catch (confirmErr) {
+                console.warn('[API verify-otp] Impossible de confirmer phone_confirm:', confirmErr);
+            }
         }
 
         let tokenHash: string | undefined;

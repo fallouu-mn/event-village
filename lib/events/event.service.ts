@@ -1,6 +1,8 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { FinancialCalculatorService } from '../payments/financial-calculator.service';
 import { NotificationService } from '../notifications/notification.service';
+import { mTargetService } from '../sms/mtarget.service';
+import { EmailService, EmailTemplates } from '../email/email.service';
 import { randomUUID } from 'crypto';
 
 export type EventStatus = 'BROUILLON' | 'EN_ATTENTE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'TERMINE';
@@ -25,7 +27,7 @@ export interface EventServicesConfig {
     ticketing: boolean;
     tableBooking: boolean;
     communication: boolean;
-    promotion: boolean;
+    promotion?: boolean;
 }
 
 export interface TicketCategoryInput {
@@ -35,10 +37,13 @@ export interface TicketCategoryInput {
     total_quantity: number;
     sale_start?: string | null;
     sale_end?: string | null;
+    max_per_order?: number;
+    is_visible?: boolean;
 }
 
 export interface CreateEventInput {
     title: string;
+    category?: string | null;
     description?: string;
     start_date: string;
     start_time: string;
@@ -46,6 +51,8 @@ export interface CreateEventInput {
     end_time?: string | null;
     location: string;
     city?: string;
+    latitude?: number | null;
+    longitude?: number | null;
     image_url?: string;
     gallery_urls?: string[];
     capacity?: number | null;
@@ -97,6 +104,14 @@ export class EventService {
             throw new Error('Le lieu de l\'événement est obligatoire.');
         }
 
+        // Validation croisée jauge serveur : somme quotas <= capacité (§35)
+        if (input.ticket_categories && input.ticket_categories.length > 0 && input.capacity && input.capacity > 0) {
+            const totalQuota = input.ticket_categories.reduce((sum, cat) => sum + Number(cat.total_quantity), 0);
+            if (totalQuota > input.capacity) {
+                throw new Error(`La somme des quotas de billets (${totalQuota}) dépasse la capacité maximale (${input.capacity}).`);
+            }
+        }
+
         const slug = `${input.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString().slice(-6)}`;
 
         // 1. Insertion de l'événement
@@ -106,6 +121,7 @@ export class EventService {
                 partner_id: partnerId,
                 title: input.title.trim(),
                 slug,
+                category: input.category || null,
                 description: input.description || null,
                 start_date: input.start_date,
                 start_time: input.start_time,
@@ -113,11 +129,18 @@ export class EventService {
                 end_time: input.end_time || null,
                 location: input.location.trim(),
                 city: input.city || 'Dakar',
+                latitude: input.latitude ?? null,
+                longitude: input.longitude ?? null,
                 image_url: input.image_url || null,
                 gallery_urls: input.gallery_urls || [],
                 capacity: input.capacity && input.capacity > 0 ? input.capacity : null,
                 program: input.program || [],
                 practical_info: input.practical_info || {},
+                services: input.services ? {
+                    ticketing: !!input.services.ticketing,
+                    tableBooking: !!input.services.tableBooking,
+                    communication: !!input.services.communication,
+                } : {},
                 status: 'BROUILLON', // Statut initial strict (§31)
             })
             .select('*')
@@ -138,6 +161,8 @@ export class EventService {
                 sold_quantity: 0,
                 sale_start: cat.sale_start || null,
                 sale_end: cat.sale_end || null,
+                max_per_order: cat.max_per_order ?? 10,
+                is_visible: cat.is_visible !== false,
                 is_active: true,
             }));
 
@@ -244,8 +269,12 @@ export class EventService {
         if (input.image_url !== undefined) updateData.image_url = input.image_url;
         if (input.gallery_urls !== undefined) updateData.gallery_urls = input.gallery_urls;
         if (input.capacity !== undefined) updateData.capacity = input.capacity;
+        if (input.latitude !== undefined) updateData.latitude = input.latitude;
+        if (input.longitude !== undefined) updateData.longitude = input.longitude;
+        if (input.category !== undefined) updateData.category = input.category;
         if (input.program !== undefined) updateData.program = input.program;
         if (input.practical_info !== undefined) updateData.practical_info = input.practical_info;
+        if (input.services !== undefined) updateData.services = input.services;
 
         const { data: updated, error: updateErr } = await supabase
             .from('events')
@@ -384,30 +413,110 @@ export class EventService {
             throw new Error(`Échec du changement de statut: ${updateErr?.message}`);
         }
 
-        // Notification in-app au Partenaire (§38 / §120)
+        // ── Triple Notification Partenaire (In-App + SMS + Email) ──────────
         if (event.partners?.user_id) {
-            let notifTitle = '';
-            let notifMessage = '';
+            const { data: partnerUser } = await supabase
+                .from('users')
+                .select('id, email, phone, first_name, last_name')
+                .eq('id', event.partners.user_id)
+                .single();
+
+            const partnerName = partnerUser
+                ? `${partnerUser.first_name || ''} ${partnerUser.last_name || ''}`.trim() || 'Partenaire'
+                : 'Partenaire';
 
             if (newStatus === 'VALIDE') {
-                notifTitle = 'Événement validé !';
-                notifMessage = `Votre événement "${event.title}" a été validé par l'administration. Il est prêt pour publication.`;
-            } else if (newStatus === 'PUBLIE') {
-                notifTitle = 'Événement en ligne !';
-                notifMessage = `Votre événement "${event.title}" est désormais visible sur la billetterie publique Event Village.`;
-            } else if (newStatus === 'SUSPENDU') {
-                notifTitle = 'Événement suspendu';
-                notifMessage = `Votre événement "${event.title}" a été suspendu par l'administration. Motif : ${rejectionReason || 'Vérification requise'}.`;
-            }
-
-            if (notifTitle) {
                 await NotificationService.createNotification({
                     userId: event.partners.user_id,
-                    title: notifTitle,
-                    message: notifMessage,
+                    title: 'Événement validé !',
+                    message: `Votre événement "${event.title}" a été validé. Vous pouvez le publier.`,
+                    type: 'SYSTEM',
+                    data: { eventId, status: newStatus, actionUrl: '/partner/events' },
+                });
+                if (partnerUser?.phone) {
+                    mTargetService.sendSms(
+                        partnerUser.phone,
+                        `Event Village : Votre événement "${event.title}" est validé ! Connectez-vous pour ouvrir la billetterie.`
+                    ).catch(err => console.error('[EventService] SMS partenaire (VALIDE) échoué:', err instanceof Error ? err.message : err));
+                }
+                if (partnerUser?.email) {
+                    EmailService.send({
+                        to: partnerUser.email,
+                        ...EmailTemplates.eventValidated({ partnerName, eventTitle: event.title }),
+                    }).catch(err => console.error('[EventService] Email partenaire (VALIDE) échoué:', err instanceof Error ? err.message : err));
+                }
+            } else if (newStatus === 'BROUILLON' && currentStatus === 'EN_ATTENTE' && isAdmin) {
+                const reasonText = rejectionReason || 'Non spécifié';
+                await NotificationService.createNotification({
+                    userId: event.partners.user_id,
+                    title: 'Événement non validé',
+                    message: `Votre événement "${event.title}" n'a pas été validé. Motif : ${reasonText}`,
+                    type: 'SYSTEM',
+                    data: { eventId, status: newStatus, reason: reasonText, actionUrl: '/partner/events' },
+                });
+                if (partnerUser?.phone) {
+                    mTargetService.sendSms(
+                        partnerUser.phone,
+                        `Event Village : Votre événement "${event.title}" n'a pas été validé. Motif : ${reasonText}. Modifiez-le et resoumettez.`
+                    ).catch(err => console.error('[EventService] SMS partenaire (REJET) échoué:', err instanceof Error ? err.message : err));
+                }
+                if (partnerUser?.email) {
+                    EmailService.send({
+                        to: partnerUser.email,
+                        ...EmailTemplates.eventRejected({ partnerName, eventTitle: event.title, reason: reasonText }),
+                    }).catch(err => console.error('[EventService] Email partenaire (REJET) échoué:', err instanceof Error ? err.message : err));
+                }
+            } else if (newStatus === 'SUSPENDU') {
+                const reasonText = rejectionReason || 'Vérification requise';
+                await NotificationService.createNotification({
+                    userId: event.partners.user_id,
+                    title: 'Événement suspendu',
+                    message: `Votre événement "${event.title}" a été suspendu. Motif : ${reasonText}.`,
+                    type: 'SYSTEM',
+                    data: { eventId, status: newStatus, reason: reasonText },
+                });
+                if (partnerUser?.phone) {
+                    mTargetService.sendSms(
+                        partnerUser.phone,
+                        `Event Village : Votre événement "${event.title}" a été suspendu. Motif : ${reasonText}. Contactez le support.`
+                    ).catch(err => console.error('[EventService] SMS partenaire (SUSPENDU) échoué:', err instanceof Error ? err.message : err));
+                }
+                if (partnerUser?.email) {
+                    EmailService.send({
+                        to: partnerUser.email,
+                        ...EmailTemplates.eventSuspended({ partnerName, eventTitle: event.title, reason: reasonText }),
+                    }).catch(err => console.error('[EventService] Email partenaire (SUSPENDU) échoué:', err instanceof Error ? err.message : err));
+                }
+            } else if (newStatus === 'PUBLIE') {
+                await NotificationService.createNotification({
+                    userId: event.partners.user_id,
+                    title: 'Événement en ligne !',
+                    message: `Votre événement "${event.title}" est désormais visible sur la billetterie publique Event Village.`,
                     type: 'SYSTEM',
                     data: { eventId, status: newStatus },
                 });
+            }
+        }
+
+        // ── Notification SuperAdmins lors de la soumission (BROUILLON → EN_ATTENTE)
+        if (newStatus === 'EN_ATTENTE' && currentStatus === 'BROUILLON') {
+            const companyName = event.partners?.company_name || 'Partenaire';
+            try {
+                const notifResult = await NotificationService.notifySuperadmins({
+                    title: 'Nouvel Événement Soumis',
+                    content: `Le partenaire "${companyName}" a soumis l'événement "${event.title}" pour validation.`,
+                    type: 'SYSTEM',
+                    metadata: { eventId, eventTitle: event.title, actionUrl: '/admin/services' },
+                    smsMessage: `EV ADMIN: Nouvel événement "${event.title}" de "${companyName}" en attente de validation.`,
+                    emailTemplate: EmailTemplates.superadminEventSubmitted({
+                        partnerName: companyName,
+                        companyName,
+                        eventTitle: event.title,
+                    }),
+                });
+                console.log('[EventService.changeEventStatus] Notification SuperAdmins résultat:', JSON.stringify(notifResult));
+            } catch (notifErr) {
+                console.error('[EventService.changeEventStatus] ERREUR notification SuperAdmins (status update OK, notification KO):', notifErr instanceof Error ? notifErr.message : notifErr);
             }
         }
 

@@ -45,6 +45,18 @@ export async function PUT(
 
         const { id } = await params;
         const body = await request.json();
+
+        // Validation croisée jauge serveur (§35)
+        if (body.ticket_categories?.length > 0 && body.capacity && body.capacity > 0) {
+            const totalQuota = body.ticket_categories.reduce((sum: number, cat: any) => sum + Number(cat.total_quantity), 0);
+            if (totalQuota > Number(body.capacity)) {
+                return NextResponse.json(
+                    { error: `La somme des quotas de billets (${totalQuota}) dépasse la capacité maximale (${body.capacity}).` },
+                    { status: 400 }
+                );
+            }
+        }
+
         const updated = await EventService.updateEvent(id, user.id, body);
 
         return NextResponse.json({ success: true, event: updated });

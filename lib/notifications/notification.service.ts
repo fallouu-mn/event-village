@@ -15,12 +15,25 @@ export interface NotificationResult {
 async function fetchAdminProfiles(): Promise<Array<{ id: string; phone?: string; email?: string }>> {
     try {
         const supabase = getServiceRoleClient();
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('users')
             .select('id, phone, email')
             .or('role.eq.SUPERADMIN,role.eq.ADMIN');
-        return (data as Array<{ id: string; phone?: string; email?: string }>) ?? [];
-    } catch {
+
+        if (error) {
+            console.error('[NOTIFY SUPERADMIN ERROR] fetchAdminProfiles — Supabase query failed:', error.message, error.code, error.details);
+            return [];
+        }
+
+        if (!data || data.length === 0) {
+            console.warn('[NOTIFY SUPERADMIN WARNING] fetchAdminProfiles — Aucun SUPERADMIN/ADMIN trouvé en base. Vérifiez que des utilisateurs avec role SUPERADMIN existent.');
+            return [];
+        }
+
+        console.log(`[NOTIFY SUPERADMIN] fetchAdminProfiles — ${data.length} admin(s) trouvé(s):`, data.map(a => ({ id: a.id, email: a.email, hasPhone: !!a.phone })));
+        return data as Array<{ id: string; phone?: string; email?: string }>;
+    } catch (err) {
+        console.error('[NOTIFY SUPERADMIN ERROR] fetchAdminProfiles — Exception inattendue:', err instanceof Error ? err.message : err);
         return [];
     }
 }
@@ -118,9 +131,23 @@ export class NotificationService {
         metadata?: Record<string, unknown>;
         smsMessage?: string;
         emailTemplate?: { subject: string; html: string };
-    }): Promise<number> {
+    }): Promise<{ adminsFound: number; inApp: boolean; smsResults: Array<{ phone: string; success: boolean; error?: string }>; emailResult: { sent: number; failed: number } | null }> {
+        const result = {
+            adminsFound: 0,
+            inApp: false,
+            smsResults: [] as Array<{ phone: string; success: boolean; error?: string }>,
+            emailResult: null as { sent: number; failed: number } | null,
+        };
+
+        console.log(`[NOTIFY SUPERADMIN] ▶ Démarrage notification: "${params.title}"`);
+
         const admins = await fetchAdminProfiles();
-        if (admins.length === 0) return 0;
+        result.adminsFound = admins.length;
+
+        if (admins.length === 0) {
+            console.error('[NOTIFY SUPERADMIN ERROR] ✗ 0 admin trouvé → AUCUNE notification envoyée. Vérifiez la table users (role = SUPERADMIN).');
+            return result;
+        }
 
         // ── In-App ────────────────────────────────────────────────────────
         try {
@@ -134,34 +161,60 @@ export class NotificationService {
                 status: 'PENDING' as const,
                 metadata: params.metadata || {},
             }));
-            await supabase.from('notifications').insert(notifs);
+            const { error: insertErr } = await supabase.from('notifications').insert(notifs);
+            if (insertErr) {
+                console.error('[NOTIFY SUPERADMIN ERROR] ✗ In-App insert failed:', insertErr.message, insertErr.code, insertErr.details);
+            } else {
+                result.inApp = true;
+                console.log(`[NOTIFY SUPERADMIN] ✓ In-App: ${admins.length} notification(s) insérée(s)`);
+            }
         } catch (err) {
-            console.error('[NotificationService] In-App superadmins:', err instanceof Error ? err.message : err);
+            console.error('[NOTIFY SUPERADMIN ERROR] ✗ In-App exception:', err instanceof Error ? err.message : err);
         }
 
         // ── SMS → chaque admin qui a un téléphone ─────────────────────────
         if (params.smsMessage) {
             const phones = admins.map(a => a.phone).filter(Boolean) as string[];
-            await Promise.allSettled(
-                phones.map(phone =>
-                    mTargetService.sendSms(phone, params.smsMessage!).catch(err =>
-                        console.warn('[NotificationService] SMS admin', phone, ':', err instanceof Error ? err.message : err)
-                    )
-                )
-            );
+            if (phones.length === 0) {
+                console.warn('[NOTIFY SUPERADMIN WARNING] Aucun admin n\'a de numéro de téléphone → SMS ignoré');
+            } else {
+                const smsSettled = await Promise.allSettled(
+                    phones.map(async (phone) => {
+                        try {
+                            const res = await mTargetService.sendSms(phone, params.smsMessage!);
+                            const entry = { phone, success: res.success, error: res.success ? undefined : (res.error || 'Échec inconnu') };
+                            console.log(`[NOTIFY SUPERADMIN] ${res.success ? '✓' : '✗'} SMS → ${phone}:`, res.success ? 'envoyé' : (res.error || 'échec'));
+                            return entry;
+                        } catch (err) {
+                            const errMsg = err instanceof Error ? err.message : String(err);
+                            console.error(`[NOTIFY SUPERADMIN ERROR] ✗ SMS → ${phone}: exception:`, errMsg);
+                            return { phone, success: false, error: errMsg };
+                        }
+                    })
+                );
+                result.smsResults = smsSettled.map(s => s.status === 'fulfilled' ? s.value : { phone: '?', success: false, error: 'Promise rejected' });
+            }
         }
 
         // ── Email → chaque admin qui a un email ───────────────────────────
         if (params.emailTemplate) {
             const emails = admins.map(a => a.email).filter(Boolean) as string[];
-            if (emails.length > 0) {
-                await EmailService.sendToMany(emails, params.emailTemplate).catch(err =>
-                    console.warn('[NotificationService] Email admins:', err instanceof Error ? err.message : err)
-                );
+            if (emails.length === 0) {
+                console.warn('[NOTIFY SUPERADMIN WARNING] Aucun admin n\'a d\'email → Email ignoré');
+            } else {
+                try {
+                    const emailRes = await EmailService.sendToMany(emails, params.emailTemplate);
+                    result.emailResult = emailRes;
+                    console.log(`[NOTIFY SUPERADMIN] ${emailRes.sent > 0 ? '✓' : '✗'} Email: ${emailRes.sent} envoyé(s), ${emailRes.failed} échoué(s) sur ${emails.length} destinataire(s)`);
+                } catch (err) {
+                    console.error('[NOTIFY SUPERADMIN ERROR] ✗ Email exception:', err instanceof Error ? err.message : err);
+                    result.emailResult = { sent: 0, failed: emails.length };
+                }
             }
         }
 
-        return admins.length;
+        console.log('[NOTIFY SUPERADMIN] ◀ Résultat final:', JSON.stringify(result));
+        return result;
     }
 
     // =========================================================================
@@ -326,7 +379,7 @@ export class NotificationService {
         phone?: string;
         resetCode: string;
     }): Promise<NotificationResult> {
-        const smsMessage = `Event Village: Votre code de réinitialisation est : ${params.resetCode}. Valable 15 minutes.`;
+        const smsMessage = `Event Village: Votre code de réinitialisation est : ${params.resetCode}. Valable 10 minutes.`;
 
         let smsSent = false;
         if (params.phone) {

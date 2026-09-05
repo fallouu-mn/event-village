@@ -112,6 +112,7 @@ export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<'EN_ATTENTE' | 'VALIDE' | 'REJETE' | 'ALL'>('EN_ATTENTE');
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
+  const [configWarning, setConfigWarning] = useState<string | null>(null);
 
   // Modal Détails Partenaire
   const [selectedPartner, setSelectedPartner] = useState<PartnerItem | null>(null);
@@ -156,6 +157,9 @@ export default function AdminDashboardPage() {
       if (metricsRes.ok && metricsData.kpis) {
         setKpis(metricsData.kpis);
         setAuditLogs(metricsData.recentAuditLogs || []);
+        setConfigWarning(metricsData.configWarning || null);
+      } else {
+        console.error('[AdminDashboard] Erreur metrics:', metricsData.error);
       }
 
       // 2. Récupération des partenaires réels selon l'onglet
@@ -331,6 +335,17 @@ export default function AdminDashboardPage() {
           </span>
         </div>
       </div>
+
+      {/* Avertissement configuration manquante */}
+      {configWarning && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-3">
+          <AlertCircle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold block">Configuration requise</span>
+            <span>{configWarning}</span>
+          </div>
+        </div>
+      )}
 
       {/* KPIs Financiers & Opérationnels Réels (CDC V3) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

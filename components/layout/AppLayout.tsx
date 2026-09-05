@@ -60,6 +60,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
   const isAdminRoute = pathname.startsWith('/admin/') || pathname === '/admin';
+  const isControllerRoute = pathname.startsWith('/controller');
 
   // Navigation principale B2C
   const navItems = [
@@ -84,6 +85,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     { name: 'Salles de Fête', href: '/partner/halls', icon: Building2 },
     { name: 'Tables', href: '/partner/tables', icon: Utensils },
     { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag },
+    { name: 'Équipe', href: '/partner/team', icon: Users },
   ];
   const partnerSecondaryItems = [
     { name: 'Finances', href: '/partner/finance', icon: DollarSign },
@@ -109,6 +111,12 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     { name: 'Audit', href: '/admin/audit', icon: Activity },
   ];
 
+  const controllerMobileItems = [
+    { name: 'Accueil', href: '/', icon: Home },
+    { name: 'Scanner', href: '/controller/scanner', icon: QrCode },
+    { name: 'Profil', href: '/controller/profile', icon: User },
+  ];
+
   // Liens Espaces Pro & Admin dynamiques selon le rôle
   const proItems: { name: string; href: string; icon: React.ComponentType<any> }[] = [];
 
@@ -125,7 +133,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   } else if (isPartner && !isPartnerRoute) {
     proItems.push({ name: 'Espace Partenaire', href: '/partner/dashboard', icon: LayoutDashboard });
   } else if (isController) {
-    proItems.push({ name: 'Scanner Billets', href: '/scan', icon: QrCode });
+    proItems.push({ name: 'Scanner Billets', href: '/controller/scanner', icon: QrCode });
   }
 
   if (!isPartner && !isAdmin && !isController) {
@@ -217,6 +225,11 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     : user?.email
     ? user.email.slice(0, 2).toUpperCase()
     : 'EV';
+
+  // Les routes /controller/* ont leur propre layout — ne pas injecter AppLayout
+  if (isControllerRoute) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#F8F9FA] dark:bg-[#0F0F11] text-slate-900 dark:text-zinc-100 transition-colors duration-200">
@@ -637,6 +650,18 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="flex items-center gap-2 sm:gap-3">
             <NotificationBell />
 
+            {rawRole === 'CONTROLEUR' && (
+              <Link
+                href="/controller/scanner"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FF5722] hover:bg-[#F4511E] text-white text-xs font-black shadow-xs transition-all active:scale-95 min-h-[36px]"
+                title="Accéder au scanner de billets"
+              >
+                <QrCode size={15} />
+                <span className="hidden sm:inline">Scanner Billets</span>
+                <span className="sm:hidden">Scanner</span>
+              </Link>
+            )}
+
             <div className="lg:hidden">
               <ThemeToggle />
             </div>
@@ -683,6 +708,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               ? partnerMobileItems
               : canShowRoleNav && isAdminRoute && isAdmin
               ? adminMobileItems
+              : rawRole === 'CONTROLEUR'
+              ? controllerMobileItems
               : navItems
             ).map((item) => {
             const active = isNavActive(item.href);

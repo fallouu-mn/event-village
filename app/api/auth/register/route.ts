@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomInt } from 'crypto';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { RegisterClientSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { mTargetService } from '@/lib/sms/mtarget.service';
@@ -30,23 +31,10 @@ export async function POST(req: NextRequest) {
         const normalizedPhone = normalizePhoneNumber(phone.trim());
         const effectiveEmail = email?.trim().toLowerCase() || `${normalizedPhone.replace('+', '')}@eventvillage.sn`;
 
-        // Détection Superadmin — exclusivement via SUPERADMIN_PHONE (virgule-séparé), jamais de numéro en dur
-        const cleanDigits = normalizedPhone.replace(/\D/g, '');
-        const superadminNumbers = (process.env.SUPERADMIN_PHONE || '')
-            .split(',')
-            .map(n => n.replace(/\D/g, '').trim())
-            .filter(n => n.length > 0);
-
-        const isSuperadminNumber = superadminNumbers.length > 0 && superadminNumbers.some(n =>
-            cleanDigits === n ||
-            cleanDigits === `221${n}` ||
-            `221${cleanDigits}` === n
-        );
-
-        const assignedRole: 'SUPERADMIN' | 'CLIENT' = isSuperadminNumber ? 'SUPERADMIN' : 'CLIENT';
+        const assignedRole = 'CLIENT' as const;
 
         // 2. Générer et envoyer le SMS OTP EN PREMIER — aucun compte ne sera créé si la livraison échoue
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpCode = randomInt(100000, 999999).toString();
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
         try {
@@ -66,15 +54,16 @@ export async function POST(req: NextRequest) {
         const supabaseAdmin = getServiceRoleClient();
 
         // 3. Création de l'utilisateur avec Supabase Admin API
+        //    phone au niveau racine → auth.users.phone renseigné pour récupération SMS
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: effectiveEmail,
+            phone: normalizedPhone,
             password: password,
             email_confirm: true,
+            phone_confirm: true,
             user_metadata: {
                 first_name: firstName.trim(),
                 last_name: lastName.trim(),
-                phone: normalizedPhone,
-                email: effectiveEmail,
                 role: assignedRole,
                 referral_code: referralCode?.trim() || '',
             },

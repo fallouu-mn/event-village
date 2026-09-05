@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
         // Protection Anti-Force Brute (Rate Limiting)
         const { RateLimiter } = await import('@/lib/security/rate-limiter');
-        const limitCheck = RateLimiter.isRateLimited(normalizedPhone);
+        const limitCheck = await RateLimiter.isRateLimited(normalizedPhone);
         if (limitCheck.limited) {
             return NextResponse.json(
                 {
@@ -51,14 +51,14 @@ export async function POST(req: NextRequest) {
         }
 
         if (!userRow) {
-            RateLimiter.recordFailedAttempt(normalizedPhone);
+            await RateLimiter.recordFailedAttempt(normalizedPhone);
             return NextResponse.json(
                 { error: 'Aucun compte n\'est associé à ce numéro de téléphone. Veuillez vous inscrire.' },
                 { status: 404 }
             );
         }
 
-        RateLimiter.resetAttempts(normalizedPhone);
+        await RateLimiter.resetAttempts(normalizedPhone);
         return NextResponse.json({
             success: true,
             email: userRow.email || `${normalizedPhone.replace('+', '')}@eventvillage.sn`,

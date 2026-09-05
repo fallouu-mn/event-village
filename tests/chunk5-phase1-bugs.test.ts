@@ -264,6 +264,7 @@ describe('CHUNK 5 — PHASE 1 : ÉRADICATION DES BUGS CRITIQUES', () => {
             paymentIntent = await paymentService.createPayment(testPartnerUserId, {
                 targetType: 'SUBSCRIPTION',
                 targetId: testPlanId,
+                operator: 'WAVE',
                 customerPhone: partnerPhone,
                 customerEmail: partnerEmail,
             });

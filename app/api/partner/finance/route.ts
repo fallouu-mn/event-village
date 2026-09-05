@@ -8,8 +8,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
-            return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
+        if (!user) {
+            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
+        }
+        if (user.role !== 'PARTENAIRE') {
+            return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
         const supabase = getServiceRoleClient();

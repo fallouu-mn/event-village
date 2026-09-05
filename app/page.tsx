@@ -25,18 +25,24 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery]           = useState('');
   const [events, setEvents]                     = useState<any[]>([]);
   const [isLoading, setIsLoading]               = useState(true);
+  const [fetchError, setFetchError]             = useState<string | null>(null);
 
   useEffect(() => {
     async function loadEvents() {
       try {
         setIsLoading(true);
-        const res = await fetch('/api/events');
+        setFetchError(null);
+        const res = await fetch('/api/events', { cache: 'no-store' });
+        const data = await res.json();
         if (res.ok) {
-          const data = await res.json();
           setEvents(data.events || []);
+        } else {
+          console.error('[HomePage] API error:', data.error);
+          setFetchError(data.error || 'Impossible de charger les événements.');
         }
       } catch (err) {
         console.error('[HomePage]', err);
+        setFetchError('Erreur réseau, veuillez réessayer.');
       } finally {
         setIsLoading(false);
       }
@@ -247,6 +253,10 @@ export default function HomePage() {
                 <Skeleton className="h-3 w-1/2" />
               </div>
             ))}
+          </div>
+        ) : fetchError ? (
+          <div className="py-10 text-center text-red-500 text-sm font-medium">
+            {fetchError}
           </div>
         ) : filteredEvents.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">

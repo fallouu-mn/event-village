@@ -93,7 +93,6 @@ export default function EditEventPage() {
         ticketing: true,
         tableBooking: false,
         communication: true,
-        promotion: false,
     });
 
     const [ticketCategories, setTicketCategories] = useState<TicketCategory[]>([]);
@@ -153,7 +152,6 @@ export default function EditEventPage() {
                         ticketing: ev.services.ticketing ?? true,
                         tableBooking: ev.services.tableBooking ?? false,
                         communication: ev.services.communication ?? true,
-                        promotion: ev.services.promotion ?? false,
                     });
                 }
 
@@ -249,6 +247,15 @@ export default function EditEventPage() {
             }
         }
 
+        // Validation croisée jauge : somme des quotas <= capacité maximale
+        const numericCapacity = Number(capacity);
+        const totalQuota = ticketCategories.reduce((sum, c) => sum + Number(c.total_quantity), 0);
+        if (services.ticketing && numericCapacity > 0 && ticketCategories.length > 0) {
+            if (totalQuota > numericCapacity) {
+                newErrors['ticket_quota_exceeded'] = `La somme des quotas (${totalQuota}) dépasse la capacité maximale (${numericCapacity}).`;
+            }
+        }
+
         if (services.ticketing && ticketCategories.length > 0) {
             ticketCategories.forEach((cat, index) => {
                 const catResult = ticketCategorySchema.safeParse({
@@ -274,7 +281,7 @@ export default function EditEventPage() {
             const firstErrorKey = Object.keys(newErrors)[0];
             if (['title', 'start_date', 'start_time', 'location', 'city', 'capacity', 'description'].some(k => firstErrorKey.startsWith(k))) {
                 setCurrentStep(1);
-            } else if (firstErrorKey.startsWith('ticket_categories')) {
+            } else if (firstErrorKey.startsWith('ticket_categories') || firstErrorKey === 'ticket_quota_exceeded') {
                 setCurrentStep(5);
             }
             return false;
@@ -290,6 +297,18 @@ export default function EditEventPage() {
             toast.error(toastMessages.events.formErrors);
             setIsSubmitting(false);
             return;
+        }
+
+        // HARD BLOCK : jauge croisée (defense-in-depth)
+        if (services.ticketing && ticketCategories.length > 0) {
+            const numCap = Number(capacity);
+            const totalQuota = ticketCategories.reduce((sum, c) => sum + Number(c.total_quantity), 0);
+            if (numCap > 0 && totalQuota > numCap) {
+                toast.error(`Erreur : Le quota total de billets (${totalQuota}) dépasse la capacité maximale de la salle (${numCap}). Réduisez les quotas ou augmentez la capacité.`);
+                setCurrentStep(5);
+                setIsSubmitting(false);
+                return;
+            }
         }
 
         const payload = {
@@ -606,7 +625,6 @@ export default function EditEventPage() {
                                 { key: 'ticketing' as const, title: 'Billetterie en Ligne', desc: 'Vendez des billets avec QR Code securise et paiement Wave/OM/Carte.' },
                                 { key: 'tableBooking' as const, title: 'Reservation de Tables VIP', desc: 'Permettez aux clients de reserver des tables exclusives.' },
                                 { key: 'communication' as const, title: 'Pack Communication Standard', desc: 'Mise en avant dans la newsletter et le calendrier public.' },
-                                { key: 'promotion' as const, title: 'Promotion Sponsorisee', desc: 'Banniere en tete d\'affiche sur la page d\'accueil.' },
                             ].map((svc) => (
                                 <label key={svc.key} className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
                                     <input type="checkbox" checked={services[svc.key]}

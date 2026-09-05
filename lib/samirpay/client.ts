@@ -77,17 +77,54 @@ export class SamirPayClient {
         const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
         try {
-            const body = JSON.stringify({
+            // Tous les champs téléphone et URL sont envoyés sous plusieurs noms (redondance).
+            // SamirPay en production exige ces alias pour déclencher le Push USSD Orange Money.
+            const phone = payload.fullIntlPhone || payload.customer?.phone || '';
+            const phoneBare = payload.barePhone || phone.replace(/^\+?221/, '');
+
+            const requestPayload = {
                 amount: payload.amount,
                 currency: payload.currency || 'XOF',
                 order_id: payload.order_id,
+                operatorName: payload.operatorName,
                 description: payload.description || `Paiement Event Village - ${payload.order_id}`,
-                customer: payload.customer,
+                customer: payload.customer
+                    ? { phone: payload.customer.phone, name: payload.customer.name, email: payload.customer.email }
+                    : undefined,
+                // Alias téléphone requis par SamirPay
+                phone,
+                phoneNumber: phoneBare,
+                telephone: phone,
+                customerPhone: phone,
+                // Alias URLs requis par SamirPay
                 return_url: payload.return_url,
                 cancel_url: payload.cancel_url,
                 callback_url: payload.callback_url,
+                callbackUrl: payload.callback_url,
+                returnUrl: payload.return_url,
+                urlCallback: payload.callback_url,
+                urlSuccess: payload.return_url,
                 metadata: payload.metadata,
+            };
+
+            console.log('[SamirPay] initPayment Request:', {
+                url,
+                method: 'POST',
+                payload: {
+                    amount: requestPayload.amount,
+                    currency: requestPayload.currency,
+                    order_id: requestPayload.order_id,
+                    description: requestPayload.description,
+                    customer_phone: requestPayload.customer?.phone ? `${requestPayload.customer.phone.slice(0, 3)}***` : 'ABSENT',
+                    customer_name: requestPayload.customer?.name || 'ABSENT',
+                    return_url: requestPayload.return_url || 'ABSENT',
+                    cancel_url: requestPayload.cancel_url || 'ABSENT',
+                    callback_url: requestPayload.callback_url || 'ABSENT',
+                    has_metadata: !!requestPayload.metadata,
+                },
             });
+
+            const body = JSON.stringify(requestPayload);
 
             const response = await fetch(url, {
                 method: 'POST',
@@ -98,16 +135,35 @@ export class SamirPayClient {
 
             clearTimeout(timeoutId);
 
-            const data = (await response.json()) as SamirPayInitPaymentResponse;
-
             if (!response.ok) {
-                const errorMessage = data?.message || `Erreur SamirPay HTTP ${response.status}`;
-                console.error(`[SamirPayClient] initPayment échec: HTTP ${response.status}`, {
-                    order_id: payload.order_id,
+                const responseText = await response.text();
+                console.error('[SamirPay] HTTP Error:', {
+                    status: response.status,
                     statusText: response.statusText,
+                    body: responseText,
+                    order_id: payload.order_id,
                 });
+                let errorMessage = `Erreur SamirPay HTTP ${response.status}`;
+                try {
+                    const errorData = JSON.parse(responseText);
+                    if (errorData?.message) errorMessage = errorData.message;
+                } catch { /* response n'est pas du JSON */ }
                 throw new Error(`Échec de l'initialisation SamirPay : ${errorMessage}`);
             }
+
+            const data = (await response.json()) as SamirPayInitPaymentResponse;
+
+            // Log complet pour diagnostic — inclut le status du corps, pas seulement HTTP
+            console.log('[SamirPay] initPayment Response:', {
+                order_id: payload.order_id,
+                operator: payload.operatorName,
+                http_ok: true,
+                body_status: data.status || 'ABSENT',
+                body_message: (data.message as string) || 'ABSENT',
+                has_payment_url: !!(data.payment_url || data.data?.payment_url),
+                has_transaction_id: !!(data.transaction_id || data.data?.transaction_id),
+                response_keys: Object.keys(data).join(','),
+            });
 
             return data;
         } catch (error: unknown) {

@@ -23,6 +23,7 @@ import {
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { RegisterPartnerSchema, PartnerActivityTypes, normalizePhoneNumber } from '@/lib/validations/auth';
 
 const ACTIVITY_LABELS: Record<string, string> = {
@@ -60,6 +61,12 @@ export default function PartnerRegisterPage() {
     // Fichiers
     const [idCardFile, setIdCardFile] = useState<File | null>(null);
     const [businessDocFile, setBusinessDocFile] = useState<File | null>(null);
+
+    // OTP verification
+    const [otpStep, setOtpStep] = useState(false);
+    const [otpPhone, setOtpPhone] = useState('');
+    const [otpCode, setOtpCode] = useState('');
+    const [otpLoading, setOtpLoading] = useState(false);
 
     // État de soumission
     const [isSuccess, setIsSuccess] = useState(false);
@@ -186,13 +193,37 @@ export default function PartnerRegisterPage() {
                 throw new Error(data.error || 'Erreur lors de l\'enregistrement de votre candidature.');
             }
 
-            setIsSuccess(true);
+            setOtpPhone(data.phone || normalizedPhone);
+            setOtpStep(true);
         } catch (err: unknown) {
             console.error('[PartnerRegister] Erreur onboarding:', err);
             const msg = err instanceof Error ? err.message : 'Erreur lors de l\'inscription partenaire.';
             setErrorMessage(msg);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleOtpVerify = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setErrorMessage(null);
+        setOtpLoading(true);
+        try {
+            const res = await fetch('/api/auth/verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: otpPhone, otpCode }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || 'Code de vérification incorrect.');
+            }
+            setIsSuccess(true);
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Erreur de vérification OTP.';
+            setErrorMessage(msg);
+        } finally {
+            setOtpLoading(false);
         }
     };
 
@@ -227,7 +258,47 @@ export default function PartnerRegisterPage() {
                     </div>
                 )}
 
-                {!isSuccess ? (
+                {otpStep && !isSuccess ? (
+                    <div className="py-10 space-y-6">
+                        <div className="text-center space-y-3">
+                            <div className="w-16 h-16 rounded-2xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto">
+                                <Phone size={32} />
+                            </div>
+                            <h2 className="text-xl font-black text-slate-900 dark:text-white">
+                                Vérification de votre numéro
+                            </h2>
+                            <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-sm mx-auto">
+                                Un code de vérification à 6 chiffres a été envoyé au <strong className="text-slate-900 dark:text-white">{otpPhone}</strong>. Saisissez-le ci-dessous.
+                            </p>
+                        </div>
+                        <form onSubmit={handleOtpVerify} className="max-w-xs mx-auto space-y-4">
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={6}
+                                value={otpCode}
+                                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                placeholder="000000"
+                                required
+                                autoFocus
+                                className="w-full px-4 py-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-center text-2xl font-black tracking-[0.5em] text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
+                            />
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                size="lg"
+                                fullWidth
+                                isLoading={otpLoading}
+                                leftIcon={<CheckCircle2 size={18} />}
+                            >
+                                Vérifier le code SMS
+                            </Button>
+                            <p className="text-[10px] text-center text-slate-400 dark:text-zinc-500">
+                                Code valable 10 minutes. Si vous ne l&apos;avez pas reçu, vérifiez votre numéro.
+                            </p>
+                        </form>
+                    </div>
+                ) : !isSuccess ? (
                     <form onSubmit={handlePartnerSubmit} className="space-y-8">
                         {/* 1. Informations sur l'Établissement / Entreprise */}
                         <div className="space-y-4">
@@ -430,9 +501,15 @@ export default function PartnerRegisterPage() {
                                             type="password"
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            placeholder="Min. 6 caractères"
+                                            placeholder="Min. 8 car., 1 Maj, 1 chiffre, 1 spécial"
                                             required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
+                                            className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border text-xs font-semibold text-slate-900 dark:text-white focus:outline-none transition-all ${
+                                                password.length > 0 && allPasswordCriteriaMet(password)
+                                                    ? 'border-emerald-500 focus:border-emerald-500'
+                                                    : password.length > 0
+                                                    ? 'border-amber-400 focus:border-amber-400'
+                                                    : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722]'
+                                            }`}
                                         />
                                         <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
                                     </div>
@@ -455,6 +532,8 @@ export default function PartnerRegisterPage() {
                                     </div>
                                 </div>
                             </div>
+
+                            <PasswordStrengthChecklist password={password} />
                         </div>
 
                         {/* 3. Justificatifs & Documents Légaux (Upload privé) */}

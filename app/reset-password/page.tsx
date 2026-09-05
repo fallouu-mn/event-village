@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
+import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/Toast';
 
@@ -28,13 +29,6 @@ const LOCKOUT_DURATION_SECONDS = 60;
 const STORAGE_KEY_LOCKOUT = 'ev_reset_lockout_until';
 const STORAGE_KEY_ATTEMPTS = 'ev_reset_failed_attempts';
 
-// ── Critères de robustesse du mot de passe ────────────────────────────────
-const passwordCriteria = [
-    { key: 'length',   label: 'Au moins 8 caractères',       test: (p: string) => p.length >= 8 },
-    { key: 'upper',    label: 'Au moins une majuscule (A-Z)', test: (p: string) => /[A-Z]/.test(p) },
-    { key: 'digit',    label: 'Au moins un chiffre (0-9)',    test: (p: string) => /[0-9]/.test(p) },
-    { key: 'special',  label: 'Au moins un caractère spécial (!@#$...)', test: (p: string) => /[^A-Za-z0-9]/.test(p) },
-];
 
 export default function ResetPasswordPage() {
     const router = useRouter();
@@ -59,38 +53,63 @@ export default function ResetPasswordPage() {
     // ── 1. Garde de session ────────────────────────────────────────────────
     // Accepte deux flux :
     //   A. Flux téléphone/OTP  → sessionStorage flag 'ev_recovery_verified' + session Supabase
-    //   B. Flux email          → session Supabase créée par le clic sur le lien (pas de flag)
+    //   B. Flux email          → session Supabase créée par le clic sur le lien magique
+    //       ⚠️ Le hash fragment (#access_token=...&type=recovery) est traité de manière
+    //       asynchrone par le client Supabase. getSession() seul peut retourner null
+    //       avant que le hash ne soit consommé → on écoute aussi onAuthStateChange.
     useEffect(() => {
-        const check = async () => {
+        const supabase = getBrowserClient();
+        let cancelled = false;
+        let fallbackTimer: ReturnType<typeof setTimeout>;
+
+        const grant = () => {
+            if (cancelled) return;
+            // Nettoyer le flag OTP expiré (>15 min) mais laisser passer
             try {
-                const supabase = getBrowserClient();
-                const { data: { session } } = await supabase.auth.getSession();
-
-                // Aucune session active — accès refusé dans tous les cas
-                if (!session) {
-                    router.replace('/login?error=session_expired');
-                    return;
-                }
-
-                // Flux OTP : vérifier que le flag n'est pas expiré (15 min)
                 const flag = sessionStorage.getItem('ev_recovery_verified');
                 const ts = sessionStorage.getItem('ev_recovery_ts');
                 if (flag && ts) {
                     const age = Date.now() - parseInt(ts, 10);
                     if (age > 15 * 60 * 1000) {
-                        // Flag expiré mais session Supabase toujours valide → laisser passer
                         sessionStorage.removeItem('ev_recovery_verified');
                         sessionStorage.removeItem('ev_recovery_ts');
                     }
                 }
-
-                // Session présente (OTP ou email link) → accès autorisé
-                setIsCheckingSession(false);
-            } catch {
-                router.replace('/login?error=session_expired');
-            }
+            } catch {}
+            setIsCheckingSession(false);
         };
-        check();
+
+        const deny = () => {
+            if (cancelled) return;
+            router.replace('/login?error=session_expired');
+        };
+
+        // Écouter PASSWORD_RECOVERY pour le flux email (hash fragment asynchrone)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
+            if (event === 'PASSWORD_RECOVERY' && session) {
+                clearTimeout(fallbackTimer);
+                grant();
+            }
+        });
+
+        // Vérifier si une session existe déjà (flux OTP ou revisit)
+        supabase.auth.getSession().then(({ data: { session } }: any) => {
+            if (session) {
+                grant();
+            } else {
+                // Pas de session immédiate — laisser 4s pour que le hash fragment
+                // soit traité par le client Supabase (flux email)
+                fallbackTimer = setTimeout(deny, 4000);
+            }
+        }).catch(() => {
+            fallbackTimer = setTimeout(deny, 4000);
+        });
+
+        return () => {
+            cancelled = true;
+            clearTimeout(fallbackTimer);
+            subscription.unsubscribe();
+        };
     }, [router]);
 
     // ── 2. Lecture localStorage anti-brute-force ───────────────────────────
@@ -141,11 +160,7 @@ export default function ResetPasswordPage() {
     }, [isLockedOut, lockoutRemaining]);
 
     // ── Critères ───────────────────────────────────────────────────────────
-    const criteriaStatus = passwordCriteria.map((c) => ({
-        ...c,
-        passed: c.test(password),
-    }));
-    const allCriteriaMet = criteriaStatus.every((c) => c.passed);
+    const allCriteriaMet = allPasswordCriteriaMet(password);
     const passwordsMatch = password === confirmPassword && confirmPassword.length > 0;
 
     // ── Enregistrement d'un échec ──────────────────────────────────────────
@@ -214,7 +229,14 @@ export default function ResetPasswordPage() {
                 localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
             } catch {}
 
-            // Déconnecter la session de récupération (sécurité bancaire)
+            // Révoquer TOUTES les sessions (tous appareils) via admin API
+            const currentSession = (await supabase.auth.getSession()).data.session;
+            if (currentSession?.access_token) {
+                await fetch('/api/auth/sign-out-global', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${currentSession.access_token}` },
+                });
+            }
             await supabase.auth.signOut();
 
             toast.success('Mot de passe mis à jour avec succès. Veuillez vous connecter.');
@@ -364,32 +386,7 @@ export default function ResetPasswordPage() {
                         </div>
 
                         {/* Checklist de robustesse */}
-                        {password.length > 0 && (
-                            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 space-y-2">
-                                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-2">
-                                    Robustesse du mot de passe
-                                </p>
-                                {criteriaStatus.map((c) => (
-                                    <div key={c.key} className="flex items-center gap-2">
-                                        <div className={clsx(
-                                            'w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                                            c.passed ? 'bg-emerald-500 text-white' : 'bg-red-100 dark:bg-red-950/50 text-red-500 border border-red-300 dark:border-red-800'
-                                        )}>
-                                            {c.passed
-                                                ? <Check size={10} strokeWidth={3} />
-                                                : <X size={10} strokeWidth={3} />
-                                            }
-                                        </div>
-                                        <span className={clsx(
-                                            'text-[11px] font-semibold transition-colors',
-                                            c.passed ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
-                                        )}>
-                                            {c.label}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        <PasswordStrengthChecklist password={password} />
 
                         {/* Champ Confirmation */}
                         <div>

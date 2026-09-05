@@ -151,7 +151,7 @@ export default function PartnerOrdersPage() {
                 { event: '*', schema: 'public', table: 'orders', filter: `partner_id=eq.${partner.id}` },
                 () => { fetchOrders(); }
             )
-            .subscribe((status) => {
+            .subscribe((status: string) => {
                 setConnected(status === 'SUBSCRIBED');
             });
 

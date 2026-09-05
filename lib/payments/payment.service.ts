@@ -17,6 +17,9 @@ export interface CreatePaymentResult {
     order_id: string;
     transaction_id: string;
     payment_url?: string;
+    redirect_url?: string;   // Deep link OM ou Wave (data.urls.OM / data.urls.WAVE)
+    qr_code?: string;        // QR Code base64 pour paiement Desktop
+    is_push_ussd?: boolean;
     amount: number;
     currency: string;
     status: string;
@@ -27,7 +30,7 @@ export class PaymentService {
      * Crée une transaction de paiement sécurisée côté serveur.
      * Le montant est obligatoirement récupéré depuis la base de données.
      */
-    public async createPayment(userId: string, input: CreatePaymentInput, authToken?: string): Promise<CreatePaymentResult> {
+    public async createPayment(userId: string, input: CreatePaymentInput): Promise<CreatePaymentResult> {
         const supabase = getServiceRoleClient();
 
         let payableAmount = 0;
@@ -157,12 +160,24 @@ export class PaymentService {
                     // C'est un achat direct via ticket_category
                     const { data: category, error: catError } = await supabase
                         .from('ticket_categories')
-                        .select('*, events(id, title, partner_id)')
+                        .select('*, events(id, title, partner_id, status)')
                         .eq('id', input.targetId)
                         .single();
 
                     if (catError || !category) {
                         throw new Error('Catégorie de ticket introuvable.');
+                    }
+
+                    const eventStatus = (category.events as any)?.status;
+                    if (eventStatus !== 'PUBLIE') {
+                        if (eventStatus === 'SUSPENDU') {
+                            throw new Error('Cet événement est temporairement suspendu. La billetterie est indisponible.');
+                        }
+                        throw new Error('La billetterie de cet événement n\'est pas disponible.');
+                    }
+
+                    if (!category.is_active) {
+                        throw new Error('Cette catégorie de ticket n\'est plus disponible à la vente.');
                     }
 
                     if (category.sold_quantity >= category.total_quantity) {
@@ -213,9 +228,21 @@ export class PaymentService {
             throw new Error('Le montant à régler doit être supérieur à zéro.');
         }
 
-        // 2. Calculs financiers conformes au Cahier des Charges V3
-        const serviceFeeRate = 0.05;
-        const aggregatorFeeRate = 0.015;
+        // 2. Lecture des taux depuis platform_settings (jamais hardcodés côté service)
+        const { data: ticketingConfig, error: ticketingConfigError } = await supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'ticketing_fee_config')
+            .maybeSingle();
+
+        if (ticketingConfigError || !ticketingConfig?.value?.service_fee_rate || !ticketingConfig?.value?.aggregator_fee_rate) {
+            console.error('[PaymentService] ticketing_fee_config manquant en DB:', ticketingConfigError);
+            throw new Error('Configuration des frais de paiement manquante. Contactez le support.');
+        }
+
+        // Taux en pourcentage (ex: 5.0) → fraction (0.05)
+        const serviceFeeRate = Number(ticketingConfig.value.service_fee_rate) / 100;
+        const aggregatorFeeRate = Number(ticketingConfig.value.aggregator_fee_rate) / 100;
 
         const aggregatorFee = Math.round(payableAmount * aggregatorFeeRate * 100) / 100;
         let serviceFee = Math.round(payableAmount * serviceFeeRate * 100) / 100;
@@ -279,20 +306,38 @@ export class PaymentService {
         }
 
         // 5. Appel à l'API SamirPay côté serveur (Cashin Direct)
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://eventvillage.sn').replace(/\/+$/, '');
+        const callbackUrl = `${appUrl}/api/webhooks/samirpay`;
+        const returnUrl = input.returnUrl || `${appUrl}/tickets`;
+        const cancelUrl = input.cancelUrl || `${appUrl}/explore`;
+
+        // Normalisation du numéro en deux formats requis par SamirPay
+        const rawPhone = (input.customerPhone || '').replace(/\s/g, '');
+        const fullIntlPhone = rawPhone.startsWith('+221') ? rawPhone
+            : rawPhone.startsWith('221') ? `+${rawPhone}`
+            : rawPhone.length > 0 ? `+221${rawPhone}` : '';
+        const barePhone = fullIntlPhone.replace(/^\+221/, ''); // ex: 771234567
+
+        const samirPayOperator = input.operator || 'WAVE'; // 'ORANGE_MONEY' / 'WAVE' envoyé tel quel
+
         let samirPayResponse;
         try {
             samirPayResponse = await samirPayClient.initPayment({
                 amount: payableAmount,
                 currency: 'XOF',
                 order_id: externalOrderId,
+                operatorName: samirPayOperator,
                 description,
                 customer: {
-                    phone: input.customerPhone || '',
+                    phone: fullIntlPhone,
                     name: input.customerName || 'Client Event Village',
                     email: input.customerEmail,
                 },
-                return_url: input.returnUrl,
-                cancel_url: input.cancelUrl,
+                barePhone,
+                fullIntlPhone,
+                return_url: returnUrl,
+                cancel_url: cancelUrl,
+                callback_url: callbackUrl,
             });
         } catch (apiError: unknown) {
             await supabase
@@ -307,9 +352,70 @@ export class PaymentService {
             throw apiError;
         }
 
-        // 6. Mise à jour de la référence SamirPay obtenue
+        // 6. Analyse complète de la réponse SamirPay
         const externalTransactionId = samirPayResponse.transaction_id || samirPayResponse.data?.transaction_id;
-        const paymentUrl = samirPayResponse.payment_url || samirPayResponse.data?.payment_url;
+        const paymentUrl = samirPayResponse.payment_url || samirPayResponse.data?.payment_url || samirPayResponse.data?.url;
+        const responseBodyStatus = (samirPayResponse.status || '').toLowerCase();
+        const responseBodyMessage = (samirPayResponse.message as string)
+            || (samirPayResponse.data?.message as string)
+            || '';
+        // URLs de secours retournées par SamirPay dans data.urls (deep link OM / Wave)
+        const responseUrls: Record<string, string> =
+            (samirPayResponse.data?.urls as Record<string, string>)
+            || (samirPayResponse.urls as Record<string, string>)
+            || {};
+        const omRedirectUrl: string | null =
+            responseUrls['OM'] || responseUrls['MAXIT'] || responseUrls['OM_URL'] || null;
+
+        // QR Code retourné par SamirPay (base64 ou URL) — utilisé sur Desktop
+        const qrCode: string | null =
+            (samirPayResponse.qr_code as string)
+            || (samirPayResponse.data?.qr_code as string)
+            || (samirPayResponse.qrCode as string)
+            || (samirPayResponse.data?.qrCode as string)
+            || (samirPayResponse.qr as string)
+            || (samirPayResponse.data?.qr as string)
+            || null;
+
+        // Log exhaustif — montre l'intégralité de la réponse SamirPay pour diagnostic OM
+        console.log('[PaymentService] SamirPay response analysis:', {
+            operator: input.operator,
+            samirpay_operator_sent: samirPayOperator,
+            order_id: externalOrderId,
+            body_status: samirPayResponse.status || 'ABSENT',
+            body_message: responseBodyMessage || 'ABSENT',
+            has_payment_url: !!paymentUrl,
+            has_transaction_id: !!externalTransactionId,
+            transaction_id: externalTransactionId || 'ABSENT',
+            response_keys: Object.keys(samirPayResponse).join(','),
+        });
+
+        // PROTECTION FAUX POSITIF CRITIQUE :
+        // SamirPay peut retourner HTTP 200 avec status:'failed' (ex: "Operator not found",
+        // "Invalid phone number", etc.). Sans ce check, le service croirait à tort que
+        // c'est un Push USSD réussi et bloquerait le client indéfiniment sur l'écran d'attente.
+        if (responseBodyStatus === 'failed' || responseBodyStatus === 'error') {
+            await supabase.from('payments').update({
+                status: 'FAILED',
+                provider_status: samirPayResponse.status,
+                provider_response: samirPayResponse,
+            }).eq('id', paymentRecord.id);
+
+            const userMsg = responseBodyMessage
+                || 'Paiement refusé par l\'opérateur. Vérifiez votre numéro et réessayez.';
+            console.error('[PaymentService] SamirPay body-level error (HTTP 200 but failed):', {
+                operator: input.operator,
+                samirpay_operator_sent: samirPayOperator,
+                order_id: externalOrderId,
+                body_status: samirPayResponse.status,
+                message: userMsg,
+            });
+            throw new Error(userMsg);
+        }
+
+        // isPushUssd = true seulement si OM sans aucune URL disponible (ni payment_url ni omRedirectUrl).
+        // Si omRedirectUrl est présent, le frontend redirigera directement → pas d'écran d'attente.
+        const isPushUssd = input.operator === 'ORANGE_MONEY' && !paymentUrl && !omRedirectUrl;
 
         await supabase
             .from('payments')
@@ -325,6 +431,9 @@ export class PaymentService {
             order_id: externalOrderId,
             transaction_id: internalTransactionId,
             payment_url: paymentUrl,
+            redirect_url: omRedirectUrl || undefined,
+            qr_code: qrCode || undefined,
+            is_push_ussd: isPushUssd,
             amount: payableAmount,
             currency: 'XOF',
             status: 'PENDING',

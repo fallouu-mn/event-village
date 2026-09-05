@@ -107,15 +107,16 @@ export async function POST(req: NextRequest) {
         const supabase = getServiceRoleClient();
 
         // 1. Création dans Supabase Auth
+        //    phone au niveau racine → auth.users.phone renseigné pour récupération SMS
         const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
             email: effectiveEmail,
+            phone: normalizedPhone,
             password: password,
             email_confirm: true,
+            phone_confirm: true,
             user_metadata: {
                 first_name: firstName.trim(),
                 last_name: lastName.trim(),
-                phone: normalizedPhone,
-                email: effectiveEmail,
                 role: targetRole,
             },
         });

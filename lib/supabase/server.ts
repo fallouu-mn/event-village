@@ -1,4 +1,6 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
+import { NextRequest } from 'next/server';
 
 /**
  * Client Supabase avec clé Service Role pour les opérations backend sécurisées
@@ -19,6 +21,33 @@ export function getServiceRoleClient() {
             autoRefreshToken: false,
         },
     });
+}
+
+/**
+ * Extrait l'utilisateur authentifie depuis une NextRequest.
+ * Gere les cookies chunkes de @supabase/ssr et le header Authorization Bearer.
+ */
+export async function getAuthenticatedUser(req: NextRequest): Promise<{ id: string; email?: string } | null> {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        const supabase = getServiceRoleClient();
+        const { data, error } = await supabase.auth.getUser(token);
+        if (!error && data?.user) return { id: data.user.id, email: data.user.email };
+    }
+
+    const ssrClient = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                getAll() { return req.cookies.getAll(); },
+                setAll() {},
+            },
+        }
+    );
+    const { data: { user } } = await ssrClient.auth.getUser();
+    return user ? { id: user.id, email: user.email } : null;
 }
 
 /**

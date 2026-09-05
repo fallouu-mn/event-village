@@ -193,26 +193,26 @@ test('21. Audit Log : Journalisation inaltérable des actions partenaires', () =
     assert.strictEqual(log.object_type, 'partners');
 });
 
-test('22. Anti-Brute-Force : RateLimiter bloque après 5 échecs consécutifs', () => {
+test('22. Anti-Brute-Force : RateLimiter bloque après 5 échecs consécutifs', async () => {
     const testIdentifier = 'test_ip_192_168_1_50';
-    RateLimiter.resetAttempts(testIdentifier);
+    await RateLimiter.resetAttempts(testIdentifier);
 
     // 1 à 4 échecs -> pas encore bloqué
     for (let i = 1; i <= 4; i++) {
-        const res = RateLimiter.recordFailedAttempt(testIdentifier);
+        const res = await RateLimiter.recordFailedAttempt(testIdentifier);
         assert.strictEqual(res.locked, false, `Tentative ${i} ne doit pas verrouiller.`);
     }
 
     // 5ème échec -> verrouillé
-    const res5 = RateLimiter.recordFailedAttempt(testIdentifier);
+    const res5 = await RateLimiter.recordFailedAttempt(testIdentifier);
     assert.strictEqual(res5.locked, true, 'La 5ème tentative doit verrouiller l\'accès.');
 
     // Vérification de verrouillage
-    const check = RateLimiter.isRateLimited(testIdentifier);
+    const check = await RateLimiter.isRateLimited(testIdentifier);
     assert.strictEqual(check.limited, true, 'L\'identifiant doit être considéré comme limité.');
 
     // Nettoyage
-    RateLimiter.resetAttempts(testIdentifier);
+    await RateLimiter.resetAttempts(testIdentifier);
 });
 
 test('23. Première Activation : Durée 60 jours Standard vs 90 jours Founder', () => {

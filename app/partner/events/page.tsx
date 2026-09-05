@@ -16,7 +16,8 @@ import {
     Trash2,
     Eye,
     Pencil,
-    RefreshCw
+    RefreshCw,
+    Radio,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/Badge';
@@ -81,6 +82,28 @@ export default function PartnerEventsPage() {
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
         fetchEvents();
+    };
+
+    const handlePublish = async (eventId: string) => {
+        setActionLoading(eventId);
+        try {
+            const res = await fetch(`/api/partner/events/${eventId}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'PUBLIE' }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast.success('Événement mis en ligne ! La billetterie est maintenant ouverte.');
+                fetchEvents();
+            } else {
+                toast.error(data.error || 'Erreur lors de la publication.');
+            }
+        } catch {
+            toast.error('Erreur réseau, réessayez.');
+        } finally {
+            setActionLoading(null);
+        }
     };
 
     const handleSubmitForValidation = async (eventId: string) => {
@@ -416,9 +439,25 @@ export default function PartnerEventsPage() {
                                     )}
 
                                     {ev.status === 'VALIDE' && (
-                                        <div className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5 w-full justify-center">
-                                            <CheckCircle2 className="w-4 h-4" />
-                                            Validé par l&apos;Administration
+                                        <div className="flex items-center justify-between w-full gap-2">
+                                            <div className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5">
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                Validé
+                                            </div>
+                                            <Button
+                                                size="sm"
+                                                variant="primary"
+                                                onClick={() => handlePublish(ev.id)}
+                                                disabled={actionLoading === ev.id}
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs flex items-center gap-1.5"
+                                            >
+                                                {actionLoading === ev.id ? (
+                                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                                ) : (
+                                                    <Radio className="w-3.5 h-3.5" />
+                                                )}
+                                                Publier
+                                            </Button>
                                         </div>
                                     )}
                                 </div>

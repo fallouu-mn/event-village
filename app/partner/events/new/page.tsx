@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { z } from 'zod';
 import {
     Calendar,
@@ -11,11 +12,25 @@ import {
     Trash2,
     ChevronRight,
     Save,
+    MapPin,
+    Ticket,
+    Users,
+    Megaphone,
+    AlertCircle,
+    CheckCircle2,
+    Eye,
+    EyeOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ImageUpload } from '@/components/ui/ImageUpload';
 import { useToast } from '@/components/ui/Toast';
 import { toastMessages } from '@/lib/messages/toast-messages';
+import { EVENT_CATEGORIES, type EventCategoryId } from '@/lib/constants/event-categories';
+
+const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then(m => ({ default: m.MapPicker })), {
+    ssr: false,
+    loading: () => <div className="w-full h-56 rounded-xl bg-slate-100 dark:bg-zinc-800 animate-pulse" />,
+});
 
 interface ProgramItem {
     id: string;
@@ -31,6 +46,10 @@ interface TicketCategory {
     price: number;
     total_quantity: number;
     description: string;
+    sale_start: string;
+    sale_end: string;
+    max_per_order: number;
+    is_visible: boolean;
 }
 
 const ticketCategorySchema = z.object({
@@ -38,10 +57,17 @@ const ticketCategorySchema = z.object({
     price: z.number().min(0, 'Le prix doit être positif ou nul.'),
     total_quantity: z.number().min(1, 'La quantité doit être au moins 1.'),
     description: z.string().optional(),
+    sale_start: z.string().optional(),
+    sale_end: z.string().optional(),
+    max_per_order: z.number().min(1, 'Minimum 1 billet par commande.').max(20, 'Maximum 20 billets par commande.'),
+    is_visible: z.boolean(),
 });
+
+const EVENT_CATEGORY_IDS = EVENT_CATEGORIES.map((c) => c.id) as [EventCategoryId, ...EventCategoryId[]];
 
 const eventFormSchema = z.object({
     title: z.string().min(3, 'Le titre doit contenir au moins 3 caractères.'),
+    category: z.enum(EVENT_CATEGORY_IDS, { errorMap: () => ({ message: 'Veuillez sélectionner une catégorie.' }) }),
     description: z.string().optional(),
     start_date: z.string().min(1, 'La date de début est requise.').refine(
         (val) => {
@@ -75,6 +101,7 @@ export default function NewEventPage() {
 
     // Étape 1 : Infos Générales (§30)
     const [title, setTitle] = useState('');
+    const [category, setCategory] = useState<EventCategoryId | ''>('');
     const [description, setDescription] = useState('');
     const [startDate, setStartDate] = useState('');
     const [startTime, setStartTime] = useState('');
@@ -84,6 +111,8 @@ export default function NewEventPage() {
     const [city, setCity] = useState('Dakar');
     const [imageUrl, setImageUrl] = useState('');
     const [capacity, setCapacity] = useState<number | ''>('');
+    const [latitude, setLatitude] = useState<number | null>(null);
+    const [longitude, setLongitude] = useState<number | null>(null);
 
     // Étape 2 : Programme (§32)
     const [programItems, setProgramItems] = useState<ProgramItem[]>([]);
@@ -100,11 +129,12 @@ export default function NewEventPage() {
         ticketing: true,
         tableBooking: false,
         communication: true,
-        promotion: false,
     });
 
     // Étape 5 : Catégories de Billets (§35)
     const [ticketCategories, setTicketCategories] = useState<TicketCategory[]>([]);
+
+    const totalTicketQuota = ticketCategories.reduce((sum, c) => sum + Number(c.total_quantity), 0);
 
     // Handlers Programme
     const addProgramItem = () => {
@@ -128,7 +158,7 @@ export default function NewEventPage() {
     const addTicketCategory = () => {
         setTicketCategories([
             ...ticketCategories,
-            { id: Date.now().toString(), name: '', price: 0, total_quantity: 1, description: '' },
+            { id: Date.now().toString(), name: '', price: 0, total_quantity: 1, description: '', sale_start: '', sale_end: '', max_per_order: 4, is_visible: true },
         ]);
     };
 
@@ -136,7 +166,7 @@ export default function NewEventPage() {
         setTicketCategories(ticketCategories.filter((cat) => cat.id !== id));
     };
 
-    const updateTicketCategory = (id: string, field: keyof TicketCategory, value: string | number) => {
+    const updateTicketCategory = (id: string, field: keyof TicketCategory, value: string | number | boolean) => {
         setTicketCategories(
             ticketCategories.map((cat) => (cat.id === id ? { ...cat, [field]: value } : cat))
         );
@@ -146,6 +176,7 @@ export default function NewEventPage() {
     const validateForm = (): boolean => {
         const formData: Record<string, unknown> = {
             title,
+            category: category || undefined,
             description: description || undefined,
             start_date: startDate,
             start_time: startTime,
@@ -162,6 +193,10 @@ export default function NewEventPage() {
                 price: Number(c.price),
                 total_quantity: Number(c.total_quantity),
                 description: c.description || undefined,
+                sale_start: c.sale_start || undefined,
+                sale_end: c.sale_end || undefined,
+                max_per_order: Number(c.max_per_order),
+                is_visible: c.is_visible,
             }));
         }
 
@@ -177,6 +212,23 @@ export default function NewEventPage() {
             }
         }
 
+        // Cohérence temporelle : date_fin >= date_début
+        if (endDate && startDate) {
+            const startDt = new Date(startDate + 'T' + (startTime || '00:00'));
+            const endDt = new Date(endDate + 'T' + (endTime || '23:59'));
+            if (endDt < startDt) {
+                newErrors['end_date'] = 'La date/heure de fin ne peut pas être antérieure à la date/heure de début.';
+            }
+        }
+
+        // Validation croisée jauge : somme des quotas <= capacité maximale
+        const numericCapacity = Number(capacity);
+        if (services.ticketing && numericCapacity > 0 && ticketCategories.length > 0) {
+            if (totalTicketQuota > numericCapacity) {
+                newErrors['ticket_quota_exceeded'] = `La somme des quotas (${totalTicketQuota}) dépasse la capacité maximale (${numericCapacity}).`;
+            }
+        }
+
         // Validate ticket_categories array items individually when ticketing is enabled
         if (services.ticketing && ticketCategories.length > 0) {
             ticketCategories.forEach((cat, index) => {
@@ -185,6 +237,10 @@ export default function NewEventPage() {
                     price: Number(cat.price),
                     total_quantity: Number(cat.total_quantity),
                     description: cat.description || undefined,
+                    sale_start: cat.sale_start || undefined,
+                    sale_end: cat.sale_end || undefined,
+                    max_per_order: Number(cat.max_per_order),
+                    is_visible: cat.is_visible,
                 });
                 if (!catResult.success) {
                     for (const issue of catResult.error.issues) {
@@ -194,25 +250,31 @@ export default function NewEventPage() {
                         }
                     }
                 }
+
+                // Cohérence dates de vente par catégorie
+                if (cat.sale_start && cat.sale_end && new Date(cat.sale_end) < new Date(cat.sale_start)) {
+                    newErrors[`ticket_categories.${index}.sale_end`] = 'La date de fin de vente doit être postérieure à la date de début.';
+                }
             });
         }
 
         setErrors(newErrors);
 
         if (Object.keys(newErrors).length > 0) {
-            // Navigate to the step that has the first error
             const firstErrorKey = Object.keys(newErrors)[0];
             if (
                 firstErrorKey.startsWith('title') ||
+                firstErrorKey.startsWith('category') ||
                 firstErrorKey.startsWith('start_date') ||
                 firstErrorKey.startsWith('start_time') ||
+                firstErrorKey.startsWith('end_date') ||
                 firstErrorKey.startsWith('location') ||
                 firstErrorKey.startsWith('city') ||
                 firstErrorKey.startsWith('capacity') ||
                 firstErrorKey.startsWith('description')
             ) {
                 setCurrentStep(1);
-            } else if (firstErrorKey.startsWith('ticket_categories')) {
+            } else if (firstErrorKey.startsWith('ticket_categories') || firstErrorKey === 'ticket_quota_exceeded') {
                 setCurrentStep(5);
             }
             return false;
@@ -231,8 +293,28 @@ export default function NewEventPage() {
             return;
         }
 
+        // Validation billetterie : au moins 1 catégorie si ticketing activé
+        if (services.ticketing && ticketCategories.length === 0) {
+            toast.error('La billetterie est activée mais aucune catégorie de billet n\'a été configurée. Ajoutez au moins une catégorie.');
+            setCurrentStep(5);
+            setIsSubmitting(false);
+            return;
+        }
+
+        // HARD BLOCK : jauge croisée (defense-in-depth, même si validateForm devrait déjà bloquer)
+        if (services.ticketing && ticketCategories.length > 0) {
+            const numCap = Number(capacity);
+            if (numCap > 0 && totalTicketQuota > numCap) {
+                toast.error(`Erreur : Le quota total de billets (${totalTicketQuota}) dépasse la capacité maximale de la salle (${numCap}). Réduisez les quotas ou augmentez la capacité.`);
+                setCurrentStep(5);
+                setIsSubmitting(false);
+                return;
+            }
+        }
+
         const payload = {
             title,
+            category: category || null,
             description,
             start_date: startDate,
             start_time: startTime,
@@ -240,6 +322,8 @@ export default function NewEventPage() {
             end_time: endTime || null,
             location,
             city,
+            latitude: latitude ?? null,
+            longitude: longitude ?? null,
             image_url: imageUrl || null,
             capacity: capacity ? Number(capacity) : null,
             program: programItems,
@@ -257,6 +341,10 @@ export default function NewEventPage() {
                       price: Number(c.price),
                       total_quantity: Number(c.total_quantity),
                       description: c.description,
+                      sale_start: c.sale_start || null,
+                      sale_end: c.sale_end || null,
+                      max_per_order: Number(c.max_per_order),
+                      is_visible: c.is_visible,
                   }))
                 : [],
         };
@@ -357,6 +445,31 @@ export default function NewEventPage() {
                             </div>
 
                             <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-2">
+                                    Catégorie de l&apos;événement <span className="text-red-500">*</span>
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    {EVENT_CATEGORIES.map((cat) => (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            onClick={() => setCategory(cat.id)}
+                                            className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all duration-200 text-left ${
+                                                category === cat.id
+                                                    ? 'bg-[#FF5722]/10 border-[#FF5722] text-[#FF5722]'
+                                                    : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:border-[#FF5722]/40'
+                                            }`}
+                                        >
+                                            {cat.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {errors.category && (
+                                    <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.category}</p>
+                                )}
+                            </div>
+
+                            <div>
                                 <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
                                     Description détaillée
                                 </label>
@@ -413,6 +526,9 @@ export default function NewEventPage() {
                                         onChange={(e) => setEndDate(e.target.value)}
                                         className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-[#FF5722] focus:outline-none"
                                     />
+                                    {errors.end_date && (
+                                        <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.end_date}</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
@@ -584,10 +700,22 @@ export default function NewEventPage() {
                                 </label>
                                 <input
                                     type="text"
-                                    placeholder="Ex: Route des Almadies, en face de l'Hôtel King Fahd"
+                                    placeholder="Ex: Dakar Arena, Diamniadio"
                                     value={address}
                                     onChange={(e) => setAddress(e.target.value)}
                                     className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
+                                    <MapPin size={13} className="text-[#FF5722]" />
+                                    Position exacte sur la carte
+                                </label>
+                                <MapPicker
+                                    latitude={latitude}
+                                    longitude={longitude}
+                                    onChange={(lat, lng) => { setLatitude(lat); setLongitude(lng); }}
                                 />
                             </div>
 
@@ -651,70 +779,115 @@ export default function NewEventPage() {
                 {/* ÉTAPE 4 : SERVICES ASSOCIÉS */}
                 {currentStep === 4 && (
                     <div className="space-y-5">
-                        <h2 className="text-base font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-zinc-800 pb-3">
-                            4. Services Associés Activés (§34 CDC V3.0)
-                        </h2>
+                        <div className="border-b border-slate-100 dark:border-zinc-800 pb-3">
+                            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                                4. Services Associés (§34 CDC V3.0)
+                            </h2>
+                            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
+                                Chaque service activé a des conséquences fonctionnelles réelles sur votre événement.
+                            </p>
+                        </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
-                                <input
-                                    type="checkbox"
-                                    checked={services.ticketing}
-                                    onChange={(e) => setServices({ ...services, ticketing: e.target.checked })}
-                                    className="mt-1 accent-[#FF5722]"
-                                />
-                                <div>
-                                    <p className="text-xs font-bold text-slate-900 dark:text-white">Billetterie en Ligne (Ticketing)</p>
-                                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-                                        Vendez des billets avec QR Code sécurisé et paiement Wave/OM/Carte.
-                                    </p>
+                        <div className="space-y-3">
+                            {/* Billetterie */}
+                            <div
+                                onClick={() => setServices(s => ({ ...s, ticketing: !s.ticketing }))}
+                                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                                    services.ticketing
+                                        ? 'border-[#FF5722] bg-orange-50/50 dark:bg-orange-950/20'
+                                        : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
+                                }`}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${services.ticketing ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'}`}>
+                                        <Ticket size={16} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-xs font-black text-slate-900 dark:text-white">Billetterie en Ligne</p>
+                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${services.ticketing ? 'bg-[#FF5722] border-[#FF5722]' : 'border-slate-300 dark:border-zinc-600'}`}>
+                                                {services.ticketing && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                            </div>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                                            Vente de billets sécurisée avec QR Code • Paiement Wave / Orange Money / Carte
+                                        </p>
+                                        {services.ticketing && (
+                                            <div className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                                                <AlertCircle size={12} />
+                                                Configurez au moins une catégorie de billet à l&apos;étape suivante
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </label>
+                            </div>
 
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
-                                <input
-                                    type="checkbox"
-                                    checked={services.tableBooking}
-                                    onChange={(e) => setServices({ ...services, tableBooking: e.target.checked })}
-                                    className="mt-1 accent-[#FF5722]"
-                                />
-                                <div>
-                                    <p className="text-xs font-bold text-slate-900 dark:text-white">Réservation de Tables VIP</p>
-                                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-                                        Permet aux clients de réserver des tables exclusives pour l&apos;événement.
-                                    </p>
+                            {/* Tables VIP */}
+                            <div
+                                onClick={() => setServices(s => ({ ...s, tableBooking: !s.tableBooking }))}
+                                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                                    services.tableBooking
+                                        ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-950/20'
+                                        : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
+                                }`}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${services.tableBooking ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'}`}>
+                                        <Users size={16} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-xs font-black text-slate-900 dark:text-white">Réservation de Tables VIP</p>
+                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${services.tableBooking ? 'bg-purple-600 border-purple-600' : 'border-slate-300 dark:border-zinc-600'}`}>
+                                                {services.tableBooking && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                            </div>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                                            Vos tables configurées dans l&apos;espace Partenaire seront disponibles à la réservation
+                                        </p>
+                                        {services.tableBooking && (
+                                            <div className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-purple-600 dark:text-purple-400">
+                                                <CheckCircle2 size={12} />
+                                                Gérez vos tables depuis l&apos;espace Tables de votre compte partenaire
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </label>
+                            </div>
 
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
-                                <input
-                                    type="checkbox"
-                                    checked={services.communication}
-                                    onChange={(e) => setServices({ ...services, communication: e.target.checked })}
-                                    className="mt-1 accent-[#FF5722]"
-                                />
-                                <div>
-                                    <p className="text-xs font-bold text-slate-900 dark:text-white">Pack Communication Standard</p>
-                                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-                                        Mise en avant dans la newsletter et le calendrier public Event Village.
-                                    </p>
+                            {/* Communication */}
+                            <div
+                                onClick={() => setServices(s => ({ ...s, communication: !s.communication }))}
+                                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                                    services.communication
+                                        ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20'
+                                        : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
+                                }`}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${services.communication ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'}`}>
+                                        <Megaphone size={16} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-xs font-black text-slate-900 dark:text-white">Pack Communication Standard</p>
+                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${services.communication ? 'bg-emerald-600 border-emerald-600' : 'border-slate-300 dark:border-zinc-600'}`}>
+                                                {services.communication && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                            </div>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                                            Présence dans le calendrier public • Newsletter Event Village • Éligibilité aux mises en avant
+                                        </p>
+                                        {services.communication && (
+                                            <div className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                                <CheckCircle2 size={12} />
+                                                Inclus dans votre abonnement partenaire
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </label>
+                            </div>
 
-                            <label className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-start gap-3 cursor-pointer hover:border-[#FF5722] transition-all">
-                                <input
-                                    type="checkbox"
-                                    checked={services.promotion}
-                                    onChange={(e) => setServices({ ...services, promotion: e.target.checked })}
-                                    className="mt-1 accent-[#FF5722]"
-                                />
-                                <div>
-                                    <p className="text-xs font-bold text-slate-900 dark:text-white">Promotion Sponsorisée</p>
-                                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-                                        Bannière en tête d&apos;affiche sur la page d&apos;accueil d&apos;Event Village.
-                                    </p>
-                                </div>
-                            </label>
                         </div>
                     </div>
                 )}
@@ -737,6 +910,27 @@ export default function NewEventPage() {
                             </Button>
                         </div>
 
+                        {/* Jauge de capacité */}
+                        {capacity !== '' && typeof capacity === 'number' && capacity > 0 && ticketCategories.length > 0 && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[11px] font-bold">
+                                    <span className="text-slate-600 dark:text-zinc-400">Jauge de capacité</span>
+                                    <span className={totalTicketQuota > capacity ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}>
+                                        {totalTicketQuota} / {capacity} billets ({Math.round((totalTicketQuota / capacity) * 100)}%)
+                                    </span>
+                                </div>
+                                <div className="w-full h-2 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full rounded-full transition-all ${totalTicketQuota > capacity ? 'bg-red-500' : totalTicketQuota > capacity * 0.8 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                        style={{ width: `${Math.min(100, (totalTicketQuota / capacity) * 100)}%` }}
+                                    />
+                                </div>
+                                {errors.ticket_quota_exceeded && (
+                                    <p className="text-[11px] font-semibold text-red-500">{errors.ticket_quota_exceeded}</p>
+                                )}
+                            </div>
+                        )}
+
                         <div className="space-y-4">
                             {ticketCategories.length === 0 && (
                                 <div className="text-center py-8 text-xs text-slate-400 dark:text-zinc-500">
@@ -746,25 +940,42 @@ export default function NewEventPage() {
                             {ticketCategories.map((cat, index) => (
                                 <div
                                     key={cat.id}
-                                    className="p-5 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700 space-y-3"
+                                    className={`p-5 rounded-xl border space-y-3 ${cat.is_visible ? 'bg-slate-50 dark:bg-zinc-800/60 border-slate-200 dark:border-zinc-700' : 'bg-slate-100/50 dark:bg-zinc-900/50 border-dashed border-slate-300 dark:border-zinc-600 opacity-75'}`}
                                 >
+                                    {/* Header : titre + badges + actions */}
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-[#FF5722]">Billet #{index + 1}</span>
-                                        {ticketCategories.length > 1 && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-[#FF5722]">Billet #{index + 1}</span>
+                                            {Number(cat.price) === 0 && (
+                                                <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase">
+                                                    Gratuit
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => updateTicketCategory(cat.id, 'is_visible', !cat.is_visible)}
+                                                className={`p-1.5 rounded-lg transition-colors ${cat.is_visible ? 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-zinc-700' : 'text-amber-500 bg-amber-50 dark:bg-amber-950/30'}`}
+                                                title={cat.is_visible ? 'Visible au public — cliquer pour masquer' : 'Masqué du public — cliquer pour rendre visible'}
+                                            >
+                                                {cat.is_visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                                            </button>
                                             <button
                                                 type="button"
                                                 onClick={() => removeTicketCategory(cat.id)}
-                                                className="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
+                                                className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
                                             </button>
-                                        )}
+                                        </div>
                                     </div>
 
+                                    {/* Ligne 1 : Nom, Prix, Quantité */}
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <div>
                                             <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
-                                                Nom du Pass
+                                                Nom du Pass <span className="text-red-500">*</span>
                                             </label>
                                             <input
                                                 type="text"
@@ -783,8 +994,9 @@ export default function NewEventPage() {
                                             </label>
                                             <input
                                                 type="number"
+                                                min="0"
                                                 value={cat.price}
-                                                onChange={(e) => updateTicketCategory(cat.id, 'price', Number(e.target.value))}
+                                                onChange={(e) => updateTicketCategory(cat.id, 'price', Math.max(0, Number(e.target.value)))}
                                                 className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
                                             />
                                             {errors[`ticket_categories.${index}.price`] && (
@@ -793,12 +1005,13 @@ export default function NewEventPage() {
                                         </div>
                                         <div>
                                             <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
-                                                Quantité Totale (Quota)
+                                                Quantité Totale (Quota) <span className="text-red-500">*</span>
                                             </label>
                                             <input
                                                 type="number"
+                                                min="1"
                                                 value={cat.total_quantity}
-                                                onChange={(e) => updateTicketCategory(cat.id, 'total_quantity', Number(e.target.value))}
+                                                onChange={(e) => updateTicketCategory(cat.id, 'total_quantity', Math.max(1, Number(e.target.value)))}
                                                 className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
                                             />
                                             {errors[`ticket_categories.${index}.total_quantity`] && (
@@ -806,6 +1019,69 @@ export default function NewEventPage() {
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* Ligne 2 : Description */}
+                                    <div>
+                                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
+                                            Description / Avantages inclus
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: Accès Carré VIP + 1 consommation offerte"
+                                            value={cat.description}
+                                            onChange={(e) => updateTicketCategory(cat.id, 'description', e.target.value)}
+                                            className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
+                                        />
+                                    </div>
+
+                                    {/* Ligne 3 : Période de vente + limite anti-fraude */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
+                                                Début de vente
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={cat.sale_start}
+                                                onChange={(e) => updateTicketCategory(cat.id, 'sale_start', e.target.value)}
+                                                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
+                                                Fin de vente
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={cat.sale_end}
+                                                onChange={(e) => updateTicketCategory(cat.id, 'sale_end', e.target.value)}
+                                                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
+                                            />
+                                            {errors[`ticket_categories.${index}.sale_end`] && (
+                                                <p className="mt-1 text-[11px] font-semibold text-red-500">{errors[`ticket_categories.${index}.sale_end`]}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
+                                                Achat max / commande
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="20"
+                                                value={cat.max_per_order}
+                                                onChange={(e) => updateTicketCategory(cat.id, 'max_per_order', Math.max(1, Math.min(20, Number(e.target.value))))}
+                                                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs text-slate-900 dark:text-white"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {!cat.is_visible && (
+                                        <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                            <EyeOff size={11} />
+                                            Ce billet ne sera pas visible par les clients sur la page publique
+                                        </p>
+                                    )}
                                 </div>
                             ))}
                         </div>

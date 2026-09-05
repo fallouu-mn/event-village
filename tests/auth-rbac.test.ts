@@ -55,6 +55,9 @@ function evaluateRbac(pathname: string, user: { role: string; partnerStatus?: st
             }
             return { allowed: true, redirect: null };
         }
+        if (user.role === 'CONTROLEUR') {
+            return { allowed: false, redirect: '/controller/scanner' };
+        }
         return { allowed: false, redirect: '/?error=unauthorized_partner' };
     }
 
@@ -71,7 +74,7 @@ function resolveSmartRoute(role: string, redirectUrl?: string | null): string {
         case 'PARTENAIRE':
             return '/partner';
         case 'CONTROLEUR':
-            return '/scan';
+            return '/controller/scanner';
         case 'CLIENT':
         default:
             return '/';
@@ -239,7 +242,7 @@ test('19. Smart Routing : Redirection post-connexion selon le rôle', () => {
     assert.equal(resolveSmartRoute('SUPERADMIN'), '/admin');
     assert.equal(resolveSmartRoute('ADMIN'), '/admin');
     assert.equal(resolveSmartRoute('PARTENAIRE'), '/partner');
-    assert.equal(resolveSmartRoute('CONTROLEUR'), '/scan');
+    assert.equal(resolveSmartRoute('CONTROLEUR'), '/controller/scanner');
     assert.equal(resolveSmartRoute('CLIENT'), '/');
     assert.equal(resolveSmartRoute('UNKNOWN'), '/');
 
@@ -254,4 +257,10 @@ test('20. Verrouillage UI Superadmin : Masquage des options B2C "Devenir Partena
     assert.equal(canBecomePartner('SUPERADMIN'), false);
     assert.equal(canBecomePartner('ADMIN'), false);
     assert.equal(canBecomePartner('PARTENAIRE'), false);
+});
+
+test('21. CONTROLEUR → tentative accès /partner/* redirigé vers /controller/scanner', () => {
+    const res = evaluateRbac('/partner/dashboard', { role: 'CONTROLEUR' });
+    assert.equal(res.allowed, false);
+    assert.equal(res.redirect, '/controller/scanner');
 });

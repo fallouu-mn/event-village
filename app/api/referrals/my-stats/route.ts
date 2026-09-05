@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,24 +10,13 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
     try {
-        const supabase = getServiceRoleClient();
-
-        // 1. Authentification — JWT uniquement, x-user-id interdit (spoofable)
-        const authHeader = req.headers.get('authorization');
-        let token: string | undefined;
-        if (authHeader?.startsWith('Bearer ')) token = authHeader.substring(7);
-        else token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
-
-        if (!token) {
+        const authUser = await getAuthenticatedUser(req);
+        if (!authUser) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
 
-        const { data: { user: jwtUser }, error: jwtErr } = await supabase.auth.getUser(token);
-        if (jwtErr || !jwtUser) {
-            return NextResponse.json({ error: 'Token invalide ou expiré.' }, { status: 401 });
-        }
-
-        const userId = jwtUser.id;
+        const supabase = getServiceRoleClient();
+        const userId = authUser.id;
 
         // 2. Profil utilisateur réel
         const { data: profile, error: uErr } = await supabase

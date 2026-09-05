@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,36 +17,18 @@ export async function PATCH(
             return NextResponse.json({ error: 'ID de notification requis.' }, { status: 400 });
         }
 
-        const supabase = getServiceRoleClient();
-
-        // 1. Authentification
-        const authHeader = req.headers.get('authorization');
-        let token: string | undefined;
-
-        if (authHeader?.startsWith('Bearer ')) {
-            token = authHeader.substring(7);
-        } else {
-            token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
-        }
-
-        if (!token) {
+        const authUser = await getAuthenticatedUser(req);
+        if (!authUser) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Session invalide.' }, { status: 401 });
-        }
-
-        // 2. Mise à jour de la notification
+        const supabase = getServiceRoleClient();
         const now = new Date().toISOString();
+
         const { data: updated, error: updateError } = await supabase
             .from('notifications')
-            .update({
-                status: 'READ',
-                read_at: now,
-            })
-            .match({ id: notifId, user_id: user.id })
+            .update({ status: 'READ', read_at: now })
+            .match({ id: notifId, user_id: authUser.id })
             .select()
             .single();
 
@@ -55,12 +37,7 @@ export async function PATCH(
             return NextResponse.json({ error: 'Impossible de marquer cette notification comme lue.' }, { status: 500 });
         }
 
-        return NextResponse.json({
-            success: true,
-            id: notifId,
-            status: 'READ',
-            readAt: now,
-        });
+        return NextResponse.json({ success: true, id: notifId, status: 'READ', readAt: now });
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Erreur interne';
         return NextResponse.json({ error: msg }, { status: 500 });

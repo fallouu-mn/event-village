@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 
 export const dynamic = 'force-dynamic';
@@ -19,25 +19,15 @@ export async function GET(req: NextRequest) {
 
         const supabase = getServiceRoleClient();
 
-        // 1. Vérification de l'utilisateur authentifié
         let isAuthorized = false;
 
-        // Vérifier si appel administrateur
         const adminAuth = await verifyAdminAuth(req);
         if (adminAuth.authorized) {
             isAuthorized = true;
         } else {
-            // Vérifier si le token appartient au partenaire propriétaire du document
-            const authHeader = req.headers.get('authorization');
-            let token: string | undefined;
-            if (authHeader?.startsWith('Bearer ')) token = authHeader.substring(7);
-            else token = req.cookies.get('sb-access-token')?.value || req.cookies.get('sb-auth-token')?.value;
-
-            if (token) {
-                const { data: { user } } = await supabase.auth.getUser(token);
-                if (user && (filePath.startsWith(`${user.id}/`) || filePath.startsWith(`temp_`) || filePath.startsWith(`pending_registrations/`))) {
-                    isAuthorized = true;
-                }
+            const authUser = await getAuthenticatedUser(req);
+            if (authUser && (filePath.startsWith(`${authUser.id}/`) || filePath.startsWith(`temp_`) || filePath.startsWith(`pending_registrations/`))) {
+                isAuthorized = true;
             }
         }
 

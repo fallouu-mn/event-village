@@ -19,6 +19,9 @@ export const CreatePaymentSchema = z.object({
     targetId: z.string().uuid({
         message: 'L\'identifiant de la cible (targetId) doit être un UUID valide.',
     }),
+    operator: z.enum(['WAVE', 'ORANGE_MONEY', 'CARD'], {
+        invalid_type_error: 'Moyen de paiement non reconnu.',
+    }).optional(),
     customerPhone: z.string().min(6, {
         message: 'Le numéro de téléphone du client est requis pour le paiement mobile.',
     }).optional(),

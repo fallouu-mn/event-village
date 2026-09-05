@@ -258,7 +258,130 @@ export const EmailTemplates = {
     },
 
     /**
-     * T6 — Compte réactivé → envoyé AU PARTENAIRE
+     * T6 — Événement validé → envoyé AU PARTENAIRE
+     */
+    eventValidated(p: {
+        partnerName: string;
+        eventTitle: string;
+    }): { subject: string; html: string } {
+        return {
+            subject: `Votre événement "${p.eventTitle}" a été validé — Event Village`,
+            html: baseLayout(`
+              <div style="text-align:center;margin:0 0 24px;">
+                <div style="display:inline-block;width:64px;height:64px;background:#dcfce7;border-radius:50%;line-height:68px;font-size:32px;">✅</div>
+              </div>
+              <p style="margin:0 0 4px;font-size:13px;color:#64748b;">Bonjour <strong>${p.partnerName}</strong>,</p>
+              <h2 style="margin:0 0 18px;font-size:19px;font-weight:900;color:#0f172a;text-align:center;line-height:1.3;">
+                Votre événement a été validé !
+              </h2>
+              <div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:8px;padding:14px 18px;margin:0 0 20px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Événement validé</p>
+                <p style="margin:0;font-size:16px;font-weight:800;color:#15803d;">${p.eventTitle}</p>
+              </div>
+              <p style="margin:0 0 18px;font-size:13px;color:#475569;line-height:1.7;">
+                L'équipe Event Village a approuvé votre événement. Vous pouvez maintenant le <strong>publier</strong> depuis votre espace partenaire pour ouvrir la billetterie.
+              </p>
+              ${ctaButton('Publier mon événement →', `${APP_URL}/partner/events`, '#22c55e')}
+            `),
+        };
+    },
+
+    /**
+     * T7 — Événement rejeté → envoyé AU PARTENAIRE
+     */
+    eventRejected(p: {
+        partnerName: string;
+        eventTitle: string;
+        reason?: string;
+    }): { subject: string; html: string } {
+        return {
+            subject: `Votre événement "${p.eventTitle}" n'a pas été validé — Event Village`,
+            html: baseLayout(`
+              <p style="margin:0 0 6px;font-size:13px;color:#64748b;">Bonjour <strong>${p.partnerName}</strong>,</p>
+              <h2 style="margin:0 0 18px;font-size:18px;font-weight:900;color:#0f172a;line-height:1.3;">
+                Votre événement n'a pas été validé.
+              </h2>
+              <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:14px 18px;margin:0 0 18px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;">Événement concerné</p>
+                <p style="margin:0;font-size:16px;font-weight:800;color:#7f1d1d;">${p.eventTitle}</p>
+              </div>
+              ${p.reason ? `
+              <div style="background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #ef4444;border-radius:8px;padding:14px 18px;margin:0 0 18px;">
+                <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;">Motif</p>
+                <p style="margin:0;font-size:13px;color:#7f1d1d;font-style:italic;">"${p.reason}"</p>
+              </div>` : ''}
+              <p style="margin:0 0 18px;font-size:13px;color:#475569;line-height:1.7;">
+                Vous pouvez modifier votre événement et le resoumettre pour une nouvelle validation.
+              </p>
+              ${ctaButton('Modifier mon événement →', `${APP_URL}/partner/events`)}
+            `),
+        };
+    },
+
+    /**
+     * T7b — Événement suspendu (Kill Switch) → envoyé AU PARTENAIRE
+     */
+    eventSuspended(p: {
+        partnerName: string;
+        eventTitle: string;
+        reason?: string;
+    }): { subject: string; html: string } {
+        return {
+            subject: `[URGENT] Votre événement "${p.eventTitle}" a été suspendu — Event Village`,
+            html: baseLayout(`
+              <div style="text-align:center;margin:0 0 24px;">
+                <div style="display:inline-block;width:64px;height:64px;background:#fef2f2;border-radius:50%;line-height:68px;font-size:32px;border:2px solid #ef4444;">⛔</div>
+              </div>
+              <p style="margin:0 0 4px;font-size:13px;color:#64748b;">Bonjour <strong>${p.partnerName}</strong>,</p>
+              <h2 style="margin:0 0 18px;font-size:19px;font-weight:900;color:#0f172a;text-align:center;line-height:1.3;">
+                Votre événement a été suspendu.
+              </h2>
+              <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:14px 18px;margin:0 0 20px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;">Événement concerné</p>
+                <p style="margin:0;font-size:16px;font-weight:800;color:#7f1d1d;">${p.eventTitle}</p>
+              </div>
+              ${p.reason ? `
+              <div style="background:#fff7ed;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:8px;padding:14px 18px;margin:0 0 18px;">
+                <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.5px;">Motif de suspension</p>
+                <p style="margin:0;font-size:13px;color:#7c2d12;font-style:italic;">"${p.reason}"</p>
+              </div>` : ''}
+              <p style="margin:0 0 18px;font-size:13px;color:#475569;line-height:1.7;">
+                La billetterie de cet événement est désormais <strong>inaccessible au public</strong>. Aucun nouvel achat ne peut être effectué.<br>Pour toute question, contactez le support Event Village.
+              </p>
+              ${ctaButton('Contacter le support →', `${APP_URL}/partner/dashboard`, '#ef4444')}
+            `),
+        };
+    },
+
+    /**
+     * T8 — Nouvel événement soumis → envoyé AUX SUPERADMINS
+     */
+    superadminEventSubmitted(p: {
+        partnerName: string;
+        companyName: string;
+        eventTitle: string;
+    }): { subject: string; html: string } {
+        return {
+            subject: `[ACTION REQUISE] Nouvel événement soumis : ${p.eventTitle}`,
+            html: baseLayout(`
+              <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:13px 17px;margin:0 0 22px;">
+                <p style="margin:0;font-size:13px;font-weight:700;color:#991b1b;">🔔 Nouvel événement en attente de validation</p>
+              </div>
+              <h2 style="margin:0 0 18px;font-size:18px;font-weight:900;color:#0f172a;">${p.eventTitle}</h2>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                ${infoRow('Partenaire', p.partnerName)}
+                ${infoRow('Établissement', p.companyName)}
+              </table>
+              ${ctaButton('Examiner l\'événement →', `${APP_URL}/admin/services`)}
+              <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;">
+                Notification automatique envoyée à tous les administrateurs Event Village.
+              </p>
+            `),
+        };
+    },
+
+    /**
+     * T9 — Compte réactivé → envoyé AU PARTENAIRE
      */
     partnerAccountReactivated(p: {
         partnerName: string;

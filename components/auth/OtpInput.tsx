@@ -90,7 +90,7 @@ export const OtpInput: React.FC<OtpInputProps> = ({
                         disabled={disabled}
                         onChange={(e) => handleChange(i, e.target.value)}
                         onKeyDown={(e) => handleKeyDown(i, e)}
-                        className={`w-11 h-13 sm:w-13 sm:h-15 text-center text-xl sm:text-2xl font-black rounded-2xl border-2 transition-all outline-none ${
+                        className={`w-10 h-12 sm:w-13 sm:h-15 text-center text-lg sm:text-2xl font-black rounded-2xl border-2 transition-all outline-none ${
                             hasError
                                 ? 'border-red-500 bg-red-50 dark:bg-red-950/30 text-red-600'
                                 : digit

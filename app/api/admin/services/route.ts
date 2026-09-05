@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
+import { EventService } from '@/lib/events/event.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,30 +86,44 @@ export async function PATCH(req: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
 
     try {
-        let body: { table: 'events' | 'halls' | 'products'; id: string; status: string; isActive?: boolean };
+        let body: { table: 'events' | 'halls' | 'products'; id: string; status: string; isActive?: boolean; reason?: string };
         try {
             body = await req.json();
         } catch {
             return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
         }
 
-        const { table, id, status, isActive } = body;
+        const { table, id, status, isActive, reason } = body;
         if (!table || !id) {
             return NextResponse.json({ error: 'Table et id requis.' }, { status: 400 });
         }
 
-        const supabase = getServiceRoleClient();
-        const updatePayload: any = { updated_at: new Date().toISOString() };
-        if (status) updatePayload.status = status;
-        if (isActive !== undefined) updatePayload.is_active = isActive;
+        let updated: any;
 
-        const { data: updated, error } = await (supabase.from(table) as any)
-            .update(updatePayload)
-            .eq('id', id)
-            .select()
-            .single();
+        // Pour les événements : passer par EventService pour déclencher les notifications
+        if (table === 'events' && status) {
+            updated = await EventService.changeEventStatus(
+                id,
+                auth.user!.id,
+                status as any,
+                auth.user!.role,
+                reason
+            );
+        } else {
+            const supabase = getServiceRoleClient();
+            const updatePayload: any = { updated_at: new Date().toISOString() };
+            if (status) updatePayload.status = status;
+            if (isActive !== undefined) updatePayload.is_active = isActive;
 
-        if (error) throw error;
+            const { data, error } = await (supabase.from(table) as any)
+                .update(updatePayload)
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw error;
+            updated = data;
+        }
 
         // Journalisation d'audit
         await AdminService.logAudit({
@@ -117,7 +132,7 @@ export async function PATCH(req: NextRequest) {
             action: 'UPDATE_SERVICE_STATUS',
             objectType: table,
             objectId: id,
-            newValue: updatePayload,
+            newValue: { status, reason },
         });
 
         return NextResponse.json({

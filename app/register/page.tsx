@@ -19,6 +19,7 @@ import {
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
 import { OtpInput } from '@/components/auth/OtpInput';
+import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { RegisterClientSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -151,11 +152,6 @@ export default function RegisterPage() {
                 console.warn('[Register] Connexion post-OTP:', signInError);
             }
 
-            if (signInData?.session?.access_token) {
-                const maxAge = 60 * 60 * 24 * 7;
-                document.cookie = `sb-access-token=${encodeURIComponent(signInData.session.access_token)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
-            }
-
             // Rafraîchir immédiatement le state utilisateur dans AuthProvider
             await refreshProfile();
 
@@ -182,7 +178,7 @@ export default function RegisterPage() {
                     targetRoute = '/partner';
                     break;
                 case 'CONTROLEUR':
-                    targetRoute = '/scan';
+                    targetRoute = '/controller/scanner';
                     break;
                 case 'CLIENT':
                 default:
@@ -358,10 +354,16 @@ export default function RegisterPage() {
                                             type={showPassword ? 'text' : 'password'}
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            placeholder="Min. 6 caractères"
+                                            placeholder="Min. 8 car., 1 Maj, 1 chiffre, 1 spécial"
                                             required
                                             autoComplete="new-password"
-                                            className="w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
+                                            className={`w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none transition-all ${
+                                                password.length > 0 && allPasswordCriteriaMet(password)
+                                                    ? 'border-emerald-500 focus:border-emerald-500'
+                                                    : password.length > 0
+                                                    ? 'border-amber-400 focus:border-amber-400'
+                                                    : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -403,6 +405,8 @@ export default function RegisterPage() {
                                     </div>
                                 </div>
                             </div>
+
+                            <PasswordStrengthChecklist password={password} />
 
                             <div>
                                 <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">

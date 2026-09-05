@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getCategoryLabel } from '@/lib/constants/event-categories';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,9 @@ export async function GET(req: NextRequest) {
             .from('events')
             .select(`
                 id,
+                slug,
                 title,
+                category,
                 description,
                 location,
                 city,
@@ -32,9 +35,9 @@ export async function GET(req: NextRequest) {
                 created_at,
                 partner_id,
                 partners(company_name, commercial_name),
-                ticket_categories(id, name, price, total_quantity, sold_quantity)
+                ticket_categories(id, name, price, total_quantity, sold_quantity, is_active)
             `)
-            .in('status', ['PUBLIE', 'VALIDE'])
+            .eq('status', 'PUBLIE')
             .order('start_date', { ascending: true });
 
         const { data: events, error } = await query;
@@ -52,25 +55,29 @@ export async function GET(req: NextRequest) {
             const timeFormatted = evt.start_time ? evt.start_time.substring(0, 5) : '20:00';
             const dateFormatted = `${dayNumber} ${monthShort} ${startDate.getFullYear()}`;
 
-            const minPrice = (evt.ticket_categories || []).length > 0
-                ? Math.min(...evt.ticket_categories.map((c: any) => Number(c.price)))
+            const activeCategories = (evt.ticket_categories || []).filter((c: any) => c.is_active);
+            const minPrice = activeCategories.length > 0
+                ? Math.min(...activeCategories.map((c: any) => Number(c.price)))
                 : 0;
 
             return {
                 id: evt.id,
+                slug: evt.slug || evt.id,
                 title: evt.title,
                 subtitle: evt.partners?.commercial_name || evt.partners?.company_name || 'Event Village',
-                imageUrl: evt.image_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80',
+                imageUrl: evt.image_url || null,
                 dateFormatted,
                 dayNumber,
                 monthShort,
                 timeFormatted,
                 venue: evt.location || 'Dakar, Sénégal',
-                category: 'CONCERT',
-                city: evt.city || 'DAKAR',
+                category: evt.category || null,
+                categoryLabel: getCategoryLabel(evt.category),
+                city: (evt.city || 'DAKAR').toUpperCase(),
                 price: minPrice,
                 priceFormatted: minPrice === 0 ? 'Gratuit' : `${minPrice.toLocaleString('fr-FR')} FCFA`,
-                categories: evt.ticket_categories || [],
+                ticketCategories: activeCategories,
+                status: evt.status,
             };
         });
 

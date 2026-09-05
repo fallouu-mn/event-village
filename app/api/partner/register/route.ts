@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomInt } from 'crypto';
 import { RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { RateLimiter } from '@/lib/security/rate-limiter';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { AdminService } from '@/lib/admin/admin.service';
+import { mTargetService } from '@/lib/sms/mtarget.service';
+import { otpMemoryCache } from '@/lib/sms/otp-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +17,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
     try {
         const clientIp = req.headers.get('x-forwarded-for') || 'local';
-        const limitCheck = RateLimiter.isRateLimited(`register_${clientIp}`);
+        const limitCheck = await RateLimiter.isRateLimited(`register_${clientIp}`);
         if (limitCheck.limited) {
             return NextResponse.json(
                 { error: `Trop de tentatives d'inscription. Veuillez patienter ${limitCheck.remainingSeconds} secondes.` },
@@ -31,7 +34,7 @@ export async function POST(req: NextRequest) {
 
         const parseResult = RegisterPartnerSchema.safeParse(body);
         if (!parseResult.success) {
-            RateLimiter.recordFailedAttempt(`register_${clientIp}`);
+            await RateLimiter.recordFailedAttempt(`register_${clientIp}`);
             const firstError = parseResult.error.errors[0]?.message || 'Données du formulaire invalides.';
             return NextResponse.json({ error: firstError }, { status: 400 });
         }
@@ -41,23 +44,41 @@ export async function POST(req: NextRequest) {
         const effectiveEmail = data.email.trim().toLowerCase();
         const supabase = getServiceRoleClient();
 
-        // 1. Création de l'utilisateur dans Supabase Auth
+        // 1. Générer et envoyer le SMS OTP AVANT toute création de compte
+        const otpCode = randomInt(100000, 999999).toString();
+        const otpExpiresAt = Date.now() + 10 * 60 * 1000;
+
+        try {
+            await mTargetService.sendOtp(normalizedPhone, otpCode);
+        } catch (smsErr) {
+            const smsMsg = smsErr instanceof Error ? smsErr.message : 'Échec envoi SMS';
+            console.error('[API /api/partner/register] Échec envoi SMS OTP:', smsMsg);
+            return NextResponse.json(
+                { error: 'Impossible d\'envoyer le code de vérification SMS. Vérifiez votre numéro et réessayez.' },
+                { status: 503 }
+            );
+        }
+
+        otpMemoryCache.set(normalizedPhone, { code: otpCode, expiresAt: otpExpiresAt, attempts: 0 });
+
+        // 2. Création de l'utilisateur dans Supabase Auth
+        //    phone_confirm: false → sera confirmé UNIQUEMENT après vérification OTP via /api/auth/verify-otp
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
             email: effectiveEmail,
+            phone: normalizedPhone,
             password: data.password,
             email_confirm: true,
+            phone_confirm: false,
             user_metadata: {
                 first_name: data.firstName.trim(),
                 last_name: data.lastName.trim(),
-                phone: normalizedPhone,
-                email: effectiveEmail,
                 role: 'PARTENAIRE',
                 company_name: data.companyName.trim(),
             },
         });
 
         if (authError) {
-            RateLimiter.recordFailedAttempt(`register_${clientIp}`);
+            await RateLimiter.recordFailedAttempt(`register_${clientIp}`);
             console.error('[API /api/partner/register] Erreur auth admin:', authError);
             if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
                 return NextResponse.json(
@@ -136,7 +157,20 @@ export async function POST(req: NextRequest) {
             metadata: { ip: clientIp },
         });
 
-        // 6. Triple Notification CDC : SMS + Email + In-App (partenaire + superadmins)
+        // 6. Persister le code OTP en base
+        try {
+            await (supabase.from('otp_codes') as any).insert({
+                user_id: userId,
+                phone: normalizedPhone,
+                code: otpCode,
+                expires_at: new Date(otpExpiresAt).toISOString(),
+                verified: false,
+            });
+        } catch (dbErr) {
+            console.warn('[API /api/partner/register] Impossible de persister otp_codes en DB:', dbErr instanceof Error ? dbErr.message : 'unknown');
+        }
+
+        // 7. Triple Notification CDC : SMS + Email + In-App (partenaire + superadmins)
         await NotificationService.sendPartnerRegistrationNotification({
             email: effectiveEmail,
             phone: normalizedPhone,
@@ -145,13 +179,15 @@ export async function POST(req: NextRequest) {
             userId: userId,
         });
 
-        RateLimiter.resetAttempts(`register_${clientIp}`);
+        await RateLimiter.resetAttempts(`register_${clientIp}`);
 
         return NextResponse.json({
             success: true,
             partnerId,
             userId,
-            message: 'Candidature partenaire enregistrée avec succès. En attente de validation administrative.',
+            phone: normalizedPhone,
+            otpSent: true,
+            message: `Dossier enregistré. Un code SMS de vérification a été envoyé au ${normalizedPhone}.`,
         });
     } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';

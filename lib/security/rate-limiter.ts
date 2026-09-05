@@ -1,83 +1,109 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
-interface InMemoryRateLimit {
-    attempts: number;
-    lockedUntil: number | null;
-    lastAttemptAt: number;
-}
-
-const memoryStore = new Map<string, InMemoryRateLimit>();
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
-const WINDOW_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const WINDOW_SECONDS = 900; // 15 minutes
+const LOCKOUT_SECONDS = 900; // 15 minutes
 
+/**
+ * Rate limiter persistant via Supabase PostgreSQL.
+ * Fonctionne correctement en serverless (Vercel) contrairement au Map en mémoire.
+ *
+ * Requiert la table `rate_limits` — voir supabase/migrations/rate_limits.sql
+ * Fallback silencieux si la table n'existe pas (aucun rate limiting dans ce cas).
+ */
 export class RateLimiter {
-    /**
-     * Vérifie si un identifiant (IP, Téléphone, Email) est actuellement verrouillé
-     */
-    static isRateLimited(identifier: string): { limited: boolean; remainingSeconds?: number } {
-        const now = Date.now();
-        const entry = memoryStore.get(identifier);
+    static async isRateLimited(identifier: string): Promise<{ limited: boolean; remainingSeconds?: number }> {
+        try {
+            const supabase = getServiceRoleClient();
+            const now = new Date().toISOString();
 
-        if (!entry) return { limited: false };
+            // Verifier s'il y a un verrou actif
+            const { data: lockRow } = await (supabase.from('rate_limits') as any)
+                .select('locked_until')
+                .eq('identifier', identifier)
+                .gt('locked_until', now)
+                .order('locked_until', { ascending: false })
+                .limit(1)
+                .maybeSingle();
 
-        // Si verrouillé
-        if (entry.lockedUntil && entry.lockedUntil > now) {
-            const remainingSeconds = Math.ceil((entry.lockedUntil - now) / 1000);
-            return { limited: true, remainingSeconds };
-        }
+            if (lockRow?.locked_until) {
+                const remaining = Math.ceil((new Date(lockRow.locked_until).getTime() - Date.now()) / 1000);
+                if (remaining > 0) return { limited: true, remainingSeconds: remaining };
+            }
 
-        // Si la fenêtre de temps est dépassée, on réinitialise
-        if (now - entry.lastAttemptAt > WINDOW_DURATION_MS) {
-            memoryStore.delete(identifier);
+            // Compter les tentatives dans la fenetre
+            const windowStart = new Date(Date.now() - WINDOW_SECONDS * 1000).toISOString();
+            const { count } = await (supabase.from('rate_limits') as any)
+                .select('*', { count: 'exact', head: true })
+                .eq('identifier', identifier)
+                .gte('attempted_at', windowStart);
+
+            if (count !== null && count >= MAX_ATTEMPTS) {
+                return { limited: true, remainingSeconds: LOCKOUT_SECONDS };
+            }
+
+            return { limited: false };
+        } catch {
             return { limited: false };
         }
-
-        return { limited: false };
     }
 
-    /**
-     * Enregistre un échec d'authentification ou d'OTP
-     */
-    static recordFailedAttempt(identifier: string): {
+    static async recordFailedAttempt(identifier: string): Promise<{
         attempts: number;
         locked: boolean;
         remainingAttempts: number;
         lockedUntilSeconds?: number;
-    } {
-        const now = Date.now();
-        let entry = memoryStore.get(identifier);
+    }> {
+        try {
+            const supabase = getServiceRoleClient();
+            const windowStart = new Date(Date.now() - WINDOW_SECONDS * 1000).toISOString();
 
-        if (!entry || now - entry.lastAttemptAt > WINDOW_DURATION_MS) {
-            entry = { attempts: 1, lockedUntil: null, lastAttemptAt: now };
-        } else {
-            entry.attempts += 1;
-            entry.lastAttemptAt = now;
+            // Inserer la tentative
+            await (supabase.from('rate_limits') as any).insert({
+                identifier,
+                attempted_at: new Date().toISOString(),
+            });
+
+            // Compter les tentatives dans la fenetre
+            const { count } = await (supabase.from('rate_limits') as any)
+                .select('*', { count: 'exact', head: true })
+                .eq('identifier', identifier)
+                .gte('attempted_at', windowStart);
+
+            const attempts = count ?? 1;
+            let locked = false;
+            let lockedUntilSeconds: number | undefined;
+
+            if (attempts >= MAX_ATTEMPTS) {
+                const lockedUntil = new Date(Date.now() + LOCKOUT_SECONDS * 1000).toISOString();
+                await (supabase.from('rate_limits') as any).insert({
+                    identifier,
+                    attempted_at: new Date().toISOString(),
+                    locked_until: lockedUntil,
+                });
+                locked = true;
+                lockedUntilSeconds = LOCKOUT_SECONDS;
+            }
+
+            return {
+                attempts,
+                locked,
+                remainingAttempts: Math.max(0, MAX_ATTEMPTS - attempts),
+                lockedUntilSeconds,
+            };
+        } catch {
+            return { attempts: 0, locked: false, remainingAttempts: MAX_ATTEMPTS };
         }
-
-        let locked = false;
-        let lockedUntilSeconds: number | undefined;
-
-        if (entry.attempts >= MAX_ATTEMPTS) {
-            entry.lockedUntil = now + LOCKOUT_DURATION_MS;
-            locked = true;
-            lockedUntilSeconds = Math.ceil(LOCKOUT_DURATION_MS / 1000);
-        }
-
-        memoryStore.set(identifier, entry);
-
-        return {
-            attempts: entry.attempts,
-            locked,
-            remainingAttempts: Math.max(0, MAX_ATTEMPTS - entry.attempts),
-            lockedUntilSeconds,
-        };
     }
 
-    /**
-     * Réinitialise les tentatives après une authentification réussie
-     */
-    static resetAttempts(identifier: string): void {
-        memoryStore.delete(identifier);
+    static async resetAttempts(identifier: string): Promise<void> {
+        try {
+            const supabase = getServiceRoleClient();
+            await (supabase.from('rate_limits') as any)
+                .delete()
+                .eq('identifier', identifier);
+        } catch {
+            // Silencieux
+        }
     }
 }

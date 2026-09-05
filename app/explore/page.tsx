@@ -22,9 +22,9 @@ export default function ExplorePage() {
     try {
       setIsLoading(true);
       setError(null);
-      const res = await fetch('/api/events');
-      if (!res.ok) throw new Error('Impossible de charger les événements.');
+      const res = await fetch('/api/events', { cache: 'no-store' });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Impossible de charger les événements.');
       setEvents(data.events || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger les événements.');

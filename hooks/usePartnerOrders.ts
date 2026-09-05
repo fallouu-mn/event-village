@@ -70,7 +70,7 @@ export function usePartnerOrders(partnerId: string | null): UsePartnerOrdersResu
                     table: 'orders',
                     filter: `partner_id=eq.${partnerId}`,
                 },
-                (payload) => {
+                (payload: any) => {
                     const newOrder = payload.new as OrderRealtimeRecord;
                     setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
                 }
@@ -83,7 +83,7 @@ export function usePartnerOrders(partnerId: string | null): UsePartnerOrdersResu
                     table: 'orders',
                     filter: `partner_id=eq.${partnerId}`,
                 },
-                (payload) => {
+                (payload: any) => {
                     const updatedOrder = payload.new as OrderRealtimeRecord;
                     setOrders((prev) =>
                         prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
@@ -98,12 +98,12 @@ export function usePartnerOrders(partnerId: string | null): UsePartnerOrdersResu
                     table: 'orders',
                     filter: `partner_id=eq.${partnerId}`,
                 },
-                (payload) => {
+                (payload: any) => {
                     const oldOrder = payload.old as { id: string };
                     setOrders((prev) => prev.filter((o) => o.id !== oldOrder.id));
                 }
             )
-            .subscribe((status) => {
+            .subscribe((status: string) => {
                 if (status === 'SUBSCRIBED') {
                     setConnected(true);
                 } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {

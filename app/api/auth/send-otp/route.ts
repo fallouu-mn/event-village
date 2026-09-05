@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomInt } from 'crypto';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
@@ -8,7 +9,7 @@ import { otpMemoryCache } from '@/lib/sms/otp-cache';
 export const dynamic = 'force-dynamic';
 
 function generateOtpCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return randomInt(100000, 999999).toString();
 }
 
 /**
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
 
         // Protection Anti-Bombardement SMS (Rate Limiting)
         const { RateLimiter } = await import('@/lib/security/rate-limiter');
-        const limitCheck = RateLimiter.isRateLimited(`otp_send_${normalizedPhone}`);
+        const limitCheck = await RateLimiter.isRateLimited(`otp_send_${normalizedPhone}`);
         if (limitCheck.limited) {
             return NextResponse.json(
                 {
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        RateLimiter.recordFailedAttempt(`otp_send_${normalizedPhone}`);
+        await RateLimiter.recordFailedAttempt(`otp_send_${normalizedPhone}`);
         return NextResponse.json({
             success: true,
             message: purpose === 'PASSWORD_RESET'

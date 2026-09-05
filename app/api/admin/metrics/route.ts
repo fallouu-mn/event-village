@@ -46,14 +46,14 @@ export async function GET(req: NextRequest) {
         const controllersCount = users.filter(u => u.role === 'CONTROLEUR').length;
         const adminsCount = users.filter(u => u.role === 'ADMIN' || u.role === 'SUPERADMIN').length;
 
-        // Taux de commission EV — lecture DB obligatoire, échec bloquant si absent (FIN-1)
-        if (!platformRateRes.data?.value?.rate) {
-            return NextResponse.json(
-                { error: 'Configuration financière critique manquante: platform_commission_rate. Configurez-la via l\'interface admin.' },
-                { status: 500 }
-            );
+        // Taux de commission EV — lecture DB obligatoire (FIN-1)
+        let evCommissionRate = 0;
+        let configWarning: string | null = null;
+        if (platformRateRes.data?.value?.rate) {
+            evCommissionRate = Number(platformRateRes.data.value.rate) / 100;
+        } else {
+            configWarning = 'Configuration financière manquante: platform_commission_rate. Exécutez la migration 0012 ou insérez la valeur via le SQL Editor Supabase. Les revenus nets affichent 0 en attendant.';
         }
-        const evCommissionRate = Number(platformRateRes.data.value.rate) / 100;
 
         const totalVolume = payments.reduce((acc, p) => acc + Number(p.amount || 0), 0);
         const totalCommissions = commissions.reduce((acc, c) => acc + Number(c.amount || 0), 0);
@@ -78,6 +78,7 @@ export async function GET(req: NextRequest) {
                 totalTickets,
             },
             recentAuditLogs: auditLogs,
+            configWarning,
         });
     } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';

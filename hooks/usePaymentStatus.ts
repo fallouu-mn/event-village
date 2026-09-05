@@ -86,7 +86,7 @@ export function usePaymentStatus(transactionId: string | null): UsePaymentStatus
                     schema: 'public',
                     table: 'payments',
                 },
-                (payload) => {
+                (payload: any) => {
                     const updated = payload.new as PaymentRealtimeRecord;
                     // Vérification que l'événement concerne bien cette transaction
                     if (
@@ -107,7 +107,7 @@ export function usePaymentStatus(transactionId: string | null): UsePaymentStatus
                     }
                 }
             )
-            .subscribe((subscriptionStatus) => {
+            .subscribe((subscriptionStatus: string) => {
                 if (subscriptionStatus === 'SUBSCRIBED') {
                     setConnected(true);
                 } else if (subscriptionStatus === 'CLOSED' || subscriptionStatus === 'CHANNEL_ERROR') {

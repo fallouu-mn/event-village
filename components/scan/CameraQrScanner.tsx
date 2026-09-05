@@ -377,7 +377,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
             {/* Badge Mode Actif */}
             <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-bold text-white/90 border border-white/10 flex items-center gap-1">
               <Camera size={12} className="text-[#FF5722]" />
-              <span>{supportMode === 'native' ? 'Scan Natif' : 'Scan ZXing'}</span>
+              <span>Scanner actif</span>
             </span>
 
             {/* Bouton Bascule Caméra Avant / Arrière (visible si plusieurs caméras) */}

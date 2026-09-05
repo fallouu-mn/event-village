@@ -42,22 +42,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/**
- * Gestionnaire de cookies côté client pour synchroniser le token avec le Middleware Next.js
- */
-function syncAuthCookie(token?: string | null) {
-    if (typeof document === 'undefined') return;
-
-    if (token) {
-        // Cookie valide 7 jours
-        const maxAge = 60 * 60 * 24 * 7;
-        const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-        document.cookie = `sb-access-token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
-    } else {
-        document.cookie = 'sb-access-token=; Path=/; Max-Age=0; SameSite=Lax';
-    }
-}
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -125,10 +109,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // onAuthStateChange fires INITIAL_SESSION immediately on subscribe with the current
         // session — no need for a separate getSession() call that would double fetchUserProfile.
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (event, newSession) => {
+            async (event: string, newSession: any) => {
                 setSession(newSession);
                 setUser(newSession?.user ?? null);
-                syncAuthCookie(newSession?.access_token);
+                // Session geree par @supabase/ssr — plus de cookie manuel
 
                 if (newSession?.user) {
                     await fetchUserProfile(newSession.user.id, newSession);
@@ -156,7 +140,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setProfile(null);
             setPartner(null);
             setSession(null);
-            syncAuthCookie(null);
             router.push('/login');
             router.refresh();
         }
