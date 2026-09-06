@@ -113,7 +113,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const controllerMobileItems = [
     { name: 'Accueil', href: '/', icon: Home },
+    { name: 'Explorer', href: '/explore', icon: Compass },
     { name: 'Scanner', href: '/controller/scanner', icon: QrCode },
+    { name: 'Billets', href: '/tickets', icon: Ticket },
     { name: 'Profil', href: '/controller/profile', icon: User },
   ];
 
