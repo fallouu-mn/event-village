@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ const BUCKET_NAME = 'public-images';
 export async function POST(req: NextRequest) {
     try {
         const user = await getServerSessionUser(req);
-        if (!user || !['PARTENAIRE', 'ADMIN', 'SUPERADMIN'].includes(user.role)) {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Non autorise.' }, { status: 401 });
         }
 

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
 
 export async function GET(request: NextRequest) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || (user.role !== 'PARTENAIRE' && user.role !== 'SUPERADMIN' && user.role !== 'ADMIN')) {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Non autorise.' }, { status: 401 });
         }
 

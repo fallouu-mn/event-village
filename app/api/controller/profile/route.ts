@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     try {
         const user = await getServerSessionUser(req);
         if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        if (!ALLOWED_ROLES.includes(user.role as any)) {
+        if (!serverHasAnyRole(user, [...ALLOWED_ROLES])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -77,7 +77,7 @@ export async function PATCH(req: NextRequest) {
     try {
         const user = await getServerSessionUser(req);
         if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        if (!ALLOWED_ROLES.includes(user.role as any)) {
+        if (!serverHasAnyRole(user, [...ALLOWED_ROLES])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 

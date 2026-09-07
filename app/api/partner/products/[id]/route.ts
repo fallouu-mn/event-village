@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
         }
 
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -41,7 +41,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 

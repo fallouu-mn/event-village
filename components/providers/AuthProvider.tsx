@@ -12,6 +12,7 @@ export interface UserProfile {
     phone: string;
     email: string | null;
     role: 'CLIENT' | 'PARTENAIRE' | 'ADMIN' | 'CONTROLEUR' | 'SUPERADMIN';
+    roles: string[];
     status: 'ACTIF' | 'SUSPENDU' | 'EN_ATTENTE';
     referral_status: 'STANDARD' | 'AMBASSADEUR';
     avatar_url?: string | null;
@@ -38,9 +39,20 @@ interface AuthContextType {
     isAuthenticated: boolean;
     signOut: () => Promise<void>;
     refreshProfile: () => Promise<void>;
+    hasRole: (role: string) => boolean;
+    hasAnyRole: (roles: string[]) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function parseRolesFromMetadata(meta: Record<string, unknown> | undefined): string[] {
+    if (!meta) return ['CLIENT'];
+    const rolesField = meta.roles;
+    if (Array.isArray(rolesField) && rolesField.length > 0) return rolesField as string[];
+    const legacyRole = meta.role as string | undefined;
+    if (legacyRole) return [legacyRole];
+    return ['CLIENT'];
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -54,11 +66,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const supabase = getBrowserClient();
 
-            const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', userId)
-                .maybeSingle();
+            const [{ data: userData, error: userError }, { data: rolesData }] = await Promise.all([
+                supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', userId)
+                    .maybeSingle(),
+                supabase
+                    .from('user_roles')
+                    .select('role')
+                    .eq('user_id', userId),
+            ]);
 
             if (userError) {
                 console.error('[AuthProvider] Erreur chargement profil user:', userError);
@@ -66,8 +84,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             let partnerData: PartnerProfile | null = null;
             if (userData) {
-                const userProfile = userData as UserProfile;
-                if (userProfile.role === 'PARTENAIRE') {
+                const dbRoles: string[] = (rolesData && rolesData.length > 0)
+                    ? rolesData.map((r: { role: string }) => r.role)
+                    : [userData.role as string];
+
+                const userProfile: UserProfile = {
+                    ...(userData as Omit<UserProfile, 'roles'>),
+                    roles: dbRoles,
+                };
+
+                if (dbRoles.includes('PARTENAIRE')) {
                     const { data } = await supabase
                         .from('partners')
                         .select('id, company_name, commercial_name, status, is_verified, trial_started_at, trial_ends_at, is_founder')
@@ -75,18 +101,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         .maybeSingle();
                     partnerData = data ? (data as unknown as PartnerProfile) : null;
                 }
-                // Both setters called consecutively — React 18 batches into a single re-render.
                 setProfile(userProfile);
                 setPartner(partnerData);
             } else if (currentSession?.user) {
                 const meta = currentSession.user.user_metadata || {};
+                const sessionRoles = parseRolesFromMetadata(meta as Record<string, unknown>);
                 setProfile({
                     id: currentSession.user.id,
-                    first_name: meta.first_name || 'Utilisateur',
-                    last_name: meta.last_name || 'Event Village',
-                    phone: currentSession.user.phone || meta.phone || '',
+                    first_name: (meta.first_name as string) || 'Utilisateur',
+                    last_name: (meta.last_name as string) || 'Event Village',
+                    phone: currentSession.user.phone || (meta.phone as string) || '',
                     email: currentSession.user.email || null,
-                    role: meta.role || 'CLIENT',
+                    role: (meta.role as UserProfile['role']) || 'CLIENT',
+                    roles: sessionRoles,
                     status: 'ACTIF',
                     referral_status: 'STANDARD',
                 });
@@ -106,13 +133,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         const supabase = getBrowserClient();
 
-        // onAuthStateChange fires INITIAL_SESSION immediately on subscribe with the current
-        // session — no need for a separate getSession() call that would double fetchUserProfile.
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event: string, newSession: any) => {
                 setSession(newSession);
                 setUser(newSession?.user ?? null);
-                // Session geree par @supabase/ssr — plus de cookie manuel
 
                 if (newSession?.user) {
                     await fetchUserProfile(newSession.user.id, newSession);
@@ -145,6 +169,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const hasRole = useCallback((role: string): boolean => {
+        return profile?.roles?.includes(role) ?? false;
+    }, [profile]);
+
+    const hasAnyRole = useCallback((roles: string[]): boolean => {
+        if (!profile?.roles) return false;
+        return roles.some(r => profile.roles.includes(r));
+    }, [profile]);
+
     return (
         <AuthContext.Provider
             value={{
@@ -156,6 +189,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 isAuthenticated: !!user,
                 signOut,
                 refreshProfile,
+                hasRole,
+                hasAnyRole,
             }}
         >
             {children}
@@ -175,6 +210,8 @@ export const useAuth = (): AuthContextType => {
             isAuthenticated: false,
             signOut: async () => {},
             refreshProfile: async () => {},
+            hasRole: () => false,
+            hasAnyRole: () => false,
         };
     }
     return context;

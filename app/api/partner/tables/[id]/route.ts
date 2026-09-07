@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
 
 export async function PATCH(
@@ -8,7 +8,7 @@ export async function PATCH(
 ) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Non autorise.' }, { status: 403 });
         }
 
@@ -37,7 +37,7 @@ export async function DELETE(
 ) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Non autorise.' }, { status: 403 });
         }
 

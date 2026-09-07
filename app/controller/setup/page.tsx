@@ -48,9 +48,14 @@ function ControllerSetupForm() {
                     new_password: password,
                 }),
             });
-            const data = await res.json();
-
-            if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'activation.');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                if (data.code === 'ACCOUNT_ALREADY_CONFIGURED') {
+                    router.push(data.redirect || '/login?message=already_configured');
+                    return;
+                }
+                throw new Error(data.error || 'Erreur lors de l\'activation.');
+            }
 
             setSuccess(true);
 

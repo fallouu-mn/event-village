@@ -571,4 +571,62 @@ export class NotificationService {
             return false;
         }
     }
+
+    // =========================================================================
+    // NOTIFICATION — Écart de Caisse (Pre-mortem §2.1)
+    // =========================================================================
+    static async sendShiftDiscrepancyNotification(params: {
+        partnerId: string;
+        eventTitle: string;
+        controllerName: string;
+        discrepancyAmount: number;
+        justification: string;
+    }): Promise<NotificationResult> {
+        let smsSent = false;
+        let emailSent = false;
+        let inAppCreated = false;
+
+        try {
+            const supabase = getServiceRoleClient();
+            const { data: partner } = await supabase
+                .from('partners')
+                .select('id, user_id, phone, company_name')
+                .eq('id', params.partnerId)
+                .maybeSingle();
+
+            const partnerUserId = partner?.user_id;
+            const partnerPhone = partner?.phone;
+
+            const formattedDiscrepancy = params.discrepancyAmount > 0 
+                ? `+${params.discrepancyAmount.toLocaleString('fr-FR')} FCFA`
+                : `${params.discrepancyAmount.toLocaleString('fr-FR')} FCFA`;
+
+            const smsMessage = `EV ALERTE CAISSE: Écart de ${formattedDiscrepancy} constaté lors de la clôture de caisse (${params.controllerName}) sur "${params.eventTitle}". Justification: "${params.justification}".`;
+
+            if (partnerUserId) {
+                inAppCreated = await this.createNotification({
+                    userId: partnerUserId,
+                    type: 'ALERT',
+                    title: `⚠️ Écart de caisse détecté (${formattedDiscrepancy})`,
+                    message: `Le contrôleur ${params.controllerName} a clôturé sa session avec un écart de ${formattedDiscrepancy} sur "${params.eventTitle}". Justification : ${params.justification}`,
+                    data: {
+                        event_title: params.eventTitle,
+                        controller_name: params.controllerName,
+                        discrepancy_amount: params.discrepancyAmount,
+                        justification: params.justification,
+                    },
+                });
+            }
+
+            if (partnerPhone) {
+                const res = await mTargetService.sendSms(partnerPhone, smsMessage);
+                smsSent = res.success;
+            }
+        } catch (err) {
+            console.warn('[NotificationService] sendShiftDiscrepancyNotification failed:', err);
+        }
+
+        return { smsSent, emailSent, inAppCreated };
+    }
 }
+

@@ -34,11 +34,11 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                     <Link
                         href="/"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors border border-slate-200 dark:border-zinc-800 shadow-2xs min-h-[38px]"
-                        title="Retourner à l'accueil"
-                        aria-label="Retourner à l'accueil"
+                        title="Basculer vers l'espace client (billetterie, réservations, commandes)"
+                        aria-label="Mon espace Client"
                     >
                         <ArrowLeft size={15} />
-                        <span>Retour</span>
+                        <span>Mon espace Client</span>
                     </Link>
                     <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-800" />
                     <Link href="/" className="flex items-center gap-1">

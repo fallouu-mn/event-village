@@ -6,6 +6,7 @@ import { otpMemoryCache } from '@/lib/sms/otp-cache';
 import { RateLimiter } from '@/lib/security/rate-limiter';
 import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
+import { addUserRole } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,8 +37,8 @@ export async function POST(req: NextRequest) {
         const rateLimitKey    = `controller-setup:${normalizedPhone}`;
         const supabase        = getServiceRoleClient();
 
-        // 0. Rate limiting — anti brute-force OTP
-        const { limited, remainingSeconds } = await RateLimiter.isRateLimited(rateLimitKey);
+        // 0. Rate limiting — anti brute-force OTP avec fail-closed (Faille 3.1)
+        const { limited, remainingSeconds } = await RateLimiter.isRateLimited(rateLimitKey, { failClosed: true });
         if (limited) {
             return NextResponse.json({
                 error: `Trop de tentatives. Réessayez dans ${Math.ceil((remainingSeconds ?? 900) / 60)} minutes.`,
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (!otpValid) {
-            const attempt = await RateLimiter.recordFailedAttempt(rateLimitKey);
+            const attempt = await RateLimiter.recordFailedAttempt(rateLimitKey, { failClosed: true });
             const msg = attempt.locked
                 ? `Code OTP invalide. Compte verrouillé pour 15 minutes.`
                 : `Code OTP invalide ou expiré. ${attempt.remainingAttempts} tentative${attempt.remainingAttempts > 1 ? 's' : ''} restante${attempt.remainingAttempts > 1 ? 's' : ''}.`;
@@ -85,9 +86,6 @@ export async function POST(req: NextRequest) {
         }
 
         // Vérifier qu'il existe au moins une assignation contrôleur pour ce compte.
-        // On vérifie l'assignation (source de vérité) plutôt que le rôle seul,
-        // car le trigger handle_new_user pouvait créer le compte en CLIENT avant
-        // que le rôle soit promu — l'invitation est la preuve d'intention.
         const { data: assignment } = await supabase
             .from('event_controllers')
             .select('id')
@@ -99,26 +97,49 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Aucune invitation contrôleur trouvée pour ce numéro.' }, { status: 404 });
         }
 
-        // Auto-réparation : si le trigger a créé le compte en CLIENT malgré l'invitation,
-        // corriger maintenant les deux sources de vérité avant de définir le mot de passe.
-        if (profile.role !== 'CONTROLEUR') {
-            const [{ error: dbRepairErr }, { error: authRepairErr }] = await Promise.all([
-                supabase.from('users')
-                    .update({ role: 'CONTROLEUR', updated_at: new Date().toISOString() })
-                    .eq('id', profile.id),
-                supabase.auth.admin.updateUserById(profile.id, {
-                    user_metadata: { role: 'CONTROLEUR' },
-                }),
-            ]);
-            if (dbRepairErr || authRepairErr) {
-                console.error('[setup] Auto-réparation rôle échouée:', dbRepairErr?.message || authRepairErr?.message);
+        // Faille 1.2 : Récupérer le compte Auth Supabase et vérifier s'il s'agit d'un compte coquille
+        const { data: authUserData, error: authUserErr } = await supabase.auth.admin.getUserById(profile.id);
+        const authUser = authUserData?.user;
+
+        if (authUserErr || !authUser) {
+            return NextResponse.json({ error: 'Compte d\'authentification introuvable.' }, { status: 404 });
+        }
+
+        // Si le compte n'est pas un compte temporaire ("coquille") créé lors d'une première invitation,
+        // c'est un compte utilisateur établi qui possède déjà ses propres identifiants.
+        // /controller/setup refuse d'écraser le mot de passe existant et invite à se connecter.
+        const isTemporaryShellAccount = authUser.user_metadata?.is_temporary_controller_account === true;
+        if (!isTemporaryShellAccount) {
+            return NextResponse.json({
+                error: 'Ce compte possède déjà un mot de passe actif. Veuillez vous connecter avec vos identifiants existants.',
+                code: 'ACCOUNT_ALREADY_CONFIGURED',
+                redirect: '/login',
+            }, { status: 400 });
+        }
+
+        // MULTI-RÔLE : s'assurer que CONTROLEUR est dans user_roles (sans écraser les autres rôles)
+        const { data: existingRoles } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', profile.id);
+        const hasControllerRole = (existingRoles || []).some(r => r.role === 'CONTROLEUR');
+        if (!hasControllerRole) {
+            try {
+                await addUserRole(profile.id, 'CONTROLEUR');
+            } catch (roleErr) {
+                console.error('[setup] Ajout rôle CONTROLEUR échoué:', roleErr);
                 return NextResponse.json({ error: 'Erreur de configuration du compte.' }, { status: 500 });
             }
         }
 
-        // 3. Définir le mot de passe définitif via Supabase Auth Admin
+        // 3. Définir le mot de passe définitif via Supabase Auth Admin et verrouiller le statut coquille
         const { error: pwdErr } = await supabase.auth.admin.updateUserById(profile.id, {
             password: new_password,
+            user_metadata: {
+                ...(authUser.user_metadata || {}),
+                role: 'CONTROLEUR',
+                is_temporary_controller_account: false,
+            },
         });
 
         if (pwdErr) {

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
 
 export async function GET(request: NextRequest) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
         }
 
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Seul un partenaire peut créer un produit.' }, { status: 403 });
         }
 

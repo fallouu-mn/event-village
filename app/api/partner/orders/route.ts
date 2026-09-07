@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { OrderService } from '@/lib/orders/order.service';
 
 export async function GET(request: NextRequest) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
         }
 

@@ -63,9 +63,10 @@ export default function ProfilePage() {
   const initials = `${profile.first_name?.[0] || 'U'}${profile.last_name?.[0] || 'E'}`.toUpperCase();
   const fullName = `${profile.first_name} ${profile.last_name}`;
   const isAmbassador = profile.referral_status === 'AMBASSADEUR';
-  const isPartner = profile.role === 'PARTENAIRE';
-  const isAdmin = profile.role === 'ADMIN' || profile.role === 'SUPERADMIN';
-  const isController = profile.role === 'CONTROLEUR' || isAdmin;
+  const roles = profile.roles || [profile.role];
+  const isPartner = roles.includes('PARTENAIRE');
+  const isAdmin = roles.includes('ADMIN') || roles.includes('SUPERADMIN');
+  const isController = roles.includes('CONTROLEUR') || isAdmin;
 
   const handleSignOut = async () => {
     await signOut();
@@ -104,7 +105,7 @@ export default function ProfilePage() {
             )}
             {isAdmin && (
               <Badge variant="success" size="sm">
-                🛡️ {profile.role}
+                🛡️ {roles.includes('SUPERADMIN') ? 'SUPERADMIN' : 'ADMIN'}
               </Badge>
             )}
           </div>
@@ -124,7 +125,7 @@ export default function ProfilePage() {
             )}
           </p>
           <p className="text-[11px] text-slate-400 dark:text-zinc-500 pt-0.5">
-            Rôle : <strong className="text-slate-700 dark:text-zinc-300">{profile.role}</strong> • Statut : <span className="text-emerald-600 font-bold">{profile.status}</span>
+            Rôle{roles.length > 1 ? 's' : ''} : <strong className="text-slate-700 dark:text-zinc-300">{roles.join(', ')}</strong> • Statut : <span className="text-emerald-600 font-bold">{profile.status}</span>
           </p>
         </div>
       </div>

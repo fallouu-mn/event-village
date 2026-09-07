@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
 import { EventService } from '@/lib/events/event.service';
 
 export async function POST(
@@ -11,8 +11,7 @@ export async function POST(
         if (!user) {
             return NextResponse.json({ error: 'Non authentifie.' }, { status: 401 });
         }
-        const allowedRoles = ['PARTENAIRE', 'ADMIN', 'SUPERADMIN', 'CONTROLEUR'];
-        if (!allowedRoles.includes(user.role)) {
+        if (!serverHasAnyRole(user, ['PARTENAIRE', 'ADMIN', 'SUPERADMIN', 'CONTROLEUR'])) {
             return NextResponse.json({ error: 'Acces non autorise.' }, { status: 403 });
         }
         const { ticketId } = await params;

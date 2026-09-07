@@ -48,14 +48,15 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   }, []);
 
   const isUserLoggedIn = mounted && (isAuthenticated || !!user);
+  const roles = mounted ? (profile?.roles || []) : [];
   const rawRole = mounted ? (profile?.role || (user?.user_metadata?.role as string) || '') : '';
   const cleanPhone = mounted ? (profile?.phone || (user?.user_metadata?.phone as string) || '').replace(/\D/g, '') : '';
   const isSuperadminNumber = mounted && (cleanPhone === '221770000000' || cleanPhone === '770000000' || cleanPhone === '221773780756' || cleanPhone === '773780756');
 
-  const isSuperAdmin = rawRole === 'SUPERADMIN' || isSuperadminNumber;
-  const isAdmin = isSuperAdmin || rawRole === 'ADMIN';
-  const isPartner = rawRole === 'PARTENAIRE';
-  const isController = rawRole === 'CONTROLEUR' || isAdmin || isPartner;
+  const isSuperAdmin = roles.includes('SUPERADMIN') || isSuperadminNumber;
+  const isAdmin = isSuperAdmin || roles.includes('ADMIN');
+  const isPartner = roles.includes('PARTENAIRE');
+  const isController = roles.includes('CONTROLEUR') || isAdmin;
   const isAmbassador = mounted && (profile?.referral_status === 'AMBASSADEUR');
 
   const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
@@ -652,7 +653,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="flex items-center gap-2 sm:gap-3">
             <NotificationBell />
 
-            {rawRole === 'CONTROLEUR' && (
+            {roles.includes('CONTROLEUR') && (
               <Link
                 href="/controller/scanner"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FF5722] hover:bg-[#F4511E] text-white text-xs font-black shadow-xs transition-all active:scale-95 min-h-[36px]"
@@ -710,7 +711,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               ? partnerMobileItems
               : canShowRoleNav && isAdminRoute && isAdmin
               ? adminMobileItems
-              : rawRole === 'CONTROLEUR'
+              : roles.includes('CONTROLEUR')
               ? controllerMobileItems
               : navItems
             ).map((item) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { QRCodeSVG } from 'qrcode.react';
 import { Share2, Download, CheckCircle2 } from 'lucide-react';
@@ -23,6 +23,7 @@ export interface TicketCardProps {
 }
 
 export const TicketCard: React.FC<TicketCardProps> = ({
+  id,
   ticketNumber,
   eventTitle,
   eventSubtitle = 'Live Performance',
@@ -36,6 +37,56 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 }) => {
   const toast = useToast();
   const ticketRef = useRef<HTMLDivElement>(null);
+
+  // QR Code Dynamique Anti-Fraude (TOTP RFC 6238)
+  const [dynamicQr, setDynamicQr] = useState<string>(qrCodeValue || ticketNumber);
+  const [expiresIn, setExpiresIn] = useState<number>(20);
+  const [totalStep, setTotalStep] = useState<number>(20);
+  const [isOffline, setIsOffline] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (status !== 'VALIDE' || !id) return;
+
+    let isMounted = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const fetchLiveCode = async () => {
+      try {
+        const res = await fetch(`/api/tickets/${id}/live-code`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.success) {
+            setDynamicQr(data.qr_payload);
+            setExpiresIn(data.expires_in || 20);
+            setTotalStep(data.step_seconds || 20);
+            setIsOffline(false);
+          }
+        } else {
+          if (isMounted) setIsOffline(true);
+        }
+      } catch {
+        if (isMounted) setIsOffline(true);
+      }
+    };
+
+    fetchLiveCode();
+
+    // Décompte seconde par seconde pour l'animation fluide
+    timer = setInterval(() => {
+      setExpiresIn((prev) => {
+        if (prev <= 1) {
+          fetchLiveCode();
+          return 20;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      isMounted = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [id, status]);
 
   const handleShare = () => {
     if (navigator.share) {
@@ -141,11 +192,11 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           {/* Ligne de Séparation */}
           <div className="ticket-divider-dashed my-2" />
 
-          {/* QR Code réel basé sur qrCodeValue (valeur cryptographique API) */}
+          {/* QR Code dynamique sécurisé (TOTP RFC 6238) */}
           <div className="flex flex-col items-center justify-center pt-2">
             <div className="p-3 bg-white rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-inner">
               <QRCodeSVG
-                value={qrCodeValue || ticketNumber}
+                value={dynamicQr || qrCodeValue || ticketNumber}
                 size={152}
                 bgColor="#ffffff"
                 fgColor="#0f172a"
@@ -156,6 +207,30 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-zinc-400 mt-2">
               {ticketNumber}
             </span>
+
+            {/* Indicateur visuel de rotation temporelle anti-capture d'écran */}
+            {status === 'VALIDE' && (
+              <div className="w-full max-w-[210px] mt-2.5 p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60 space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 dark:text-zinc-300">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
+                    {isOffline ? 'Mode hors-ligne' : 'Protection anti-fraude'}
+                  </span>
+                  <span className="font-mono text-[11px] font-black text-[#FF5722]">{expiresIn}s</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 via-[#FF5722] to-[#FF3D68] transition-all duration-1000 ease-linear rounded-full"
+                    style={{ width: `${Math.max(5, (expiresIn / totalStep) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 dark:text-zinc-400 text-center leading-tight">
+                  {isOffline
+                    ? 'Code actif en cache — vérifiez votre réseau'
+                    : 'Le QR Code se renouvelle automatiquement (capture d\'écran invalide)'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Sceau de validation */}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { type UserRoleType } from '@/lib/auth/roles';
 
 export interface AdminAuthResult {
     authorized: boolean;
@@ -8,7 +9,8 @@ export interface AdminAuthResult {
         id: string;
         email: string;
         phone: string;
-        role: 'SUPERADMIN' | 'ADMIN' | 'PARTENAIRE' | 'CONTROLEUR' | 'CLIENT';
+        role: UserRoleType;
+        roles: string[];
         first_name?: string;
         last_name?: string;
     };
@@ -88,12 +90,18 @@ export async function verifyAdminAuth(
             };
         }
 
-        // 2. Récupération du profil et rôle réel depuis public.users
-        const { data: userProfile, error: profileErr } = await supabase
-            .from('users')
-            .select('id, email, phone, role, first_name, last_name, status')
-            .eq('id', userId)
-            .maybeSingle();
+        // 2. Récupération du profil et des rôles depuis public.users + user_roles
+        const [{ data: userProfile, error: profileErr }, { data: userRolesData }] = await Promise.all([
+            supabase
+                .from('users')
+                .select('id, email, phone, role, first_name, last_name, status')
+                .eq('id', userId)
+                .maybeSingle(),
+            supabase
+                .from('user_roles')
+                .select('role')
+                .eq('user_id', userId),
+        ]);
 
         if (profileErr || !userProfile) {
             return {
@@ -102,7 +110,10 @@ export async function verifyAdminAuth(
             };
         }
 
-        const role = userProfile.role as 'SUPERADMIN' | 'ADMIN' | 'PARTENAIRE' | 'CONTROLEUR' | 'CLIENT';
+        const roles = (userRolesData && userRolesData.length > 0)
+            ? userRolesData.map(r => r.role as string)
+            : [userProfile.role as string];
+        const role = userProfile.role as UserRoleType;
 
         if (userProfile.status === 'SUSPENDU') {
             return {
@@ -111,7 +122,7 @@ export async function verifyAdminAuth(
             };
         }
 
-        if (role !== 'SUPERADMIN' && role !== 'ADMIN') {
+        if (!roles.includes('SUPERADMIN') && !roles.includes('ADMIN')) {
             // Journalisation de la tentative d'accès non autorisé
             await supabase.from('audit_logs').insert({
                 user_id: userId,
@@ -131,7 +142,7 @@ export async function verifyAdminAuth(
         }
 
         // 3. Exigence stricte de Superadmin si demandée
-        if (options?.requireSuperadmin && role !== 'SUPERADMIN') {
+        if (options?.requireSuperadmin && !roles.includes('SUPERADMIN')) {
             return {
                 authorized: false,
                 errorResponse: NextResponse.json(
@@ -144,7 +155,7 @@ export async function verifyAdminAuth(
         // 4. Récupération des permissions granulaires pour les Admins ordinaires
         let permissions: string[] = [];
 
-        if (role === 'SUPERADMIN') {
+        if (roles.includes('SUPERADMIN')) {
             permissions = [...ADMIN_PERMISSIONS]; // Le Superadmin a toutes les permissions
         } else {
             const { data: permsData } = await supabase
@@ -172,6 +183,7 @@ export async function verifyAdminAuth(
                 email: userProfile.email || '',
                 phone: userProfile.phone || '',
                 role: role,
+                roles,
                 first_name: userProfile.first_name,
                 last_name: userProfile.last_name,
             },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
-        if (user.role !== 'PARTENAIRE' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+        if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
         // ── 1. Résoudre le partner_id ─────────────────────────────────────────
         let partnerId: string | null = null;
-        if (user.role === 'PARTENAIRE') {
+        if (serverHasRole(user, 'PARTENAIRE')) {
             const { data: p, error: pErr } = await supabase
                 .from('partners')
                 .select('id')
@@ -156,7 +156,7 @@ export async function DELETE(req: NextRequest) {
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
-        if (user.role !== 'PARTENAIRE' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+        if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -169,7 +169,7 @@ export async function DELETE(req: NextRequest) {
 
         // 1. Résoudre le partner_id
         let partnerId: string | null = null;
-        if (user.role === 'PARTENAIRE') {
+        if (serverHasRole(user, 'PARTENAIRE')) {
             const { data: p, error: pErr } = await supabase
                 .from('partners')
                 .select('id')

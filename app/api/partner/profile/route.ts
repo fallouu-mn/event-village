@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { getServerSessionUser } from "@/lib/auth/session";
+import { getServerSessionUser, serverIsPartner } from "@/lib/auth/session";
 import { getServiceRoleClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || !["PARTENAIRE", "ADMIN", "SUPERADMIN"].includes(user.role)) {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: "Acces refuse." }, { status: 403 });
         }
         const body = await request.json();

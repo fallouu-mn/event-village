@@ -17,7 +17,6 @@ const PUBLIC_PREFIXES = [
     '/sw.js',
 ];
 
-// Routes API publiques exactes (pas de startsWith)
 const PUBLIC_API_EXACT = [
     '/api/controller/setup',
 ];
@@ -33,6 +32,25 @@ const PUBLIC_EXACT_ROUTES = [
     '/partner/register',
     '/controller/setup',
 ];
+
+function parseRoles(userMetadata: Record<string, unknown> | undefined | null): string[] {
+    if (!userMetadata) return ['CLIENT'];
+    const rolesField = userMetadata.roles;
+    if (Array.isArray(rolesField) && rolesField.length > 0) {
+        return rolesField as string[];
+    }
+    const legacyRole = userMetadata.role as string | undefined;
+    if (legacyRole) return [legacyRole];
+    return ['CLIENT'];
+}
+
+function hasRole(roles: string[], role: string): boolean {
+    return roles.includes(role);
+}
+
+function hasAnyRole(roles: string[], required: string[]): boolean {
+    return required.some(r => roles.includes(r));
+}
 
 export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl;
@@ -54,7 +72,6 @@ export async function middleware(req: NextRequest) {
         pathname === '/register' ||
         pathname === '/forgot-password';
 
-    // Creer le client Supabase SSR avec gestion automatique des cookies
     let supabaseResponse = NextResponse.next({ request: req });
 
     const supabase = createServerClient(
@@ -80,7 +97,6 @@ export async function middleware(req: NextRequest) {
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Helper: creer une redirection qui preserve les cookies Supabase
     function redirect(url: URL) {
         const redirectResponse = NextResponse.redirect(url);
         supabaseResponse.cookies.getAll().forEach((cookie) => {
@@ -89,7 +105,6 @@ export async function middleware(req: NextRequest) {
         return redirectResponse;
     }
 
-    // Pas d'utilisateur authentifie
     if (!user) {
         if (isPublicExact || isPublicDynamic) {
             return supabaseResponse;
@@ -107,36 +122,40 @@ export async function middleware(req: NextRequest) {
         return redirect(loginUrl);
     }
 
-    // Utilisateur connecte sur une page d'auth → rediriger selon le role
+    // Extraire les rôles depuis le JWT (synchronisé par le trigger PostgreSQL)
+    let roles = parseRoles(user.user_metadata);
+
+    // Utilisateur connecté sur une page d'auth → rediriger selon les rôles
     if (isAuthPage) {
-        let role = user.user_metadata?.role || 'CLIENT';
-        if (role === 'CLIENT') {
+        // Vérification DB si le JWT porte uniquement CLIENT (fallback si JWT pas encore rafraîchi)
+        if (roles.length === 1 && roles[0] === 'CLIENT') {
             const { data: dbProfile } = await supabase
                 .from('users')
                 .select('role')
                 .eq('id', user.id)
                 .maybeSingle();
             if (dbProfile?.role && dbProfile.role !== 'CLIENT') {
-                role = dbProfile.role;
+                roles = [dbProfile.role];
             }
         }
-        if (role === 'ADMIN' || role === 'SUPERADMIN') {
+
+        if (hasAnyRole(roles, ['ADMIN', 'SUPERADMIN'])) {
             return redirect(new URL('/admin/dashboard', req.url));
         }
-        if (role === 'PARTENAIRE') {
+        if (hasRole(roles, 'PARTENAIRE')) {
             return redirect(new URL('/partner/dashboard', req.url));
         }
-        if (role === 'CONTROLEUR') {
+        if (hasRole(roles, 'CONTROLEUR')) {
             return redirect(new URL('/controller/scanner', req.url));
         }
         return redirect(new URL('/', req.url));
     }
 
-    // RBAC
-    let role = user.user_metadata?.role || 'CLIENT';
+    // ── RBAC MULTI-RÔLE ──────────────────────────────────────────────────
 
+    // /admin/* → nécessite ADMIN ou SUPERADMIN
     if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
-        if (role !== 'ADMIN' && role !== 'SUPERADMIN') {
+        if (!hasAnyRole(roles, ['ADMIN', 'SUPERADMIN'])) {
             if (pathname.startsWith('/api/')) {
                 return NextResponse.json(
                     { error: 'Accès non autorisé : Rôle Administrateur requis.' },
@@ -148,43 +167,53 @@ export async function middleware(req: NextRequest) {
         return supabaseResponse;
     }
 
+    // /scan → CONTROLEUR, ADMIN, SUPERADMIN, PARTENAIRE
     if (pathname === '/scan' || pathname.startsWith('/scan/') || pathname === '/partner/scan' || pathname.startsWith('/partner/scan/')) {
-        if (role !== 'CONTROLEUR' && role !== 'ADMIN' && role !== 'SUPERADMIN' && role !== 'PARTENAIRE') {
+        if (!hasAnyRole(roles, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN', 'PARTENAIRE'])) {
             return redirect(new URL('/?error=unauthorized_scanner', req.url));
         }
         return supabaseResponse;
     }
 
-    // Espace Contrôleur — accessible uniquement au rôle CONTROLEUR (+ admins)
+    // /controller/* → nécessite CONTROLEUR (+ ADMIN/SUPERADMIN)
     if (pathname.startsWith('/controller') || pathname.startsWith('/api/controller')) {
-        if (role !== 'CONTROLEUR' && role !== 'ADMIN' && role !== 'SUPERADMIN') {
-            // Fallback DB : si le JWT est encore en CLIENT après une promotion récente
-            const { data: dbProfile } = await supabase
-                .from('users')
-                .select('role')
-                .eq('id', user.id)
-                .maybeSingle();
-            if (dbProfile?.role === 'CONTROLEUR') {
-                role = 'CONTROLEUR';
-            }
-        }
+        // Vérification DB pour fraîcheur (invalider sessions après rétrogradation)
+        const { data: dbRoles } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', user.id);
 
-        if (role !== 'CONTROLEUR' && role !== 'ADMIN' && role !== 'SUPERADMIN') {
+        const freshRoles = (dbRoles && dbRoles.length > 0)
+            ? dbRoles.map((r: { role: string }) => r.role)
+            : roles;
+
+        // Vérifier aussi le statut du compte
+        const { data: dbProfile } = await supabase
+            .from('users')
+            .select('status')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (!dbProfile || dbProfile.status !== 'ACTIF' || !hasAnyRole(freshRoles, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'])) {
             if (pathname.startsWith('/api/')) {
                 return NextResponse.json(
-                    { error: 'Accès non autorisé : Rôle Contrôleur requis.' },
+                    { error: 'Accès non autorisé : Rôle Contrôleur actif requis.' },
                     { status: 403 }
                 );
             }
-            return redirect(new URL('/?error=unauthorized_controller', req.url));
+            return redirect(new URL('/login?error=unauthorized_controller', req.url));
         }
         return supabaseResponse;
     }
 
+    // /partner/* → nécessite PARTENAIRE (+ ADMIN/SUPERADMIN)
     if (pathname.startsWith('/partner') && pathname !== '/partner/register') {
-        if (role !== 'PARTENAIRE' && role !== 'ADMIN' && role !== 'SUPERADMIN') {
-            if (role === 'CONTROLEUR') {
-                return redirect(new URL('/controller/scanner', req.url));
+        if (!hasAnyRole(roles, ['PARTENAIRE', 'ADMIN', 'SUPERADMIN'])) {
+            if (pathname.startsWith('/api/')) {
+                return NextResponse.json(
+                    { error: 'Accès non autorisé : Rôle Partenaire requis.' },
+                    { status: 403 }
+                );
             }
             return redirect(new URL('/?error=unauthorized_partner', req.url));
         }

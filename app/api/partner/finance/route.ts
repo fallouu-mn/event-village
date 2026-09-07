@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { FinancialCalculatorService } from '@/lib/payments/financial-calculator.service';
 
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
-        if (user.role !== 'PARTENAIRE') {
+        if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 

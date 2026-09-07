@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RequestWithdrawalSchema } from '@/lib/validations/payment';
 import { withdrawalService } from '@/lib/payments/withdrawal.service';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +15,9 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Seuls les rôles éligibles aux commissions peuvent retirer
-        const ELIGIBLE_ROLES = ['CLIENT', 'PARTENAIRE', 'AMBASSADEUR'];
-        if (!ELIGIBLE_ROLES.includes(user.role)) {
+        // Rôles autorisés à effectuer un retrait (Clients, Ambassadeurs, Contrôleurs, Partenaires)
+        const ELIGIBLE_ROLES = ['CLIENT', 'PARTENAIRE', 'CONTROLEUR'] as const;
+        if (!serverHasAnyRole(user, [...ELIGIBLE_ROLES])) {
             return NextResponse.json(
                 { success: false, error: 'Votre rôle ne permet pas d\'effectuer un retrait.' },
                 { status: 403 }

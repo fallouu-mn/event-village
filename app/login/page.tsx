@@ -184,13 +184,13 @@ function LoginPageContent() {
     const handlePostLoginRedirect = async (userId: string) => {
         clearLockoutState();
         const supabase = getBrowserClient();
-        const { data: profile } = await supabase
-            .from('users')
-            .select('role, status')
-            .eq('id', userId)
-            .maybeSingle();
 
-        const userProfile = profile as { role?: string; status?: string } | null;
+        const [{ data: profileData }, { data: rolesData }] = await Promise.all([
+            supabase.from('users').select('role, status').eq('id', userId).maybeSingle(),
+            supabase.from('user_roles').select('role').eq('user_id', userId),
+        ]);
+
+        const userProfile = profileData as { role?: string; status?: string } | null;
 
         if (userProfile?.status === 'SUSPENDU') {
             await supabase.auth.signOut();
@@ -199,20 +199,19 @@ function LoginPageContent() {
             return;
         }
 
-        const role = userProfile?.role;
+        const roles: string[] = (rolesData && rolesData.length > 0)
+            ? rolesData.map((r: { role: string }) => r.role)
+            : (userProfile?.role ? [userProfile.role] : ['CLIENT']);
 
-        // Pour les rôles non-CLIENT (contrôleur, partenaire, admin), forcer un refresh du
-        // JWT avant la navigation. Si le rôle a été promu côté serveur (ex: invitation
-        // contrôleur), raw_user_meta_data a pu être mis à jour après l'émission du token
-        // courant. refreshSession() garantit que le middleware lira le bon role dans le JWT.
-        if (role && role !== 'CLIENT') {
+        const hasNonClientRole = roles.some((r: string) => r !== 'CLIENT');
+        if (hasNonClientRole) {
             await supabase.auth.refreshSession();
         }
 
         await refreshProfile();
         router.refresh();
 
-        const target = resolvePostLoginRoute(role, redirectUrl);
+        const target = resolvePostLoginRoute(roles, redirectUrl);
 
         setTimeout(() => {
             window.location.href = target;

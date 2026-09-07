@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
+import { parseDynamicQrPayload, verifyTotp, deriveTicketTotpSecret, TOTP_STEP_SECONDS } from '@/lib/security/totp';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/tickets/verify
  * Vérification en direct d'un QR code de billet par un Contrôleur ou Partenaire
+ * Supporte le QR code dynamique anti-fraude (TOTP RFC 6238) et la saisie manuelle.
  */
 export async function POST(req: NextRequest) {
     try {
@@ -24,24 +26,47 @@ export async function POST(req: NextRequest) {
 
         const supabase = getServiceRoleClient();
 
+        // 0. Décodage du QR Code dynamique (TOTP RFC 6238) ou saisie directe
+        const parsed = parseDynamicQrPayload(rawCode);
+        const lookupCode = parsed.identifier;
+
         // 1. Recherche du billet dans public.tickets avec jointures
-        const { data: ticket, error: ticketErr } = await supabase
+        const ticketSelect = `
+            id,
+            ticket_number,
+            qr_code,
+            status,
+            price,
+            checked_in_at,
+            created_at,
+            event_id,
+            user_id,
+            users:users!tickets_user_id_fkey (id, first_name, last_name, email),
+            events (id, title, start_date, location),
+            ticket_categories (id, name, price)
+        `;
+
+        let ticket: any = null;
+        let ticketErr: any = null;
+
+        const { data: t1, error: e1 } = await supabase
             .from('tickets')
-            .select(`
-                id,
-                ticket_number,
-                qr_code,
-                status,
-                price,
-                checked_in_at,
-                created_at,
-                event_id,
-                user_id,
-                events (id, title, start_date, location),
-                ticket_categories (id, name, price)
-            `)
-            .or(`ticket_number.eq.${rawCode},qr_code.eq.${rawCode}`)
+            .select(ticketSelect)
+            .eq('ticket_number', lookupCode)
             .maybeSingle();
+
+        if (t1) {
+            ticket = t1;
+            ticketErr = e1;
+        } else {
+            const { data: t2, error: e2 } = await supabase
+                .from('tickets')
+                .select(ticketSelect)
+                .eq('qr_code', lookupCode)
+                .maybeSingle();
+            ticket = t2;
+            ticketErr = e2;
+        }
 
         if (ticketErr || !ticket) {
             return NextResponse.json({
@@ -52,6 +77,40 @@ export async function POST(req: NextRequest) {
 
         const eventData = ticket.events as any;
         const categoryData = ticket.ticket_categories as any;
+        const holderData = ticket.users as any;
+        const holderName = holderData
+            ? [holderData.first_name, holderData.last_name].filter(Boolean).join(' ') || holderData.email
+            : 'Porteur Validé';
+
+        // 1.1 Validation anti-fraude TOTP (rotation temporelle 20s)
+        if (parsed.isDynamic) {
+            if (!parsed.token) {
+                return NextResponse.json({
+                    status: 'invalid',
+                    message: 'Format de QR code dynamique invalide (token manquant).',
+                }, { status: 400 });
+            }
+
+            const secret = (ticket as any).totp_secret || deriveTicketTotpSecret(ticket.id);
+            const isTotpValid = verifyTotp(parsed.token, secret, {
+                toleranceWindows: 1, // ±1 fenêtre (±20s)
+                stepSeconds: TOTP_STEP_SECONDS,
+            });
+
+            if (!isTotpValid) {
+                return NextResponse.json({
+                    code: 'QR_EXPIRED',
+                    status: 'qr_expired',
+                    message: 'QR Code expiré. Demandez au client de rafraîchir son billet.',
+                    ticketInfo: {
+                        ticketNumber: ticket.ticket_number,
+                        eventTitle: eventData?.title || 'Événement Event Village',
+                        holderName: holderName,
+                        category: categoryData?.name || 'Pass Standard',
+                    },
+                }, { status: 400 });
+            }
+        }
 
         // 2. Si le billet a déjà été validé / composté
         if (ticket.status === 'UTILISE') {
@@ -65,7 +124,7 @@ export async function POST(req: NextRequest) {
                 ticketInfo: {
                     ticketNumber: ticket.ticket_number,
                     eventTitle: eventData?.title || 'Événement Event Village',
-                    holderName: 'Porteur de Billet',
+                    holderName: holderName,
                     category: categoryData?.name || 'Pass Standard',
                     checkedInAt: `Validé à ${checkedTime}`,
                 },
@@ -123,7 +182,7 @@ export async function POST(req: NextRequest) {
             ticketInfo: {
                 ticketNumber: ticket.ticket_number,
                 eventTitle: eventData?.title || 'Événement Event Village',
-                holderName: 'Porteur Validé',
+                holderName: holderName,
                 category: categoryData?.name || 'Pass Officiel',
                 checkedInAt: 'À l’instant',
             },

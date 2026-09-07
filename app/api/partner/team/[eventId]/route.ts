@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: { eventId: str
     try {
         const user = await getServerSessionUser(req);
         if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        if (user.role !== 'PARTENAIRE' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+        if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: { eventId: str
         const resolvedParams = await Promise.resolve(params);
         const { eventId } = resolvedParams;
 
-        if (user.role === 'PARTENAIRE') {
+        if (serverHasRole(user, 'PARTENAIRE')) {
             const { data: partnerRec } = await supabase.from('partners').select('id').eq('user_id', user.id).maybeSingle();
             const { data: event }     = await supabase.from('events').select('partner_id').eq('id', eventId).maybeSingle();
             if (!partnerRec || !event || event.partner_id !== partnerRec.id) {
@@ -81,7 +81,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
     try {
         const user = await getServerSessionUser(req);
         if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        if (user.role !== 'PARTENAIRE' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+        if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -106,7 +106,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
             return NextResponse.json({ success: true, message: 'Assignation déjà retirée.' }, { status: 200 });
         }
 
-        if (user.role === 'PARTENAIRE') {
+        if (serverHasRole(user, 'PARTENAIRE')) {
             const { data: partnerRec } = await supabase.from('partners').select('id').eq('user_id', user.id).maybeSingle();
             const { data: event }     = await supabase.from('events').select('partner_id').eq('id', assignment.event_id).maybeSingle();
             if (!partnerRec || !event || event.partner_id !== partnerRec.id) {

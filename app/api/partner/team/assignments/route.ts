@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
+import { ShiftService } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,12 +16,15 @@ const UpdateAssignmentsSchema = z.object({
     event_ids:       z.array(z.string().uuid('event_id invalide.')).optional(),
     eventIds:        z.array(z.string().uuid('eventIds invalide.')).optional(),
     eventId:         z.string().uuid('eventId invalide.').optional(),
-    can_accept_cash: z.boolean().optional(),
-    canAcceptCash:   z.boolean().optional(),
+    can_accept_cash:   z.boolean().optional(),
+    canAcceptCash:     z.boolean().optional(),
+    confirm_promotion: z.boolean().optional(),
+    confirmPromotion:  z.boolean().optional(),
 }).transform(data => ({
-    controller_id:   data.controller_id || data.controllerId || '',
-    event_ids:       data.event_ids || data.eventIds || (data.eventId ? [data.eventId] : []),
-    can_accept_cash: data.can_accept_cash ?? data.canAcceptCash ?? false,
+    controller_id:     data.controller_id || data.controllerId || '',
+    event_ids:         data.event_ids || data.eventIds || (data.eventId ? [data.eventId] : []),
+    can_accept_cash:   data.can_accept_cash ?? data.canAcceptCash ?? false,
+    confirm_promotion: data.confirm_promotion ?? data.confirmPromotion ?? false,
 })).refine(data => !!data.controller_id, {
     message: 'controller_id ou controllerId requis.',
 });
@@ -36,7 +40,7 @@ export async function PATCH(req: NextRequest) {
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
-        if (user.role !== 'PARTENAIRE' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+        if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -49,12 +53,12 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: parse.error.errors[0]?.message || 'Données invalides.' }, { status: 400 });
         }
 
-        const { controller_id: controllerId, event_ids: requestedEventIds, can_accept_cash } = parse.data;
+        const { controller_id: controllerId, event_ids: requestedEventIds, can_accept_cash, confirm_promotion } = parse.data;
         const supabase = getServiceRoleClient();
 
         // 1. Résoudre le partner_id
         let partnerId: string | null = null;
-        if (user.role === 'PARTENAIRE') {
+        if (serverHasRole(user, 'PARTENAIRE')) {
             const { data: p, error: pErr } = await supabase
                 .from('partners')
                 .select('id')
@@ -86,6 +90,45 @@ export async function PATCH(req: NextRequest) {
             }
         }
 
+        // 2.5. Vérifier le profil contrôleur et exiger la confirmation si le rôle n'est pas CONTROLEUR (Faille 2.3)
+        const { data: ctrlUser, error: ctrlErr } = await supabase
+            .from('users')
+            .select('id, phone, first_name, last_name, role, status')
+            .eq('id', controllerId)
+            .maybeSingle();
+
+        if (ctrlErr || !ctrlUser) {
+            return NextResponse.json({ error: 'Contrôleur introuvable.' }, { status: 404 });
+        }
+
+        if (ctrlUser.role !== 'CONTROLEUR' && ctrlUser.role !== 'ADMIN' && ctrlUser.role !== 'SUPERADMIN') {
+            if (!confirm_promotion) {
+                const clientFullName = [ctrlUser.first_name, ctrlUser.last_name].filter(Boolean).join(' ') || 'Utilisateur';
+                return NextResponse.json({
+                    requires_confirmation: true,
+                    existing_user: {
+                        id: ctrlUser.id,
+                        first_name: ctrlUser.first_name,
+                        last_name: ctrlUser.last_name,
+                        phone: ctrlUser.phone,
+                        role: ctrlUser.role,
+                    },
+                    message: `Compte existant détecté — ${clientFullName} (${ctrlUser.phone}) possède le rôle ${ctrlUser.role}. Voulez-vous lui attribuer le rôle Contrôleur pour vos événements ?`,
+                }, { status: 200 });
+            }
+
+            // Confirmation fournie -> promouvoir de façon cohérente (DB + Auth metadata + déconnexion session)
+            await Promise.all([
+                supabase.from('users').update({ role: 'CONTROLEUR', status: 'ACTIF', updated_at: new Date().toISOString() }).eq('id', controllerId),
+                supabase.auth.admin.updateUserById(controllerId, {
+                    user_metadata: { role: 'CONTROLEUR', is_temporary_controller_account: false },
+                }),
+            ]);
+            try {
+                await supabase.auth.admin.signOut(controllerId, 'global');
+            } catch { /* notice */ }
+        }
+
         // 3. Récupérer les affectations actuelles de ce contrôleur chez ce partenaire
         const { data: currentAssignments, error: caErr } = await supabase
             .from('event_controllers')
@@ -114,6 +157,15 @@ export async function PATCH(req: NextRequest) {
 
         // 4. Supprimer les événements décochés
         if (toRemove.length > 0) {
+            // Blocage si une session de caisse est encore OUVERTE sur l'un des événements à retirer
+            const hasOpenShift = await ShiftService.hasActiveShift(controllerId, toRemove);
+            if (hasOpenShift) {
+                return NextResponse.json({
+                    error: 'Ce contrôleur a une session de caisse ouverte, clôturez-la avant de le retirer.',
+                    code: 'OPEN_SHIFT_EXISTS',
+                }, { status: 400 });
+            }
+
             const idsToDelete = (currentAssignments ?? [])
                 .filter(a => toRemove.includes(a.event_id))
                 .map(a => a.id);
@@ -155,17 +207,11 @@ export async function PATCH(req: NextRequest) {
             }
         }
 
-        // 7. S'assurer que le profil est ACTIF et a le rôle CONTROLEUR
-        const { data: ctrlUser } = await supabase
-            .from('users')
-            .select('id, phone, first_name, role, status')
-            .eq('id', controllerId)
-            .maybeSingle();
-
-        if (ctrlUser && (ctrlUser.status !== 'ACTIF' || ctrlUser.role !== 'CONTROLEUR')) {
+        // 7. S'assurer que le profil est ACTIF
+        if (ctrlUser && ctrlUser.status !== 'ACTIF') {
             await supabase
                 .from('users')
-                .update({ role: 'CONTROLEUR', status: 'ACTIF' })
+                .update({ status: 'ACTIF' })
                 .eq('id', controllerId);
         }
 

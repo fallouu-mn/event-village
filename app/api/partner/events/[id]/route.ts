@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverIsPartner, serverIsAdmin, serverHasRole } from '@/lib/auth/session';
 import { EventService } from '@/lib/events/event.service';
 
 /**
@@ -18,7 +18,7 @@ export async function GET(
         const { id } = await params;
         const event = await EventService.getEventById(
             id,
-            user.role === 'SUPERADMIN' || user.role === 'ADMIN' ? undefined : user.id
+            serverIsAdmin(user) ? undefined : user.id
         );
 
         return NextResponse.json({ success: true, event });
@@ -39,7 +39,7 @@ export async function PUT(
 ) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
@@ -77,7 +77,7 @@ export async function DELETE(
 ) {
     try {
         const user = await getServerSessionUser(request);
-        if (!user || user.role !== 'PARTENAIRE') {
+        if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverHasAnyRole, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController } from '@/lib/events/event-status';
+import { parseDynamicQrPayload, verifyTotp, deriveTicketTotpSecret, TOTP_STEP_SECONDS } from '@/lib/security/totp';
+import { ShiftService } from '@/lib/shifts/shift.service';
+import { RateLimiter } from '@/lib/security/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +19,8 @@ const ScanSchema = z.object({
  * Validation sécurisée d'un billet par un contrôleur assigné.
  * - Vérifie le rôle CONTROLEUR
  * - Vérifie l'assignation event_controllers
- * - pg_advisory_xact_lock anti-double-scan
+ * - Validation du QR Code dynamique TOTP (anti-capture d'écran RFC 6238)
+ * - pg_advisory_xact_lock anti-double-scan (atomic_ticket_checkin)
  * - Gère le cas "paiement espèces à l'entrée"
  */
 export async function POST(req: NextRequest) {
@@ -26,8 +30,29 @@ export async function POST(req: NextRequest) {
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
-        if (user.role !== 'CONTROLEUR' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN' && user.role !== 'PARTENAIRE') {
+        if (!serverHasAnyRole(user, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN', 'PARTENAIRE'])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
+        }
+        if (user.status !== 'ACTIF') {
+            return NextResponse.json({ error: 'Compte inactif ou suspendu.' }, { status: 403 });
+        }
+
+        // ─── Rate limiting contrôleur : 5 req/s par contrôleur (429 au-delà) ───
+        const scanRateKey = `controller_scan:${user.id}`;
+        const scanLimit = await RateLimiter.checkAndRecord(scanRateKey, {
+            maxAttempts: 5,
+            windowSeconds: 1,
+            lockoutSeconds: 1,
+            failClosed: false,
+        });
+
+        if (scanLimit.limited) {
+            return NextResponse.json({
+                code: 'RATE_LIMIT_EXCEEDED',
+                scan_result: 'rate_limited',
+                error: 'Cadence de scan trop élevée (maximum 5 scans par seconde). Veuillez patienter.',
+                message: 'Cadence de scan trop élevée (maximum 5 scans par seconde).',
+            }, { status: 429 });
         }
 
         let body: unknown;
@@ -42,8 +67,12 @@ export async function POST(req: NextRequest) {
         const rawCode = parse.data.qr_code.trim();
         const supabase = getServiceRoleClient();
 
+        // ─── 0. Décodage du QR Code dynamique (TOTP RFC 6238) ou saisie directe ───
+        const parsed = parseDynamicQrPayload(rawCode);
+        const lookupCode = parsed.identifier;
+
         // Sanitize: reject codes containing Supabase filter operators
-        if (/[(),.]/.test(rawCode) && !rawCode.startsWith('EV-') && !rawCode.startsWith('TCK-')) {
+        if (/[(),.]/.test(rawCode) && !rawCode.startsWith('EV-') && !rawCode.startsWith('TCK-') && !rawCode.startsWith('EVT1:')) {
             return NextResponse.json({ scan_result: 'invalid', message: 'Format de code invalide.' });
         }
 
@@ -60,6 +89,7 @@ export async function POST(req: NextRequest) {
                 category_id,
                 user_id,
                 order_id,
+                users:users!tickets_user_id_fkey (id, first_name, last_name, email, phone),
                 events (id, title, start_date, location, partner_id, status),
                 ticket_categories (id, name, price)
             `;
@@ -70,7 +100,7 @@ export async function POST(req: NextRequest) {
         const { data: t1, error: e1 } = await supabase
             .from('tickets')
             .select(ticketSelect)
-            .eq('ticket_number', rawCode)
+            .eq('ticket_number', lookupCode)
             .maybeSingle();
 
         if (t1) {
@@ -80,7 +110,7 @@ export async function POST(req: NextRequest) {
             const { data: t2, error: e2 } = await supabase
                 .from('tickets')
                 .select(ticketSelect)
-                .eq('qr_code', rawCode)
+                .eq('qr_code', lookupCode)
                 .maybeSingle();
             ticket = t2;
             ticketErr = e2;
@@ -95,6 +125,41 @@ export async function POST(req: NextRequest) {
 
         const eventData = ticket.events as any;
         const categoryData = ticket.ticket_categories as any;
+        const holderData = ticket.users as any;
+        const holderName = holderData
+            ? [holderData.first_name, holderData.last_name].filter(Boolean).join(' ') || holderData.email
+            : undefined;
+
+        // ─── 1.1 Validation anti-fraude TOTP (rotation temporelle 20s) ───
+        if (parsed.isDynamic) {
+            if (!parsed.token) {
+                return NextResponse.json({
+                    code: 'QR_INVALID',
+                    scan_result: 'invalid',
+                    message: 'Format de QR code dynamique incomplet (jeton temporel manquant).',
+                }, { status: 400 });
+            }
+
+            const secret = (ticket as any).totp_secret || deriveTicketTotpSecret(ticket.id);
+            const isTotpValid = verifyTotp(parsed.token, secret, {
+                toleranceWindows: 2, // ±2 fenêtres (±40s, tolérance réseau 3G/4G + dérive horloge)
+                stepSeconds: TOTP_STEP_SECONDS,
+            });
+
+            if (!isTotpValid) {
+                return NextResponse.json({
+                    code: 'QR_EXPIRED',
+                    scan_result: 'qr_expired',
+                    message: 'QR Code expiré. Demandez au client de rafraîchir son billet.',
+                    ticket_info: {
+                        ticket_number: ticket.ticket_number,
+                        event_title: eventData?.title,
+                        category: categoryData?.name || 'Standard',
+                        holder_name: holderName,
+                    },
+                }, { status: 400 });
+            }
+        }
 
         // ─── 2.0. Vérification statut de l'événement (Partie 7 CDC & Hotfix opérationnel) ───
         if (eventData?.status === 'TERMINE') {
@@ -120,7 +185,7 @@ export async function POST(req: NextRequest) {
         }
 
         // ─── 2. Vérifier l'assignation contrôleur ↔ événement ───
-        if (user.role === 'CONTROLEUR') {
+        if (serverHasRole(user, 'CONTROLEUR') && !serverHasAnyRole(user, ['ADMIN', 'SUPERADMIN', 'PARTENAIRE'])) {
             const { data: assignment } = await supabase
                 .from('event_controllers')
                 .select('id, can_accept_cash')
@@ -149,6 +214,7 @@ export async function POST(req: NextRequest) {
                         event_title: eventData?.title,
                         category: categoryData?.name || 'Standard',
                         checked_in_at: ticket.checked_in_at,
+                        holder_name: holderName,
                     },
                 });
             }
@@ -182,6 +248,7 @@ export async function POST(req: NextRequest) {
                                 event_title: eventData?.title,
                                 category: categoryData?.name || 'Standard',
                                 amount_due: amountDue,
+                                holder_name: holderName,
                             },
                         });
                     }
@@ -195,6 +262,7 @@ export async function POST(req: NextRequest) {
                             event_title: eventData?.title,
                             category: categoryData?.name || 'Standard',
                             amount_due: amountDue,
+                            holder_name: holderName,
                             ticket_id: ticket.id,
                             order_id: order.id,
                         },
@@ -227,12 +295,20 @@ export async function POST(req: NextRequest) {
                 });
             }
         } else {
-            // Partenaire — vérifie qu'il est propriétaire de l'événement
-            if (user.role === 'PARTENAIRE' && eventData?.partner_id !== user.id) {
-                return NextResponse.json({
-                    scan_result: 'unauthorized',
-                    message: 'Vous n\'êtes pas autorisé à scanner les billets de cet événement.',
-                });
+            // Partenaire — vérifie qu'il est propriétaire de l'événement en résolvant son partner_id
+            if (serverHasRole(user, 'PARTENAIRE') && !serverHasAnyRole(user, ['ADMIN', 'SUPERADMIN'])) {
+                const { data: partnerRec } = await supabase
+                    .from('partners')
+                    .select('id')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (!partnerRec || eventData?.partner_id !== partnerRec.id) {
+                    return NextResponse.json({
+                        scan_result: 'unauthorized',
+                        message: 'Vous n\'êtes pas autorisé à scanner les billets de cet événement.',
+                    }, { status: 403 });
+                }
             }
 
             if (ticket.status === 'UTILISE') {
@@ -247,6 +323,7 @@ export async function POST(req: NextRequest) {
                         event_title: eventData?.title,
                         category: categoryData?.name || 'Standard',
                         checked_in_at: ticket.checked_in_at,
+                        holder_name: holderName,
                     },
                 });
             }
@@ -279,21 +356,14 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        // ─── 8. Stats du jour ───
+        // ─── 8. Stats légères et optimisées (Évite le double COUNT(*) lourd sur la table tickets à chaque scan) ───
         const today = new Date().toISOString().split('T')[0];
-        const [{ count: scannedToday }, { count: totalTickets }] = await Promise.all([
-            supabase
-                .from('tickets')
-                .select('id', { count: 'exact', head: true })
-                .eq('event_id', ticket.event_id)
-                .eq('status', 'UTILISE')
-                .gte('checked_in_at', `${today}T00:00:00`),
-            supabase
-                .from('tickets')
-                .select('id', { count: 'exact', head: true })
-                .eq('event_id', ticket.event_id)
-                .in('status', ['VALIDE', 'UTILISE']),
-        ]);
+        const { count: scannedToday } = await supabase
+            .from('tickets')
+            .select('id', { count: 'exact', head: true })
+            .eq('event_id', ticket.event_id)
+            .eq('status', 'UTILISE')
+            .gte('checked_in_at', `${today}T00:00:00`);
 
         return NextResponse.json({
             scan_result: 'valid',
@@ -303,10 +373,11 @@ export async function POST(req: NextRequest) {
                 event_title: eventData?.title,
                 category: categoryData?.name || 'Standard',
                 checked_in_at: new Date().toISOString(),
+                holder_name: holderName,
+                is_manual_entry: !parsed.isDynamic,
             },
             stats: {
-                scanned_today: scannedToday ?? 0,
-                total_tickets: totalTickets ?? 0,
+                scanned_today: scannedToday ?? 1,
             },
         });
 
@@ -330,8 +401,11 @@ export async function PUT(req: NextRequest) {
         // ─── Authentification + RBAC ───
         const user = await getServerSessionUser(req);
         if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        if (user.role !== 'CONTROLEUR' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN' && user.role !== 'PARTENAIRE') {
+        if (!serverHasAnyRole(user, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN', 'PARTENAIRE'])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
+        }
+        if (user.status !== 'ACTIF') {
+            return NextResponse.json({ error: 'Compte inactif ou suspendu.' }, { status: 403 });
         }
 
         let body: unknown;
@@ -348,10 +422,21 @@ export async function PUT(req: NextRequest) {
 
         // Vérif assignation + permission cash
         const { data: ticket } = await supabase
-            .from('tickets').select('id, event_id, status, price, events(status)').eq('id', ticketId).single();
+            .from('tickets')
+            .select('id, event_id, status, price, order_id, events(status, partner_id)')
+            .eq('id', ticketId)
+            .single();
 
         if (!ticket || ticket.status !== 'VALIDE') {
             return NextResponse.json({ error: 'Billet invalide ou déjà utilisé.' }, { status: 400 });
+        }
+
+        // Faille 1.1 : Vérification stricte anti-IDOR dès réception du payload
+        const targetOrderId = orderId || ticket.order_id;
+        if (targetOrderId && ticket.order_id && ticket.order_id !== targetOrderId) {
+            return NextResponse.json({
+                error: 'Violation de sécurité : ce billet n\'est pas rattaché à la commande spécifiée.'
+            }, { status: 403 });
         }
 
         const evStatus = (ticket.events as any)?.status;
@@ -359,7 +444,18 @@ export async function PUT(req: NextRequest) {
             return NextResponse.json({ error: 'Cet événement est terminé ou suspendu. Encaissement impossible.' }, { status: 400 });
         }
 
-        if (user.role === 'CONTROLEUR') {
+        let activeShiftId: string | null = null;
+        if (serverHasRole(user, 'PARTENAIRE') && !serverHasAnyRole(user, ['ADMIN', 'SUPERADMIN'])) {
+            const { data: partnerRec } = await supabase
+                .from('partners')
+                .select('id')
+                .eq('user_id', user.id)
+                .maybeSingle();
+
+            if (!partnerRec || (ticket.events as any)?.partner_id !== partnerRec.id) {
+                return NextResponse.json({ error: 'Non autorisé à encaisser pour cet événement.' }, { status: 403 });
+            }
+        } else if (serverHasRole(user, 'CONTROLEUR')) {
             const { data: assignment } = await supabase
                 .from('event_controllers')
                 .select('can_accept_cash')
@@ -370,6 +466,16 @@ export async function PUT(req: NextRequest) {
             if (!assignment?.can_accept_cash) {
                 return NextResponse.json({ error: 'Non autorisé à encaisser.' }, { status: 403 });
             }
+
+            // Exigence stricte de Session de Caisse ouverte (Pre-Mortem §2.1)
+            const activeShift = await ShiftService.getActiveShift(user.id, ticket.event_id);
+            if (!activeShift) {
+                return NextResponse.json({
+                    error: "Session de caisse non ouverte. Vous devez ouvrir votre caisse avant d'encaisser des espèces.",
+                    code: 'SHIFT_NOT_OPEN',
+                }, { status: 403 });
+            }
+            activeShiftId = activeShift.id;
         }
 
         const now = new Date().toISOString();
@@ -402,13 +508,37 @@ export async function PUT(req: NextRequest) {
             });
         }
 
-        // Marquer le paiement comme réglé en espèces
-        if (orderId) {
+        // Marquer le paiement comme réglé en espèces avec protection anti-IDOR stricte
+        if (targetOrderId) {
+            // Vérification en base de la commande et du montant
+            const { data: orderData, error: orderFetchErr } = await supabase
+                .from('orders')
+                .select('id, total_amount, payment_status')
+                .eq('id', targetOrderId)
+                .maybeSingle();
+
+            if (orderFetchErr || !orderData) {
+                return NextResponse.json({ error: 'Commande associée introuvable.' }, { status: 404 });
+            }
+
+            // Vérification que le montant de la commande correspond au prix du billet
+            if (Number(orderData.total_amount) !== Number(ticket.price)) {
+                return NextResponse.json({
+                    error: `Incohérence financière : montant commande (${orderData.total_amount} F) différent du prix du billet (${ticket.price} F).`
+                }, { status: 400 });
+            }
+
             await supabase.from('orders').update({
                 payment_status: 'SUCCESS',
                 order_status: 'CONFIRMEE',
                 updated_at: now,
-            }).eq('id', orderId);
+                ...(activeShiftId ? { shift_id: activeShiftId } : {}),
+            }).eq('id', targetOrderId);
+        }
+
+        // Incrémentation atomique du total espèces attendu sur le shift actif
+        if (activeShiftId) {
+            await ShiftService.recordCashPayment(activeShiftId, ticket.price);
         }
 
         // Audit
@@ -418,9 +548,10 @@ export async function PUT(req: NextRequest) {
             action: 'CASH_COLLECTION',
             objectType: 'tickets',
             objectId: ticketId,
-            newValue: { payment: 'CASH', amount: ticket.price, order_id: orderId },
-            metadata: { controller_id: user.id, event_id: ticket.event_id },
+            newValue: { payment: 'CASH', amount: ticket.price, order_id: orderId, shift_id: activeShiftId },
+            metadata: { controller_id: user.id, event_id: ticket.event_id, shift_id: activeShiftId },
         });
+
 
         // Stats du jour
         const today = new Date().toISOString().split('T')[0];

@@ -6,13 +6,28 @@ import {
     ShieldCheck, ShieldOff, CheckCircle2, AlertCircle,
     Calendar, ChevronDown, X, Search, Mail, Send,
     RotateCcw, CheckSquare, Square, Settings, UserMinus,
+    UserCheck,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { Modal } from '@/components/ui/Modal';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { isEventEligibleForController } from '@/lib/events/event-status';
+
+interface ExistingAccountConfirmState {
+    existingUser: {
+        id: string;
+        first_name: string;
+        last_name: string;
+        phone: string;
+        role: string;
+    };
+    eventIds: string[];
+    canAcceptCash: boolean;
+    message: string;
+}
 
 interface ControllerUser {
     id: string;
@@ -65,6 +80,8 @@ export default function PartnerTeamPage() {
     const [invPhoneError, setInvPhoneError]     = useState('');
     const [invNameError, setInvNameError]       = useState('');
     const [resendingId, setResendingId]         = useState<string | null>(null);
+    const [existingAccountConfirm, setExistingAccountConfirm] = useState<ExistingAccountConfirmState | null>(null);
+    const [confirmingPromotion, setConfirmingPromotion]       = useState(false);
 
     // Modal de modification d'affectations (Partie 2.C)
     const [editModalCtrl, setEditModalCtrl]     = useState<GroupedController | null>(null);
@@ -277,6 +294,18 @@ export default function PartnerTeamPage() {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'invitation.');
+
+            // Détection de compte existant non-contrôleur -> demande de confirmation explicite
+            if (data.requires_confirmation && data.existing_user) {
+                setExistingAccountConfirm({
+                    existingUser: data.existing_user,
+                    eventIds: [...invEventIds],
+                    canAcceptCash: invCanCash,
+                    message: data.message || '',
+                });
+                return;
+            }
+
             await fetchControllers(true);
             toast.success(data.message || 'Contrôleur invité avec succès.');
             setShowModal(false);
@@ -287,6 +316,39 @@ export default function PartnerTeamPage() {
             toast.error(err instanceof Error ? err.message : 'Erreur inattendue.');
         } finally {
             setInviting(false);
+        }
+    };
+
+    // ── Confirmation d'attribution du rôle Contrôleur pour un compte existant (CLIENT) ──
+    const handleConfirmPromotion = async () => {
+        if (!existingAccountConfirm || confirmingPromotion) return;
+        setConfirmingPromotion(true);
+        try {
+            const res = await fetch('/api/partner/team/invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    event_ids: existingAccountConfirm.eventIds,
+                    phone: existingAccountConfirm.existingUser.phone,
+                    first_name: existingAccountConfirm.existingUser.first_name || 'Contrôleur',
+                    last_name: existingAccountConfirm.existingUser.last_name || '',
+                    can_accept_cash: existingAccountConfirm.canAcceptCash,
+                    confirm_promotion: true,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Erreur lors de la confirmation.');
+            await fetchControllers(true);
+            toast.success(data.message || 'Rôle Contrôleur attribué avec succès.');
+            setExistingAccountConfirm(null);
+            setShowModal(false);
+            setInvFirstName(''); setInvLastName(''); setInvEmail('');
+            setInvPhone(''); setInvCanCash(false);
+            if (events.length > 1) setInvEventIds([]);
+        } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : 'Erreur inattendue.');
+        } finally {
+            setConfirmingPromotion(false);
         }
     };
 
@@ -1202,6 +1264,76 @@ export default function PartnerTeamPage() {
                     </div>
                 </div>
             )}
+
+            {/* Modal de Confirmation Compte Existant (Multi-Casquette Client -> Contrôleur) */}
+            <Modal
+                isOpen={!!existingAccountConfirm}
+                onClose={() => setExistingAccountConfirm(null)}
+                title="Compte existant détecté"
+                subtitle="Attribution du rôle Contrôleur sans doublon"
+                icon={
+                    <div className="w-10 h-10 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                        <UserCheck size={20} />
+                    </div>
+                }
+                footer={
+                    <div className="flex items-center justify-end gap-3 w-full">
+                        <Button
+                            variant="secondary"
+                            onClick={() => setExistingAccountConfirm(null)}
+                            disabled={confirmingPromotion}
+                        >
+                            Annuler
+                        </Button>
+                        <Button
+                            variant="primary"
+                            onClick={handleConfirmPromotion}
+                            isLoading={confirmingPromotion}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                            Attribuer le rôle Contrôleur
+                        </Button>
+                    </div>
+                }
+            >
+                {existingAccountConfirm && (
+                    <div className="space-y-4 py-2">
+                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-zinc-700/80 space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Nom complet</span>
+                                <span className="font-semibold text-slate-900 dark:text-white">
+                                    {[existingAccountConfirm.existingUser.first_name, existingAccountConfirm.existingUser.last_name].filter(Boolean).join(' ') || 'Utilisateur sans nom'}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Numéro de téléphone</span>
+                                <span className="font-mono font-medium text-slate-900 dark:text-white">
+                                    {existingAccountConfirm.existingUser.phone}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Rôle actuel</span>
+                                <span className="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                                    {existingAccountConfirm.existingUser.role}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-xs text-emerald-800 dark:text-emerald-300 space-y-1.5 leading-relaxed">
+                            <p className="font-semibold flex items-center gap-1.5">
+                                <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                Compte unifié sans perte de données
+                            </p>
+                            <p>
+                                Cet utilisateur conservera l&apos;intégralité de son historique et ses fonctionnalités Client (achats de billets, commandes, réservations, solde portefeuille) tout en accédant aux outils de contrôle pour vos événements.
+                            </p>
+                            <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
+                                Aucun compte en double ne sera créé. La transition est instantanée et transparente.
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 }

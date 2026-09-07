@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     try {
         const user = await getServerSessionUser(req);
         if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        if (user.role !== 'CONTROLEUR' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+        if (!serverHasAnyRole(user, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
