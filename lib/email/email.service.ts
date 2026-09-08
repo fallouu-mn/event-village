@@ -422,6 +422,190 @@ export const EmailTemplates = {
             `),
         };
     },
+
+    /**
+     * T8 — Confirmation d'achat de billet(s) → envoyé AU CLIENT
+     */
+    ticketPurchaseConfirmation(p: {
+        clientName: string;
+        eventTitle: string;
+        eventDate: string;
+        eventVenue: string;
+        ticketCount: number;
+        ticketNumbers: string[];
+        totalAmount: number;
+        orderNumber?: string;
+    }): { subject: string; html: string } {
+        const plural = p.ticketCount > 1;
+        return {
+            subject: `🎟️ Vos billets pour "${p.eventTitle}" sont disponibles — Event Village`,
+            html: baseLayout(`
+              <p style="margin:0 0 6px;font-size:13px;color:#64748b;">Bonjour <strong>${p.clientName}</strong>,</p>
+              <h2 style="margin:0 0 20px;font-size:19px;font-weight:900;color:#0f172a;line-height:1.3;">
+                Votre achat est confirmé ! ${plural ? 'Vos billets électroniques sont prêts.' : 'Votre billet électronique est prêt.'}
+              </h2>
+              <div style="background:#f8fafc;border-left:4px solid ${BRAND_COLOR};border-radius:8px;padding:14px 18px;margin:0 0 22px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;">Événement</p>
+                <p style="margin:0 0 6px;font-size:16px;font-weight:800;color:#0f172a;">${p.eventTitle}</p>
+                <p style="margin:0;font-size:12px;color:#475569;">📍 ${p.eventVenue} • 📅 ${p.eventDate}</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                ${p.orderNumber ? infoRow('Numéro de commande', p.orderNumber) : ''}
+                ${infoRow('Nombre de billet(s)', `${p.ticketCount} place(s)`)}
+                ${infoRow('Montant total réglé', `${p.totalAmount.toLocaleString('fr-FR')} FCFA`)}
+                ${infoRow('Numéro(s) de billet', p.ticketNumbers.join(', '))}
+              </table>
+              <div style="padding:16px 20px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;margin:0 0 22px;">
+                <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#9a3412;">📲 Comment accéder à l'événement :</p>
+                <p style="margin:0;font-size:12px;color:#c2410c;line-height:1.6;">
+                  Présentez directement votre QR Code dynamique depuis votre espace client "Mes Billets" aux contrôleurs à l'entrée.
+                </p>
+              </div>
+              ${ctaButton('Accéder à Mes Billets →', `${APP_URL}/tickets`)}
+            `),
+        };
+    },
+
+    /**
+     * T9 — Alerte nouvelle vente de billet(s) → envoyé À L'ORGANISATEUR
+     */
+    organizerTicketSaleAlert(p: {
+        organizerName: string;
+        eventTitle: string;
+        ticketCount: number;
+        categoryName: string;
+        totalAmount: number;
+        orderNumber?: string;
+    }): { subject: string; html: string } {
+        return {
+            subject: `🎟️ Nouvelle vente : ${p.ticketCount} billet(s) pour "${p.eventTitle}"`,
+            html: baseLayout(`
+              <p style="margin:0 0 6px;font-size:13px;color:#64748b;">Bonjour <strong>${p.organizerName}</strong>,</p>
+              <h2 style="margin:0 0 20px;font-size:19px;font-weight:900;color:#0f172a;line-height:1.3;">
+                Une nouvelle commande vient d'être validée pour votre événement !
+              </h2>
+              <div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:8px;padding:14px 18px;margin:0 0 22px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Événement</p>
+                <p style="margin:0;font-size:16px;font-weight:800;color:#15803d;">${p.eventTitle}</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                ${p.orderNumber ? infoRow('Référence commande', p.orderNumber) : ''}
+                ${infoRow('Formule / Catégorie', p.categoryName)}
+                ${infoRow('Quantité vendue', `${p.ticketCount} billet(s)`)}
+                ${infoRow('Montant encaissé', `${p.totalAmount.toLocaleString('fr-FR')} FCFA`)}
+              </table>
+              ${ctaButton('Consulter le Dashboard Partenaire →', `${APP_URL}/partner/dashboard`)}
+            `),
+        };
+    },
+
+    /**
+     * T10 — Alerte Catégorie de Billets Épuisée → envoyé À L'ORGANISATEUR
+     */
+    ticketCategorySoldOut(p: {
+        partnerName: string;
+        eventTitle: string;
+        categoryName: string;
+        totalQuantity: number;
+    }): { subject: string; html: string } {
+        return {
+            subject: `🎟️ Catégorie Épuisée : "${p.categoryName}" sur "${p.eventTitle}" — Event Village`,
+            html: baseLayout(`
+              <p style="margin:0 0 6px;font-size:13px;color:#64748b;">Bonjour <strong>${p.partnerName}</strong>,</p>
+              <h2 style="margin:0 0 20px;font-size:19px;font-weight:900;color:#0f172a;line-height:1.3;">
+                La catégorie "${p.categoryName}" est désormais complète !
+              </h2>
+              <div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:8px;padding:14px 18px;margin:0 0 22px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:.5px;">Événement</p>
+                <p style="margin:0;font-size:16px;font-weight:800;color:#ea580c;">${p.eventTitle}</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                ${infoRow('Catégorie', p.categoryName)}
+                ${infoRow('Stock initial', `${p.totalQuantity} place(s)`)}
+                ${infoRow('Billets vendus', `${p.totalQuantity} place(s)`)}
+                ${infoRow('Billets restants', '0 (ÉPUISÉ)')}
+              </table>
+              <p style="font-size:12px;color:#64748b;line-height:1.6;margin:0 0 20px;">
+                Les ventes pour ce pass sont automatiquement suspendues. Vous pouvez augmenter le quota ou ajuster vos formules depuis votre espace partenaire.
+              </p>
+              ${ctaButton('Gérer mes Billets →', `${APP_URL}/partner/events`)}
+            `),
+        };
+    },
+
+    /**
+     * T11 — Alerte Événement Intégralement Complet (SOLD OUT TOTAL) → envoyé À L'ORGANISATEUR
+     */
+    eventFullySoldOut(p: {
+        partnerName: string;
+        eventTitle: string;
+        totalTicketsSold: number;
+    }): { subject: string; html: string } {
+        return {
+            subject: `🔴 ÉVÉNEMENT COMPLET : "${p.eventTitle}" est à guichet fermé ! — Event Village`,
+            html: baseLayout(`
+              <p style="margin:0 0 6px;font-size:13px;color:#64748b;">Bonjour <strong>${p.partnerName}</strong>,</p>
+              <h2 style="margin:0 0 20px;font-size:19px;font-weight:900;color:#0f172a;line-height:1.3;">
+                🎉 Félicitations ! Votre événement est 100% COMPLET !
+              </h2>
+              <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:14px 18px;margin:0 0 22px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;">Événement Guichet Fermé</p>
+                <p style="margin:0;font-size:16px;font-weight:800;color:#dc2626;">${p.eventTitle}</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                ${infoRow('Statut Global', '100% COMPLET (Guichet Fermé)')}
+                ${infoRow('Total Billets Vendus', `${p.totalTicketsSold} place(s)`)}
+                ${infoRow('Places restantes', '0')}
+              </table>
+              <p style="font-size:12px;color:#64748b;line-height:1.6;margin:0 0 20px;">
+                Toutes les catégories de billets sont désormais épuisées ou fermées. Les ventes sont suspendues sur l'ensemble de la plateforme.
+              </p>
+              ${ctaButton('Accéder à mon Événement →', `${APP_URL}/partner/events`)}
+            `),
+        };
+    },
+
+    /**
+     * T10 — Confirmation de scan de billet → envoyé AU CLIENT (Acheteur/Porteur)
+     */
+    ticketScannedConfirmation(p: {
+        buyerName: string;
+        eventTitle: string;
+        categoryName: string;
+        ticketNumber: string;
+        checkedInAt?: string;
+        venue?: string;
+    }): { subject: string; html: string } {
+        const checkTime = p.checkedInAt
+            ? new Date(p.checkedInAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+            : new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+        return {
+            subject: `🎟️ Billet Validé : "${p.eventTitle}" (${p.categoryName}) — Event Village`,
+            html: baseLayout(`
+              <p style="margin:0 0 6px;font-size:13px;color:#64748b;">Bonjour <strong>${p.buyerName}</strong>,</p>
+              <h2 style="margin:0 0 20px;font-size:19px;font-weight:900;color:#0f172a;line-height:1.3;">
+                ✅ Votre billet a été scanné et validé avec succès !
+              </h2>
+              <div style="background:#f0fdf4;border-left:4px solid #10b981;border-radius:8px;padding:14px 18px;margin:0 0 22px;">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#065f46;text-transform:uppercase;letter-spacing:.5px;">Entrée Confirmée</p>
+                <p style="margin:0;font-size:16px;font-weight:800;color:#047857;">${p.eventTitle}</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                ${infoRow('Événement', p.eventTitle)}
+                ${infoRow('Catégorie', p.categoryName)}
+                ${infoRow('Numéro de Billet', p.ticketNumber)}
+                ${infoRow('Heure de compostage', `Aujourd'hui à ${checkTime}`)}
+                ${p.venue ? infoRow('Lieu', p.venue) : ''}
+                ${infoRow('Statut', 'UTILISÉ / ACCÈS AUTORISÉ')}
+              </table>
+              <p style="font-size:12px;color:#64748b;line-height:1.6;margin:0 0 20px;">
+                Votre billet a été vérifié par les équipes d'accueil à l'entrée. Passez un excellent moment sur l'événement !
+              </p>
+              ${ctaButton('Accéder à mes Billets →', `${APP_URL}/tickets`)}
+            `),
+        };
+    },
 };
 
 // ── EmailService ──────────────────────────────────────────────────────────

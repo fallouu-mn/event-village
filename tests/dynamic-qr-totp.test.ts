@@ -55,28 +55,40 @@ describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', a
 
     before(async () => {
         // 1. Obtenir les jetons d'accès
-        const { data: pUser } = await supabase.from('users').select('email').eq('id', partnerUserId).single();
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!' });
+        const { data: pAuthUser } = await supabase.auth.admin.getUserById(partnerUserId);
+        const pEmail = pAuthUser?.user?.email || 'fallouu.dev@gmail.com';
+        await supabase.from('users').update({ status: 'ACTIF', role: 'PARTENAIRE', phone: '221770006743' }).eq('id', partnerUserId);
+        await supabase.from('user_roles').delete().eq('user_id', partnerUserId);
+        await supabase.from('user_roles').insert({ user_id: partnerUserId, role: 'PARTENAIRE' });
+        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
-            email: pUser?.email || 'partenaireA@test.com',
+            email: pEmail,
             password: 'Password123!',
         });
         partnerToken = pAuth?.session?.access_token!;
         assert.ok(partnerToken, 'Token Partenaire obtenu');
 
-        const { data: cUser } = await supabase.from('users').select('email').eq('id', ctrlUserId).single();
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!' });
+        const { data: cAuthUser } = await supabase.auth.admin.getUserById(ctrlUserId);
+        const cEmail = cAuthUser?.user?.email || 'clientB@test.com';
+        await supabase.from('users').update({ status: 'ACTIF', role: 'CONTROLEUR', phone: '221772223344' }).eq('id', ctrlUserId);
+        await supabase.from('user_roles').delete().eq('user_id', ctrlUserId);
+        await supabase.from('user_roles').insert({ user_id: ctrlUserId, role: 'CONTROLEUR' });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
         const { data: cAuth } = await publicAuth.auth.signInWithPassword({
-            email: cUser?.email!,
+            email: cEmail,
             password: 'Password123!',
         });
         ctrlToken = cAuth?.session?.access_token!;
         assert.ok(ctrlToken, 'Token Contrôleur obtenu');
 
-        const { data: clUser } = await supabase.from('users').select('email').eq('id', clientUserId).single();
-        await supabase.auth.admin.updateUserById(clientUserId, { password: 'Password123!' });
+        const { data: clAuthUser } = await supabase.auth.admin.getUserById(clientUserId);
+        const clEmail = clAuthUser?.user?.email || 'clientA@test.com';
+        await supabase.from('users').update({ status: 'ACTIF', role: 'CLIENT', phone: '221771234567' }).eq('id', clientUserId);
+        await supabase.from('user_roles').delete().eq('user_id', clientUserId);
+        await supabase.from('user_roles').insert({ user_id: clientUserId, role: 'CLIENT' });
+        await supabase.auth.admin.updateUserById(clientUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT' } });
         const { data: clAuth } = await publicAuth.auth.signInWithPassword({
-            email: clUser?.email!,
+            email: clEmail,
             password: 'Password123!',
         });
         clientToken = clAuth?.session?.access_token!;

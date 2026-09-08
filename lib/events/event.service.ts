@@ -540,9 +540,27 @@ export class EventService {
      * - Le second UPDATE retourne 0 ligne affectée et rejette immédiatement avec l'erreur "Épuisé".
      * - La contrainte CHECK (sold_quantity <= total_quantity) en base garantit l'impossibilité de dépasser le quota.
      */
-    public static async purchaseTicketAtomic(params: {
+    /**
+     * Réservation & Achat Atomique de Billets avec Protection Anti-Survente (§35 CDC V3.0)
+     * Supporte 1 ou plusieurs billets (N >= 1) en UNE SEULE TRANSACTION ATOMIQUE.
+     *
+     * Mécanisme :
+     * UPDATE ticket_categories
+     * SET sold_quantity = sold_quantity + quantity
+     * WHERE id = categoryId AND is_active = TRUE AND sold_quantity + quantity <= total_quantity
+     * RETURNING *
+     *
+     * En cas de forte concurrence (ex: stock restant = 3, Client A demande 2, Client B demande 2) :
+     * - PostgreSQL garantit l'atomicité sur le bloc de N billets.
+     * - Une seule transaction réussit à réserver ses 2 billets.
+     * - L'autre transaction est rejetée immédiatement avec 0 billet partiel créé.
+     * - Si le stock restant atteint exactement 0 (sold_quantity === total_quantity),
+     *   déclenche automatiquement la notification d'épuisement (SOLD_OUT) à l'organisateur.
+     */
+    public static async reserveTicketsAtomic(params: {
         eventId: string;
         categoryId: string;
+        quantity?: number;
         userId: string;
         orderId?: string;
         aggregatorFeeRate?: number;
@@ -552,24 +570,17 @@ export class EventService {
         callerUserId?: string;
     }) {
         const supabase = getServiceRoleClient();
-
-        // 1. Incrémentation atomique conditionnelle garantie sans survente
-        // On récupère et réserve le billet en une seule instruction atomique
+        let requestedQty = 1;
+        if (params.quantity !== undefined) {
+            const parsed = Number(params.quantity);
+            if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 50) {
+                throw new Error(`Quantité invalide (${params.quantity}). Vous pouvez réserver entre 1 et 50 billets.`);
+            }
+            requestedQty = parsed;
+        }
         const nowIso = new Date().toISOString();
 
-        // Requête conditionnelle directe
-        const { data: updatedCategories, error: updateErr } = await supabase
-            .from('ticket_categories')
-            .update({
-                sold_quantity: (supabase as any).rpc ? undefined : undefined, // fallback pattern
-            })
-            .eq('id', params.categoryId)
-            .eq('event_id', params.eventId)
-            .eq('is_active', true)
-            .select('*');
-
-        // Pour garantir l'exécution atomique sans dépendance d'extension externe,
-        // nous exécutons la mise à jour transactionnelle PostgreSQL :
+        // 1. Récupération et vérification de la catégorie et de l'événement
         const { data: category, error: catFetchErr } = await supabase
             .from('ticket_categories')
             .select('*, events(id, title, status, partner_id)')
@@ -582,7 +593,7 @@ export class EventService {
         }
 
         if (!category.is_active) {
-            throw new Error('Cette catégorie de billet n\'est plus active.');
+            throw new Error('Cette catégorie de billet n\'est plus disponible à la vente (fermée par l\'organisateur).');
         }
 
         if (category.events?.status !== 'PUBLIE') {
@@ -597,11 +608,6 @@ export class EventService {
             throw new Error('La vente pour cette catégorie de billet est clôturée.');
         }
 
-        // Restriction de sécurité anti-fraude & contrôle de paiement :
-        // Si le billet est payant (price > 0) et que le paiement n'est pas préalablement validé (paymentConfirmed !== true) :
-        // Un utilisateur avec le rôle CLIENT ne peut JAMAIS obtenir un billet payant sans passer par le paiement SamirPay.
-        // Seuls le personnel autorisé (SUPERADMIN, ADMIN, CONTROLEUR) ou le partenaire organisateur
-        // peuvent émettre un billet direct hors paiement en ligne (ex: billetterie guichet sur place, invitation physique).
         const price = Number(category.price);
         const isFree = price === 0;
         const effectiveCallerId = params.callerUserId || params.userId;
@@ -640,45 +646,116 @@ export class EventService {
             }
         }
 
-        // UPDATE atomique conditionnel : sold_quantity = sold_quantity + 1 WHERE sold_quantity < total_quantity
-        const nextSold = Number(category.sold_quantity) + 1;
-        if (nextSold > Number(category.total_quantity)) {
-            throw new Error(`Épuisé : Aucun billet restant disponible pour la catégorie "${category.name}".`);
+        // 2. UPDATE atomique conditionnel du bloc entier (Compare-and-Swap strict avec retry loop sous forte concurrence)
+        let lockedCategory: any = null;
+        let attempts = 0;
+        const maxAttempts = 10;
+        let currentSold = Number(category.sold_quantity || 0);
+        let totalQty = Number(category.total_quantity || 0);
+        
+        let hasHeldCol = false;
+        let currentHeld = 0;
+        try {
+            const { data: checkHeld, error: heldErr } = await supabase
+                .from('ticket_categories')
+                .select('held_quantity')
+                .eq('id', params.categoryId)
+                .maybeSingle();
+            if (!heldErr && checkHeld && typeof (checkHeld as any).held_quantity === 'number') {
+                hasHeldCol = true;
+                currentHeld = Number((checkHeld as any).held_quantity);
+            }
+        } catch {
+            hasHeldCol = false;
         }
 
-        const { data: lockedCategory, error: lockErr } = await supabase
-            .from('ticket_categories')
-            .update({
+        while (attempts < maxAttempts) {
+            attempts++;
+            const availableQty = Math.max(0, totalQty - currentSold);
+            if (availableQty <= 0) {
+                throw new Error(`Épuisé : Aucun billet restant disponible pour la catégorie "${category.name}".`);
+            }
+            if (requestedQty > availableQty) {
+                throw new Error(`Stock insuffisant : Il ne reste que ${availableQty} place(s) disponible(s) pour la catégorie "${category.name}".`);
+            }
+
+            const nextSold = currentSold + requestedQty;
+            const nextHeld = params.paymentConfirmed ? Math.max(0, currentHeld - requestedQty) : currentHeld;
+
+            const updatePayload: any = {
                 sold_quantity: nextSold,
                 updated_at: nowIso,
-            })
-            .eq('id', params.categoryId)
-            .eq('sold_quantity', category.sold_quantity) // Optimistic Concurrency Lock / Compare-and-Swap
-            .select('*')
-            .single();
+            };
+            if (hasHeldCol) {
+                updatePayload.held_quantity = nextHeld;
+            }
 
-        if (lockErr || !lockedCategory) {
-            // Conflit d'accès concurrent détecté (une autre transaction a pris le billet en même temps)
-            throw new Error(`Épuisé : Aucun billet restant disponible pour la catégorie "${category.name}".`);
+            let casQuery = supabase
+                .from('ticket_categories')
+                .update(updatePayload)
+                .eq('id', params.categoryId)
+                .eq('sold_quantity', currentSold) // Compare-and-swap
+                .eq('is_active', true);
+
+            if (hasHeldCol) {
+                casQuery = casQuery.eq('held_quantity', currentHeld);
+            }
+
+            const { data: updatedCat, error: lockErr } = await casQuery
+                .select('*')
+                .maybeSingle();
+
+            if (!lockErr && updatedCat) {
+                lockedCategory = updatedCat;
+                break;
+            }
+
+            // Conflit CAS concurrent : délai exponentiel/aléatoire puis relecture pour ré-essayer
+            await new Promise(r => setTimeout(r, 15 + Math.random() * 25));
+            const { data: refreshedCat } = await supabase
+                .from('ticket_categories')
+                .select('sold_quantity, total_quantity, is_active')
+                .eq('id', params.categoryId)
+                .single();
+
+            if (!refreshedCat || !refreshedCat.is_active) {
+                throw new Error(`Les ventes pour cette catégorie de billet sont clôturées.`);
+            }
+
+            currentSold = Number(refreshedCat.sold_quantity || 0);
+            totalQty = Number(refreshedCat.total_quantity || 0);
+
+            if (hasHeldCol) {
+                const { data: refHeld } = await supabase
+                    .from('ticket_categories')
+                    .select('held_quantity')
+                    .eq('id', params.categoryId)
+                    .maybeSingle();
+                if (refHeld) currentHeld = Number((refHeld as any).held_quantity || 0);
+            }
         }
 
-        // 2. Calcul financier conforme Annexe C (§37 CDC V3.0)
+        if (!lockedCategory) {
+            throw new Error(`Stock insuffisant : Conflit de réservation concurrente sur "${category.name}".`);
+        }
+
+        // 4. Calcul financier conforme Annexe C (§37 CDC V3.0)
         const ticketPrice = Number(lockedCategory.price);
         const financials = FinancialCalculatorService.calculateTicketingFinancials({
-            ticketFacialPrice: ticketPrice,
+            ticketFacialPrice: ticketPrice * requestedQty,
             serviceFeeRatePercent: params.serviceFeeRate ?? 5.0,
             aggregatorFeeRatePercent: params.aggregatorFeeRate ?? 1.5,
         });
 
-        // 3. Génération du ticket unique
-        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const randomHex = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
-        const ticketNumber = `TCK-${dateStr}-${randomHex}`;
-        const qrCode = `EV-QR-${randomUUID().replace(/-/g, '')}`;
+        // 5. Génération atomique des N tickets uniques
+        const ticketsToInsert = [];
+        for (let i = 0; i < requestedQty; i++) {
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const randomHex = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+            const ticketNumber = `TCK-${dateStr}-${randomHex}`;
+            const qrCode = `EV-QR-${randomUUID().replace(/-/g, '')}`;
 
-        const { data: ticket, error: ticketErr } = await supabase
-            .from('tickets')
-            .insert({
+            ticketsToInsert.push({
                 event_id: params.eventId,
                 category_id: params.categoryId,
                 user_id: params.userId,
@@ -687,113 +764,550 @@ export class EventService {
                 price: ticketPrice,
                 qr_code: qrCode,
                 status: 'VALIDE',
-            })
-            .select('*')
-            .single();
-
-        if (ticketErr || !ticket) {
-            // Rollback de la quantité si l'insertion du ticket échoue
-            await supabase
-                .from('ticket_categories')
-                .update({ sold_quantity: Number(lockedCategory.sold_quantity) - 1 })
-                .eq('id', params.categoryId);
-
-            throw new Error(`Échec de la génération du billet: ${ticketErr?.message}`);
+            });
         }
 
-        // 4. Traçabilité financière obligatoire (§76 & §160 CDC) :
-        // Si le billet payant est émis hors parcours webhook (guichet Contrôleur / invitation Partenaire),
-        // on enregistre systématiquement l'écriture financière dans la table 'payments'
+        const { data: createdTickets, error: ticketErr } = await supabase
+            .from('tickets')
+            .insert(ticketsToInsert)
+            .select('*');
+
+        if (ticketErr || !createdTickets || createdTickets.length !== requestedQty) {
+            // Rollback relatif sécurisé : décrémenter strictement la quantité demandée sans écraser les réservations concurrentes
+            const { data: catForRollback } = await supabase
+                .from('ticket_categories')
+                .select('sold_quantity')
+                .eq('id', params.categoryId)
+                .single();
+
+            if (catForRollback) {
+                const latestSold = Number(catForRollback.sold_quantity);
+                const rolledBackSold = Math.max(0, latestSold - requestedQty);
+                const rollbackPayload: any = {
+                    sold_quantity: rolledBackSold,
+                    updated_at: new Date().toISOString(),
+                };
+                if (params.paymentConfirmed && hasHeldCol) {
+                    const { data: curHeldDb } = await supabase.from('ticket_categories').select('held_quantity').eq('id', params.categoryId).maybeSingle();
+                    if (curHeldDb) {
+                        rollbackPayload.held_quantity = Number((curHeldDb as any).held_quantity || 0) + requestedQty;
+                    }
+                }
+                await supabase
+                    .from('ticket_categories')
+                    .update(rollbackPayload)
+                    .eq('id', params.categoryId)
+                    .eq('sold_quantity', latestSold); // CAS guard
+            }
+
+            throw new Error(`Échec de la génération des billets: ${ticketErr?.message}`);
+        }
+
+        // 6. Traçabilité financière hors webhook (guichet / invitation)
         if (!params.paymentConfirmed && ticketPrice > 0) {
-            if (isAuthorizedStaff) {
-                // Encaissement Guichet Physique (Cash / Espèces)
-                const cashTxId = `TX-CASH-${Date.now()}-${randomUUID().substring(0, 8)}`;
-                await supabase.from('payments').insert({
-                    transaction_id: cashTxId,
-                    client_id: params.userId,
-                    partner_id: category.events?.partner_id || null,
-                    ticket_id: ticket.id,
-                    payment_target: 'TICKET',
-                    amount: ticketPrice,
-                    currency: 'XOF',
-                    payment_method: 'CASH',
-                    is_platform_payment: false,
-                    offline_payment_method: 'ESPECES',
-                    aggregator: 'GUICHET_PHYSIQUE',
-                    aggregator_fee: 0,
-                    service_fee: financials.serviceFeeAmount,
-                    gross_event_village_revenue: financials.serviceFeeAmount,
-                    net_event_village_revenue: financials.serviceFeeAmount,
-                    partner_payout_amount: ticketPrice,
-                    status: 'SUCCESS',
-                    provider_status: 'GUICHET_CASH',
-                    idempotency_key: `IDEMP-CASH-${ticket.id}`,
-                    metadata: {
-                        issued_by_role: role,
-                        issued_by_user_id: params.userId,
-                        channel: 'GUICHET',
-                        event_id: params.eventId,
-                        category_id: params.categoryId,
-                    },
-                    paid_at: nowIso,
-                });
-            } else if (isPartnerOwner) {
-                // Billet Invitation / Gratuité Organisateur (Auditable par Superadmin §160)
-                const invTxId = `TX-INV-${Date.now()}-${randomUUID().substring(0, 8)}`;
-                await supabase.from('payments').insert({
-                    transaction_id: invTxId,
-                    client_id: params.userId,
-                    partner_id: category.events?.partner_id || null,
-                    ticket_id: ticket.id,
-                    payment_target: 'TICKET',
-                    amount: 0,
-                    currency: 'XOF',
-                    payment_method: 'INVITATION',
-                    is_platform_payment: false,
-                    aggregator: 'ORGANISATEUR_INVITATION',
-                    aggregator_fee: 0,
-                    service_fee: 0,
-                    gross_event_village_revenue: 0,
-                    net_event_village_revenue: 0,
-                    partner_payout_amount: 0,
-                    status: 'SUCCESS',
-                    provider_status: 'INVITATION_ORGANISATEUR',
-                    idempotency_key: `IDEMP-INV-${ticket.id}`,
-                    metadata: {
-                        issued_by_role: 'PARTENAIRE_ORGANISATEUR',
-                        is_complimentary: true,
-                        event_id: params.eventId,
-                        category_id: params.categoryId,
-                    },
-                    paid_at: nowIso,
-                });
+            for (const createdTicket of createdTickets) {
+                if (isAuthorizedStaff) {
+                    const cashTxId = `TX-CASH-${Date.now()}-${randomUUID().substring(0, 8)}`;
+                    await supabase.from('payments').insert({
+                        transaction_id: cashTxId,
+                        client_id: params.userId,
+                        partner_id: category.events?.partner_id || null,
+                        ticket_id: createdTicket.id,
+                        payment_target: 'TICKET',
+                        amount: ticketPrice,
+                        currency: 'XOF',
+                        payment_method: 'CASH',
+                        is_platform_payment: false,
+                        offline_payment_method: 'ESPECES',
+                        aggregator: 'GUICHET_PHYSIQUE',
+                        aggregator_fee: 0,
+                        service_fee: financials.serviceFeeAmount / requestedQty,
+                        gross_event_village_revenue: financials.serviceFeeAmount / requestedQty,
+                        net_event_village_revenue: financials.serviceFeeAmount / requestedQty,
+                        partner_payout_amount: ticketPrice,
+                        status: 'SUCCESS',
+                        provider_status: 'GUICHET_CASH',
+                        idempotency_key: `IDEMP-CASH-${createdTicket.id}`,
+                        metadata: {
+                            issued_by_role: role,
+                            issued_by_user_id: params.userId,
+                            channel: 'GUICHET',
+                            event_id: params.eventId,
+                            category_id: params.categoryId,
+                        },
+                        paid_at: nowIso,
+                    });
+                } else if (isPartnerOwner) {
+                    const invTxId = `TX-INV-${Date.now()}-${randomUUID().substring(0, 8)}`;
+                    await supabase.from('payments').insert({
+                        transaction_id: invTxId,
+                        client_id: params.userId,
+                        partner_id: category.events?.partner_id || null,
+                        ticket_id: createdTicket.id,
+                        payment_target: 'TICKET',
+                        amount: 0,
+                        currency: 'XOF',
+                        payment_method: 'INVITATION',
+                        is_platform_payment: false,
+                        aggregator: 'ORGANISATEUR_INVITATION',
+                        aggregator_fee: 0,
+                        service_fee: 0,
+                        gross_event_village_revenue: 0,
+                        net_event_village_revenue: 0,
+                        partner_payout_amount: 0,
+                        status: 'SUCCESS',
+                        provider_status: 'INVITATION_ORGANISATEUR',
+                        idempotency_key: `IDEMP-INV-${createdTicket.id}`,
+                        metadata: {
+                            issued_by_role: 'PARTENAIRE_ORGANISATEUR',
+                            is_complimentary: true,
+                            event_id: params.eventId,
+                            category_id: params.categoryId,
+                        },
+                        paid_at: nowIso,
+                    });
+                }
             }
         }
 
-        // 5. Notification au partenaire organisateur
-        if (category.events?.partner_id) {
-            const { data: partner } = await supabase
-                .from('partners')
-                .select('user_id')
-                .eq('id', category.events.partner_id)
-                .single();
-
-            if (partner?.user_id) {
-                await NotificationService.createNotification({
-                    userId: partner.user_id,
-                    title: 'Nouveau billet vendu !',
-                    message: `Un billet "${lockedCategory.name}" a été émis pour votre événement "${category.events.title}" (${ticketPrice} FCFA).`,
-                    type: 'SYSTEM',
-                    data: { eventId: params.eventId, ticketId: ticket.id, price: ticketPrice },
+        // 7. Notification SOLD_OUT post-commit sécurisée (strictement après création confirmée des billets en base)
+        const finalSold = Number(lockedCategory.sold_quantity);
+        const finalTotal = Number(lockedCategory.total_quantity);
+        if (finalSold >= finalTotal) {
+            try {
+                await NotificationService.sendTicketCategorySoldOutNotification({
+                    eventId: params.eventId,
+                    categoryId: params.categoryId,
+                    categoryName: lockedCategory.name,
+                    totalQuantity: finalTotal,
                 });
+            } catch (err) {
+                console.error('[EventService.reserveTicketsAtomic] Notification SOLD_OUT post-commit échouée:', err);
+            }
+
+            // Vérifier si toutes les catégories de l'événement sont désormais complètes / fermées
+            try {
+                const { data: allCategories } = await supabase
+                    .from('ticket_categories')
+                    .select('id, total_quantity, sold_quantity, is_active')
+                    .eq('event_id', params.eventId);
+
+                if (allCategories && allCategories.length > 0) {
+                    const isFullySoldOut = allCategories.every(
+                        (cat: any) => Number(cat.sold_quantity || 0) >= Number(cat.total_quantity || 0) || cat.is_active === false
+                    );
+                    if (isFullySoldOut) {
+                        const totalSoldSum = allCategories.reduce((sum: number, c: any) => sum + Number(c.sold_quantity || 0), 0);
+                        await NotificationService.sendEventFullySoldOutNotification({
+                            eventId: params.eventId,
+                            eventTitle: category.events?.title || lockedCategory.name || 'Événement',
+                            totalTicketsSold: totalSoldSum,
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('[EventService.reserveTicketsAtomic] Erreur vérification event fully sold out:', err);
             }
         }
 
         return {
-            ticket,
+            tickets: createdTickets,
+            ticket: createdTickets[0],
+            count: createdTickets.length,
             category: lockedCategory,
             financials,
         };
+    }
+
+    /**
+     * Achat Atomique d'un seul Billet (wrapper 100% rétrocompatible vers reserveTicketsAtomic)
+     */
+    public static async purchaseTicketAtomic(params: {
+        eventId: string;
+        categoryId: string;
+        userId: string;
+        orderId?: string;
+        aggregatorFeeRate?: number;
+        serviceFeeRate?: number;
+        paymentConfirmed?: boolean;
+        callerRole?: string;
+        callerUserId?: string;
+    }) {
+        const result = await this.reserveTicketsAtomic({
+            ...params,
+            quantity: 1,
+        });
+
+        return {
+            ticket: result.ticket,
+            category: result.category,
+            financials: result.financials,
+        };
+    }
+
+    /**
+     * Calcule la quantité de billets actuellement réservée temporairement (Hold Cart)
+     * Lit à la fois la colonne physique held_quantity et filtre en SQL par metadata->>event_id
+     */
+    public static async getActiveHeldQuantity(categoryId: string): Promise<number> {
+        const supabase = getServiceRoleClient();
+        const now = new Date();
+        const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+
+        // 1. Lire depuis ticket_categories la colonne physique held_quantity et l'event_id
+        let dbHeld = 0;
+        let eventId: string | null = null;
+        try {
+            const { data: cat } = await supabase
+                .from('ticket_categories')
+                .select('event_id')
+                .eq('id', categoryId)
+                .maybeSingle();
+            if (cat) {
+                eventId = cat.event_id || null;
+            }
+
+            const { data: heldData, error: heldErr } = await supabase
+                .from('ticket_categories')
+                .select('held_quantity')
+                .eq('id', categoryId)
+                .maybeSingle();
+            if (!heldErr && heldData && typeof (heldData as any).held_quantity === 'number') {
+                dbHeld = Number((heldData as any).held_quantity);
+            }
+        } catch {
+            // colonne non présente
+        }
+
+        // 2. Calculer le total des holds actifs depuis la table payments filtrée par event_id
+        let query = supabase
+            .from('payments')
+            .select('amount, metadata, created_at')
+            .eq('payment_target', 'TICKET')
+            .eq('status', 'PENDING');
+
+        if (eventId) {
+            query = query.filter('metadata->>event_id', 'eq', eventId);
+        }
+
+        const { data: pendingPayments } = await query;
+
+        let pendingHeld = 0;
+        for (const p of pendingPayments || []) {
+            const expiresAt = p.metadata?.held_expires_at;
+            const isStillActive = expiresAt
+                ? new Date(expiresAt).getTime() > now.getTime()
+                : new Date(p.created_at).getTime() > new Date(tenMinutesAgo).getTime();
+
+            if (isStillActive) {
+                if (p.metadata?.checkout_items && Array.isArray(p.metadata.checkout_items)) {
+                    for (const item of p.metadata.checkout_items) {
+                        if (item.categoryId === categoryId) {
+                            pendingHeld += Number(item.quantity || 1);
+                        }
+                    }
+                } else if (p.metadata?.category_id === categoryId) {
+                    pendingHeld += Number(p.metadata.quantity || 1);
+                }
+            }
+        }
+
+        return Math.max(dbHeld, pendingHeld);
+    }
+
+    /**
+     * Vérifie et applique l'ordonnancement strict de réservation temporaire (Hold Queue Serializer)
+     * Garantit qu'en cas de forte concurrence (ex: 5 requêtes sur 1 place restante), seule la première est validée
+     * et toutes les suivantes sont immédiatement rejetées et nettoyées AVANT tout débit ou appel externe.
+     * Effectue une incrémentation atomique CAS sur la colonne physique held_quantity si disponible.
+     */
+    public static async verifyAndEnforceHoldAtomic(params: {
+        paymentId: string;
+        categoryId: string;
+        quantity: number;
+        eventId: string;
+    }): Promise<boolean> {
+        const supabase = getServiceRoleClient();
+        const now = new Date();
+        const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+
+        // 1. Lire la catégorie
+        const { data: category } = await supabase
+            .from('ticket_categories')
+            .select('total_quantity, sold_quantity, name, is_active')
+            .eq('id', params.categoryId)
+            .single();
+
+        if (!category) {
+            await supabase.from('payments').delete().eq('id', params.paymentId);
+            throw new Error('Catégorie de billet introuvable.');
+        }
+
+        if (!category.is_active) {
+            await supabase.from('payments').delete().eq('id', params.paymentId);
+            throw new Error(`Cette catégorie de billet n'est plus disponible à la vente (fermée par l'organisateur).`);
+        }
+
+        const totalQty = Number(category.total_quantity || 0);
+        const soldQty = Number(category.sold_quantity || 0);
+        const remainingCapacity = Math.max(0, totalQty - soldQty);
+
+        if (remainingCapacity <= 0) {
+            await supabase.from('payments').delete().eq('id', params.paymentId);
+            throw new Error(`Épuisé : Aucun billet restant disponible pour la catégorie "${category.name}".`);
+        }
+
+        // 2. Lire les intentions PENDING ordonnées chronologiquement avec filtre SQL par eventId
+        const { data: pendingPayments } = await supabase
+            .from('payments')
+            .select('id, amount, metadata, created_at')
+            .eq('payment_target', 'TICKET')
+            .eq('status', 'PENDING')
+            .filter('metadata->>event_id', 'eq', params.eventId)
+            .order('created_at', { ascending: true })
+            .order('id', { ascending: true });
+
+        let cumulativeHeld = 0;
+        let isWithinCapacity = false;
+
+        for (const p of pendingPayments || []) {
+            const expiresAt = p.metadata?.held_expires_at;
+            const isStillActive = expiresAt
+                ? new Date(expiresAt).getTime() > now.getTime()
+                : new Date(p.created_at).getTime() > new Date(tenMinutesAgo).getTime();
+
+            if (!isStillActive) continue;
+
+            let qty = 0;
+            if (p.metadata?.checkout_items && Array.isArray(p.metadata.checkout_items)) {
+                const item = p.metadata.checkout_items.find((i: any) => i.categoryId === params.categoryId);
+                if (item) qty = Number(item.quantity || 1);
+            } else if (p.metadata?.category_id === params.categoryId) {
+                qty = Number(p.metadata.quantity || 1);
+            }
+
+            if (qty > 0) {
+                cumulativeHeld += qty;
+                if (p.id === params.paymentId) {
+                    if (cumulativeHeld <= remainingCapacity) {
+                        isWithinCapacity = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (!isWithinCapacity) {
+            // Rejet immédiat : supprimer la transaction PENDING perdante pour ne pas bloquer les autres
+            await supabase.from('payments').delete().eq('id', params.paymentId);
+            throw new Error(`Stock insuffisant : Cette catégorie est actuellement en cours de réservation par d'autres acheteurs. Veuillez réessayer dans quelques minutes.`);
+        }
+
+        // 3. Incrémentation atomique CAS de la colonne physique ticket_categories.held_quantity si disponible
+        try {
+            const { data: checkHeld, error: heldErr } = await supabase
+                .from('ticket_categories')
+                .select('held_quantity')
+                .eq('id', params.categoryId)
+                .maybeSingle();
+
+            if (!heldErr && checkHeld && typeof (checkHeld as any).held_quantity === 'number') {
+                const maxCasRetries = 10;
+                let holdLocked = false;
+                let currentHeld = Number((checkHeld as any).held_quantity || 0);
+                let currentSold = soldQty;
+                let currentTotal = totalQty;
+
+                for (let attempt = 0; attempt < maxCasRetries; attempt++) {
+                    if (currentSold + currentHeld + params.quantity > currentTotal) {
+                        await supabase.from('payments').delete().eq('id', params.paymentId);
+                        throw new Error(`Stock insuffisant : Cette catégorie est actuellement en cours de réservation par d'autres acheteurs. Veuillez réessayer dans quelques minutes.`);
+                    }
+
+                    const nextHeld = currentHeld + params.quantity;
+                    const { data: updatedCat, error: lockErr } = await supabase
+                        .from('ticket_categories')
+                        .update({
+                            held_quantity: nextHeld,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', params.categoryId)
+                        .eq('held_quantity', currentHeld)
+                        .eq('sold_quantity', currentSold)
+                        .select('held_quantity, sold_quantity, total_quantity')
+                        .maybeSingle();
+
+                    if (!lockErr && updatedCat) {
+                        holdLocked = true;
+                        break;
+                    }
+
+                    await new Promise(r => setTimeout(r, 10 + Math.random() * 20));
+                    const { data: refreshedCat } = await supabase
+                        .from('ticket_categories')
+                        .select('held_quantity, sold_quantity, total_quantity, is_active')
+                        .eq('id', params.categoryId)
+                        .single();
+
+                    if (!refreshedCat || !refreshedCat.is_active) {
+                        await supabase.from('payments').delete().eq('id', params.paymentId);
+                        throw new Error(`Cette catégorie de billet n'est plus disponible à la vente.`);
+                    }
+
+                    currentHeld = Number((refreshedCat as any).held_quantity || 0);
+                    currentSold = Number(refreshedCat.sold_quantity || 0);
+                    currentTotal = Number(refreshedCat.total_quantity || 0);
+                }
+
+                if (!holdLocked) {
+                    await supabase.from('payments').delete().eq('id', params.paymentId);
+                    throw new Error(`Stock insuffisant : Conflit de réservation concurrente. Veuillez réessayer.`);
+                }
+            }
+        } catch {
+            // colonne held_quantity non configurée en base
+        }
+
+        return true;
+    }
+
+    /**
+     * Libère une réservation temporaire de stock (Hold Cart)
+     * Décrémente held_quantity sans toucher sold_quantity via Compare-And-Swap.
+     */
+    public static async releaseHoldTicketsAtomic(params: {
+        categoryId: string;
+        quantity: number;
+    }): Promise<{ success: boolean; released: number }> {
+        const supabase = getServiceRoleClient();
+        const qtyToRelease = Math.max(0, Number(params.quantity || 1));
+
+        const maxRetries = 10;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const { data: cat, error: catErr } = await supabase
+                    .from('ticket_categories')
+                    .select('held_quantity, sold_quantity')
+                    .eq('id', params.categoryId)
+                    .maybeSingle();
+
+                if (catErr || !cat || typeof (cat as any).held_quantity !== 'number') break;
+
+                const currentHeld = Number((cat as any).held_quantity || 0);
+                if (currentHeld <= 0) break; // Déjà à 0
+
+                const nextHeld = Math.max(0, currentHeld - qtyToRelease);
+                const { data: updated, error } = await supabase
+                    .from('ticket_categories')
+                    .update({
+                        held_quantity: nextHeld,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', params.categoryId)
+                    .eq('held_quantity', currentHeld)
+                    .select('held_quantity')
+                    .maybeSingle();
+
+                if (!error && updated) break;
+                await new Promise(r => setTimeout(r, 10 + Math.random() * 20));
+            } catch {
+                break;
+            }
+        }
+
+        return { success: true, released: qtyToRelease };
+    }
+
+    /**
+     * Mise à jour du stock ou du statut d'une catégorie de billets par l'organisateur
+     * Permet d'augmenter le stock (total_quantity) ou de fermer/réouvrir les ventes (is_active)
+     * même sur un événement déjà publié (§35 CDC V3.0).
+     */
+    public static async updateCategoryStockAndStatus(
+        partnerUserId: string,
+        eventId: string,
+        categoryId: string,
+        input: {
+            total_quantity?: number;
+            is_active?: boolean;
+            is_visible?: boolean;
+            price?: number;
+            description?: string;
+        }
+    ) {
+        const supabase = getServiceRoleClient();
+        const partnerId = await this.resolvePartnerId(partnerUserId);
+
+        // 1. Vérifier que l'événement appartient bien au partenaire
+        const { data: event, error: evErr } = await supabase
+            .from('events')
+            .select('id, capacity, status, ticket_categories(*)')
+            .eq('id', eventId)
+            .eq('partner_id', partnerId)
+            .single();
+
+        if (evErr || !event) {
+            throw new Error('Événement introuvable ou vous n\'en êtes pas le propriétaire.');
+        }
+
+        const category = (event.ticket_categories as any[])?.find(c => c.id === categoryId);
+        if (!category) {
+            throw new Error('Catégorie de billet introuvable sur cet événement.');
+        }
+
+        const updateData: Record<string, any> = {
+            updated_at: new Date().toISOString(),
+        };
+
+        if (input.total_quantity !== undefined) {
+            const newTotal = Number(input.total_quantity);
+            const currentSold = Number(category.sold_quantity || 0);
+            if (newTotal < currentSold) {
+                throw new Error(`Le stock total (${newTotal}) ne peut pas être inférieur au nombre de billets déjà vendus (${currentSold}).`);
+            }
+
+            // Vérification capacité max de l'événement si définie
+            if (event.capacity && Number(event.capacity) > 0) {
+                const otherTotal = (event.ticket_categories as any[])
+                    .filter(c => c.id !== categoryId)
+                    .reduce((sum, c) => sum + Number(c.total_quantity || 0), 0);
+                if (otherTotal + newTotal > Number(event.capacity)) {
+                    throw new Error(`La somme des quotas de billets (${otherTotal + newTotal}) dépasserait la capacité maximale de l'événement (${event.capacity}).`);
+                }
+            }
+
+            updateData.total_quantity = newTotal;
+        }
+
+        if (input.is_active !== undefined) {
+            updateData.is_active = !!input.is_active;
+        }
+
+        if (input.is_visible !== undefined) {
+            updateData.is_visible = !!input.is_visible;
+        }
+
+        if (input.price !== undefined && ['BROUILLON', 'EN_ATTENTE'].includes(event.status)) {
+            updateData.price = Number(input.price);
+        }
+
+        if (input.description !== undefined) {
+            updateData.description = input.description;
+        }
+
+        const { data: updatedCat, error: updateErr } = await supabase
+            .from('ticket_categories')
+            .update(updateData)
+            .eq('id', categoryId)
+            .eq('event_id', eventId)
+            .select('*')
+            .single();
+
+        if (updateErr || !updatedCat) {
+            throw new Error(`Échec de la mise à jour de la catégorie: ${updateErr?.message}`);
+        }
+
+        return updatedCat;
     }
 
     /**

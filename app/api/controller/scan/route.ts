@@ -7,6 +7,7 @@ import { isEventEligibleForController } from '@/lib/events/event-status';
 import { parseDynamicQrPayload, verifyTotp, deriveTicketTotpSecret, TOTP_STEP_SECONDS } from '@/lib/security/totp';
 import { ShiftService } from '@/lib/shifts/shift.service';
 import { RateLimiter } from '@/lib/security/rate-limiter';
+import { NotificationService } from '@/lib/notifications/notification.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -356,6 +357,20 @@ export async function POST(req: NextRequest) {
             },
         });
 
+        // ─── 7.5 Notification Client / Porteur (In-App + SMS + Email) ───
+        NotificationService.sendTicketScannedSuccessNotification({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            eventTitle: eventData?.title,
+            categoryName: categoryData?.name || 'Standard',
+            userId: ticket.user_id,
+            checkedInAt: new Date().toISOString(),
+            controllerId: user.id,
+            venue: eventData?.location,
+        }).catch((notifErr) => {
+            console.warn('[controller/scan] Erreur notification scan client:', notifErr);
+        });
+
         // ─── 8. Stats légères et optimisées (Évite le double COUNT(*) lourd sur la table tickets à chaque scan) ───
         const today = new Date().toISOString().split('T')[0];
         const { count: scannedToday } = await supabase
@@ -423,7 +438,7 @@ export async function PUT(req: NextRequest) {
         // Vérif assignation + permission cash
         const { data: ticket } = await supabase
             .from('tickets')
-            .select('id, event_id, status, price, order_id, events(status, partner_id)')
+            .select('id, event_id, status, price, order_id, ticket_number, user_id, events(status, partner_id, title, location), ticket_categories(name)')
             .eq('id', ticketId)
             .single();
 
@@ -550,6 +565,20 @@ export async function PUT(req: NextRequest) {
             objectId: ticketId,
             newValue: { payment: 'CASH', amount: ticket.price, order_id: orderId, shift_id: activeShiftId },
             metadata: { controller_id: user.id, event_id: ticket.event_id, shift_id: activeShiftId },
+        });
+
+        // Notification Client / Porteur (In-App + SMS + Email)
+        NotificationService.sendTicketScannedSuccessNotification({
+            ticketId: ticketId,
+            ticketNumber: ticket.ticket_number,
+            eventTitle: (ticket.events as any)?.title,
+            categoryName: (ticket.ticket_categories as any)?.name || 'Standard',
+            userId: ticket.user_id,
+            checkedInAt: now,
+            controllerId: user.id,
+            venue: (ticket.events as any)?.location,
+        }).catch((notifErr) => {
+            console.warn('[controller/scan] Erreur notification scan espèces client:', notifErr);
         });
 
 

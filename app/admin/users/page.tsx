@@ -42,7 +42,7 @@ interface UserItem {
   phone: string;
   email: string;
   role: 'SUPERADMIN' | 'ADMIN' | 'PARTENAIRE' | 'CONTROLEUR' | 'CLIENT';
-  status: 'ACTIF' | 'EN_ATTENTE' | 'SUSPENDU';
+  status: 'ACTIF' | 'EN_ATTENTE' | 'SUSPENDU' | 'SUPPRIME';
   referral_status: 'STANDARD' | 'AMBASSADEUR';
   created_at: string;
 }
@@ -220,17 +220,17 @@ export default function AdminUsersManagementPage() {
     if (!userToDelete) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/admin/users?userId=${userToDelete.id}`, {
-        method: 'DELETE',
+      const res = await fetch(`/api/admin/users/${userToDelete.id}/anonymize`, {
+        method: 'POST',
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression.');
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'anonymisation.');
 
-      toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement supprimé.`);
+      toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement anonymisé (RGPD).`);
       setUserToDelete(null);
       await fetchUsers();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la suppression.';
+      const msg = err instanceof Error ? err.message : 'Échec de l\'anonymisation.';
       toast.error(msg);
     } finally {
       setIsDeleting(false);
@@ -331,11 +331,16 @@ export default function AdminUsersManagementPage() {
               const isSuper = user.role === 'SUPERADMIN';
               const isAdmin = user.role === 'ADMIN';
               const isSuspended = user.status === 'SUSPENDU';
+              const isDeleted = user.status === 'SUPPRIME';
 
               return (
                 <div
                   key={user.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200/80 dark:border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                    isDeleted
+                      ? 'bg-slate-100/60 dark:bg-zinc-950/40 border-slate-200 dark:border-zinc-800 opacity-75'
+                      : 'bg-slate-50 dark:bg-zinc-900/70 border-slate-200/80 dark:border-zinc-800/80'
+                  }`}
                 >
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -359,12 +364,14 @@ export default function AdminUsersManagementPage() {
 
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                          isSuspended
+                          isDeleted
+                            ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 font-black'
+                            : isSuspended
                             ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400'
                             : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
                         }`}
                       >
-                        {user.status}
+                        {isDeleted ? 'SUPPRIMÉ (RGPD)' : user.status}
                       </span>
 
                       {user.referral_status === 'AMBASSADEUR' && (
@@ -388,7 +395,7 @@ export default function AdminUsersManagementPage() {
 
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {/* Bouton Permissions Granulaires pour Admin */}
-                    {isAdmin && (
+                    {isAdmin && !isDeleted && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -400,8 +407,8 @@ export default function AdminUsersManagementPage() {
                       </Button>
                     )}
 
-                    {/* Suspension / Réactivation */}
-                    {!isSuper && (
+                    {/* Suspension / Réactivation / Suppression */}
+                    {!isSuper && !isDeleted && (
                       <>
                         <Button
                           variant="secondary"
@@ -415,20 +422,29 @@ export default function AdminUsersManagementPage() {
                         >
                           {isSuspended ? 'Réactiver' : 'Suspendre'}
                         </Button>
-                        <button
-                          type="button"
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => handleDeleteUser(user)}
-                          title="Supprimer définitivement ce compte"
-                          className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                          title="Anonymiser définitivement ce compte (RGPD)"
+                          className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/30 flex items-center gap-1"
                         >
-                          <Trash2 size={15} />
-                        </button>
+                          <Trash2 size={13} />
+                          <span>Supprimer</span>
+                        </Button>
                       </>
+                    )}
+
+                    {isDeleted && (
+                      <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 italic px-2">
+                        Compte Anonymisé & Banni
+                      </span>
                     )}
                   </div>
                 </div>
               );
             })}
+
           </div>
         )}
       </div>
@@ -771,20 +787,19 @@ export default function AdminUsersManagementPage() {
         </Modal>
       )}
 
-      {/* ConfirmDialog Suppression */}
+      {/* ConfirmDialog Anonymisation RGPD */}
       <ConfirmDialog
         isOpen={!!userToDelete}
         onClose={() => setUserToDelete(null)}
         onConfirm={handleConfirmDelete}
         variant="danger"
-        title="Supprimer ce compte ?"
-        message={userToDelete
-          ? `Vous allez supprimer définitivement le compte de ${userToDelete.first_name} ${userToDelete.last_name} (${userToDelete.phone}). Cette action est irréversible.`
-          : ''}
-        confirmLabel="Supprimer définitivement"
+        title="Anonymiser définitivement ce compte ?"
+        message="Attention : Cette action va anonymiser définitivement cet utilisateur (conformité RGPD). Ses données personnelles seront effacées et il sera banni, mais son historique financier sera conservé. Cette action est irréversible."
+        confirmLabel="Anonymiser & Supprimer"
         cancelLabel="Annuler"
         isLoading={isDeleting}
       />
     </div>
   );
 }
+

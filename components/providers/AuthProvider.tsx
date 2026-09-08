@@ -64,29 +64,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const fetchUserProfile = useCallback(async (userId: string, currentSession?: Session | null) => {
         try {
-            const supabase = getBrowserClient();
+            // 1. Essayer de récupérer le profil complet et les multi-rôles via /api/auth/me (backend Service Role)
+            try {
+                const res = await fetch('/api/auth/me', {
+                    headers: currentSession?.access_token ? { 'Authorization': `Bearer ${currentSession.access_token}` } : {}
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data?.authenticated && data?.profile) {
+                        setProfile(data.profile);
+                        setPartner(data.partner || null);
+                        return;
+                    }
+                }
+            } catch {
+                // Fallback direct si l'API n'est pas encore disponible
+            }
 
-            const [{ data: userData, error: userError }, { data: rolesData }] = await Promise.all([
-                supabase
-                    .from('users')
-                    .select('*')
-                    .eq('id', userId)
-                    .maybeSingle(),
-                supabase
-                    .from('user_roles')
-                    .select('role')
-                    .eq('user_id', userId),
-            ]);
+            // 2. Fallback direct via client Supabase sur users
+            const supabase = getBrowserClient();
+            const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', userId)
+                .maybeSingle();
 
             if (userError) {
-                console.error('[AuthProvider] Erreur chargement profil user:', userError);
+                console.warn('[AuthProvider] Chargement fallback user:', userError.message);
             }
 
             let partnerData: PartnerProfile | null = null;
             if (userData) {
-                const dbRoles: string[] = (rolesData && rolesData.length > 0)
-                    ? rolesData.map((r: { role: string }) => r.role)
-                    : [userData.role as string];
+                const meta = currentSession?.user?.user_metadata || {};
+                const metaRoles = parseRolesFromMetadata(meta as Record<string, unknown>);
+                const dbRoles: string[] = (metaRoles && metaRoles.length > 0 && !metaRoles.includes('CLIENT'))
+                    ? metaRoles
+                    : [userData.role as string || 'CLIENT'];
 
                 const userProfile: UserProfile = {
                     ...(userData as Omit<UserProfile, 'roles'>),

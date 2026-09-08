@@ -23,6 +23,8 @@ import {
   Phone,
   ClipboardList,
   ExternalLink,
+  Plus,
+  Minus,
 } from 'lucide-react';
 
 const EventMap = dynamic(
@@ -34,6 +36,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { PaymentModal } from '@/components/payment/PaymentModal';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { getBrowserClient } from '@/lib/supabase/client';
 
 export default function EventDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -42,36 +45,132 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [isLiked, setIsLiked] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isClaimingFree, setIsClaimingFree] = useState(false);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [event, setEvent] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cart, setCart] = useState<Record<string, number>>({});
+
+  const updateCartQty = (categoryId: string, delta: number) => {
+    setCart(prev => {
+      const cat = (event?.categories || []).find((c: any) => c.id === categoryId);
+      if (!cat) return prev;
+      const current = prev[categoryId] || 0;
+      const maxAllowed = Math.min(cat.maxPerOrder || 10, cat.availableQuantity ?? 10);
+      const next = Math.max(0, Math.min(maxAllowed, current + delta));
+      if (next === 0) {
+        const { [categoryId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [categoryId]: next };
+    });
+  };
+
+  const cartItems = Object.entries(cart)
+    .map(([catId, qty]) => {
+      const cat = (event?.categories || []).find((c: any) => c.id === catId);
+      return cat ? { ...cat, qty } : null;
+    })
+    .filter(Boolean) as any[];
+
+  const cartTotal = cartItems.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
+  const cartTotalQty = cartItems.reduce((sum, item) => sum + item.qty, 0);
+  const hasFreeOnly = cartTotal === 0 && cartTotalQty > 0;
+  const hasPaidItems = cartItems.some(item => (item.price || 0) > 0);
 
   const eventId = params.id;
 
-  useEffect(() => {
-    async function loadEvent() {
-      if (!eventId) return;
-      try {
+  const loadEvent = React.useCallback(async (showLoading = true) => {
+    if (!eventId) return;
+    try {
+      if (showLoading) {
         setIsLoading(true);
         setError(null);
-        const res = await fetch(`/api/events/${eventId}`);
-        if (!res.ok) {
-          throw new Error('Événement introuvable.');
-        }
-        const data = await res.json();
-        setEvent(data.event);
-        if (data.event.categories && data.event.categories.length > 0) {
-          setSelectedCategoryId(data.event.categories[0].id);
-        }
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erreur chargement événement');
-      } finally {
-        setIsLoading(false);
       }
+      const res = await fetch(`/api/events/${eventId}`);
+      if (!res.ok) {
+        throw new Error('Événement introuvable.');
+      }
+      const data = await res.json();
+      setEvent(data.event);
+
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erreur chargement événement');
+    } finally {
+      if (showLoading) setIsLoading(false);
     }
-    loadEvent();
   }, [eventId]);
+
+  useEffect(() => {
+    loadEvent(true);
+  }, [loadEvent]);
+
+  // Abonnement Realtime Supabase sur les catégories de billets de l'événement (sans F5)
+  useEffect(() => {
+    if (!eventId) return;
+
+    const supabase = getBrowserClient();
+    const channel = supabase
+      .channel(`realtime-event-categories-${eventId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ticket_categories',
+          filter: `event_id=eq.${eventId}`,
+        },
+        (payload: any) => {
+          if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as any;
+            setEvent((prevEvent: any) => {
+              if (!prevEvent || !prevEvent.categories) return prevEvent;
+              const updatedCats = prevEvent.categories.map((cat: any) => {
+                if (cat.id === updated.id) {
+                  const totalQuantity = Number(updated.total_quantity || 0);
+                  const soldQuantity = Number(updated.sold_quantity || 0);
+                  const heldQuantity = Number(updated.held_quantity || 0);
+                  const availableQuantity = Math.max(0, totalQuantity - soldQuantity - heldQuantity);
+                  const isSoldOut = soldQuantity >= totalQuantity;
+                  const isHeld = !isSoldOut && (soldQuantity + heldQuantity) >= totalQuantity;
+                  const isClosed = updated.is_active === false;
+                  const isAvailable = !isClosed && !isSoldOut && !isHeld && availableQuantity > 0;
+
+                  return {
+                    ...cat,
+                    name: updated.name || cat.name,
+                    price: Number(updated.price ?? cat.price),
+                    totalQuantity,
+                    soldQuantity,
+                    heldQuantity,
+                    availableQuantity,
+                    isSoldOut,
+                    isHeld,
+                    isClosed,
+                    isAvailable,
+                    status: isClosed ? 'CLOSED' : isSoldOut ? 'SOLD_OUT' : isHeld ? 'HELD' : 'ACTIVE',
+                  };
+                }
+                return cat;
+              });
+
+              const isFullySoldOut = updatedCats.length > 0 && updatedCats.every((c: any) => c.isSoldOut || c.isClosed);
+              return {
+                ...prevEvent,
+                categories: updatedCats,
+                isFullySoldOut,
+              };
+            });
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+            loadEvent(false);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [eventId, loadEvent]);
 
   if (isLoading) {
     return (
@@ -108,8 +207,6 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     );
   }
 
-  const selectedCategory = (event.categories || []).find((c: any) => c.id === selectedCategoryId) || event.categories?.[0];
-
   const handleBuyClick = async () => {
     if (!isAuthenticated) {
       const returnUrl = `/events/${eventId}`;
@@ -117,26 +214,33 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       router.push(`/login?redirect=${encodeURIComponent(returnUrl)}`);
       return;
     }
+    if (cartTotalQty === 0) return;
 
-    if (!selectedCategory) return;
-
-    if (selectedCategory.isFree) {
+    // Si le panier ne contient QUE des billets gratuits
+    if (hasFreeOnly) {
       setIsClaimingFree(true);
       try {
-        const res = await fetch('/api/tickets/claim-free', {
+        const res = await fetch('/api/checkout', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
           },
-          body: JSON.stringify({ categoryId: selectedCategory.id }),
+          body: JSON.stringify({
+            eventId,
+            items: cartItems.map(item => ({ categoryId: item.id, quantity: item.qty })),
+          }),
         });
         const data = await res.json();
         if (data.success) {
-          toast.success('Billet gratuit réservé avec succès ! Retrouvez-le dans Mes Billets.');
+          toast.success(
+            cartTotalQty > 1
+              ? `${cartTotalQty} billets gratuits réservés avec succès !`
+              : 'Billet gratuit réservé avec succès !'
+          );
           router.push('/tickets');
         } else {
-          toast.error(data.error || 'Erreur lors de la réservation du billet gratuit.');
+          toast.error(data.error || 'Erreur lors de la réservation.');
         }
       } catch {
         toast.error('Erreur réseau. Veuillez réessayer.');
@@ -146,6 +250,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       return;
     }
 
+    // Sinon, ouvrir le PaymentModal pour les billets payants
     setIsPaymentOpen(true);
   };
 
@@ -201,6 +306,16 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
               priority
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+
+            {/* Badge Événement Complet si toutes les catégories sont épuisées/fermées */}
+            {event.isFullySoldOut && (
+              <div className="absolute top-4 right-4 z-10">
+                <span className="px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider bg-red-600/90 backdrop-blur-md text-white border border-red-400 shadow-lg inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  Complet
+                </span>
+              </div>
+            )}
 
             <div className="absolute bottom-4 left-4 right-4 sm:bottom-6 sm:left-6 sm:right-6 text-white space-y-1">
               <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#FF5722] text-white shadow-md inline-block">
@@ -402,14 +517,26 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
 
         {/* Colonne Droite : Formules & Module d'Achat Sticky */}
         <div className="bg-white dark:bg-[#1E1E1E] p-6 rounded-3xl border border-slate-200/80 dark:border-zinc-800 space-y-6 sticky top-20 shadow-md">
+          {event.isFullySoldOut && (
+            <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-center space-y-1">
+              <p className="text-xs font-black text-red-600 dark:text-red-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                🔴 ÉVÉNEMENT COMPLET
+              </p>
+              <p className="text-[11px] text-red-700 dark:text-red-300 font-medium">
+                Tous les billets disponibles pour cet événement ont été vendus.
+              </p>
+            </div>
+          )}
+
           <div>
             <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
               Choisissez votre formule
             </h2>
             <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-              {selectedCategory?.isFree
-                ? 'Réservez votre place gratuitement en un clic.'
-                : 'Paiement direct sécurisé via SamirPay (Wave / OM).'}
+              {event.isFullySoldOut
+                ? 'Les réservations sont closes pour cet événement.'
+                : 'Sélectionnez vos billets et validez votre commande.'}
             </p>
           </div>
 
@@ -417,39 +544,66 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           {event.categories && event.categories.length > 0 ? (
             <div className="space-y-3">
               {event.categories.map((cat: any) => {
-                const isSelected = selectedCategoryId === cat.id;
+                const isUnavailable = cat.isSoldOut || cat.isClosed || (cat.availableQuantity !== undefined && cat.availableQuantity <= 0);
+                const qty = cart[cat.id] || 0;
+                const maxAllowed = Math.max(1, Math.min(cat.maxPerOrder || 10, cat.availableQuantity ?? 10));
                 return (
                   <div
                     key={cat.id}
-                    onClick={() => !cat.isSoldOut && setSelectedCategoryId(cat.id)}
                     className={`p-4 rounded-2xl border-2 transition-all ${
-                      cat.isSoldOut
-                        ? 'opacity-50 cursor-not-allowed border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900'
-                        : isSelected
-                        ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs cursor-pointer'
-                        : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300 cursor-pointer'
+                      isUnavailable
+                        ? 'opacity-60 cursor-not-allowed border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900'
+                        : qty > 0
+                        ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs'
+                        : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <h3 className="text-xs font-black text-slate-900 dark:text-white">{cat.name}</h3>
                           {cat.name.toUpperCase().includes('VIP') && <Sparkles size={12} className="text-amber-500" />}
                         </div>
                         <span className="text-xs font-black text-[#FF5722] mt-0.5 block">{cat.priceFormatted}</span>
-                        {cat.isSoldOut && (
+                        {cat.isClosed ? (
+                          <span className="text-[10px] font-bold text-slate-500 block">🔒 Ventes Clôturées</span>
+                        ) : cat.isSoldOut ? (
                           <span className="text-[10px] font-bold text-red-500 block">Épuisé</span>
-                        )}
+                        ) : cat.isHeld || (cat.availableQuantity === 0 && !cat.isSoldOut) ? (
+                          <span className="text-[10px] font-bold text-amber-500 dark:text-amber-400 block">
+                            ⏳ En cours de réservation (réessayez dans quelques minutes)
+                          </span>
+                        ) : cat.availableQuantity !== undefined && cat.availableQuantity <= 5 ? (
+                          <span className="text-[10px] font-bold text-amber-500 block">
+                            Plus que {cat.availableQuantity} place{cat.availableQuantity > 1 ? 's' : ''} !
+                          </span>
+                        ) : null}
                       </div>
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          isSelected
-                            ? 'border-[#FF5722] bg-[#FF5722] text-white'
-                            : 'border-slate-300 dark:border-zinc-700'
-                        }`}
-                      >
-                        {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
-                      </div>
+                      {!isUnavailable && (
+                        <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 rounded-xl p-1 border border-slate-200 dark:border-zinc-700 shadow-xs">
+                          <button
+                            type="button"
+                            onClick={() => updateCartQty(cat.id, -1)}
+                            disabled={qty <= 0}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            aria-label={`Retirer un billet ${cat.name}`}
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <span className="w-7 text-center text-xs font-black text-slate-900 dark:text-white font-mono">
+                            {qty}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateCartQty(cat.id, 1)}
+                            disabled={qty >= maxAllowed}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            aria-label={`Ajouter un billet ${cat.name}`}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -461,32 +615,29 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
             </div>
           )}
 
-          {/* Avantages de la formule choisie */}
-          {selectedCategory && (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800/80 space-y-2">
-              <span className="text-[11px] font-bold text-slate-700 dark:text-zinc-300 block">
-                Inclus dans {selectedCategory.name} :
-              </span>
-              <ul className="space-y-1.5">
-                {selectedCategory.perks.map((perk: string, i: number) => (
-                  <li key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-zinc-400">
-                    <CheckCircle2 size={14} className="text-emerald-600 flex-shrink-0" />
-                    <span>{perk}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Récapitulatif & CTA */}
-          {selectedCategory && (
+          {/* Récapitulatif Panier & CTA */}
+          {cartTotalQty > 0 && (
             <div className="pt-2 space-y-3">
+              {/* Détail du panier */}
+              <div className="space-y-1.5">
+                {cartItems.map((item: any) => (
+                  <div key={item.id} className="flex justify-between items-baseline text-xs">
+                    <span className="text-slate-600 dark:text-zinc-400">
+                      {item.qty}x {item.name}
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {item.isFree ? 'Gratuit' : `${((item.price || 0) * item.qty).toLocaleString('fr-FR')} FCFA`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="h-px bg-slate-200 dark:bg-zinc-800" />
               <div className="flex justify-between items-baseline">
                 <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">
-                  {selectedCategory.isFree ? 'Billet gratuit' : 'Total à régler'}
+                  Total ({cartTotalQty} billet{cartTotalQty > 1 ? 's' : ''})
                 </span>
-                <span className={`text-xl font-black ${selectedCategory.isFree ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}`}>
-                  {selectedCategory.priceFormatted}
+                <span className={`text-xl font-black ${hasFreeOnly ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}`}>
+                  {hasFreeOnly ? 'Gratuit' : `${cartTotal.toLocaleString('fr-FR')} FCFA`}
                 </span>
               </div>
 
@@ -494,18 +645,16 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                 variant="primary"
                 size="lg"
                 fullWidth
-                disabled={selectedCategory.isSoldOut || isClaimingFree}
+                disabled={event.isFullySoldOut || isClaimingFree}
                 isLoading={isClaimingFree}
                 onClick={handleBuyClick}
                 leftIcon={<Ticket size={18} />}
               >
                 {isClaimingFree
                   ? 'Réservation en cours...'
-                  : selectedCategory.isSoldOut
-                  ? 'Catégorie Épuisée'
-                  : selectedCategory.isFree
-                  ? 'Réserver mon billet gratuit'
-                  : `Acheter mon billet (${selectedCategory.priceFormatted})`}
+                  : hasFreeOnly
+                  ? `Réserver ${cartTotalQty} billet${cartTotalQty > 1 ? 's' : ''} gratuit${cartTotalQty > 1 ? 's' : ''}`
+                  : `Acheter ${cartTotalQty} billet${cartTotalQty > 1 ? 's' : ''} (${cartTotal.toLocaleString('fr-FR')} FCFA)`}
               </Button>
 
               <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500">
@@ -518,7 +667,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       </div>
 
       {/* CTA Mobile — visible uniquement sur mobile */}
-      {selectedCategory && !selectedCategory.isSoldOut && (
+      {cartTotalQty > 0 && !event.isFullySoldOut && (
         <div className="fixed bottom-0 left-0 w-full z-50 p-4 bg-white dark:bg-[#1E1E1E] border-t border-slate-200 dark:border-zinc-800 lg:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           <Button
             variant="primary"
@@ -531,28 +680,29 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           >
             {isClaimingFree
               ? 'Réservation...'
-              : selectedCategory.isFree
-              ? 'Réserver gratuit'
-              : `Acheter (${selectedCategory.priceFormatted})`}
+              : hasFreeOnly
+              ? `Réserver ${cartTotalQty} gratuit${cartTotalQty > 1 ? 's' : ''}`
+              : `Acheter (${cartTotal.toLocaleString('fr-FR')} FCFA)`}
           </Button>
         </div>
       )}
 
-      {/* Modale de Paiement SamirPay avec VRAI category_id */}
-      {selectedCategory && (
-        <PaymentModal
-          isOpen={isPaymentOpen}
-          onClose={() => setIsPaymentOpen(false)}
-          targetType="TICKET"
-          targetId={selectedCategory.id}
-          amountFormatted={selectedCategory.priceFormatted}
-          title={`${event.title} (${selectedCategory.name})`}
-          onPaymentSuccess={() => {
-            setIsPaymentOpen(false);
-            router.push('/tickets');
-          }}
-        />
-      )}
+      {/* Modale de Paiement SamirPay — Checkout multi-catégories */}
+      <PaymentModal
+        isOpen={isPaymentOpen}
+        onClose={() => setIsPaymentOpen(false)}
+        targetType="TICKET"
+        targetId={cartItems.find((item: any) => (item.price || 0) > 0)?.id || ''}
+        quantity={cartItems.filter((item: any) => (item.price || 0) > 0).reduce((sum: number, item: any) => sum + item.qty, 0)}
+        amountFormatted={`${cartTotal.toLocaleString('fr-FR')} FCFA`}
+        title={`${event.title} (${cartItems.map((item: any) => `${item.qty}x ${item.name}`).join(' + ')})`}
+        checkoutItems={cartItems.filter((item: any) => (item.price || 0) > 0).map((item: any) => ({ categoryId: item.id, quantity: item.qty }))}
+        eventId={eventId}
+        onPaymentSuccess={() => {
+          setIsPaymentOpen(false);
+          router.push('/tickets');
+        }}
+      />
     </div>
   );
 }

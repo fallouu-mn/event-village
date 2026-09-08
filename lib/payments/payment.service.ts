@@ -9,6 +9,7 @@ import { mapSamirPayStatus } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CreatePaymentInput, SamirPayWebhookSchema } from '@/lib/validations/payment';
 import { EventService } from '@/lib/events/event.service';
+import { NotificationService } from '@/lib/notifications/notification.service';
 import crypto from 'crypto';
 
 export interface CreatePaymentResult {
@@ -176,19 +177,13 @@ export class PaymentService {
                         throw new Error('La billetterie de cet événement n\'est pas disponible.');
                     }
 
-                    if (!category.is_active) {
-                        throw new Error('Cette catégorie de ticket n\'est plus disponible à la vente.');
-                    }
+                    const quantity = input.quantity && Number(input.quantity) > 0 ? Number(input.quantity) : 1;
 
-                    if (category.sold_quantity >= category.total_quantity) {
-                        throw new Error('Cette catégorie de ticket est épuisée.');
-                    }
-
-                    payableAmount = Number(category.price);
+                    payableAmount = Number(category.price) * quantity;
                     partnerId = category.events?.partner_id || null;
                     eventRefId = category.event_id;
                     categoryRefId = category.id;
-                    description = `Ticket ${category.events?.title || ''} - ${category.name}`;
+                    description = `${quantity > 1 ? `${quantity}x Billets` : 'Billet'} ${category.events?.title || ''} - ${category.name}`;
                 }
                 break;
             }
@@ -294,7 +289,12 @@ export class PaymentService {
                     target_id: input.targetId,
                     event_id: eventRefId,
                     category_id: categoryRefId,
+                    quantity: input.quantity || 1,
+                    held_quantity: input.targetType === 'TICKET' ? (input.quantity || 1) : undefined,
+                    held_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
                     customer_phone: input.customerPhone,
+                    customer_name: input.customerName,
+                    customer_email: input.customerEmail,
                 },
             })
             .select('*')
@@ -303,6 +303,16 @@ export class PaymentService {
         if (insertError || !paymentRecord) {
             console.error('[PaymentService] Erreur création enregistrement paiement', insertError);
             throw new Error('Impossible d\'enregistrer l\'intention de paiement.');
+        }
+
+        // Phase 2 : Hold Cart — Vérification atomique de la capacité restante sous concurrence
+        if (input.targetType === 'TICKET' && categoryRefId && eventRefId) {
+            await EventService.verifyAndEnforceHoldAtomic({
+                paymentId: paymentRecord.id,
+                categoryId: categoryRefId,
+                quantity: input.quantity || 1,
+                eventId: eventRefId,
+            });
         }
 
         // 5. Appel à l'API SamirPay côté serveur (Cashin Direct)
@@ -340,6 +350,13 @@ export class PaymentService {
                 callback_url: callbackUrl,
             });
         } catch (apiError: unknown) {
+            if (input.targetType === 'TICKET' && categoryRefId) {
+                await EventService.releaseHoldTicketsAtomic({
+                    categoryId: categoryRefId,
+                    quantity: input.quantity || 1,
+                });
+            }
+
             await supabase
                 .from('payments')
                 .update({
@@ -444,16 +461,20 @@ export class PaymentService {
      * Traite de façon atomique et idempotente la notification reçue via le Webhook SamirPay.
      * Le format attendu est application/x-www-form-urlencoded.
      */
-    public async handleSamirPayWebhook(formData: FormData): Promise<{ success: boolean; message: string }> {
+    public async handleSamirPayWebhook(formData: FormData | Record<string, any>): Promise<{ success: boolean; message: string }> {
         const supabase = getServiceRoleClient();
 
         // 1. Extraction et validation des données du formulaire
-        const rawData: Record<string, string> = {};
-        formData.forEach((value, key) => {
-            if (typeof value === 'string') {
-                rawData[key] = value;
-            }
-        });
+        let rawData: Record<string, string> = {};
+        if (formData && typeof (formData as any).forEach === 'function') {
+            (formData as any).forEach((value: any, key: string) => {
+                if (typeof value === 'string') {
+                    rawData[key] = value;
+                }
+            });
+        } else if (typeof formData === 'object' && formData !== null) {
+            rawData = { ...(formData as unknown as Record<string, string>) };
+        }
 
         const validationResult = SamirPayWebhookSchema.safeParse(rawData);
         if (!validationResult.success) {
@@ -486,30 +507,106 @@ export class PaymentService {
         // 4. Traitement selon le statut validé
         if (mappedStatus === 'SUCCESS') {
             let confirmedTicketId = payment.ticket_id;
+            const generatedTicketIds: string[] = [];
+            const generatedTicketNumbers: string[] = [];
 
-            // 4.1 Génération sécurisée et garantie du ticket si nécessaire
+            // 4.1 Génération sécurisée et garantie des billets (1, 2, 3... N)
             if (payment.payment_target === 'TICKET') {
                 if (payment.ticket_id) {
                     // Ticket pré-existant -> passer à VALIDE
-                    await supabase
+                    const { data: updatedTck } = await supabase
                         .from('tickets')
                         .update({
                             status: 'VALIDE',
                             updated_at: new Date().toISOString(),
                         })
-                        .eq('id', payment.ticket_id);
+                        .eq('id', payment.ticket_id)
+                        .select('id, ticket_number')
+                        .single();
+
+                    if (updatedTck) {
+                        generatedTicketIds.push(updatedTck.id);
+                        generatedTicketNumbers.push(updatedTck.ticket_number);
+                    }
                 } else if (payment.metadata?.event_id && payment.metadata?.category_id) {
+                    const countToGenerate = Number(payment.metadata?.quantity || 1);
                     try {
-                        const purchaseResult = await EventService.purchaseTicketAtomic({
+                        const purchaseResult = await EventService.reserveTicketsAtomic({
                             eventId: payment.metadata.event_id,
                             categoryId: payment.metadata.category_id,
+                            quantity: countToGenerate,
                             userId: payment.client_id,
                             orderId: payment.order_id || undefined,
                             paymentConfirmed: true,
                         });
-                        confirmedTicketId = purchaseResult.ticket.id;
+                        if (purchaseResult?.tickets && purchaseResult.tickets.length > 0) {
+                            confirmedTicketId = purchaseResult.tickets[0].id;
+                            purchaseResult.tickets.forEach((t: any) => {
+                                generatedTicketIds.push(t.id);
+                                generatedTicketNumbers.push(t.ticket_number);
+                            });
+                        }
                     } catch (ticketError) {
-                        console.error('[PaymentService.Webhook] Erreur génération ticket via EventService:', ticketError);
+                        console.error(`[PaymentService.Webhook] Erreur réservation atomique ${countToGenerate} ticket(s):`, ticketError);
+                    } finally {
+                        await EventService.releaseHoldTicketsAtomic({
+                            categoryId: payment.metadata.category_id,
+                            quantity: countToGenerate,
+                        });
+                    }
+                } else if (payment.metadata?.checkout_items) {
+                    const items = payment.metadata.checkout_items as { categoryId: string, quantity: number }[];
+                    const eventId = payment.metadata.event_id;
+                    
+                    for (const item of items) {
+                        try {
+                            const purchaseResult = await EventService.reserveTicketsAtomic({
+                                eventId: eventId,
+                                categoryId: item.categoryId,
+                                quantity: item.quantity,
+                                userId: payment.client_id,
+                                orderId: payment.order_id || undefined,
+                                paymentConfirmed: true,
+                            });
+                            
+                            if (purchaseResult?.tickets && purchaseResult.tickets.length > 0) {
+                                if (!confirmedTicketId) {
+                                    confirmedTicketId = purchaseResult.tickets[0].id;
+                                }
+                                purchaseResult.tickets.forEach((t: any) => {
+                                    generatedTicketIds.push(t.id);
+                                    generatedTicketNumbers.push(t.ticket_number);
+                                });
+                            }
+                        } catch (ticketError) {
+                            console.error(`[PaymentService.Webhook] Erreur réservation atomique ${item.quantity} ticket(s) pour la categorie ${item.categoryId}:`, ticketError);
+                        } finally {
+                            await EventService.releaseHoldTicketsAtomic({
+                                categoryId: item.categoryId,
+                                quantity: item.quantity,
+                            });
+                        }
+                    }
+                }
+
+                // Déclencher les notifications orchestrées (In-App + SMS + Email Client & Organisateur)
+                if (payment.metadata?.event_id && generatedTicketIds.length > 0) {
+                    try {
+                        await NotificationService.sendTicketPurchaseNotifications({
+                            userId: payment.client_id,
+                            eventId: payment.metadata.event_id,
+                            categoryId: payment.metadata.category_id,
+                            orderId: payment.order_id || payment.external_order_id,
+                            orderNumber: payment.external_order_id,
+                            ticketCount: generatedTicketIds.length,
+                            ticketNumbers: generatedTicketNumbers,
+                            totalAmount: Number(payment.amount),
+                            clientPhone: payment.metadata?.customer_phone,
+                            clientEmail: payment.metadata?.customer_email,
+                            clientName: payment.metadata?.customer_name,
+                        });
+                    } catch (notifErr) {
+                        console.error('[PaymentService.Webhook] Erreur envoi notifications billetterie:', notifErr);
                     }
                 }
             }
@@ -691,6 +788,23 @@ export class PaymentService {
                     .eq('id', payment.ticket_id);
             }
 
+            // Libération de la réservation temporaire de stock (Hold Cart) lors d'un échec/annulation
+            if (payment.payment_target === 'TICKET') {
+                if (payment.metadata?.checkout_items && Array.isArray(payment.metadata.checkout_items)) {
+                    for (const item of payment.metadata.checkout_items) {
+                        await EventService.releaseHoldTicketsAtomic({
+                            categoryId: item.categoryId,
+                            quantity: Number(item.quantity || 1),
+                        });
+                    }
+                } else if (payment.metadata?.category_id) {
+                    await EventService.releaseHoldTicketsAtomic({
+                        categoryId: payment.metadata.category_id,
+                        quantity: Number(payment.metadata.quantity || 1),
+                    });
+                }
+            }
+
             // Notification client d'échec
             await supabase.from('notifications').insert({
                 user_id: payment.client_id,
@@ -705,6 +819,64 @@ export class PaymentService {
             console.warn(`[PaymentService.Webhook] Paiement échoué ou annulé pour : ${order_id} (Statut: ${status})`);
             return { success: true, message: `Paiement marqué comme ${mappedStatus}.` };
         }
+    }
+
+    /**
+     * Nettoyage automatique des réservations temporaires de stock expirées (TTL 10 minutes)
+     * Décrémente held_quantity pour tous les paiements PENDING non confirmés dans le délai.
+     */
+    public async cleanupExpiredHolds(): Promise<{ cleanedCount: number; releasedTickets: number }> {
+        const supabase = getServiceRoleClient();
+        const now = new Date();
+        const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+
+        const { data: pendingPayments } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('payment_target', 'TICKET')
+            .eq('status', 'PENDING');
+
+        let cleanedCount = 0;
+        let releasedTickets = 0;
+
+        for (const payment of pendingPayments || []) {
+            const expiresAt = payment.held_expires_at || payment.metadata?.held_expires_at;
+            const isExpired = expiresAt
+                ? new Date(expiresAt).getTime() <= now.getTime()
+                : new Date(payment.created_at).getTime() <= new Date(tenMinutesAgo).getTime();
+
+            if (isExpired) {
+                await supabase
+                    .from('payments')
+                    .update({
+                        status: 'CANCELLED',
+                        provider_status: 'HOLD_EXPIRED',
+                        updated_at: now.toISOString(),
+                    })
+                    .eq('id', payment.id);
+
+                if (payment.metadata?.checkout_items && Array.isArray(payment.metadata.checkout_items)) {
+                    for (const item of payment.metadata.checkout_items) {
+                        const qty = Number(item.quantity || 1);
+                        await EventService.releaseHoldTicketsAtomic({
+                            categoryId: item.categoryId,
+                            quantity: qty,
+                        });
+                        releasedTickets += qty;
+                    }
+                } else if (payment.metadata?.category_id) {
+                    const qty = Number(payment.metadata.quantity || 1);
+                    await EventService.releaseHoldTicketsAtomic({
+                        categoryId: payment.metadata.category_id,
+                        quantity: qty,
+                    });
+                    releasedTickets += qty;
+                }
+                cleanedCount++;
+            }
+        }
+
+        return { cleanedCount, releasedTickets };
     }
 
     /**

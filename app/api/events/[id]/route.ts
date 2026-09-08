@@ -63,13 +63,56 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
         const partnerData = Array.isArray(event.partners) ? event.partners[0] : event.partners;
 
-        const activeTicketCategories = (event.ticket_categories || [])
-            .filter((cat: any) => cat.is_active !== false && cat.is_visible !== false)
+        // Calculer les réservations temporaires (Hold Cart) actives pour cet événement
+        const { data: activeHolds } = await supabase
+            .from('payments')
+            .select('metadata, created_at, held_expires_at')
+            .eq('payment_target', 'TICKET')
+            .eq('status', 'PENDING');
+
+        const now = new Date();
+        const categoryHeldMap: Record<string, number> = {};
+        for (const p of activeHolds || []) {
+            const expiresAt = p.held_expires_at || p.metadata?.held_expires_at;
+            const isStillActive = expiresAt
+                ? new Date(expiresAt).getTime() > now.getTime()
+                : (now.getTime() - new Date(p.created_at).getTime()) < 10 * 60 * 1000;
+
+            if (isStillActive) {
+                if (p.metadata?.checkout_items && Array.isArray(p.metadata.checkout_items)) {
+                    for (const item of p.metadata.checkout_items) {
+                        categoryHeldMap[item.categoryId] = (categoryHeldMap[item.categoryId] || 0) + Number(item.quantity || 1);
+                    }
+                } else if (p.metadata?.category_id) {
+                    categoryHeldMap[p.metadata.category_id] = (categoryHeldMap[p.metadata.category_id] || 0) + Number(p.metadata.quantity || 1);
+                }
+            }
+        }
+
+        const formattedTicketCategories = (event.ticket_categories || [])
+            .filter((cat: any) => cat.is_visible !== false)
             .map((cat: any) => {
                 const price = Number(cat.price);
-                const now = new Date();
                 const saleStarted = !cat.sale_start || new Date(cat.sale_start) <= now;
                 const saleEnded = cat.sale_end ? new Date(cat.sale_end) < now : false;
+                const saleOpen = saleStarted && !saleEnded;
+                const totalQuantity = Number(cat.total_quantity || 0);
+                const soldQuantity = Number(cat.sold_quantity || 0);
+                const dbHeldQuantity = Number(cat.held_quantity || 0);
+                const heldQuantity = Math.max(dbHeldQuantity, categoryHeldMap[cat.id] || 0);
+                const availableQuantity = Math.max(0, totalQuantity - soldQuantity - heldQuantity);
+                const isSoldOut = soldQuantity >= totalQuantity;
+                const isHeld = !isSoldOut && (soldQuantity + heldQuantity) >= totalQuantity;
+                const isClosed = cat.is_active === false;
+                const isAvailable = !isClosed && !isSoldOut && !isHeld && availableQuantity > 0 && saleOpen;
+
+                const categoryStatus: 'ACTIVE' | 'SOLD_OUT' | 'HELD' | 'CLOSED' = isClosed
+                    ? 'CLOSED'
+                    : isSoldOut
+                    ? 'SOLD_OUT'
+                    : isHeld
+                    ? 'HELD'
+                    : 'ACTIVE';
 
                 return {
                     id: cat.id,
@@ -77,10 +120,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
                     price,
                     priceFormatted: price === 0 ? 'Gratuit' : `${price.toLocaleString('fr-FR')} FCFA`,
                     isFree: price === 0,
-                    totalQuantity: cat.total_quantity,
-                    soldQuantity: cat.sold_quantity || 0,
-                    isSoldOut: (cat.sold_quantity || 0) >= cat.total_quantity,
-                    saleOpen: saleStarted && !saleEnded,
+                    totalQuantity,
+                    soldQuantity,
+                    heldQuantity,
+                    availableQuantity,
+                    status: categoryStatus,
+                    isSoldOut,
+                    isHeld,
+                    isClosed,
+                    isAvailable,
+                    saleOpen,
                     saleStarted,
                     saleEnded,
                     saleStart: cat.sale_start || null,
@@ -92,6 +141,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
                         : ['Accès général fosse & gradins', 'Billet électronique QR sécurisé'],
                 };
             });
+
+        const isFullySoldOut = formattedTicketCategories.length > 0 &&
+            formattedTicketCategories.every((cat) => cat.isSoldOut || cat.isClosed);
+        const hasAvailableTickets = formattedTicketCategories.some((cat) => cat.isAvailable);
 
         const practicalInfo = event.practical_info as {
             address?: string;
@@ -125,6 +178,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
                 longitude: event.longitude || null,
                 capacity: event.capacity || null,
                 status: event.status,
+                isFullySoldOut,
+                hasAvailableTickets,
                 program: (event.program as any[]) || [],
                 practicalInfo: {
                     address: practicalInfo?.address || null,
@@ -133,7 +188,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
                     contactPhone: practicalInfo?.contactPhone || null,
                     rules: practicalInfo?.rules || null,
                 },
-                categories: activeTicketCategories,
+                categories: formattedTicketCategories,
             },
         });
     } catch (err: unknown) {

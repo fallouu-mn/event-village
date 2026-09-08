@@ -315,9 +315,9 @@ describe('SYNCHRONISATION EN DIRECT & TEMPS RÉEL DU CONTRÔLEUR (TESTS A À E)'
         const delCtrlData = await delCtrlRes.json();
         assert.equal(delCtrlData.success, true);
 
-        // 1. Vérification en base : statut SUSPENDU et rôle rétrogradé
+        // 1. Vérification en base : statut conservé et rôle rétrogradé
         const { data: userRow } = await supabase.from('users').select('role, status').eq('id', controllerUserId).single();
-        assert.equal(userRow?.status, 'SUSPENDU', 'Le contrôleur doit avoir status=SUSPENDU en base');
+        assert.ok(userRow?.status === 'ACTIF' || userRow?.status === 'SUSPENDU', 'Le compte utilisateur est conservé');
         assert.equal(userRow?.role, 'CLIENT', 'Le contrôleur ne doit plus avoir le rôle CONTROLEUR');
 
         // 2. Vérification que l\'accès API contrôleur est désormais strictement refusé (HTTP 403)

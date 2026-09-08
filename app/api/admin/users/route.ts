@@ -265,7 +265,7 @@ export async function PATCH(req: NextRequest) {
 
 /**
  * DELETE /api/admin/users
- * Suppression définitive d'un compte utilisateur (Auth + Base de données)
+ * Suppression définitive d'un compte utilisateur (Auth + Base de données en cascade)
  */
 export async function DELETE(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'users.write' });
@@ -288,58 +288,19 @@ export async function DELETE(req: NextRequest) {
             return NextResponse.json({ error: 'userId requis.' }, { status: 400 });
         }
 
-        // Protection : interdiction de supprimer son propre compte
-        if (userId === auth.user!.id) {
-            return NextResponse.json(
-                { error: 'Impossible de supprimer votre propre compte administrateur.' },
-                { status: 400 }
-            );
-        }
-
-        const supabase = getServiceRoleClient();
-
-        // 1. Récupération des infos utilisateur
-        const { data: targetUser } = await supabase
-            .from('users')
-            .select('id, phone, email, role')
-            .eq('id', userId)
-            .maybeSingle();
-
-        if (targetUser?.role === 'SUPERADMIN' && auth.user!.role !== 'SUPERADMIN') {
-            return NextResponse.json(
-                { error: 'Seul un Superadmin peut supprimer un compte SUPERADMIN.' },
-                { status: 403 }
-            );
-        }
-
-        // 2. Nettoyage en cascade des tables liées
-        await supabase.from('partners').delete().eq('user_id', userId);
-        await supabase.from('tickets').delete().eq('user_id', userId);
-        await supabase.from('orders').delete().eq('user_id', userId);
-        await supabase.from('referral_relationships').delete().or(`referrer_id.eq.${userId},referred_id.eq.${userId}`);
-        await supabase.from('referral_commissions').delete().eq('referrer_id', userId);
-        await supabase.from('users').delete().eq('id', userId);
-
-        // 3. Suppression dans Supabase Auth
-        await supabase.auth.admin.deleteUser(userId);
-
-        // 4. Journal d'audit inaltérable
-        await AdminService.logAudit({
-            userId: auth.user!.id,
-            userRole: auth.user!.role,
-            action: 'DELETE_USER',
-            objectType: 'users',
-            objectId: userId,
-            oldValue: targetUser,
-            metadata: { deleted_by: auth.user!.role },
+        const result = await AdminService.deleteUser(userId, {
+            id: auth.user!.id,
+            role: auth.user!.role,
         });
 
         return NextResponse.json({
             success: true,
-            message: 'Compte utilisateur définitivement supprimé.',
+            message: result.message,
         });
     } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        console.error('[API /api/admin/users DELETE] Exception:', errorMsg);
+        return NextResponse.json({ error: errorMsg }, { status: 400 });
     }
 }
+

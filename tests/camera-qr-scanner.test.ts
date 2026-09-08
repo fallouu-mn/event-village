@@ -29,36 +29,12 @@ describe('SCANNER QR CAMÉRA — DÉTECTION CASCADE & INTÉGRATION PIPELINE (§3
 
     before(async () => {
         const timestamp = Date.now();
-        const partnerEmail = `cam_part_${timestamp}@test.sn`;
-        const clientEmail = `cam_client_${timestamp}@test.sn`;
+        testPartnerUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
+        testPartnerId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
+        testClientId = 'a7345050-03cf-4967-9281-9ee5eb75615a';
 
-        // 1. Partenaire
-        const { data: authPartner } = await supabase.auth.admin.createUser({
-            email: partnerEmail,
-            password: 'Password123!',
-            email_confirm: true,
-            user_metadata: { role: 'PARTENAIRE', first_name: 'Partner', last_name: 'Cam' },
-        });
-        testPartnerUserId = authPartner.user!.id;
-
-        await supabase.from('users').upsert({
-            id: testPartnerUserId,
-            email: partnerEmail,
-            first_name: 'Partner',
-            last_name: 'Cam',
-            role: 'PARTENAIRE',
-            status: 'ACTIF',
-        });
-
-        const { data: partner } = await supabase.from('partners').insert({
-            user_id: testPartnerUserId,
-            company_name: 'Camera Scan Test Partner',
-            status: 'VALIDE',
-        }).select().single();
-        testPartnerId = partner!.id;
-
-        // 2. Événement
-        const { data: event } = await supabase.from('events').insert({
+        // 1. Événement
+        const { data: event, error: evErr } = await supabase.from('events').insert({
             partner_id: testPartnerId,
             title: 'Soirée Contrôle Caméra',
             slug: `soiree-camera-${timestamp}`,
@@ -67,34 +43,18 @@ describe('SCANNER QR CAMÉRA — DÉTECTION CASCADE & INTÉGRATION PIPELINE (§3
             location: 'Dakar Arena',
             status: 'PUBLIE',
         }).select().single();
-        testEventId = event!.id;
+        if (evErr || !event) throw new Error(`Échec création event: ${evErr?.message}`);
+        testEventId = event.id;
 
-        const { data: cat } = await supabase.from('ticket_categories').insert({
+        const { data: cat, error: catErr } = await supabase.from('ticket_categories').insert({
             event_id: testEventId,
             name: 'Pass Caméra VIP',
             price: 25000,
             total_quantity: 50,
             sold_quantity: 0,
         }).select().single();
-        testCategoryId = cat!.id;
-
-        // 3. Client
-        const { data: authClient } = await supabase.auth.admin.createUser({
-            email: clientEmail,
-            password: 'Password123!',
-            email_confirm: true,
-            user_metadata: { role: 'CLIENT', first_name: 'Moussa', last_name: 'Client' },
-        });
-        testClientId = authClient.user!.id;
-
-        await supabase.from('users').upsert({
-            id: testClientId,
-            email: clientEmail,
-            first_name: 'Moussa',
-            last_name: 'Client',
-            role: 'CLIENT',
-            status: 'ACTIF',
-        });
+        if (catErr || !cat) throw new Error(`Échec création category: ${catErr?.message}`);
+        testCategoryId = cat.id;
     });
 
     after(async () => {
@@ -102,17 +62,6 @@ describe('SCANNER QR CAMÉRA — DÉTECTION CASCADE & INTÉGRATION PIPELINE (§3
             await supabase.from('tickets').delete().eq('event_id', testEventId);
             await supabase.from('ticket_categories').delete().eq('id', testCategoryId);
             await supabase.from('events').delete().eq('id', testEventId);
-        }
-        if (testPartnerId) {
-            await supabase.from('partners').delete().eq('id', testPartnerId);
-        }
-        if (testPartnerUserId) {
-            await supabase.from('users').delete().eq('id', testPartnerUserId);
-            await supabase.auth.admin.deleteUser(testPartnerUserId);
-        }
-        if (testClientId) {
-            await supabase.from('users').delete().eq('id', testClientId);
-            await supabase.auth.admin.deleteUser(testClientId);
         }
     });
 

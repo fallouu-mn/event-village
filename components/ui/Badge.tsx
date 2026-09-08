@@ -94,7 +94,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
       else label = norm.replace(/_/g, ' ');
       break;
 
-    // 🔴 REJET / ANNULATION / ÉCHEC / SUSPENSION / RUPTURE
+    // 🔴 REJET / ANNULATION / ÉCHEC / SUSPENSION / RUPTURE / SUPPRESSION
     case 'FAILED':
     case 'ECHEC':
     case 'REJETE':
@@ -103,6 +103,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
     case 'ANNULEE':
     case 'CANCELLED':
     case 'SUSPENDU':
+    case 'SUPPRIME':
+    case 'SUPPRIMEE':
     case 'EPUISE':
     case 'INDISPONIBLE':
     case 'REFUNDED':
@@ -110,6 +112,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
       variant = 'danger';
       if (norm === 'REFUNDED' || norm === 'REMBOURSE') label = 'REMBOURSÉ';
       else if (norm === 'CANCELLED') label = 'ANNULÉ';
+      else if (norm === 'SUPPRIME' || norm === 'SUPPRIMEE') label = 'SUPPRIMÉ (RGPD)';
       else label = norm.replace(/_/g, ' ');
       break;
 

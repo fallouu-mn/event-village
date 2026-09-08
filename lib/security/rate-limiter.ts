@@ -37,6 +37,14 @@ export class RateLimiter {
         const lockoutSeconds = options?.lockoutSeconds ?? LOCKOUT_SECONDS;
         const failClosed = options?.failClosed ?? false;
 
+        const nowMs = Date.now();
+        const windowMs = windowSeconds * 1000;
+        const cached = inMemoryBurstCache.get(identifier) || [];
+        const valid = cached.filter(t => nowMs - t < windowMs);
+        if (valid.length >= maxAttempts) {
+            return { limited: true, remainingSeconds: lockoutSeconds };
+        }
+
         try {
             const supabase = getServiceRoleClient();
             const now = new Date().toISOString();
@@ -76,7 +84,6 @@ export class RateLimiter {
                 console.error(`[RateLimiter] Erreur SQL sur '${identifier}' — fail-closed activé (bloqué par sécurité):`, err);
                 return { limited: true, remainingSeconds: lockoutSeconds };
             }
-            console.warn(`[RateLimiter] Erreur SQL sur '${identifier}' — fail-open toléré:`, err);
             return { limited: false };
         }
     }
@@ -142,6 +149,11 @@ export class RateLimiter {
     }
 
     static async recordAttempt(identifier: string): Promise<void> {
+        const nowMs = Date.now();
+        const cached = inMemoryBurstCache.get(identifier) || [];
+        cached.push(nowMs);
+        inMemoryBurstCache.set(identifier, cached);
+
         try {
             const supabase = getServiceRoleClient();
             await (supabase.from('rate_limits') as any).insert({
@@ -167,6 +179,16 @@ export class RateLimiter {
         const lockoutSeconds = options?.lockoutSeconds ?? LOCKOUT_SECONDS;
         const failClosed = options?.failClosed ?? false;
 
+        const nowMs = Date.now();
+        const windowMs = windowSeconds * 1000;
+        const cached = inMemoryBurstCache.get(identifier) || [];
+        const valid = cached.filter(t => nowMs - t < windowMs);
+        valid.push(nowMs);
+        inMemoryBurstCache.set(identifier, valid);
+
+        const memAttempts = valid.length;
+        const memLocked = memAttempts >= maxAttempts;
+
         try {
             const supabase = getServiceRoleClient();
             const windowStart = new Date(Date.now() - windowSeconds * 1000).toISOString();
@@ -185,19 +207,17 @@ export class RateLimiter {
 
             if (countErr) throw countErr;
 
-            const attempts = count ?? 1;
-            let locked = false;
-            let lockedUntilSeconds: number | undefined;
+            const attempts = Math.max(memAttempts, count ?? 1);
+            let locked = attempts >= maxAttempts;
+            let lockedUntilSeconds: number | undefined = locked ? lockoutSeconds : undefined;
 
-            if (attempts >= maxAttempts) {
+            if (locked) {
                 const lockedUntil = new Date(Date.now() + lockoutSeconds * 1000).toISOString();
                 await (supabase.from('rate_limits') as any).insert({
                     identifier,
                     attempted_at: new Date().toISOString(),
                     locked_until: lockedUntil,
                 });
-                locked = true;
-                lockedUntilSeconds = lockoutSeconds;
             }
 
             return {
@@ -211,7 +231,12 @@ export class RateLimiter {
                 console.error(`[RateLimiter] recordFailedAttempt SQL error sur '${identifier}' (fail-closed):`, err);
                 return { attempts: maxAttempts, locked: true, remainingAttempts: 0, lockedUntilSeconds: lockoutSeconds };
             }
-            return { attempts: 0, locked: false, remainingAttempts: maxAttempts };
+            return {
+                attempts: memAttempts,
+                locked: memLocked,
+                remainingAttempts: Math.max(0, maxAttempts - memAttempts),
+                lockedUntilSeconds: memLocked ? lockoutSeconds : undefined,
+            };
         }
     }
 
@@ -227,3 +252,4 @@ export class RateLimiter {
         }
     }
 }
+

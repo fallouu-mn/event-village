@@ -10,9 +10,12 @@ export interface PaymentModalProps {
   onClose: () => void;
   targetType: 'ORDER' | 'HALL_RESERVATION' | 'TABLE_RESERVATION' | 'TICKET' | 'SUBSCRIPTION';
   targetId: string;
+  quantity?: number;
   amountFormatted: string;
   title: string;
   onPaymentSuccess?: () => void;
+  checkoutItems?: { categoryId: string; quantity: number }[];
+  eventId?: string;
 }
 
 type ModalScreen = 'form' | 'ussd_pending' | 'qr_pending' | 'success';
@@ -25,9 +28,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onClose,
   targetType,
   targetId,
+  quantity,
   amountFormatted,
   title,
   onPaymentSuccess,
+  checkoutItems,
+  eventId,
 }) => {
   const [operator, setOperator] = useState<'wave' | 'om' | 'card'>('wave');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -108,15 +114,26 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/payments/create', {
+      const endpoint = checkoutItems && checkoutItems.length > 0 ? '/api/checkout' : '/api/payments/create';
+      const payload = checkoutItems && checkoutItems.length > 0
+        ? {
+            eventId,
+            items: checkoutItems,
+            operator: operator === 'om' ? 'ORANGE_MONEY' : operator.toUpperCase(),
+            customerPhone: phoneSanitized,
+          }
+        : {
+            targetType,
+            targetId,
+            operator: operator === 'om' ? 'ORANGE_MONEY' : operator.toUpperCase(),
+            customerPhone: phoneSanitized,
+            ...(quantity && quantity > 1 ? { quantity } : {}),
+          };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetType,
-          targetId,
-          operator: operator === 'om' ? 'ORANGE_MONEY' : operator.toUpperCase(),
-          customerPhone: phoneSanitized,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -126,8 +143,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const redirectTarget: string = data.redirect_url || data.payment_url || '';
-      const qrCodeData: string = data.qr_code || '';
+      // Support both flat response (legacy) and nested checkout response
+      const paymentData = data.payment || data;
+      const redirectTarget: string = paymentData.redirect_url || paymentData.payment_url || data.redirect_url || data.payment_url || '';
+      const qrCodeData: string = paymentData.qr_code || data.qr_code || '';
+      const txId: string = paymentData.transaction_id || data.transaction_id || '';
+      const isPushUssd: boolean = paymentData.is_push_ussd || data.is_push_ussd || false;
 
       // ── Mobile : Deep Link immédiat (Wave OU Orange Money) ──
       if (isMobile && redirectTarget) {
@@ -138,9 +159,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       // ── Desktop + QR Code : affichage QR + polling ──
       if (!isMobile && qrCodeData) {
         setQrCode(qrCodeData);
-        setPendingTransactionId(data.transaction_id);
+        setPendingTransactionId(txId);
         setScreen('qr_pending');
-        startPolling(data.transaction_id);
+        startPolling(txId);
         setIsInitiating(false);
         return;
       }
@@ -152,11 +173,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       // ── Fallback ultime OM Push USSD (aucune URL, aucun QR) ──
-      if (data.is_push_ussd) {
-        setPendingTransactionId(data.transaction_id);
+      if (isPushUssd) {
+        setPendingTransactionId(txId);
         setOmRedirectUrl('');
         setScreen('ussd_pending');
-        startPolling(data.transaction_id);
+        startPolling(txId);
         setIsInitiating(false);
         return;
       }

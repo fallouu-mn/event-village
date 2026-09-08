@@ -268,7 +268,18 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.setAttribute('playsinline', 'true'); // Indispensable pour iOS Safari
-        await videoRef.current.play();
+        videoRef.current.muted = true;
+
+        // Démarrage sécurisé du flux vidéo sans conflit de promesses play()
+        try {
+          if (videoRef.current.paused) {
+            await videoRef.current.play();
+          }
+        } catch (playErr: any) {
+          if (playErr.name !== 'AbortError') {
+            console.warn('[CameraQrScanner] Lecture vidéo:', playErr.message);
+          }
+        }
 
         await refreshAvailableCameras();
         resetInactivityTimer();
@@ -284,6 +295,12 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
 
       setIsInitializing(false);
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // Interruption normale lors d'un basculement de caméra ou cycle rapide
+        setIsInitializing(false);
+        return;
+      }
+
       console.warn('[CameraQrScanner] Erreur accès caméra:', err);
       setIsInitializing(false);
 

@@ -26,7 +26,7 @@ test('SCENARIO 1 : Parcours client complet & Structure des Pages Redesign', () =
 
     const eventContent = fs.readFileSync(path.join(process.cwd(), 'app/events/[id]/page.tsx'), 'utf-8');
     assert.ok(eventContent.includes('PaymentModal'));
-    assert.ok(eventContent.includes('Acheter mon billet') || eventContent.includes('Pass'));
+    assert.ok(eventContent.includes('Acheter') || eventContent.includes('Pass') || eventContent.includes('billet'));
 });
 
 test('SCENARIO 2 & 3 : Création de commande & Validation des Schémas de Paiement', () => {

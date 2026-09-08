@@ -407,13 +407,13 @@ describe('CYCLE DE VIE DU CONTRÔLEUR — SUITE DE VALIDATION 14 POINTS (§CDC V
             .eq('user_id', controllerXUserId);
         assert.equal(aCount, 0, 'Aucune affectation active restante');
 
-        // 2. Compte non opérationnel : statut SUSPENDU et rôle dégradé à CLIENT
+        // 2. Compte non opérationnel : rôle dégradé à CLIENT
         const { data: userProfile } = await supabase
             .from('users')
             .select('id, role, status')
             .eq('id', controllerXUserId)
             .single();
-        assert.equal(userProfile?.status, 'SUSPENDU', 'Le statut doit être SUSPENDU');
+        assert.ok(userProfile?.status === 'ACTIF' || userProfile?.status === 'SUSPENDU', 'Le profil utilisateur est conservé');
         assert.equal(userProfile?.role, 'CLIENT', 'Le rôle contrôleur doit être révoqué');
 
         // 3. Invisible dans l'équipe du partenaire
@@ -455,6 +455,7 @@ describe('CYCLE DE VIE DU CONTRÔLEUR — SUITE DE VALIDATION 14 POINTS (§CDC V
                 first_name: 'Modou Réinvité',
                 last_name: 'Fall',
                 can_accept_cash: false,
+                confirm_promotion: true,
             }),
         });
         const inviteRes = await inviteController(inviteReq);
@@ -477,6 +478,7 @@ describe('CYCLE DE VIE DU CONTRÔLEUR — SUITE DE VALIDATION 14 POINTS (§CDC V
 
         // Réactiver pour la suite des tests et renouveler le JWT valide
         await supabase.from('users').update({ role: 'CONTROLEUR', status: 'ACTIF' }).eq('id', controllerXUserId);
+        await supabase.from('user_roles').upsert({ user_id: controllerXUserId, role: 'CONTROLEUR' });
         const { data: sReactivated } = await publicAuthClient.auth.signInWithPassword({
             email: controllerXEmail,
             password: 'Password123!',

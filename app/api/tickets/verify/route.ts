@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { parseDynamicQrPayload, verifyTotp, deriveTicketTotpSecret, TOTP_STEP_SECONDS } from '@/lib/security/totp';
+import { NotificationService } from '@/lib/notifications/notification.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -158,6 +159,19 @@ export async function POST(req: NextRequest) {
             objectId: ticket.id,
             newValue: { status: 'UTILISE', scanned_at: now },
             metadata: { ticket_number: ticket.ticket_number, event_id: ticket.event_id },
+        });
+
+        // 5.5 Notification Client / Porteur (In-App + SMS + Email)
+        NotificationService.sendTicketScannedSuccessNotification({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticket_number,
+            eventTitle: eventData?.title,
+            categoryName: categoryData?.name || 'Pass Standard',
+            userId: ticket.user_id,
+            checkedInAt: now,
+            venue: eventData?.location,
+        }).catch((notifErr) => {
+            console.warn('[tickets/verify] Erreur notification scan client:', notifErr);
         });
 
         // 6. Calcul des statistiques du jour pour cet événement

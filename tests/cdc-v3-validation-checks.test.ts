@@ -81,8 +81,6 @@ test('3. VRAI TEST D\'INTÉGRATION RLS MULTI-TENANT : Partner A avec son token n
         email: testEmailA,
         password: testPassword,
         email_confirm: true,
-        phone: phoneA,
-        phone_confirm: true,
         user_metadata: { first_name: 'Partner', last_name: 'Alpha', phone: phoneA },
     });
     assert.ok(!errA && authA?.user, `Création Auth Partner A: ${errA?.message}`);
@@ -91,8 +89,6 @@ test('3. VRAI TEST D\'INTÉGRATION RLS MULTI-TENANT : Partner A avec son token n
         email: testEmailB,
         password: testPassword,
         email_confirm: true,
-        phone: phoneB,
-        phone_confirm: true,
         user_metadata: { first_name: 'Partner', last_name: 'Beta', phone: phoneB },
     });
     assert.ok(!errB && authB?.user, `Création Auth Partner B: ${errB?.message}`);
@@ -192,8 +188,6 @@ test('4. VRAI CONTRÔLE BACKEND PRODUIT INTERDIT : Refus de paiement et aucune l
         email: testEmail,
         password: 'Password123!',
         email_confirm: true,
-        phone: phone,
-        phone_confirm: true,
         user_metadata: { first_name: 'Client', last_name: 'Test', phone: phone },
     });
     assert.ok(!aErr && authClient?.user, `Création Client: ${aErr?.message}`);
@@ -295,8 +289,6 @@ test('5. VRAIE EXPIRATION AUTOMATIQUE DES MORATOIRES EN BASE DE DONNÉES', async
         email: testEmail,
         password: 'Password123!',
         email_confirm: true,
-        phone: phone,
-        phone_confirm: true,
         user_metadata: { first_name: 'Mora', last_name: 'Test', phone: phone },
     });
 
@@ -384,8 +376,6 @@ test('6. VRAI REMBOURSEMENT & INVARIANT EN BASE DE DONNÉES (Total − Payé = S
         email: testEmail,
         password: 'Password123!',
         email_confirm: true,
-        phone: phone,
-        phone_confirm: true,
         user_metadata: { first_name: 'Refund', last_name: 'Client', phone: phone },
     });
 

@@ -628,5 +628,720 @@ export class NotificationService {
 
         return { smsSent, emailSent, inAppCreated };
     }
+
+    // =========================================================================
+    // WORKFLOW — Confirmation Achat Billetterie (Client + Organisateur)
+    // CDC : In-App + SMS + Email pour l'acheteur ET In-App + SMS/Email organisateur
+    // =========================================================================
+    static async sendTicketPurchaseNotifications(params: {
+        userId: string;
+        eventId: string;
+        categoryId?: string;
+        orderId?: string;
+        orderNumber?: string;
+        ticketCount: number;
+        ticketNumbers: string[];
+        totalAmount: number;
+        clientPhone?: string;
+        clientEmail?: string;
+        clientName?: string;
+    }): Promise<{
+        client: { inApp: boolean; sms: boolean; email: boolean };
+        organizer: { inApp: boolean; sms: boolean; email: boolean };
+    }> {
+        const result = {
+            client: { inApp: false, sms: false, email: false },
+            organizer: { inApp: false, sms: false, email: false },
+        };
+
+        try {
+            const supabase = getServiceRoleClient();
+
+            // 1. Récupération des informations Client si non fournies
+            let clientPhone = params.clientPhone;
+            let clientEmail = params.clientEmail;
+            let clientName = params.clientName;
+
+            if (!clientPhone || !clientEmail || !clientName) {
+                const { data: userRec } = await supabase
+                    .from('users')
+                    .select('first_name, last_name, phone, email')
+                    .eq('id', params.userId)
+                    .maybeSingle();
+
+                if (userRec) {
+                    clientName = clientName || `${userRec.first_name || ''} ${userRec.last_name || ''}`.trim() || 'Client';
+                    clientPhone = clientPhone || userRec.phone;
+                    clientEmail = clientEmail || userRec.email;
+                }
+            }
+
+            // 2. Récupération des informations Événement + Partenaire
+            const { data: eventRec } = await supabase
+                .from('events')
+                .select(`
+                    id,
+                    title,
+                    location,
+                    city,
+                    start_date,
+                    start_time,
+                    partner_id,
+                    partners (
+                        id,
+                        user_id,
+                        phone,
+                        company_name,
+                        commercial_name,
+                        users (id, phone, email, first_name, last_name)
+                    )
+                `)
+                .eq('id', params.eventId)
+                .maybeSingle();
+
+            const eventTitle = eventRec?.title || 'Événement';
+            const eventVenue = eventRec?.location || eventRec?.city || 'Dakar, Sénégal';
+            const eventDate = eventRec?.start_date ? new Date(eventRec.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
+            const orderRef = params.orderNumber || (params.orderId ? `CMD-${params.orderId.slice(0, 8).toUpperCase()}` : `CMD-${Date.now().toString().slice(-6)}`);
+            const plural = params.ticketCount > 1;
+
+            // ── CANAL 1 : In-App Acheteur ─────────────────────────────
+            result.client.inApp = await NotificationService.createNotification({
+                userId: params.userId,
+                type: 'TICKET' as any,
+                title: '🎟️ Achat confirmé',
+                message: plural
+                    ? `Vos ${params.ticketCount} billets pour "${eventTitle}" sont disponibles dans votre espace.`
+                    : `Votre billet pour "${eventTitle}" est disponible dans votre espace.`,
+                data: {
+                    event_id: params.eventId,
+                    order_id: params.orderId,
+                    ticket_count: params.ticketCount,
+                    ticket_numbers: params.ticketNumbers,
+                    total_amount: params.totalAmount,
+                },
+            });
+
+            // ── CANAL 2 : SMS Acheteur ───────────────────────────────
+            if (clientPhone) {
+                const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://event-village.sn';
+                const clientSms = plural
+                    ? `Event Village : Achat confirme (${params.ticketCount} billets pour "${eventTitle}"). Retrouvez vos billets sur : ${appBaseUrl}/tickets`
+                    : `Event Village : Achat confirme (billet pour "${eventTitle}"). Retrouvez votre billet sur : ${appBaseUrl}/tickets`;
+                try {
+                    const smsRes = await mTargetService.sendSms(clientPhone, clientSms);
+                    result.client.sms = smsRes.success;
+                } catch (smsErr) {
+                    console.warn('[NotificationService] SMS achat billet client échoué:', smsErr);
+                }
+            }
+
+            // ── CANAL 3 : Email Acheteur ─────────────────────────────
+            if (clientEmail && clientEmail.includes('@')) {
+                try {
+                    const tpl = EmailTemplates.ticketPurchaseConfirmation({
+                        clientName: clientName || 'Client',
+                        eventTitle,
+                        eventDate,
+                        eventVenue,
+                        ticketCount: params.ticketCount,
+                        ticketNumbers: params.ticketNumbers,
+                        totalAmount: params.totalAmount,
+                        orderNumber: orderRef,
+                    });
+                    const emailRes = await EmailService.send({ to: clientEmail, ...tpl });
+                    result.client.email = emailRes.sent;
+                } catch (emailErr) {
+                    console.warn('[NotificationService] Email achat billet client échoué:', emailErr);
+                }
+            }
+
+            // ── CANAL 4 : In-App Organisateur (Partenaire) ───────────
+            const partnerData: any = eventRec?.partners;
+            const partnerUserId = partnerData?.user_id || partnerData?.users?.id;
+            const partnerPhone = partnerData?.phone || partnerData?.users?.phone;
+            const partnerEmail = partnerData?.users?.email;
+            const organizerName = partnerData?.commercial_name || partnerData?.company_name || 'Organisateur';
+
+            if (partnerUserId) {
+                result.organizer.inApp = await NotificationService.createNotification({
+                    userId: partnerUserId,
+                    type: 'ORDER' as any,
+                    title: '🎟️ Nouvelle commande de billets',
+                    message: `Un client vient d'acheter ${params.ticketCount} billet(s) pour votre événement "${eventTitle}" (${params.totalAmount.toLocaleString('fr-FR')} FCFA).`,
+                    data: {
+                        event_id: params.eventId,
+                        order_id: params.orderId,
+                        ticket_count: params.ticketCount,
+                        total_amount: params.totalAmount,
+                        buyer_name: clientName,
+                    },
+                });
+            }
+
+            // ── CANAL 5 : SMS Organisateur ────────────────────────────
+            if (partnerPhone) {
+                const partnerSms = `Event Village : Nouvelle vente de ${params.ticketCount} billet(s) pour "${eventTitle}" (${params.totalAmount.toLocaleString('fr-FR')} FCFA, Réf: ${orderRef}).`;
+                try {
+                    const orgSmsRes = await mTargetService.sendSms(partnerPhone, partnerSms);
+                    result.organizer.sms = orgSmsRes.success;
+                } catch (orgSmsErr) {
+                    console.warn('[NotificationService] SMS vente billet organisateur échoué:', orgSmsErr);
+                }
+            }
+
+            // ── CANAL 6 : Email Organisateur ──────────────────────────
+            if (partnerEmail && partnerEmail.includes('@')) {
+                try {
+                    let catName = 'Standard';
+                    if (params.categoryId) {
+                        const { data: catRec } = await supabase
+                            .from('ticket_categories')
+                            .select('name')
+                            .eq('id', params.categoryId)
+                            .maybeSingle();
+                        if (catRec?.name) catName = catRec.name;
+                    }
+                    const tpl = EmailTemplates.organizerTicketSaleAlert({
+                        organizerName,
+                        eventTitle,
+                        ticketCount: params.ticketCount,
+                        categoryName: catName,
+                        totalAmount: params.totalAmount,
+                        orderNumber: orderRef,
+                    });
+                    const orgEmailRes = await EmailService.send({ to: partnerEmail, ...tpl });
+                    result.organizer.email = orgEmailRes.sent;
+                } catch (orgEmailErr) {
+                    console.warn('[NotificationService] Email vente billet organisateur échoué:', orgEmailErr);
+                }
+            }
+        } catch (err) {
+            console.error('[NotificationService.sendTicketPurchaseNotifications] Exception:', err);
+        }
+
+        return result;
+    }
+
+    // =========================================================================
+    // WORKFLOW — Alerte Catégorie Épuisée (SOLD_OUT) Organisateur
+    // CDC : In-App + SMS + Email avec garde d'idempotence stricte
+    // =========================================================================
+    static async sendTicketCategorySoldOutNotification(params: {
+        eventId: string;
+        categoryId: string;
+        categoryName?: string;
+        totalQuantity?: number;
+    }): Promise<{ inApp: boolean; sms: boolean; email: boolean }> {
+        const result = { inApp: false, sms: false, email: false };
+
+        try {
+            const supabase = getServiceRoleClient();
+
+            // 1. Récupération des informations de la catégorie et de l'événement
+            const { data: catRec } = await supabase
+                .from('ticket_categories')
+                .select(`
+                    id,
+                    name,
+                    total_quantity,
+                    sold_quantity,
+                    events (
+                        id,
+                        title,
+                        partner_id,
+                        partners (
+                            id,
+                            user_id,
+                            phone,
+                            company_name,
+                            commercial_name,
+                            users (id, phone, email, first_name, last_name)
+                        )
+                    )
+                `)
+                .eq('id', params.categoryId)
+                .maybeSingle();
+
+            const eventData: any = catRec?.events;
+            const partnerData: any = eventData?.partners;
+            const partnerUserId = partnerData?.user_id || partnerData?.users?.id;
+            const partnerPhone = partnerData?.phone || partnerData?.users?.phone;
+            const partnerEmail = partnerData?.users?.email;
+            const organizerName = partnerData?.commercial_name || partnerData?.company_name || 'Organisateur';
+            const categoryName = params.categoryName || catRec?.name || 'Catégorie';
+            const eventTitle = eventData?.title || 'Événement';
+            const totalQty = params.totalQuantity ?? catRec?.total_quantity ?? 0;
+
+            if (!partnerUserId) {
+                console.warn('[NotificationService.sendTicketCategorySoldOutNotification] Aucun partenaire trouvé pour category:', params.categoryId);
+                return result;
+            }
+
+            // 2. Garde d'Idempotence stricte : Vérifier si une notification d'épuisement existe déjà
+            const { data: existingNotifs } = await supabase
+                .from('notifications')
+                .select('id')
+                .eq('user_id', partnerUserId)
+                .eq('type', 'ALERT')
+                .filter('metadata->>alert_type', 'eq', 'CATEGORY_SOLD_OUT')
+                .filter('metadata->>category_id', 'eq', params.categoryId)
+                .limit(1);
+
+            if (existingNotifs && existingNotifs.length > 0) {
+                console.log(`[NotificationService.sendTicketCategorySoldOutNotification] Notification SOLD_OUT déjà envoyée (Idempotence) pour category: ${params.categoryId}`);
+                return { inApp: true, sms: false, email: false };
+            }
+
+            // ── CANAL 1 : In-App Organisateur ─────────────────────────
+            const inAppMessage = `La catégorie "${categoryName}" de votre événement "${eventTitle}" est désormais complète (${totalQty}/${totalQty} billets vendus). Les ventes sont automatiquement suspendues.`;
+            result.inApp = await NotificationService.createNotification({
+                userId: partnerUserId,
+                type: 'ALERT',
+                title: `🎟️ Catégorie "${categoryName}" Épuisée`,
+                message: inAppMessage,
+                data: {
+                    event_id: params.eventId,
+                    category_id: params.categoryId,
+                    category_name: categoryName,
+                    total_quantity: totalQty,
+                    alert_type: 'CATEGORY_SOLD_OUT',
+                    actionUrl: '/partner/events',
+                },
+            });
+
+            // ── CANAL 2 : SMS Organisateur ────────────────────────────
+            if (partnerPhone) {
+                const orgSms = `Event Village : La catégorie "${categoryName}" pour "${eventTitle}" est désormais complète (${totalQty}/${totalQty} vendus). Rendez-vous sur votre espace pro.`;
+                try {
+                    const smsRes = await mTargetService.sendSms(partnerPhone, orgSms);
+                    result.sms = smsRes.success;
+                } catch (smsErr) {
+                    console.warn('[NotificationService] SMS catégorie épuisée échoué:', smsErr);
+                }
+            }
+
+            // ── CANAL 3 : Email Organisateur ──────────────────────────
+            if (partnerEmail && partnerEmail.includes('@')) {
+                try {
+                    const tpl = EmailTemplates.ticketCategorySoldOut({
+                        partnerName: organizerName,
+                        eventTitle,
+                        categoryName,
+                        totalQuantity: totalQty,
+                    });
+                    const emailRes = await EmailService.send({ to: partnerEmail, ...tpl });
+                    result.email = emailRes.sent;
+                } catch (emailErr) {
+                    console.warn('[NotificationService] Email catégorie épuisée échoué:', emailErr);
+                }
+            }
+        } catch (err) {
+            console.error('[NotificationService.sendTicketCategorySoldOutNotification] Exception:', err);
+        }
+
+        return result;
+    }
+
+    // =========================================================================
+    // WORKFLOW — Alerte Événement Intégralement Complet (EVENT_FULLY_SOLD_OUT)
+    // CDC : In-App + SMS + Email avec garde d'idempotence stricte
+    // =========================================================================
+    static async sendEventFullySoldOutNotification(params: {
+        eventId: string;
+        eventTitle?: string;
+        partnerId?: string;
+        totalTicketsSold?: number;
+    }): Promise<{ inApp: boolean; sms: boolean; email: boolean }> {
+        const result = { inApp: false, sms: false, email: false };
+
+        try {
+            const supabase = getServiceRoleClient();
+
+            // 1. Récupération des informations de l'événement et du partenaire
+            const { data: eventRec } = await supabase
+                .from('events')
+                .select(`
+                    id,
+                    title,
+                    partner_id,
+                    partners (
+                        id,
+                        user_id,
+                        phone,
+                        company_name,
+                        commercial_name,
+                        users (id, phone, email, first_name, last_name)
+                    )
+                `)
+                .eq('id', params.eventId)
+                .maybeSingle();
+
+            const partnerData: any = eventRec?.partners;
+            const partnerUserId = partnerData?.user_id || partnerData?.users?.id;
+            const partnerPhone = partnerData?.phone || partnerData?.users?.phone;
+            const partnerEmail = partnerData?.users?.email;
+            const organizerName = partnerData?.commercial_name || partnerData?.company_name || 'Organisateur';
+            const eventTitle = params.eventTitle || eventRec?.title || 'Événement';
+            const totalSold = params.totalTicketsSold ?? 0;
+
+            if (!partnerUserId) {
+                console.warn('[NotificationService.sendEventFullySoldOutNotification] Aucun partenaire trouvé pour event:', params.eventId);
+                return result;
+            }
+
+            // 2. Garde d'Idempotence stricte : Vérifier si une notification d'événement complet existe déjà
+            const { data: existingNotifs } = await supabase
+                .from('notifications')
+                .select('id')
+                .eq('user_id', partnerUserId)
+                .eq('type', 'ALERT')
+                .filter('metadata->>alert_type', 'eq', 'EVENT_FULLY_SOLD_OUT')
+                .filter('metadata->>event_id', 'eq', params.eventId)
+                .limit(1);
+
+            if (existingNotifs && existingNotifs.length > 0) {
+                console.log(`[NotificationService.sendEventFullySoldOutNotification] Notification EVENT_FULLY_SOLD_OUT déjà envoyée (Idempotence) pour event: ${params.eventId}`);
+                return { inApp: true, sms: false, email: false };
+            }
+
+            // ── CANAL 1 : In-App Organisateur ─────────────────────────
+            const inAppMessage = `Félicitations ! Toutes les catégories de votre événement "${eventTitle}" sont désormais complètes (${totalSold} billets vendus). Votre événement est officiellement à guichet fermé.`;
+            result.inApp = await NotificationService.createNotification({
+                userId: partnerUserId,
+                type: 'ALERT',
+                title: `🔴 Événement Complet : "${eventTitle}"`,
+                message: inAppMessage,
+                data: {
+                    event_id: params.eventId,
+                    event_title: eventTitle,
+                    total_sold: totalSold,
+                    alert_type: 'EVENT_FULLY_SOLD_OUT',
+                    actionUrl: '/partner/events',
+                },
+            });
+
+            // ── CANAL 2 : SMS Organisateur ────────────────────────────
+            if (partnerPhone) {
+                const orgSms = `Event Village : Félicitations ! Votre événement "${eventTitle}" est désormais 100% COMPLET (Guichet Fermé). Total : ${totalSold} billets vendus.`;
+                try {
+                    const smsRes = await mTargetService.sendSms(partnerPhone, orgSms);
+                    result.sms = smsRes.success;
+                } catch (smsErr) {
+                    console.warn('[NotificationService] SMS événement complet échoué:', smsErr);
+                }
+            }
+
+            // ── CANAL 3 : Email Organisateur ──────────────────────────
+            if (partnerEmail && partnerEmail.includes('@')) {
+                try {
+                    const tpl = EmailTemplates.eventFullySoldOut({
+                        partnerName: organizerName,
+                        eventTitle,
+                        totalTicketsSold: totalSold,
+                    });
+                    const emailRes = await EmailService.send({ to: partnerEmail, ...tpl });
+                    result.email = emailRes.sent;
+                } catch (emailErr) {
+                    console.warn('[NotificationService] Email événement complet échoué:', emailErr);
+                }
+            }
+        } catch (err) {
+            console.error('[NotificationService.sendEventFullySoldOutNotification] Exception:', err);
+        }
+
+        return result;
+    }
+
+    // =========================================================================
+    // WORKFLOW — Confirmation de Scan & Compostage de Billet au Client
+    // CDC : In-App + SMS + Email envoyés immédiatement au porteur lors de l'accès
+    // =========================================================================
+    static async sendTicketScannedSuccessNotification(params: {
+        ticketId: string;
+        ticketNumber?: string;
+        eventTitle?: string;
+        categoryName?: string;
+        userId?: string;
+        checkedInAt?: string;
+        controllerId?: string;
+        venue?: string;
+    }): Promise<{ inApp: boolean; sms: boolean; email: boolean }> {
+        const result = { inApp: false, sms: false, email: false };
+
+        try {
+            const supabase = getServiceRoleClient();
+
+            // 1. Récupération des informations complètes du billet si nécessaire
+            let buyerUserId = params.userId;
+            let buyerPhone: string | undefined;
+            let buyerEmail: string | undefined;
+            let buyerName = 'Porteur de billet';
+            let eventTitle = params.eventTitle;
+            let categoryName = params.categoryName;
+            let ticketNumber = params.ticketNumber;
+            let checkedInAt = params.checkedInAt || new Date().toISOString();
+            let venue = params.venue;
+
+            const { data: ticketRec } = await supabase
+                .from('tickets')
+                .select(`
+                    id,
+                    ticket_number,
+                    checked_in_at,
+                    user_id,
+                    users:users!tickets_user_id_fkey (id, phone, email, first_name, last_name),
+                    events (id, title, location),
+                    ticket_categories (id, name)
+                `)
+                .eq('id', params.ticketId)
+                .maybeSingle();
+
+            if (ticketRec) {
+                ticketNumber = ticketNumber || ticketRec.ticket_number;
+                checkedInAt = ticketRec.checked_in_at || checkedInAt;
+                buyerUserId = buyerUserId || ticketRec.user_id;
+
+                const u: any = ticketRec.users;
+                if (u) {
+                    buyerPhone = u.phone;
+                    buyerEmail = u.email;
+                    buyerName = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email || buyerName;
+                }
+
+                const ev: any = ticketRec.events;
+                if (ev) {
+                    eventTitle = eventTitle || ev.title;
+                    venue = venue || ev.location;
+                }
+
+                const cat: any = ticketRec.ticket_categories;
+                if (cat) {
+                    categoryName = categoryName || cat.name;
+                }
+            }
+
+            eventTitle = eventTitle || 'Événement Event Village';
+            categoryName = categoryName || 'Standard';
+            ticketNumber = ticketNumber || params.ticketId.slice(0, 8).toUpperCase();
+
+            if (!buyerUserId) {
+                console.warn('[NotificationService.sendTicketScannedSuccessNotification] Aucun user_id pour ticket:', params.ticketId);
+                return result;
+            }
+
+            // 2. Idempotence : Ne pas doubler les notifications si déjà scanné
+            const { data: existingNotifs } = await supabase
+                .from('notifications')
+                .select('id')
+                .eq('user_id', buyerUserId)
+                .filter('metadata->>alert_type', 'eq', 'TICKET_SCANNED')
+                .filter('metadata->>ticket_id', 'eq', params.ticketId)
+                .limit(1);
+
+            if (existingNotifs && existingNotifs.length > 0) {
+                return { inApp: true, sms: false, email: false };
+            }
+
+            // ── CANAL 1 : In-App Porteur / Client ─────────────────────
+            const inAppMessage = `Votre billet "${categoryName}" (N° ${ticketNumber}) pour l'événement "${eventTitle}" a été validé avec succès à l'entrée. Bon événement !`;
+            result.inApp = await NotificationService.createNotification({
+                userId: buyerUserId,
+                type: 'TICKET' as any,
+                title: `🎟️ Entrée Validée : "${eventTitle}"`,
+                message: inAppMessage,
+                data: {
+                    ticket_id: params.ticketId,
+                    ticket_number: ticketNumber,
+                    event_title: eventTitle,
+                    category_name: categoryName,
+                    checked_in_at: checkedInAt,
+                    status: 'UTILISE',
+                    alert_type: 'TICKET_SCANNED',
+                    actionUrl: '/tickets',
+                },
+            });
+
+            // ── CANAL 2 : SMS Porteur / Client ────────────────────────
+            if (buyerPhone) {
+                const clientSms = `Event Village : Votre billet "${categoryName}" (N° ${ticketNumber}) pour "${eventTitle}" a été validé avec succès à l'entrée. Bon événement !`;
+                try {
+                    const smsRes = await mTargetService.sendSms(buyerPhone, clientSms);
+                    result.sms = smsRes.success;
+                } catch (smsErr) {
+                    console.warn('[NotificationService] SMS validation billet échoué:', smsErr);
+                }
+            }
+
+            // ── CANAL 3 : Email Porteur / Client ──────────────────────
+            if (buyerEmail && buyerEmail.includes('@')) {
+                try {
+                    const tpl = EmailTemplates.ticketScannedConfirmation({
+                        buyerName,
+                        eventTitle,
+                        categoryName,
+                        ticketNumber,
+                        checkedInAt,
+                        venue,
+                    });
+                    const emailRes = await EmailService.send({ to: buyerEmail, ...tpl });
+                    result.email = emailRes.sent;
+                } catch (emailErr) {
+                    console.warn('[NotificationService] Email validation billet échoué:', emailErr);
+                }
+            }
+        } catch (err) {
+            console.error('[NotificationService.sendTicketScannedSuccessNotification] Exception:', err);
+        }
+
+        return result;
+    }
+
+    // =========================================================================
+    // WORKFLOW TRANSFERT P2P — Réclamation Réussie (Ancien + Nouveau Propriétaire)
+    // =========================================================================
+    static async sendTicketTransferClaimedNotifications(params: {
+        senderUserId: string;
+        recipientUserId: string;
+        ticketId: string;
+        ticketNumber: string;
+        eventTitle: string;
+        recipientName?: string;
+    }): Promise<{ senderNotified: boolean; recipientNotified: boolean }> {
+        const result = { senderNotified: false, recipientNotified: false };
+        try {
+            const supabase = getServiceRoleClient();
+            const recipientLabel = params.recipientName || 'votre destinataire';
+
+            // 1. Notification Ancien Propriétaire (Expéditeur)
+            const senderMsg = `Votre billet N° ${params.ticketNumber} pour "${params.eventTitle}" a été transféré et réclamé par ${recipientLabel}.`;
+            result.senderNotified = await NotificationService.createNotification({
+                userId: params.senderUserId,
+                type: 'TICKET' as any,
+                title: '🎟️ Billet Transféré avec Succès',
+                message: senderMsg,
+                data: {
+                    ticket_id: params.ticketId,
+                    ticket_number: params.ticketNumber,
+                    event_title: params.eventTitle,
+                    action: 'TRANSFER_CLAIMED_SENDER',
+                },
+            });
+
+            // Récupérer le numéro de l'expéditeur pour SMS optionnel
+            const { data: senderUser } = await supabase
+                .from('users')
+                .select('phone')
+                .eq('id', params.senderUserId)
+                .maybeSingle();
+
+            if (senderUser?.phone) {
+                try {
+                    await mTargetService.sendSms(senderUser.phone, `Event Village : ${senderMsg}`);
+                } catch {
+                    // Non bloquant
+                }
+            }
+
+            // 2. Notification Nouveau Propriétaire (Destinataire)
+            const recipientMsg = `Le billet N° ${params.ticketNumber} pour "${params.eventTitle}" a été ajouté à votre portefeuille.`;
+            result.recipientNotified = await NotificationService.createNotification({
+                userId: params.recipientUserId,
+                type: 'TICKET' as any,
+                title: '🎟️ Nouveau Billet Reçu !',
+                message: recipientMsg,
+                data: {
+                    ticket_id: params.ticketId,
+                    ticket_number: params.ticketNumber,
+                    event_title: params.eventTitle,
+                    action: 'TRANSFER_CLAIMED_RECIPIENT',
+                    actionUrl: '/tickets',
+                },
+            });
+
+            const { data: recipientUser } = await supabase
+                .from('users')
+                .select('phone')
+                .eq('id', params.recipientUserId)
+                .maybeSingle();
+
+            if (recipientUser?.phone) {
+                try {
+                    await mTargetService.sendSms(recipientUser.phone, `Event Village : ${recipientMsg} Rendez-vous dans votre espace pour le consulter.`);
+                } catch {
+                    // Non bloquant
+                }
+            }
+        } catch (err) {
+            console.error('[NotificationService.sendTicketTransferClaimedNotifications] Erreur:', err);
+        }
+
+        return result;
+    }
+
+    // =========================================================================
+    // WORKFLOW TRANSFERT P2P — Annulation par l'Expéditeur
+    // =========================================================================
+    static async sendTicketTransferCancelledNotification(params: {
+        recipientPhoneOrEmail: string;
+        ticketNumber: string;
+        eventTitle: string;
+    }): Promise<void> {
+        try {
+            const msg = `Event Village : Le transfert du billet N° ${params.ticketNumber} pour "${params.eventTitle}" a été annulé par son propriétaire.`;
+            if (params.recipientPhoneOrEmail.includes('@')) {
+                try {
+                    await EmailService.send({
+                        to: params.recipientPhoneOrEmail,
+                        subject: 'Transfert de billet annulé — Event Village',
+                        html: `<p>${msg}</p>`,
+                    });
+                } catch {
+                    // Non bloquant
+                }
+            } else {
+                try {
+                    await mTargetService.sendSms(params.recipientPhoneOrEmail, msg);
+                } catch {
+                    // Non bloquant
+                }
+            }
+        } catch (err) {
+            console.warn('[NotificationService.sendTicketTransferCancelledNotification] Erreur:', err);
+        }
+    }
+
+    // =========================================================================
+    // WORKFLOW TRANSFERT P2P — Expiration TTL 48h
+    // =========================================================================
+    static async sendTicketTransferExpiredNotification(params: {
+        recipientPhoneOrEmail: string;
+        ticketNumber: string;
+        eventTitle: string;
+    }): Promise<void> {
+        try {
+            const msg = `Event Village : Le lien de transfert du billet N° ${params.ticketNumber} pour "${params.eventTitle}" a expiré (délai de 48h dépassé).`;
+            if (params.recipientPhoneOrEmail.includes('@')) {
+                try {
+                    await EmailService.send({
+                        to: params.recipientPhoneOrEmail,
+                        subject: 'Lien de transfert de billet expiré — Event Village',
+                        html: `<p>${msg}</p>`,
+                    });
+                } catch {
+                    // Non bloquant
+                }
+            } else {
+                try {
+                    await mTargetService.sendSms(params.recipientPhoneOrEmail, msg);
+                } catch {
+                    // Non bloquant
+                }
+            }
+        } catch (err) {
+            console.warn('[NotificationService.sendTicketTransferExpiredNotification] Erreur:', err);
+        }
+    }
 }
+
 

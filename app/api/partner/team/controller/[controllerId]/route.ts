@@ -127,6 +127,8 @@ export async function DELETE(
         // 5. Si le contrôleur n'a plus d'autres affectations partenaires (Cas A - Exclusif) :
         // Le rôle est rétrogradé vers 'CLIENT' et le statut reste strictement 'ACTIF' pour préserver son compte
         if (isExclusivelyInThisTeam && ctrlProfile) {
+            await supabase.from('user_roles').delete().eq('user_id', controllerId).eq('role', 'CONTROLEUR');
+
             await supabase.from('users').update({
                 role: 'CLIENT',
                 status: 'ACTIF',

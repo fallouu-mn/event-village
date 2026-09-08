@@ -22,6 +22,7 @@ export const CreatePaymentSchema = z.object({
     operator: z.enum(['WAVE', 'ORANGE_MONEY', 'CARD'], {
         invalid_type_error: 'Moyen de paiement non reconnu.',
     }).optional(),
+    quantity: z.number().int().min(1).max(20).optional(),
     customerPhone: z.string().min(6, {
         message: 'Le numéro de téléphone du client est requis pour le paiement mobile.',
     }).optional(),
