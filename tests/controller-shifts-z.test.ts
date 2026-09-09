@@ -58,6 +58,13 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
         // 1. Obtenir les tokens d'accès
         const { data: pUser } = await supabase.from('users').select('email').eq('id', partnerUserId).single();
         await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!' });
+
+        // S'assurer que le partenaire a le rôle PARTENAIRE
+        await supabase.from('user_roles').upsert({
+            user_id: partnerUserId,
+            role: 'PARTENAIRE'
+        }, { onConflict: 'user_id,role' });
+
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pUser?.email || 'partenaireA@test.com',
             password: 'Password123!',
@@ -67,12 +74,21 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
 
         const { data: cUser } = await supabase.from('users').select('email').eq('id', ctrlUserId).single();
         await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!' });
-        const { data: cAuth } = await publicAuth.auth.signInWithPassword({
+
+        // S'assurer que le contrôleur a le statut ACTIF et rôle CONTROLEUR
+        await supabase.from('users').update({ role: 'CONTROLEUR', status: 'ACTIF' }).eq('id', ctrlUserId);
+        await supabase.from('user_roles').upsert({
+            user_id: ctrlUserId,
+            role: 'CONTROLEUR'
+        }, { onConflict: 'user_id,role' });
+
+        // Re-login to get fresh session with updated role
+        const { data: cAuthFresh } = await publicAuth.auth.signInWithPassword({
             email: cUser?.email!,
             password: 'Password123!',
         });
-        ctrlToken = cAuth?.session?.access_token!;
-        assert.ok(ctrlToken, 'Token Contrôleur obtenu');
+        ctrlToken = cAuthFresh?.session?.access_token!;
+        assert.ok(ctrlToken, 'Token Contrôleur obtenu (après mise à jour du rôle)');
 
         const { data: clUser } = await supabase.from('users').select('email').eq('id', clientUserId).single();
         await supabase.auth.admin.updateUserById(clientUserId, { password: 'Password123!' });
@@ -82,9 +98,6 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
         });
         clientToken = clAuth?.session?.access_token!;
         assert.ok(clientToken, 'Token Client obtenu');
-
-        // S'assurer que le contrôleur a le statut ACTIF et rôle CONTROLEUR
-        await supabase.from('users').update({ role: 'CONTROLEUR', status: 'ACTIF' }).eq('id', ctrlUserId);
 
         // 2. Créer un événement actif (fenêtre horaire en cours : aujourd'hui)
         const todayStr = new Date().toISOString().split('T')[0];
@@ -165,6 +178,10 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
             await supabase.from('event_controllers').delete().in('event_id', createdEventIds);
             await supabase.from('ticket_categories').delete().in('event_id', createdEventIds);
             await supabase.from('events').delete().in('id', createdEventIds);
+        }
+        // Also clean up controller_shifts to prevent test interference
+        if (createdEventIds.length > 0) {
+            await supabase.from('controller_shifts').delete().in('event_id', createdEventIds);
         }
     });
 

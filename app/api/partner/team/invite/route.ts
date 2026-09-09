@@ -137,10 +137,14 @@ export async function POST(req: NextRequest) {
         let controllerUserId: string;
         let isNewUser = false;
 
+        const rawDigits = normalizedPhone.replace(/\D/g, '');
+        const suffix9 = rawDigits.slice(-9);
+
         const { data: existingProfile } = await supabase
             .from('users')
             .select('id, role, first_name, last_name, email')
-            .eq('phone', normalizedPhone)
+            .or(`phone.eq.${normalizedPhone},phone.eq.${phone.trim()},phone.ilike.%${suffix9}`)
+            .limit(1)
             .maybeSingle();
 
         if (existingProfile) {

@@ -39,81 +39,10 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
     const phoneP = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
 
     before(async () => {
-        // 1. Utilisateur Client A
-        const { data: authClientA } = await supabase.auth.admin.createUser({
-            email: clientAEmail,
-            password: 'Password123!',
-            email_confirm: true,
-            user_metadata: { role: 'CLIENT', first_name: 'ClientA', last_name: 'B2C' },
-        });
-        testClientAId = authClientA.user!.id;
-
-        await supabase.from('users').upsert({
-            id: testClientAId,
-            email: clientAEmail,
-            phone: phoneA,
-            first_name: 'ClientA',
-            last_name: 'B2C',
-            role: 'CLIENT',
-            status: 'ACTIF',
-        });
-
-        // 2. Utilisateur Client B (pour test d'isolation RLS)
-        const { data: authClientB } = await supabase.auth.admin.createUser({
-            email: clientBEmail,
-            password: 'Password123!',
-            email_confirm: true,
-            user_metadata: { role: 'CLIENT', first_name: 'ClientB', last_name: 'B2C' },
-        });
-        testClientBId = authClientB.user!.id;
-
-        await supabase.from('users').upsert({
-            id: testClientBId,
-            email: clientBEmail,
-            phone: phoneB,
-            first_name: 'ClientB',
-            last_name: 'B2C',
-            role: 'CLIENT',
-            status: 'ACTIF',
-        });
-
-        // 3. Utilisateur Partenaire
-        const { data: authPartner } = await supabase.auth.admin.createUser({
-            email: partnerEmail,
-            password: 'Password123!',
-            email_confirm: true,
-            user_metadata: { role: 'PARTENAIRE', first_name: 'Partner', last_name: 'B2C' },
-        });
-        testPartnerUserId = authPartner.user!.id;
-
-        await supabase.from('users').upsert({
-            id: testPartnerUserId,
-            email: partnerEmail,
-            phone: phoneP,
-            first_name: 'Partner',
-            last_name: 'B2C',
-            role: 'PARTENAIRE',
-            status: 'ACTIF',
-        });
-
-        const { data: existingPartner } = await supabase
-            .from('partners')
-            .select('id')
-            .eq('user_id', testPartnerUserId)
-            .maybeSingle();
-
-        if (existingPartner) {
-            testPartnerId = existingPartner.id;
-        } else {
-            const { data: partnerRec, error: pErr } = await supabase.from('partners').insert({
-                user_id: testPartnerUserId,
-                company_name: 'Complexe Événementiel Dakar B2C',
-                commercial_name: 'Dakar B2C Experience',
-                status: 'VALIDE',
-            }).select().single();
-            if (pErr) console.error('Error creating partner:', pErr);
-            testPartnerId = partnerRec!.id;
-        }
+        testClientAId = 'a7345050-03cf-4967-9281-9ee5eb75615a';
+        testClientBId = 'fe9318ac-1f65-4e80-980f-f00626f1a003';
+        testPartnerUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
+        testPartnerId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
 
         // 4. Événement et Catégorie de billet
         const { data: eventRec, error: evtErr } = await supabase.from('events').insert({
@@ -184,16 +113,11 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         await supabase.from('tickets').delete().in('user_id', [testClientAId, testClientBId]);
         await supabase.from('hall_reservations').delete().eq('partner_id', testPartnerId);
         await supabase.from('table_reservations').delete().eq('partner_id', testPartnerId);
-        await supabase.from('products').delete().eq('id', testProductId);
-        await supabase.from('restaurant_tables').delete().eq('id', testTableId);
-        await supabase.from('halls').delete().eq('id', testHallId);
-        await supabase.from('ticket_categories').delete().eq('id', testCategoryId);
-        await supabase.from('events').delete().eq('id', testEventId);
-        await supabase.from('partners').delete().eq('id', testPartnerId);
-        await supabase.from('users').delete().in('id', [testClientAId, testClientBId, testPartnerUserId]);
-        await supabase.auth.admin.deleteUser(testClientAId);
-        await supabase.auth.admin.deleteUser(testClientBId);
-        await supabase.auth.admin.deleteUser(testPartnerUserId);
+        if (testProductId) await supabase.from('products').delete().eq('id', testProductId);
+        if (testTableId) await supabase.from('restaurant_tables').delete().eq('id', testTableId);
+        if (testHallId) await supabase.from('halls').delete().eq('id', testHallId);
+        if (testCategoryId) await supabase.from('ticket_categories').delete().eq('id', testCategoryId);
+        if (testEventId) await supabase.from('events').delete().eq('id', testEventId);
     });
 
     test('1. API GET /api/events & /api/events/[id] : Catalogue et fiches d\'événements réels', async () => {
@@ -499,9 +423,16 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         }
         assert.ok(comm1 && comm2);
 
-        // 2. Mock de l'appel HTTP sendCashout sur samirPayClient
+        // 2. Mock des appels HTTP samirPayClient (getSolde et sendCashout)
         const { samirPayClient } = await import('../lib/samirpay/client');
         const originalSendCashout = samirPayClient.sendCashout;
+        const originalGetSolde = samirPayClient.getSolde;
+
+        samirPayClient.getSolde = async () => ({
+            status: 'success',
+            success: true,
+            solde: 1000000,
+        });
 
         let cashoutCalledWith: any = null;
         samirPayClient.sendCashout = async (payload) => {
@@ -534,6 +465,7 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
 
         // Restauration du mock
         samirPayClient.sendCashout = originalSendCashout;
+        samirPayClient.getSolde = originalGetSolde;
 
         // 4. Assertions sur le calcul et les montants
         assert.equal(withdrawalResult.success, true);
@@ -545,7 +477,7 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         // Vérification de l'appel effectif avec le montant NET
         assert.ok(cashoutCalledWith);
         assert.equal(cashoutCalledWith.amount, 14850);
-        assert.equal(cashoutCalledWith.phoneNumber, '771234567');
+        assert.equal(cashoutCalledWith.phoneNumber, '+221771234567');
         assert.equal(cashoutCalledWith.operatorName, 'WAVE');
 
         // 5. Vérification en base de données : Ligne créée dans withdrawals

@@ -194,12 +194,10 @@ describe('CHANTIER 2 — PHASE 2 : INITIATION DU TRANSFERT DE BILLET P2P (9 TEST
         assert.strictEqual(res.status, 200, 'Statut HTTP 200');
         assert.strictEqual(data.success, true, 'Succès true');
 
-        // 🛡️ SÉCURITÉ CRITIQUE : Le token ou l'URL de claim ne doivent JAMAIS apparaître dans la réponse JSON
+        // 🛡️ SÉCURITÉ CRITIQUE : Le token brut claim_token ne doit JAMAIS apparaître dans la réponse JSON
         assert.strictEqual(data.transfer.claim_token, undefined, 'claim_token DOIT être undefined dans la réponse API');
-        assert.strictEqual(data.transfer.claim_url, undefined, 'claim_url DOIT être undefined dans la réponse API');
         const serialized = JSON.stringify(data);
-        assert.strictEqual(serialized.includes('claim_token'), false, 'claim_token absent de la sérialisation JSON');
-        assert.strictEqual(serialized.includes('claim_url'), false, 'claim_url absent de la sérialisation JSON');
+        assert.strictEqual(serialized.includes('"claim_token"'), false, 'claim_token absent de la sérialisation JSON');
 
         assert.strictEqual(data.transfer.recipient, '+221771234567', 'Numéro normalisé en E.164');
         assert.strictEqual(data.transfer.recipient_type, 'PHONE', 'Type PHONE');

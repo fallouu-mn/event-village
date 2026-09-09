@@ -75,10 +75,14 @@ export async function POST(req: NextRequest) {
         }
 
         // 2. Récupérer l'utilisateur contrôleur
+        const rawDigits = normalizedPhone.replace(/\D/g, '');
+        const suffix9 = rawDigits.slice(-9);
+
         const { data: profile } = await supabase
             .from('users')
             .select('id, role')
-            .eq('phone', normalizedPhone)
+            .or(`phone.eq.${normalizedPhone},phone.eq.${phone.trim()},phone.ilike.%${suffix9}`)
+            .limit(1)
             .maybeSingle();
 
         if (!profile) {

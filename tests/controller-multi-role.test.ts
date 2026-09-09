@@ -56,6 +56,7 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         // 1. Initialiser Partenaire A
         partnerAUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
         partnerAId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
+        await supabase.from('users').update({ role: 'PARTENAIRE', status: 'ACTIF' }).eq('id', partnerAUserId);
         const { data: pAUser } = await supabase.from('users').select('email').eq('id', partnerAUserId).single();
         await supabase.auth.admin.updateUserById(partnerAUserId, { password: 'Password123!' });
         const { data: sA } = await publicAuthClient.auth.signInWithPassword({
@@ -68,6 +69,7 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         // 2. Initialiser Partenaire B
         partnerBUserId = '775818bd-1833-4e99-843d-3f5ecf8196e3';
         partnerBId = '9cdc4247-d1fe-483b-b5e2-12671b069134';
+        await supabase.from('users').update({ role: 'PARTENAIRE', status: 'ACTIF' }).eq('id', partnerBUserId);
         const { data: pBUser } = await supabase.from('users').select('email').eq('id', partnerBUserId).single();
         await supabase.auth.admin.updateUserById(partnerBUserId, { password: 'Password123!' });
         const { data: sB } = await publicAuthClient.auth.signInWithPassword({
@@ -99,6 +101,9 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         clientPhoneNormalized = `+221${clientPhone}`;
 
         // Initialiser avec rôle CLIENT et téléphone de test
+        await supabase.from('event_controllers').delete().eq('user_id', clientUserId);
+        await supabase.from('user_roles').delete().eq('user_id', clientUserId);
+        await supabase.from('user_roles').insert({ user_id: clientUserId, role: 'CLIENT' });
         await supabase.from('users').update({
             phone: clientPhoneNormalized,
             first_name: 'Moussa',
@@ -106,6 +111,12 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
             role: 'CLIENT',
             status: 'ACTIF',
         }).eq('id', clientUserId);
+
+        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
+        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerAUserId}`);
+        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerBUserId}`);
+        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerAUserId}`);
+        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerBUserId}`);
 
         await supabase.auth.admin.updateUserById(clientUserId, {
             password: 'Password123!',
@@ -367,6 +378,13 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
     // Contrôleur affecté chez Partenaire A ET Partenaire B -> suppression par A conserve le rôle CONTROLEUR
     // ──────────────────────────────────────────────────────────
     await test('TEST 4 : Smart Delete Cas B (Partagé) -> Suppression par Partenaire A préserve le rôle CONTROLEUR et l\'affectation Partenaire B', async () => {
+        // Reset rate limiters before test
+        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
+        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerAUserId}`);
+        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerBUserId}`);
+        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerAUserId}`);
+        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerBUserId}`);
+
         // 1. Réassigner chez Partenaire A (avec confirmation car le user est redevenu CLIENT)
         const reInviteAReq = new NextRequest('http://localhost:3000/api/partner/team/invite', {
             method: 'POST',
@@ -382,6 +400,9 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         });
         const reInviteARes = await inviteController(reInviteAReq);
         assert.ok([200, 201].includes(reInviteARes.status));
+
+        // Reset phone rate limit for second invite in same test
+        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
 
         // 2. Partenaire B invite également ce contrôleur (déjà CONTROLEUR -> pas de confirmation requise)
         const inviteBReq = new NextRequest('http://localhost:3000/api/partner/team/invite', {

@@ -284,7 +284,7 @@ export class AdminService {
             await supabase.auth.admin.updateUserById(targetUserId, {
                 email: anonymizedEmail,
                 email_confirm: true,
-                phone: '' as any,
+                phone: `+000000${targetUserId.replace(/-/g, '').slice(0, 6)}`,
                 phone_confirm: false,
                 ban_duration: '876000h', // 100 ans
                 user_metadata: {

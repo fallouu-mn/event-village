@@ -39,62 +39,9 @@ describe('CHUNK 5 — PHASE 1 : ÉRADICATION DES BUGS CRITIQUES', () => {
     const partnerPhone = `+22178${Math.floor(1000000 + Math.random() * 9000000)}`;
 
     before(async () => {
-        // 1. Création utilisateur Client
-        const { data: authClient } = await supabase.auth.admin.createUser({
-            email: clientEmail,
-            password: 'Password123!',
-            email_confirm: true,
-            user_metadata: { role: 'CLIENT', first_name: 'Client', last_name: 'Chunk5' },
-        });
-        testClientId = authClient.user!.id;
-
-        await supabase.from('users').upsert({
-            id: testClientId,
-            email: clientEmail,
-            phone: clientPhone,
-            first_name: 'Client',
-            last_name: 'Chunk5',
-            role: 'CLIENT',
-            status: 'ACTIF',
-        });
-
-        // 2. Création utilisateur Partenaire
-        const { data: authPartner } = await supabase.auth.admin.createUser({
-            email: partnerEmail,
-            password: 'Password123!',
-            email_confirm: true,
-            user_metadata: { role: 'PARTENAIRE', first_name: 'Partner', last_name: 'Chunk5' },
-        });
-        testPartnerUserId = authPartner.user!.id;
-
-        await supabase.from('users').upsert({
-            id: testPartnerUserId,
-            email: partnerEmail,
-            phone: partnerPhone,
-            first_name: 'Partner',
-            last_name: 'Chunk5',
-            role: 'PARTENAIRE',
-            status: 'ACTIF',
-        });
-
-        const { data: existingPartner } = await supabase
-            .from('partners')
-            .select('id')
-            .eq('user_id', testPartnerUserId)
-            .maybeSingle();
-
-        if (existingPartner) {
-            testPartnerId = existingPartner.id;
-        } else {
-            const { data: partnerRec, error: pErr } = await supabase.from('partners').insert({
-                user_id: testPartnerUserId,
-                company_name: 'Traiteur & Salle Chunk5',
-                commercial_name: 'Chunk5 Events',
-                status: 'VALIDE',
-            }).select().single();
-            if (pErr) console.error('Error creating partner in test setup:', pErr);
-            testPartnerId = partnerRec!.id;
-        }
+        testClientId = 'a7345050-03cf-4967-9281-9ee5eb75615a';
+        testPartnerUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
+        testPartnerId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
 
         // 3. Récupération ou création d'un plan d'abonnement payant
         const { data: existingPlan } = await supabase
@@ -145,12 +92,8 @@ describe('CHUNK 5 — PHASE 1 : ÉRADICATION DES BUGS CRITIQUES', () => {
         await supabase.from('table_reservations').delete().eq('partner_id', testPartnerId);
         await supabase.from('hall_reservations').delete().eq('partner_id', testPartnerId);
         await supabase.from('orders').delete().eq('client_id', testClientId);
-        await supabase.from('restaurant_tables').delete().eq('id', testTableId);
-        await supabase.from('halls').delete().eq('id', testHallId);
-        await supabase.from('partners').delete().eq('id', testPartnerId);
-        await supabase.from('users').delete().in('id', [testClientId, testPartnerUserId]);
-        await supabase.auth.admin.deleteUser(testClientId);
-        await supabase.auth.admin.deleteUser(testPartnerUserId);
+        if (testTableId) await supabase.from('restaurant_tables').delete().eq('id', testTableId);
+        if (testHallId) await supabase.from('halls').delete().eq('id', testHallId);
     });
 
     test('BUG 1 — Enum & Invariant de Remboursement : processRefund utilise l\'enum PROCESSED et préserve Total − Payé = Solde', async () => {

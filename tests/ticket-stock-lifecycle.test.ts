@@ -61,13 +61,18 @@ describe('CYCLE DE VIE COMPLET DES BILLETS — 22 TESTS D\'INTÉGRATION ET DE CO
         await supabase.from('users').update({ status: 'ACTIF', role: 'PARTENAIRE', first_name: 'Organisateur', last_name: 'Principal', phone: '221770006743' }).eq('id', partnerUserId);
         await supabase.from('user_roles').delete().eq('user_id', partnerUserId);
         await supabase.from('user_roles').insert({ user_id: partnerUserId, role: 'PARTENAIRE' });
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
+        await supabase.auth.admin.updateUserById(partnerUserId, {
+            email: pEmail,
+            password: 'Password123!',
+            email_confirm: true,
+            user_metadata: { role: 'PARTENAIRE' }
+        });
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pEmail,
             password: 'Password123!',
         });
         partnerToken = pAuth?.session?.access_token || '';
-        assert.ok(partnerToken, 'partnerToken obtenu');
+        assert.ok(partnerToken !== '', 'partnerToken obtenu');
 
         // 2. Partenaire Tiers (Non Propriétaire)
         const { data: opAuthUser } = await supabase.auth.admin.getUserById(otherPartnerUserId);

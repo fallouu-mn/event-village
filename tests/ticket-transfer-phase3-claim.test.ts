@@ -329,6 +329,7 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
 
     test('TEST 6 : DOUBLE CLAIM concurrent (Promise.allSettled — Exactement 1 succès, 1 rejet)', async () => {
         // Ré-initialisation propre pour garantir le test concurrent
+        await supabase.from('ticket_transfers').delete().eq('ticket_id', tClaimConcurrenceId);
         await supabase.from('tickets').update({ transfer_locked: false, user_id: buyerAUserId }).eq('id', tClaimConcurrenceId);
         const memMap = (TicketTransferService as any).inMemoryTransfers as Map<string, any>;
         if (memMap) {

@@ -428,5 +428,72 @@ describe('CHANTIER 1 : HOLD CART — RÉSERVATION TEMPORAIRE DE STOCK (7 TESTS)'
         assert.ok(heldQty >= 0, 'held_quantity n\'est jamais négatif');
         console.log('   ✅ Nettoyage périodique robuste sans fuite ni dérive négative');
     });
+
+    test('8. Validation max_per_order : Tentative de dépassement de la limite par commande', async () => {
+        // Test sur catégorie avec max_per_order = 10 (category10Id)
+        const maxPerOrderTest = await EventService.reserveTicketsAtomic({
+            eventId: testEventId,
+            categoryId: category10Id,
+            quantity: 11, // Une de plus que la limite
+            userId: buyerAUserId,
+            paymentConfirmed: true,
+        }).catch(err => err);
+
+        assert.ok(maxPerOrderTest instanceof Error, 'Devrait retourner une erreur pour quantité > max_per_order');
+        assert.ok(maxPerOrderTest.message.includes('limite autorisée par commande'), 'Message d\'erreur approprié');
+
+        // Test sur catégorie avec max_per_order = 1 (category1Id - dernière place flash)
+        const maxPerOrderOneTest = await EventService.reserveTicketsAtomic({
+            eventId: testEventId,
+            categoryId: category1Id,
+            quantity: 2, // Une de plus que la limite
+            userId: buyerBUserId,
+            paymentConfirmed: true,
+        }).catch(err => err);
+
+        assert.ok(maxPerOrderOneTest instanceof Error, 'Devrait retourner une erreur pour quantité > max_per_order');
+        assert.ok(maxPerOrderOneTest.message.includes('limite autorisée par commande'), 'Message d\'erreur approprié');
+
+        // Test quantité valide (égale à max_per_order) devrait réussir
+        const validMaxTest = await EventService.reserveTicketsAtomic({
+            eventId: testEventId,
+            categoryId: category1Id,
+            quantity: 1, // Exactement la limite
+            userId: buyerCUserId,
+            paymentConfirmed: true,
+        });
+
+        assert.ok(validMaxTest.ticket, 'Quantité égale à max_per_order devrait réussir');
+        assert.strictEqual(validMaxTest.ticket.status, 'VALIDE', 'Statut du billet VALIDE');
+
+        // Nettoyer la réservation valide
+        await EventService.releaseHoldTicketsAtomic({ categoryId: category1Id, quantity: 1 });
+
+        // Test quantité zéro devrait échouer
+        const zeroQtyTest = await EventService.reserveTicketsAtomic({
+            eventId: testEventId,
+            categoryId: category10Id,
+            quantity: 0,
+            userId: buyerAUserId,
+            paymentConfirmed: true,
+        }).catch(err => err);
+
+        assert.ok(zeroQtyTest instanceof Error, 'Devrait retourner une erreur pour quantité zéro');
+        assert.ok(zeroQtyTest.message.includes('Quantité invalide'), 'Message d\'erreur approprié pour quantité zéro');
+
+        // Test quantité négative devrait échouer
+        const negativeQtyTest = await EventService.reserveTicketsAtomic({
+            eventId: testEventId,
+            categoryId: category10Id,
+            quantity: -1,
+            userId: buyerBUserId,
+            paymentConfirmed: true,
+        }).catch(err => err);
+
+        assert.ok(negativeQtyTest instanceof Error, 'Devrait retourner une erreur pour quantité négative');
+        assert.ok(negativeQtyTest.message.includes('Quantité invalide'), 'Message d\'erreur approprié pour quantité négative');
+
+        console.log('   ✅ Validation max_per_order fonctionnelle : limites respectées, erreurs appropriées');
+    });
 });
 

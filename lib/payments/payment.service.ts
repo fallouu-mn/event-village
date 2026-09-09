@@ -179,6 +179,14 @@ export class PaymentService {
 
                     const quantity = input.quantity && Number(input.quantity) > 0 ? Number(input.quantity) : 1;
 
+                    const availableQty = Math.max(0, Number(category.total_quantity || 0) - Number(category.sold_quantity || 0));
+                    if (availableQty <= 0) {
+                        throw new Error(`Épuisé : Aucun billet restant disponible pour la catégorie "${category.name}".`);
+                    }
+                    if (quantity > availableQty) {
+                        throw new Error(`Capacité insuffisante : Il ne reste que ${availableQty} place(s) disponible(s) pour la catégorie "${category.name}".`);
+                    }
+
                     payableAmount = Number(category.price) * quantity;
                     partnerId = category.events?.partner_id || null;
                     eventRefId = category.event_id;

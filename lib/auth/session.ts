@@ -56,9 +56,11 @@ export async function getServerSessionUser(req: NextRequest): Promise<ServerUser
             return null;
         }
 
-        const roles = (userRoles && userRoles.length > 0)
-            ? userRoles.map(r => r.role as string)
-            : [profile.role as string];
+        const dbRoles = (userRoles || []).map(r => r.role as string);
+        if (profile.role && !dbRoles.includes(profile.role)) {
+            dbRoles.push(profile.role);
+        }
+        const roles = dbRoles.length > 0 ? dbRoles : ['CLIENT'];
 
         return {
             id: profile.id,
