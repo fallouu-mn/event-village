@@ -87,6 +87,11 @@ export interface SamirPaySoldeResponse {
     status: string;
     solde?: number;
     balance?: number;
+    body?: {
+        samirEntityName?: string;
+        solde?: number;
+        [key: string]: unknown;
+    };
     currency?: string;
     message?: string;
     [key: string]: unknown;

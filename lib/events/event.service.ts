@@ -5,7 +5,7 @@ import { mTargetService } from '../sms/mtarget.service';
 import { EmailService, EmailTemplates } from '../email/email.service';
 import { randomUUID } from 'crypto';
 
-export type EventStatus = 'BROUILLON' | 'EN_ATTENTE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'TERMINE';
+export type EventStatus = 'BROUILLON' | 'EN_ATTENTE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'TERMINE' | 'ANNULE';
 
 export interface ProgramItem {
     id: string;
@@ -242,7 +242,7 @@ export class EventService {
         // Vérification que l'événement appartient au partenaire
         const { data: existing, error: findErr } = await supabase
             .from('events')
-            .select('id, status')
+            .select('*, ticket_categories(*)')
             .eq('id', eventId)
             .eq('partner_id', partnerId)
             .single();
@@ -251,22 +251,42 @@ export class EventService {
             throw new Error('Événement introuvable ou non autorisé pour modification.');
         }
 
-        // On ne peut modifier librement que les événements en BROUILLON ou EN_ATTENTE
-        if (existing.status === 'PUBLIE' || existing.status === 'TERMINE') {
-            throw new Error(`Un événement en statut ${existing.status} ne peut plus être modifié directement.`);
+        // On ne peut modifier les événements en BROUILLON, EN_ATTENTE, VALIDE, SUSPENDU, et PUBLIE (champs contrôlés)
+        // TERMINE et ANNULE ne peuvent plus être modifiés
+        if (existing.status === 'TERMINE' || existing.status === 'ANNULE') {
+            throw new Error(`Un événement en statut ${existing.status} ne peut plus être modifié.`);
         }
 
+        // Définir les champs autorisés pour les événements PUBLIE
+        const allowedFieldsForPublished = new Set([
+            'title', 'description', 'location', 'city', 'address', 'accessNotes', 'parking', 'contactPhone',
+            'program', 'image_url', 'gallery_urls', 'start_date', 'start_time', 'end_date', 'end_time',
+            'capacity', 'services', 'practical_info', 'latitude', 'longitude', 'category'
+        ]);
+
+        // Pour les événements PUBLIE, valider que seuls les champs autorisés sont modifiés
+        if (existing.status === 'PUBLIE') {
+            const updateKeys = Object.keys(input);
+            for (const key of updateKeys) {
+                if (input[key as keyof UpdateEventInput] === undefined || key === 'status') continue;
+                if (!allowedFieldsForPublished.has(key)) {
+                    throw new Error(`Le champ '${key}' ne peut pas être modifié pour un événement publié.`);
+                }
+            }
+        }
+
+        // Préparer les données de mise à jour
         const updateData: Record<string, any> = {
             updated_at: new Date().toISOString(),
         };
 
-        if (input.title) updateData.title = input.title.trim();
+        if (input.title !== undefined) updateData.title = input.title?.trim() ?? null;
         if (input.description !== undefined) updateData.description = input.description;
-        if (input.start_date) updateData.start_date = input.start_date;
-        if (input.start_time) updateData.start_time = input.start_time;
+        if (input.start_date !== undefined) updateData.start_date = input.start_date;
+        if (input.start_time !== undefined) updateData.start_time = input.start_time;
         if (input.end_date !== undefined) updateData.end_date = input.end_date;
         if (input.end_time !== undefined) updateData.end_time = input.end_time;
-        if (input.location) updateData.location = input.location.trim();
+        if (input.location !== undefined) updateData.location = input.location?.trim() ?? null;
         if (input.city !== undefined) updateData.city = input.city;
         if (input.image_url !== undefined) updateData.image_url = input.image_url;
         if (input.gallery_urls !== undefined) updateData.gallery_urls = input.gallery_urls;
@@ -275,9 +295,46 @@ export class EventService {
         if (input.longitude !== undefined) updateData.longitude = input.longitude;
         if (input.category !== undefined) updateData.category = input.category;
         if (input.program !== undefined) updateData.program = input.program;
-        if (input.practical_info !== undefined) updateData.practical_info = input.practical_info;
         if (input.services !== undefined) updateData.services = input.services;
 
+        // Practical info
+        if (input.practical_info !== undefined) {
+            updateData.practical_info = input.practical_info;
+        } else if (
+            (input as any).address !== undefined ||
+            (input as any).accessNotes !== undefined ||
+            (input as any).parking !== undefined ||
+            (input as any).contactPhone !== undefined
+        ) {
+            const practicalInfo = { ...(existing.practical_info || {}) };
+            if ((input as any).address !== undefined) practicalInfo.address = (input as any).address;
+            if ((input as any).accessNotes !== undefined) practicalInfo.accessNotes = (input as any).accessNotes;
+            if ((input as any).parking !== undefined) practicalInfo.parking = (input as any).parking;
+            if ((input as any).contactPhone !== undefined) practicalInfo.contactPhone = (input as any).contactPhone;
+            updateData.practical_info = practicalInfo;
+        }
+
+        // Pour les événements PUBLIE, validation de la capacité
+        const soldTotal = (existing.ticket_categories || []).reduce((sum: number, cat: any) => sum + (cat.sold_quantity || 0), 0);
+        const sumQuotas = (existing.ticket_categories || []).reduce((sum: number, cat: any) => sum + (cat.total_quantity || 0), 0);
+
+        if (input.capacity !== undefined && input.capacity !== null) {
+            const newCapacity = Number(input.capacity);
+            if (newCapacity < soldTotal) {
+                throw new Error(`La nouvelle capacité (${newCapacity}) ne peut pas être inférieure au nombre de billets déjà vendus (${soldTotal}).`);
+            }
+            if (newCapacity < sumQuotas) {
+                throw new Error(`La nouvelle capacité (${newCapacity}) ne peut pas être inférieure à la somme des quotas de billets (${sumQuotas}).`);
+            }
+        }
+
+        // Détection des changements critiques (Date/Heure ou Lieu)
+        const dateTimeChanged = (input.start_date !== undefined && input.start_date !== existing.start_date) ||
+                                (input.start_time !== undefined && input.start_time !== existing.start_time);
+        const locationChanged = (input.location !== undefined && input.location?.trim() !== existing.location) ||
+                                (input.city !== undefined && input.city !== existing.city);
+
+        // Effectuer la mise à jour
         const { data: updated, error: updateErr } = await supabase
             .from('events')
             .update(updateData)
@@ -289,7 +346,322 @@ export class EventService {
             throw new Error(`Échec de la mise à jour: ${updateErr?.message}`);
         }
 
+        // Journalisation dans audit_logs
+        try {
+            await supabase.from('audit_logs').insert({
+                user_id: partnerUserId,
+                action: existing.status === 'PUBLIE' ? 'EVENT_LIVE_UPDATED' : 'EVENT_UPDATED',
+                object_type: 'EVENT',
+                object_id: eventId,
+                metadata: {
+                    status: existing.status,
+                    updates: updateData,
+                    dateTimeChanged,
+                    locationChanged,
+                },
+                created_at: new Date().toISOString(),
+            });
+        } catch (auditErr) {
+            console.error('[EventService.updateEvent] Erreur audit_logs:', auditErr);
+        }
+
+        // Si événement PUBLIE avec des billets déjà vendus et changement critique de Date/Lieu : Notifier les acheteurs
+        if (existing.status === 'PUBLIE' && soldTotal > 0 && (dateTimeChanged || locationChanged)) {
+            try {
+                // Récupérer les acheteurs uniques
+                const { data: tickets } = await supabase
+                    .from('tickets')
+                    .select('user_id')
+                    .eq('event_id', eventId)
+                    .in('status', ['VALIDE', 'UTILISE']);
+
+                if (tickets && tickets.length > 0) {
+                    const uniqueUserIds = Array.from(new Set(tickets.map((t: any) => t.user_id).filter(Boolean)));
+                    const { data: userProfiles } = await supabase
+                        .from('users')
+                        .select('id, email, phone, full_name')
+                        .in('id', uniqueUserIds);
+
+                    const userMap = new Map<string, any>();
+                    (userProfiles || []).forEach((u: any) => userMap.set(u.id, u));
+
+                    const changeReason = dateTimeChanged && locationChanged
+                        ? 'La date, l\'heure et le lieu ont été modifiés'
+                        : dateTimeChanged
+                        ? 'La date ou l\'heure de l\'événement a été modifiée'
+                        : 'Le lieu de l\'événement a été modifié';
+
+                    const newInfoText = `Date: ${updated.start_date} à ${updated.start_time} | Lieu: ${updated.location} (${updated.city || 'Dakar'})`;
+
+                    const notificationPromises: Promise<any>[] = [];
+                    uniqueUserIds.forEach((userId) => {
+                        const clientUser = userMap.get(userId);
+
+                        // In-App
+                        notificationPromises.push(
+                            NotificationService.createNotification({
+                                userId,
+                                title: `Mise à jour : ${existing.title}`,
+                                message: `${changeReason}. Nouvelles informations : ${newInfoText}`,
+                                type: 'SYSTEM',
+                                data: { eventId, action: 'event_update' },
+                            }).catch((e) => {
+                                console.error('[EventService.updateEvent] Erreur in-app notification:', e);
+                            })
+                        );
+
+                        // SMS
+                        if (clientUser?.phone) {
+                            notificationPromises.push(
+                                mTargetService.sendSms(
+                                    clientUser.phone,
+                                    `Event Village: Mise a jour importante pour "${existing.title}". ${changeReason}. ${newInfoText}`
+                                ).catch(() => {})
+                            );
+                        }
+
+                        // Email
+                        if (clientUser?.email) {
+                            notificationPromises.push(
+                                EmailService.send({
+                                    to: clientUser.email,
+                                    subject: `Mise à jour importante : ${existing.title}`,
+                                    html: `
+                                        <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:20px;border:1px solid #eee;border-radius:8px;">
+                                            <h2 style="color:#FF5722;">Mise à jour de votre événement</h2>
+                                            <p>Bonjour <strong>${clientUser.full_name || 'Cher client'}</strong>,</p>
+                                            <p>L'organisateur de l'événement <strong>${existing.title}</strong> a mis à jour certaines informations importantes :</p>
+                                            <div style="background:#f8f9fa;padding:15px;border-radius:6px;margin:20px 0;">
+                                                <p style="margin:5px 0;"><strong>Motif :</strong> ${changeReason}</p>
+                                                <p style="margin:5px 0;"><strong>Nouvelle date :</strong> ${updated.start_date} à ${updated.start_time}</p>
+                                                <p style="margin:5px 0;"><strong>Nouveau lieu :</strong> ${updated.location} (${updated.city || 'Dakar'})</p>
+                                            </div>
+                                            <p>Vos billets restent valides avec leur QR Code d'origine.</p>
+                                            <p style="color:#888;font-size:12px;margin-top:30px;">Event Village — Billetterie Officielle</p>
+                                        </div>
+                                    `,
+                                }).catch(() => {})
+                            );
+                        }
+                    });
+
+                    await Promise.allSettled(notificationPromises);
+                }
+            } catch (notifyErr) {
+                console.error('[EventService.updateEvent] Erreur notification acheteurs:', notifyErr);
+            }
+        }
+
         return updated;
+    }
+
+    /**
+     * Mise à jour dynamique du stock et statut d'une catégorie de billets
+     * Gère les augmentations (réouverture automatique si Sold Out)
+     * et les diminutions (rejet strict si total < sold_quantity)
+     */
+    public static async updateCategoryStockAndStatus(
+        partnerUserId: string,
+        eventId: string,
+        categoryId: string,
+        updates: {
+            total_quantity?: number;
+            is_active?: boolean;
+            is_visible?: boolean;
+            price?: number;
+            description?: string;
+            name?: string;
+        }
+    ) {
+        const supabase = getServiceRoleClient();
+        const partnerId = await this.resolvePartnerId(partnerUserId);
+
+        // 1. Vérifier l'événement et son propriétaire
+        const { data: event, error: eventErr } = await supabase
+            .from('events')
+            .select('id, title, status, capacity, partner_id, ticket_categories(*)')
+            .eq('id', eventId)
+            .eq('partner_id', partnerId)
+            .single();
+
+        if (eventErr || !event) {
+            throw new Error('Événement introuvable ou non autorisé.');
+        }
+
+        if (['ANNULE', 'TERMINE'].includes(event.status)) {
+            throw new Error(`Impossible de modifier une catégorie pour un événement en statut ${event.status}.`);
+        }
+
+        const existingCategory = (event.ticket_categories || []).find((c: any) => c.id === categoryId);
+        if (!existingCategory) {
+            throw new Error('Catégorie de billets introuvable pour cet événement.');
+        }
+
+        const updateData: Record<string, any> = {
+            updated_at: new Date().toISOString(),
+        };
+
+        if (updates.name !== undefined) updateData.name = updates.name.trim();
+        if (updates.description !== undefined) updateData.description = updates.description;
+        if (updates.price !== undefined) {
+            const newPrice = Number(updates.price);
+            if (newPrice < 0) throw new Error('Le prix doit être positif ou nul.');
+            updateData.price = newPrice;
+        }
+        if (updates.is_visible !== undefined) updateData.is_visible = updates.is_visible;
+        if (updates.is_active !== undefined) updateData.is_active = updates.is_active;
+
+        // 2. Gestion du Quota (total_quantity)
+        if (updates.total_quantity !== undefined) {
+            const newTotal = Number(updates.total_quantity);
+            const sold = Number(existingCategory.sold_quantity || 0);
+
+            if (newTotal < 0) {
+                throw new Error('Le quota de billets doit être supérieur ou égal à 0.');
+            }
+
+            // RÈGLE CRITIQUE DIMINUTION : total ne peut jamais être inférieur au nombre de billets déjà vendus
+            if (newTotal < sold) {
+                throw new Error(`Impossible de réduire le quota à ${newTotal} : ${sold} billets ont déjà été vendus.`);
+            }
+
+            // RÈGLE CRITIQUE CAPACITÉ GLOBALE : somme des quotas <= event.capacity
+            if (event.capacity && event.capacity > 0) {
+                const otherCategoriesTotal = (event.ticket_categories || [])
+                    .filter((c: any) => c.id !== categoryId)
+                    .reduce((sum: number, c: any) => sum + Number(c.total_quantity || 0), 0);
+
+                const newSumQuotas = otherCategoriesTotal + newTotal;
+                if (newSumQuotas > Number(event.capacity)) {
+                    throw new Error(`La somme des quotas de billets (${newSumQuotas}) dépasse la capacité maximale de l'événement (${event.capacity}).`);
+                }
+            }
+
+            updateData.total_quantity = newTotal;
+
+            // RÈGLE AUGMENTATION : Si augmentation et le nouveau total > sold, réactiver automatiquement la vente
+            if (newTotal > sold && updates.is_active === undefined) {
+                updateData.is_active = true;
+            }
+        }
+
+        // 3. Exécution de la mise à jour
+        const { data: updatedCat, error: updateErr } = await supabase
+            .from('ticket_categories')
+            .update(updateData)
+            .eq('id', categoryId)
+            .eq('event_id', eventId)
+            .select('*')
+            .single();
+
+        if (updateErr || !updatedCat) {
+            throw new Error(`Échec de la mise à jour de la catégorie: ${updateErr?.message}`);
+        }
+
+        // 4. Audit Trail
+        try {
+            await supabase.from('audit_logs').insert({
+                user_id: partnerUserId,
+                action: 'CATEGORY_STOCK_UPDATED',
+                object_type: 'TICKET_CATEGORY',
+                object_id: categoryId,
+                metadata: {
+                    event_id: eventId,
+                    old_total: existingCategory.total_quantity,
+                    new_total: updateData.total_quantity ?? existingCategory.total_quantity,
+                    sold_quantity: existingCategory.sold_quantity,
+                    is_active: updateData.is_active ?? existingCategory.is_active,
+                    price: updateData.price ?? existingCategory.price,
+                },
+                created_at: new Date().toISOString(),
+            });
+        } catch (auditErr) {
+            console.error('[EventService.updateCategoryStockAndStatus] Erreur audit_logs:', auditErr);
+        }
+
+        return {
+            ...updatedCat,
+            available_quantity: Math.max(0, Number(updatedCat.total_quantity) - Number(updatedCat.sold_quantity || 0)),
+        };
+    }
+
+    /**
+     * Ajout d'une nouvelle catégorie de billets sur un événement existant
+     */
+    public static async addTicketCategory(
+        partnerUserId: string,
+        eventId: string,
+        categoryInput: TicketCategoryInput
+    ) {
+        const supabase = getServiceRoleClient();
+        const partnerId = await this.resolvePartnerId(partnerUserId);
+
+        const { data: event, error: eventErr } = await supabase
+            .from('events')
+            .select('id, status, capacity, partner_id, ticket_categories(*)')
+            .eq('id', eventId)
+            .eq('partner_id', partnerId)
+            .single();
+
+        if (eventErr || !event) {
+            throw new Error('Événement introuvable ou non autorisé.');
+        }
+
+        if (['ANNULE', 'TERMINE'].includes(event.status)) {
+            throw new Error(`Impossible d'ajouter une catégorie pour un événement en statut ${event.status}.`);
+        }
+
+        const newQuota = Number(categoryInput.total_quantity);
+        if (newQuota <= 0) {
+            throw new Error('Le quota de billets doit être supérieur à 0.');
+        }
+
+        if (event.capacity && event.capacity > 0) {
+            const currentTotalQuotas = (event.ticket_categories || []).reduce(
+                (sum: number, c: any) => sum + Number(c.total_quantity || 0),
+                0
+            );
+            if (currentTotalQuotas + newQuota > Number(event.capacity)) {
+                throw new Error(`La somme des quotas de billets (${currentTotalQuotas + newQuota}) dépasse la capacité maximale de l'événement (${event.capacity}).`);
+            }
+        }
+
+        const { data: newCat, error: insertErr } = await supabase
+            .from('ticket_categories')
+            .insert({
+                event_id: eventId,
+                name: categoryInput.name.trim(),
+                description: categoryInput.description || null,
+                price: Number(categoryInput.price),
+                total_quantity: newQuota,
+                sold_quantity: 0,
+                sale_start: categoryInput.sale_start || null,
+                sale_end: categoryInput.sale_end || null,
+                max_per_order: categoryInput.max_per_order ?? 10,
+                is_visible: categoryInput.is_visible !== false,
+                is_active: true,
+            })
+            .select('*')
+            .single();
+
+        if (insertErr || !newCat) {
+            throw new Error(`Échec de la création de la catégorie: ${insertErr?.message}`);
+        }
+
+        try {
+            await supabase.from('audit_logs').insert({
+                user_id: partnerUserId,
+                action: 'CATEGORY_CREATED',
+                object_type: 'TICKET_CATEGORY',
+                object_id: newCat.id,
+                metadata: { event_id: eventId, name: newCat.name, total_quantity: newQuota, price: newCat.price },
+                created_at: new Date().toISOString(),
+            });
+        } catch (err) {
+            console.error('[EventService.addTicketCategory] Erreur audit_logs:', err);
+        }
+
+        return newCat;
     }
 
     /**
@@ -1255,98 +1627,6 @@ export class EventService {
         }
 
         return { success: true, released: qtyToRelease };
-    }
-
-    /**
-     * Mise à jour du stock ou du statut d'une catégorie de billets par l'organisateur
-     * Permet d'augmenter le stock (total_quantity) ou de fermer/réouvrir les ventes (is_active)
-     * même sur un événement déjà publié (§35 CDC V3.0).
-     */
-    public static async updateCategoryStockAndStatus(
-        partnerUserId: string,
-        eventId: string,
-        categoryId: string,
-        input: {
-            total_quantity?: number;
-            is_active?: boolean;
-            is_visible?: boolean;
-            price?: number;
-            description?: string;
-        }
-    ) {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        // 1. Vérifier que l'événement appartient bien au partenaire
-        const { data: event, error: evErr } = await supabase
-            .from('events')
-            .select('id, capacity, status, ticket_categories(*)')
-            .eq('id', eventId)
-            .eq('partner_id', partnerId)
-            .single();
-
-        if (evErr || !event) {
-            throw new Error('Événement introuvable ou vous n\'en êtes pas le propriétaire.');
-        }
-
-        const category = (event.ticket_categories as any[])?.find(c => c.id === categoryId);
-        if (!category) {
-            throw new Error('Catégorie de billet introuvable sur cet événement.');
-        }
-
-        const updateData: Record<string, any> = {
-            updated_at: new Date().toISOString(),
-        };
-
-        if (input.total_quantity !== undefined) {
-            const newTotal = Number(input.total_quantity);
-            const currentSold = Number(category.sold_quantity || 0);
-            if (newTotal < currentSold) {
-                throw new Error(`Le stock total (${newTotal}) ne peut pas être inférieur au nombre de billets déjà vendus (${currentSold}).`);
-            }
-
-            // Vérification capacité max de l'événement si définie
-            if (event.capacity && Number(event.capacity) > 0) {
-                const otherTotal = (event.ticket_categories as any[])
-                    .filter(c => c.id !== categoryId)
-                    .reduce((sum, c) => sum + Number(c.total_quantity || 0), 0);
-                if (otherTotal + newTotal > Number(event.capacity)) {
-                    throw new Error(`La somme des quotas de billets (${otherTotal + newTotal}) dépasserait la capacité maximale de l'événement (${event.capacity}).`);
-                }
-            }
-
-            updateData.total_quantity = newTotal;
-        }
-
-        if (input.is_active !== undefined) {
-            updateData.is_active = !!input.is_active;
-        }
-
-        if (input.is_visible !== undefined) {
-            updateData.is_visible = !!input.is_visible;
-        }
-
-        if (input.price !== undefined && ['BROUILLON', 'EN_ATTENTE'].includes(event.status)) {
-            updateData.price = Number(input.price);
-        }
-
-        if (input.description !== undefined) {
-            updateData.description = input.description;
-        }
-
-        const { data: updatedCat, error: updateErr } = await supabase
-            .from('ticket_categories')
-            .update(updateData)
-            .eq('id', categoryId)
-            .eq('event_id', eventId)
-            .select('*')
-            .single();
-
-        if (updateErr || !updatedCat) {
-            throw new Error(`Échec de la mise à jour de la catégorie: ${updateErr?.message}`);
-        }
-
-        return updatedCat;
     }
 
     /**

@@ -10,6 +10,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CreatePaymentInput, SamirPayWebhookSchema } from '@/lib/validations/payment';
 import { EventService } from '@/lib/events/event.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
+import { mTargetService } from '@/lib/sms/mtarget.service';
 import crypto from 'crypto';
 
 export interface CreatePaymentResult {
@@ -595,6 +596,152 @@ export class PaymentService {
                             });
                         }
                     }
+                }
+
+                // 4.1.1 BLINDAGE VULNÉRABILITÉ #2 : LATE WEBHOOK & OVERBOOKING AUTO-REFUND
+                if (generatedTicketIds.length === 0) {
+                    console.warn(`[PaymentService.Webhook] ALERTE OVERBOOKING / LATE WEBHOOK : Aucun billet émis pour le paiement ${payment.id}. Déclenchement du remboursement automatique.`);
+
+                    let buyerPhone = payment.metadata?.customer_phone || payment.metadata?.phone || payment.customer_phone || '';
+                    let buyerName = payment.metadata?.customer_name || 'Client';
+                    let operator: 'WAVE' | 'ORANGE_MONEY' = 'WAVE';
+
+                    if (payment.payment_method?.toUpperCase().includes('ORANGE') || payment.metadata?.operator === 'ORANGE_MONEY') {
+                        operator = 'ORANGE_MONEY';
+                    }
+
+                    if (payment.client_id && !buyerPhone) {
+                        const { data: clientUser } = await supabase
+                            .from('users')
+                            .select('phone, first_name, last_name')
+                            .eq('id', payment.client_id)
+                            .maybeSingle();
+                        if (clientUser) {
+                            buyerPhone = clientUser.phone || '';
+                            if (clientUser.first_name) buyerName = `${clientUser.first_name} ${clientUser.last_name || ''}`.trim();
+                        }
+                    }
+
+                    const nameParts = buyerName.split(' ');
+                    const firstName = nameParts[0] || 'Client';
+                    const lastName = nameParts.slice(1).join(' ') || 'EV';
+                    const cleanPhone = (buyerPhone || '770000000').replace(/\s+/g, '');
+                    const refundTxId = `AUTO-REFUND-LATE-${payment.id}`;
+
+                    let cashoutSuccess = false;
+                    let externalTxId: string | undefined;
+                    let refundErrorMsg: string | undefined;
+
+                    try {
+                        const cashoutRes = await samirPayClient.sendCashout({
+                            phoneNumber: cleanPhone,
+                            operatorName: operator,
+                            amount: Number(payment.amount),
+                            firstName,
+                            lastName,
+                        });
+
+                        if (cashoutRes.status === 'success' || cashoutRes.status === 'pending' || cashoutRes.transaction_id) {
+                            cashoutSuccess = true;
+                            externalTxId = cashoutRes.transaction_id || (cashoutRes.reference as string) || refundTxId;
+                        } else {
+                            refundErrorMsg = cashoutRes.message || 'Échec du cashout opérateur';
+                        }
+                    } catch (cashoutErr: any) {
+                        refundErrorMsg = cashoutErr.message || 'Erreur passerelle cashout SamirPay';
+                    }
+
+                    // Enregistrement du remboursement dans la table refunds
+                    try {
+                        const refundReason = refundErrorMsg
+                            ? `AUTO_REFUND_OVERBOOKING_LATE_WEBHOOK (Échec: ${refundErrorMsg.slice(0, 100)})`
+                            : 'AUTO_REFUND_OVERBOOKING_LATE_WEBHOOK';
+
+                        await supabase.from('refunds').insert({
+                            payment_id: payment.id,
+                            refund_transaction_id: refundTxId,
+                            external_refund_id: externalTxId || null,
+                            amount: payment.amount,
+                            reason: refundReason,
+                            status: cashoutSuccess ? 'PROCESSED' : 'FAILED',
+                            processed_by: payment.client_id || '00000000-0000-0000-0000-000000000000',
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString(),
+                        });
+                    } catch (refErr) {
+                        console.error('[PaymentService.Webhook] Erreur insertion refund overbooking:', refErr);
+                    }
+
+                    // Mise à jour de la transaction de paiement
+                    await supabase.from('payments').update({
+                        status: cashoutSuccess ? 'REFUNDED' : 'FAILED',
+                        provider_status: status,
+                        external_transaction_id: transaction_id,
+                        metadata: {
+                            ...payment.metadata,
+                            overbooked: true,
+                            auto_refund_attempted: true,
+                            auto_refund_success: cashoutSuccess,
+                            failure_reason: 'LATE_WEBHOOK_SOLD_OUT',
+                        },
+                        updated_at: new Date().toISOString(),
+                    }).eq('id', payment.id);
+
+                    // Journalisation dans audit_logs
+                    try {
+                        await supabase.from('audit_logs').insert({
+                            user_id: payment.client_id || '00000000-0000-0000-0000-000000000000',
+                            action: cashoutSuccess ? 'PAYMENT_OVERBOOKED_AUTO_REFUNDED' : 'PAYMENT_OVERBOOKED_REFUND_FAILED',
+                            object_type: 'PAYMENT',
+                            object_id: payment.id,
+                            metadata: {
+                                amount: payment.amount,
+                                operator,
+                                phone: cleanPhone,
+                                cashoutSuccess,
+                                error: refundErrorMsg,
+                            },
+                            created_at: new Date().toISOString(),
+                        });
+                    } catch (audErr) {
+                        console.error('[PaymentService.Webhook] Erreur audit log:', audErr);
+                    }
+
+                    // Notification SMS transparente au client
+                    if (cleanPhone && cleanPhone.length >= 9) {
+                        try {
+                            const smsText = cashoutSuccess
+                                ? `Event Village: Votre paiement de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA a bien ete recu mais les billets etaient deja epuises. Vous avez ete integralement rembourse sur votre compte ${operator}.`
+                                : `Event Village: Votre commande n'a pu aboutir (billets epuises). Notre service client procede a votre remboursement de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA. Contact: +221770000000.`;
+                            await mTargetService.sendSms(cleanPhone, smsText);
+                        } catch (smsErr) {
+                            console.error('[PaymentService.Webhook] Erreur SMS notification overbooking:', smsErr);
+                        }
+                    }
+
+                    // Notification In-App
+                    if (payment.client_id) {
+                        try {
+                            await NotificationService.createNotification({
+                                userId: payment.client_id,
+                                title: 'Remboursement automatique - Billets épuisés',
+                                message: cashoutSuccess
+                                    ? `Votre commande n'a pu aboutir car les billets ont été épuisés avant la validation. Vous avez été intégralement remboursé de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA sur votre compte ${operator}.`
+                                    : `Votre commande n'a pu aboutir (billets épuisés). Votre remboursement de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA est en cours de traitement par notre équipe.`,
+                                type: 'SYSTEM',
+                                data: { paymentId: payment.id, status: cashoutSuccess ? 'REFUNDED' : 'FAILED' },
+                            });
+                        } catch (notifErr) {
+                            console.error('[PaymentService.Webhook] Erreur in-app notif overbooking:', notifErr);
+                        }
+                    }
+
+                    return {
+                        success: true,
+                        message: cashoutSuccess
+                            ? 'Paiement en surréservation remboursé automatiquement avec succès.'
+                            : 'Paiement en surréservation enregistré, remboursement en attente d\'intervention.',
+                    };
                 }
 
                 // Déclencher les notifications orchestrées (In-App + SMS + Email Client & Organisateur)

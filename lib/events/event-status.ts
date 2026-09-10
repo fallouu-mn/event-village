@@ -40,6 +40,8 @@ export function getEventEligibilityRejectionReason(status?: string | null): stri
             return "L'événement est en statut Brouillon.";
         case 'EN_ATTENTE':
             return "L'événement est en attente de validation administrative.";
+        case 'ANNULE':
+            return "L'événement a été annulé.";
         case 'SUSPENDU':
             return "L'événement est actuellement suspendu par l'administration.";
         case 'TERMINE':

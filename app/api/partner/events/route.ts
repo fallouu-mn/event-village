@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { EventService } from '@/lib/events/event.service';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/partner/events
  * Liste paginée des événements du partenaire connecté

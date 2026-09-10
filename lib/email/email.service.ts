@@ -606,6 +606,53 @@ export const EmailTemplates = {
             `),
         };
     },
+
+    /**
+     * T12 — Annulation d'événement & Remboursement Mobile Money → Envoyé AU CLIENT
+     */
+    eventCancelledAndRefunded(p: {
+        recipientName: string;
+        eventTitle: string;
+        ticketNumber: string;
+        refundAmount: number;
+        refundTransactionId: string;
+        reason?: string;
+        operator?: string;
+    }): { subject: string; html: string } {
+        const formattedAmount = `${p.refundAmount.toLocaleString('fr-FR')} FCFA`;
+        return {
+            subject: `[Annulation & Remboursement] Événement "${p.eventTitle}" — Event Village`,
+            html: baseLayout(`
+              <div style="background:#fef2f2;border:2px solid #ef4444;border-radius:12px;padding:18px;margin:0 0 22px;text-align:center;">
+                <p style="margin:0;font-size:28px;">📢</p>
+                <p style="margin:6px 0 0;font-size:15px;font-weight:800;color:#991b1b;">Annulation Officielle de l'Événement</p>
+                <p style="margin:4px 0 0;font-size:12px;font-weight:600;color:#dc2626;">Remboursement Mobile Money Effectué</p>
+              </div>
+              <p style="margin:0 0 8px;font-size:13px;color:#64748b;">Bonjour <strong>${p.recipientName}</strong>,</p>
+              <p style="margin:0 0 16px;font-size:13px;color:#334155;line-height:1.7;">
+                Nous vous informons que l'organisateur a annulé l'événement <strong>${p.eventTitle}</strong>. 
+                Conformément à la politique de protection des acheteurs Event Village, votre billet a été <strong>intégralement remboursé</strong> via votre opérateur Mobile Money.
+              </p>
+              ${p.reason ? `
+              <div style="background:#fff1f2;border-left:4px solid #f43f5e;border-radius:8px;padding:14px 18px;margin:0 0 18px;">
+                <p style="margin:0 0 4px;font-size:10px;font-weight:800;color:#9f1239;text-transform:uppercase;letter-spacing:.6px;">Motif de l'organisateur</p>
+                <p style="margin:0;font-size:13px;color:#881337;font-style:italic;">"${p.reason}"</p>
+              </div>` : ''}
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:0 0 20px;">
+                ${infoRow('Événement', p.eventTitle)}
+                ${infoRow('Billet N°', p.ticketNumber)}
+                ${infoRow('Montant Remboursé', formattedAmount)}
+                ${infoRow('Opérateur', p.operator || 'Mobile Money (Wave / Orange Money)')}
+                ${infoRow('Réf. Remboursement', p.refundTransactionId)}
+                ${infoRow('Statut Billet', 'ANNULÉ / REMBOURSÉ')}
+              </table>
+              <p style="font-size:12px;color:#64748b;line-height:1.6;margin:0 0 20px;">
+                Les fonds ont été directement recrédités sur votre compte Mobile Money. Votre QR Code d'accès est désormais désactivé.
+              </p>
+              ${ctaButton('Consulter mes Billets →', `${APP_URL}/tickets`)}
+            `),
+        };
+    },
 };
 
 // ── EmailService ──────────────────────────────────────────────────────────

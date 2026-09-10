@@ -97,6 +97,8 @@ export default function EditEventPage() {
 
     const [ticketCategories, setTicketCategories] = useState<TicketCategory[]>([]);
 
+    const [eventStatus, setEventStatus] = useState<string>('BROUILLON');
+
     useEffect(() => {
         const loadEvent = async () => {
             try {
@@ -109,8 +111,9 @@ export default function EditEventPage() {
                 }
 
                 const ev = data.event;
+                setEventStatus(ev.status || 'BROUILLON');
 
-                if (!['BROUILLON', 'EN_ATTENTE'].includes(ev.status)) {
+                if (['TERMINE', 'ANNULE'].includes(ev.status)) {
                     setNotEditable(true);
                     return;
                 }
@@ -410,14 +413,36 @@ export default function EditEventPage() {
             </div>
 
             <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                    <Calendar className="w-7 h-7 text-[#FF5722]" />
-                    Modifier l&apos;Evenement
-                </h1>
+                <div className="flex items-center gap-3">
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+                        <Calendar className="w-7 h-7 text-[#FF5722]" />
+                        Modifier l&apos;Evenement
+                    </h1>
+                    {eventStatus === 'PUBLIE' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 shadow-xs">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            En Direct
+                        </span>
+                    )}
+                </div>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400 mt-1">
-                    Modifiez les informations de votre evenement. Les modifications seront enregistrees immediatement.
+                    {eventStatus === 'PUBLIE'
+                        ? "Cet événement est actuellement en ligne. Vos modifications logistiques, de quotas ou de programme s'appliqueront immédiatement."
+                        : "Modifiez les informations de votre événement. Les modifications seront enregistrées immédiatement."}
                 </p>
             </div>
+
+            {eventStatus === 'PUBLIE' && (
+                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-300">
+                    <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                        <strong className="font-bold block">Événement en direct :</strong>
+                        <span>
+                            La billetterie est active. Les quotas de billets ne peuvent pas être réduits en dessous des ventes déjà enregistrées. En cas de changement de date ou de lieu, les acheteurs de billets seront automatiquement prévenus par notification, email et SMS.
+                        </span>
+                    </div>
+                </div>
+            )}
 
             {/* Stepper Tabs */}
             <div className="grid grid-cols-5 gap-2 border-b border-slate-200 dark:border-zinc-800 pb-4">

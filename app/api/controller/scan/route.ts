@@ -163,6 +163,13 @@ export async function POST(req: NextRequest) {
         }
 
         // ─── 2.0. Vérification statut de l'événement (Partie 7 CDC & Hotfix opérationnel) ───
+        if (eventData?.status === 'ANNULE') {
+            return NextResponse.json({
+                code: 'EVENT_CANCELLED',
+                scan_result: 'event_cancelled',
+                message: 'Cet événement a été annulé. Les scans sont strictement interdits.',
+            }, { status: 400 });
+        }
         if (eventData?.status === 'TERMINE') {
             return NextResponse.json({
                 code: 'event_ended',
@@ -223,9 +230,10 @@ export async function POST(req: NextRequest) {
             // ─── 4. Billet annulé / remboursé ───
             if (ticket.status === 'ANNULE' || ticket.status === 'REMBOURSE') {
                 return NextResponse.json({
+                    code: 'EVENT_CANCELLED',
                     scan_result: 'invalid',
                     message: `Ce billet est ${ticket.status === 'ANNULE' ? 'annulé' : 'remboursé'}.`,
-                });
+                }, { status: 400 });
             }
 
             // ─── 5. Vérification paiement — "cash gate" ───
@@ -330,9 +338,10 @@ export async function POST(req: NextRequest) {
             }
             if (ticket.status === 'ANNULE' || ticket.status === 'REMBOURSE') {
                 return NextResponse.json({
+                    code: 'EVENT_CANCELLED',
                     scan_result: 'invalid',
                     message: `Ce billet est ${ticket.status === 'ANNULE' ? 'annulé' : 'remboursé'}.`,
-                });
+                }, { status: 400 });
             }
 
             await supabase.from('tickets').update({

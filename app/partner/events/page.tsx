@@ -24,6 +24,7 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { toastMessages } from '@/lib/messages/toast-messages';
+import { AdjustTicketQuotaModal } from '@/components/events/AdjustTicketQuotaModal';
 
 interface EventItem {
     id: string;
@@ -43,6 +44,8 @@ interface EventItem {
         price: number;
         total_quantity: number;
         sold_quantity: number;
+        is_active?: boolean;
+        is_visible?: boolean;
     }>;
 }
 
@@ -54,6 +57,7 @@ export default function PartnerEventsPage() {
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const toast = useToast();
     const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; eventId: string | null }>({ isOpen: false, eventId: null });
+    const [quotaModalEvent, setQuotaModalEvent] = useState<EventItem | null>(null);
 
     const fetchEvents = async () => {
         setIsLoading(true);
@@ -430,12 +434,27 @@ export default function PartnerEventsPage() {
                                     )}
 
                                     {ev.status === 'PUBLIE' && (
-                                        <Link href={`/events/${ev.id}`} target="_blank" className="w-full">
-                                            <Button size="sm" variant="outline" className="w-full text-xs flex items-center justify-center gap-1.5">
-                                                <Eye className="w-3.5 h-3.5" />
-                                                Voir la page publique
+                                        <div className="flex items-center gap-2 w-full">
+                                            <Button
+                                                size="sm"
+                                                variant="primary"
+                                                onClick={() => setQuotaModalEvent(ev)}
+                                                className="text-xs flex-1 flex items-center justify-center gap-1.5 shadow-xs"
+                                            >
+                                                <Ticket className="w-3.5 h-3.5" />
+                                                Quotas & Stock
                                             </Button>
-                                        </Link>
+                                            <Link href={`/partner/events/${ev.id}/edit`}>
+                                                <Button size="sm" variant="outline" className="text-xs px-2.5" title="Modifier les informations">
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                </Button>
+                                            </Link>
+                                            <Link href={`/events/${ev.id}`} target="_blank">
+                                                <Button size="sm" variant="outline" className="text-xs px-2.5" title="Voir la page publique">
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                </Button>
+                                            </Link>
+                                        </div>
                                     )}
 
                                     {ev.status === 'VALIDE' && (
@@ -477,6 +496,18 @@ export default function PartnerEventsPage() {
                 variant="danger"
                 isLoading={actionLoading === deleteConfirm.eventId}
             />
+
+            {quotaModalEvent && (
+                <AdjustTicketQuotaModal
+                    isOpen={Boolean(quotaModalEvent)}
+                    onClose={() => setQuotaModalEvent(null)}
+                    eventId={quotaModalEvent.id}
+                    eventTitle={quotaModalEvent.title}
+                    eventCapacity={quotaModalEvent.capacity}
+                    categories={quotaModalEvent.ticket_categories || []}
+                    onSuccess={fetchEvents}
+                />
+            )}
         </div>
     );
 }
