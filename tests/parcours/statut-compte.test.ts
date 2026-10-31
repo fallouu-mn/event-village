@@ -91,6 +91,31 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
         assert.ok((await auditActions(target.userId)).includes('CONTROLLER_INVITE_REFUSED_INACTIVE'), 'refus journalisé dans audit_logs');
     });
 
+    test('invitation avec l’email d’un compte existant et un autre numéro → refus, identifiants du compte intacts', async () => {
+        const fx = await loadFixtures();
+        const partnerA = await signInAs('PARTNER_A');
+        const victim = await newAccount('victime-invite');
+        const otherPhone = randomSenegalPhone('78');
+
+        const res = await inviteController(jsonRequest('/api/partner/team/invite', {
+            phone: otherPhone,
+            email: victim.email,
+            event_ids: [fx.events.A_PUBLIE.id],
+            first_name: 'Invité',
+            confirm_promotion: true,
+        }, bearer(partnerA.accessToken)));
+        const body = await res.json();
+        assert.equal(body.code, 'ACCOUNT_ALREADY_EXISTS', `refus attendu, HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
+        assert.equal(res.status, 409);
+
+        const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+        const { error: loginErr } = await anon.auth.signInWithPassword({ email: victim.email, password: STRONG_PASSWORD });
+        assert.equal(loginErr, null, `le titulaire doit toujours se connecter avec son mot de passe : ${loginErr?.message}`);
+        const { data: authUser } = await getServiceRoleClient().auth.admin.getUserById(victim.userId);
+        const digits = (s: string | null | undefined) => (s || '').replace(/\D/g, '');
+        assert.equal(digits(authUser.user?.phone), digits(victim.phone), 'le téléphone de connexion du titulaire ne doit pas changer');
+    });
+
     test('affectation d’un compte SUSPENDU par le partenaire A → refus explicite, journalisé, statut inchangé', async () => {
         const fx = await loadFixtures();
         const partnerA = await signInAs('PARTNER_A');
