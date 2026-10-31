@@ -1,23 +1,21 @@
 /**
- * Lot 1A.2 — les parcours OTP serveur fonctionnent toujours après la fermeture de otp_codes
- * aux rôles API.
+ * Parcours OTP serveur (lots 1A.2 et 1B.7).
  *
- * 1. Chemin base de données : /api/auth/send-otp écrit le code dans otp_codes (service_role),
- *    /api/auth/verify-otp le relit (cache mémoire du processus vidé) et le marque vérifié.
- * 2. Inscription client : /api/auth/register → SMS → /api/auth/verify-otp.
- *
- * Défaut préexistant, hors périmètre du lot 1A : /api/auth/register et /api/partner/register
- * insèrent une colonne user_id absente de otp_codes ; l'insertion échoue sans vérification
- * d'erreur et leur code ne vit que dans le cache mémoire du processus (cas 2). Signalé dans
- * docs/lot1a-rapport.md.
+ * Le code OTP vit en base (otp_codes, service_role) : la vérification ne dépend plus de la
+ * mémoire du processus qui a émis le code. Pour simuler une seconde instance, le cache
+ * mémoire historique (globalThis.otpMemoryCache, s'il existe encore) est vidé entre l'émission
+ * et la vérification.
+ *  1. /api/auth/send-otp → otp_codes → /api/auth/verify-otp.
+ *  2. /api/auth/register → otp_codes → /api/auth/verify-otp (lot 1B.7).
+ *  3. /api/partner/register → otp_codes → /api/auth/verify-otp (lot 1B.7).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { otpMemoryCache } from '../../lib/sms/otp-cache';
 import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
 import { POST as registerClient } from '../../app/api/auth/register/route';
+import { POST as registerPartner } from '../../app/api/partner/register/route';
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
@@ -30,29 +28,39 @@ function codeFromLastSms(phone: string): string {
     return code;
 }
 
+/** Simule une autre instance : plus rien en mémoire du processus émetteur. */
+function forgetProcessMemory(): void {
+    (globalThis as { otpMemoryCache?: Map<string, unknown> }).otpMemoryCache?.clear();
+}
+
+async function assertStoredUnverified(phone: string, code: string): Promise<string> {
+    const { data, error } = await getServiceRoleClient().from('otp_codes').select('id, verified').eq('phone', phone).eq('code', code).maybeSingle();
+    assert.equal(error, null, `lecture de otp_codes : ${error?.message}`);
+    assert.ok(data, `le code envoyé au ${phone} doit être persisté dans otp_codes`);
+    assert.equal(data.verified, false);
+    return data.id as string;
+}
+
+async function verifyFromAnotherInstance(phone: string, code: string, storedId: string): Promise<void> {
+    forgetProcessMemory();
+    const verify = await verifyOtp(jsonRequest('/api/auth/verify-otp', { phone, otpCode: code }));
+    const body = await verify.json();
+    assert.equal(verify.status, 200, `verify-otp : HTTP ${verify.status} ${JSON.stringify(body)}`);
+    const { data: after } = await getServiceRoleClient().from('otp_codes').select('verified').eq('id', storedId).single();
+    assert.equal(after?.verified, true, 'le code doit être marqué vérifié en base');
+}
+
 describe('Parcours OTP serveur', () => {
-    test('send-otp → otp_codes (service_role) → verify-otp par la base, cache mémoire vidé', async () => {
+    test('send-otp → otp_codes → verify-otp depuis une autre instance', async () => {
         const phone = randomSenegalPhone('76');
         const res = await sendOtp(jsonRequest('/api/auth/send-otp', { phone }));
         const body = await res.json();
         assert.equal(res.status, 200, `send-otp : HTTP ${res.status} ${JSON.stringify(body)}`);
         const code = codeFromLastSms(phone);
-
-        const service = getServiceRoleClient();
-        const { data: stored, error } = await service.from('otp_codes').select('id, verified').eq('phone', phone).eq('code', code).single();
-        assert.equal(error, null, `code persisté dans otp_codes : ${error?.message}`);
-        assert.equal(stored.verified, false);
-
-        otpMemoryCache.delete(phone);
-        const verify = await verifyOtp(jsonRequest('/api/auth/verify-otp', { phone, otpCode: code }));
-        const verifyBody = await verify.json();
-        assert.equal(verify.status, 200, `verify-otp : HTTP ${verify.status} ${JSON.stringify(verifyBody)}`);
-
-        const { data: after } = await service.from('otp_codes').select('verified').eq('id', stored.id).single();
-        assert.equal(after?.verified, true, 'le code doit être marqué vérifié par la route serveur');
+        await verifyFromAnotherInstance(phone, code, await assertStoredUnverified(phone, code));
     });
 
-    test('inscription client → OTP par SMS → verify-otp', async () => {
+    test('inscription client → otp_codes → verify-otp depuis une autre instance', async () => {
         const phone = randomSenegalPhone('77');
         const res = await registerClient(jsonRequest('/api/auth/register', {
             firstName: 'Mariama',
@@ -65,9 +73,29 @@ describe('Parcours OTP serveur', () => {
         const body = await res.json();
         assert.equal(res.status, 200, `inscription : HTTP ${res.status} ${JSON.stringify(body)}`);
         const code = codeFromLastSms(phone);
+        await verifyFromAnotherInstance(phone, code, await assertStoredUnverified(phone, code));
+    });
 
-        const verify = await verifyOtp(jsonRequest('/api/auth/verify-otp', { phone, otpCode: code }));
-        const verifyBody = await verify.json();
-        assert.equal(verify.status, 200, `verify-otp : HTTP ${verify.status} ${JSON.stringify(verifyBody)}`);
+    test('inscription partenaire → otp_codes → verify-otp depuis une autre instance', async () => {
+        const phone = randomSenegalPhone('78');
+        const res = await registerPartner(jsonRequest('/api/partner/register', {
+            companyName: 'OTP Test SARL',
+            description: 'Organisateur fictif créé par la suite de tests OTP.',
+            address: '3 rue des Codes',
+            city: 'Dakar',
+            activities: ['ORGANISATEUR'],
+            firstName: 'Ousmane',
+            lastName: 'Otp',
+            phone,
+            email: randomEmail('otp-partenaire'),
+            password: STRONG_PASSWORD,
+            confirmPassword: STRONG_PASSWORD,
+            idCardUrl: 'tests/cni-fictive.pdf',
+            businessDocUrl: 'tests/rccm-fictif.pdf',
+        }));
+        const body = await res.json();
+        assert.ok(res.status < 300, `inscription partenaire : HTTP ${res.status} ${JSON.stringify(body)}`);
+        const code = codeFromLastSms(phone);
+        await verifyFromAnotherInstance(phone, code, await assertStoredUnverified(phone, code));
     });
 });
