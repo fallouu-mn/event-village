@@ -1,0 +1,60 @@
+VÉRIFICATIONS LOCALES (machine de développement Windows 10, Node v26.13.0, npm 11.6.2) — sorties brutes, 31/10/2026
+Docker est absent de cette machine : supabase start y est impossible (voir ci-dessous) ; l'exécution des suites
+sur base locale a donc été faite en CI (GitHub Actions, voir ci-run4-verify.log).
+
+────────────────────────────────────────────────────────────────────────────
+$ npx supabase start
+────────────────────────────────────────────────────────────────────────────
+WARN: config section [inbucket] is deprecated and will be removed in v3, use [local_smtp] instead.
+{"_tag":"Error","error":{"code":"DockerLifecycleInspectError","message":"failed to inspect container health: docker: command not found (podman also not found) — install Docker Desktop or Podman and ensure it is on PATH"}}
+
+────────────────────────────────────────────────────────────────────────────
+$ npx tsc --noEmit
+────────────────────────────────────────────────────────────────────────────
+(aucune sortie)
+TSC_EXIT=0
+
+────────────────────────────────────────────────────────────────────────────
+$ npx next lint
+────────────────────────────────────────────────────────────────────────────
+✔ No ESLint warnings or errors
+LINT_EXIT=0
+
+(avant correctif, même commande :)
+./components/scan/CameraQrScanner.tsx
+440:42  Error: `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.  react/no-unescaped-entities
++ 6 avertissements (react-hooks/exhaustive-deps ×4, @next/next/no-img-element ×2)
+EXIT=1
+
+────────────────────────────────────────────────────────────────────────────
+$ npm ci --no-audit --no-fund   (parité CI : .npmrc legacy-peer-deps + lockfile)
+────────────────────────────────────────────────────────────────────────────
+npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+added 423 packages in 3m
+NPM_CI_EXIT=0
+
+(sans .npmrc, toute installation échouait :)
+npm error While resolving: liquid-glass-react@1.1.1
+npm error Found: react@18.3.1
+npm error Could not resolve dependency:
+npm error peer react@">=19" from liquid-glass-react@1.1.1
+
+────────────────────────────────────────────────────────────────────────────
+$ env $(grep -v '^#' .env.test | grep -v '^$' | xargs) NEXT_TELEMETRY_DISABLED=1 npx next build   (fin de sortie)
+(build exécuté avant le passage à la police auto-hébergée, commit 4722bd7 ; le build de référence est celui du run CI 6, docs/lot0-logs/ci-run6-verify.log)
+────────────────────────────────────────────────────────────────────────────
+├ ○ /tickets                                            16.1 kB         239 kB
+├ ƒ /tickets/claim/[token]                              4.58 kB         227 kB
+└ ○ /wallet                                             8.96 kB         173 kB
++ First Load JS shared by all                           87.6 kB
+  ├ chunks/2117-488d789e9004e22c.js                     31.9 kB
+  ├ chunks/fd9d1056-270721ac51469ce4.js                 53.6 kB
+  └ other shared chunks (total)                         2.1 kB
+
+ƒ Middleware                                            87 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+BUILD_EXIT=0
