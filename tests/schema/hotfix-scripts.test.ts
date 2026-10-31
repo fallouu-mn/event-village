@@ -1,6 +1,8 @@
 /**
  * Lot 1A.7 — validation des scripts de hotfix sur la base LOCALE (jamais le projet distant) :
  *  - 01-detection.sql s'exécute en lecture seule et renvoie les colonnes attendues ;
+ *  - sa section A classe chaque rôle élevé réclamé (ALERTE / A_VERIFIER / INFO) d'après
+ *    user_roles et la trace serveur, sur des comptes synthétiques (transaction annulée) ;
  *  - 02-hotfix.sql s'applique deux fois de suite sans erreur (idempotence, transaction) ;
  *  - 03-verification.sql ne renvoie que des OK sur une base migrée.
  */
@@ -10,7 +12,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Client } from 'pg';
-import { inspect } from '../helpers/db';
+import crypto from 'node:crypto';
+import { inRolledBackTransaction, inspect } from '../helpers/db';
 
 const DIR = path.resolve(process.cwd(), 'supabase/hotfix/2026-10-31-lot1a');
 const read = (f: string) => fs.readFileSync(path.join(DIR, f), 'utf8');
@@ -36,6 +39,56 @@ describe('Scripts de hotfix du lot 1A', () => {
         } finally {
             await client.end();
         }
+    });
+
+    test('01-detection.sql section A : gravité par rôle réclamé, selon user_roles et la trace serveur', async () => {
+        // Comptes synthétiques créés dans une transaction annulée. L'UPDATE des métadonnées
+        // reproduit ce que fait GoTrue après les triggers d'insertion : il réécrit
+        // raw_user_meta_data avec les données envoyées au signUp.
+        const ids = {
+            bootstrap: crypto.randomUUID(), // SUPERADMIN via bootstrap serveur : rôles recopiés par le trigger, « role » = CLIENT
+            forged: crypto.randomUUID(), // ADMIN réclamé à l'inscription et détenu, sans trace serveur
+            attempt: crypto.randomUUID(), // SUPERADMIN réclamé, jamais détenu
+            adminCreated: crypto.randomUUID(), // CONTROLEUR créé par l'API admin, sans affectation
+        };
+        const rows = await inRolledBackTransaction(async (c) => {
+            for (const [label, id] of Object.entries(ids)) {
+                await c.query(
+                    `INSERT INTO auth.users (id, aud, role, email, raw_user_meta_data, raw_app_meta_data, created_at, updated_at)
+                     VALUES ($1, 'authenticated', 'authenticated', $2, '{}'::jsonb, '{}'::jsonb, now(), now())`,
+                    [id, `detection-${label}-${id.slice(0, 8)}@test.eventvillage.local`],
+                );
+            }
+            const grant = (id: string, role: string) => c.query('INSERT INTO public.user_roles (user_id, role) VALUES ($1, $2)', [id, role]);
+            const audit = (id: string, action: string) =>
+                c.query(`INSERT INTO public.audit_logs (action, object_type, object_id) VALUES ($1, 'users', $2)`, [action, id]);
+            const signupMetadata = (id: string, meta: object) =>
+                c.query('UPDATE auth.users SET raw_user_meta_data = $2::jsonb WHERE id = $1', [id, JSON.stringify(meta)]);
+
+            await grant(ids.bootstrap, 'SUPERADMIN');
+            await audit(ids.bootstrap, 'SUPERADMIN_BOOTSTRAP');
+            await grant(ids.forged, 'ADMIN');
+            await signupMetadata(ids.forged, { role: 'ADMIN' });
+            await signupMetadata(ids.attempt, { role: 'SUPERADMIN', roles: ['SUPERADMIN'] });
+            await grant(ids.adminCreated, 'CONTROLEUR');
+            await audit(ids.adminCreated, 'CREATE_USER');
+
+            const res = await c.query(read('01-detection.sql'));
+            const last = Array.isArray(res) ? res[res.length - 1] : res;
+            return last.rows as { controle: string; gravite: string; objet_id: string; details: { role_reclame?: string } }[];
+        });
+        const label = Object.fromEntries(Object.entries(ids).map(([k, v]) => [v, k]));
+        const sectionA = rows
+            .filter((r) => r.controle === 'A_metadata_role_eleve' && label[r.objet_id])
+            .map((r) => `${label[r.objet_id]} ${r.details.role_reclame ?? '(rôle non exposé)'} ${r.gravite}`)
+            .sort();
+        console.log('Section A sur les comptes synthétiques :', JSON.stringify(sectionA, null, 1));
+        assert.deepEqual(sectionA, [
+            'adminCreated CONTROLEUR A_VERIFIER',
+            'attempt SUPERADMIN INFO',
+            'bootstrap SUPERADMIN A_VERIFIER',
+            'forged ADMIN ALERTE',
+        ]);
     });
 
     test('03-verification.sql : tous les points OK', async () => {
