@@ -16,8 +16,8 @@ import { bearer, signInAs } from '../helpers/fixtures';
 import { GET as adminListUsers } from '../../app/api/admin/users/route';
 import { BASE_URL } from './helpers';
 
-/** Paiement : relève du lot 2 (webhook SamirPay et route de statut), listé seulement. */
-const LOT2_ALLOWED = new Set(['app/api/payments/[transactionId]/status/route.ts', 'lib/payments/payment.service.ts']);
+/** Lot 2 : D1 et D2 (route de statut, webhook) corrigés par des .eq() séparés ; plus aucune exemption. */
+const LOT2_ALLOWED = new Set<string>();
 
 function sourceFiles(): string[] {
     const out: string[] = [];

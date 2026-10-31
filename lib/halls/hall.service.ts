@@ -326,7 +326,7 @@ export class HallService {
      *
      * Deux vecteurs de confirmation sont supportés et coexistent de manière complémentaire :
      * 1. Déclenchement automatique par paiement de l'acompte (En ligne) :
-     *    Géré directement par le webhook SamirPay (`PaymentService.handleSamirPayWebhook`).
+     *    Géré directement par le webhook SamirPay (`lib/payments/confirmation.service.ts` (lot 2)).
      *    Dès que la transaction de paiement de l'acompte passe à `SUCCESS`, la réservation
      *    est automatiquement passée à `payment_status = 'SUCCESS'` et `status = 'CONFIRMEE'`.
      *

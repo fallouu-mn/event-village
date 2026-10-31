@@ -3,6 +3,7 @@ import type { SmsContext } from '@/lib/sms/sms-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { EmailService, EmailTemplates } from '@/lib/email/email.service';
 import { emailChannelAvailable } from '@/lib/notifications/channels';
+import { maskPhone } from '@/lib/payments/payer-phone';
 
 export interface NotificationResult {
     smsSent: boolean;
@@ -185,11 +186,11 @@ export class NotificationService {
                         try {
                             const res = await mTargetService.sendSms(phone, params.smsMessage!);
                             const entry = { phone, success: res.success, error: res.success ? undefined : (res.error || 'Échec inconnu') };
-                            console.log(`[NOTIFY SUPERADMIN] ${res.success ? '✓' : '✗'} SMS → ${phone}:`, res.success ? 'envoyé' : (res.error || 'échec'));
+                            console.log(`[NOTIFY SUPERADMIN] ${res.success ? '✓' : '✗'} SMS → ${maskPhone(phone)}:`, res.success ? 'envoyé' : (res.error || 'échec'));
                             return entry;
                         } catch (err) {
                             const errMsg = err instanceof Error ? err.message : String(err);
-                            console.error(`[NOTIFY SUPERADMIN ERROR] ✗ SMS → ${phone}: exception:`, errMsg);
+                            console.error(`[NOTIFY SUPERADMIN ERROR] ✗ SMS → ${maskPhone(phone)}: exception:`, errMsg);
                             return { phone, success: false, error: errMsg };
                         }
                     })

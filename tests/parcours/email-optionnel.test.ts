@@ -17,7 +17,9 @@ import { POST as registerPartner } from '../../app/api/partner/register/route';
 import { POST as checkout } from '../../app/api/checkout/route';
 import { POST as samirpayWebhook } from '../../app/api/webhooks/samirpay/route';
 import { getFakes, resetFakes } from '../fakes';
-import { formRequest, jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { randomUUID } from 'node:crypto';
+import { NextRequest } from 'next/server';
+import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 
 const warnings: string[] = [];
 const originalWarn = console.warn;
@@ -75,17 +77,15 @@ describe('Email optionnel, SMS obligatoire', () => {
         const client = await signInAs('CLIENT');
         const buyerPhone = randomSenegalPhone('76');
         const res = await checkout(jsonRequest('/api/checkout', {
-            eventId, items: [{ categoryId, quantity: 1 }], operator: 'WAVE', customerPhone: buyerPhone, customerName: 'Awa Client',
-        }, bearer(client.accessToken)));
+            eventId, items: [{ categoryId, quantity: 1 }], operator: 'WAVE', payerPhone: buyerPhone.slice(4),
+        }, { ...bearer(client.accessToken), 'idempotency-key': randomUUID() }));
         const body = await res.json();
         assert.equal(res.status, 200, `checkout : HTTP ${res.status} ${JSON.stringify(body)}`);
         const { payment } = getFakes();
-        const init = payment.callsOf('initPayment');
-        const orderId = (init[init.length - 1].args as { order_id: string }).order_id;
-        const { data: pending } = await getServiceRoleClient().from('payments').select('id, amount').eq('external_order_id', orderId).single();
-        payment.setTransactionStatus(orderId, 'success');
-        const hook = payment.buildWebhook({ order_id: orderId, status: 'success', amount: pending?.amount, currency: 'XOF' });
-        const hookRes = await samirpayWebhook(formRequest('/api/webhooks/samirpay', hook.body, hook.headers));
+        const { data: pending } = await getServiceRoleClient().from('payments').select('id, amount, external_transaction_id').eq('id', body.payment_id).single();
+        payment.setTransactionStatus(pending!.external_transaction_id, 'SUCCESS');
+        const hook = payment.buildWebhook(pending!.external_transaction_id);
+        const hookRes = await samirpayWebhook(new NextRequest(hook.url, { method: 'POST', headers: hook.headers, body: hook.body }));
         assert.equal(hookRes.status, 200, `webhook : HTTP ${hookRes.status} ${JSON.stringify(await hookRes.json())}`);
         assert.ok(getFakes().sms.messagesTo(buyerPhone).length >= 1, 'SMS de confirmation d’achat envoyé');
 

@@ -4,8 +4,9 @@
  * billet VALIDE émis par le serveur. Le trigger de commissions (SECURITY DEFINER) s'exécute
  * au passage du paiement à SUCCESS.
  *
- * Note : la notification est envoyée signée avec le schéma provisoire du faux SamirPay ;
- * la vérification de signature côté serveur est l'objet du lot 2.
+ * Lot 2 : contrat SamirPay (cashin direct, opérateur et téléphone payeur, Idempotency-Key) ;
+ * la notification est adressée au callBackUrl (jeton du paiement), sans signature, et le serveur
+ * confirme auprès de l'endpoint de statut avant d'émettre.
  */
 import '../helpers/env';
 import { test, before } from 'node:test';
@@ -15,7 +16,9 @@ import { bearer, loadFixtures, signInAs } from '../helpers/fixtures';
 import { POST as checkout } from '../../app/api/checkout/route';
 import { POST as samirpayWebhook } from '../../app/api/webhooks/samirpay/route';
 import { getFakes } from '../fakes';
-import { formRequest, jsonRequest, randomSenegalPhone } from './helpers';
+import { randomUUID } from 'node:crypto';
+import { NextRequest } from 'next/server';
+import { jsonRequest, randomSenegalPhone } from './helpers';
 
 const service = getServiceRoleClient();
 let eventId = '';
@@ -58,26 +61,25 @@ test('checkout → paiement PENDING → notification SUCCESS → billet VALIDE �
         eventId,
         items: [{ categoryId, quantity: 1 }],
         operator: 'WAVE',
-        customerPhone: randomSenegalPhone('77'),
-        customerName: 'Awa Client',
-    }, bearer(client.accessToken)));
+        payerPhone: randomSenegalPhone('77').slice(4),
+    }, { ...bearer(client.accessToken), 'idempotency-key': randomUUID() }));
     const body = await res.json();
     assert.equal(res.status, 200, `checkout : HTTP ${res.status} ${JSON.stringify(body)}`);
-    assert.ok(body.payment?.transaction_id, 'transaction interne retournée');
+    assert.ok(body.payment_id, 'paiement retourné');
 
-    const init = payment.callsOf('initPayment');
-    assert.equal(init.length, 1, 'un appel initPayment (faux SamirPay)');
-    const orderId = (init[0].args as { order_id: string }).order_id;
+    const init = payment.callsOf('initDirectPayment');
+    assert.equal(init.length, 1, 'un appel de cashin direct (faux SamirPay)');
+    const orderId = (init[0].args as { orderId: string }).orderId;
 
-    const { data: pending } = await service.from('payments').select('id, status, amount').eq('external_order_id', orderId).single();
+    const { data: pending } = await service.from('payments').select('id, status, amount, external_transaction_id').eq('external_order_id', orderId).single();
     assert.equal(pending?.status, 'PENDING');
 
-    payment.setTransactionStatus(orderId, 'success');
-    const hook = payment.buildWebhook({ order_id: orderId, status: 'success', amount: pending?.amount, currency: 'XOF' });
-    const hookRes = await samirpayWebhook(formRequest('/api/webhooks/samirpay', hook.body, hook.headers));
+    payment.setTransactionStatus(pending!.external_transaction_id, 'SUCCESS');
+    const hook = payment.buildWebhook(pending!.external_transaction_id);
+    const hookRes = await samirpayWebhook(new NextRequest(hook.url, { method: 'POST', headers: hook.headers, body: hook.body }));
     const hookBody = await hookRes.json();
     assert.equal(hookRes.status, 200, `webhook : HTTP ${hookRes.status}`);
-    assert.equal(hookBody.success, true, `webhook traité : ${JSON.stringify(hookBody)}`);
+    assert.equal(hookBody.received, true, `webhook enregistré : ${JSON.stringify(hookBody)}`);
 
     const { data: paid } = await service.from('payments').select('status').eq('id', pending!.id).single();
     assert.equal(paid?.status, 'SUCCESS');
