@@ -8,7 +8,9 @@
  *    à l'événement publié de A, ADMIN, SUPERADMIN), mot de passe commun TEST_PASSWORD ;
  *  - platform_settings complets (dont ticketing_fee_config) ;
  *  - partenaire A : un événement PUBLIE (Standard 5 000 F × 10, VIP 15 000 F × 3),
- *    un BROUILLON, un événement passé ; partenaire B : un événement PUBLIE.
+ *    un BROUILLON, un événement passé ; partenaire B : un événement PUBLIE et un événement
+ *    ANNULE avec sa fiche d'annulation ;
+ *  - un compte client SUSPENDU ; un billet de référence sur l'événement de A et un sur celui de B.
  *
  * Les tests résolvent les UUID via tests/helpers/fixtures.ts, jamais en dur.
  */
@@ -17,11 +19,13 @@ import { randomBytes } from 'node:crypto';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import {
     CONTROLLER_A_EVENT,
+    FIXTURE_CANCELLATIONS,
     FIXTURE_EVENTS,
     FIXTURE_PARTNERS,
     FIXTURE_TICKETS,
     FIXTURE_USERS,
     TEST_PASSWORD,
+    fixtureUserStatus,
     type FixtureEventKey,
     type FixturePartnerKey,
     type FixtureUserKey,
@@ -122,7 +126,7 @@ async function ensureUser(key: FixtureUserKey): Promise<string> {
             phone: spec.phone,
             email: spec.email,
             role: spec.primaryRole,
-            status: 'ACTIF',
+            status: fixtureUserStatus(key),
             referral_status: 'STANDARD',
             updated_at: new Date().toISOString(),
         },
@@ -320,6 +324,27 @@ async function syncCategoryCounters(categoryId: string): Promise<void> {
     if (upErr) fail('ticket_categories.counters', upErr);
 }
 
+async function ensureCancellation(key: keyof typeof FIXTURE_CANCELLATIONS, eventId: string, cancelledBy: string): Promise<string> {
+    const spec = FIXTURE_CANCELLATIONS[key];
+    const { data: existing, error: findErr } = await supabase.from('event_cancellations').select('id').eq('event_id', eventId).maybeSingle();
+    if (findErr) fail(`event_cancellations.find(${key})`, findErr);
+    const row = {
+        event_id: eventId,
+        cancelled_by: cancelledBy,
+        internal_reason: spec.internalReason,
+        public_notice: spec.publicNotice,
+        updated_at: new Date().toISOString(),
+    };
+    if (existing) {
+        const { error } = await supabase.from('event_cancellations').update(row).eq('id', existing.id);
+        if (error) fail(`event_cancellations.update(${key})`, error);
+        return existing.id;
+    }
+    const { data: created, error } = await supabase.from('event_cancellations').insert(row).select('id').single();
+    if (error || !created) fail(`event_cancellations.insert(${key})`, error);
+    return created.id;
+}
+
 async function ensureControllerAssignment(eventId: string, controllerUserId: string, createdBy: string): Promise<void> {
     const { error } = await supabase
         .from('event_controllers')
@@ -367,6 +392,14 @@ async function main(): Promise<void> {
         tickets[key] = await ensureFixtureTicket(key, eventIds[spec.event].id, eventIds[spec.event].categories[spec.category], userIds[spec.owner]);
     }
     summary.tickets = tickets;
+
+    const cancellations: Record<string, string> = {};
+    for (const key of Object.keys(FIXTURE_CANCELLATIONS) as (keyof typeof FIXTURE_CANCELLATIONS)[]) {
+        const spec = FIXTURE_CANCELLATIONS[key];
+        logStep(`annulation ${key}…`);
+        cancellations[key] = await ensureCancellation(key, eventIds[spec.event].id, userIds[spec.cancelledBy]);
+    }
+    summary.cancellations = cancellations;
 
     logStep('compteurs de stock des catégories…');
     for (const key of Object.keys(eventIds)) {

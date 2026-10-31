@@ -16,7 +16,15 @@ export const FIXTURE_USERS = {
     CONTROLLER_A: { email: 'controller-a@test.eventvillage.local', phone: '+221700000005', firstName: 'Cheikh', lastName: 'ControleurA', primaryRole: 'CONTROLEUR', roles: ['CLIENT', 'CONTROLEUR'] },
     ADMIN: { email: 'admin@test.eventvillage.local', phone: '+221700000006', firstName: 'Dior', lastName: 'Admin', primaryRole: 'ADMIN', roles: ['CLIENT', 'ADMIN'] },
     SUPERADMIN: { email: 'superadmin@test.eventvillage.local', phone: '+221700000007', firstName: 'Elhadji', lastName: 'SuperAdmin', primaryRole: 'SUPERADMIN', roles: ['CLIENT', 'SUPERADMIN'] },
+    /** Compte client SUSPENDU (lot 1B.2) : ne doit pas pouvoir se réactiver lui-même. */
+    SUSPENDED: { email: 'suspendu@test.eventvillage.local', phone: '+221700000008', firstName: 'Fatou', lastName: 'Suspendue', primaryRole: 'CLIENT', roles: ['CLIENT'], status: 'SUSPENDU' },
 } as const;
+
+/** Statut du profil public.users d'une fixture (ACTIF sauf mention contraire). */
+export function fixtureUserStatus(key: FixtureUserKey): 'ACTIF' | 'SUSPENDU' {
+    const spec = FIXTURE_USERS[key];
+    return 'status' in spec ? spec.status : 'ACTIF';
+}
 
 export type FixtureUserKey = keyof typeof FIXTURE_USERS;
 
@@ -37,7 +45,7 @@ export interface FixtureEventSpec {
     partner: FixturePartnerKey;
     slug: string;
     title: string;
-    status: 'PUBLIE' | 'BROUILLON';
+    status: 'PUBLIE' | 'BROUILLON' | 'ANNULE';
     daysFromNow: number;
     categories: readonly FixtureCategorySpec[];
 }
@@ -78,6 +86,14 @@ export const FIXTURE_EVENTS: Record<string, FixtureEventSpec> = {
         daysFromNow: 20,
         categories: [{ name: 'Standard', price: 4000, total: 8 }],
     },
+    B_ANNULE: {
+        partner: 'B',
+        slug: 'test-fixture-b-annule',
+        title: 'TEST Gala B (annulé)',
+        status: 'ANNULE',
+        daysFromNow: 25,
+        categories: [],
+    },
 };
 
 export type FixtureEventKey = keyof typeof FIXTURE_EVENTS;
@@ -96,5 +112,23 @@ export const FIXTURE_TICKETS = {
         category: 'Standard',
         ticketNumber: 'TCK-FIXTURE-CLIENT-A-1',
         qrCode: 'EV-QR-FIXTURE-CLIENT-A-1',
+    },
+    /** Billet sur l'événement de B (lot 1B.3) : CONTROLLER_A, affecté à A seulement, ne doit pas le lire. */
+    CLIENT_BIS_B_STANDARD: {
+        owner: 'CLIENT_BIS' as FixtureUserKey,
+        event: 'B_PUBLIE' as FixtureEventKey,
+        category: 'Standard',
+        ticketNumber: 'TCK-FIXTURE-CLIENT-BIS-B-1',
+        qrCode: 'EV-QR-FIXTURE-CLIENT-BIS-B-1',
+    },
+} as const;
+
+/** Annulations d'événement émises par le seed (lot 1B.4) : celle de B ne doit pas être lisible par A. */
+export const FIXTURE_CANCELLATIONS = {
+    B_ANNULE: {
+        event: 'B_ANNULE' as FixtureEventKey,
+        cancelledBy: 'PARTNER_B' as FixtureUserKey,
+        internalReason: 'Annulation de test (fixture lot 1B)',
+        publicNotice: 'Événement de test annulé.',
     },
 } as const;
