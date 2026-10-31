@@ -13,7 +13,7 @@ const RECONCILABLE = new Set(['PENDING', 'EXPIRED', 'CANCELLED']);
  * GET /api/payments/[id]/status — statut d'un paiement, pour son propriétaire uniquement.
  * Lecture seule : si le paiement n'est pas final, elle peut demander une réconciliation (statut
  * SamirPay avec l'identifiant enregistré, puis la même RPC que le webhook) ; elle n'écrit jamais
- * elle-même un statut. Identifiant : UUID du paiement (plus de recherche .or() interpolée).
+ * elle-même un statut. Identifiant : UUID du paiement, recherche par égalité (filtre D1 du lot 1C corrigé).
  */
 export async function GET(req: NextRequest, context: { params: Promise<{ transactionId: string }> | { transactionId: string } }) {
     const { transactionId: id } = await Promise.resolve(context?.params);
