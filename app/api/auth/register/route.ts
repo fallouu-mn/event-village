@@ -3,7 +3,7 @@ import { randomInt } from 'crypto';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { RegisterClientSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { mTargetService } from '@/lib/sms/mtarget.service';
-import { otpMemoryCache } from '@/lib/sms/otp-cache';
+import { storeOtp } from '@/lib/auth/otp-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,8 +34,16 @@ export async function POST(req: NextRequest) {
         const assignedRole = 'CLIENT' as const;
 
         // 2. Générer et envoyer le SMS OTP EN PREMIER — aucun compte ne sera créé si la livraison échoue
-        const otpCode = randomInt(100000, 999999).toString();
+        const otpCode = randomInt(100000, 1000000).toString();
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
+
+        // Lot 1B.7 : le code est enregistré en base AVANT l'envoi (vérifiable depuis toute instance).
+        try {
+            await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt));
+        } catch (storeErr) {
+            console.error('[API /api/auth/register]', storeErr instanceof Error ? storeErr.message : storeErr);
+            return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
+        }
 
         try {
             await mTargetService.sendOtp(normalizedPhone, otpCode);
@@ -47,9 +55,6 @@ export async function POST(req: NextRequest) {
                 { status: 503 }
             );
         }
-
-        // SMS envoyé avec succès — on peut maintenant stocker le code en mémoire
-        otpMemoryCache.set(normalizedPhone, { code: otpCode, expiresAt: otpExpiresAt, attempts: 0 });
 
         const supabaseAdmin = getServiceRoleClient();
 
@@ -64,7 +69,6 @@ export async function POST(req: NextRequest) {
             user_metadata: {
                 first_name: firstName.trim(),
                 last_name: lastName.trim(),
-                role: assignedRole,
                 referral_code: referralCode?.trim() || '',
             },
         });
@@ -143,20 +147,6 @@ export async function POST(req: NextRequest) {
             } catch (refErr) {
                 console.warn('[API /api/auth/register] Erreur création relation parrainage:', refErr);
             }
-        }
-
-        // 5. Persister le code OTP en base maintenant qu'on a le userId
-        try {
-            await (supabaseAdmin.from('otp_codes') as any).insert({
-                user_id: userId,
-                phone: normalizedPhone,
-                code: otpCode,
-                expires_at: new Date(otpExpiresAt).toISOString(),
-                verified: false,
-            });
-        } catch (dbErr) {
-            // Non-bloquant : le cache mémoire suffit pour la vérification immédiate
-            console.warn('[API /api/auth/register] Impossible de persister otp_codes en DB:', dbErr instanceof Error ? dbErr.message : 'unknown');
         }
 
         return NextResponse.json({

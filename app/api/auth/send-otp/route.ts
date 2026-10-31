@@ -4,12 +4,12 @@ import { mTargetService } from '@/lib/sms/mtarget.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { otpMemoryCache } from '@/lib/sms/otp-cache';
+import { storeOtp } from '@/lib/auth/otp-store';
 
 export const dynamic = 'force-dynamic';
 
 function generateOtpCode(): string {
-    return randomInt(100000, 999999).toString();
+    return randomInt(100000, 1000000).toString();
 }
 
 /**
@@ -77,19 +77,12 @@ export async function POST(req: NextRequest) {
         const otpCode = generateOtpCode();
         const expiresAt = Date.now() + 10 * 60 * 1000; // Valide 10 minutes
 
-        // 2. Sauvegarde en mémoire cache
-        otpMemoryCache.set(normalizedPhone, { code: otpCode, expiresAt, attempts: 0 });
-
-        // 3. Sauvegarde en base de données Supabase (si table otp_codes existante)
+        // 2-3. Lot 1B.7 : enregistrement en base, seule source de vérité (aucun cache mémoire).
         try {
-            await (supabase.from('otp_codes') as any).insert({
-                phone: normalizedPhone,
-                code: otpCode,
-                expires_at: new Date(expiresAt).toISOString(),
-                verified: false,
-            });
-        } catch (dbErr) {
-            // Fallback silencieux
+            await storeOtp(normalizedPhone, otpCode, new Date(expiresAt));
+        } catch (storeErr) {
+            console.error('[API /api/auth/send-otp]', storeErr instanceof Error ? storeErr.message : storeErr);
+            return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
         }
 
         // 4. Envoi effectif du SMS

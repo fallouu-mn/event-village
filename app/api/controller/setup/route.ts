@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
-import { otpMemoryCache } from '@/lib/sms/otp-cache';
+import { checkStoredOtp, consumeStoredOtp, otpFailureMessage } from '@/lib/auth/otp-store';
 import { RateLimiter } from '@/lib/security/rate-limiter';
 import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
@@ -45,29 +45,14 @@ export async function POST(req: NextRequest) {
             }, { status: 429 });
         }
 
-        // 1. Vérification OTP (mémoire cache puis fallback DB)
-        let otpValid = false;
-        const cached = otpMemoryCache.get(normalizedPhone);
-
-        if (cached && cached.code === otp_code && Date.now() < cached.expiresAt) {
-            otpValid = true;
-        } else {
-            const { data: dbOtp } = await (supabase.from('otp_codes') as any)
-                .select('code, expires_at')
-                .eq('phone', normalizedPhone)
-                .eq('code', otp_code)
-                .eq('verified', false)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-            if (dbOtp && new Date(dbOtp.expires_at).getTime() > Date.now()) {
-                otpValid = true;
-            }
-        }
-
-        if (!otpValid) {
+        // 1. Lot 1B.7 : vérification en base uniquement (le code est consommé en fin de parcours).
+        const otpCheck = await checkStoredOtp(normalizedPhone, otp_code);
+        if (!otpCheck.ok) {
             const attempt = await RateLimiter.recordFailedAttempt(rateLimitKey, { failClosed: true });
+            if (otpCheck.reason !== 'INVALID') {
+                const { message, status } = otpFailureMessage(otpCheck.reason);
+                return NextResponse.json({ error: message }, { status });
+            }
             const msg = attempt.locked
                 ? `Code OTP invalide. Compte verrouillé pour 15 minutes.`
                 : `Code OTP invalide ou expiré. ${attempt.remainingAttempts} tentative${attempt.remainingAttempts > 1 ? 's' : ''} restante${attempt.remainingAttempts > 1 ? 's' : ''}.`;
@@ -128,10 +113,9 @@ export async function POST(req: NextRequest) {
             .eq('user_id', profile.id);
         const hasControllerRole = (existingRoles || []).some(r => r.role === 'CONTROLEUR');
         if (!hasControllerRole) {
-            try {
-                await addUserRole(profile.id, 'CONTROLEUR');
-            } catch (roleErr) {
-                console.error('[setup] Ajout rôle CONTROLEUR échoué:', roleErr);
+            const { error: roleError } = await addUserRole(profile.id, 'CONTROLEUR');
+            if (roleError) {
+                console.error('[setup] Ajout rôle CONTROLEUR échoué:', roleError);
                 return NextResponse.json({ error: 'Erreur de configuration du compte.' }, { status: 500 });
             }
         }
@@ -141,7 +125,6 @@ export async function POST(req: NextRequest) {
             password: new_password,
             user_metadata: {
                 ...(authUser.user_metadata || {}),
-                role: 'CONTROLEUR',
                 is_temporary_controller_account: false,
             },
         });
@@ -151,15 +134,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Impossible de définir le mot de passe.' }, { status: 500 });
         }
 
-        // 4. Invalider l'OTP + reset rate limiter
-        otpMemoryCache.set(normalizedPhone, { code: '', expiresAt: 0, attempts: 99 });
-        await Promise.all([
-            (supabase.from('otp_codes') as any)
-                .update({ verified: true })
-                .eq('phone', normalizedPhone)
-                .eq('code', otp_code),
-            RateLimiter.resetAttempts(rateLimitKey),
-        ]);
+        // 4. Consommer l'OTP (en base) + reset rate limiter
+        if (!(await consumeStoredOtp(otpCheck.id))) {
+            console.warn(`[controller/setup] code OTP ${otpCheck.id} déjà consommé par une requête concurrente`);
+        }
+        await RateLimiter.resetAttempts(rateLimitKey);
 
         // 5. Audit
         await AdminService.logAudit({

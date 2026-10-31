@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { otpMemoryCache } from '@/lib/sms/otp-cache';
+import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,65 +44,13 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // 1. Vérification dans le cache mémoire
-        let isValid = false;
-        const cached = otpMemoryCache.get(normalizedPhone);
-
-        if (cached) {
-            if (Date.now() > cached.expiresAt) {
-                otpMemoryCache.delete(normalizedPhone);
-                return NextResponse.json(
-                    { error: 'Le code OTP a expiré. Veuillez en demander un nouveau.' },
-                    { status: 400 }
-                );
-            }
-
-            if (cached.code === otpCode) {
-                isValid = true;
-                otpMemoryCache.delete(normalizedPhone);
-            } else {
-                cached.attempts += 1;
-                if (cached.attempts >= 5) {
-                    otpMemoryCache.delete(normalizedPhone);
-                    return NextResponse.json(
-                        { error: 'Trop de tentatives infructueuses. Veuillez demander un nouveau code.' },
-                        { status: 429 }
-                    );
-                }
-            }
-        }
-
-        // 2. Vérification de secours dans la table PostgreSQL otp_codes si présent
-        if (!isValid) {
-            try {
-                const supabase = getServiceRoleClient();
-                const { data: record } = await (supabase.from('otp_codes') as any)
-                    .select('*')
-                    .eq('phone', normalizedPhone)
-                    .eq('code', otpCode)
-                    .eq('verified', false)
-                    .gt('expires_at', new Date().toISOString())
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                if (record) {
-                    isValid = true;
-                    await (supabase.from('otp_codes') as any)
-                        .update({ verified: true })
-                        .eq('id', record.id);
-                }
-            } catch {
-                // Pas de table otp_codes
-            }
-        }
-
-        if (!isValid) {
+        // 1-2. Lot 1B.7 : vérification en base uniquement (otp_codes), indépendante de l'instance
+        //      qui a émis le code. Une erreur de lecture ou d'écriture est une erreur serveur.
+        const check = await verifyStoredOtp(normalizedPhone, otpCode);
+        if (!check.ok) {
             await RateLimiter.recordFailedAttempt(`otp_verify_${normalizedPhone}`);
-            return NextResponse.json(
-                { error: 'Code de vérification incorrect ou expiré.' },
-                { status: 400 }
-            );
+            const { message, status } = otpFailureMessage(check.reason);
+            return NextResponse.json({ error: message }, { status });
         }
 
         await RateLimiter.resetAttempts(`otp_verify_${normalizedPhone}`);

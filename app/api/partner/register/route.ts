@@ -6,7 +6,7 @@ import { RateLimiter } from '@/lib/security/rate-limiter';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
-import { otpMemoryCache } from '@/lib/sms/otp-cache';
+import { storeOtp } from '@/lib/auth/otp-store';
 import { grantUserRoles } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
@@ -46,8 +46,16 @@ export async function POST(req: NextRequest) {
         const supabase = getServiceRoleClient();
 
         // 1. Générer et envoyer le SMS OTP AVANT toute création de compte
-        const otpCode = randomInt(100000, 999999).toString();
+        const otpCode = randomInt(100000, 1000000).toString();
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
+
+        // Lot 1B.7 : le code est enregistré en base AVANT l'envoi (vérifiable depuis toute instance).
+        try {
+            await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt));
+        } catch (storeErr) {
+            console.error('[API /api/partner/register]', storeErr instanceof Error ? storeErr.message : storeErr);
+            return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
+        }
 
         try {
             await mTargetService.sendOtp(normalizedPhone, otpCode);
@@ -59,8 +67,6 @@ export async function POST(req: NextRequest) {
                 { status: 503 }
             );
         }
-
-        otpMemoryCache.set(normalizedPhone, { code: otpCode, expiresAt: otpExpiresAt, attempts: 0 });
 
         // 2. Création de l'utilisateur dans Supabase Auth
         //    phone_confirm: false → sera confirmé UNIQUEMENT après vérification OTP via /api/auth/verify-otp
@@ -166,18 +172,7 @@ export async function POST(req: NextRequest) {
             metadata: { ip: clientIp },
         });
 
-        // 6. Persister le code OTP en base
-        try {
-            await (supabase.from('otp_codes') as any).insert({
-                user_id: userId,
-                phone: normalizedPhone,
-                code: otpCode,
-                expires_at: new Date(otpExpiresAt).toISOString(),
-                verified: false,
-            });
-        } catch (dbErr) {
-            console.warn('[API /api/partner/register] Impossible de persister otp_codes en DB:', dbErr instanceof Error ? dbErr.message : 'unknown');
-        }
+        // 6. (Lot 1B.7) Le code OTP a été enregistré en base avant l'envoi du SMS.
 
         // 7. Triple Notification CDC : SMS + Email + In-App (partenaire + superadmins)
         await NotificationService.sendPartnerRegistrationNotification({
