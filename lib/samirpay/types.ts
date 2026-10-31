@@ -1,71 +1,38 @@
 /**
- * Types et interfaces pour l'intégration de la passerelle de paiement SamirPay.
- * Conforme à la documentation officielle SamirPay et aux spécifications techniques Event Village.
+ * Types du contrat SamirPay (documentation officielle API Partenaires v1.0) et statuts internes.
+ * Le contrat lui-même (document confidentiel) n'est pas recopié : seuls les éléments nécessaires
+ * au code figurent ici.
  */
 
-export interface SamirPayCustomer {
-    name?: string;
-    phone: string;
-    email?: string;
-}
-
-export interface SamirPayInitPaymentRequest {
-    amount: number;
-    currency?: string;
-    order_id: string;
-    operatorName: string;
-    description?: string;
-    customer?: SamirPayCustomer;
-    // Formats téléphone redondants requis par SamirPay pour le Push USSD Orange Money
-    barePhone?: string;      // ex: 771234567  (sans indicatif)
-    fullIntlPhone?: string;  // ex: +221771234567 (E.164)
-    return_url?: string;
-    cancel_url?: string;
-    callback_url?: string;
-    metadata?: Record<string, unknown>;
-}
-
-export interface SamirPayInitPaymentResponse {
-    status: 'success' | 'failed' | 'pending' | string;
-    message?: string;
-    transaction_id?: string;
-    order_id?: string;
-    payment_url?: string;
-    token?: string;
-    urls?: Record<string, string>;
-    data?: {
-        transaction_id?: string;
-        order_id?: string;
-        payment_url?: string;
-        url?: string;
-        urls?: Record<string, string>;
-        [key: string]: unknown;
-    };
-    [key: string]: unknown;
-}
-
-export interface SamirPayWebhookFormData {
-    transaction_id: string;
-    order_id: string;
-    status: string;
-    amount?: string;
-    currency?: string;
-    signature?: string;
-    [key: string]: string | undefined;
-}
-
-export interface SamirPayCheckStatusResponse {
-    status: 'success' | 'failed' | 'pending' | 'cancelled' | string;
-    transaction_id: string;
-    order_id: string;
-    amount?: number;
-    currency?: string;
-    payment_date?: string;
-    [key: string]: unknown;
-}
-
 export type SamirPayOperatorName = 'WAVE' | 'ORANGE_MONEY';
+export const SAMIRPAY_OPERATORS: readonly SamirPayOperatorName[] = ['WAVE', 'ORANGE_MONEY'];
 
+/** Statuts renvoyés par l'endpoint de statut d'une transaction. */
+export type SamirPayTransactionStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
+
+/** Cashin direct : montant en XOF (envoyé en chaîne), téléphone payeur à 9 chiffres. */
+export interface SamirPayDirectInitRequest {
+    amount: number;
+    orderId: string;
+    callBackUrl: string;
+    operatorName: SamirPayOperatorName;
+    telephone: string;
+    description?: string;
+}
+
+export interface SamirPayDirectInitResult {
+    transactionId: string;
+    paymentUrl: string | null;
+    qrCode: string | null;
+    deepLinks: { wave: string | null; orange: string | null };
+}
+
+export interface SamirPayStatusResult {
+    transactionId: string;
+    status: SamirPayTransactionStatus;
+}
+
+/** Cashout : numéro à 9 chiffres sans indicatif, prénom et nom obligatoires. */
 export interface SamirPayCashoutRequest {
     phoneNumber: string;
     operatorName: SamirPayOperatorName;
@@ -74,57 +41,50 @@ export interface SamirPayCashoutRequest {
     lastName: string;
 }
 
-export interface SamirPayCashoutResponse {
-    status: 'success' | 'failed' | 'pending' | string;
-    message?: string;
-    transaction_id?: string;
-    reference?: string;
-    data?: Record<string, unknown>;
-    [key: string]: unknown;
-}
-
-export interface SamirPaySoldeResponse {
+export interface SamirPayCashoutResult {
+    transactionId: string;
+    /** Statut renvoyé dans la réponse d'envoi (SUCCESS attendu). */
     status: string;
-    solde?: number;
-    balance?: number;
-    body?: {
-        samirEntityName?: string;
-        solde?: number;
-        [key: string]: unknown;
-    };
-    currency?: string;
-    message?: string;
-    [key: string]: unknown;
 }
 
-export type EventVillagePaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'CANCELLED';
+export interface SamirPaySoldeResult {
+    solde: number;
+    entityName: string | null;
+}
 
 /**
- * Mappe un statut retourné par SamirPay vers le statut PostgreSQL Event Village.
+ * Nature d'un échec d'appel :
+ *  - REJECTED : refus explicite (400, 409 métier) — aucun effet chez SamirPay ;
+ *  - DUPLICATE : orderId déjà utilisé (409 sur un cashin) ;
+ *  - NOT_FOUND : transaction inexistante (404) ;
+ *  - UNAUTHORIZED : clés refusées (401/403) ;
+ *  - INVALID_RESPONSE : réponse 2xx incohérente ou illisible pour un appel sans effet financier ;
+ *  - UNCERTAIN : délai dépassé, coupure, 5xx ou réponse illisible — l'opération a pu avoir lieu.
  */
-export function mapSamirPayStatus(status: string): EventVillagePaymentStatus {
-    const normalized = (status || '').toLowerCase().trim();
-    switch (normalized) {
-        case 'success':
-        case 'completed':
-        case 'paid':
-        case 'valide':
-            return 'SUCCESS';
-        case 'failed':
-        case 'echec':
-        case 'error':
-        case 'declined':
-            return 'FAILED';
-        case 'cancelled':
-        case 'annule':
-            return 'CANCELLED';
-        case 'refunded':
-        case 'rembourse':
-            return 'REFUNDED';
-        case 'pending':
-        case 'en_attente':
-        case 'processing':
-        default:
-            return 'PENDING';
+export type SamirPayErrorKind = 'REJECTED' | 'DUPLICATE' | 'NOT_FOUND' | 'UNAUTHORIZED' | 'INVALID_RESPONSE' | 'UNCERTAIN';
+
+export class SamirPayError extends Error {
+    constructor(readonly kind: SamirPayErrorKind, message: string, readonly httpStatus?: number) {
+        super(message);
+        this.name = 'SamirPayError';
     }
 }
+
+export function isSamirPayError(err: unknown): err is SamirPayError {
+    return err instanceof SamirPayError || (typeof err === 'object' && err !== null && (err as { name?: string }).name === 'SamirPayError' && typeof (err as { kind?: unknown }).kind === 'string');
+}
+
+/** Webhook SamirPay (form-urlencoded) : envoyé seulement en cas de succès, sans signature. */
+export interface SamirPayWebhookFields {
+    transaction_id: string;
+    order_id: string;
+    status: string;
+}
+
+/** Statuts d'un paiement Event Village (enum payment_status_enum). */
+export type EventVillagePaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'CANCELLED' | 'EXPIRED' | 'REFUND_PENDING' | 'PARTIAL';
+
+export const OPERATOR_LABELS: Record<SamirPayOperatorName, string> = {
+    WAVE: 'Wave',
+    ORANGE_MONEY: 'Orange Money',
+};

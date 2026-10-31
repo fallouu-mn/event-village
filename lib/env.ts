@@ -11,7 +11,8 @@
  *    || SUPABASE_SERVICE_ROLE_KEY (lot 1C.6 : plus de valeur littérale de repli)
  *  - lib/shifts/shift.service.ts : sel du PIN régisseur, même chaîne (lot 1C.6 : idem)
  *  - app/api/cron/moratoriums/route.ts et app/api/cron/ticket-transfers/route.ts :
- *    CRON_SECRET || SUPABASE_SERVICE_ROLE_KEY (et cron non protégé si les deux manquent)
+ *    CRON_SECRET || SUPABASE_SERVICE_ROLE_KEY (et cron non protégé si les deux manquent) ; les crons
+ *    du lot 2 (lib/security/cron-auth.ts) exigent CRON_SECRET, sans repli
  */
 import { z } from 'zod';
 
@@ -35,11 +36,10 @@ const serverEnvSchema = z.object({
     SAMIRPAY_API_URL: z.string().url({ message: 'URL API SamirPay requise' }),
     SAMIRPAY_API_KEY: z.string().min(1, 'clé API SamirPay requise'),
     SAMIRPAY_SECRET_KEY: z.string().min(1, 'clé secrète SamirPay requise'),
-    SAMIRPAY_WEBHOOK_SECRET: optionalString, // rendu obligatoire au lot 2 (vérification des webhooks)
-    SAMIRPAY_CASHIN_URL: optionalUrl,
-    SAMIRPAY_CASHOUT_URL: optionalUrl,
-    SAMIRPAY_SOLDE_URL: optionalUrl,
-    SAMIRPAY_STATUS_URL: optionalUrl,
+    // Lot 2 : chemins fixés par le contrat sous SAMIRPAY_API_URL (plus de SAMIRPAY_*_URL). Le contrat
+    // ne prévoit aucune signature de webhook : SAMIRPAY_WEBHOOK_SECRET n'est plus utilisé (jeton de
+    // callback par paiement à la place, voir lib/payments/webhook.service.ts).
+    SAMIRPAY_TIMEOUT_MS: limit(15000),
 
     // SMS MTarget (obligatoire, lot 1C.8 : le SMS est le canal essentiel)
     MTARGET_API_URL: optionalUrl, // défaut : API publique MTarget (lib/sms/mtarget-http.adapter.ts)
@@ -57,6 +57,16 @@ const serverEnvSchema = z.object({
     SMS_GLOBAL_DAILY_CAP: limit(1000), // tous SMS confondus, par jour UTC (minuit à Dakar)
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
+    // Lot 2 : chaîne paiement → billet
+    PAYMENT_HOLD_MINUTES: limit(15), // durée de réservation du stock (et du délai d'attente de l'interface)
+    CHECKOUT_PER_USER_15MIN: limit(10), // checkouts par compte (quota en base)
+    CHECKOUT_PER_USER_DAY: limit(50),
+    CLAIM_FREE_PER_USER_HOUR: limit(20), // demandes de billets gratuits par compte
+    STATUS_POLL_RECONCILE_SECONDS: limit(5), // intervalle minimal des réconciliations demandées par la route de statut
+    PAYMENT_RECONCILE_MIN_AGE_MINUTES: limit(2), // fenêtre d'attente avant le premier contrôle par le cron
+    PAYMENT_PENDING_MAX_AGE_MINUTES: limit(60), // au-delà, un paiement encore PENDING chez SamirPay expire
+    PAYMENT_LATE_SUCCESS_WINDOW_HOURS: limit(48), // succès tardifs recherchés sur les paiements EXPIRED/CANCELLED
+    PAYMENT_RECONCILE_BATCH: limit(50),
     // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
     // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
     CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),

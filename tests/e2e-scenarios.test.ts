@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mapSamirPayStatus } from '../lib/samirpay/types';
 import { SamirPayWebhookSchema, CreatePaymentSchema } from '../lib/validations/payment';
 import { POST as handleWebhook } from '../app/api/webhooks/samirpay/route';
 import { NextRequest } from 'next/server';
@@ -22,15 +21,18 @@ test('SCENARIO 1 : Parcours client complet & Structure des Pages Redesign', () =
 });
 
 test('SCENARIO 2 & 3 : Création de commande & Validation des Schémas de Paiement', () => {
+    // Lot 2 : opérateur (Wave ou Orange Money) et téléphone payeur obligatoires
     const stdPayload = {
         targetType: 'TICKET',
         targetId: 'a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d',
-        customerPhone: '771234567',
+        operator: 'WAVE',
+        payerPhone: '771234567',
     };
     const vipPayload = {
         targetType: 'TICKET',
         targetId: 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e',
-        customerPhone: '771234567',
+        operator: 'ORANGE_MONEY',
+        payerPhone: '781234567',
     };
 
     const parsedStd = CreatePaymentSchema.safeParse(stdPayload);

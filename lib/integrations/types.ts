@@ -7,11 +7,11 @@
  */
 import type {
     SamirPayCashoutRequest,
-    SamirPayCashoutResponse,
-    SamirPayCheckStatusResponse,
-    SamirPayInitPaymentRequest,
-    SamirPayInitPaymentResponse,
-    SamirPaySoldeResponse,
+    SamirPayCashoutResult,
+    SamirPayDirectInitRequest,
+    SamirPayDirectInitResult,
+    SamirPaySoldeResult,
+    SamirPayStatusResult,
 } from '@/lib/samirpay/types';
 
 export interface SmsSendResult {
@@ -48,11 +48,19 @@ export interface EmailAdapter {
     send(payload: EmailSendPayload): Promise<EmailSendResult>;
 }
 
+/**
+ * Passerelle de paiement, alignée sur le contrat SamirPay (lot 2). Les échecs sont levés en
+ * SamirPayError (nature REJECTED, DUPLICATE, NOT_FOUND, UNAUTHORIZED, INVALID_RESPONSE ou UNCERTAIN).
+ */
 export interface PaymentGateway {
-    initPayment(payload: SamirPayInitPaymentRequest): Promise<SamirPayInitPaymentResponse>;
-    checkTransactionStatus(orderId: string): Promise<SamirPayCheckStatusResponse>;
-    getSolde(): Promise<SamirPaySoldeResponse>;
-    sendCashout(payload: SamirPayCashoutRequest): Promise<SamirPayCashoutResponse>;
+    /** Cashin direct (POST /api/tiers/direct/initPayment). */
+    initDirectPayment(payload: SamirPayDirectInitRequest): Promise<SamirPayDirectInitResult>;
+    /** Statut d'une transaction par son identifiant SamirPay (GET /api/tiers/payments/{id}/status). */
+    checkTransactionStatus(transactionId: string): Promise<SamirPayStatusResult>;
+    /** Solde du compte partenaire (GET /api/tiers/payments/solde). */
+    getSolde(): Promise<SamirPaySoldeResult>;
+    /** Cashout (POST /api/tiers/payments/send) — aucune clé d'idempotence côté SamirPay. */
+    sendCashout(payload: SamirPayCashoutRequest): Promise<SamirPayCashoutResult>;
 }
 
 export interface Integrations {

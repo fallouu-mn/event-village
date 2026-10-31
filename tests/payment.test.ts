@@ -2,23 +2,21 @@
 import './helpers/env';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapSamirPayStatus } from '../lib/samirpay/types';
+import { OPERATOR_LABELS, SAMIRPAY_OPERATORS } from '../lib/samirpay/types';
 import { SamirPayWebhookSchema, CreatePaymentSchema } from '../lib/validations/payment';
 
-test('1. Mapping des statuts SamirPay', () => {
-    assert.equal(mapSamirPayStatus('success'), 'SUCCESS');
-    assert.equal(mapSamirPayStatus('paid'), 'SUCCESS');
-    assert.equal(mapSamirPayStatus('valide'), 'SUCCESS');
-    assert.equal(mapSamirPayStatus('failed'), 'FAILED');
-    assert.equal(mapSamirPayStatus('echec'), 'FAILED');
-    assert.equal(mapSamirPayStatus('cancelled'), 'CANCELLED');
-    assert.equal(mapSamirPayStatus('pending'), 'PENDING');
+// Lot 2 : le contrat SamirPay fixe les statuts (PENDING, SUCCESS, FAILED, CANCELLED) ; l'ancienne
+// table de correspondance permissive (mapSamirPayStatus) est supprimée. Statuts vérifiés par
+// tests/samirpay-contrat.test.ts (client réel) et les suites tests/parcours/paiement-*.
+test('1. Opérateurs du contrat SamirPay : Wave et Orange Money uniquement', () => {
+    assert.deepEqual([...SAMIRPAY_OPERATORS], ['WAVE', 'ORANGE_MONEY']);
+    assert.equal(OPERATOR_LABELS.ORANGE_MONEY, 'Orange Money');
 });
 
 test('2. Validation du payload Webhook SamirPay', () => {
     const validPayload = {
-        transaction_id: 'TX-123456',
-        order_id: 'ORD-789012',
+        transaction_id: '550e8400-e29b-41d4-a716-446655440000',
+        order_id: 'ORD-EV-1793470496112-6786FB',
         status: 'success',
     };
     const result = SamirPayWebhookSchema.safeParse(validPayload);
@@ -47,15 +45,21 @@ test('4. Validation de la création de paiement PWA (Pas de montant envoyé)', (
     const validPaymentInput = {
         targetType: 'TICKET',
         targetId: 'a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d',
-        customerPhone: '771234567',
+        operator: 'WAVE',
+        payerPhone: '771234567',
     };
     const result = CreatePaymentSchema.safeParse(validPaymentInput);
     assert.equal(result.success, true);
+    // Lot 2 : opérateur obligatoire, carte bancaire refusée tant qu'elle n'est pas intégrée
+    assert.equal(CreatePaymentSchema.safeParse({ ...validPaymentInput, operator: undefined }).success, false);
+    assert.equal(CreatePaymentSchema.safeParse({ ...validPaymentInput, operator: 'CARD' }).success, false);
 
     // Si le client tente d'injecter un montant arbitraire, il est ignoré par le schéma
     const hackedInput = {
         targetType: 'ORDER',
         targetId: 'a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d',
+        operator: 'ORANGE_MONEY',
+        payerPhone: '781234567',
         amount: 1, // Devra être ignoré / non pris en compte
     };
     const hackedResult = CreatePaymentSchema.safeParse(hackedInput);

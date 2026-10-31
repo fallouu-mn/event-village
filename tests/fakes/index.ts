@@ -8,8 +8,8 @@ import { FakeSamirPayGateway } from './fake-samirpay';
 import { FakeSmsAdapter } from './fake-sms';
 
 export { FakeEmailAdapter } from './fake-email';
-export { FakeSamirPayGateway, computeFakeWebhookSignature } from './fake-samirpay';
-export type { FakeInitMode, FakeCashoutMode, FakeTransactionStatus, FakeWebhook, FakeWebhookParams } from './fake-samirpay';
+export { FakeSamirPayGateway } from './fake-samirpay';
+export type { FakeInitMode, FakeCashoutMode, FakeWebhook } from './fake-samirpay';
 export { FakeSmsAdapter } from './fake-sms';
 
 export interface FakeIntegrations {

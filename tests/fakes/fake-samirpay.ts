@@ -1,64 +1,64 @@
 /**
- * Fausse passerelle SamirPay : aucune requête réseau, comportement pilotable,
- * enregistrement de tous les appels, génération de webhooks signés ou non.
- *
- * Scénarios simulés :
- *  - initPayment : succès | refus dans le corps (status "failed") | exception réseau
- *  - checkTransactionStatus : success | failed | pending | cancelled (par order_id)
- *  - getSolde : solde marchand paramétrable
- *  - sendCashout : succès | échec | exception
- *  - buildWebhook : corps application/x-www-form-urlencoded, signé (HMAC-SHA256) ou non
- *
- * NOTE : le schéma de signature (champ `signature` + en-tête `x-samirpay-signature`,
- * HMAC-SHA256 de "order_id|transaction_id|status|amount|currency" avec
- * SAMIRPAY_WEBHOOK_SECRET) est PROVISOIRE : il sera aligné sur la documentation
- * officielle SamirPay au lot 2, en même temps que la vérification côté serveur.
+ * Fausse passerelle SamirPay, alignée EXACTEMENT sur le contrat officiel (API Partenaires v1.0)
+ * au niveau de la passerelle (lib/integrations/types.ts) : aucune requête réseau, comportement
+ * pilotable, enregistrement de tous les appels.
+ *  - initDirectPayment : identifiant de transaction UUID ; orderId en double → DUPLICATE (409) ;
+ *    paramètres hors contrat → REJECTED (400) ; modes refus, délai dépassé, clés refusées ;
+ *  - checkTransactionStatus : par identifiant SamirPay, { transactionId, status } SANS montant ;
+ *    identifiant inconnu → NOT_FOUND (404) ;
+ *  - getSolde : { solde } paramétrable ;
+ *  - sendCashout : succès, refus, délai dépassé avant envoi (rien n'est parti) ou APRÈS envoi
+ *    (l'argent est parti mais la réponse est perdue), réponse « en attente » ;
+ *  - buildWebhook : form-urlencoded (transaction_id, order_id, status=success), adressé au
+ *    callBackUrl reçu à l'initialisation, aucune signature ; refusé si la transaction n'est pas
+ *    SUCCESS (le contrat n'envoie aucun webhook d'échec).
+ * Le contrat exact est vérifié côté client réel par tests/samirpay-contrat.test.ts.
  */
 import crypto from 'node:crypto';
 import type { PaymentGateway } from '../../lib/integrations/types';
-import type {
-    SamirPayCashoutRequest,
-    SamirPayCashoutResponse,
-    SamirPayCheckStatusResponse,
-    SamirPayInitPaymentRequest,
-    SamirPayInitPaymentResponse,
-    SamirPaySoldeResponse,
+import {
+    SAMIRPAY_OPERATORS,
+    SamirPayError,
+    type SamirPayCashoutRequest,
+    type SamirPayCashoutResult,
+    type SamirPayDirectInitRequest,
+    type SamirPayDirectInitResult,
+    type SamirPaySoldeResult,
+    type SamirPayStatusResult,
+    type SamirPayTransactionStatus,
 } from '../../lib/samirpay/types';
 
-export type FakeInitMode = 'success' | 'failed-body' | 'throw';
-export type FakeCashoutMode = 'success' | 'failed' | 'throw';
-export type FakeTransactionStatus = 'success' | 'failed' | 'pending' | 'cancelled';
+export type FakeInitMode = 'success' | 'rejected' | 'timeout' | 'unauthorized';
+export type FakeCashoutMode = 'success' | 'rejected' | 'timeout' | 'timeout-after-send' | 'pending';
 
 export interface RecordedGatewayCall {
-    method: 'initPayment' | 'checkTransactionStatus' | 'getSolde' | 'sendCashout';
-    args: unknown;
+    method: 'initDirectPayment' | 'checkTransactionStatus' | 'getSolde' | 'sendCashout';
+    args: Record<string, unknown>;
     at: string;
 }
 
-export interface FakeWebhookParams {
-    order_id: string;
-    status: FakeTransactionStatus | string;
-    transaction_id?: string;
-    amount?: number | string;
-    currency?: string;
-    /** true (défaut) : signature HMAC incluse ; false : aucun champ ni en-tête de signature. */
-    signed?: boolean;
-    /** Secret utilisé pour signer (défaut : SAMIRPAY_WEBHOOK_SECRET). Un mauvais secret produit une signature invalide. */
-    secret?: string;
+interface FakeTransaction {
+    transactionId: string;
+    orderId: string | null;
+    kind: 'CASHIN' | 'CASHOUT';
+    status: SamirPayTransactionStatus;
+    callBackUrl: string | null;
+    amount: number;
 }
 
 export interface FakeWebhook {
-    fields: Record<string, string>;
+    url: string;
     body: string;
     headers: Record<string, string>;
-    formData: FormData;
+    fields: Record<string, string>;
 }
 
-export function computeFakeWebhookSignature(fields: Record<string, string>, secret: string): string {
-    const canonical = [fields.order_id, fields.transaction_id, fields.status, fields.amount ?? '', fields.currency ?? '']
-        .map((v) => v ?? '')
-        .join('|');
-    return crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+const PHONE9 = /^[0-9]{9}$/;
+
+function normalizeStatus(s: string): SamirPayTransactionStatus {
+    const up = s.toUpperCase();
+    if (up === 'SUCCESS' || up === 'FAILED' || up === 'CANCELLED' || up === 'PENDING') return up;
+    throw new Error(`Faux SamirPay : statut inconnu « ${s} »`);
 }
 
 export class FakeSamirPayGateway implements PaymentGateway {
@@ -67,127 +67,106 @@ export class FakeSamirPayGateway implements PaymentGateway {
     cashoutMode: FakeCashoutMode = 'success';
     balance = 10_000_000;
 
-    private statuses = new Map<string, FakeTransactionStatus>();
-    private transactionIds = new Map<string, string>();
-    private counter = 0;
+    private transactions = new Map<string, FakeTransaction>();
+    private byOrder = new Map<string, string>();
 
     reset(): void {
         this.calls.length = 0;
         this.initMode = 'success';
         this.cashoutMode = 'success';
         this.balance = 10_000_000;
-        this.statuses.clear();
-        this.transactionIds.clear();
-        this.counter = 0;
+        this.transactions.clear();
+        this.byOrder.clear();
     }
 
-    setTransactionStatus(orderId: string, status: FakeTransactionStatus): void {
-        this.statuses.set(orderId, status);
+    setInitMode(mode: FakeInitMode): void {
+        this.initMode = mode;
     }
 
-    transactionIdFor(orderId: string): string {
-        let tx = this.transactionIds.get(orderId);
-        if (!tx) {
-            tx = `FAKE-TX-${++this.counter}`;
-            this.transactionIds.set(orderId, tx);
-        }
-        return tx;
+    setCashoutMode(mode: FakeCashoutMode): void {
+        this.cashoutMode = mode;
+    }
+
+    /** Statut côté SamirPay d'une transaction (clé : identifiant SamirPay, ou orderId de l'initialisation). */
+    setTransactionStatus(key: string, status: string): void {
+        const tx = this.transactions.get(key) ?? this.transactions.get(this.byOrder.get(key) ?? '');
+        if (!tx) throw new Error(`Faux SamirPay : transaction inconnue « ${key} »`);
+        tx.status = normalizeStatus(status);
+    }
+
+    transactionIdForOrder(orderId: string): string | null {
+        return this.byOrder.get(orderId) ?? null;
     }
 
     callsOf(method: RecordedGatewayCall['method']): RecordedGatewayCall[] {
         return this.calls.filter((c) => c.method === method);
     }
 
-    private record(method: RecordedGatewayCall['method'], args: unknown): void {
-        this.calls.push({ method, args, at: new Date().toISOString() });
+    private record(method: RecordedGatewayCall['method'], args: Record<string, unknown>): void {
+        this.calls.push({ method, args: { ...args }, at: new Date().toISOString() });
     }
 
-    async initPayment(payload: SamirPayInitPaymentRequest): Promise<SamirPayInitPaymentResponse> {
-        this.record('initPayment', payload);
-        if (this.initMode === 'throw') {
-            throw new Error('Délai d\'attente dépassé lors de la communication avec SamirPay (simulation).');
+    async initDirectPayment(payload: SamirPayDirectInitRequest): Promise<SamirPayDirectInitResult> {
+        this.record('initDirectPayment', payload as unknown as Record<string, unknown>);
+        if (this.initMode === 'unauthorized') throw new SamirPayError('UNAUTHORIZED', 'Clés refusées (simulation)', 401);
+        if (this.initMode === 'timeout') throw new SamirPayError('UNCERTAIN', 'Délai dépassé (simulation)');
+        if (this.initMode === 'rejected') throw new SamirPayError('REJECTED', 'Paiement refusé par l’opérateur (simulation)', 400);
+        if (!(payload.amount > 0) || !payload.orderId || !payload.callBackUrl || !SAMIRPAY_OPERATORS.includes(payload.operatorName) || (payload.telephone && !PHONE9.test(payload.telephone))) {
+            throw new SamirPayError('REJECTED', 'Paramètre manquant ou invalide (simulation du contrat)', 400);
         }
-        if (this.initMode === 'failed-body') {
-            return {
-                status: 'failed',
-                message: 'Paiement refusé par l\'opérateur (simulation).',
-                order_id: payload.order_id,
-            };
-        }
-        const transactionId = this.transactionIdFor(payload.order_id);
-        if (!this.statuses.has(payload.order_id)) {
-            this.statuses.set(payload.order_id, 'pending');
-        }
+        if (this.byOrder.has(payload.orderId)) throw new SamirPayError('DUPLICATE', 'orderId déjà utilisé (simulation)', 409);
+        const transactionId = crypto.randomUUID();
+        this.transactions.set(transactionId, { transactionId, orderId: payload.orderId, kind: 'CASHIN', status: 'PENDING', callBackUrl: payload.callBackUrl, amount: payload.amount });
+        this.byOrder.set(payload.orderId, transactionId);
         return {
-            status: 'success',
-            message: 'Transaction initiée (simulation).',
-            transaction_id: transactionId,
-            order_id: payload.order_id,
-            payment_url: `http://127.0.0.1:9/fake-samirpay/pay/${transactionId}`,
-            data: {
-                transaction_id: transactionId,
-                order_id: payload.order_id,
-                payment_url: `http://127.0.0.1:9/fake-samirpay/pay/${transactionId}`,
-            },
+            transactionId,
+            paymentUrl: `http://127.0.0.1:9/fake-samirpay/pay/${transactionId}`,
+            qrCode: 'data:image/png;base64,ZmF1eA==',
+            deepLinks: { wave: `http://127.0.0.1:9/fake-wave/${transactionId}`, orange: `http://127.0.0.1:9/fake-orange/${transactionId}` },
         };
     }
 
-    async checkTransactionStatus(orderId: string): Promise<SamirPayCheckStatusResponse> {
-        this.record('checkTransactionStatus', { orderId });
-        return {
-            status: this.statuses.get(orderId) ?? 'pending',
-            transaction_id: this.transactionIdFor(orderId),
-            order_id: orderId,
-        };
+    async checkTransactionStatus(transactionId: string): Promise<SamirPayStatusResult> {
+        this.record('checkTransactionStatus', { transactionId });
+        const tx = this.transactions.get(transactionId);
+        if (!tx) throw new SamirPayError('NOT_FOUND', 'Transaction introuvable (simulation)', 404);
+        return { transactionId, status: tx.status };
     }
 
-    async getSolde(): Promise<SamirPaySoldeResponse> {
+    async getSolde(): Promise<SamirPaySoldeResult> {
         this.record('getSolde', {});
-        return { status: 'success', solde: this.balance, balance: this.balance, currency: 'XOF' };
+        return { solde: this.balance, entityName: 'Event Village (simulation)' };
     }
 
-    async sendCashout(payload: SamirPayCashoutRequest): Promise<SamirPayCashoutResponse> {
-        this.record('sendCashout', payload);
-        if (this.cashoutMode === 'throw') {
-            throw new Error('Délai d\'attente dépassé lors du Cashout SamirPay (simulation).');
+    async sendCashout(payload: SamirPayCashoutRequest): Promise<SamirPayCashoutResult> {
+        this.record('sendCashout', payload as unknown as Record<string, unknown>);
+        if (!PHONE9.test(payload.phoneNumber) || !SAMIRPAY_OPERATORS.includes(payload.operatorName) || !payload.firstName || !payload.lastName || !(payload.amount > 0)) {
+            throw new SamirPayError('REJECTED', 'Paramètre manquant ou invalide (simulation du contrat)', 400);
         }
-        if (this.cashoutMode === 'failed') {
-            return { status: 'failed', message: 'Cashout refusé par l\'opérateur (simulation).' };
-        }
-        return { status: 'success', transaction_id: `FAKE-OUT-${++this.counter}`, message: 'Cashout effectué (simulation).' };
+        if (this.cashoutMode === 'rejected') throw new SamirPayError('REJECTED', 'Cashout refusé (simulation)', 409);
+        if (this.cashoutMode === 'timeout') throw new SamirPayError('UNCERTAIN', 'Délai dépassé avant envoi (simulation)');
+        if (payload.amount > this.balance) throw new SamirPayError('REJECTED', 'Solde insuffisant (simulation)', 409);
+        const transactionId = crypto.randomUUID();
+        this.balance -= payload.amount;
+        const status: SamirPayTransactionStatus = this.cashoutMode === 'pending' ? 'PENDING' : 'SUCCESS';
+        this.transactions.set(transactionId, { transactionId, orderId: null, kind: 'CASHOUT', status, callBackUrl: null, amount: payload.amount });
+        if (this.cashoutMode === 'timeout-after-send') throw new SamirPayError('UNCERTAIN', 'Délai dépassé après envoi (simulation)');
+        return { transactionId, status };
     }
 
     /**
-     * Construit la notification que SamirPay enverrait sur POST /api/webhooks/samirpay.
-     * Utilisable avec `new NextRequest(url, { method: 'POST', body, headers })`.
+     * Webhook que SamirPay enverrait au callBackUrl reçu : uniquement pour une transaction SUCCESS.
      */
-    buildWebhook(params: FakeWebhookParams): FakeWebhook {
-        const fields: Record<string, string> = {
-            order_id: params.order_id,
-            transaction_id: params.transaction_id ?? this.transactionIdFor(params.order_id),
-            status: params.status,
+    buildWebhook(transactionId: string): FakeWebhook {
+        const tx = this.transactions.get(transactionId);
+        if (!tx || tx.kind !== 'CASHIN' || !tx.callBackUrl || !tx.orderId) throw new Error(`Faux SamirPay : cashin inconnu « ${transactionId} »`);
+        if (tx.status !== 'SUCCESS') throw new Error('Faux SamirPay : le contrat n’envoie de webhook qu’en cas de succès');
+        const fields = { transaction_id: tx.transactionId, order_id: tx.orderId, status: 'success' };
+        return {
+            url: tx.callBackUrl,
+            body: new URLSearchParams(fields).toString(),
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            fields,
         };
-        if (params.amount !== undefined) fields.amount = String(params.amount);
-        if (params.currency !== undefined) fields.currency = params.currency;
-
-        const headers: Record<string, string> = {
-            'content-type': 'application/x-www-form-urlencoded',
-        };
-
-        const signed = params.signed ?? true;
-        if (signed) {
-            const secret = params.secret ?? process.env.SAMIRPAY_WEBHOOK_SECRET;
-            if (!secret) {
-                throw new Error('buildWebhook(signed) : SAMIRPAY_WEBHOOK_SECRET absent de l\'environnement de test.');
-            }
-            fields.signature = computeFakeWebhookSignature(fields, secret);
-            headers['x-samirpay-signature'] = fields.signature;
-        }
-
-        const body = new URLSearchParams(fields).toString();
-        const formData = new FormData();
-        for (const [k, v] of Object.entries(fields)) formData.append(k, v);
-
-        return { fields, body, headers, formData };
     }
 }

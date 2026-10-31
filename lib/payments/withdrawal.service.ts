@@ -1,5 +1,6 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { samirPayClient } from '@/lib/samirpay/client';
+import { normalizePayerPhone } from './payer-phone';
 import { RequestWithdrawalInput } from '@/lib/validations/payment';
 
 export interface WithdrawalResult {
@@ -115,20 +116,20 @@ export class WithdrawalService {
 
         // 5. Exécution du Cashout SamirPay (après lock et création de l'enregistrement)
         try {
-            const e164Phone = toE164Senegal(input.phoneNumber);
+            // Lot 2 : adaptation minimale à la passerelle alignée sur le contrat (numéro à 9 chiffres,
+            // identifiant lu dans data). Le retrait sera branché sur le module de cashout au lot 3.
+            const phone9 = normalizePayerPhone(toE164Senegal(input.phoneNumber));
+            if (!phone9) throw new Error('Numéro du bénéficiaire invalide (mobile sénégalais).');
 
             const cashoutRes = await samirPayClient.sendCashout({
-                phoneNumber: e164Phone,
+                phoneNumber: phone9,
                 operatorName: input.operatorName,
                 amount: netAmount,
                 firstName: input.firstName,
                 lastName: input.lastName,
             });
 
-            const externalRef =
-                cashoutRes.transaction_id ||
-                cashoutRes.reference ||
-                `TX-SAMIR-OUT-${withdrawal.id.substring(0, 8)}`;
+            const externalRef = cashoutRes.transactionId;
 
             // Mise à jour du retrait en PAID
             await supabase
@@ -210,7 +211,7 @@ export class WithdrawalService {
             );
         }
 
-        const balance = Number(soldeResponse.solde ?? soldeResponse.balance ?? 0);
+        const balance = Number(soldeResponse.solde);
         if (isNaN(balance)) {
             throw new Error('Réponse solde SamirPay invalide. Veuillez réessayer.');
         }

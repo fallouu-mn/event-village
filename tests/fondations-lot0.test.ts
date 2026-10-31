@@ -60,42 +60,41 @@ describe('LOT 0 — fondations de vérification', () => {
         assert.equal(email.messagesTo('client@test.eventvillage.local').length, 1);
     });
 
-    test('SamirPay : init réussi, refus dans le corps, exception, statut piloté', async () => {
+    // Lot 2 : faux SamirPay aligné sur le contrat (cashin direct, statut par identifiant SamirPay,
+    // aucune signature de webhook). Cas réécrits ; l'ancien contrat (initPayment, refus dans le
+    // corps, webhook signé provisoire) n'existe plus.
+    test('SamirPay : cashin direct réussi, refus, délai dépassé, doublon d’orderId, statut piloté', async () => {
         const { payment } = getFakes();
-        const base = { amount: 5000, currency: 'XOF', order_id: 'ORD-TEST-1', operatorName: 'WAVE' };
+        const base = { amount: 5000, orderId: 'ORD-EV-1700000000000-AAAAAA', callBackUrl: 'http://127.0.0.1:3000/api/webhooks/samirpay?t=x', operatorName: 'WAVE' as const, telephone: '771234567' };
 
-        const ok = await samirPayClient.initPayment(base);
-        assert.equal(ok.status, 'success');
-        assert.ok(ok.transaction_id);
+        const ok = await samirPayClient.initDirectPayment(base);
+        assert.match(ok.transactionId, /^[0-9a-f-]{36}$/);
 
-        payment.initMode = 'failed-body';
-        const refused = await samirPayClient.initPayment({ ...base, order_id: 'ORD-TEST-2' });
-        assert.equal(refused.status, 'failed');
+        await assert.rejects(() => samirPayClient.initDirectPayment(base), (e: { kind?: string }) => e.kind === 'DUPLICATE');
 
-        payment.initMode = 'throw';
-        await assert.rejects(() => samirPayClient.initPayment({ ...base, order_id: 'ORD-TEST-3' }), /simulation/);
+        payment.setInitMode('rejected');
+        await assert.rejects(() => samirPayClient.initDirectPayment({ ...base, orderId: 'ORD-EV-1700000000000-BBBBBB' }), (e: { kind?: string }) => e.kind === 'REJECTED');
+        payment.setInitMode('timeout');
+        await assert.rejects(() => samirPayClient.initDirectPayment({ ...base, orderId: 'ORD-EV-1700000000000-CCCCCC' }), (e: { kind?: string }) => e.kind === 'UNCERTAIN');
+        payment.setInitMode('success');
 
-        assert.equal((await samirPayClient.checkTransactionStatus('ORD-TEST-1')).status, 'pending');
-        payment.setTransactionStatus('ORD-TEST-1', 'success');
-        assert.equal((await samirPayClient.checkTransactionStatus('ORD-TEST-1')).status, 'success');
-        payment.setTransactionStatus('ORD-TEST-1', 'failed');
-        assert.equal((await samirPayClient.checkTransactionStatus('ORD-TEST-1')).status, 'failed');
+        assert.equal((await samirPayClient.checkTransactionStatus(ok.transactionId)).status, 'PENDING');
+        payment.setTransactionStatus(ok.transactionId, 'SUCCESS');
+        assert.deepEqual(await samirPayClient.checkTransactionStatus(ok.transactionId), { transactionId: ok.transactionId, status: 'SUCCESS' });
+        await assert.rejects(() => samirPayClient.checkTransactionStatus('00000000-0000-4000-8000-000000000000'), (e: { kind?: string }) => e.kind === 'NOT_FOUND');
 
-        assert.equal(payment.callsOf('initPayment').length, 3);
+        assert.equal(payment.callsOf('initDirectPayment').length, 4);
     });
 
-    test('SamirPay : webhooks générés signés ou non signés', () => {
+    test('SamirPay : webhook form-urlencoded vers le callBackUrl reçu, uniquement en cas de succès', async () => {
         const { payment } = getFakes();
-        const signed = payment.buildWebhook({ order_id: 'ORD-TEST-9', status: 'success', amount: 5000, currency: 'XOF' });
-        assert.ok(signed.fields.signature);
-        assert.equal(signed.headers['x-samirpay-signature'], signed.fields.signature);
-
-        const unsigned = payment.buildWebhook({ order_id: 'ORD-TEST-9', status: 'success', signed: false });
-        assert.equal(unsigned.fields.signature, undefined);
-        assert.equal(unsigned.headers['x-samirpay-signature'], undefined);
-
-        const wrong = payment.buildWebhook({ order_id: 'ORD-TEST-9', status: 'success', amount: 5000, currency: 'XOF', secret: 'mauvais-secret' });
-        assert.notEqual(wrong.fields.signature, signed.fields.signature);
+        const init = await samirPayClient.initDirectPayment({ amount: 1000, orderId: 'ORD-EV-1700000000000-DDDDDD', callBackUrl: 'http://127.0.0.1:3000/api/webhooks/samirpay?t=jeton', operatorName: 'ORANGE_MONEY', telephone: '781234567' });
+        assert.throws(() => payment.buildWebhook(init.transactionId), /succès/, 'aucun webhook tant que la transaction n’est pas SUCCESS');
+        payment.setTransactionStatus(init.transactionId, 'SUCCESS');
+        const hook = payment.buildWebhook(init.transactionId);
+        assert.equal(hook.url, 'http://127.0.0.1:3000/api/webhooks/samirpay?t=jeton');
+        assert.equal(hook.headers['content-type'], 'application/x-www-form-urlencoded');
+        assert.deepEqual(Object.fromEntries(new URLSearchParams(hook.body)), { transaction_id: init.transactionId, order_id: 'ORD-EV-1700000000000-DDDDDD', status: 'success' });
     });
 
     test('lib/env : échec explicite si une variable requise manque', () => {

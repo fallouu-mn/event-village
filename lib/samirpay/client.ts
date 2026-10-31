@@ -11,8 +11,8 @@ import type { PaymentGateway } from '@/lib/integrations/types';
 export { SamirPayHttpClient } from './http-client';
 
 export const samirPayClient: PaymentGateway = {
-    initPayment: (payload) => getPaymentGateway().initPayment(payload),
-    checkTransactionStatus: (orderId) => getPaymentGateway().checkTransactionStatus(orderId),
+    initDirectPayment: (payload) => getPaymentGateway().initDirectPayment(payload),
+    checkTransactionStatus: (transactionId) => getPaymentGateway().checkTransactionStatus(transactionId),
     getSolde: () => getPaymentGateway().getSolde(),
     sendCashout: (payload) => getPaymentGateway().sendCashout(payload),
 };

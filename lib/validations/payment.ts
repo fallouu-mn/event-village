@@ -17,40 +17,30 @@ export const CreatePaymentSchema = z.object({
         invalid_type_error: 'Type de paiement non reconnu.',
     }),
     targetId: z.string().uuid({
-        message: 'L\'identifiant de la cible (targetId) doit être un UUID valide.',
+        message: 'L’identifiant de la cible (targetId) doit être un UUID valide.',
     }),
-    operator: z.enum(['WAVE', 'ORANGE_MONEY', 'CARD'], {
-        invalid_type_error: 'Moyen de paiement non reconnu.',
-    }).optional(),
-    quantity: z.number().int().min(1).max(20).optional(),
-    customerPhone: z.string().min(6, {
-        message: 'Le numéro de téléphone du client est requis pour le paiement mobile.',
-    }).optional(),
-    customerName: z.string().optional(),
-    customerEmail: z.string().email('Format email invalide').optional(),
-    returnUrl: z.string().url('L\'URL de retour doit être valide').optional(),
-    cancelUrl: z.string().url('L\'URL d\'annulation doit être valide').optional(),
+    // Lot 2 : Wave ou Orange Money obligatoire ; carte bancaire retirée tant qu'elle n'est pas intégrée.
+    operator: z.enum(['WAVE', 'ORANGE_MONEY'], {
+        required_error: 'Choisissez Wave ou Orange Money.',
+        invalid_type_error: 'Choisissez Wave ou Orange Money.',
+    }),
+    // Téléphone du payeur, transmis à SamirPay et persisté (normalisé en 9 chiffres côté serveur).
+    payerPhone: z.string().min(9, { message: 'Le numéro du payeur est requis.' }),
+    // Billet : quantité bornée par MAX_PER_ORDER_CAP, max_per_order contrôlé en base.
+    quantity: z.number().int().min(1).max(50).optional(),
 });
 
 export type CreatePaymentInput = z.infer<typeof CreatePaymentSchema>;
 
 /**
- * Schéma de validation des données reçues via le Webhook SamirPay.
- * Le webhook est envoyé au format application/x-www-form-urlencoded.
+ * Webhook SamirPay (contrat API Partenaires v1.0) : POST application/x-www-form-urlencoded,
+ * envoyé seulement en cas de succès, sans signature. Contrôles complets dans
+ * lib/payments/webhook.service.ts (jeton du callBackUrl, corrélation, statut SamirPay).
  */
 export const SamirPayWebhookSchema = z.object({
-    transaction_id: z.string().min(1, {
-        message: 'Le transaction_id SamirPay est obligatoire.',
-    }),
-    order_id: z.string().min(1, {
-        message: 'L\'order_id Event Village est obligatoire.',
-    }),
-    status: z.string().min(1, {
-        message: 'Le statut de la transaction est obligatoire.',
-    }),
-    amount: z.string().optional(),
-    currency: z.string().optional(),
-    signature: z.string().optional(),
+    transaction_id: z.string().uuid({ message: 'transaction_id SamirPay invalide.' }),
+    order_id: z.string().regex(/^ORD-EV-\d{13}-[0-9A-F]{6,12}$/, { message: 'order_id invalide.' }),
+    status: z.literal('success'),
 });
 
 export type SamirPayWebhookInput = z.infer<typeof SamirPayWebhookSchema>;

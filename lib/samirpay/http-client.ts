@@ -1,340 +1,170 @@
 /**
- * Client API SamirPay officiel (Côté serveur exclusivement).
- * Gère l'authentification via X-API-KEY et X-SECRET-KEY ainsi que les appels
- * aux endpoints officiels SamirPay (Direct Cashin, Cashout, Solde, Status).
- * Entièrement piloté par les variables d'environnement (Production & Sandbox).
+ * Client HTTP SamirPay (côté serveur exclusivement), aligné sur le contrat officiel API
+ * Partenaires v1.0 (lot 2) :
+ *  - cashin direct POST /api/tiers/direct/initPayment (montant en chaîne, orderId, callBackUrl,
+ *    operatorName, telephone à 9 chiffres) ;
+ *  - statut GET /api/tiers/payments/{transactionId}/status → { transactionId, status } ;
+ *  - solde GET /api/tiers/payments/solde → data.solde ;
+ *  - cashout POST /api/tiers/payments/send (phoneNumber 9 chiffres, montant en chaîne, prénom, nom).
+ * En-têtes X-API-KEY et X-SECRET-KEY. Chemins fixés par le contrat sous SAMIRPAY_API_URL.
+ * Chaque échec est levé en SamirPayError, avec une nature qui distingue le refus explicite de
+ * l'issue incertaine (délai, coupure, 5xx, réponse illisible). Aucun numéro dans les journaux.
  */
-
-import {
-    SamirPayInitPaymentRequest,
-    SamirPayInitPaymentResponse,
-    SamirPayCheckStatusResponse,
-    SamirPayCashoutRequest,
-    SamirPayCashoutResponse,
-    SamirPaySoldeResponse,
-} from './types';
 import type { PaymentGateway } from '@/lib/integrations/types';
 import { getServerEnv } from '@/lib/env';
+import {
+    SamirPayError,
+    type SamirPayCashoutRequest,
+    type SamirPayCashoutResult,
+    type SamirPayDirectInitRequest,
+    type SamirPayDirectInitResult,
+    type SamirPayErrorKind,
+    type SamirPaySoldeResult,
+    type SamirPayStatusResult,
+    type SamirPayTransactionStatus,
+} from './types';
+
+const STATUSES: readonly SamirPayTransactionStatus[] = ['PENDING', 'SUCCESS', 'FAILED', 'CANCELLED'];
+
+interface RawResponse {
+    status: number;
+    body: unknown;
+}
+
+type Json = Record<string, unknown>;
+
+function asObject(v: unknown): Json | null {
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : null;
+}
 
 export class SamirPayHttpClient implements PaymentGateway {
+    constructor() {
+        if (typeof window !== 'undefined') {
+            throw new Error('SamirPayHttpClient ne doit jamais être exécuté côté navigateur.');
+        }
+    }
+
     private get env() {
         return getServerEnv();
     }
 
-    private get baseUrl(): string {
-        return this.env.SAMIRPAY_API_URL.replace(/\/+$/, '');
-    }
-
-    private get cashinUrl(): string {
-        return this.env.SAMIRPAY_CASHIN_URL || `${this.baseUrl}/api/tiers/direct/initPayment`;
-    }
-
-    private get cashoutUrl(): string {
-        return this.env.SAMIRPAY_CASHOUT_URL || `${this.baseUrl}/api/tiers/payments/send`;
-    }
-
-    private get soldeUrl(): string {
-        return this.env.SAMIRPAY_SOLDE_URL || `${this.baseUrl}/api/tiers/payments/solde`;
-    }
-
-    private get statusUrl(): string {
-        return this.env.SAMIRPAY_STATUS_URL || `${this.baseUrl}/api/tiers/direct/status`;
-    }
-
-    private get apiKey(): string {
-        return this.env.SAMIRPAY_API_KEY;
-    }
-
-    private get secretKey(): string {
-        return this.env.SAMIRPAY_SECRET_KEY;
-    }
-
-    private readonly timeoutMs: number = 15000;
-
-    constructor() {
-        // Validation stricte de l'environnement serveur
-        if (typeof window !== 'undefined') {
-            throw new Error('SamirPayHttpClient ne doit JAMAIS être instancié ou exécuté côté client/navigateur.');
-        }
+    private url(path: string): string {
+        return `${this.env.SAMIRPAY_API_URL.replace(/\/+$/, '')}${path}`;
     }
 
     /**
-     * En-têtes HTTP requis par SamirPay pour l'authentification et le format.
+     * Appel HTTP brut. Délai dépassé ou coupure → UNCERTAIN (le corps est lu en texte puis
+     * analysé : un 502 HTML n'est plus une SyntaxError non typée).
      */
-    private getHeaders(): Record<string, string> {
+    private async call(method: 'GET' | 'POST', path: string, body?: Json): Promise<RawResponse> {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.env.SAMIRPAY_TIMEOUT_MS);
+        try {
+            const res = await fetch(this.url(path), {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-KEY': this.env.SAMIRPAY_API_KEY,
+                    'X-SECRET-KEY': this.env.SAMIRPAY_SECRET_KEY,
+                },
+                body: body ? JSON.stringify(body) : undefined,
+                signal: controller.signal,
+            });
+            const text = await res.text();
+            let parsed: unknown = null;
+            if (text) {
+                try {
+                    parsed = JSON.parse(text);
+                } catch {
+                    parsed = undefined; // corps non JSON : traité par l'appelant selon le statut HTTP
+                }
+            }
+            return { status: res.status, body: parsed };
+        } catch (err) {
+            const aborted = err instanceof Error && err.name === 'AbortError';
+            throw new SamirPayError('UNCERTAIN', aborted ? `SamirPay : délai de ${this.env.SAMIRPAY_TIMEOUT_MS} ms dépassé (${method} ${path.split('/').slice(0, 4).join('/')}).` : `SamirPay injoignable : ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    private failure(res: RawResponse, context: string, conflictKind: SamirPayErrorKind): SamirPayError {
+        const message = String(asObject(res.body)?.message ?? `HTTP ${res.status}`);
+        if (res.status >= 500 || res.body === undefined) return new SamirPayError('UNCERTAIN', `${context} : ${message}`, res.status);
+        if (res.status === 401 || res.status === 403) return new SamirPayError('UNAUTHORIZED', `${context} : clés refusées (${res.status})`, res.status);
+        if (res.status === 404) return new SamirPayError('NOT_FOUND', `${context} : introuvable`, res.status);
+        if (res.status === 409) return new SamirPayError(conflictKind, `${context} : ${message}`, res.status);
+        return new SamirPayError('REJECTED', `${context} : ${message}`, res.status);
+    }
+
+    async initDirectPayment(payload: SamirPayDirectInitRequest): Promise<SamirPayDirectInitResult> {
+        const body: Json = {
+            amount: String(Math.round(payload.amount)),
+            orderId: payload.orderId,
+            callBackUrl: payload.callBackUrl,
+            operatorName: payload.operatorName,
+            telephone: payload.telephone,
+        };
+        if (payload.description) body.description = payload.description;
+        const res = await this.call('POST', '/api/tiers/direct/initPayment', body);
+        if (res.status !== 200 && res.status !== 201) throw this.failure(res, `Cashin ${payload.orderId}`, 'DUPLICATE');
+        const root = asObject(res.body);
+        const data = asObject(root?.data);
+        if (!root || root.success === false || !data || typeof data.transactionId !== 'string' || !data.transactionId) {
+            throw new SamirPayError('INVALID_RESPONSE', `Cashin ${payload.orderId} : réponse sans transactionId`, res.status);
+        }
+        const urls = asObject(data.urls);
         return {
-            'Content-Type': 'application/json',
-            'X-API-KEY': this.apiKey,
-            'X-SECRET-KEY': this.secretKey,
+            transactionId: data.transactionId,
+            paymentUrl: typeof data.url === 'string' ? data.url : null,
+            qrCode: typeof data.qrCode === 'string' ? data.qrCode : null,
+            deepLinks: {
+                wave: typeof urls?.wave === 'string' ? urls.wave : null,
+                orange: typeof urls?.orange === 'string' ? urls.orange : null,
+            },
         };
     }
 
-    /**
-     * Initialise une demande de paiement Cashin Direct auprès de SamirPay.
-     * Utilise dynamiquement process.env.SAMIRPAY_CASHIN_URL
-     */
-    public async initPayment(payload: SamirPayInitPaymentRequest): Promise<SamirPayInitPaymentResponse> {
-        const url = this.cashinUrl;
-        if (!url) {
-            throw new Error('[SamirPayClient] SAMIRPAY_CASHIN_URL non configurée dans les variables d\'environnement.');
+    async checkTransactionStatus(transactionId: string): Promise<SamirPayStatusResult> {
+        const res = await this.call('GET', `/api/tiers/payments/${encodeURIComponent(transactionId)}/status`);
+        if (res.status !== 200) {
+            const err = this.failure(res, `Statut ${transactionId}`, 'REJECTED');
+            // Un statut illisible n'a pas d'effet financier : réponse invalide, à redemander.
+            throw err.kind === 'UNCERTAIN' && res.status < 500 ? new SamirPayError('INVALID_RESPONSE', err.message, res.status) : err;
         }
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-
-        try {
-            // Tous les champs téléphone et URL sont envoyés sous plusieurs noms (redondance).
-            // SamirPay en production exige ces alias pour déclencher le Push USSD Orange Money.
-            const phone = payload.fullIntlPhone || payload.customer?.phone || '';
-            const phoneBare = payload.barePhone || phone.replace(/^\+?221/, '');
-
-            const requestPayload = {
-                amount: payload.amount,
-                currency: payload.currency || 'XOF',
-                order_id: payload.order_id,
-                operatorName: payload.operatorName,
-                description: payload.description || `Paiement Event Village - ${payload.order_id}`,
-                customer: payload.customer
-                    ? { phone: payload.customer.phone, name: payload.customer.name, email: payload.customer.email }
-                    : undefined,
-                // Alias téléphone requis par SamirPay
-                phone,
-                phoneNumber: phoneBare,
-                telephone: phone,
-                customerPhone: phone,
-                // Alias URLs requis par SamirPay
-                return_url: payload.return_url,
-                cancel_url: payload.cancel_url,
-                callback_url: payload.callback_url,
-                callbackUrl: payload.callback_url,
-                returnUrl: payload.return_url,
-                urlCallback: payload.callback_url,
-                urlSuccess: payload.return_url,
-                metadata: payload.metadata,
-            };
-
-            console.log('[SamirPay] initPayment Request:', {
-                url,
-                method: 'POST',
-                payload: {
-                    amount: requestPayload.amount,
-                    currency: requestPayload.currency,
-                    order_id: requestPayload.order_id,
-                    description: requestPayload.description,
-                    customer_phone: requestPayload.customer?.phone ? `${requestPayload.customer.phone.slice(0, 3)}***` : 'ABSENT',
-                    customer_name: requestPayload.customer?.name || 'ABSENT',
-                    return_url: requestPayload.return_url || 'ABSENT',
-                    cancel_url: requestPayload.cancel_url || 'ABSENT',
-                    callback_url: requestPayload.callback_url || 'ABSENT',
-                    has_metadata: !!requestPayload.metadata,
-                },
-            });
-
-            const body = JSON.stringify(requestPayload);
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body,
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                const responseText = await response.text();
-                console.error('[SamirPay] HTTP Error:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    body: responseText,
-                    order_id: payload.order_id,
-                });
-                let errorMessage = `Erreur SamirPay HTTP ${response.status}`;
-                try {
-                    const errorData = JSON.parse(responseText);
-                    if (errorData?.message) errorMessage = errorData.message;
-                } catch { /* response n'est pas du JSON */ }
-                throw new Error(`Échec de l'initialisation SamirPay : ${errorMessage}`);
-            }
-
-            const data = (await response.json()) as SamirPayInitPaymentResponse;
-
-            // Log complet pour diagnostic — inclut le status du corps, pas seulement HTTP
-            console.log('[SamirPay] initPayment Response:', {
-                order_id: payload.order_id,
-                operator: payload.operatorName,
-                http_ok: true,
-                body_status: data.status || 'ABSENT',
-                body_message: (data.message as string) || 'ABSENT',
-                has_payment_url: !!(data.payment_url || data.data?.payment_url),
-                has_transaction_id: !!(data.transaction_id || data.data?.transaction_id),
-                response_keys: Object.keys(data).join(','),
-            });
-
-            return data;
-        } catch (error: unknown) {
-            clearTimeout(timeoutId);
-
-            if (error instanceof Error && error.name === 'AbortError') {
-                console.error('[SamirPayClient] Timeout lors de l\'appel à initPayment', { order_id: payload.order_id });
-                throw new Error('Délai d\'attente dépassé lors de la communication avec SamirPay (Timeout).');
-            }
-
-            if (error instanceof Error) {
-                // S'assure de ne jamais fuiter les clés secrètes dans l'erreur
-                const sanitizedMessage = error.message
-                    .replace(this.secretKey, '***')
-                    .replace(this.apiKey, '***');
-                throw new Error(sanitizedMessage);
-            }
-
-            throw new Error('Erreur inconnue lors de l\'initialisation du paiement SamirPay.');
+        const root = asObject(res.body);
+        const status = String(root?.status ?? '').toUpperCase() as SamirPayTransactionStatus;
+        if (!root || root.transactionId !== transactionId || !STATUSES.includes(status)) {
+            throw new SamirPayError('INVALID_RESPONSE', `Statut ${transactionId} : réponse non corrélée ou statut inconnu`, res.status);
         }
+        return { transactionId, status };
     }
 
-    /**
-     * Vérification de fallback du statut d'une transaction auprès de SamirPay.
-     * Utilisé en cas de retard de webhook ou pour le rapprochement.
-     */
-    public async checkTransactionStatus(orderId: string): Promise<SamirPayCheckStatusResponse> {
-        let url = this.statusUrl;
-        if (!url) {
-            throw new Error('[SamirPayClient] URL de vérification de statut non configurée.');
-        }
-
-        const separator = url.includes('?') ? '&' : '?';
-        url = `${url}${separator}order_id=${encodeURIComponent(orderId)}`;
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-
-        try {
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error(`Impossible de vérifier le statut SamirPay : HTTP ${response.status}`);
-            }
-
-            return (await response.json()) as SamirPayCheckStatusResponse;
-        } catch (error: unknown) {
-            clearTimeout(timeoutId);
-            if (error instanceof Error) {
-                throw new Error(`Erreur vérification statut SamirPay : ${error.message}`);
-            }
-            throw new Error('Erreur inconnue lors de la vérification du statut SamirPay.');
-        }
+    async getSolde(): Promise<SamirPaySoldeResult> {
+        const res = await this.call('GET', '/api/tiers/payments/solde');
+        if (res.status !== 200) throw this.failure(res, 'Solde', 'REJECTED');
+        const data = asObject(asObject(res.body)?.data);
+        const solde = Number(data?.solde);
+        if (!data || !Number.isFinite(solde)) throw new SamirPayError('INVALID_RESPONSE', 'Solde : data.solde absent', res.status);
+        return { solde, entityName: typeof data.samirEntityName === 'string' ? data.samirEntityName : null };
     }
 
-    /**
-     * Récupère le solde du compte marchand chez SamirPay.
-     * Utilise dynamiquement process.env.SAMIRPAY_SOLDE_URL
-     */
-    public async getSolde(): Promise<SamirPaySoldeResponse> {
-        const url = this.soldeUrl;
-        if (!url) {
-            throw new Error('[SamirPayClient] SAMIRPAY_SOLDE_URL non configurée dans les variables d\'environnement.');
+    async sendCashout(payload: SamirPayCashoutRequest): Promise<SamirPayCashoutResult> {
+        const res = await this.call('POST', '/api/tiers/payments/send', {
+            phoneNumber: payload.phoneNumber,
+            operatorName: payload.operatorName,
+            amount: String(Math.round(payload.amount)),
+            firstName: payload.firstName,
+            lastName: payload.lastName,
+        });
+        if (res.status !== 200 && res.status !== 201) throw this.failure(res, 'Cashout', 'REJECTED');
+        const root = asObject(res.body);
+        if (root?.status === 'error') throw new SamirPayError('REJECTED', `Cashout : ${String(root.message ?? 'refusé')}`, res.status);
+        const data = asObject(root?.data);
+        if (!root || root.status !== 'success' || !data || typeof data.transactionId !== 'string') {
+            // Envoi peut-être effectué : jamais traité comme un échec
+            throw new SamirPayError('UNCERTAIN', 'Cashout : réponse illisible, envoi possiblement effectué', res.status);
         }
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-
-        try {
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: this.getHeaders(),
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            const data = (await response.json()) as SamirPaySoldeResponse;
-
-            if (!response.ok) {
-                const errorMsg = data?.message || `HTTP ${response.status}`;
-                throw new Error(`Impossible de consulter le solde SamirPay : ${errorMsg}`);
-            }
-
-            return data;
-        } catch (error: unknown) {
-            clearTimeout(timeoutId);
-            if (error instanceof Error && error.name === 'AbortError') {
-                throw new Error('Délai d\'attente dépassé lors de la consultation du solde SamirPay.');
-            }
-            if (error instanceof Error) {
-                const sanitized = error.message
-                    .replace(this.secretKey, '***')
-                    .replace(this.apiKey, '***');
-                throw new Error(sanitized);
-            }
-            throw new Error('Erreur inconnue lors de la consultation du solde SamirPay.');
-        }
-    }
-
-    /**
-     * Envoie un transfert de fonds (Cashout) vers Wave ou Orange Money.
-     * Utilise dynamiquement process.env.SAMIRPAY_CASHOUT_URL
-     */
-    public async sendCashout(payload: SamirPayCashoutRequest): Promise<SamirPayCashoutResponse> {
-        const url = this.cashoutUrl;
-        if (!url) {
-            throw new Error('[SamirPayClient] SAMIRPAY_CASHOUT_URL non configurée dans les variables d\'environnement.');
-        }
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-
-        try {
-            const body = JSON.stringify({
-                phoneNumber: payload.phoneNumber,
-                operatorName: payload.operatorName,
-                amount: payload.amount,
-                firstName: payload.firstName,
-                lastName: payload.lastName,
-            });
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body,
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            const data = (await response.json()) as SamirPayCashoutResponse;
-
-            if (!response.ok) {
-                const errorMsg = data?.message || `HTTP ${response.status}`;
-                console.error('[SamirPayClient] sendCashout échec:', {
-                    phoneNumber: payload.phoneNumber,
-                    operatorName: payload.operatorName,
-                    amount: payload.amount,
-                    error: errorMsg,
-                });
-                throw new Error(`Échec du Cashout SamirPay : ${errorMsg}`);
-            }
-
-            return data;
-        } catch (error: unknown) {
-            clearTimeout(timeoutId);
-            if (error instanceof Error && error.name === 'AbortError') {
-                console.error('[SamirPayClient] Timeout sendCashout', { phoneNumber: payload.phoneNumber });
-                throw new Error('Délai d\'attente dépassé lors du Cashout SamirPay (Timeout).');
-            }
-            if (error instanceof Error) {
-                const sanitized = error.message
-                    .replace(this.secretKey, '***')
-                    .replace(this.apiKey, '***');
-                throw new Error(sanitized);
-            }
-            throw new Error('Erreur inconnue lors du Cashout SamirPay.');
-        }
+        return { transactionId: data.transactionId, status: String(data.status ?? 'SUCCESS').toUpperCase() };
     }
 }
-
