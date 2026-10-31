@@ -34,8 +34,19 @@ function forgetProcessMemory(): void {
     (globalThis as { otpMemoryCache?: Map<string, unknown> }).otpMemoryCache?.clear();
 }
 
-async function assertStoredUnverified(phone: string, code: string): Promise<string> {
-    const { data, error } = await getServiceRoleClient().from('otp_codes').select('id, verified').eq('phone', phone).eq('code', code).maybeSingle();
+/**
+ * Dernier code non consommé du numéro, persisté en base. Depuis le lot 1C.4 le code n'est plus
+ * stocké en clair : la ligne est retrouvée par numéro (le plus récent), sa correspondance avec
+ * le code envoyé étant prouvée par la vérification qui suit.
+ */
+async function assertStoredUnverified(phone: string, _code: string): Promise<string> {
+    const { data, error } = await getServiceRoleClient()
+        .from('otp_codes')
+        .select('id, verified')
+        .eq('phone', phone)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
     assert.equal(error, null, `lecture de otp_codes : ${error?.message}`);
     assert.ok(data, `le code envoyé au ${phone} doit être persisté dans otp_codes`);
     assert.equal(data.verified, false);
