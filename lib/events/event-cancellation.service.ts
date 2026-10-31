@@ -213,17 +213,7 @@ export class EventCancellationService {
             throw new Error("Cet événement a déjà été annulé ou n'est plus au statut publié/validé.");
         }
 
-        // 6. Invalidation des billets 'VALIDE' -> 'ANNULE' pour bloquer les scanners d'accès
-        await supabase
-            .from('tickets')
-            .update({
-                status: 'ANNULE',
-                updated_at: new Date().toISOString(),
-            })
-            .eq('event_id', eventId)
-            .eq('status', 'VALIDE');
-
-        // 7. Révocation des transferts P2P en attente
+        // 6. Révocation des transferts P2P en attente
         const { error: transferErr } = await supabase
             .from('ticket_transfers')
             .update({
@@ -234,9 +224,11 @@ export class EventCancellationService {
             .eq('status', 'PENDING');
         if (transferErr) console.error('[EventCancellationService] révocation des transferts en attente impossible :', transferErr.message);
 
-        // 8. Paiements à rembourser (lot 2.7) : paiements plateforme SUCCESS rattachés aux billets
-        //    de l'événement (tickets.payment_id), montant > 0. Les paiements espèces (guichet) et les
-        //    invitations ne sont jamais remboursés par cashout : l'argent n'est pas passé par SamirPay.
+        // 7. Paiements en ligne à rembourser (lot 3.7) : paiements plateforme SUCCESS ou PARTIAL
+        //    rattachés aux billets de l'événement (tickets.payment_id). refund_request rembourse le
+        //    RESTE dû au client (total payé, frais de service compris, moins les remboursements déjà
+        //    demandés), passe les billets REMBOURSEMENT_EN_COURS et débite l'organisateur ; si ses
+        //    fonds ont déjà été retirés, le reste devient une créance avec alerte (grand livre).
         const { data: ticketPayRows, error: tpErr } = await supabase
             .from('tickets')
             .select('payment_id')
@@ -244,27 +236,46 @@ export class EventCancellationService {
             .not('payment_id', 'is', null);
         if (tpErr) throw new Error(`Lecture des paiements de l'événement impossible : ${tpErr.message}`);
         const paymentIds = Array.from(new Set((ticketPayRows ?? []).map((r) => r.payment_id as string)));
-        let payments: Array<{ id: string; amount: number; client_id: string }> = [];
+        let payments: Array<{ id: string; client_id: string }> = [];
         if (paymentIds.length > 0) {
             const { data, error } = await supabase
                 .from('payments')
-                .select('id, amount, client_id')
+                .select('id, client_id')
                 .in('id', paymentIds)
-                .eq('status', 'SUCCESS')
+                .in('status', ['SUCCESS', 'PARTIAL'])
                 .eq('is_platform_payment', true)
                 .gt('amount', 0);
             if (error) throw new Error(`Lecture des paiements à rembourser impossible : ${error.message}`);
             payments = data ?? [];
         }
-
-        // 9. Remboursements par le module commun (solde vérifié une fois pour le lot)
-        const entries = new Map<string, { id: string; amount: number; client_id: string }>();
+        const entries = new Map<string, { id: string; client_id: string }>();
         for (const p of payments) {
             const cashout = await CashoutService.requestRefund({ paymentId: p.id, reason: `Annulation de l'événement « ${event.title} »`, kind: 'EVENT_CANCELLATION_REFUND' });
-            entries.set(cashout.id, p);
+            if (cashout) entries.set(cashout.id, p);
         }
-        const outcomes = await CashoutService.sendBatch(Array.from(entries.keys()));
 
+        // 8. Billets encore valables : espèces → « à rembourser par l'organisateur » (aucun cashout,
+        //    l'argent n'est pas passé par SamirPay) ; gratuits et invitations → annulés.
+        const { data: remaining, error: remErr } = await supabase
+            .from('tickets')
+            .select('id')
+            .eq('event_id', eventId)
+            .eq('status', 'VALIDE');
+        if (remErr) throw new Error(`Lecture des billets restants impossible : ${remErr.message}`);
+        for (const t of remaining ?? []) {
+            const r = await CashoutService.requestTicketRefund({ ticketId: t.id as string, actorId: userId, reason: `Annulation de l'événement « ${event.title} »` });
+            if (!r.ok) console.error(`[EventCancellationService] billet ${t.id} non annulé : ${r.code} ${r.message}`);
+        }
+        const { error: invalidErr } = await supabase
+            .from('tickets')
+            .update({ status: 'ANNULE', updated_at: new Date().toISOString() })
+            .eq('event_id', eventId)
+            .eq('status', 'VALIDE');
+        if (invalidErr) throw new Error(`Invalidation des billets restants impossible : ${invalidErr.message}`);
+
+        // 9. Envoi des remboursements (solde SamirPay vérifié une fois pour le lot). Les billets ne
+        //    passent REMBOURSE et le client n'est prévenu du versement qu'à la confirmation.
+        const outcomes = await CashoutService.sendBatch(Array.from(entries.keys()));
         let refundsProcessed = 0;
         let refundsFailed = 0;
         let totalAmountRefunded = 0;
@@ -275,23 +286,19 @@ export class EventCancellationService {
                 continue;
             }
             refundsProcessed++;
-            totalAmountRefunded += Number(payment.amount);
-            const { error: tErr } = await supabase
-                .from('tickets')
-                .update({ status: 'REMBOURSE', updated_at: new Date().toISOString() })
-                .eq('payment_id', payment.id)
-                .in('status', ['ANNULE', 'VALIDE']);
-            if (tErr) console.error(`[EventCancellationService] billets du paiement ${payment.id} non marqués REMBOURSE :`, tErr.message);
-            const { data: c } = await supabase.from('cashouts').select('operator, phone_number, first_name, last_name, idempotency_key').eq('id', cashoutId).single();
+            const { data: c, error: cErr } = await supabase.from('cashouts').select('amount, operator, phone_number, first_name, last_name, idempotency_key').eq('id', cashoutId).single();
+            if (cErr || !c) throw new Error(`Lecture du remboursement ${cashoutId} impossible : ${cErr?.message}`);
+            totalAmountRefunded += Number(c.amount);
+            if (outcome.status !== 'CONFIRME') continue;
             await this.dispatchRefundNotifications({
                 userId: payment.client_id,
-                buyerName: [c?.first_name, c?.last_name].filter(Boolean).join(' '),
-                buyerPhone: c?.phone_number ? `+221${c.phone_number}` : '',
+                buyerName: [c.first_name, c.last_name].filter(Boolean).join(' '),
+                buyerPhone: c.phone_number ? `+221${c.phone_number}` : '',
                 eventTitle: event.title,
                 ticketNumber: '',
-                refundAmount: Number(payment.amount),
-                refundTransactionId: c?.idempotency_key ?? cashoutId,
-                operator: c?.operator ? OPERATOR_LABELS[c.operator as SamirPayOperatorName] : 'Mobile Money',
+                refundAmount: Number(c.amount),
+                refundTransactionId: c.idempotency_key ?? cashoutId,
+                operator: c.operator ? OPERATOR_LABELS[c.operator as SamirPayOperatorName] : 'Mobile Money',
             });
         }
 
@@ -330,6 +337,8 @@ export class EventCancellationService {
                 .eq('id', cashout.id).eq('status', 'ECHOUE').select('id');
             if (rErr) throw new Error(`Remise à envoyer impossible : ${rErr.message}`);
             if (!reset?.length) return { success: false, refundId, status: 'FAILED', message: 'Remboursement modifié par une autre opération.' };
+            const { error: refErr } = await supabase.from('refunds').update({ status: 'PENDING', updated_at: new Date().toISOString() }).eq('id', refundId).eq('status', 'FAILED');
+            if (refErr) throw new Error(`Remboursement ${refundId} non remis en attente : ${refErr.message}`);
         } else if (cashout.blocked_reason === 'SOLDE_INSUFFISANT') {
             const { error: uErr } = await supabase.from('cashouts').update({ blocked_reason: null, updated_at: new Date().toISOString() }).eq('id', cashout.id).eq('status', 'A_ENVOYER');
             if (uErr) throw new Error(`Déblocage impossible : ${uErr.message}`);
