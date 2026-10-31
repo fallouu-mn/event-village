@@ -151,7 +151,39 @@ process.env = new Proxy(realEnv, {
     },
 });
 
-// ── 4. Faux adaptateurs (SMS, email, SamirPay) : aucune requête réseau ──
+// ── 4. Verrou réseau : toute requête fetch vers un hôte non local est refusée ──
+// Défense en profondeur : même un appel oublié hors des adaptateurs (SMS, email,
+// SamirPay) ne peut pas sortir de la machine. Supabase local (127.0.0.1) reste autorisé.
+const blockedRequests: string[] = [];
+const realFetch = globalThis.fetch;
+
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+    if (typeof input === 'string') return input;
+    if (input instanceof URL) return input.href;
+    return input.url;
+}
+
+globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const url = requestUrl(input);
+    let host = '';
+    try {
+        host = new URL(url).hostname;
+    } catch {
+        host = '';
+    }
+    if (!LOCAL_HOSTS.has(host)) {
+        blockedRequests.push(url);
+        throw new Error(`[tests/helpers/env] Requête réseau externe bloquée en test : ${host || url}`);
+    }
+    return realFetch(input, init);
+}) as typeof fetch;
+
+/** URLs dont la requête a été refusée par le verrou réseau (pour assertion). */
+export function getBlockedRequests(): readonly string[] {
+    return blockedRequests;
+}
+
+// ── 5. Faux adaptateurs (SMS, email, SamirPay) : aucune requête réseau ──
 installFakeIntegrations();
 
 export const TEST_ENV_FILE = envPath;
