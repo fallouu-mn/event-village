@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { randomInt } from 'crypto';
 import crypto from 'crypto';
-import { getServerSessionUser, serverIsPartner, serverHasRole, serverHasAnyRole } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner, serverHasRole, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { mTargetService } from '@/lib/sms/mtarget.service';
-import { otpMemoryCache } from '@/lib/sms/otp-cache';
+import { storeOtp } from '@/lib/auth/otp-store';
 import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
 import { RateLimiter } from '@/lib/security/rate-limiter';
-import { addUserRole } from '@/lib/auth/roles';
+import { addUserRole, grantUserRoles } from '@/lib/auth/roles';
+import { refuseInactiveAccount } from '@/lib/auth/account-status';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,9 @@ const InviteSchema = z.object({
 
 export async function POST(req: NextRequest) {
     try {
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
@@ -142,12 +145,22 @@ export async function POST(req: NextRequest) {
 
         const { data: existingProfile } = await supabase
             .from('users')
-            .select('id, role, first_name, last_name, email')
+            .select('id, role, status, first_name, last_name, email')
             .or(`phone.eq.${normalizedPhone},phone.eq.${phone.trim()},phone.ilike.%${suffix9}`)
             .limit(1)
             .maybeSingle();
 
         if (existingProfile) {
+            // Lot 1B.6 : un compte non ACTIF (SUSPENDU, SUPPRIME…) n'est jamais réactivé par une invitation.
+            if (existingProfile.status !== 'ACTIF') {
+                return refuseInactiveAccount({
+                    actor: user,
+                    targetId: existingProfile.id,
+                    targetStatus: existingProfile.status,
+                    action: 'CONTROLLER_INVITE_REFUSED_INACTIVE',
+                    context: { event_ids: targetEventIds, phone: normalizedPhone },
+                });
+            }
             controllerUserId = existingProfile.id;
 
             // Vérifier si l'utilisateur possède déjà le rôle CONTROLEUR via user_roles
@@ -181,19 +194,17 @@ export async function POST(req: NextRequest) {
                 }
 
                 // MULTI-RÔLE : AJOUTER CONTROLEUR sans détruire les rôles existants
-                try {
-                    await addUserRole(existingProfile.id, 'CONTROLEUR');
-                } catch (roleErr) {
-                    console.error('[invite] Ajout rôle CONTROLEUR échoué:', roleErr);
+                const { error: roleError } = await addUserRole(existingProfile.id, 'CONTROLEUR');
+                if (roleError) {
+                    console.error('[invite] Ajout rôle CONTROLEUR échoué:', roleError);
                     return NextResponse.json({
                         error: 'Impossible d\'ajouter le rôle Contrôleur. Réessayez.',
                     }, { status: 500 });
                 }
 
-                // Mettre à jour le rôle et les infos complémentaires
+                // Infos complémentaires. Le rôle legacy users.role est recalculé par le trigger de
+                // synchronisation depuis user_roles ; le statut n'est jamais modifié ici (lot 1B.6).
                 await supabase.from('users').update({
-                    role: 'CONTROLEUR',
-                    status: 'ACTIF',
                     ...(first_name && first_name !== 'Contrôleur' ? { first_name } : {}),
                     ...(last_name ? { last_name } : {}),
                     ...(email ? { email } : {}),
@@ -201,11 +212,6 @@ export async function POST(req: NextRequest) {
                 }).eq('id', existingProfile.id);
 
                 try {
-                    await supabase.auth.admin.updateUserById(existingProfile.id, {
-                        user_metadata: {
-                            role: 'CONTROLEUR',
-                        }
-                    });
                     await supabase.auth.admin.signOut(existingProfile.id, 'global');
                 } catch (signoutErr) {
                     console.warn('[invite] signOut session notice:', signoutErr);
@@ -232,21 +238,14 @@ export async function POST(req: NextRequest) {
             );
 
             if (matchingAuthUser) {
-                controllerUserId = matchingAuthUser.id;
-                await supabase.auth.admin.updateUserById(controllerUserId, {
-                    email: contactEmail,
-                    phone: normalizedPhone,
-                    password: tempPassword,
-                    email_confirm: true,
-                    phone_confirm: true,
-                    user_metadata: {
-                        role: 'CONTROLEUR',
-                        phone: normalizedPhone,
-                        first_name: cleanFirstName,
-                        last_name: cleanLastName,
-                        is_temporary_controller_account: true,
-                    },
-                });
+                // Lot 1B.6 : un compte d'authentification existe déjà pour cet email ou ce numéro.
+                // La route le réécrivait (email, téléphone, mot de passe) et le remettait ACTIF :
+                // prise de contrôle d'un compte tiers et réactivation. Refus explicite.
+                console.warn(`[invite-controller] compte d'authentification existant ${matchingAuthUser.id} : invitation refusée`);
+                return NextResponse.json({
+                    error: 'Un compte existe déjà avec cet email ou ce numéro. Invitez-le par le numéro de téléphone de son profil, ou contactez le support.',
+                    code: 'ACCOUNT_ALREADY_EXISTS',
+                }, { status: 409 });
             } else {
                 // Tentative de création standard d'un compte contrôleur temporaire
                 const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
@@ -256,7 +255,6 @@ export async function POST(req: NextRequest) {
                     phone_confirm:  true,
                     password:       tempPassword,
                     user_metadata:  {
-                        role: 'CONTROLEUR',
                         phone: normalizedPhone,
                         first_name: cleanFirstName,
                         last_name: cleanLastName,
@@ -295,11 +293,13 @@ export async function POST(req: NextRequest) {
                 }, { status: 500 });
             }
 
-            // MULTI-RÔLE : s'assurer que CLIENT + CONTROLEUR existent dans user_roles
-            await supabase.from('user_roles').upsert([
-                { user_id: controllerUserId, role: 'CLIENT' },
-                { user_id: controllerUserId, role: 'CONTROLEUR' },
-            ], { onConflict: 'user_id,role' });
+            // MULTI-RÔLE : CLIENT + CONTROLEUR dans user_roles (erreur remontée, pas ignorée)
+            try {
+                await grantUserRoles(controllerUserId, ['CONTROLEUR']);
+            } catch (roleErr) {
+                console.error('[invite-controller]', roleErr instanceof Error ? roleErr.message : roleErr);
+                return NextResponse.json({ error: 'Impossible d\'attribuer le rôle Contrôleur.' }, { status: 500 });
+            }
         }
 
         // 3. Traiter les assignations pour chaque événement sélectionné
@@ -359,19 +359,16 @@ export async function POST(req: NextRequest) {
         }
 
         // 4. Génération OTP d'activation (24h) + envoi SMS
-        const otpCode   = randomInt(100000, 999999).toString();
+        const otpCode   = randomInt(100000, 1000000).toString();
         const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
-        otpMemoryCache.set(normalizedPhone, { code: otpCode, expiresAt, attempts: 0 });
-
+        // Lot 1B.7 : code d'activation en base uniquement (vérifié par /api/controller/setup).
         try {
-            await (supabase.from('otp_codes') as any).insert({
-                phone:      normalizedPhone,
-                code:       otpCode,
-                expires_at: new Date(expiresAt).toISOString(),
-                verified:   false,
-            });
-        } catch { /* fallback silencieux */ }
+            await storeOtp(normalizedPhone, otpCode, new Date(expiresAt));
+        } catch (storeErr) {
+            console.error('[invite-controller]', storeErr instanceof Error ? storeErr.message : storeErr);
+            return NextResponse.json({ error: 'Impossible de préparer le code d\'activation. Réessayez.' }, { status: 500 });
+        }
 
         const baseUrl   = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
         const setupLink = `${baseUrl}/controller/setup?phone=${encodeURIComponent(normalizedPhone)}`;

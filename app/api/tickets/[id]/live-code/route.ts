@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
+import { requireActiveSession, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { generateTotp, buildDynamicQrPayload, TOTP_STEP_SECONDS, deriveTicketTotpSecret } from '@/lib/security/totp';
 
@@ -15,7 +15,9 @@ export async function GET(
     context: { params: Promise<{ id: string }> | { id: string } }
 ) {
     try {
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }

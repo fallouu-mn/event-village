@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
@@ -14,7 +14,9 @@ export const dynamic = 'force-dynamic';
 // de FK hint PostgREST (event_controllers a 2 FK vers users: user_id et created_by).
 export async function GET(req: NextRequest) {
     try {
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
@@ -152,7 +154,9 @@ export async function GET(req: NextRequest) {
 // ──────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
     try {
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }

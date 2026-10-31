@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { TicketPdfService } from '@/lib/tickets/ticket-pdf.service';
 
@@ -21,7 +21,9 @@ export async function GET(
 ) {
     try {
         // 1. Authentification
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json(
                 { error: 'Authentification requise pour télécharger votre billet.' },

@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient, getAuthenticatedUser } from '../supabase/server';
 import { type UserRoleType } from './roles';
 
@@ -31,6 +31,32 @@ export function serverIsController(user: ServerUser): boolean {
 
 export function serverIsPartner(user: ServerUser): boolean {
     return serverHasAnyRole(user, ['PARTENAIRE', 'ADMIN', 'SUPERADMIN']);
+}
+
+export type ActiveSessionResult =
+    | { user: ServerUser; response?: undefined }
+    | { user?: undefined; response: NextResponse };
+
+/**
+ * Lot 1B.6 — contrôle commun des routes /api/partner/* et /api/tickets/* :
+ * session obligatoire (401) et compte ACTIF obligatoire (403, code ACCOUNT_NOT_ACTIVE).
+ * Usage : `const s = await requireActiveSession(req); if (s.response) return s.response;`
+ */
+export async function requireActiveSession(req: NextRequest): Promise<ActiveSessionResult> {
+    const user = await getServerSessionUser(req);
+    if (!user) {
+        return { response: NextResponse.json({ error: 'Authentification requise.', code: 'AUTH_REQUIRED' }, { status: 401 }) };
+    }
+    if (user.status !== 'ACTIF') {
+        console.warn(`[requireActiveSession] accès refusé à ${new URL(req.url).pathname} : compte ${user.id} au statut ${user.status}`);
+        return {
+            response: NextResponse.json(
+                { error: `Votre compte n'est pas actif (statut ${user.status}). Contactez le support.`, code: 'ACCOUNT_NOT_ACTIVE' },
+                { status: 403 }
+            ),
+        };
+    }
+    return { user };
 }
 
 export async function getServerSessionUser(req: NextRequest): Promise<ServerUser | null> {

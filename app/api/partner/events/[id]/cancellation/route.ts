@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { EventCancellationService } from '@/lib/events/event-cancellation.service';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { requireActiveSession } from '@/lib/auth/session';
 
 export async function GET(
     request: NextRequest,
     { params }: { params: { id: string } }
 ) {
     try {
-        const user = await getServerSessionUser(request);
+        const activeSession = await requireActiveSession(request);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }

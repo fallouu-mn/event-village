@@ -1,31 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/tickets
- * Récupère tous les billets réels de l'utilisateur connecté avec QR code et informations d'événement
+ * Récupère tous les billets réels de l'utilisateur connecté avec QR code et informations d'événement.
+ * L'utilisateur est celui de la session (lot 1B.6) : le paramètre historique `userId` n'est
+ * accepté que s'il désigne ce même compte.
  */
 export async function GET(req: NextRequest) {
     try {
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const effectiveUserId = activeSession.user.id;
+
+        const queryUserId = new URL(req.url).searchParams.get('userId');
+        if (queryUserId && queryUserId !== effectiveUserId) {
+            console.warn(`[API /api/tickets] userId ${queryUserId} demandé par le compte ${effectiveUserId} : refusé`);
+            return NextResponse.json({ error: 'Vous ne pouvez consulter que vos propres billets.', code: 'FORBIDDEN_OTHER_USER' }, { status: 403 });
+        }
+
         const supabase = getServiceRoleClient();
-        const authHeader = req.headers.get('authorization');
-        const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-        let userId: string | null = null;
-        if (token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            userId = user?.id || null;
-        }
-
-        const { searchParams } = new URL(req.url);
-        const queryUserId = searchParams.get('userId');
-        const effectiveUserId = userId || queryUserId;
-
-        if (!effectiveUserId) {
-            return NextResponse.json({ error: 'Connexion requise pour consulter vos billets.' }, { status: 401 });
-        }
 
         const { data: tickets, error } = await supabase
             .from('tickets')

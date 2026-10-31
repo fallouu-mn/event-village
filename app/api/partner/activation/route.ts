@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { NotificationService } from '@/lib/notifications/notification.service';
+import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/partner/activation
- * Démarre de manière IDEMPOTENTE la période d'essai lors de la première connexion du partenaire validé (§7)
+ * Démarre de manière IDEMPOTENTE la période d'essai lors de la première connexion du partenaire validé (§7).
+ * Lot 1B.6 : uniquement pour la fiche partenaire du compte connecté, lui-même ACTIF. Les champs
+ * historiques `partnerId` / `userId` du corps doivent désigner cette même fiche.
  */
 export async function POST(req: NextRequest) {
     try {
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
+
         let body: { partnerId?: string; userId?: string };
         try {
             body = await req.json();
@@ -18,21 +25,24 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = getServiceRoleClient();
-        let partnerId = body.partnerId;
 
-        // Si userId est fourni, récupérer le partnerId
-        if (!partnerId && body.userId) {
-            const { data: p } = await supabase
-                .from('partners')
-                .select('id')
-                .eq('user_id', body.userId)
-                .maybeSingle();
-            partnerId = p?.id;
+        const { data: ownPartner, error: ownErr } = await supabase
+            .from('partners')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        if (ownErr) {
+            console.error('[API /api/partner/activation] lecture de la fiche partenaire :', ownErr.message);
+            return NextResponse.json({ error: 'Lecture de la fiche partenaire impossible.' }, { status: 500 });
         }
-
-        if (!partnerId) {
-            return NextResponse.json({ error: 'partnerId ou userId requis.' }, { status: 400 });
+        if (!ownPartner) {
+            return NextResponse.json({ error: 'Aucune fiche partenaire associée à ce compte.' }, { status: 403 });
         }
+        if ((body.userId && body.userId !== user.id) || (body.partnerId && body.partnerId !== ownPartner.id)) {
+            console.warn(`[API /api/partner/activation] compte ${user.id} : activation d'une autre fiche refusée`);
+            return NextResponse.json({ error: 'Vous ne pouvez activer que votre propre fiche partenaire.', code: 'FORBIDDEN_OTHER_PARTNER' }, { status: 403 });
+        }
+        const partnerId = ownPartner.id;
 
         // 1. Récupération du partenaire
         const { data: partner, error: fetchErr } = await supabase
@@ -77,10 +87,7 @@ export async function POST(req: NextRequest) {
                     })
                     .eq('id', partnerId);
 
-                await supabase
-                    .from('users')
-                    .update({ status: 'ACTIF', updated_at: new Date().toISOString() })
-                    .eq('id', partner.user_id);
+                // Lot 1B.6 : plus d'écriture de users.status ici ; le compte appelant est ACTIF par construction.
 
                 // Notification Première Activation
                 if (partner.phone) {

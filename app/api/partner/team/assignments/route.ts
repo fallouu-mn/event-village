@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
 import { ShiftService } from '@/lib/shifts/shift.service';
+import { grantUserRoles } from '@/lib/auth/roles';
+import { refuseInactiveAccount } from '@/lib/auth/account-status';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +38,9 @@ const UpdateAssignmentsSchema = z.object({
 // ──────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
     try {
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
@@ -101,7 +105,27 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: 'Contrôleur introuvable.' }, { status: 404 });
         }
 
-        if (ctrlUser.role !== 'CONTROLEUR' && ctrlUser.role !== 'ADMIN' && ctrlUser.role !== 'SUPERADMIN') {
+        // Lot 1B.6 : un compte non ACTIF n'est jamais affecté ni réactivé par une route partenaire.
+        if (ctrlUser.status !== 'ACTIF') {
+            return refuseInactiveAccount({
+                actor: user,
+                targetId: ctrlUser.id,
+                targetStatus: ctrlUser.status,
+                action: 'CONTROLLER_ASSIGNMENT_REFUSED_INACTIVE',
+                context: { event_ids: requestedEventIds },
+            });
+        }
+
+        // Rôles effectifs : user_roles (source des politiques RLS), pas le rôle legacy users.role.
+        const { data: ctrlRoleRows, error: ctrlRolesErr } = await supabase.from('user_roles').select('role').eq('user_id', controllerId);
+        if (ctrlRolesErr) {
+            console.error('[PATCH team/assignments] lecture des rôles du contrôleur :', ctrlRolesErr.message);
+            return NextResponse.json({ error: 'Impossible de lire les rôles du contrôleur.' }, { status: 500 });
+        }
+        const ctrlRoles = (ctrlRoleRows || []).map((r) => r.role as string);
+        const alreadyController = ctrlRoles.some((r) => r === 'CONTROLEUR' || r === 'ADMIN' || r === 'SUPERADMIN');
+
+        if (!alreadyController) {
             if (!confirm_promotion) {
                 const clientFullName = [ctrlUser.first_name, ctrlUser.last_name].filter(Boolean).join(' ') || 'Utilisateur';
                 return NextResponse.json({
@@ -117,16 +141,20 @@ export async function PATCH(req: NextRequest) {
                 }, { status: 200 });
             }
 
-            // Confirmation fournie -> promouvoir de façon cohérente (DB + Auth metadata + déconnexion session)
-            await Promise.all([
-                supabase.from('users').update({ role: 'CONTROLEUR', status: 'ACTIF', updated_at: new Date().toISOString() }).eq('id', controllerId),
-                supabase.auth.admin.updateUserById(controllerId, {
-                    user_metadata: { role: 'CONTROLEUR', is_temporary_controller_account: false },
-                }),
-            ]);
+            // Confirmation fournie -> rôle CONTROLEUR dans user_roles (le trigger recalcule users.role),
+            // sans toucher au statut, puis déconnexion des sessions existantes.
             try {
-                await supabase.auth.admin.signOut(controllerId, 'global');
-            } catch { /* notice */ }
+                await grantUserRoles(controllerId, ['CONTROLEUR']);
+            } catch (roleErr) {
+                console.error('[PATCH team/assignments]', roleErr instanceof Error ? roleErr.message : roleErr);
+                return NextResponse.json({ error: 'Impossible d\'attribuer le rôle Contrôleur.' }, { status: 500 });
+            }
+            const { error: metaErr } = await supabase.auth.admin.updateUserById(controllerId, {
+                user_metadata: { is_temporary_controller_account: false },
+            });
+            if (metaErr) console.warn('[PATCH team/assignments] métadonnée is_temporary_controller_account :', metaErr.message);
+            const { error: signOutErr } = await supabase.auth.admin.signOut(controllerId, 'global');
+            if (signOutErr) console.warn('[PATCH team/assignments] déconnexion des sessions :', signOutErr.message);
         }
 
         // 3. Récupérer les affectations actuelles de ce contrôleur chez ce partenaire
@@ -207,13 +235,7 @@ export async function PATCH(req: NextRequest) {
             }
         }
 
-        // 7. S'assurer que le profil est ACTIF
-        if (ctrlUser && ctrlUser.status !== 'ACTIF') {
-            await supabase
-                .from('users')
-                .update({ status: 'ACTIF' })
-                .eq('id', controllerId);
-        }
+        // 7. (Lot 1B.6) Plus de réactivation : un compte non ACTIF a été refusé en 2.5.
 
         // 8. Notifications
         if (ctrlUser?.phone) {

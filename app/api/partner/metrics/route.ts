@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireActiveSession } from '@/lib/auth/session';
 import { FinancialCalculatorService } from '@/lib/payments/financial-calculator.service';
 
 export const dynamic = 'force-dynamic';
@@ -10,13 +11,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
     try {
-        const authUser = await getAuthenticatedUser(req);
-        if (!authUser) {
-            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        }
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
 
         const supabase = getServiceRoleClient();
-        const userId = authUser.id;
+        const userId = activeSession.user.id;
 
         // 2. Récupération de la fiche partenaire liée à cet utilisateur
         const { data: partner, error: pErr } = await supabase

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { EventCancellationService } from '@/lib/events/event-cancellation.service';
-import { getServerSessionUser, serverHasRole } from '@/lib/auth/session';
+import { requireActiveSession, serverHasRole } from '@/lib/auth/session';
 
 const cancelEventSchema = z.object({
     internalReason: z.string().min(3, 'Le motif de l\'annulation doit comporter au moins 3 caractères.'),
@@ -13,7 +13,9 @@ export async function POST(
     { params }: { params: { id: string } }
 ) {
     try {
-        const user = await getServerSessionUser(request);
+        const activeSession = await requireActiveSession(request);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }

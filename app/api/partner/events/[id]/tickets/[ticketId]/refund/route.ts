@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
+import { requireActiveSession, serverHasAnyRole } from '@/lib/auth/session';
 import { EventService } from '@/lib/events/event.service';
 
 export async function POST(
@@ -7,7 +7,9 @@ export async function POST(
     { params }: { params: Promise<{ id: string; ticketId: string }> }
 ) {
     try {
-        const user = await getServerSessionUser(request);
+        const activeSession = await requireActiveSession(request);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Non authentifie.' }, { status: 401 });
         }

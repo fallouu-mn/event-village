@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { NotificationService } from '@/lib/notifications/notification.service';
 
@@ -7,7 +7,9 @@ export const dynamic = 'force-dynamic';
 
 /** POST /api/partner/events/[id]/promotion — Soumettre une demande de promotion */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const user = await getServerSessionUser(req);
+    const activeSession = await requireActiveSession(req);
+    if (activeSession.response) return activeSession.response;
+    const user = activeSession.user;
     if (!user || !serverIsPartner(user)) {
         return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
     }
@@ -84,7 +86,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
 /** GET /api/partner/events/[id]/promotion — Statut de la demande */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const user = await getServerSessionUser(req);
+    const activeSession = await requireActiveSession(req);
+    if (activeSession.response) return activeSession.response;
+    const user = activeSession.user;
     if (!user || !serverIsPartner(user)) {
         return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
     }

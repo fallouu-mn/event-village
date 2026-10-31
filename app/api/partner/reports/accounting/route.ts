@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { PartnerDashboardService } from '@/lib/partner/partner-dashboard.service';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }

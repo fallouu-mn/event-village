@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverIsPartner } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
     try {
-        const user = await getServerSessionUser(request);
+        const activeSession = await requireActiveSession(request);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }

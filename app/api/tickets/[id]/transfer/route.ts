@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser } from '@/lib/auth/session';
+import { requireActiveSession } from '@/lib/auth/session';
 import { InitiateTransferSchema } from '@/lib/validations/transfer';
 import { TicketTransferService } from '@/lib/tickets/ticket-transfer.service';
 
@@ -16,7 +16,9 @@ export async function POST(
 ) {
     try {
         // 1. Authentification
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }

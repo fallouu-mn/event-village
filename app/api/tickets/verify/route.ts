@@ -3,8 +3,41 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { parseDynamicQrPayload, verifyTotp, deriveTicketTotpSecret, TOTP_STEP_SECONDS } from '@/lib/security/totp';
 import { NotificationService } from '@/lib/notifications/notification.service';
+import { requireActiveSession, serverHasAnyRole, serverIsAdmin, type ServerUser } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
+
+type ServiceClient = ReturnType<typeof getServiceRoleClient>;
+
+/**
+ * Lot 1B.6 — périmètre de scan : un ADMIN partout, un PARTENAIRE sur ses propres événements,
+ * un CONTROLEUR sur les événements auxquels il est affecté. Lève une erreur si la vérification
+ * elle-même échoue (aucun accès accordé par défaut).
+ */
+async function canScanEvent(supabase: ServiceClient, user: ServerUser, eventId: string): Promise<boolean> {
+    if (serverIsAdmin(user)) return true;
+    if (user.roles.includes('PARTENAIRE')) {
+        const { data: owned, error } = await supabase
+            .from('events')
+            .select('id, partners!inner(user_id)')
+            .eq('id', eventId)
+            .eq('partners.user_id', user.id)
+            .maybeSingle();
+        if (error) throw new Error(`vérification du propriétaire de l'événement : ${error.message}`);
+        if (owned) return true;
+    }
+    if (user.roles.includes('CONTROLEUR')) {
+        const { data: assigned, error } = await supabase
+            .from('event_controllers')
+            .select('id')
+            .eq('event_id', eventId)
+            .eq('user_id', user.id)
+            .maybeSingle();
+        if (error) throw new Error(`vérification de l'affectation du contrôleur : ${error.message}`);
+        if (assigned) return true;
+    }
+    return false;
+}
 
 /**
  * POST /api/tickets/verify
@@ -13,6 +46,13 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
     try {
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
+        if (!serverHasAnyRole(user, ['CONTROLEUR', 'PARTENAIRE', 'ADMIN', 'SUPERADMIN'])) {
+            return NextResponse.json({ error: 'Vérification réservée aux contrôleurs, partenaires et administrateurs.', code: 'FORBIDDEN_ROLE' }, { status: 403 });
+        }
+
         let body: { qrCode?: string; ticketNumber?: string };
         try {
             body = await req.json();
@@ -74,6 +114,11 @@ export async function POST(req: NextRequest) {
                 status: 'invalid',
                 message: 'Billet inexistant ou QR Code non reconnu.',
             });
+        }
+
+        if (!(await canScanEvent(supabase, user, ticket.event_id))) {
+            console.warn(`[tickets/verify] compte ${user.id} hors périmètre de l'événement ${ticket.event_id}`);
+            return NextResponse.json({ error: 'Ce billet ne relève pas de vos événements.', code: 'FORBIDDEN_EVENT' }, { status: 403 });
         }
 
         const eventData = ticket.events as any;
@@ -147,13 +192,14 @@ export async function POST(req: NextRequest) {
             .update({
                 status: 'UTILISE',
                 checked_in_at: now,
+                checked_in_by: user.id,
             })
             .eq('id', ticket.id);
 
-        // 5. Journal d'audit du scan
+        // 5. Journal d'audit du scan (auteur : le compte qui scanne)
         await AdminService.logAudit({
-            userId: ticket.user_id || 'controller-scan',
-            userRole: 'CONTROLEUR',
+            userId: user.id,
+            userRole: user.role,
             action: 'TICKET_SCAN',
             objectType: 'tickets',
             objectId: ticket.id,

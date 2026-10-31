@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
+import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,8 +26,10 @@ export async function GET(req: NextRequest) {
         if (adminAuth.authorized) {
             isAuthorized = true;
         } else {
-            const authUser = await getAuthenticatedUser(req);
-            if (authUser && (filePath.startsWith(`${authUser.id}/`) || filePath.startsWith(`temp_`) || filePath.startsWith(`pending_registrations/`))) {
+            const activeSession = await requireActiveSession(req);
+            if (activeSession.response) return activeSession.response;
+            const authUser = activeSession.user;
+            if (filePath.startsWith(`${authUser.id}/`) || filePath.startsWith(`temp_`) || filePath.startsWith(`pending_registrations/`)) {
                 isAuthorized = true;
             }
         }

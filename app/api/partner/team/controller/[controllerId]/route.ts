@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
@@ -23,7 +23,9 @@ export async function DELETE(
     context: { params: Promise<{ controllerId: string }> | { controllerId: string } }
 ) {
     try {
-        const user = await getServerSessionUser(req);
+        const activeSession = await requireActiveSession(req);
+        if (activeSession.response) return activeSession.response;
+        const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         }
@@ -103,17 +105,13 @@ export async function DELETE(
             isExclusivelyInThisTeam = remainingAssignments === 0;
 
             if (isExclusivelyInThisTeam) {
-                // MULTI-RÔLE : retirer CONTROLEUR de user_roles, le trigger sync users.role
-                try {
-                    await removeUserRole(controllerId, 'CONTROLEUR');
-                } catch (roleErr) {
-                    console.warn('[DELETE team/controller] removeUserRole fallback:', roleErr);
+                // MULTI-RÔLE : retirer CONTROLEUR de user_roles ; le trigger recalcule users.role.
+                // Lot 1B.6 : le statut du compte n'est jamais modifié par une route partenaire.
+                const { error: roleErr } = await removeUserRole(controllerId, 'CONTROLEUR');
+                if (roleErr) {
+                    console.error('[DELETE team/controller] retrait du rôle CONTROLEUR :', roleErr);
+                    return NextResponse.json({ error: 'Retrait du rôle Contrôleur impossible.' }, { status: 500 });
                 }
-
-                await supabase.from('users').update({
-                    role: 'CLIENT',
-                    status: 'ACTIF',
-                }).eq('id', controllerId);
             }
         }
 
@@ -125,18 +123,19 @@ export async function DELETE(
             .maybeSingle();
 
         // 5. Si le contrôleur n'a plus d'autres affectations partenaires (Cas A - Exclusif) :
-        // Le rôle est rétrogradé vers 'CLIENT' et le statut reste strictement 'ACTIF' pour préserver son compte
+        // le rôle CONTROLEUR est retiré de user_roles (le trigger recalcule users.role) ;
+        // le statut du compte n'est pas modifié (lot 1B.6 : un compte SUSPENDU le reste).
         if (isExclusivelyInThisTeam && ctrlProfile) {
-            await supabase.from('user_roles').delete().eq('user_id', controllerId).eq('role', 'CONTROLEUR');
+            const { error: roleDelErr } = await supabase.from('user_roles').delete().eq('user_id', controllerId).eq('role', 'CONTROLEUR');
+            if (roleDelErr) {
+                console.error('[DELETE team/controller] retrait du rôle CONTROLEUR :', roleDelErr.message);
+                return NextResponse.json({ error: 'Retrait du rôle Contrôleur impossible.' }, { status: 500 });
+            }
 
-            await supabase.from('users').update({
-                role: 'CLIENT',
-                status: 'ACTIF',
-            }).eq('id', controllerId);
-
-            await supabase.auth.admin.updateUserById(controllerId, {
-                user_metadata: { role: 'CLIENT', is_temporary_controller_account: false },
+            const { error: metaErr } = await supabase.auth.admin.updateUserById(controllerId, {
+                user_metadata: { is_temporary_controller_account: false },
             });
+            if (metaErr) console.warn('[DELETE team/controller] métadonnée is_temporary_controller_account :', metaErr.message);
 
             // Invalider les sessions GoTrue actives pour purger l'ancien token JWT CONTROLEUR
             try {
