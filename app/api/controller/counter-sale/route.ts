@@ -25,7 +25,7 @@ const REFUSAL_STATUS: Record<string, number> = {
 
 /**
  * POST /api/controller/counter-sale — vente au guichet en espèces (lot 4.6, remplace l'ancienne route
- * /api/events/[id]/tickets/purchase). Contrôleur affecté à l'événement avec la permission espèces et
+ * d'émission par le staff, désactivée au lot 2 puis supprimée). Contrôleur affecté à l'événement avec la permission espèces et
  * une caisse ouverte ; contrôles de vente (catégorie active, stock sous verrou) ; prix facial, aucun
  * frais Event Village (CDC §76) ; paiement hors plateforme rattaché à la caisse ; aucune écriture au
  * grand livre. Le billet va au compte du numéro de l'acheteur s'il existe, sinon au vendeur.
