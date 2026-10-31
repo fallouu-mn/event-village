@@ -51,3 +51,22 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- 1A.2 — otp_codes (R2) : RLS activée, aucune politique, aucun privilège pour anon / authenticated
+-- ----------------------------------------------------------------------------
+-- Toutes les lectures et écritures applicatives passent par le service_role (routes
+-- /api/auth/*, /api/controller/setup, /api/partner/*, lib/security/sensitive-action.service.ts).
+ALTER TABLE public.otp_codes ENABLE ROW LEVEL SECURITY;
+
+DO $$
+DECLARE
+    r record;
+BEGIN
+    FOR r IN SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'otp_codes' LOOP
+        EXECUTE format('DROP POLICY %I ON public.otp_codes', r.policyname);
+    END LOOP;
+END $$;
+
+REVOKE ALL ON TABLE public.otp_codes FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.otp_codes TO service_role;
