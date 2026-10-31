@@ -24,7 +24,7 @@ import { GET as partnerEvents } from '../../app/api/partner/events/route';
 import { POST as partnerActivation } from '../../app/api/partner/activation/route';
 import { GET as liveCode } from '../../app/api/tickets/[id]/live-code/route';
 import { GET as listTickets } from '../../app/api/tickets/route';
-import { POST as verifyTicket } from '../../app/api/tickets/verify/route';
+import { POST as scanTicket } from '../../app/api/controller/scan/route';
 import { BASE_URL, jsonRequest, randomEmail, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
 import { NextRequest } from 'next/server';
 
@@ -202,51 +202,67 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
     });
 
     test('vérification de billet : refusée à un CLIENT et au partenaire d’un autre événement, acceptée pour le contrôleur affecté', async () => {
-        // Billet dédié (la vérification réussie le composte) sur A_PUBLIE, appartenant à CLIENT_BIS.
+        // Lot 4.3 : /api/tickets/verify supprimée, voie de scan unique /api/controller/scan (saisie manuelle,
+        // pièce d'identité vérifiée). Événement dédié du partenaire A, ouvert au contrôle (fenêtre de scan),
+        // où CONTROLLER_A est affecté ; billet dédié (la vérification réussie le composte) appartenant à CLIENT_BIS.
         const fx = await loadFixtures();
+        const service = getServiceRoleClient();
         const suffix = Math.random().toString(36).slice(2, 10).toUpperCase();
         const ticketNumber = `TCK-VERIFY-${suffix}`;
-        // Lot 2 : un billet payant VALIDE a son paiement SUCCESS et sa réservation convertie
-        // (invariant global vérifié par les suites de paiement).
+        const start = new Date(Date.now() + 3600_000);
+        const end = new Date(start.getTime() + 4 * 3600_000);
+        const { data: ev, error: evErr } = await service.from('events').insert({
+            partner_id: fx.partners.A.id, title: `TEST Vérification ${suffix}`, description: 'Événement dédié au contrôle des droits de vérification.',
+            start_date: start.toISOString().slice(0, 10), start_time: start.toISOString().slice(11, 19),
+            end_date: end.toISOString().slice(0, 10), end_time: end.toISOString().slice(11, 19),
+            location: 'Salle de test, Dakar', city: 'Dakar', capacity: 20, status: 'PUBLIE',
+        }).select('id').single();
+        assert.equal(evErr, null, `événement dédié : ${evErr?.message}`);
         const price = fx.events.A_PUBLIE.categories.Standard.price;
-        const { data: pay, error: payErr } = await getServiceRoleClient().from('payments').insert({
+        const { data: cat, error: catErr } = await service.from('ticket_categories').insert({
+            event_id: ev!.id, name: 'Standard', price, total_quantity: 10, sold_quantity: 1, is_active: true, is_visible: true,
+        }).select('id').single();
+        assert.equal(catErr, null, `catégorie dédiée : ${catErr?.message}`);
+        const { error: assignErr } = await service.from('event_controllers').insert({
+            event_id: ev!.id, user_id: fx.users.CONTROLLER_A.id, can_accept_cash: false, created_by: fx.partners.A.userId,
+        });
+        assert.equal(assignErr, null, `affectation de CONTROLLER_A : ${assignErr?.message}`);
+        // Lot 2 : un billet payant VALIDE a son paiement SUCCESS et sa réservation convertie (invariant global) ;
+        // lot 3 : répartition explicite du paiement (fixture sans frais de service).
+        const { data: pay, error: payErr } = await service.from('payments').insert({
             transaction_id: `TX-VERIFY-${suffix}`, client_id: fx.users.CLIENT_BIS.id, payment_target: 'TICKET', amount: price,
+            facial_amount: price, partner_payout_amount: price,
             currency: 'XOF', is_platform_payment: true, status: 'SUCCESS', paid_at: new Date().toISOString(),
         }).select('id').single();
         assert.equal(payErr, null, `paiement du billet dédié : ${payErr?.message}`);
-        const { error: resErr } = await getServiceRoleClient().from('stock_reservations').insert({
-            payment_id: pay!.id, category_id: fx.events.A_PUBLIE.categories.Standard.id, quantity: 1, unit_price: price,
+        const { error: resErr } = await service.from('stock_reservations').insert({
+            payment_id: pay!.id, category_id: cat!.id, quantity: 1, unit_price: price,
             status: 'CONVERTED', expires_at: new Date().toISOString(), closed_at: new Date().toISOString(), close_reason: 'TEST',
         });
         assert.equal(resErr, null, `réservation convertie du billet dédié : ${resErr?.message}`);
-        const { error: insErr } = await getServiceRoleClient().from('tickets').insert({
-            payment_id: pay!.id,
-            event_id: fx.events.A_PUBLIE.id,
-            category_id: fx.events.A_PUBLIE.categories.Standard.id,
-            user_id: fx.users.CLIENT_BIS.id,
-            ticket_number: ticketNumber,
-            qr_code: `EV-QR-VERIFY-${suffix}`,
-            price: fx.events.A_PUBLIE.categories.Standard.price,
-            status: 'VALIDE',
+        const { error: insErr } = await service.from('tickets').insert({
+            payment_id: pay!.id, event_id: ev!.id, category_id: cat!.id, user_id: fx.users.CLIENT_BIS.id,
+            ticket_number: ticketNumber, qr_code: `EV-QR-VERIFY-${suffix}`, price, status: 'VALIDE',
         });
         assert.equal(insErr, null, `billet dédié : ${insErr?.message}`);
+        const manual = { eventId: ev!.id, manualTicketNumber: ticketNumber, identityVerified: true };
 
         const client = await signInAs('CLIENT_BIS');
-        const asClient = await verifyTicket(jsonRequest('/api/tickets/verify', { ticketNumber }, bearer(client.accessToken)));
+        const asClient = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(client.accessToken)));
         assert.equal(asClient.status, 403, `CLIENT : HTTP ${asClient.status} ${JSON.stringify(await asClient.json()).slice(0, 300)}`);
 
         const partnerB = await signInAs('PARTNER_B');
-        const asOtherPartner = await verifyTicket(jsonRequest('/api/tickets/verify', { ticketNumber }, bearer(partnerB.accessToken)));
+        const asOtherPartner = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(partnerB.accessToken)));
         assert.equal(asOtherPartner.status, 403, `partenaire B : HTTP ${asOtherPartner.status} ${JSON.stringify(await asOtherPartner.json()).slice(0, 300)}`);
 
-        const { data: still } = await getServiceRoleClient().from('tickets').select('status').eq('ticket_number', ticketNumber).single();
+        const { data: still } = await service.from('tickets').select('status').eq('ticket_number', ticketNumber).single();
         assert.equal(still?.status, 'VALIDE', 'le billet ne doit pas avoir été composté par un compte hors périmètre');
 
         const controller = await signInAs('CONTROLLER_A');
-        const asController = await verifyTicket(jsonRequest('/api/tickets/verify', { ticketNumber }, bearer(controller.accessToken)));
+        const asController = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(controller.accessToken)));
         const body = await asController.json();
         assert.equal(asController.status, 200, `contrôleur affecté : HTTP ${asController.status} ${JSON.stringify(body).slice(0, 300)}`);
-        assert.equal(body.status, 'valid');
+        assert.equal(body.result, 'valid');
     });
 
     test('toutes les routes /api/partner/* et /api/tickets/* passent par le helper commun', () => {

@@ -16,7 +16,7 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['create_hall_reservation_atomic', { p_hall_id: ZERO_UUID, p_client_id: ZERO_UUID, p_start_date: '2030-01-01', p_end_date: '2030-01-02' }],
     ['create_table_reservation_atomic', { p_table_id: ZERO_UUID, p_client_id: ZERO_UUID, p_reservation_date: '2030-01-01', p_reservation_time: '20:00', p_guest_count: 2 }],
     // Lot 3 : request_withdrawal supprimée, remplacée par withdrawal_request (plus bas)
-    ['atomic_ticket_checkin', { p_ticket_id: ZERO_UUID, p_controller_id: ZERO_UUID }],
+    // Lot 4 : atomic_ticket_checkin supprimée, remplacée par ticket_scan (plus bas)
     ['atomic_partner_remove_controller', { p_partner_id: ZERO_UUID, p_controller_id: ZERO_UUID }],
     ['generate_referral_code', { p_user_id: ZERO_UUID, p_phone: '770000000' }],
     // Lot 2 : chaîne paiement → billet (service_role uniquement)
@@ -40,6 +40,14 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['referral_commissions_release', {}],
     ['finance_partner_summary', { p_partner_id: ZERO_UUID, p_event_id: null }],
     ['finance_platform_revenue', { p_from: null, p_to: null }],
+    // Lot 4 : contrôle d'accès et caisse (service_role uniquement)
+    ['ticket_scan', { p: {} }],
+    ['ticket_cash_checkin', { p: {} }],
+    ['counter_sale', { p: {} }],
+    ['shift_open', { p: {} }],
+    ['ticket_transfer_claim', { p_transfer_id: ZERO_UUID, p_recipient: ZERO_UUID }],
+    ['scan_scanner_authorized', { p_scanner: ZERO_UUID, p_event: ZERO_UUID }],
+    ['scan_event_problem', { p_event: ZERO_UUID }],
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */

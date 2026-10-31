@@ -76,6 +76,9 @@ export async function middleware(req: NextRequest) {
     const isAdminArea = pathname.startsWith('/admin') || pathname.startsWith('/api/admin');
     const isScanArea = pathname === '/scan' || pathname.startsWith('/scan/') || pathname === '/partner/scan' || pathname.startsWith('/partner/scan/');
     const isControllerArea = pathname.startsWith('/controller') || pathname.startsWith('/api/controller');
+    // Lot 4.3 : voie de scan unique et caisse partagées par le contrôleur, le partenaire propriétaire
+    // et l'admin ; chaque route vérifie elle-même le droit sur l'événement (affectation ou propriété).
+    const isSharedControlApi = pathname === '/api/controller/scan' || pathname.startsWith('/api/controller/shifts');
     const isPartnerArea = pathname.startsWith('/partner') && pathname !== '/partner/register';
 
     let supabaseResponse = NextResponse.next({ request: req });
@@ -198,7 +201,10 @@ export async function middleware(req: NextRequest) {
             console.error(`[middleware] lecture du statut impossible pour ${user.id} :`, profileError.code, profileError.message);
             return deny('Vérification du compte impossible. Réessayez.', '/login?error=unauthorized_controller', 503);
         }
-        if (!dbProfile || dbProfile.status !== 'ACTIF' || !hasAnyRole(roles, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'])) {
+        const allowedRoles: Parameters<typeof hasAnyRole>[1] = isSharedControlApi
+            ? ['CONTROLEUR', 'PARTENAIRE', 'ADMIN', 'SUPERADMIN']
+            : ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'];
+        if (!dbProfile || dbProfile.status !== 'ACTIF' || !hasAnyRole(roles, allowedRoles)) {
             return deny('Accès non autorisé : Rôle Contrôleur actif requis.', '/login?error=unauthorized_controller');
         }
         return supabaseResponse;
