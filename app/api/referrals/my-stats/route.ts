@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { accountBalance } from '@/lib/finance/ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,24 +85,31 @@ export async function GET(req: NextRequest) {
             n2Count = n2Relationships?.length || 0;
         }
 
-        // 6. Commissions réelles (colonnes : sponsor_id, amount, generation, status)
-        const { data: commissions } = await supabase
+        // 6. Commissions (lot 3.5) : statut, échéance et nature (commission ou régularisation)
+        const { data: commissions, error: commErr } = await supabase
             .from('referral_commissions')
-            .select('id, amount, generation, status, created_at')
+            .select('id, amount, generation, status, kind, available_at, cancellation_reason, created_at')
             .eq('sponsor_id', userId)
             .order('created_at', { ascending: false });
+        if (commErr) throw new Error(`Lecture des commissions impossible : ${commErr.message}`);
+        // Total gagné : commissions non annulées, régularisations (négatives) déduites
+        const totalEarned = (commissions ?? [])
+            .filter((c) => c.kind === 'REGULARISATION' || c.status !== 'CANCELLED')
+            .reduce((acc, c) => acc + Number(c.amount), 0);
 
-        const totalEarned = commissions?.reduce((acc: number, c: { amount: unknown }) => acc + (Number(c.amount) || 0), 0) || 0;
-
-        // 7. Retraits effectués (statuts non REJECTED)
-        const { data: withdrawals } = await supabase
+        // 7. Retraits de parrainage effectivement payés (montant brut)
+        const { data: withdrawals, error: wErr } = await supabase
             .from('withdrawals')
-            .select('id, amount, status')
+            .select('gross_amount')
             .eq('user_id', userId)
-            .neq('status', 'REJECTED');
+            .eq('account_kind', 'PARRAINAGE')
+            .eq('status', 'PAID');
+        if (wErr) throw new Error(`Lecture des retraits impossible : ${wErr.message}`);
+        const totalWithdrawn = (withdrawals ?? []).reduce((acc, w) => acc + Number(w.gross_amount), 0);
 
-        const totalWithdrawn = withdrawals?.reduce((acc: number, w: { amount: unknown }) => acc + (Number(w.amount) || 0), 0) || 0;
-        const availableBalance = Math.max(0, totalEarned - totalWithdrawn);
+        // 8. Solde : grand livre PARRAINAGE (une commission en attente n'est pas disponible)
+        const balance = await accountBalance(userId, 'PARRAINAGE');
+        const availableBalance = balance.available;
 
         return NextResponse.json({
             success: true,
@@ -119,10 +127,13 @@ export async function GET(req: NextRequest) {
             },
             finances: {
                 availableBalance,
-                totalEarned,
+                pendingBalance: balance.pending,
+                nextAvailableAt: balance.next_available_at,
+                withdrawable: balance.withdrawable,
+                totalEarned: Math.round(totalEarned * 100) / 100,
                 totalWithdrawn,
             },
-            // Les 10 dernières commissions — champs réels : amount, generation ('N1'|'N2')
+            // Les 10 dernières lignes : montant, niveau, statut, échéance, nature
             recentCommissions: commissions?.slice(0, 10) || [],
         });
     } catch (err: unknown) {
