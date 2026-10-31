@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             const { data } = await supabase
                 .from('partners')
                 .select('id, company_name, commercial_name')
-                .or(`commercial_name.ilike.%${cleanSlug}%,company_name.ilike.%${cleanSlug}%`)
+                .or(`commercial_name.ilike.${pgIlikeContains(cleanSlug)},company_name.ilike.${pgIlikeContains(cleanSlug)}`) // lot 1C.1
                 .limit(1)
                 .maybeSingle();
             partner = data;

@@ -9,6 +9,7 @@ import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from 
 import { ShiftService } from '@/lib/shifts/shift.service';
 import { grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
+import { maskPersonName } from '@/lib/security/mask';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,17 +128,13 @@ export async function PATCH(req: NextRequest) {
 
         if (!alreadyController) {
             if (!confirm_promotion) {
-                const clientFullName = [ctrlUser.first_name, ctrlUser.last_name].filter(Boolean).join(' ') || 'Utilisateur';
+                // Lot 1C.1 : nom masqué seulement (ni téléphone, ni rôles) pour un identifiant quelconque.
+                const displayName = maskPersonName(ctrlUser.first_name, ctrlUser.last_name);
                 return NextResponse.json({
                     requires_confirmation: true,
-                    existing_user: {
-                        id: ctrlUser.id,
-                        first_name: ctrlUser.first_name,
-                        last_name: ctrlUser.last_name,
-                        phone: ctrlUser.phone,
-                        role: ctrlUser.role,
-                    },
-                    message: `Compte existant détecté — ${clientFullName} (${ctrlUser.phone}) possède le rôle ${ctrlUser.role}. Voulez-vous lui attribuer le rôle Contrôleur pour vos événements ?`,
+                    code: 'EXISTING_ACCOUNT',
+                    existing_user: { display_name: displayName },
+                    message: `Ce compte (${displayName}) n'est pas encore contrôleur. Confirmez-vous son affectation à vos événements ?`,
                 }, { status: 200 });
             }
 

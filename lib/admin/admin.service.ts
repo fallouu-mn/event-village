@@ -363,7 +363,7 @@ export class AdminService {
             originalPhone
                 ? (supabase.from('otp_codes') as any)
                     .delete()
-                    .or(`phone.eq.${originalPhone},phone.eq.${originalPhone.replace('+', '')},phone.eq.${anonymizedPhone}`)
+                    .in('phone', [originalPhone, originalPhone.replace('+', ''), anonymizedPhone]) // lot 1C.1 : plus de filtre texte
                 : Promise.resolve({ error: null }),
         ]);
         const cleanupLabels = ['event_controllers', 'user_roles CONTROLEUR', 'admin_permissions', 'otp_codes'];

@@ -4,6 +4,7 @@ import { NotificationService } from '../notifications/notification.service';
 import { mTargetService } from '../sms/mtarget.service';
 import { EmailService, EmailTemplates } from '../email/email.service';
 import { randomUUID } from 'crypto';
+import { pgEscapeLike } from '@/lib/security/postgrest-filter';
 
 export type EventStatus = 'BROUILLON' | 'EN_ATTENTE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'TERMINE' | 'ANNULE';
 
@@ -198,7 +199,7 @@ export class EventService {
         }
 
         if (options?.search && options.search.trim()) {
-            query = query.ilike('title', `%${options.search.trim()}%`);
+            query = query.ilike('title', `%${pgEscapeLike(options.search.trim())}%`); // lot 1C.1 : jokers échappés
         }
 
         const { data, error } = await query;

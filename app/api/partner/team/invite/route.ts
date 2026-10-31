@@ -4,7 +4,8 @@ import { randomInt } from 'crypto';
 import crypto from 'crypto';
 import { requireActiveSession, serverIsPartner, serverHasRole, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { normalizePhoneNumber } from '@/lib/validations/auth';
+import { phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
+import { maskPersonName } from '@/lib/security/mask';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { storeOtp } from '@/lib/auth/otp-store';
 import { AdminService } from '@/lib/admin/admin.service';
@@ -64,7 +65,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: parse.error.errors[0]?.message || 'Données invalides.' }, { status: 400 });
         }
 
-        const { event_id, event_ids, phone, first_name, last_name, email, can_accept_cash, resend, confirm_promotion } = parse.data;
+        // Lot 1C.1 : `email` et les noms saisis ne s'appliquent jamais à un compte existant, et un
+        // compte créé par invitation reçoit l'email de connexion synthétique lié au numéro.
+        const { event_id, event_ids, phone, first_name, last_name, can_accept_cash, confirm_promotion } = parse.data;
         const targetEventIds = (event_ids && event_ids.length > 0)
             ? Array.from(new Set(event_ids))
             : (event_id ? [event_id] : []);
@@ -74,7 +77,15 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = getServiceRoleClient();
-        const normalizedPhone = normalizePhoneNumber(phone.trim());
+        // Lot 1C.1 : numéro mobile sénégalais E.164 exigé (plus de recherche par suffixe)
+        const e164 = toSenegaleseE164(phone);
+        if (!e164) {
+            return NextResponse.json({
+                error: 'Numéro de téléphone sénégalais invalide (ex : 77 123 45 67).',
+                code: 'INVALID_PHONE',
+            }, { status: 400 });
+        }
+        const normalizedPhone = e164;
 
         // 0. Rate limiting (Faille 2.2 & Hardening) — invitations SMS (20/24h et 20/h par partenaire, 3/jour par numéro cible)
         const partnerDailyRateKey  = `sms_daily_quota_partner:${user.id}`;
@@ -140,15 +151,24 @@ export async function POST(req: NextRequest) {
         let controllerUserId: string;
         let isNewUser = false;
 
-        const rawDigits = normalizedPhone.replace(/\D/g, '');
-        const suffix9 = rawDigits.slice(-9);
-
-        const { data: existingProfile } = await supabase
+        // Lot 1C.1 : égalité exacte sur les deux formes stockées du même numéro (+221… et 221…)
+        const { data: matches, error: lookupErr } = await supabase
             .from('users')
-            .select('id, role, status, first_name, last_name, email')
-            .or(`phone.eq.${normalizedPhone},phone.eq.${phone.trim()},phone.ilike.%${suffix9}`)
-            .limit(1)
-            .maybeSingle();
+            .select('id, role, status, first_name, last_name')
+            .in('phone', phoneStorageForms(normalizedPhone))
+            .limit(2);
+        if (lookupErr) {
+            console.error('[invite-controller] recherche du compte par téléphone :', lookupErr.message);
+            return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+        }
+        if ((matches ?? []).length > 1) {
+            console.error(`[invite-controller] plusieurs comptes portent le numéro ${normalizedPhone}`);
+            return NextResponse.json({
+                error: 'Plusieurs comptes correspondent à ce numéro. Contactez le support.',
+                code: 'AMBIGUOUS_PHONE',
+            }, { status: 409 });
+        }
+        const existingProfile = (matches ?? [])[0] ?? null;
 
         if (existingProfile) {
             // Lot 1B.6 : un compte non ACTIF (SUSPENDU, SUPPRIME…) n'est jamais réactivé par une invitation.
@@ -178,22 +198,20 @@ export async function POST(req: NextRequest) {
                 existingProfile.role === 'SUPERADMIN';
 
             if (!alreadyController) {
-                if (!confirm_promotion && !resend) {
-                    const clientFullName = [existingProfile.first_name, existingProfile.last_name].filter(Boolean).join(' ') || 'Utilisateur';
+                // Lot 1C.1 : confirmation explicite obligatoire (« resend » ne la contourne plus).
+                // Le partenaire ne voit que le nom masqué du titulaire : ni identifiant, ni rôles.
+                if (!confirm_promotion) {
+                    const displayName = maskPersonName(existingProfile.first_name, existingProfile.last_name);
                     return NextResponse.json({
                         requires_confirmation: true,
-                        existing_user: {
-                            id: existingProfile.id,
-                            first_name: existingProfile.first_name,
-                            last_name: existingProfile.last_name,
-                            phone: normalizedPhone,
-                            role: existingProfile.role,
-                        },
-                        message: `Compte existant détecté — ${clientFullName} (${normalizedPhone}) possède déjà un compte Event Village (${currentRoles.join(', ')}). Voulez-vous lui attribuer le rôle Contrôleur pour vos événements ?`,
+                        code: 'EXISTING_ACCOUNT',
+                        existing_user: { display_name: displayName, phone: normalizedPhone },
+                        message: `Ce numéro appartient déjà à un compte Event Village (${displayName}). Confirmez-vous l'affectation de ce titulaire comme contrôleur de vos événements ? Son identité et ses identifiants ne seront pas modifiés.`,
                     }, { status: 200 });
                 }
 
-                // MULTI-RÔLE : AJOUTER CONTROLEUR sans détruire les rôles existants
+                // MULTI-RÔLE : ajout de CONTROLEUR sans toucher au compte (ni nom, ni email,
+                // ni téléphone, ni mot de passe, ni statut). users.role est recalculé par le trigger.
                 const { error: roleError } = await addUserRole(existingProfile.id, 'CONTROLEUR');
                 if (roleError) {
                     console.error('[invite] Ajout rôle CONTROLEUR échoué:', roleError);
@@ -201,33 +219,13 @@ export async function POST(req: NextRequest) {
                         error: 'Impossible d\'ajouter le rôle Contrôleur. Réessayez.',
                     }, { status: 500 });
                 }
-
-                // Infos complémentaires. Le rôle legacy users.role est recalculé par le trigger de
-                // synchronisation depuis user_roles ; le statut n'est jamais modifié ici (lot 1B.6).
-                await supabase.from('users').update({
-                    ...(first_name && first_name !== 'Contrôleur' ? { first_name } : {}),
-                    ...(last_name ? { last_name } : {}),
-                    ...(email ? { email } : {}),
-                    updated_at: new Date().toISOString(),
-                }).eq('id', existingProfile.id);
-
-                try {
-                    await supabase.auth.admin.signOut(existingProfile.id, 'global');
-                } catch (signoutErr) {
-                    console.warn('[invite] signOut session notice:', signoutErr);
-                }
-            } else if (first_name && first_name !== 'Contrôleur') {
-                await supabase.from('users').update({
-                    first_name,
-                    ...(last_name ? { last_name } : {}),
-                    ...(email ? { email } : {}),
-                    updated_at: new Date().toISOString(),
-                }).eq('id', existingProfile.id);
             }
         } else {
             isNewUser = true;
             const tempPassword = crypto.randomUUID();
-            const contactEmail = (email && email.trim()) ? email.trim().toLowerCase() : `${normalizedPhone.replace('+', '')}@eventvillage.sn`;
+            // Lot 1C.1 : email de connexion synthétique lié au numéro, jamais choisi par le partenaire
+            // (sinon le partenaire pourrait réinitialiser le mot de passe du contrôleur par email).
+            const contactEmail = `${normalizedPhone.replace('+', '')}@eventvillage.sn`;
             const cleanFirstName = (first_name || 'Contrôleur').trim();
             const cleanLastName = (last_name || '').trim();
 
@@ -358,16 +356,20 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 4. Génération OTP d'activation (24h) + envoi SMS
+        // 4. Code d'activation (24 h) : seulement pour un compte créé par cette invitation. Un compte
+        //    existant garde ses identifiants ; aucun code n'est émis sur son numéro (lot 1C.1 :
+        //    un code émis remplaçait le code en attente du titulaire).
         const otpCode   = randomInt(100000, 1000000).toString();
         const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
-        // Lot 1B.7 : code d'activation en base uniquement (vérifié par /api/controller/setup).
-        try {
-            await storeOtp(normalizedPhone, otpCode, new Date(expiresAt));
-        } catch (storeErr) {
-            console.error('[invite-controller]', storeErr instanceof Error ? storeErr.message : storeErr);
-            return NextResponse.json({ error: 'Impossible de préparer le code d\'activation. Réessayez.' }, { status: 500 });
+        if (isNewUser) {
+            // Lot 1B.7 : code d'activation en base uniquement (vérifié par /api/controller/setup).
+            try {
+                await storeOtp(normalizedPhone, otpCode, new Date(expiresAt));
+            } catch (storeErr) {
+                console.error('[invite-controller]', storeErr instanceof Error ? storeErr.message : storeErr);
+                return NextResponse.json({ error: 'Impossible de préparer le code d\'activation. Réessayez.' }, { status: 500 });
+            }
         }
 
         const baseUrl   = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -380,15 +382,16 @@ export async function POST(req: NextRequest) {
                     normalizedPhone,
                     otpCode,
                     setupLink,
-                    first_name && first_name !== 'Contrôleur' ? first_name : existingProfile?.first_name
+                    first_name && first_name !== 'Contrôleur' ? first_name : undefined
                 );
                 smsSent = smsRes.success;
                 if (!smsRes.success) {
                     console.warn('[invite-controller] SMS mTarget non délivré:', smsRes.error);
                 }
             } else {
-                // Compte client existant : possède déjà son propre mot de passe
-                const name = (first_name && first_name !== 'Contrôleur' ? first_name : existingProfile?.first_name) || '';
+                // Compte client existant : possède déjà son propre mot de passe ; le SMS le salue par
+                // le prénom de son profil, jamais par un nom saisi par le partenaire.
+                const name = existingProfile?.first_name || '';
                 const greeting = name.trim() ? `Bonjour ${name.trim()}, ` : '';
                 const countEv = targetEventIds.length;
                 const evSuffix = countEv > 1 ? `pour ${countEv} événements` : `pour l'événement`;
@@ -425,7 +428,7 @@ export async function POST(req: NextRequest) {
             assignment:   finalAssignments[0] || null,
             is_new_user:  isNewUser,
             message:      actionMsg,
-            otp_code:     process.env.NODE_ENV !== 'production' ? otpCode : undefined,
+            // Lot 1C.1 : le code d'activation n'est jamais renvoyé au partenaire (il part par SMS).
         }, { status: anyNewlyAssigned || isNewUser ? 201 : 200 });
 
     } catch (err: unknown) {

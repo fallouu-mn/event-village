@@ -16,12 +16,10 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { isEventEligibleForController } from '@/lib/events/event-status';
 
 interface ExistingAccountConfirmState {
+    // Lot 1C.1 : le serveur ne renvoie que le nom masqué du titulaire et le numéro saisi.
     existingUser: {
-        id: string;
-        first_name: string;
-        last_name: string;
+        display_name: string;
         phone: string;
-        role: string;
     };
     eventIds: string[];
     canAcceptCash: boolean;
@@ -205,8 +203,6 @@ export default function PartnerEventTeamPage() {
                 body: JSON.stringify({
                     event_id: eventId,
                     phone: existingAccountConfirm.existingUser.phone,
-                    first_name: existingAccountConfirm.existingUser.first_name || 'Contrôleur',
-                    last_name: existingAccountConfirm.existingUser.last_name || '',
                     can_accept_cash: existingAccountConfirm.canAcceptCash,
                     confirm_promotion: true,
                 }),
@@ -553,21 +549,15 @@ export default function PartnerEventTeamPage() {
                     <div className="space-y-4 py-2">
                         <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-zinc-700/80 space-y-2">
                             <div className="flex items-center justify-between text-sm">
-                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Nom complet</span>
+                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Titulaire du compte</span>
                                 <span className="font-semibold text-slate-900 dark:text-white">
-                                    {[existingAccountConfirm.existingUser.first_name, existingAccountConfirm.existingUser.last_name].filter(Boolean).join(' ') || 'Utilisateur sans nom'}
+                                    {existingAccountConfirm.existingUser.display_name}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between text-sm">
                                 <span className="text-slate-500 dark:text-zinc-400 font-medium">Numéro de téléphone</span>
                                 <span className="font-mono font-medium text-slate-900 dark:text-white">
                                     {existingAccountConfirm.existingUser.phone}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Rôle actuel</span>
-                                <span className="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                                    {existingAccountConfirm.existingUser.role}
                                 </span>
                             </div>
                         </div>

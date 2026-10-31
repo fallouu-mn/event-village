@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { normalizePhoneNumber } from '@/lib/validations/auth';
+import { phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
 import { checkStoredOtp, consumeStoredOtp, otpFailureMessage } from '@/lib/auth/otp-store';
 import { RateLimiter } from '@/lib/security/rate-limiter';
 import { AdminService } from '@/lib/admin/admin.service';
@@ -33,7 +33,12 @@ export async function POST(req: NextRequest) {
         }
 
         const { phone, otp_code, new_password } = parse.data;
-        const normalizedPhone = normalizePhoneNumber(phone.trim());
+        // Lot 1C.1 : numéro mobile sénégalais E.164 exigé, recherche en égalité exacte.
+        const e164 = toSenegaleseE164(phone);
+        if (!e164) {
+            return NextResponse.json({ error: 'Numéro de téléphone sénégalais invalide.', code: 'INVALID_PHONE' }, { status: 400 });
+        }
+        const normalizedPhone = e164;
         const rateLimitKey    = `controller-setup:${normalizedPhone}`;
         const supabase        = getServiceRoleClient();
 
@@ -60,15 +65,19 @@ export async function POST(req: NextRequest) {
         }
 
         // 2. Récupérer l'utilisateur contrôleur
-        const rawDigits = normalizedPhone.replace(/\D/g, '');
-        const suffix9 = rawDigits.slice(-9);
-
-        const { data: profile } = await supabase
+        const { data: matches, error: lookupErr } = await supabase
             .from('users')
             .select('id, role')
-            .or(`phone.eq.${normalizedPhone},phone.eq.${phone.trim()},phone.ilike.%${suffix9}`)
-            .limit(1)
-            .maybeSingle();
+            .in('phone', phoneStorageForms(normalizedPhone))
+            .limit(2);
+        if (lookupErr) {
+            console.error('[controller/setup] recherche du compte par téléphone :', lookupErr.message);
+            return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+        }
+        if ((matches ?? []).length > 1) {
+            return NextResponse.json({ error: 'Plusieurs comptes correspondent à ce numéro. Contactez le support.', code: 'AMBIGUOUS_PHONE' }, { status: 409 });
+        }
+        const profile = (matches ?? [])[0] ?? null;
 
         if (!profile) {
             return NextResponse.json({ error: 'Aucun compte associé à ce numéro.' }, { status: 404 });

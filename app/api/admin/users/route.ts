@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
+import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { grantUserRoles, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
@@ -49,7 +50,8 @@ export async function GET(req: NextRequest) {
         }
 
         if (search) {
-            query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+            // Lot 1C.1 : terme assaini (guillemets PostgREST, jokers échappés) ; une virgule n'ajoute plus de condition
+            query = query.or(`first_name.ilike.${pgIlikeContains(search)},last_name.ilike.${pgIlikeContains(search)},email.ilike.${pgIlikeContains(search)},phone.ilike.${pgIlikeContains(search)}`);
         }
 
         const { data: users, error } = await query;

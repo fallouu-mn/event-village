@@ -20,6 +20,25 @@ export function normalizePhoneNumber(phone: string): string {
     return cleaned;
 }
 
+const SENEGAL_MOBILE_E164 = /^\+221[7][05678]\d{7}$/;
+
+/**
+ * Lot 1C.1 — numéro mobile sénégalais au format E.164 (+221XXXXXXXXX), ou null si la saisie
+ * n'en est pas un. À utiliser avant toute recherche de compte par téléphone.
+ */
+export function toSenegaleseE164(phone: string): string | null {
+    const normalized = normalizePhoneNumber(phone.trim());
+    return SENEGAL_MOBILE_E164.test(normalized) ? normalized : null;
+}
+
+/**
+ * Formes sous lesquelles un même numéro E.164 est stocké en base : « +221… » (routes serveur)
+ * et « 221… » (copie de auth.users.phone par le trigger d'inscription). Égalité exacte uniquement.
+ */
+export function phoneStorageForms(e164: string): string[] {
+    return [e164, e164.replace(/^\+/, '')];
+}
+
 /**
  * Validateur de numéro de téléphone sénégalais (Orange, Wave/Free, Expresso, Promobile)
  */

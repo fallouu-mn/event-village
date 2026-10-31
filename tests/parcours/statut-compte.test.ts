@@ -91,7 +91,10 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
         assert.ok((await auditActions(target.userId)).includes('CONTROLLER_INVITE_REFUSED_INACTIVE'), 'refus journalisé dans audit_logs');
     });
 
-    test('invitation avec l’email d’un compte existant et un autre numéro → refus, identifiants du compte intacts', async () => {
+    // Lot 1C.1 : l'email saisi par le partenaire n'est plus utilisé du tout (compte invité = email
+    // synthétique lié au numéro). L'invitation crée donc un compte distinct pour l'autre numéro, sans
+    // jamais toucher au compte qui porte cet email ; le refus 409 du lot 1B n'a plus lieu d'être.
+    test('invitation avec l’email d’un compte existant et un autre numéro → compte distinct, identifiants du titulaire intacts', async () => {
         const fx = await loadFixtures();
         const partnerA = await signInAs('PARTNER_A');
         const victim = await newAccount('victime-invite');
@@ -105,8 +108,11 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
             confirm_promotion: true,
         }, bearer(partnerA.accessToken)));
         const body = await res.json();
-        assert.equal(body.code, 'ACCOUNT_ALREADY_EXISTS', `refus attendu, HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
-        assert.equal(res.status, 409);
+        assert.ok(res.status === 200 || res.status === 201, `invitation : HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
+        const createdId = body.assignment?.user_id;
+        assert.ok(createdId && createdId !== victim.userId, `un compte distinct doit être créé : ${JSON.stringify(body).slice(0, 300)}`);
+        const { data: created } = await getServiceRoleClient().auth.admin.getUserById(createdId);
+        assert.notEqual(created.user?.email, victim.email, 'l’email du titulaire n’est pas réutilisé pour le compte invité');
 
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
         const { error: loginErr } = await anon.auth.signInWithPassword({ email: victim.email, password: STRONG_PASSWORD });
