@@ -24,6 +24,7 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const PROTECTED_KEYS = [
     'NEXT_PUBLIC_SUPABASE_URL',
     'SUPABASE_URL',
+    'SUPABASE_DB_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     'SUPABASE_ANON_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
@@ -104,6 +105,9 @@ if (!isLocalUrl(supabaseUrl)) {
 }
 if (process.env.SUPABASE_URL && !isLocalUrl(process.env.SUPABASE_URL)) {
     fail(`SUPABASE_URL pointe hors de la machine (hôte : ${hostOf(process.env.SUPABASE_URL)}).`);
+}
+if (process.env.SUPABASE_DB_URL && !isLocalUrl(process.env.SUPABASE_DB_URL)) {
+    fail(`SUPABASE_DB_URL pointe hors de la machine (hôte : ${hostOf(process.env.SUPABASE_DB_URL)}). Les tests de catalogue ne lisent que la base locale.`);
 }
 for (const key of EXTERNAL_URL_KEYS) {
     const value = process.env[key];

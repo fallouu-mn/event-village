@@ -13,11 +13,13 @@
  * Les tests résolvent les UUID via tests/helpers/fixtures.ts, jamais en dur.
  */
 import '../helpers/env';
+import { randomBytes } from 'node:crypto';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import {
     CONTROLLER_A_EVENT,
     FIXTURE_EVENTS,
     FIXTURE_PARTNERS,
+    FIXTURE_TICKETS,
     FIXTURE_USERS,
     TEST_PASSWORD,
     type FixtureEventKey,
@@ -262,6 +264,62 @@ async function ensureEvent(key: FixtureEventKey, partnerId: string): Promise<{ i
 }
 
 // ── 5. Affectation contrôleur ────────────────────────────────────────────────
+// ── 4 bis. Billet de référence et compteurs de stock cohérents ──────────────
+async function ensureFixtureTicket(
+    key: keyof typeof FIXTURE_TICKETS,
+    eventId: string,
+    categoryId: string,
+    ownerId: string
+): Promise<string> {
+    const spec = FIXTURE_TICKETS[key];
+    const { data: category, error: catErr } = await supabase.from('ticket_categories').select('price').eq('id', categoryId).single();
+    if (catErr || !category) fail(`ticket_categories.price(${key})`, catErr);
+
+    const { data: existing, error: findErr } = await supabase.from('tickets').select('id').eq('ticket_number', spec.ticketNumber).maybeSingle();
+    if (findErr) fail(`tickets.find(${key})`, findErr);
+
+    const row = {
+        event_id: eventId,
+        category_id: categoryId,
+        user_id: ownerId,
+        ticket_number: spec.ticketNumber,
+        qr_code: spec.qrCode,
+        price: category.price,
+        status: 'VALIDE',
+        checked_in_at: null,
+        checked_in_by: null,
+        updated_at: new Date().toISOString(),
+    };
+
+    if (existing) {
+        const { error } = await supabase.from('tickets').update(row).eq('id', existing.id);
+        if (error) fail(`tickets.update(${key})`, error);
+        return existing.id;
+    }
+    const { data: created, error } = await supabase
+        .from('tickets')
+        .insert({ ...row, totp_secret: randomBytes(32).toString('hex') })
+        .select('id')
+        .single();
+    if (error || !created) fail(`tickets.insert(${key})`, error);
+    return created.id;
+}
+
+/** sold_quantity = billets VALIDE/UTILISE réellement émis, held_quantity = 0 (base de référence des tests). */
+async function syncCategoryCounters(categoryId: string): Promise<void> {
+    const { count, error } = await supabase
+        .from('tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('category_id', categoryId)
+        .in('status', ['VALIDE', 'UTILISE']);
+    if (error) fail('tickets.count', error);
+    const { error: upErr } = await supabase
+        .from('ticket_categories')
+        .update({ sold_quantity: count ?? 0, held_quantity: 0, updated_at: new Date().toISOString() })
+        .eq('id', categoryId);
+    if (upErr) fail('ticket_categories.counters', upErr);
+}
+
 async function ensureControllerAssignment(eventId: string, controllerUserId: string, createdBy: string): Promise<void> {
     const { error } = await supabase
         .from('event_controllers')
@@ -301,6 +359,21 @@ async function main(): Promise<void> {
     logStep('affectation contrôleur…');
     await ensureControllerAssignment(eventIds[CONTROLLER_A_EVENT].id, userIds.CONTROLLER_A, userIds.PARTNER_A);
     summary.controller_assignment = { event: CONTROLLER_A_EVENT, controller: 'CONTROLLER_A', can_accept_cash: true };
+
+    const tickets: Record<string, string> = {};
+    for (const key of Object.keys(FIXTURE_TICKETS) as (keyof typeof FIXTURE_TICKETS)[]) {
+        const spec = FIXTURE_TICKETS[key];
+        logStep(`billet ${key}…`);
+        tickets[key] = await ensureFixtureTicket(key, eventIds[spec.event].id, eventIds[spec.event].categories[spec.category], userIds[spec.owner]);
+    }
+    summary.tickets = tickets;
+
+    logStep('compteurs de stock des catégories…');
+    for (const key of Object.keys(eventIds)) {
+        for (const categoryId of Object.values(eventIds[key].categories)) {
+            await syncCategoryCounters(categoryId);
+        }
+    }
 
     console.log(JSON.stringify(summary, null, 2));
     console.log(`[seed-test] OK en ${((Date.now() - started) / 1000).toFixed(1)}s`);
