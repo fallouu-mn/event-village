@@ -1,114 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
-import { getServiceRoleClient } from '@/lib/supabase/server';
-import { EventService } from '@/lib/events/event.service';
+import { getServerEnv } from '@/lib/env';
 import { NotificationService } from '@/lib/notifications/notification.service';
+import { rpcWithRetry } from '@/lib/payments/rpc';
+import { notifyStockMilestones } from '@/lib/payments/stock-notifications';
+import { reserveQuota } from '@/lib/security/quota';
+import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
+const ClaimFreeSchema = z.object({
+    categoryId: z.string().uuid(),
+    quantity: z.number().int().min(1).max(50),
+});
+
 /**
- * POST /api/tickets/claim-free
- * Réservation d'un ou plusieurs billets gratuits (price = 0) sans passer par la passerelle de paiement.
- * Authentification obligatoire. Vérifie côté serveur que le billet est bien gratuit.
+ * POST /api/tickets/claim-free — billets gratuits (lot 2.6) : contrôles partagés et limite par
+ * compte et par catégorie (max_per_order, billets déjà détenus compris) appliqués dans une seule
+ * transaction (free_tickets_claim) ; demandes limitées par compte (quota en base).
  */
 export async function POST(req: NextRequest) {
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
+    let body: unknown;
     try {
-        const activeSession = await requireActiveSession(req);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user) {
-            return NextResponse.json(
-                { success: false, error: 'Authentification requise pour réserver un billet.' },
-                { status: 401 }
-            );
+        body = await req.json();
+    } catch {
+        return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    }
+    const parsed = ClaimFreeSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: 'Demande invalide.', details: parsed.error.flatten().fieldErrors }, { status: 400 });
+    const { categoryId, quantity } = parsed.data;
+    const userId = session.user.id;
+    try {
+        const quota = await reserveQuota([{ scope: 'claim_free_user', bucket: userId, windowSecs: 3600, max: getServerEnv().CLAIM_FREE_PER_USER_HOUR }], 'billets gratuits');
+        if (!quota.allowed) {
+            return quota.reason === 'EXCEEDED'
+                ? NextResponse.json({ error: 'Trop de demandes : réessayez plus tard.', code: 'CLAIM_RATE_LIMITED', retryAfterSeconds: quota.retryAfterSeconds }, { status: 429 })
+                : NextResponse.json({ error: 'Service momentanément indisponible.' }, { status: 503 });
         }
+        const { data: cat, error: catErr } = await getServiceRoleClient().from('ticket_categories').select('id, event_id').eq('id', categoryId).maybeSingle();
+        if (catErr) throw new Error(`lecture de la catégorie : ${catErr.message}`);
+        if (!cat) return NextResponse.json({ error: 'Catégorie introuvable.' }, { status: 404 });
 
-        const body = await req.json();
-        const { categoryId, quantity } = body;
-
-        if (!categoryId || typeof categoryId !== 'string') {
-            return NextResponse.json(
-                { success: false, error: 'categoryId requis.' },
-                { status: 400 }
-            );
-        }
-
-        const qty = typeof quantity === 'number' && quantity > 0 && quantity <= 20 ? quantity : 1;
-
-        const supabase = getServiceRoleClient();
-        const { data: category, error: catErr } = await supabase
-            .from('ticket_categories')
-            .select('id, price, event_id, name')
-            .eq('id', categoryId)
-            .single();
-
-        if (catErr || !category) {
-            return NextResponse.json(
-                { success: false, error: 'Catégorie de billet introuvable.' },
-                { status: 404 }
-            );
-        }
-
-        if (Number(category.price) !== 0) {
-            return NextResponse.json(
-                { success: false, error: 'Ce billet n\'est pas gratuit. Utilisez le parcours de paiement standard.' },
-                { status: 400 }
-            );
-        }
-
-        const result = await EventService.reserveTicketsAtomic({
-            eventId: category.event_id,
-            categoryId: category.id,
-            quantity: qty,
-            userId: user.id,
-            paymentConfirmed: true,
+        const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; problems?: Array<{ code: string; message: string }>; ticket_ids?: string[] }>('free_tickets_claim', {
+            p_user_id: userId, p_event_id: cat.event_id, p_items: [{ category_id: categoryId, quantity }],
         });
-
-        const createdTickets = (result?.tickets || []).map((t: any) => ({
-            id: t.id,
-            ticket_number: t.ticket_number,
-            qr_code: t.qr_code,
-            status: t.status,
-        }));
-        const ticketNumbers = createdTickets.map((t: any) => t.ticket_number);
-
-        // Déclencher les notifications (In-App + SMS + Email Client & Organisateur)
-        if (createdTickets.length > 0) {
-            try {
-                await NotificationService.sendTicketPurchaseNotifications({
-                    userId: user.id,
-                    eventId: category.event_id,
-                    categoryId: category.id,
-                    ticketCount: createdTickets.length,
-                    ticketNumbers,
-                    totalAmount: 0,
-                    clientPhone: user.phone,
-                    clientEmail: user.email,
-                    clientName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Client',
-                });
-            } catch (notifErr) {
-                console.error('[claim-free] Erreur notifications:', notifErr);
-            }
+        if (error || !data) throw new Error(`émission des billets gratuits : ${error?.message}`);
+        if (!data.ok) {
+            if (data.code === 'NOT_FREE') return NextResponse.json({ error: data.message, code: data.code }, { status: 400 });
+            if (data.code === 'FREE_LIMIT_REACHED') return NextResponse.json({ error: data.message, code: data.code }, { status: 409 });
+            const onlyStock = (data.problems ?? []).every((p) => p.code === 'INSUFFICIENT_STOCK');
+            return NextResponse.json({ error: (data.problems ?? []).map((p) => p.message).join(' '), code: onlyStock ? 'INSUFFICIENT_STOCK' : 'SALE_CHECK_FAILED', problems: data.problems }, { status: onlyStock ? 409 : 400 });
         }
-
-        return NextResponse.json({
-            success: true,
-            tickets: createdTickets,
-            ticket: createdTickets[0],
-            count: createdTickets.length,
-        }, { status: 201 });
-    } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : 'Erreur lors de la réservation du billet gratuit.';
-        console.error('[API /api/tickets/claim-free] Erreur:', msg);
-        const isSoldOut = msg.includes('Épuisé') || msg.includes('disponible') || msg.includes('insuffisant');
-        return NextResponse.json(
-            {
-                success: false,
-                code: isSoldOut ? 'TICKET_CATEGORY_SOLD_OUT' : 'CLAIM_FAILED',
-                error: msg,
-                message: msg,
-            },
-            { status: 400 }
-        );
+        const ticketIds = data.ticket_ids ?? [];
+        const { data: tickets, error: tErr } = await getServiceRoleClient().from('tickets').select('id, ticket_number').in('id', ticketIds);
+        if (tErr) console.error('[claim-free] lecture des billets émis impossible :', tErr.message);
+        try {
+            await NotificationService.sendTicketPurchaseNotifications({
+                userId, eventId: cat.event_id, categoryId, ticketCount: ticketIds.length,
+                ticketNumbers: (tickets ?? []).map((t) => t.ticket_number), totalAmount: 0,
+            });
+        } catch (err) {
+            console.error('[claim-free] notifications en échec :', err instanceof Error ? err.message : String(err));
+        }
+        await notifyStockMilestones([categoryId]);
+        return NextResponse.json({ success: true, ticket_ids: ticketIds, tickets: tickets ?? [] });
+    } catch (err) {
+        console.error('[API /api/tickets/claim-free] erreur interne :', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Erreur interne.' }, { status: 500 });
     }
 }
