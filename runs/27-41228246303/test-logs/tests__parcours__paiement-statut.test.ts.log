@@ -1,0 +1,203 @@
+TAP version 13
+# Subtest: Route de statut
+    # Subtest: sans session → 401 ; autre compte → 404 sans donnée ; propriétaire → statut, opérateur, échéance
+    not ok 1 - sans session → 401 ; autre compte → 404 sans donnée ; propriétaire → statut, opérateur, échéance
+      ---
+      duration_ms: 210.645877
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:2:1499'
+      failureType: 'testCodeFailure'
+      error: |-
+        Expected values to be strictly equal:
+        
+        400 !== 401
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 401
+      actual: 400
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:32:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: identifiant non UUID (injection) → 400
+    ok 2 - identifiant non UUID (injection) → 400
+      ---
+      duration_ms: 146.961455
+      type: 'test'
+      ...
+    # Subtest: sondage qui voit SUCCESS chez SamirPay avant le webhook : billets émis exactement une fois, puis webhook idempotent
+    not ok 3 - sondage qui voit SUCCESS chez SamirPay avant le webhook : billets émis exactement une fois, puis webhook idempotent
+      ---
+      duration_ms: 177.882891
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:2:3042'
+      failureType: 'testCodeFailure'
+      error: |-
+        Expected values to be strictly equal:
+        
+        400 !== 200
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 200
+      actual: 400
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:57:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: la route ne passe jamais elle-même un paiement en SUCCESS (lecture seule, réconciliation par RPC)
+    not ok 4 - la route ne passe jamais elle-même un paiement en SUCCESS (lecture seule, réconciliation par RPC)
+      ---
+      duration_ms: 0.483307
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:2:4309'
+      failureType: 'testCodeFailure'
+      error: 'aucune écriture de SUCCESS dans la route'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        import { NextRequest, NextResponse } from 'next/server';
+        import { getServiceRoleClient } from '@/lib/supabase/server';
+        import { samirPayClient } from '@/lib/samirpay/client';
+        import { mapSamirPayStatus } from '@/lib/samirpay/types';
+        
+        export const dynamic = 'force-dynamic';
+        
+        export async function GET(
+            req: NextRequest,
+            { params }: { params: { transactionId: string } }
+        ) {
+            try {
+                const transactionId = params.transactionId;
+                if (!transactionId) {
+                    return NextResponse.json(
+                        { success: false, error: 'Identifiant de transaction manquant.' },
+                        { status: 400 }
+                    );
+                }
+        
+                const supabase = getServiceRoleClient();
+        
+                // 1. Consultation en base PostgreSQL
+                const { data: payment, error } = await supabase
+                    .from('payments')
+                    .select('id, transaction_id, external_order_id, external_transaction_id, client_id, amount, currency, status, provider_status, paid_at, created_at')
+                    .or(`transaction_id.eq.${transactionId},external_order_id.eq.${transactionId}`)
+                    .single();
+        
+                if (error || !payment) {
+                    return NextResponse.json(
+                        { success: false, error: 'Paiement introuvable.' },
+                        { status: 404 }
+                    );
+                }
+        
+                // 2. Si le statut est encore PENDING, vérification de fallback auprès de SamirPay
+                if (payment.status === 'PENDING' && payment.external_order_id) {
+                    try {
+                        const checkRes = await samirPayClient.checkTransactionStatus(payment.external_order_id);
+                        if (checkRes && checkRes.status) {
+                            const mapped = mapSamirPayStatus(checkRes.status);
+                            if (mapped === 'SUCCESS') {
+                                // Mise à jour de confirmation
+                                await supabase
+                                    .from('payments')
+                                    .update({
+                                        status: 'SUCCESS',
+                                        external_transaction_id: checkRes.transaction_id || payment.external_transaction_id,
+                                        provider_status: checkRes.status,
+                                        paid_at: new Date().toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    })
+                                    .eq('id', payment.id);
+        
+                                payment.status = 'SUCCESS';
+                            }
+                        }
+                    } catch (fallbackError) {
+                        // Silently keep current DB status if SamirPay check fails temporarily
+                        console.warn('[PaymentStatusFallback] Erreur vérification statut auprès de SamirPay', fallbackError);
+                    }
+                }
+        
+                return NextResponse.json({
+                    success: true,
+                    payment: {
+                        id: payment.id,
+                        transaction_id: payment.transaction_id,
+                        order_id: payment.external_order_id,
+                        status: payment.status,
+                        amount: payment.amount,
+                        currency: payment.currency,
+                        paid_at: payment.paid_at,
+                    },
+                });
+            } catch (error: unknown) {
+                console.error('[API /api/payments/[transactionId]/status] Erreur:', error);
+                return NextResponse.json(
+                    { success: false, error: error instanceof Error ? error.message : 'Erreur interne serveur.' },
+                    { status: 500 }
+                );
+            }
+        }
+        
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:69:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..4
+not ok 1 - Route de statut
+  ---
+  duration_ms: 597.0533
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:2:1450'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts
+  ---
+  duration_ms: 17.278539
+  location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:2:1330'
+  failureType: 'hookFailed'
+  error: 'relation "public.stock_reservations" does not exist'
+  code: '42P01'
+  name: 'error'
+  stack: |-
+    /home/runner/work/event-village/event-village/node_modules/pg/lib/client.js:694:17
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async <anonymous> (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:58:35)
+    async <anonymous> (/home/runner/work/event-village/event-village/tests/helpers/db.ts:48:20)
+    async withClient (/home/runner/work/event-village/event-village/tests/helpers/db.ts:36:16)
+    async assertPaymentInvariants (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:68:20)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:24:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+  ...
+1..1
+# tests 4
+# suites 1
+# pass 1
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 622.898595
