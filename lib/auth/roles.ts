@@ -36,8 +36,9 @@ export function getPrimaryRole(roles: string[] | undefined | null): UserRoleType
     return 'CLIENT';
 }
 
-// Lot 1B.1 : parseRolesFromJwt (rôles lus dans user_metadata) et getUserRolesFromDb (repli
-// silencieux sur CLIENT en cas d'erreur) supprimés ; aucun appelant dans le code applicatif.
+// Lot 1B.1 : supprimés, faute d'appelant dans le code applicatif : la lecture des rôles dans
+// user_metadata (modifiable par l'utilisateur) et la lecture en base qui retombait sans bruit
+// sur CLIENT en cas d'erreur.
 
 export async function addUserRole(userId: string, role: UserRoleType): Promise<{ error?: string }> {
     const supabase = getServiceRoleClient();
