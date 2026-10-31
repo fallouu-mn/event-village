@@ -1,14 +1,39 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { FinancialCalculatorService } from '@/lib/payments/financial-calculator.service';
+import { accountBalance } from '@/lib/finance/ledger';
+
+/**
+ * Tableau de bord, rapport de clôture (et son PDF) et export comptable du partenaire (lot 3, contrat G).
+ *  - Aucun montant n'est recalculé ici avec des taux : tout est lu dans le grand livre (finance_ledger)
+ *    ou dans les colonnes recopiées sur les paiements et les billets par le moteur financier unique.
+ *  - Net organisateur = Σ écritures VENTE + REMBOURSEMENT (finance_partner_summary) : un remboursement
+ *    n'est déduit qu'une fois. Paiements plateforme uniquement : les ventes espèces (paiements
+ *    is_platform_payment = false) et les invitations ne produisent aucune écriture ; les espèces sont
+ *    affichées à part, à titre informatif, jamais dans le net ni dans le solde retirable.
+ *  - Frais de service payés par l'acheteur : ligne informative, jamais déduite de l'organisateur.
+ *  - Toute lecture en échec lève une erreur (la route répond 500 et la journalise).
+ */
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES & TYPES DU DASHBOARD PARTENAIRE & RAPPORTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PartnerKPIs {
+    /** Ventes en ligne, prix faciaux (Σ écritures VENTE du grand livre, toutes activités). */
     grossRevenue: number;
+    /** Net organisateur = ventes en ligne − remboursements (grand livre). */
     netRevenue: number;
+    /** Event Village ne prélève rien sur l'organisateur : ses frais sont payés par l'acheteur. */
     commissionAmount: number;
+    refundedAmount: number;
+    availableRevenue: number;
+    pendingRevenue: number;
+    nextAvailableAt: string | null;
+    debt: number;
+    /** Frais de service payés par les acheteurs (informatif, non déduit). */
+    buyerServiceFees: number;
+    /** Ventes espèces au guichet (informatif, hors plateforme). */
+    cashSales: number;
+    cashTickets: number;
     ticketsSold: number;
     ticketsCheckedIn: number;
     ticketsCancelled: number;
@@ -16,6 +41,7 @@ export interface PartnerKPIs {
     activeEvents: number;
     ordersCount: number;
     ordersRevenue: number;
+    /** Solde retirable du compte organisateur (grand livre). */
     soldeDisponible: number;
     totalWithdrawn: number;
     pendingWithdrawals: number;
@@ -36,6 +62,7 @@ export interface PartnerEventBreakdown {
     fillRatePercent: number;
     checkInRatePercent: number;
     grossRevenue: number;
+    refundedAmount: number;
     commissionAmount: number;
     netRevenue: number;
 }
@@ -70,11 +97,17 @@ export interface CategorySalesSummary {
     name: string;
     unitPrice: number;
     totalAllocated: number;
+    /** Billets valables ou utilisés, tous canaux. */
     soldQuantity: number;
+    onlineQuantity: number;
+    cashQuantity: number;
     checkedInQuantity: number;
     remainingQuantity: number;
+    /** Prix faciaux des billets payés en ligne encore valables (prix réellement payés). */
     grossAmount: number;
-    commissionAmount: number;
+    /** Prix des billets payés en espèces (informatif). */
+    cashAmount: number;
+    /** Reversement organisateur de la catégorie : prix facial (aucune commission déduite). */
     netAmount: number;
 }
 
@@ -119,11 +152,181 @@ export interface ClosingReportData {
         fillRatePercent: number;
     };
     financialSummary: {
+        /** Ventes en ligne de l'événement, prix faciaux (Σ VENTE). */
         totalGross: number;
-        totalCommission: number;
+        /** Remboursements débités à l'organisateur (Σ REMBOURSEMENT, en valeur positive). */
         totalRefunded: number;
+        /** Net organisateur = totalGross − totalRefunded (grand livre, une seule déduction). */
         totalNet: number;
+        availableNet: number;
+        pendingNet: number;
+        /** Frais de service payés par l'acheteur (informatif, non déduits). */
+        buyerServiceFees: number;
+        /** Ventes espèces au guichet (informatif, hors plateforme, hors net). */
+        cashSales: number;
+        cashTickets: number;
     };
+}
+
+/** Synthèse financière d'un partenaire (finance_partner_summary, lue dans le grand livre). */
+export interface PartnerFinanceSummary {
+    organizerNet: number;
+    onlineSales: number;
+    refunded: number;
+    available: number;
+    pending: number;
+    byTarget: Record<string, number>;
+    buyerServiceFees: number;
+    cashSales: number;
+    cashTickets: number;
+}
+
+export interface LedgerBucket {
+    sales: number;
+    refunded: number;
+    net: number;
+}
+
+export interface LedgerSplit {
+    byTarget: Record<string, LedgerBucket>;
+    byEvent: Record<string, LedgerBucket>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LECTURES (paginées, erreurs remontées)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 1000;
+const ID_CHUNK = 100;
+
+/** Colonnes et types d'écritures de vente lus dans le grand livre organisateur. */
+export const LEDGER_SALES_COLUMNS = 'id, amount, entry_type, event_id, payment:payments(payment_target)';
+export const LEDGER_SALES_TYPES = ['VENTE', 'REMBOURSEMENT'];
+
+export interface LedgerSalesRow {
+    id: string;
+    amount: number;
+    entry_type: string;
+    event_id: string | null;
+    payment: { payment_target: string } | null;
+}
+
+type PageResult = { data: unknown[] | null; error: { message: string } | null };
+
+/** Lit toutes les lignes d'une requête paginée (plafond max_rows de PostgREST). */
+export async function fetchAllRows<T>(label: string, page: (from: number, to: number) => PromiseLike<PageResult>): Promise<T[]> {
+    const rows: T[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await page(from, from + PAGE_SIZE - 1);
+        if (error) throw new Error(`Lecture impossible (${label}) : ${error.message}`);
+        rows.push(...((data ?? []) as T[]));
+        if (!data || data.length < PAGE_SIZE) return rows;
+    }
+}
+
+/** Billets d'un ensemble d'événements (identifiants par lots, pages de 1 000), filtre de date optionnel. */
+export async function ticketsOfEvents<T>(eventIds: string[], columns: string, period: { from?: string; to?: string } = {}): Promise<T[]> {
+    const supabase = getServiceRoleClient();
+    const out: T[] = [];
+    for (let i = 0; i < eventIds.length; i += ID_CHUNK) {
+        const chunk = eventIds.slice(i, i + ID_CHUNK);
+        out.push(...await fetchAllRows<T>('billets', (from, to) => {
+            let q = supabase.from('tickets').select(columns).in('event_id', chunk);
+            if (period.from) q = q.gte('created_at', period.from);
+            if (period.to) q = q.lte('created_at', period.to);
+            return q.order('id', { ascending: true }).range(from, to);
+        }));
+    }
+    return out;
+}
+
+/** Canal de paiement des billets : true si le paiement est un paiement plateforme. */
+async function platformFlags(paymentIds: string[]): Promise<Map<string, { platform: boolean; reference: string }>> {
+    const supabase = getServiceRoleClient();
+    const flags = new Map<string, { platform: boolean; reference: string }>();
+    const ids = Array.from(new Set(paymentIds));
+    for (let i = 0; i < ids.length; i += ID_CHUNK) {
+        const chunk = ids.slice(i, i + ID_CHUNK);
+        const { data, error } = await supabase.from('payments').select('id, transaction_id, is_platform_payment').in('id', chunk);
+        if (error) throw new Error(`Lecture impossible (paiements des billets) : ${error.message}`);
+        for (const p of data ?? []) flags.set(p.id, { platform: p.is_platform_payment === true, reference: p.transaction_id });
+    }
+    return flags;
+}
+
+/** Réponse de finance_partner_summary → synthèse typée (erreur de lecture remontée). */
+export function toPartnerSummary(res: { data: unknown; error: { message: string } | null }): PartnerFinanceSummary {
+    if (res.error || !res.data) throw new Error(`Lecture impossible (synthèse financière du partenaire) : ${res.error?.message ?? 'réponse vide'}`);
+    const s = res.data as Record<string, unknown>;
+    const byTarget: Record<string, number> = {};
+    for (const [k, v] of Object.entries((s.by_target ?? {}) as Record<string, unknown>)) byTarget[k] = Number(v);
+    return {
+        organizerNet: Number(s.organizer_net),
+        onlineSales: Number(s.online_sales),
+        refunded: Number(s.refunded),
+        available: Number(s.available),
+        pending: Number(s.pending),
+        byTarget,
+        buyerServiceFees: Number(s.buyer_service_fees),
+        cashSales: Number(s.cash_sales),
+        cashTickets: Number(s.cash_tickets),
+    };
+}
+
+/** Ventilation des écritures de vente du grand livre par activité et par événement. */
+export function splitLedgerRows(rows: LedgerSalesRow[]): LedgerSplit {
+    const byTarget: Record<string, LedgerBucket> = {};
+    const byEvent: Record<string, LedgerBucket> = {};
+    const add = (map: Record<string, LedgerBucket>, key: string, row: LedgerSalesRow) => {
+        const b = map[key] ?? (map[key] = { sales: 0, refunded: 0, net: 0 });
+        const amount = Number(row.amount);
+        if (row.entry_type === 'VENTE') b.sales += amount;
+        else b.refunded -= amount;
+        b.net += amount;
+    };
+    for (const row of rows) {
+        if (row.payment?.payment_target) add(byTarget, row.payment.payment_target, row);
+        if (row.event_id) add(byEvent, row.event_id, row);
+    }
+    return { byTarget, byEvent };
+}
+
+export const EMPTY_BUCKET: LedgerBucket = { sales: 0, refunded: 0, net: 0 };
+
+/** Retraits du compte organisateur : total versé, montant en cours, derniers retraits. */
+export async function organizerWithdrawals(userId: string): Promise<{ totalWithdrawn: number; pending: number; rows: Array<Record<string, unknown>> }> {
+    const supabase = getServiceRoleClient();
+    const rows = await fetchAllRows<Record<string, unknown>>('retraits', (from, to) => supabase
+        .from('withdrawals')
+        .select('id, gross_amount, fee_amount, net_amount, status, withdrawal_method, operator, phone_number, payment_details, account_kind, created_at, processed_at')
+        .eq('user_id', userId)
+        .eq('account_kind', 'ORGANISATEUR')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to));
+    let totalWithdrawn = 0;
+    let pending = 0;
+    for (const w of rows) {
+        if (w.status === 'PAID') totalWithdrawn += Number(w.net_amount);
+        if (w.status === 'PENDING' || w.status === 'PROCESSING') pending += Number(w.gross_amount);
+    }
+    return { totalWithdrawn, pending, rows };
+}
+
+const SOLD = new Set(['VALIDE', 'UTILISE']);
+const REFUNDED_TICKET = new Set(['REMBOURSE', 'REMBOURSEMENT_EN_COURS']);
+
+interface TicketRow {
+    id: string;
+    event_id: string;
+    category_id: string;
+    ticket_number: string | null;
+    price: number;
+    service_fee: number | null;
+    status: string;
+    payment_id: string | null;
+    checked_in_at: string | null;
+    created_at: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,7 +335,7 @@ export interface ClosingReportData {
 function escapePdfText(str: string): string {
     if (!str) return '';
     const clean = str
-        .replace(/[\u00A0\u202F\u2000-\u200A]/g, ' ')
+        .replace(/[   - ]/g, ' ')
         .replace(/\\/g, '\\\\')
         .replace(/\(/g, '\\(')
         .replace(/\)/g, '\\)');
@@ -165,6 +368,17 @@ function escapePdfText(str: string): string {
         .replace(/»/g, '"');
 }
 
+/** Montant FCFA pour le PDF (séparateurs de milliers normalisés, encodage WinAnsi). */
+function pdfAmount(n: number, suffix = 'FCFA'): string {
+    return escapePdfText(`${n.toLocaleString('fr-FR')} ${suffix}`);
+}
+
+/** Champ CSV (séparateur point-virgule) : guillemets si nécessaire. */
+function csvField(value: string | number): string {
+    const s = String(value);
+    return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SERVICE PRINCIPAL : PARTNER DASHBOARD & EXPORTS COMPTABLES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,141 +397,98 @@ export class PartnerDashboardService {
             .eq('user_id', userId)
             .maybeSingle();
 
-        if (error || !partner) {
-            throw new Error('PROFIL_PARTENAIRE_INTROUVABLE');
-        }
+        if (error) throw new Error(`Lecture impossible (profil partenaire) : ${error.message}`);
+        if (!partner) throw new Error('PROFIL_PARTENAIRE_INTROUVABLE');
         return partner;
     }
 
     /**
-     * Calcule l'intégralité des KPIs et métriques du Dashboard pour un partenaire.
+     * KPIs et métriques du Dashboard partenaire : montants lus dans le grand livre (paiements
+     * plateforme uniquement), comptages de billets tous canaux.
      */
     public static async getDashboardData(userId: string): Promise<PartnerDashboardData> {
         const supabase = getServiceRoleClient();
         const partner = await this.resolvePartner(userId);
         const partnerId = partner.id;
 
-        // 1. Récupération concurrente des événements, commandes, configurations et retraits
-        const [
-            eventsRes,
-            ordersRes,
-            withdrawalsRes,
-            orderConfigRes,
-            ticketConfigRes,
-        ] = await Promise.all([
-            supabase.from('events').select('*').eq('partner_id', partnerId).order('start_date', { ascending: false }),
-            supabase.from('orders').select('*').eq('partner_id', partnerId).order('created_at', { ascending: false }),
-            supabase.from('withdrawals').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-            supabase.from('platform_settings').select('value').eq('key', 'order_commission_config').maybeSingle(),
-            supabase.from('platform_settings').select('value').eq('key', 'ticketing_fee_config').maybeSingle(),
+        const [events, recentOrdersRes, ordersCountRes, summaryRes, ledgerRows, balance, withdrawals] = await Promise.all([
+            fetchAllRows<Record<string, unknown>>('événements', (from, to) => supabase
+                .from('events')
+                .select('id, title, start_date, start_time, location, city, status, capacity')
+                .eq('partner_id', partnerId)
+                .order('start_date', { ascending: false })
+                .order('id', { ascending: true })
+                .range(from, to)),
+            supabase.from('orders')
+                .select('id, order_number, delivery_mode, total_amount, order_status, created_at')
+                .eq('partner_id', partnerId)
+                .order('created_at', { ascending: false })
+                .limit(5),
+            supabase.from('orders')
+                .select('id', { count: 'exact', head: true })
+                .eq('partner_id', partnerId)
+                .not('order_status', 'in', '(ANNULEE,REJETEE)'),
+            supabase.rpc('finance_partner_summary', { p_partner_id: partnerId, p_event_id: null }),
+            fetchAllRows<LedgerSalesRow>('grand livre', (from, to) => supabase
+                .from('finance_ledger')
+                .select(LEDGER_SALES_COLUMNS)
+                .eq('partner_id', partnerId)
+                .eq('account_kind', 'ORGANISATEUR')
+                .in('entry_type', LEDGER_SALES_TYPES)
+                .order('id', { ascending: true })
+                .range(from, to)),
+            accountBalance(userId, 'ORGANISATEUR'),
+            organizerWithdrawals(userId),
         ]);
+        if (recentOrdersRes.error) throw new Error(`Lecture impossible (commandes) : ${recentOrdersRes.error.message}`);
+        if (ordersCountRes.error) throw new Error(`Lecture impossible (nombre de commandes) : ${ordersCountRes.error.message}`);
+        const summary = toPartnerSummary(summaryRes);
+        const split = splitLedgerRows(ledgerRows);
+        const recentOrders = recentOrdersRes.data ?? [];
 
-        const events = eventsRes.data || [];
-        const orders = ordersRes.data || [];
-        const withdrawals = withdrawalsRes.data || [];
+        const tickets = await ticketsOfEvents<TicketRow>(events.map((e) => String(e.id)), 'id, event_id, price, status, checked_in_at, created_at');
+        const validTickets = tickets.filter((t) => SOLD.has(t.status));
+        const checkedInTickets = tickets.filter((t) => t.status === 'UTILISE');
+        const cancelledTickets = tickets.filter((t) => t.status === 'ANNULE');
 
-        const orderCommissionRate = Number(orderConfigRes.data?.value?.commission_rate || 5.0);
-        const ticketServiceFeeRate = Number(ticketConfigRes.data?.value?.service_fee_rate || 5.0);
-        const ticketAggregatorFeeRate = Number(ticketConfigRes.data?.value?.aggregator_fee_rate || 1.5);
-
-        const eventIds = events.map(e => e.id);
-
-        // 2. Récupération des catégories et billets pour tous les événements du partenaire
-        let tickets: any[] = [];
-        let categories: any[] = [];
-
-        if (eventIds.length > 0) {
-            const [ticketsQuery, categoriesQuery] = await Promise.all([
-                supabase.from('tickets').select('id, event_id, category_id, price, status, checked_in_at, created_at').in('event_id', eventIds),
-                supabase.from('ticket_categories').select('id, event_id, name, price, total_quantity, sold_quantity').in('event_id', eventIds),
-            ]);
-            tickets = ticketsQuery.data || [];
-            categories = categoriesQuery.data || [];
-        }
-
-        // 3. Calculs des KPIs Billetterie
-        const validTickets = tickets.filter(t => t.status === 'VALIDE' || t.status === 'UTILISE');
-        const checkedInTickets = tickets.filter(t => t.status === 'UTILISE');
-        const cancelledTickets = tickets.filter(t => t.status === 'ANNULE');
-
-        const totalTicketFacialRevenue = validTickets.reduce((sum, t) => sum + (Number(t.price) || 0), 0);
-
-        const ticketingCalc = FinancialCalculatorService.calculateTicketingFinancials({
-            ticketFacialPrice: totalTicketFacialRevenue,
-            serviceFeeRatePercent: ticketServiceFeeRate,
-            aggregatorFeeRatePercent: ticketAggregatorFeeRate,
-        });
-
-        // 4. Calculs des KPIs Commandes & Restauration
-        const validOrders = orders.filter(o => !['ANNULEE', 'REJETEE'].includes(o.order_status));
-        const totalOrderRevenue = validOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
-
-        const orderCalc = FinancialCalculatorService.calculateOrderFinancials({
-            orderTotalAmount: totalOrderRevenue,
-            commissionRatePercent: orderCommissionRate,
-            aggregatorFeeRatePercent: ticketAggregatorFeeRate,
-        });
-
-        // 5. Synthèse financière consolidée
-        const totalGrossRevenue = totalTicketFacialRevenue + totalOrderRevenue;
-        const totalNetRevenue = ticketingCalc.partnerPayout + orderCalc.partnerPayout;
-        const totalCommission = totalGrossRevenue - totalNetRevenue;
-
-        // Retraits
-        const paidWithdrawals = withdrawals.filter(w => w.status === 'PAID');
-        const pendingWithdrawalsList = withdrawals.filter(w => ['PENDING', 'PROCESSING'].includes(w.status));
-
-        const totalWithdrawn = paidWithdrawals.reduce((sum, w) => sum + (Number(w.net_amount) || 0), 0);
-        const pendingWithdrawalsAmount = pendingWithdrawalsList.reduce((sum, w) => sum + (Number(w.gross_amount) || 0), 0);
-
-        const soldeDisponible = Math.max(0, totalNetRevenue - totalWithdrawn - pendingWithdrawalsAmount);
-
-        // 6. Découpage par événement
-        const eventBreakdowns: PartnerEventBreakdown[] = events.map(ev => {
-            const evTickets = tickets.filter(t => t.event_id === ev.id);
-            const evValidTickets = evTickets.filter(t => t.status === 'VALIDE' || t.status === 'UTILISE');
-            const evCheckedIn = evTickets.filter(t => t.status === 'UTILISE').length;
-            const evSold = evValidTickets.length;
+        const eventBreakdowns: PartnerEventBreakdown[] = events.map((ev) => {
+            const evId = String(ev.id);
+            const evTickets = tickets.filter((t) => t.event_id === evId);
+            const evSold = evTickets.filter((t) => SOLD.has(t.status)).length;
+            const evCheckedIn = evTickets.filter((t) => t.status === 'UTILISE').length;
             const evCapacity = Number(ev.capacity) || 1;
-            const evAvailable = Math.max(0, evCapacity - evSold);
-
-            const evGross = evValidTickets.reduce((sum, t) => sum + (Number(t.price) || 0), 0);
-            const evCalc = FinancialCalculatorService.calculateTicketingFinancials({
-                ticketFacialPrice: evGross,
-                serviceFeeRatePercent: ticketServiceFeeRate,
-                aggregatorFeeRatePercent: ticketAggregatorFeeRate,
-            });
-
+            const ledger = split.byEvent[evId] ?? EMPTY_BUCKET;
             return {
-                id: ev.id,
-                title: ev.title,
-                startDate: ev.start_date,
-                startTime: ev.start_time,
-                location: ev.location,
-                city: ev.city,
-                status: ev.status,
+                id: evId,
+                title: String(ev.title),
+                startDate: String(ev.start_date),
+                startTime: String(ev.start_time),
+                location: String(ev.location ?? ''),
+                city: String(ev.city ?? ''),
+                status: String(ev.status),
                 capacity: evCapacity,
                 ticketsSold: evSold,
-                ticketsAvailable: evAvailable,
+                ticketsAvailable: Math.max(0, evCapacity - evSold),
                 ticketsCheckedIn: evCheckedIn,
                 fillRatePercent: Math.min(100, Math.round((evSold / evCapacity) * 100)),
                 checkInRatePercent: evSold > 0 ? Math.min(100, Math.round((evCheckedIn / evSold) * 100)) : 0,
-                grossRevenue: evGross,
+                grossRevenue: ledger.sales,
+                refundedAmount: ledger.refunded,
                 commissionAmount: 0,
-                netRevenue: evCalc.partnerPayout,
+                netRevenue: ledger.net,
             };
         });
 
-        // 7. Flux d'activité récent unifié (Ventes, Scans, Commandes, Retraits)
+        // Flux d'activité récent unifié (Ventes, Scans, Commandes, Retraits)
         const recentActivity: PartnerActivityItem[] = [];
+        const titleOf = (eventId: string) => String(events.find((e) => e.id === eventId)?.title ?? 'Événement');
+        const byDateDesc = (a: { created_at: string }, b: { created_at: string }) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 
-        // Ventes de billets récentes
-        validTickets.slice(0, 8).forEach(t => {
-            const ev = events.find(e => e.id === t.event_id);
+        [...validTickets].sort(byDateDesc).slice(0, 8).forEach((t) => {
             recentActivity.push({
                 id: `sale-${t.id}`,
                 type: 'SALE',
-                title: `Billet Vendu — ${ev?.title || 'Événement'}`,
+                title: `Billet Vendu — ${titleOf(t.event_id)}`,
                 description: `Billet N° ${t.id.slice(0, 8)} • ${Number(t.price).toLocaleString('fr-FR')} FCFA`,
                 amount: Number(t.price),
                 status: t.status,
@@ -325,21 +496,22 @@ export class PartnerDashboardService {
             });
         });
 
-        // Scans de billets récents
-        checkedInTickets.filter(t => t.checked_in_at).slice(0, 5).forEach(t => {
-            const ev = events.find(e => e.id === t.event_id);
-            recentActivity.push({
-                id: `scan-${t.id}`,
-                type: 'CHECKIN',
-                title: `Billet Composté aux Portes`,
-                description: `${ev?.title || 'Événement'} • Contrôle validé`,
-                status: 'UTILISE',
-                createdAt: t.checked_in_at,
+        checkedInTickets
+            .filter((t) => t.checked_in_at)
+            .sort((a, b) => new Date(String(b.checked_in_at)).getTime() - new Date(String(a.checked_in_at)).getTime())
+            .slice(0, 5)
+            .forEach((t) => {
+                recentActivity.push({
+                    id: `scan-${t.id}`,
+                    type: 'CHECKIN',
+                    title: 'Billet Composté aux Portes',
+                    description: `${titleOf(t.event_id)} • Contrôle validé`,
+                    status: 'UTILISE',
+                    createdAt: String(t.checked_in_at),
+                });
             });
-        });
 
-        // Commandes récentes
-        orders.slice(0, 5).forEach(o => {
+        recentOrders.forEach((o) => {
             recentActivity.push({
                 id: `order-${o.id}`,
                 type: 'ORDER',
@@ -351,20 +523,18 @@ export class PartnerDashboardService {
             });
         });
 
-        // Retraits récents
-        withdrawals.slice(0, 3).forEach(w => {
+        withdrawals.rows.slice(0, 3).forEach((w) => {
             recentActivity.push({
                 id: `w-${w.id}`,
                 type: 'WITHDRAWAL',
-                title: `Demande de Retrait`,
+                title: 'Demande de Retrait',
                 description: `${w.withdrawal_method} • ${Number(w.gross_amount).toLocaleString('fr-FR')} FCFA`,
                 amount: Number(w.net_amount),
-                status: w.status,
-                createdAt: w.created_at,
+                status: String(w.status),
+                createdAt: String(w.created_at),
             });
         });
 
-        // Trier l'activité par date décroissante
         recentActivity.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
         return {
@@ -378,19 +548,27 @@ export class PartnerDashboardService {
                 isVerified: partner.is_verified,
             },
             kpis: {
-                grossRevenue: totalGrossRevenue,
-                netRevenue: totalNetRevenue,
-                commissionAmount: totalCommission,
+                grossRevenue: summary.onlineSales,
+                netRevenue: summary.organizerNet,
+                commissionAmount: 0,
+                refundedAmount: summary.refunded,
+                availableRevenue: summary.available,
+                pendingRevenue: summary.pending,
+                nextAvailableAt: balance.next_available_at,
+                debt: balance.debt,
+                buyerServiceFees: summary.buyerServiceFees,
+                cashSales: summary.cashSales,
+                cashTickets: summary.cashTickets,
                 ticketsSold: validTickets.length,
                 ticketsCheckedIn: checkedInTickets.length,
                 ticketsCancelled: cancelledTickets.length,
                 totalEvents: events.length,
-                activeEvents: events.filter(e => e.status === 'PUBLIE').length,
-                ordersCount: validOrders.length,
-                ordersRevenue: totalOrderRevenue,
-                soldeDisponible,
-                totalWithdrawn,
-                pendingWithdrawals: pendingWithdrawalsAmount,
+                activeEvents: events.filter((e) => e.status === 'PUBLIE').length,
+                ordersCount: ordersCountRes.count ?? 0,
+                ordersRevenue: summary.byTarget.ORDER ?? 0,
+                soldeDisponible: balance.withdrawable,
+                totalWithdrawn: withdrawals.totalWithdrawn,
+                pendingWithdrawals: withdrawals.pending,
             },
             events: eventBreakdowns,
             recentActivity: recentActivity.slice(0, 15),
@@ -398,7 +576,8 @@ export class PartnerDashboardService {
     }
 
     /**
-     * Génère les données déterministes du Rapport de Clôture (Z de Caisse / Clôture Événement).
+     * Rapport de clôture (Z de caisse / clôture événement) : net organisateur lu dans le grand livre
+     * de l'événement, frais de service de l'acheteur et ventes espèces en lignes informatives.
      */
     public static async getClosingReportData(userId: string, eventId: string): Promise<ClosingReportData> {
         const supabase = getServiceRoleClient();
@@ -408,98 +587,68 @@ export class PartnerDashboardService {
             throw new Error('EVENT_ID_REQUIS');
         }
 
-        // 1. Récupération de l'événement et vérification stricte de propriété multi-tenant
         const { data: event, error: evErr } = await supabase
             .from('events')
             .select('*')
             .eq('id', eventId)
             .maybeSingle();
+        if (evErr) throw new Error(`Lecture impossible (événement) : ${evErr.message}`);
+        if (!event) throw new Error('EVENEMENT_INTROUVABLE');
+        if (event.partner_id !== partner.id) throw new Error('ACCES_REFUSE_AUTRE_TENANT');
 
-        if (evErr || !event) {
-            throw new Error('EVENEMENT_INTROUVABLE');
-        }
-
-        if (event.partner_id !== partner.id) {
-            throw new Error('ACCES_REFUSE_AUTRE_TENANT');
-        }
-
-        // 2. Récupération concurrente des catégories, billets et paiements de cet événement
-        const [categoriesRes, ticketsRes, paymentsRes] = await Promise.all([
-            supabase.from('ticket_categories').select('*').eq('event_id', eventId).order('price', { ascending: true }),
-            supabase.from('tickets').select('*').eq('event_id', eventId),
-            supabase.from('payments').select('*').eq('partner_id', partner.id),
+        const [categoriesRes, tickets, summaryRes, eventPayments] = await Promise.all([
+            supabase.from('ticket_categories').select('id, name, price, total_quantity').eq('event_id', eventId).order('price', { ascending: true }),
+            ticketsOfEvents<TicketRow>([eventId], 'id, category_id, price, service_fee, status, payment_id'),
+            supabase.rpc('finance_partner_summary', { p_partner_id: partner.id, p_event_id: eventId }),
+            fetchAllRows<{ id: string; status: string; amount: number; refunded_amount: number | null }>('paiements de l’événement', (from, to) => supabase
+                .from('payments')
+                .select('id, status, amount, refunded_amount')
+                .eq('event_id', eventId)
+                .eq('is_platform_payment', true)
+                .order('id', { ascending: true })
+                .range(from, to)),
         ]);
+        if (categoriesRes.error) throw new Error(`Lecture impossible (catégories) : ${categoriesRes.error.message}`);
+        const categories = categoriesRes.data ?? [];
+        const summary = toPartnerSummary(summaryRes);
+        const flags = await platformFlags(tickets.map((t) => t.payment_id).filter((id): id is string => Boolean(id)));
+        const isOnline = (t: TicketRow) => Boolean(t.payment_id && flags.get(t.payment_id)?.platform);
 
-        const categories = categoriesRes.data || [];
-        const tickets = ticketsRes.data || [];
-        const allPartnerPayments = paymentsRes.data || [];
-
-        // Filtrer les paiements associés à cet événement
-        const eventPayments = allPartnerPayments.filter(p => {
-            if (p.metadata?.event_id === eventId) return true;
-            if (p.payment_target === 'TICKET' && tickets.some(t => t.id === p.ticket_id)) return true;
-            return false;
-        });
-
-        // 3. Répartition des ventes par catégorie
-        const salesByCategory: CategorySalesSummary[] = categories.map(cat => {
-            const catTickets = tickets.filter(t => t.category_id === cat.id);
-            const soldTickets = catTickets.filter(t => t.status === 'VALIDE' || t.status === 'UTILISE');
-            const checkedIn = catTickets.filter(t => t.status === 'UTILISE').length;
-            const soldQty = soldTickets.length;
+        // Ventilation par catégorie : prix réellement payés (billets), canal de paiement séparé
+        const salesByCategory: CategorySalesSummary[] = categories.map((cat) => {
+            const sold = tickets.filter((t) => t.category_id === cat.id && SOLD.has(t.status));
+            const online = sold.filter(isOnline);
+            const cash = sold.filter((t) => !isOnline(t) && Number(t.price) > 0);
+            const grossAmount = online.reduce((s, t) => s + Number(t.price), 0);
             const totalAllocated = Number(cat.total_quantity) || 0;
-            const remainingQty = Math.max(0, totalAllocated - soldQty);
-
-            const unitPrice = Number(cat.price) || 0;
-            const grossAmount = soldQty * unitPrice;
-            const commissionAmount = 0;
-            const netAmount = grossAmount - commissionAmount;
-
             return {
                 categoryId: cat.id,
                 name: cat.name,
-                unitPrice,
+                unitPrice: Number(cat.price) || 0,
                 totalAllocated,
-                soldQuantity: soldQty,
-                checkedInQuantity: checkedIn,
-                remainingQuantity: remainingQty,
+                soldQuantity: sold.length,
+                onlineQuantity: online.length,
+                cashQuantity: cash.length,
+                checkedInQuantity: sold.filter((t) => t.status === 'UTILISE').length,
+                remainingQuantity: Math.max(0, totalAllocated - sold.length),
                 grossAmount,
-                commissionAmount,
-                netAmount,
+                cashAmount: cash.reduce((s, t) => s + Number(t.price), 0),
+                netAmount: grossAmount,
             };
         });
 
-        // 4. Synthèse des Billets
         const totalAllocated = categories.reduce((s, c) => s + (Number(c.total_quantity) || 0), 0);
-        const totalSold = tickets.filter(t => t.status === 'VALIDE' || t.status === 'UTILISE').length;
-        const totalCheckedIn = tickets.filter(t => t.status === 'UTILISE').length;
-        const totalCancelled = tickets.filter(t => t.status === 'ANNULE').length;
-        const totalRefunded = tickets.filter(t => t.status === 'REMBOURSE').length;
-        const totalRemaining = Math.max(0, (event.capacity || totalAllocated) - totalSold);
+        const totalSold = tickets.filter((t) => SOLD.has(t.status)).length;
+        const totalCheckedIn = tickets.filter((t) => t.status === 'UTILISE').length;
+        const capacity = Number(event.capacity) || totalAllocated;
 
-        const checkInRatePercent = totalSold > 0 ? Math.min(100, Math.round((totalCheckedIn / totalSold) * 100)) : 0;
-        const fillRatePercent = event.capacity > 0 ? Math.min(100, Math.round((totalSold / event.capacity) * 100)) : 0;
-
-        // 5. Synthèse des Paiements
-        const confirmedPayments = eventPayments.filter(p => p.status === 'SUCCESS');
-        const pendingPayments = eventPayments.filter(p => p.status === 'PENDING');
-        const refundedPayments = eventPayments.filter(p => p.status === 'REFUNDED');
-
-        const confirmedGross = confirmedPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-        const pendingGross = pendingPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-        const refundedGross = refundedPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-
-        // 6. Synthèse Financière Consolidée
-        const totalGross = salesByCategory.reduce((s, c) => s + c.grossAmount, 0);
-        const totalCommission = salesByCategory.reduce((s, c) => s + c.commissionAmount, 0);
-        const totalRefundedAmount = refundedGross;
-        const totalNet = totalGross - totalCommission - totalRefundedAmount;
+        const confirmed = eventPayments.filter((p) => p.status === 'SUCCESS' || p.status === 'PARTIAL');
+        const pending = eventPayments.filter((p) => p.status === 'PENDING');
+        const refundedPayments = eventPayments.filter((p) => p.status === 'REFUNDED');
 
         const dateSuffix = new Date().toISOString().split('T')[0].replace(/-/g, '');
-        const reportId = `CLOTURE-${eventId.slice(0, 8).toUpperCase()}-${dateSuffix}`;
-
         return {
-            reportId,
+            reportId: `CLOTURE-${eventId.slice(0, 8).toUpperCase()}-${dateSuffix}`,
             generatedAt: new Date().toISOString(),
             event: {
                 id: event.id,
@@ -510,7 +659,7 @@ export class PartnerDashboardService {
                 venue: event.location,
                 city: event.city,
                 status: event.status,
-                capacity: event.capacity || totalAllocated,
+                capacity,
             },
             partner: {
                 id: partner.id,
@@ -521,28 +670,32 @@ export class PartnerDashboardService {
             },
             salesByCategory,
             paymentsSummary: {
-                confirmedCount: confirmedPayments.length,
-                confirmedGross,
-                pendingCount: pendingPayments.length,
-                pendingGross,
+                confirmedCount: confirmed.length,
+                confirmedGross: confirmed.reduce((s, p) => s + Number(p.amount), 0),
+                pendingCount: pending.length,
+                pendingGross: pending.reduce((s, p) => s + Number(p.amount), 0),
                 refundedCount: refundedPayments.length,
-                refundedGross,
+                refundedGross: eventPayments.reduce((s, p) => s + Number(p.refunded_amount ?? 0), 0),
             },
             ticketsSummary: {
-                totalAllocated: event.capacity || totalAllocated,
+                totalAllocated: capacity,
                 sold: totalSold,
                 checkedIn: totalCheckedIn,
-                cancelled: totalCancelled,
-                refunded: totalRefunded,
-                remaining: totalRemaining,
-                checkInRatePercent,
-                fillRatePercent,
+                cancelled: tickets.filter((t) => t.status === 'ANNULE').length,
+                refunded: tickets.filter((t) => REFUNDED_TICKET.has(t.status)).length,
+                remaining: Math.max(0, capacity - totalSold),
+                checkInRatePercent: totalSold > 0 ? Math.min(100, Math.round((totalCheckedIn / totalSold) * 100)) : 0,
+                fillRatePercent: capacity > 0 ? Math.min(100, Math.round((totalSold / capacity) * 100)) : 0,
             },
             financialSummary: {
-                totalGross,
-                totalCommission,
-                totalRefunded: totalRefundedAmount,
-                totalNet,
+                totalGross: summary.onlineSales,
+                totalRefunded: summary.refunded,
+                totalNet: summary.organizerNet,
+                availableNet: summary.available,
+                pendingNet: summary.pending,
+                buyerServiceFees: summary.buyerServiceFees,
+                cashSales: summary.cashSales,
+                cashTickets: summary.cashTickets,
             },
         };
     }
@@ -627,7 +780,7 @@ export class PartnerDashboardService {
         stream += `80 0 Td\n(VENDUS) Tj\n`;
         stream += `70 0 Td\n(COMPOSTES) Tj\n`;
         stream += `70 0 Td\n(RESTANTS) Tj\n`;
-        stream += `70 0 Td\n(TOTAL BRUT) Tj\n`;
+        stream += `70 0 Td\n(EN LIGNE) Tj\n`;
         stream += 'ET\n';
 
         // Lignes du tableau
@@ -642,14 +795,14 @@ export class PartnerDashboardService {
 
             stream += 'BT\n/F1 8.5 Tf\n0.06 0.09 0.16 rg\n';
             stream += `44 ${rowY + 5} Td\n(${escapePdfText(cat.name.slice(0, 22))}) Tj\n`;
-            stream += `160 0 Td\n(${cat.unitPrice.toLocaleString('fr-FR')} F) Tj\n`;
+            stream += `160 0 Td\n(${pdfAmount(cat.unitPrice, 'F')}) Tj\n`;
             stream += `80 0 Td\n(${cat.soldQuantity}) Tj\n`;
             stream += `70 0 Td\n(${cat.checkedInQuantity}) Tj\n`;
             stream += `70 0 Td\n(${cat.remainingQuantity}) Tj\n`;
             stream += 'ET\n';
 
             stream += 'BT\n/F2 8.5 Tf\n0.06 0.09 0.16 rg\n';
-            stream += `${pageWidth - 110} ${rowY + 5} Td\n(${cat.grossAmount.toLocaleString('fr-FR')} FCFA) Tj\nET\n`;
+            stream += `${pageWidth - 110} ${rowY + 5} Td\n(${pdfAmount(cat.grossAmount)}) Tj\nET\n`;
 
             rowY -= 18;
         });
@@ -684,43 +837,38 @@ export class PartnerDashboardService {
         stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
         stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 34} Td\n(ANNULES / REMBOURSES) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.80 0.20 0.20 rg\n';
-        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 16} Td\n(${data.ticketsSummary.cancelled} annule(s)) Tj\nET\n`;
+        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 16} Td\n(${data.ticketsSummary.cancelled} annule(s) / ${data.ticketsSummary.refunded} remb.) Tj\nET\n`;
 
-        // 6. Section : SYNTHÈSE COMPTABLE & VERSEMENTS (Encadré Premium)
+        // 6. Section : SYNTHÈSE COMPTABLE (grand livre) & REVERSEMENT NET
         const finSectionY = statGridY - 26;
         stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
         stream += `36 ${finSectionY} Td\n(3. RECAPITULATIF FINANCIER & REVERSEMENT NET) Tj\nET\n`;
 
-        const finBoxY = finSectionY - 110;
+        const finBoxY = finSectionY - 150;
         stream += '0.96 0.97 0.99 rg\n0.80 0.85 0.90 RG\n1.5 w\n';
-        stream += `36 ${finBoxY} ${pageWidth - 72} 98 re B\n`;
+        stream += `36 ${finBoxY} ${pageWidth - 72} 138 re B\n`;
 
-        // Ligne 1 : Chiffre d'affaires Brut
-        stream += 'BT\n/F1 10 Tf\n0.20 0.25 0.35 rg\n';
-        stream += `52 ${finBoxY + 74} Td\n(Chiffre d'affaires brut encaisse) Tj\nET\n`;
-        stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `${pageWidth - 180} ${finBoxY + 74} Td\n(${data.financialSummary.totalGross.toLocaleString('fr-FR')} FCFA) Tj\nET\n`;
+        const finLine = (y: number, label: string, amount: string, color: string) => {
+            stream += 'BT\n/F1 10 Tf\n0.20 0.25 0.35 rg\n';
+            stream += `52 ${finBoxY + y} Td\n(${escapePdfText(label)}) Tj\nET\n`;
+            stream += `BT\n/F2 11 Tf\n${color} rg\n`;
+            stream += `${pageWidth - 180} ${finBoxY + y} Td\n(${amount}) Tj\nET\n`;
+        };
+        const fin = data.financialSummary;
+        finLine(114, 'Ventes en ligne (prix faciaux des billets)', pdfAmount(fin.totalGross), '0.06 0.09 0.16');
+        finLine(94, 'Remboursements aux acheteurs (part organisateur)', `- ${pdfAmount(fin.totalRefunded)}`, '0.80 0.20 0.20');
+        finLine(74, 'Frais de service payes par l\'acheteur (informatif, non deduits)', pdfAmount(fin.buyerServiceFees), '0.45 0.52 0.60');
+        finLine(54, `Ventes especes au guichet, hors plateforme (${fin.cashTickets} billet(s), informatif)`, pdfAmount(fin.cashSales), '0.45 0.52 0.60');
+        finLine(34, 'Dont disponible / en attente de disponibilite', `${pdfAmount(fin.availableNet, 'F')} / ${pdfAmount(fin.pendingNet, 'F')}`, '0.06 0.09 0.16');
 
-        // Ligne 2 : Frais & Commissions Event Village
-        stream += 'BT\n/F1 10 Tf\n0.20 0.25 0.35 rg\n';
-        stream += `52 ${finBoxY + 54} Td\n(Frais de billetterie & commissions de service) Tj\nET\n`;
-        stream += 'BT\n/F2 11 Tf\n0.80 0.20 0.20 rg\n';
-        stream += `${pageWidth - 180} ${finBoxY + 54} Td\n(- ${data.financialSummary.totalCommission.toLocaleString('fr-FR')} FCFA) Tj\nET\n`;
-
-        // Ligne 3 : Remboursements clients
-        stream += 'BT\n/F1 10 Tf\n0.20 0.25 0.35 rg\n';
-        stream += `52 ${finBoxY + 34} Td\n(Remboursements & retours valides) Tj\nET\n`;
-        stream += 'BT\n/F2 11 Tf\n0.80 0.20 0.20 rg\n';
-        stream += `${pageWidth - 180} ${finBoxY + 34} Td\n(- ${data.financialSummary.totalRefunded.toLocaleString('fr-FR')} FCFA) Tj\nET\n`;
-
-        // Ligne 4 : NET PARTENAIRE (Surbrillance Orange)
+        // NET PARTENAIRE (Surbrillance Orange)
         stream += '1 0.34 0.13 rg\n';
         stream += `36 ${finBoxY} ${pageWidth - 72} 26 re f\n`;
 
         stream += 'BT\n/F2 11 Tf\n1 1 1 rg\n';
-        stream += `52 ${finBoxY + 8} Td\n(MONTANT TOTAL NET A REVERSER AU PARTENAIRE) Tj\nET\n`;
+        stream += `52 ${finBoxY + 8} Td\n(NET ORGANISATEUR -- VENTES EN LIGNE) Tj\nET\n`;
         stream += 'BT\n/F2 13 Tf\n1 1 1 rg\n';
-        stream += `${pageWidth - 190} ${finBoxY + 7} Td\n(${data.financialSummary.totalNet.toLocaleString('fr-FR')} FCFA) Tj\nET\n`;
+        stream += `${pageWidth - 190} ${finBoxY + 7} Td\n(${pdfAmount(fin.totalNet)}) Tj\nET\n`;
 
         // 7. Footer & Sceau d'authenticité
         const footerY = 30;
@@ -767,7 +915,9 @@ export class PartnerDashboardService {
     }
 
     /**
-     * Génère un fichier export comptable structuré (CSV / XLSX standard avec UTF-8 BOM).
+     * Export comptable (CSV UTF-8 avec BOM, séparateur point-virgule) : une ligne par billet (canal,
+     * prix facial, frais de service payés par l'acheteur, remboursement, net organisateur en ligne),
+     * puis la synthèse du grand livre (finance_partner_summary), cohérente avec le rapport de clôture.
      */
     public static async generateAccountingExport(
         userId: string,
@@ -777,100 +927,90 @@ export class PartnerDashboardService {
         const supabase = getServiceRoleClient();
         const partner = await this.resolvePartner(userId);
 
-        // 1. Récupération des événements du partenaire
         let eventsQuery = supabase.from('events').select('id, title, start_date').eq('partner_id', partner.id);
-        if (eventId) {
-            eventsQuery = eventsQuery.eq('id', eventId);
-        }
+        if (eventId) eventsQuery = eventsQuery.eq('id', eventId);
         const { data: events, error: evErr } = await eventsQuery;
-        if (evErr || !events || events.length === 0) {
-            if (eventId) throw new Error('EVENEMENT_INTROUVABLE');
-        }
+        if (evErr) throw new Error(`Lecture impossible (événements) : ${evErr.message}`);
+        if (eventId && (!events || events.length === 0)) throw new Error('EVENEMENT_INTROUVABLE');
+        const eventList = events ?? [];
+        const eventIds = eventList.map((e) => e.id as string);
 
-        const eventIds = (events || []).map(e => e.id);
-
-        // 2. Récupération des transactions de billetterie et paiements
-        const [ticketsRes, paymentsRes, categoriesRes] = await Promise.all([
+        const [tickets, categories, summaryRes] = await Promise.all([
+            ticketsOfEvents<TicketRow>(eventIds, 'id, event_id, category_id, ticket_number, price, service_fee, status, payment_id, created_at'),
             eventIds.length > 0
-                ? supabase.from('tickets').select('id, event_id, category_id, ticket_number, price, status, created_at').in('event_id', eventIds)
-                : Promise.resolve({ data: [] }),
-            supabase.from('payments').select('id, external_order_id, transaction_id, payment_target, amount, status, partner_payout_amount, service_fee, aggregator_fee, created_at, metadata').eq('partner_id', partner.id),
-            eventIds.length > 0
-                ? supabase.from('ticket_categories').select('id, name, price').in('event_id', eventIds)
-                : Promise.resolve({ data: [] }),
+                ? fetchAllRows<{ id: string; name: string }>('catégories', (from, to) => supabase
+                    .from('ticket_categories').select('id, name').in('event_id', eventIds).order('id', { ascending: true }).range(from, to))
+                : Promise.resolve([] as Array<{ id: string; name: string }>),
+            supabase.rpc('finance_partner_summary', { p_partner_id: partner.id, p_event_id: eventId ?? null }),
         ]);
+        const summary = toPartnerSummary(summaryRes);
+        // Canal de chaque billet : paiement plateforme (is_platform_payment) ou hors plateforme
+        const flags = await platformFlags(tickets.map((t) => t.payment_id).filter((id): id is string => Boolean(id)));
 
-        const tickets = ticketsRes.data || [];
-        const payments = paymentsRes.data || [];
-        const categories = categoriesRes.data || [];
-
-        // 3. Construction des lignes comptables
         const headers = [
             'Date',
             'Evenement',
             'Reference Transaction',
-            'Type Operation',
-            'Billet / Commande',
+            'Canal',
+            'Billet',
             'Categorie',
             'Quantite',
-            'Montant Brut (FCFA)',
-            'Frais (FCFA)',
-            'Commission (FCFA)',
+            'Prix facial (FCFA)',
+            'Frais de service acheteur (FCFA, informatif)',
             'Remboursement (FCFA)',
-            'Montant Net (FCFA)',
-            'Statut Paiement'
+            'Net organisateur en ligne (FCFA)',
+            'Statut billet',
         ];
 
-        const rows: string[][] = [];
+        const rows: Array<Array<string | number>> = tickets
+            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+            .map((t) => {
+                const flag = t.payment_id ? flags.get(t.payment_id) : undefined;
+                const online = flag?.platform === true;
+                const price = Number(t.price) || 0;
+                const channel = online ? 'EN_LIGNE' : price > 0 ? 'ESPECES' : 'INVITATION';
+                return [
+                    t.created_at ? new Date(t.created_at).toISOString().split('T')[0] : '',
+                    String(eventList.find((e) => e.id === t.event_id)?.title ?? 'Evenement'),
+                    flag?.reference ?? '',
+                    channel,
+                    t.ticket_number || t.id,
+                    categories.find((c) => c.id === t.category_id)?.name ?? 'Standard',
+                    1,
+                    price,
+                    online ? Number(t.service_fee ?? 0) : 0,
+                    online && REFUNDED_TICKET.has(t.status) ? price : 0,
+                    online && SOLD.has(t.status) ? price : 0,
+                    t.status,
+                ];
+            });
 
-        // Lignes de billetterie
-        tickets.forEach(t => {
-            const ev = (events || []).find(e => e.id === t.event_id);
-            const cat = categories.find(c => c.id === t.category_id);
-            const dateStr = t.created_at ? new Date(t.created_at).toISOString().split('T')[0] : '';
-            const price = Number(t.price) || 0;
-            const isRefunded = t.status === 'REMBOURSE';
-            const isCancelled = t.status === 'ANNULE';
+        const blank = headers.map(() => '');
+        const totalLine = (label: string, amount: number): Array<string | number> => {
+            const line: Array<string | number> = [...blank];
+            line[1] = label;
+            line[10] = amount;
+            return line;
+        };
+        rows.push(blank);
+        rows.push(totalLine('SYNTHESE DU GRAND LIVRE : ventes en ligne (prix faciaux)', summary.onlineSales));
+        rows.push(totalLine('Remboursements (part organisateur)', -summary.refunded));
+        rows.push(totalLine('NET ORGANISATEUR (ventes en ligne)', summary.organizerNet));
+        rows.push(totalLine('Frais de service payes par l\'acheteur (informatif, non deduits)', summary.buyerServiceFees));
+        rows.push(totalLine(`Ventes especes hors plateforme (${summary.cashTickets} billet(s), informatif)`, summary.cashSales));
 
-            const brut = (isCancelled || isRefunded) ? 0 : price;
-            const refund = isRefunded ? price : 0;
-            const net = (isCancelled || isRefunded) ? 0 : price;
-
-            rows.push([
-                dateStr,
-                `"${(ev?.title || 'Evenement').replace(/"/g, '""')}"`,
-                `"TICK-${t.id.slice(0, 8)}"`,
-                'BILLETTERIE',
-                `"${t.ticket_number || t.id}"`,
-                `"${(cat?.name || 'Standard').replace(/"/g, '""')}"`,
-                '1',
-                String(brut),
-                '0',
-                '0',
-                String(refund),
-                String(net),
-                t.status
-            ]);
-        });
-
-        // 4. Assemblage du contenu CSV avec séparateur point-virgule et UTF-8 BOM pour Excel
-        const csvLines = [
-            headers.join(';'),
-            ...rows.map(r => r.join(';'))
-        ];
-
-        const csvContent = '\uFEFF' + csvLines.join('\r\n');
+        const csvLines = [headers, ...rows].map((r) => r.map(csvField).join(';'));
+        const csvContent = '﻿' + csvLines.join('\r\n');
         const buffer = Buffer.from(csvContent, 'utf8');
 
         const prefix = eventId ? `Cloture-${eventId.slice(0, 8)}` : `Comptabilite-${partner.company_name.replace(/[^a-zA-Z0-9]/g, '_')}`;
         const dateTag = new Date().toISOString().split('T')[0];
-        const ext = format === 'xlsx' ? 'csv' : 'csv';
-        const filename = `EventVillage-${prefix}-${dateTag}.${ext}`;
-        const contentType = 'text/csv; charset=utf-8';
+        // Format CSV uniquement (le paramètre format=xlsx est accepté pour compatibilité de l'API, mais produit un CSV)
+        const filename = `EventVillage-${prefix}-${dateTag}.csv`;
 
         return {
             buffer,
-            contentType,
+            contentType: 'text/csv; charset=utf-8',
             filename,
         };
     }

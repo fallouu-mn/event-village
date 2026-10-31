@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { FinancialCalculatorService } from '@/lib/payments/financial-calculator.service';
+import { accountBalance } from '@/lib/finance/ledger';
+import {
+    EMPTY_BUCKET, LEDGER_SALES_COLUMNS, LEDGER_SALES_TYPES, fetchAllRows, organizerWithdrawals, splitLedgerRows, toPartnerSummary,
+    type LedgerSalesRow,
+} from '@/lib/partner/partner-dashboard.service';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * GET /api/partner/finance — finance du compte organisateur (lot 3, contrat G).
+ * Montants lus dans le grand livre (finance_ledger, via finance_partner_summary) : ventes en ligne
+ * (prix faciaux), remboursements, net organisateur, disponible / en attente, solde retirable.
+ * Aucun taux appliqué ici : Event Village ne prélève rien sur l'organisateur (frais de service payés
+ * par l'acheteur, ligne informative) ; les ventes espèces (is_platform_payment = false) sont
+ * affichées à part et n'entrent ni dans le net ni dans le solde.
+ */
 export async function GET(request: NextRequest) {
     try {
         const activeSession = await requireActiveSession(request);
@@ -23,138 +35,71 @@ export async function GET(request: NextRequest) {
             .from('partners')
             .select('id, company_name, commercial_name')
             .eq('user_id', user.id)
-            .single();
-
-        if (pErr || !partner) {
+            .maybeSingle();
+        if (pErr) throw new Error(`Lecture impossible (profil partenaire) : ${pErr.message}`);
+        if (!partner) {
             return NextResponse.json({ error: 'Profil partenaire introuvable.' }, { status: 404 });
         }
 
-        const partnerId = partner.id;
-
-        // Lancer toutes les requêtes indépendantes en parallèle — configs financières incluses
-        const [eventsRes, ordersRes, hallsRes, orderConfigRes, hallConfigRes, withdrawalsRes] = await Promise.all([
-            supabase.from('events').select('id').eq('partner_id', partnerId),
-            supabase.from('orders')
-                .select('total_amount, paid_amount, order_status')
-                .eq('partner_id', partnerId)
-                .in('order_status', ['CONFIRMEE', 'EN_PREPARATION', 'PRETE', 'EN_LIVRAISON', 'LIVREE']),
-            supabase.from('hall_reservations')
-                .select('deposit_amount')
-                .eq('partner_id', partnerId)
-                .eq('status', 'CONFIRMEE'),
-            supabase.from('platform_settings')
-                .select('value')
-                .eq('key', 'order_commission_config')
-                .maybeSingle(),
-            supabase.from('platform_settings')
-                .select('value')
-                .eq('key', 'hall_fee_config')
-                .maybeSingle(),
-            supabase.from('withdrawals')
-                .select('id, gross_amount, fee_amount, net_amount, status, withdrawal_method, payment_details, created_at, processed_at')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false }),
+        const [summaryRes, ledgerRows, balance, withdrawals] = await Promise.all([
+            supabase.rpc('finance_partner_summary', { p_partner_id: partner.id, p_event_id: null }),
+            fetchAllRows<LedgerSalesRow>('grand livre', (from, to) => supabase
+                .from('finance_ledger')
+                .select(LEDGER_SALES_COLUMNS)
+                .eq('partner_id', partner.id)
+                .eq('account_kind', 'ORGANISATEUR')
+                .in('entry_type', LEDGER_SALES_TYPES)
+                .order('id', { ascending: true })
+                .range(from, to)),
+            accountBalance(user.id, 'ORGANISATEUR'),
+            organizerWithdrawals(user.id),
         ]);
-
-        const eventIds = eventsRes.data?.map((e: { id: string }) => e.id) || [];
-        let ticketRevenue = 0;
-        if (eventIds.length > 0) {
-            const { data: tickets } = await supabase
-                .from('tickets')
-                .select('price')
-                .in('event_id', eventIds)
-                .in('status', ['VALIDE', 'UTILISE']);
-            ticketRevenue = tickets?.reduce((s: number, t: { price: number }) => s + Number(t.price || 0), 0) || 0;
-        }
-
-        const orders = ordersRes.data || [];
-        const hallReservations = hallsRes.data || [];
-        const withdrawalsData = withdrawalsRes.data || [];
-
-        // Taux financiers — lecture DB obligatoire, échec bloquant si absent (FIN-1)
-        if (!orderConfigRes.data?.value?.commission_rate) {
-            return NextResponse.json(
-                { error: 'Configuration financière manquante: order_commission_config. Contactez le superadmin.' },
-                { status: 500 }
-            );
-        }
-        if (!hallConfigRes.data?.value?.aggregator_fee_rate) {
-            return NextResponse.json(
-                { error: 'Configuration financière manquante: hall_fee_config. Contactez le superadmin.' },
-                { status: 500 }
-            );
-        }
-
-        const orderCommissionRate = Number(orderConfigRes.data.value.commission_rate);
-        const hallAggregatorFeeRate = Number(hallConfigRes.data.value.aggregator_fee_rate);
-
-        const orderRevenue = orders.reduce((s: number, o: { paid_amount: number; total_amount: number }) =>
-            s + Number(o.paid_amount || o.total_amount || 0), 0);
-        const hallRevenue = hallReservations.reduce((s: number, r: { deposit_amount: number }) =>
-            s + Number(r.deposit_amount || 0), 0);
-
-        // 5. Calculs financiers (CDC V3.0 — server-side, taux 100% issus de la DB)
-        const ticketCalc = FinancialCalculatorService.calculateTicketingFinancials({
-            ticketFacialPrice: ticketRevenue,
-        });
-
-        const orderCalc = FinancialCalculatorService.calculateOrderFinancials({
-            orderTotalAmount: orderRevenue,
-            commissionRatePercent: orderCommissionRate,
-        });
-
-        const hallCalc = FinancialCalculatorService.calculateHallFinancials({
-            hallTotalAmount: hallRevenue,
-            depositPercentage: 100,
-            aggregatorFeeRatePercent: hallAggregatorFeeRate,
-        });
-
-        const grossRevenue = ticketRevenue + orderRevenue + hallRevenue;
-        const netRevenue = ticketCalc.partnerPayout + orderCalc.partnerPayout + hallCalc.partnerPayout;
-        const evCommission = grossRevenue - netRevenue;
-
-        const withdrawals = withdrawalsData;
-        const paidWithdrawals = withdrawals.filter((w: { status: string }) => w.status === 'PAID');
-        const pendingWithdrawalsArr = withdrawals.filter((w: { status: string }) => ['PENDING', 'PROCESSING'].includes(w.status));
-
-        const totalWithdrawn = paidWithdrawals.reduce((s: number, w: { net_amount: number }) => s + Number(w.net_amount || 0), 0);
-        const pendingAmount = pendingWithdrawalsArr.reduce((s: number, w: { gross_amount: number }) => s + Number(w.gross_amount || 0), 0);
-
-        const soldeDisponible = Math.max(0, netRevenue - totalWithdrawn - pendingAmount);
+        const summary = toPartnerSummary(summaryRes);
+        const split = splitLedgerRows(ledgerRows);
+        const target = (key: string) => {
+            const bucket = split.byTarget[key] ?? EMPTY_BUCKET;
+            return {
+                grossRevenue: bucket.sales,
+                refunded: bucket.refunded,
+                netRevenue: summary.byTarget[key] ?? 0,
+                commissionRate: 0,
+            };
+        };
 
         return NextResponse.json({
             success: true,
             finance: {
-                grossRevenue,
-                evCommission,
-                netRevenue,
-                soldeDisponible,
-                totalWithdrawn,
-                pendingAmount,
+                grossRevenue: summary.onlineSales,
+                evCommission: 0,
+                netRevenue: summary.organizerNet,
+                refunded: summary.refunded,
+                availableRevenue: summary.available,
+                pendingRevenue: summary.pending,
+                nextAvailableAt: balance.next_available_at,
+                debt: balance.debt,
+                soldeDisponible: balance.withdrawable,
+                totalWithdrawn: withdrawals.totalWithdrawn,
+                pendingAmount: withdrawals.pending,
+                buyerServiceFees: summary.buyerServiceFees,
+                cashSales: summary.cashSales,
+                cashTickets: summary.cashTickets,
                 breakdown: {
                     tickets: {
-                        grossRevenue: ticketRevenue,
-                        netRevenue: ticketCalc.partnerPayout,
-                        commissionRate: 0,
+                        ...target('TICKET'),
+                        buyerServiceFees: summary.buyerServiceFees,
+                        cashSales: summary.cashSales,
+                        cashTickets: summary.cashTickets,
                     },
-                    orders: {
-                        grossRevenue: orderRevenue,
-                        netRevenue: orderCalc.partnerPayout,
-                        commissionRate: orderCommissionRate,
-                    },
-                    halls: {
-                        grossRevenue: hallRevenue,
-                        netRevenue: hallCalc.partnerPayout,
-                        aggregatorFeeRate: hallAggregatorFeeRate,
-                    },
+                    orders: target('ORDER'),
+                    halls: target('HALL_RESERVATION'),
+                    tables: target('TABLE_RESERVATION'),
                 },
             },
-            withdrawals,
+            withdrawals: withdrawals.rows,
         });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur interne.' },
-            { status: 500 }
-        );
+        const message = error instanceof Error ? error.message : 'Erreur interne.';
+        console.error('[API /api/partner/finance] Erreur:', message);
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }
