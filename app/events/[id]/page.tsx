@@ -25,6 +25,7 @@ import {
   ExternalLink,
   Plus,
   Minus,
+  RefreshCw,
 } from 'lucide-react';
 
 const EventMap = dynamic(
@@ -35,11 +36,22 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import {
   PaymentModal,
+  formatFcfa,
   isUncertainOutcome,
+  readCheckoutQuote,
   readJsonBody,
   readPaymentError,
+  serverErrorMessage,
   useIdempotencyKey,
+  type CheckoutQuote,
 } from '@/components/payment/PaymentModal';
+
+/** Devis serveur du panier courant (clé = panier et prix affichés au moment de la demande). */
+type QuoteState =
+  | { kind: 'idle' }
+  | { kind: 'loading'; key: string }
+  | { kind: 'ready'; key: string; quote: CheckoutQuote }
+  | { kind: 'error'; key: string; message: string };
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { getBrowserClient } from '@/lib/supabase/client';
@@ -80,12 +92,77 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     })
     .filter(Boolean) as any[];
 
-  const cartTotal = cartItems.reduce((sum, item) => sum + (item.price || 0) * item.qty, 0);
+  // Nombre de billets (quantités) ; les montants viennent du devis serveur, jamais d'un calcul local.
   const cartTotalQty = cartItems.reduce((sum, item) => sum + item.qty, 0);
-  const hasFreeOnly = cartTotal === 0 && cartTotalQty > 0;
   const hasPaidItems = cartItems.some(item => (item.price || 0) > 0);
+  const hasFreeOnly = cartTotalQty > 0 && !hasPaidItems;
 
   const eventId = params.id;
+
+  // Empreinte du panier (catégories, quantités et prix affichés) : un devis ne vaut que pour elle.
+  const cartKey = cartItems
+    .map((item: any) => `${item.id}:${item.qty}:${item.price ?? 0}`)
+    .sort()
+    .join('|');
+  const [quoteState, setQuoteState] = useState<QuoteState>({ kind: 'idle' });
+  const [quoteRetry, setQuoteRetry] = useState(0);
+
+  useEffect(() => {
+    if (!eventId || !hasPaidItems) {
+      setQuoteState({ kind: 'idle' });
+      return;
+    }
+    const key = cartKey;
+    // Corps de la demande reconstruit depuis l'empreinte (identifiant:quantité:prix affiché).
+    const items = key.split('|').map(part => {
+      const [categoryId, quantity] = part.split(':');
+      return { categoryId, quantity: Number(quantity) };
+    });
+    const controller = new AbortController();
+    setQuoteState({ kind: 'loading', key });
+    // Court délai : plusieurs clics « + » ne déclenchent qu'une demande de devis.
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/checkout/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventId, items }),
+          signal: controller.signal,
+        });
+        const body = await readJsonBody(res, 'événement/devis');
+        if (controller.signal.aborted) return;
+        if (!res.ok) {
+          setQuoteState({
+            kind: 'error',
+            key,
+            message: serverErrorMessage(body) ?? `Le total n’a pas pu être calculé (erreur ${res.status}).`,
+          });
+          return;
+        }
+        const quote = readCheckoutQuote(body);
+        if (!quote) {
+          console.error('[événement] devis illisible :', body);
+          setQuoteState({ kind: 'error', key, message: 'Réponse inattendue du serveur pour le calcul du total.' });
+          return;
+        }
+        setQuoteState({ kind: 'ready', key, quote });
+      } catch (err) {
+        // Demande remplacée par un panier plus récent : son résultat ne sert plus.
+        if (controller.signal.aborted) return;
+        console.error('[événement] devis impossible :', err);
+        setQuoteState({ kind: 'error', key, message: 'Connexion impossible : le total n’a pas pu être calculé.' });
+      }
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [eventId, cartKey, hasPaidItems, quoteRetry]);
+
+  const quote = quoteState.kind === 'ready' && quoteState.key === cartKey ? quoteState.quote : null;
+  const quoteLoading = hasPaidItems && !quote && (quoteState.kind === 'loading' || quoteState.kind === 'idle');
+  const quoteError = hasPaidItems && quoteState.kind === 'error' && quoteState.key === cartKey ? quoteState.message : null;
+  const quoteLineFor = (categoryId: string) => quote?.lines.find(line => line.categoryId === categoryId) ?? null;
 
   const loadEvent = React.useCallback(async (showLoading = true) => {
     if (!eventId) return;
@@ -301,9 +378,27 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     }
 
     // Panier avec au moins un billet payant : PaymentModal envoie TOUT le panier (gratuits compris,
-    // émis à la confirmation du paiement).
+    // émis à la confirmation du paiement). Le total affiché est celui du devis serveur à jour.
+    if (!quote) {
+      toast.error(quoteError ?? 'Calcul du total en cours : patientez un instant.');
+      return;
+    }
     setIsPaymentOpen(true);
   };
+
+  const buyLabel = (compact: boolean): string => {
+    if (isClaimingFree) return compact ? 'Réservation...' : 'Réservation en cours...';
+    const plural = cartTotalQty > 1 ? 's' : '';
+    if (hasFreeOnly) {
+      return compact ? `Réserver ${cartTotalQty} gratuit${plural}` : `Réserver ${cartTotalQty} billet${plural} gratuit${plural}`;
+    }
+    if (quote) {
+      return compact ? `Acheter (${formatFcfa(quote.totalAmount)})` : `Acheter ${cartTotalQty} billet${plural} (${formatFcfa(quote.totalAmount)})`;
+    }
+    if (quoteError) return 'Total indisponible';
+    return 'Calcul du total…';
+  };
+  const buyBlocked = hasPaidItems && !quote;
 
   return (
     <div className="space-y-6 pb-20">
@@ -669,44 +764,96 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           {/* Récapitulatif Panier & CTA */}
           {cartTotalQty > 0 && (
             <div className="pt-2 space-y-3">
-              {/* Détail du panier */}
-              <div className="space-y-1.5">
-                {cartItems.map((item: any) => (
-                  <div key={item.id} className="flex justify-between items-baseline text-xs">
-                    <span className="text-slate-600 dark:text-zinc-400">
-                      {item.qty}x {item.name}
-                    </span>
-                    <span className="font-bold text-slate-900 dark:text-white">
-                      {item.isFree ? 'Gratuit' : `${((item.price || 0) * item.qty).toLocaleString('fr-FR')} FCFA`}
-                    </span>
+              {/* Détail du panier : montants du devis serveur */}
+              <dl className="space-y-1.5" aria-busy={quoteLoading || undefined}>
+                {cartItems.map((item: any) => {
+                  const line = quoteLineFor(item.id);
+                  return (
+                    <div key={item.id} className="flex justify-between items-baseline gap-3 text-xs">
+                      <dt className="text-slate-600 dark:text-zinc-400">
+                        {item.qty}x {item.name}
+                      </dt>
+                      <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">
+                        {(item.price || 0) === 0 ? (
+                          'Gratuit'
+                        ) : line ? (
+                          formatFcfa(line.lineFacial)
+                        ) : (
+                          <span className="inline-block h-3 w-16 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none align-middle" aria-hidden="true" />
+                        )}
+                      </dd>
+                    </div>
+                  );
+                })}
+                {hasPaidItems && (
+                  <div className="flex justify-between items-baseline gap-3 text-xs">
+                    <dt className="text-slate-600 dark:text-zinc-400">Frais de service</dt>
+                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">
+                      {quote ? (
+                        formatFcfa(quote.serviceFee)
+                      ) : (
+                        <span className="inline-block h-3 w-12 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none align-middle" aria-hidden="true" />
+                      )}
+                    </dd>
                   </div>
-                ))}
-              </div>
+                )}
+              </dl>
               <div className="h-px bg-slate-200 dark:bg-zinc-800" />
-              <div className="flex justify-between items-baseline">
+              <div className="flex justify-between items-baseline gap-3" aria-live="polite">
                 <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">
                   Total ({cartTotalQty} billet{cartTotalQty > 1 ? 's' : ''})
                 </span>
-                <span className={`text-xl font-black ${hasFreeOnly ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}`}>
-                  {hasFreeOnly ? 'Gratuit' : `${cartTotal.toLocaleString('fr-FR')} FCFA`}
+                <span className={`text-xl font-black tabular-nums ${hasFreeOnly ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+                  {hasFreeOnly ? (
+                    'Gratuit'
+                  ) : quote ? (
+                    formatFcfa(quote.totalAmount)
+                  ) : quoteError ? (
+                    '—'
+                  ) : (
+                    <>
+                      <span className="sr-only">Calcul du total en cours…</span>
+                      <span className="inline-block h-6 w-24 rounded-lg bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none align-middle" aria-hidden="true" />
+                    </>
+                  )}
                 </span>
               </div>
+
+              {quoteError && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2.5 p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40"
+                >
+                  <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">{quoteError}</p>
+                    <button
+                      type="button"
+                      onClick={() => setQuoteRetry(n => n + 1)}
+                      className="inline-flex items-center gap-1.5 min-h-[44px] text-xs font-bold text-red-700 dark:text-red-300 underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded-md"
+                    >
+                      <RefreshCw size={13} aria-hidden="true" /> Recalculer le total
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <Button
                 variant="primary"
                 size="lg"
                 fullWidth
-                disabled={event.isFullySoldOut || isClaimingFree}
+                disabled={event.isFullySoldOut || isClaimingFree || buyBlocked}
                 isLoading={isClaimingFree}
                 onClick={handleBuyClick}
                 leftIcon={<Ticket size={18} />}
               >
-                {isClaimingFree
-                  ? 'Réservation en cours...'
-                  : hasFreeOnly
-                  ? `Réserver ${cartTotalQty} billet${cartTotalQty > 1 ? 's' : ''} gratuit${cartTotalQty > 1 ? 's' : ''}`
-                  : `Acheter ${cartTotalQty} billet${cartTotalQty > 1 ? 's' : ''} (${cartTotal.toLocaleString('fr-FR')} FCFA)`}
+                {buyLabel(false)}
               </Button>
+              {hasPaidItems && (
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 text-center leading-relaxed">
+                  Frais de service payés par l’acheteur, calculés par Event Village sur chaque billet.
+                </p>
+              )}
 
               <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500">
                 <ShieldCheck size={13} className="text-emerald-500" />
@@ -724,16 +871,12 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
             variant="primary"
             size="lg"
             fullWidth
-            disabled={isClaimingFree}
+            disabled={isClaimingFree || buyBlocked}
             isLoading={isClaimingFree}
             onClick={handleBuyClick}
             leftIcon={<Ticket size={18} />}
           >
-            {isClaimingFree
-              ? 'Réservation...'
-              : hasFreeOnly
-              ? `Réserver ${cartTotalQty} gratuit${cartTotalQty > 1 ? 's' : ''}`
-              : `Acheter (${cartTotal.toLocaleString('fr-FR')} FCFA)`}
+            {buyLabel(true)}
           </Button>
         </div>
       )}
@@ -744,7 +887,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         onClose={() => setIsPaymentOpen(false)}
         eventId={eventId}
         checkoutItems={cartItems.map((item: any) => ({ categoryId: item.id, quantity: item.qty, label: item.name }))}
-        amountFormatted={`${cartTotal.toLocaleString('fr-FR')} FCFA`}
+        quote={quote}
         title={`${event.title} (${cartItems.map((item: any) => `${item.qty}x ${item.name}`).join(' + ')})`}
         onPaymentSuccess={() => {
           setIsPaymentOpen(false);

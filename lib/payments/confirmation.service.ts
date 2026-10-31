@@ -52,7 +52,7 @@ export async function loadPayment(id: string): Promise<PaymentRecord | null> {
 
 async function notifyTicketPurchase(paymentId: string, ticketIds: string[]): Promise<void> {
     const supabase = getServiceRoleClient();
-    const { data: pay, error } = await supabase.from('payments').select('id, client_id, amount, payer_phone, metadata').eq('id', paymentId).single();
+    const { data: pay, error } = await supabase.from('payments').select('id, client_id, amount, facial_amount, service_fee, payer_phone, metadata').eq('id', paymentId).single();
     if (error || !pay) {
         console.error(`[confirmation] notifications du paiement ${paymentId} impossibles :`, error?.message);
         return;
@@ -70,6 +70,8 @@ async function notifyTicketPurchase(paymentId: string, ticketIds: string[]): Pro
             ticketCount: tickets.length,
             ticketNumbers: tickets.map((t) => t.ticket_number),
             totalAmount: Number(pay.amount),
+            serviceFee: Number(pay.service_fee ?? 0),
+            facialAmount: pay.facial_amount === null ? undefined : Number(pay.facial_amount),
             clientPhone: pay.payer_phone ? `+221${pay.payer_phone}` : undefined,
         });
     } catch (err) {

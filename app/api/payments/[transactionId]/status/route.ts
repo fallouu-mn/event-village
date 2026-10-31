@@ -41,6 +41,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ transac
             payment_id: payment.id,
             status: payment.status,
             amount: Number(payment.amount),
+            facial_amount: view.facial_amount === null || view.facial_amount === undefined ? null : Number(view.facial_amount),
+            // Paiement antérieur au lot 3 (sans répartition enregistrée) : frais inconnus, pas 0
+            service_fee: view.facial_amount === null || view.facial_amount === undefined ? null : Number(view.service_fee ?? 0),
+            refunded_amount: Number(view.refunded_amount ?? 0),
             currency: payment.currency ?? 'XOF',
             operator: view.operator ?? null,
             expires_at: view.held_expires_at ?? null,

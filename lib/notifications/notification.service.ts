@@ -647,6 +647,10 @@ export class NotificationService {
         ticketCount: number;
         ticketNumbers: string[];
         totalAmount: number;
+        /** Lot 3 : frais de service payés par l'acheteur (inclus dans totalAmount). */
+        serviceFee?: number;
+        /** Lot 3 : part de l'organisateur (prix faciaux) ; à défaut, totalAmount moins les frais. */
+        facialAmount?: number;
         clientPhone?: string;
         clientEmail?: string;
         clientName?: string;
@@ -709,6 +713,11 @@ export class NotificationService {
             const eventDate = eventRec?.start_date ? new Date(eventRec.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
             const orderRef = params.orderNumber || (params.orderId ? `CMD-${params.orderId.slice(0, 8).toUpperCase()}` : `CMD-${Date.now().toString().slice(-6)}`);
             const plural = params.ticketCount > 1;
+            const fmt = (v: number) => `${Number(v).toLocaleString('fr-FR')} FCFA`;
+            const serviceFee = Number(params.serviceFee ?? 0);
+            const facialAmount = Number(params.facialAmount ?? params.totalAmount - serviceFee);
+            // Lot 3.2 : montant payé et frais de service annoncés à l'acheteur (achat payant seulement)
+            const paidLine = params.totalAmount > 0 ? ` Total paye : ${fmt(params.totalAmount)} (dont frais de service : ${fmt(serviceFee)}).` : '';
 
             // ── CANAL 1 : In-App Acheteur ─────────────────────────────
             result.client.inApp = await NotificationService.createNotification({
@@ -731,8 +740,8 @@ export class NotificationService {
             if (clientPhone) {
                 const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://event-village.sn';
                 const clientSms = plural
-                    ? `Event Village : Achat confirme (${params.ticketCount} billets pour "${eventTitle}"). Retrouvez vos billets sur : ${appBaseUrl}/tickets`
-                    : `Event Village : Achat confirme (billet pour "${eventTitle}"). Retrouvez votre billet sur : ${appBaseUrl}/tickets`;
+                    ? `Event Village : Achat confirme (${params.ticketCount} billets pour "${eventTitle}").${paidLine} Retrouvez vos billets sur : ${appBaseUrl}/tickets`
+                    : `Event Village : Achat confirme (billet pour "${eventTitle}").${paidLine} Retrouvez votre billet sur : ${appBaseUrl}/tickets`;
                 try {
                     const smsRes = await mTargetService.sendSms(clientPhone, clientSms);
                     result.client.sms = smsRes.success;
@@ -773,7 +782,7 @@ export class NotificationService {
                     userId: partnerUserId,
                     type: 'ORDER' as any,
                     title: '🎟️ Nouvelle commande de billets',
-                    message: `Un client vient d'acheter ${params.ticketCount} billet(s) pour votre événement "${eventTitle}" (${params.totalAmount.toLocaleString('fr-FR')} FCFA).`,
+                    message: `Un client vient d'acheter ${params.ticketCount} billet(s) pour votre événement "${eventTitle}" (${facialAmount.toLocaleString('fr-FR')} FCFA).`,
                     data: {
                         event_id: params.eventId,
                         order_id: params.orderId,
@@ -786,7 +795,7 @@ export class NotificationService {
 
             // ── CANAL 5 : SMS Organisateur ────────────────────────────
             if (partnerPhone) {
-                const partnerSms = `Event Village : Nouvelle vente de ${params.ticketCount} billet(s) pour "${eventTitle}" (${params.totalAmount.toLocaleString('fr-FR')} FCFA, Réf: ${orderRef}).`;
+                const partnerSms = `Event Village : Nouvelle vente de ${params.ticketCount} billet(s) pour "${eventTitle}" (${facialAmount.toLocaleString('fr-FR')} FCFA, Réf: ${orderRef}).`;
                 try {
                     const orgSmsRes = await mTargetService.sendSms(partnerPhone, partnerSms);
                     result.organizer.sms = orgSmsRes.success;

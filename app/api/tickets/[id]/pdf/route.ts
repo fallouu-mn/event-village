@@ -112,6 +112,11 @@ export async function GET(
 
         const price = ticket.price ?? categoryData?.price ?? 0;
         const priceFormatted = price > 0 ? `${price.toLocaleString('fr-FR')} FCFA` : 'Gratuit';
+        // Lot 3.2 : frais de service du billet (payés par l'acheteur) et total payé
+        const serviceFee = Number(ticket.service_fee ?? 0);
+        const feesFormatted = price > 0
+            ? `Frais de service : ${serviceFee.toLocaleString('fr-FR')} FCFA - Total paye : ${(Number(price) + serviceFee).toLocaleString('fr-FR')} FCFA`
+            : undefined;
 
         // 6. Génération du PDF vectoriel
         const pdfBuffer = await TicketPdfService.generateTicketPdf({
@@ -121,6 +126,7 @@ export async function GET(
             organizerName,
             categoryName: categoryData?.name || 'Pass Standard',
             priceFormatted,
+            feesFormatted,
             dateFormatted,
             timeFormatted,
             venue: eventData?.location || 'Dakar Arena',

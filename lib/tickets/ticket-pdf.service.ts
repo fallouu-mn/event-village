@@ -7,6 +7,8 @@ export interface TicketPdfData {
     organizerName?: string;
     categoryName: string;
     priceFormatted: string;
+    /** Lot 3.2 : frais de service et total payé du billet (billet payant). */
+    feesFormatted?: string;
     dateFormatted: string;
     timeFormatted: string;
     venue: string;
@@ -201,6 +203,10 @@ export class TicketPdfService {
         stream += `${cardX + 260} ${line3Y} Td\n(PRIX DU BILLET) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
         stream += `${cardX + 260} ${line3Y - 16} Td\n(${escapePdfText(data.priceFormatted)}) Tj\nET\n`;
+        if (data.feesFormatted) {
+            stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
+            stream += `${cardX + 260} ${line3Y - 30} Td\n(${escapePdfText(data.feesFormatted)}) Tj\nET\n`;
+        }
 
         // Ligne 4 : Numéro officiel de billet
         const line4Y = line3Y - 44;

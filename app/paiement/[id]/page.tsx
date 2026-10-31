@@ -42,6 +42,7 @@ import {
   clearPaymentHandoff,
   isMobileDevice,
   isSamirPayOperator,
+  readAmount,
   readJsonBody,
   readPaymentHandoff,
   serverErrorMessage,
@@ -66,7 +67,12 @@ const PAYMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 interface PaymentStatusView {
   paymentId: string;
   status: string;
+  /** Total payé (prix + frais de service), montant demandé à l'opérateur. */
   amount: number;
+  /** Prix des billets ou de la prestation (facial_amount) ; null si la route ne le fournit pas. */
+  facialAmount: number | null;
+  /** Frais de service payés par l'acheteur (service_fee) ; null si la route ne le fournit pas. */
+  serviceFee: number | null;
   currency: string;
   operator: string | null;
   /** Échéance de la réservation (expires_at), en millisecondes ; null si le paiement n'en a pas. */
@@ -136,6 +142,8 @@ function parseStatusBody(body: unknown): PaymentStatusView | null {
     paymentId: b.payment_id,
     status: b.status,
     amount: b.amount,
+    facialAmount: readAmount(b.facial_amount),
+    serviceFee: readAmount(b.service_fee),
     currency: b.currency,
     operator: b.operator,
     expiresAt,
@@ -828,8 +836,24 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
 
           {/* Détails */}
           <dl className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 space-y-2.5 text-xs">
-            <div className="flex items-center justify-between gap-3">
-              <dt className="text-slate-500 dark:text-zinc-400">Montant</dt>
+            {payment.facialAmount !== null && (
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-500 dark:text-zinc-400">Prix</dt>
+                <dd className="font-bold text-slate-900 dark:text-white tabular-nums">{formatAmount(payment.facialAmount, payment.currency)}</dd>
+              </div>
+            )}
+            {payment.serviceFee !== null && (
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-slate-500 dark:text-zinc-400">Frais de service</dt>
+                <dd className="font-bold text-slate-900 dark:text-white tabular-nums">{formatAmount(payment.serviceFee, payment.currency)}</dd>
+              </div>
+            )}
+            <div
+              className={`flex items-center justify-between gap-3 ${
+                payment.facialAmount !== null || payment.serviceFee !== null ? 'pt-2.5 border-t border-slate-200 dark:border-zinc-800' : ''
+              }`}
+            >
+              <dt className="font-bold text-slate-700 dark:text-zinc-200">{payment.status === 'SUCCESS' ? 'Total payé' : 'Total'}</dt>
               <dd className="font-black text-slate-900 dark:text-white tabular-nums">{formatAmount(payment.amount, payment.currency)}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">

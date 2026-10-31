@@ -10,6 +10,8 @@
  *   clé est tirée pour toute nouvelle tentative (échec définitif, panier ou saisie modifiés).
  * - Après l'initiation, le lien de l'opérateur est ouvert puis le client est conduit sur la page de
  *   suivi /paiement/<id> (status_page_url), qui sonde le statut jusqu'à l'échéance expires_at.
+ * - Lot 3 : un panier de billets s'affiche avec le devis du serveur (POST /api/checkout/quote) :
+ *   prix des billets, frais de service et total. Aucun frais n'est calculé dans le navigateur.
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -34,10 +36,33 @@ export interface CheckoutItem {
   label?: string;
 }
 
+/** Ligne du devis serveur (POST /api/checkout/quote). */
+export interface CheckoutQuoteLine {
+  categoryId: string;
+  unitPrice: number;
+  quantity: number;
+  unitServiceFee: number;
+  lineFacial: number;
+  lineServiceFee: number;
+  lineTotal: number;
+}
+
+/** Devis serveur d'un panier de billets : montants affichés tels quels, jamais recalculés ici. */
+export interface CheckoutQuote {
+  lines: CheckoutQuoteLine[];
+  /** Somme des prix des billets. */
+  facialAmount: number;
+  /** Frais de service payés par l'acheteur. */
+  serviceFee: number;
+  /** Taux des frais de service (en %), pour information. */
+  serviceRatePercent: number | null;
+  /** Total à payer = montant demandé à l'opérateur. */
+  totalAmount: number;
+}
+
 interface PaymentModalBaseProps {
   isOpen: boolean;
   onClose: () => void;
-  amountFormatted: string;
   title: string;
   /**
    * Appelée quand l'achat est confirmé sans paiement (panier gratuit). Un paiement Mobile Money se
@@ -48,17 +73,23 @@ interface PaymentModalBaseProps {
 
 /** Paiement d'une cible unique via /api/payments/create (salle, table, commande, abonnement, billet). */
 interface TargetPaymentProps extends PaymentModalBaseProps {
+  /** Montant affiché par la page appelante (hors frais de service, calculés par le serveur). */
+  amountFormatted: string;
   targetType: PaymentTargetType;
   targetId: string;
   quantity?: number;
   checkoutItems?: undefined;
   eventId?: undefined;
+  quote?: undefined;
 }
 
 /** Panier de billets complet (payants et gratuits) via /api/checkout. */
 interface CheckoutPaymentProps extends PaymentModalBaseProps {
   checkoutItems: CheckoutItem[];
   eventId: string;
+  /** Devis du serveur pour ce panier ; null pendant son calcul (paiement impossible). */
+  quote: CheckoutQuote | null;
+  amountFormatted?: undefined;
   targetType?: undefined;
   targetId?: undefined;
   quantity?: undefined;
@@ -129,6 +160,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+/** Nombre lu dans une réponse JSON (nombre, ou chaîne numérique d'une colonne numeric) ; null sinon. */
+export function readAmount(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+/** Montant en FCFA au format français (séparateur de milliers, centimes seulement s'il y en a). */
+export function formatFcfa(amount: number): string {
+  return `${amount.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA`;
+}
+
+/** Devis renvoyé par POST /api/checkout/quote ; null s'il ne respecte pas le contrat. */
+export function readCheckoutQuote(body: unknown): CheckoutQuote | null {
+  const root = isRecord(body) && isRecord(body.quote) ? body.quote : body;
+  if (!isRecord(root) || !Array.isArray(root.lines)) return null;
+  const facialAmount = readAmount(root.facial_amount);
+  const serviceFee = readAmount(root.service_fee);
+  const totalAmount = readAmount(root.total_amount);
+  if (facialAmount === null || serviceFee === null || totalAmount === null) return null;
+  const lines: CheckoutQuoteLine[] = [];
+  for (const raw of root.lines) {
+    if (!isRecord(raw)) return null;
+    const categoryId = nonEmptyString(raw.category_id);
+    const unitPrice = readAmount(raw.unit_price);
+    const quantity = readAmount(raw.quantity);
+    const unitServiceFee = readAmount(raw.unit_service_fee);
+    const lineFacial = readAmount(raw.line_facial);
+    const lineServiceFee = readAmount(raw.line_service_fee);
+    const lineTotal = readAmount(raw.line_total);
+    if (!categoryId || unitPrice === null || quantity === null || unitServiceFee === null || lineFacial === null || lineServiceFee === null || lineTotal === null) {
+      return null;
+    }
+    lines.push({ categoryId, unitPrice, quantity, unitServiceFee, lineFacial, lineServiceFee, lineTotal });
+  }
+  return { lines, facialAmount, serviceFee, serviceRatePercent: readAmount(root.service_fee_rate), totalAmount };
 }
 
 /** Message d'erreur fourni par le serveur ({ error }), ou null s'il n'y en a pas. */
@@ -307,12 +379,14 @@ const FINISHED_FAILED: Record<string, string> = {
   EXPIRED: 'délai dépassé',
 };
 
-const OPERATOR_VISUALS: Record<SamirPayOperatorName, { mark: string; tile: string }> = {
+/** Pastille de marque de chaque opérateur (partagée avec les écrans de retrait). */
+export const OPERATOR_VISUALS: Record<SamirPayOperatorName, { mark: string; tile: string }> = {
   WAVE: { mark: 'W', tile: 'bg-[#1DC8F2] text-slate-950' },
   ORANGE_MONEY: { mark: 'OM', tile: 'bg-[#FF7900] text-white' },
 };
 
-function formatLocalPhone(nineDigits: string): string {
+/** Numéro à 9 chiffres affiché « 77 123 45 67 ». */
+export function formatLocalPhone(nineDigits: string): string {
   return `${nineDigits.slice(0, 2)} ${nineDigits.slice(2, 5)} ${nineDigits.slice(5, 7)} ${nineDigits.slice(7)}`;
 }
 
@@ -383,7 +457,21 @@ function makeFailure(httpStatus: number, message: string): PaymentRequestError {
 /* ──────────────────────────────── Composant ──────────────────────────────── */
 
 export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
-  const { isOpen, onClose, amountFormatted, title, onPaymentSuccess } = props;
+  const { isOpen, onClose, title, onPaymentSuccess } = props;
+  // Panier de billets : montants du devis serveur. Autres cibles : montant de la page appelante,
+  // hors frais de service (calculés par le serveur, détaillés sur la page de suivi), sauf abonnement.
+  const quote = props.checkoutItems !== undefined ? props.quote : null;
+  const awaitingQuote = props.checkoutItems !== undefined && props.quote === null;
+  const feesComputedLater = props.checkoutItems === undefined && props.targetType !== 'SUBSCRIPTION';
+  const payableAmount: string | null =
+    props.checkoutItems !== undefined
+      ? quote
+        ? formatFcfa(quote.totalAmount)
+        : null
+      : feesComputedLater
+      ? null
+      : props.amountFormatted;
+  const payableText = payableAmount ? `le paiement de ${payableAmount}` : 'le paiement';
   const router = useRouter();
   const pathname = usePathname();
   const toast = useToast();
@@ -483,7 +571,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
   };
 
   const handleSubmit = async () => {
-    if (submittingRef.current || retryRemaining > 0) return;
+    if (submittingRef.current || retryRemaining > 0 || awaitingQuote) return;
     setPhoneTouched(true);
     if (!operator) {
       setOperatorMissing(true);
@@ -619,9 +707,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
     ? `Connexion à ${chosenLabel ?? 'l’opérateur'}…`
     : retryRemaining > 0
     ? `Réessayer dans ${formatDelay(retryRemaining)}`
+    : awaitingQuote
+    ? 'Calcul du total…'
+    : payableAmount
+    ? chosenLabel
+      ? `Payer ${payableAmount} avec ${chosenLabel}`
+      : `Payer ${payableAmount}`
     : chosenLabel
-    ? `Payer ${amountFormatted} avec ${chosenLabel}`
-    : `Payer ${amountFormatted}`;
+    ? `Continuer avec ${chosenLabel}`
+    : 'Continuer vers le paiement';
 
   const reservationClock = redirect ? formatClock(redirect.expiresAt) : null;
 
@@ -655,8 +749,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
               {redirect.kind === 'settled'
                 ? 'Affichage du statut de ce paiement…'
                 : redirect.opened
-                ? `Validez le paiement de ${amountFormatted} dans ${redirect.label}, puis revenez ici : le suivi se met à jour tout seul.`
-                : `Sur la page de suivi, ouvrez ${redirect.label} ou scannez le QR code pour valider le paiement de ${amountFormatted}.`}
+                ? `Validez ${payableText} dans ${redirect.label}, puis revenez ici : le suivi se met à jour tout seul.`
+                : `Sur la page de suivi, ouvrez ${redirect.label} ou scannez le QR code pour valider ${payableText}.`}
             </p>
             {reservationClock && (
               <p className="inline-flex items-center gap-1.5 pt-1 text-[11px] font-bold text-[#FF5722]">
@@ -687,15 +781,56 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
           className="space-y-5"
         >
           {/* Récapitulatif */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider">Récapitulatif</span>
-              <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">{title}</p>
+          {props.checkoutItems !== undefined ? (
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 space-y-3">
+              <div className="min-w-0">
+                <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider">Récapitulatif</span>
+                <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">{title}</p>
+              </div>
+              {quote ? (
+                <dl className="space-y-1.5 text-xs" aria-live="polite">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-slate-500 dark:text-zinc-400">Prix des billets</dt>
+                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">{formatFcfa(quote.facialAmount)}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-slate-500 dark:text-zinc-400">
+                      Frais de service{quote.serviceRatePercent !== null && quote.serviceFee > 0 ? ` (${quote.serviceRatePercent.toLocaleString('fr-FR')} %)` : ''}
+                    </dt>
+                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">{formatFcfa(quote.serviceFee)}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3 pt-2 border-t border-slate-200 dark:border-zinc-800">
+                    <dt className="font-bold text-slate-700 dark:text-zinc-200">Total à payer</dt>
+                    <dd className="text-base font-black text-[#FF5722] tabular-nums whitespace-nowrap">{formatFcfa(quote.totalAmount)}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <div className="space-y-2" role="status" aria-live="polite">
+                  <span className="sr-only">Calcul du total en cours…</span>
+                  <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+                  <div className="h-3 w-1/2 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+                  <div className="h-5 w-1/3 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+                </div>
+              )}
             </div>
-            <span className="shrink-0 text-sm sm:text-base font-black text-[#FF5722] px-3 py-1 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/30 whitespace-nowrap">
-              {amountFormatted}
-            </span>
-          </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider">Récapitulatif</span>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">{title}</p>
+                </div>
+                <span className="shrink-0 text-sm sm:text-base font-black text-[#FF5722] px-3 py-1 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/30 whitespace-nowrap tabular-nums">
+                  {props.amountFormatted}
+                </span>
+              </div>
+              {feesComputedLater && (
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
+                  Montant hors frais de service : le total exact, frais de service compris, s’affiche sur la page de suivi du paiement.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Erreur */}
           {failure && (
@@ -886,7 +1021,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
             </ul>
           ) : null}
 
-          <Button type="submit" variant="primary" fullWidth size="lg" isLoading={isSubmitting} disabled={retryRemaining > 0}>
+          <Button type="submit" variant="primary" fullWidth size="lg" isLoading={isSubmitting} disabled={retryRemaining > 0 || awaitingQuote}>
             {ctaLabel}
           </Button>
 
