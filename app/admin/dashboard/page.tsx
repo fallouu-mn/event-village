@@ -126,12 +126,13 @@ export default function AdminDashboardPage() {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
 
   // Visionneuse sécurisée de documents KYC
-  const handleViewDocument = async (filePath: string | undefined, docName: string) => {
+  // Lot 1C.2 : URL demandée par dossier et type de pièce ; le chemin est lu côté serveur.
+  const handleViewDocument = async (partnerId: string, docType: 'id_card' | 'business_doc', filePath: string | undefined, docName: string) => {
     if (!filePath) return;
     setDocError(null);
     setLoadingDoc(filePath);
     try {
-      const res = await fetch(`/api/partner/documents/signed-url?path=${encodeURIComponent(filePath)}`);
+      const res = await fetch(`/api/partner/documents/signed-url?partnerId=${encodeURIComponent(partnerId)}&docType=${docType}`);
       const data = await res.json();
       if (!res.ok || !data.signedUrl) {
         throw new Error(data.error || `Impossible de générer le lien de consultation (${docName}).`);
@@ -913,7 +914,7 @@ export default function AdminDashboardPage() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => handleViewDocument(selectedPartner.id_card_url, 'Pièce d\'identité')}
+                      onClick={() => handleViewDocument(selectedPartner.id, 'id_card', selectedPartner.id_card_url, 'Pièce d\'identité')}
                       disabled={loadingDoc === selectedPartner.id_card_url}
                       className="text-xs font-bold text-[#FF5722] hover:bg-orange-50 dark:hover:bg-orange-950/30 flex-shrink-0"
                     >
@@ -951,7 +952,7 @@ export default function AdminDashboardPage() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => handleViewDocument(selectedPartner.business_doc_url, 'NINEA/RCCM')}
+                      onClick={() => handleViewDocument(selectedPartner.id, 'business_doc', selectedPartner.business_doc_url, 'NINEA/RCCM')}
                       disabled={loadingDoc === selectedPartner.business_doc_url}
                       className="text-xs font-bold text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30 flex-shrink-0"
                     >

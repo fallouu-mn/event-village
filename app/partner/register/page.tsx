@@ -111,10 +111,11 @@ export default function PartnerRegisterPage() {
                 body: idCardFormData,
             });
             const idCardData = await idCardRes.json();
-            if (!idCardRes.ok || !idCardData.success || !idCardData.filePath) {
+            if (!idCardRes.ok || !idCardData.success || !idCardData.uploadToken) {
                 throw new Error(idCardData.error || "Échec du téléversement de la pièce d'identité du gérant.");
             }
-            const idCardUrl = idCardData.filePath as string;
+            // Lot 1C.2 : la pièce est rattachée à l'inscription par son jeton de dépôt
+            const idCardUploadToken = idCardData.uploadToken as string;
 
             // 3. Upload sécurisé du document d'entreprise dans le bucket privé
             const busFormData = new FormData();
@@ -126,10 +127,10 @@ export default function PartnerRegisterPage() {
                 body: busFormData,
             });
             const busData = await busRes.json();
-            if (!busRes.ok || !busData.success || !busData.filePath) {
+            if (!busRes.ok || !busData.success || !busData.uploadToken) {
                 throw new Error(busData.error || "Échec du téléversement du document d'immatriculation d'entreprise.");
             }
-            const businessDocUrl = busData.filePath as string;
+            const businessDocUploadToken = busData.uploadToken as string;
 
             // 4. Validation Zod stricte incluant les URLs des justificatifs obligatoires
             const parseResult = RegisterPartnerSchema.safeParse({
@@ -147,8 +148,8 @@ export default function PartnerRegisterPage() {
                 confirmPassword,
                 ninea: ninea.trim() || undefined,
                 rccm: rccm.trim() || undefined,
-                idCardUrl,
-                businessDocUrl,
+                idCardUploadToken,
+                businessDocUploadToken,
             });
 
             if (!parseResult.success) {
@@ -176,8 +177,8 @@ export default function PartnerRegisterPage() {
                     confirmPassword,
                     ninea: ninea.trim() || undefined,
                     rccm: rccm.trim() || undefined,
-                    idCardUrl,
-                    businessDocUrl,
+                    idCardUploadToken,
+                    businessDocUploadToken,
                 }),
             });
 

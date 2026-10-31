@@ -1,84 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getServerEnv } from '@/lib/env';
+import { getClientIp } from '@/lib/security/client-ip';
+import { reserveQuota } from '@/lib/security/quota';
+import {
+    PARTNER_DOCUMENTS_BUCKET,
+    detectDocumentType,
+    isDocType,
+    newUploadPath,
+    recordUpload,
+} from '@/lib/partners/documents';
 
 export const dynamic = 'force-dynamic';
 
-const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 Mo
 
 /**
  * POST /api/partner/documents/upload
- * Upload sécurisé de justificatifs professionnels pour l'onboarding partenaire
+ * Dépôt d'une pièce d'inscription partenaire (route publique : l'inscrit n'a pas encore de compte).
+ *
+ * Lot 1C.2 :
+ *  - type de pièce limité à id_card / business_doc ;
+ *  - type réel lu dans la signature du contenu (PDF, JPEG, PNG, WebP), jamais dans le type annoncé ;
+ *  - chemin aléatoire « pending/<uuid>/<type>.<ext> », sans écrasement ;
+ *  - jeton de dépôt renvoyé une seule fois ; l'inscription rattache la pièce par ce jeton ;
+ *  - limite par IP en base (fail-closed).
+ * Le bucket est créé par la migration 0005 (plus de création à la volée).
  */
 export async function POST(req: NextRequest) {
     try {
-        const formData = await req.formData();
-        const file = formData.get('file') as File | null;
-        const docType = (formData.get('docType') as string) || 'document';
+        const ip = getClientIp(req) ?? 'unknown';
+        const quota = await reserveQuota(
+            [{ scope: 'upload_ip', bucket: ip, windowSecs: 3600, max: getServerEnv().DOCUMENT_UPLOADS_PER_IP_HOUR }],
+            'dépôt de pièce'
+        );
+        if (!quota.allowed) {
+            return quota.reason === 'UNAVAILABLE'
+                ? NextResponse.json({ error: 'Service momentanément indisponible. Réessayez.' }, { status: 503 })
+                : NextResponse.json({ error: 'Trop de dépôts depuis cette connexion. Réessayez plus tard.', code: 'UPLOAD_RATE_LIMITED' }, { status: 429 });
+        }
 
-        if (!file) {
+        const formData = await req.formData();
+        const file = formData.get('file');
+        const docType = formData.get('docType');
+
+        if (!isDocType(docType)) {
+            return NextResponse.json({ error: 'Type de pièce invalide (id_card ou business_doc).' }, { status: 400 });
+        }
+        if (!(file instanceof File)) {
             return NextResponse.json({ error: 'Aucun fichier fourni.' }, { status: 400 });
         }
-
-        if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-            return NextResponse.json(
-                { error: 'Format de fichier non supporté. Formats acceptés : PDF, JPEG, PNG.' },
-                { status: 400 }
-            );
+        if (file.size === 0 || file.size > MAX_FILE_SIZE_BYTES) {
+            return NextResponse.json({ error: 'Le fichier est vide ou dépasse la taille maximale autorisée (10 Mo).' }, { status: 400 });
         }
 
-        if (file.size > MAX_FILE_SIZE_BYTES) {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const detected = detectDocumentType(buffer);
+        if (!detected) {
             return NextResponse.json(
-                { error: 'Le fichier dépasse la taille maximale autorisée (10 Mo).' },
+                { error: 'Format de fichier non supporté. Formats acceptés : PDF, JPEG, PNG, WebP.' },
                 { status: 400 }
             );
         }
 
         const supabase = getServiceRoleClient();
-
-        // Vérification de l'existence du bucket partner_documents (création si absent)
-        const { data: buckets } = await supabase.storage.listBuckets();
-        const bucketExists = buckets?.some(b => b.name === 'partner_documents');
-        if (!bucketExists) {
-            await supabase.storage.createBucket('partner_documents', {
-                public: false,
-                fileSizeLimit: MAX_FILE_SIZE_BYTES,
-                allowedMimeTypes: ALLOWED_MIME_TYPES,
-            });
+        const filePath = newUploadPath(docType, detected.ext);
+        const { error: uploadError } = await supabase.storage
+            .from(PARTNER_DOCUMENTS_BUCKET)
+            .upload(filePath, buffer, { contentType: detected.mime, upsert: false });
+        if (uploadError) {
+            console.error('[API /api/partner/documents/upload] Erreur Storage :', uploadError.message);
+            return NextResponse.json({ error: 'Échec du dépôt du fichier. Réessayez.' }, { status: 500 });
         }
 
-        const fileExt = file.name.split('.').pop() || 'pdf';
-        const sanitizedExt = fileExt.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const timestamp = Date.now();
-        const randomSuffix = Math.random().toString(36).substring(2, 8);
-        const fileName = `${docType}_${timestamp}_${randomSuffix}.${sanitizedExt}`;
-        const filePath = `pending_registrations/${fileName}`;
-
-        const buffer = Buffer.from(await file.arrayBuffer());
-
-        const { error: uploadError } = await supabase.storage
-            .from('partner_documents')
-            .upload(filePath, buffer, {
-                contentType: file.type,
-                upsert: true,
-            });
-
-        if (uploadError) {
-            console.error('[API /api/partner/documents/upload] Erreur upload:', uploadError);
-            return NextResponse.json(
-                { error: `Échec du téléchargement du fichier : ${uploadError.message}` },
-                { status: 500 }
-            );
+        let recorded: { token: string; expiresAt: string };
+        try {
+            recorded = await recordUpload({ objectPath: filePath, docType, mime: detected.mime, size: buffer.length });
+        } catch (recordErr) {
+            console.error('[API /api/partner/documents/upload]', recordErr instanceof Error ? recordErr.message : recordErr);
+            const { error: cleanupErr } = await supabase.storage.from(PARTNER_DOCUMENTS_BUCKET).remove([filePath]);
+            if (cleanupErr) console.error('[API /api/partner/documents/upload] suppression du fichier orphelin impossible :', cleanupErr.message);
+            return NextResponse.json({ error: 'Échec du dépôt du fichier. Réessayez.' }, { status: 500 });
         }
 
         return NextResponse.json({
             success: true,
             filePath,
             fileName: file.name,
+            uploadToken: recorded.token,
+            expiresAt: recorded.expiresAt,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/partner/documents/upload] Exception:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        console.error('[API /api/partner/documents/upload] Exception :', err instanceof Error ? err.message : err);
+        return NextResponse.json({ error: 'Erreur interne du serveur.' }, { status: 500 });
     }
 }

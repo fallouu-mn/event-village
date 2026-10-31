@@ -11,6 +11,7 @@ import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
 import { findExistingAccount } from '@/lib/auth/existing-account';
+import { claimRegistrationUploads, resolveRegistrationUploads } from '@/lib/partners/documents';
 import { grantUserRoles } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,15 @@ export async function POST(req: NextRequest) {
         const normalizedPhone = normalizePhoneNumber(data.phone.trim());
         const effectiveEmail = data.email.trim().toLowerCase();
         const supabase = getServiceRoleClient();
+
+        // 0 bis. Lot 1C.2 : pièces rattachées par leurs jetons de dépôt (jamais par un chemin libre).
+        const documents = await resolveRegistrationUploads({
+            id_card: data.idCardUploadToken,
+            business_doc: data.businessDocUploadToken,
+        });
+        if (!documents.ok) {
+            return NextResponse.json({ error: documents.error, code: 'INVALID_DOCUMENT_UPLOAD' }, { status: 400 });
+        }
 
         // 0 ter. Lot 1C.9 : numéro ou email déjà inscrit → aucun SMS (facturé) ; puis réservation
         //        anti-abus avant d'enregistrer le code.
@@ -145,8 +155,8 @@ export async function POST(req: NextRequest) {
                 city: data.city?.trim() || 'Dakar',
                 phone: normalizedPhone,
                 email: effectiveEmail,
-                id_card_url: data.idCardUrl,
-                business_doc_url: data.businessDocUrl,
+                id_card_url: documents.uploads.id_card.object_path,
+                business_doc_url: documents.uploads.business_doc.object_path,
                 status: 'EN_ATTENTE',
                 is_verified: false,
                 phone_verified: false,
@@ -160,6 +170,14 @@ export async function POST(req: NextRequest) {
         }
 
         const partnerId = partnerRow.id;
+
+        // Lot 1C.2 : rattachement des pièces au dossier (usage unique des jetons)
+        try {
+            await claimRegistrationUploads(partnerId, documents.uploads);
+        } catch (claimErr) {
+            console.error('[API /api/partner/register] rattachement des pièces :', claimErr instanceof Error ? claimErr.message : claimErr);
+            return NextResponse.json({ error: 'Pièces justificatives déjà utilisées ou expirées : déposez-les à nouveau.', code: 'INVALID_DOCUMENT_UPLOAD' }, { status: 409 });
+        }
 
         // 4. Enregistrement des activités dans public.partner_activities
         if (data.activities && data.activities.length > 0) {

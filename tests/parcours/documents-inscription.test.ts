@@ -6,6 +6,8 @@
  *  - /api/partner/documents/signed-url : URL délivrée au propriétaire du dossier, à l'admin, et
  *    au porteur du jeton tant que l'inscription n'est pas finalisée ; un compte tiers reçoit 403 ;
  *    un chemin fourni par le client n'est plus accepté.
+ *  - Dossier antérieur au lot 1C.2 (chemin hérité dans partners, aucune ligne de dépôt) :
+ *    consultable par l'admin, pas par le propriétaire (ce chemin avait été saisi par le client).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -101,5 +103,31 @@ describe('Documents d’inscription partenaire', () => {
         const { docs } = await registerWithDocuments();
         const claimed = await getSigned(`uploadToken=${encodeURIComponent(docs.idCardUploadToken)}`);
         assert.equal(claimed.status, 403, `jeton déjà rattaché à un dossier : HTTP ${claimed.status}`);
+    });
+
+    test('dossier antérieur au lot 1C.2 : chemin hérité servi à l’admin seulement', async () => {
+        const { partnerId, ownerToken } = await registerWithDocuments();
+        const service = getServiceRoleClient();
+        const legacyPath = `pending_registrations/id_card_${Date.now()}_legacy.pdf`;
+        const { error: upErr } = await service.storage.from('partner_documents').upload(legacyPath, MINIMAL_PDF, { contentType: 'application/pdf' });
+        assert.equal(upErr, null, `dépôt hérité : ${upErr?.message}`);
+        try {
+            const { error: delErr } = await service.from('partner_document_uploads').delete().eq('claimed_partner_id', partnerId);
+            assert.equal(delErr, null, `simulation d'un dossier ancien : ${delErr?.message}`);
+            const { error: pErr } = await service.from('partners').update({ id_card_url: legacyPath }).eq('id', partnerId);
+            assert.equal(pErr, null, `chemin hérité : ${pErr?.message}`);
+
+            const owner = await getSigned(`partnerId=${partnerId}&docType=id_card`, bearer(ownerToken));
+            assert.equal(owner.status, 404, `propriétaire, chemin hérité : HTTP ${owner.status} ${JSON.stringify(await owner.json())}`);
+
+            const admin = await signInAs('SUPERADMIN');
+            const adminRes = await getSigned(`partnerId=${partnerId}&docType=id_card`, bearer(admin.accessToken));
+            const adminBody = await adminRes.json();
+            assert.equal(adminRes.status, 200, `admin, chemin hérité : HTTP ${adminRes.status} ${JSON.stringify(adminBody)}`);
+            assert.ok(String(adminBody.signedUrl).includes('pending_registrations'), 'URL signée du chemin hérité');
+        } finally {
+            const { error: rmErr } = await service.storage.from('partner_documents').remove([legacyPath]);
+            if (rmErr) throw new Error(`nettoyage du dépôt hérité : ${rmErr.message}`);
+        }
     });
 });

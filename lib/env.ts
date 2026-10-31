@@ -55,6 +55,8 @@ const serverEnvSchema = z.object({
     SMS_OTP_PER_IP_DAY: limit(30),
     SMS_PER_PHONE_DAY: limit(30), // tout SMS (notifications comprises), par destinataire
     SMS_GLOBAL_DAILY_CAP: limit(1000), // tous SMS confondus, par jour UTC (minuit à Dakar)
+    // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
+    DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
     // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
     CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),

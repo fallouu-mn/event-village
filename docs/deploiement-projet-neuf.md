@@ -61,6 +61,7 @@ Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éd
 | `OTP_HASH_SECRET` | oui | secret aléatoire dédié (`openssl rand -hex 32`), différent de toute autre clé ; le changer invalide seulement les codes OTP en cours (10 min) |
 | `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | non (défauts : 3, 10, 10, 30, 30, 1000) | à ajuster au budget SMS du client ; le plafond global quotidien bloque tout SMS et alerte les SUPERADMIN (notification in-app, journal d'audit) |
 | `CLIENT_IP_SOURCE` | non (défaut `x-forwarded-for`) | garder `x-forwarded-for` uniquement derrière un hébergeur qui réécrit l'en-tête (Vercel) ; sinon `x-real-ip` ou `none` (pas de limite par IP) |
+| `DOCUMENT_UPLOADS_PER_IP_HOUR` | non (défaut 20) | dépôts publics de pièces d'inscription partenaire, par IP et par heure |
 | `EV_INTEGRATIONS` | non | ne pas définir (valeur `fake` interdite en production) |
 
 Règles :

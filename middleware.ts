@@ -7,6 +7,9 @@ const PUBLIC_PREFIXES = [
     '/api/auth',
     '/api/partner/register',
     '/api/partner/documents/upload',
+    // Lot 1C.2 : consultation par jeton de dépôt pendant l'inscription (pas encore de compte) ;
+    // l'accès par dossier exige une session, contrôlée par la route.
+    '/api/partner/documents/signed-url',
     '/api/payments',
     '/api/events',
     '/branding',

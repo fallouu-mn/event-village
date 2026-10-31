@@ -160,9 +160,10 @@ export const RegisterPartnerSchema = z.object({
     ninea: z.string().optional(),
     rccm: z.string().optional(),
 
-    // Documents Professionnels Obligatoires (Bucket Privé Sécurisé)
-    idCardUrl: z.string().min(3, "La pièce d'identité du gérant (CNI ou Passeport) est obligatoire"),
-    businessDocUrl: z.string().min(3, "Le document d'entreprise (RCCM ou NINEA) est obligatoire"),
+    // Documents Professionnels Obligatoires (Bucket Privé Sécurisé).
+    // Lot 1C.2 : jetons de dépôt remis par /api/partner/documents/upload (plus de chemin libre).
+    idCardUploadToken: z.string().min(32, "La pièce d'identité du gérant (CNI ou Passeport) est obligatoire"),
+    businessDocUploadToken: z.string().min(32, "Le document d'entreprise (RCCM ou NINEA) est obligatoire"),
 }).refine((data) => data.password === data.confirmPassword, {
     message: 'Les mots de passe ne correspondent pas',
     path: ['confirmPassword'],

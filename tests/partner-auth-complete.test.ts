@@ -8,6 +8,11 @@ import { NotificationService } from '../lib/notifications/notification.service';
 import { AdminService } from '../lib/admin/admin.service';
 import { TEST_PASSWORD } from './helpers/fixture-data';
 
+// Lot 1C.2 : les pièces sont rattachées par jeton de dépôt (idCardUploadToken / businessDocUploadToken),
+// plus par un chemin libre. Lot 1C.6 : mot de passe de fixture partagé au lieu d'un littéral.
+const ID_CARD_TOKEN = 'jeton-de-depot-fictif-piece-identite-0001';
+const BUSINESS_DOC_TOKEN = 'jeton-de-depot-fictif-document-entreprise-0001';
+
 test('1. Register Partenaire : Schéma strict avec documents obligatoires (Bucket Privé) et statut initial EN_ATTENTE', () => {
     const validPayload = {
         companyName: 'Traiteur Royal Dakar',
@@ -22,8 +27,8 @@ test('1. Register Partenaire : Schéma strict avec documents obligatoires (Bucke
         email: 'aminata@royal.sn',
         password: TEST_PASSWORD,
         confirmPassword: TEST_PASSWORD,
-        idCardUrl: 'pending_registrations/id_card_aminata_123.pdf',
-        businessDocUrl: 'pending_registrations/business_rccm_royal_123.pdf',
+        idCardUploadToken: ID_CARD_TOKEN,
+        businessDocUploadToken: BUSINESS_DOC_TOKEN,
     };
 
     const parsed = RegisterPartnerSchema.safeParse(validPayload);
@@ -31,17 +36,17 @@ test('1. Register Partenaire : Schéma strict avec documents obligatoires (Bucke
     if (parsed.success) {
         assert.strictEqual(parsed.data.activities.length, 2);
         assert.strictEqual(normalizePhoneNumber(parsed.data.phone), '+221774567890');
-        assert.strictEqual(parsed.data.idCardUrl, 'pending_registrations/id_card_aminata_123.pdf');
-        assert.strictEqual(parsed.data.businessDocUrl, 'pending_registrations/business_rccm_royal_123.pdf');
+        assert.strictEqual(parsed.data.idCardUploadToken, ID_CARD_TOKEN);
+        assert.strictEqual(parsed.data.businessDocUploadToken, BUSINESS_DOC_TOKEN);
     }
 
     // Rejet si pièce d'identité manquante
-    const payloadWithoutIdCard = { ...validPayload, idCardUrl: undefined };
+    const payloadWithoutIdCard = { ...validPayload, idCardUploadToken: undefined };
     const parsedNoId = RegisterPartnerSchema.safeParse(payloadWithoutIdCard);
     assert.strictEqual(parsedNoId.success, false, 'Le schéma doit rejeter une inscription sans pièce d\'identité.');
 
     // Rejet si document d'entreprise manquant
-    const payloadWithoutBusinessDoc = { ...validPayload, businessDocUrl: undefined };
+    const payloadWithoutBusinessDoc = { ...validPayload, businessDocUploadToken: undefined };
     const parsedNoBus = RegisterPartnerSchema.safeParse(payloadWithoutBusinessDoc);
     assert.strictEqual(parsedNoBus.success, false, 'Le schéma doit rejeter une inscription sans document d\'entreprise.');
 });
