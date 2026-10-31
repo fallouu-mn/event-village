@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomInt } from 'crypto';
 import { RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { RateLimiter } from '@/lib/security/rate-limiter';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
+import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
@@ -22,13 +24,20 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
     try {
-        const clientIp = req.headers.get('x-forwarded-for') || 'local';
-        const limitCheck = await RateLimiter.isRateLimited(`register_${clientIp}`);
-        if (limitCheck.limited) {
-            return NextResponse.json(
-                { error: `Trop de tentatives d'inscription. Veuillez patienter ${limitCheck.remainingSeconds} secondes.` },
-                { status: 429 }
-            );
+        // Lot 4.8 : quota par IP en base (PARTNER_REGISTER_PER_IP_HOUR), réservé avant toute lecture du
+        // corps : chaque tentative compte (formulaire invalide, pièces introuvables, compte existant),
+        // l'IP vient de getClientIp (CLIENT_IP_SOURCE, plus de x-forwarded-for brut) et la garde
+        // indisponible refuse (503). Sans IP connue, les appels partagent le compteur « unknown ».
+        const clientIp = getClientIp(req);
+        const quota = await reserveQuota(
+            [{ scope: 'partner_register_ip', bucket: clientIp ?? 'unknown', windowSecs: 3600, max: getServerEnv().PARTNER_REGISTER_PER_IP_HOUR }],
+            'inscription partenaire'
+        );
+        if (!quota.allowed) {
+            return quotaRefusalResponse(quota, {
+                error: 'Trop de tentatives d’inscription depuis cette connexion. Réessayez plus tard.',
+                code: 'PARTNER_REGISTER_RATE_LIMITED',
+            });
         }
 
         let body: any;
@@ -40,7 +49,6 @@ export async function POST(req: NextRequest) {
 
         const parseResult = RegisterPartnerSchema.safeParse(body);
         if (!parseResult.success) {
-            await RateLimiter.recordFailedAttempt(`register_${clientIp}`);
             const firstError = parseResult.error.errors[0]?.message || 'Données du formulaire invalides.';
             return NextResponse.json({ error: firstError }, { status: 400 });
         }
@@ -67,7 +75,7 @@ export async function POST(req: NextRequest) {
                 { status: 409 }
             );
         }
-        const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: getClientIp(req) });
+        const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: clientIp });
         if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
         // 1. Générer et envoyer le SMS OTP AVANT toute création de compte
@@ -108,7 +116,6 @@ export async function POST(req: NextRequest) {
         });
 
         if (authError) {
-            await RateLimiter.recordFailedAttempt(`register_${clientIp}`);
             console.error('[API /api/partner/register] Erreur auth admin:', authError);
             if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
                 return NextResponse.json(
@@ -201,7 +208,7 @@ export async function POST(req: NextRequest) {
                 status: 'EN_ATTENTE',
                 activities: data.activities,
             },
-            metadata: { ip: clientIp },
+            metadata: { ip: clientIp ?? 'inconnue' },
         });
 
         // 6. (Lot 1B.7) Le code OTP a été enregistré en base avant l'envoi du SMS.
@@ -214,8 +221,6 @@ export async function POST(req: NextRequest) {
             partnerName: `${data.firstName.trim()} ${data.lastName.trim()}`,
             userId: userId,
         });
-
-        await RateLimiter.resetAttempts(`register_${clientIp}`);
 
         return NextResponse.json({
             success: true,

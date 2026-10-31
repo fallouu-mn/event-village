@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { ACCOUNT_OTP_PURPOSES, otpFailureMessage, verifyStoredOtp, type OtpPurpose } from '@/lib/auth/otp-store';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
+import { quotaRefusalResponse } from '@/lib/security/quota-http';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,17 +34,18 @@ export async function POST(req: NextRequest) {
 
         const normalizedPhone = normalizePhoneNumber(rawPhone);
 
-        // Protection Anti-Force Brute serveur (Rate Limiting)
-        const { RateLimiter } = await import('@/lib/security/rate-limiter');
-        const limitCheck = await RateLimiter.isRateLimited(`otp_verify_${normalizedPhone}`);
-        if (limitCheck.limited) {
-            return NextResponse.json(
-                {
-                    error: `Trop de tentatives de vérification. Veuillez patienter ${limitCheck.remainingSeconds || 60} secondes.`,
-                    remainingSeconds: limitCheck.remainingSeconds || 60,
-                },
-                { status: 429 }
-            );
+        // Lot 4.8 : anti-force brute en base (VERIFY_OTP_PER_PHONE_15MIN), réservé avant la vérification :
+        // chaque tentative compte (bonne ou mauvaise), une rafale parallèle ne passe pas, et la garde
+        // indisponible refuse (503).
+        const quota = await reserveQuota(
+            [{ scope: 'otp_verify_phone', bucket: normalizedPhone, windowSecs: 900, max: getServerEnv().VERIFY_OTP_PER_PHONE_15MIN }],
+            'vérification OTP'
+        );
+        if (!quota.allowed) {
+            return quotaRefusalResponse(quota, {
+                error: 'Trop de tentatives de vérification pour ce numéro. Réessayez plus tard.',
+                code: 'OTP_VERIFY_RATE_LIMITED',
+            });
         }
 
         // 1-2. Lot 1B.7 : vérification en base uniquement (otp_codes), indépendante de l'instance
@@ -52,12 +56,9 @@ export async function POST(req: NextRequest) {
         const purposes = requested && ACCOUNT_OTP_PURPOSES.includes(requested) ? [requested] : ACCOUNT_OTP_PURPOSES;
         const check = await verifyStoredOtp(normalizedPhone, otpCode, purposes);
         if (!check.ok) {
-            await RateLimiter.recordFailedAttempt(`otp_verify_${normalizedPhone}`);
             const { message, status } = otpFailureMessage(check.reason);
             return NextResponse.json({ error: message }, { status });
         }
-
-        await RateLimiter.resetAttempts(`otp_verify_${normalizedPhone}`);
 
         // 3. Récupération du profil utilisateur et génération de session
         const supabase = getServiceRoleClient();

@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
 import { checkStoredOtp, consumeStoredOtp, otpFailureMessage } from '@/lib/auth/otp-store';
-import { RateLimiter } from '@/lib/security/rate-limiter';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
+import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { addUserRole } from '@/lib/auth/roles';
@@ -39,29 +41,27 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Numéro de téléphone sénégalais invalide.', code: 'INVALID_PHONE' }, { status: 400 });
         }
         const normalizedPhone = e164;
-        const rateLimitKey    = `controller-setup:${normalizedPhone}`;
         const supabase        = getServiceRoleClient();
 
-        // 0. Rate limiting — anti brute-force OTP avec fail-closed (Faille 3.1)
-        const { limited, remainingSeconds } = await RateLimiter.isRateLimited(rateLimitKey, { failClosed: true });
-        if (limited) {
-            return NextResponse.json({
-                error: `Trop de tentatives. Réessayez dans ${Math.ceil((remainingSeconds ?? 900) / 60)} minutes.`,
-            }, { status: 429 });
+        // 0. Lot 4.8 : anti-force brute en base (CONTROLLER_SETUP_PER_PHONE_HOUR), réservé avant la
+        //    vérification du code : chaque tentative compte, et la garde indisponible refuse (503).
+        const quota = await reserveQuota(
+            [{ scope: 'controller_setup_phone', bucket: normalizedPhone, windowSecs: 3600, max: getServerEnv().CONTROLLER_SETUP_PER_PHONE_HOUR }],
+            'activation contrôleur'
+        );
+        if (!quota.allowed) {
+            return quotaRefusalResponse(quota, {
+                error: 'Trop de tentatives d’activation pour ce numéro. Réessayez plus tard.',
+                code: 'CONTROLLER_SETUP_RATE_LIMITED',
+            });
         }
 
         // 1. Lot 1B.7 : vérification en base uniquement (le code est consommé en fin de parcours).
+        //    Le code lui-même n'accepte que 5 essais (OTP_MAX_ATTEMPTS, lib/auth/otp-store.ts).
         const otpCheck = await checkStoredOtp(normalizedPhone, otp_code, 'CONTROLLER_SETUP');
         if (!otpCheck.ok) {
-            const attempt = await RateLimiter.recordFailedAttempt(rateLimitKey, { failClosed: true });
-            if (otpCheck.reason !== 'INVALID') {
-                const { message, status } = otpFailureMessage(otpCheck.reason);
-                return NextResponse.json({ error: message }, { status });
-            }
-            const msg = attempt.locked
-                ? `Code OTP invalide. Compte verrouillé pour 15 minutes.`
-                : `Code OTP invalide ou expiré. ${attempt.remainingAttempts} tentative${attempt.remainingAttempts > 1 ? 's' : ''} restante${attempt.remainingAttempts > 1 ? 's' : ''}.`;
-            return NextResponse.json({ error: msg }, { status: 400 });
+            const { message, status } = otpFailureMessage(otpCheck.reason);
+            return NextResponse.json({ error: message }, { status });
         }
 
         // 2. Récupérer l'utilisateur contrôleur
@@ -143,11 +143,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Impossible de définir le mot de passe.' }, { status: 500 });
         }
 
-        // 4. Consommer l'OTP (en base) + reset rate limiter
+        // 4. Consommer l'OTP (en base)
         if (!(await consumeStoredOtp(otpCheck.id))) {
             console.warn(`[controller/setup] code OTP ${otpCheck.id} déjà consommé par une requête concurrente`);
         }
-        await RateLimiter.resetAttempts(rateLimitKey);
 
         // 5. Audit
         await AdminService.logAudit({

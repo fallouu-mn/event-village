@@ -654,6 +654,8 @@ export class NotificationService {
         clientPhone?: string;
         clientEmail?: string;
         clientName?: string;
+        /** Lot 4.8 : compte connecté qui déclenche l'envoi (billets gratuits) : SMS comptés sur ce compte. */
+        smsActorId?: string | null;
     }): Promise<{
         client: { inApp: boolean; sms: boolean; email: boolean };
         organizer: { inApp: boolean; sms: boolean; email: boolean };
@@ -743,7 +745,7 @@ export class NotificationService {
                     ? `Event Village : Achat confirme (${params.ticketCount} billets pour "${eventTitle}").${paidLine} Retrouvez vos billets sur : ${appBaseUrl}/tickets`
                     : `Event Village : Achat confirme (billet pour "${eventTitle}").${paidLine} Retrouvez votre billet sur : ${appBaseUrl}/tickets`;
                 try {
-                    const smsRes = await mTargetService.sendSms(clientPhone, clientSms);
+                    const smsRes = await mTargetService.sendSms(clientPhone, clientSms, { actorId: params.smsActorId });
                     result.client.sms = smsRes.success;
                 } catch (smsErr) {
                     console.warn('[NotificationService] SMS achat billet client échoué:', smsErr);
@@ -797,7 +799,7 @@ export class NotificationService {
             if (partnerPhone) {
                 const partnerSms = `Event Village : Nouvelle vente de ${params.ticketCount} billet(s) pour "${eventTitle}" (${facialAmount.toLocaleString('fr-FR')} FCFA, Réf: ${orderRef}).`;
                 try {
-                    const orgSmsRes = await mTargetService.sendSms(partnerPhone, partnerSms);
+                    const orgSmsRes = await mTargetService.sendSms(partnerPhone, partnerSms, { actorId: params.smsActorId });
                     result.organizer.sms = orgSmsRes.success;
                 } catch (orgSmsErr) {
                     console.warn('[NotificationService] SMS vente billet organisateur échoué:', orgSmsErr);

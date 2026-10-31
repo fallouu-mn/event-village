@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
             await NotificationService.sendTicketPurchaseNotifications({
                 userId, eventId: cat.event_id, categoryId, ticketCount: ticketIds.length,
                 ticketNumbers: (tickets ?? []).map((t) => t.ticket_number), totalAmount: 0,
+                smsActorId: userId, // lot 4.8 : SMS comptés sur le compte qui réclame (SMS_PER_ACCOUNT_DAY)
             });
         } catch (err) {
             console.error('[claim-free] notifications en échec :', err instanceof Error ? err.message : String(err));

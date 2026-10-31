@@ -3,7 +3,8 @@ import './helpers/env';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RegisterPartnerSchema, normalizePhoneNumber } from '../lib/validations/auth';
-import { RateLimiter } from '../lib/security/rate-limiter';
+import { randomUUID } from 'node:crypto';
+import { reserveQuota } from '../lib/security/quota';
 import { NotificationService } from '../lib/notifications/notification.service';
 import { AdminService } from '../lib/admin/admin.service';
 import { TEST_PASSWORD } from './helpers/fixture-data';
@@ -200,26 +201,22 @@ test('21. Audit Log : Journalisation inaltérable des actions partenaires', () =
     assert.strictEqual(log.object_type, 'partners');
 });
 
-test('22. Anti-Brute-Force : RateLimiter bloque après 5 échecs consécutifs', async () => {
-    const testIdentifier = 'test_ip_192_168_1_50';
-    await RateLimiter.resetAttempts(testIdentifier);
+// Lot 4.8 : lib/security/rate-limiter.ts est supprimé ; l'anti-force brute passe par reserveQuota
+// (compteur en base, atomique, toutes les tentatives comptées). Même intention : blocage après 5.
+test('22. Anti-Brute-Force : le quota en base bloque la 6e tentative après 5', async () => {
+    const bucket = `test-brute-force-${randomUUID()}`;
+    const rule = { scope: 'test_brute_force', bucket, windowSecs: 900, max: 5 };
 
-    // 1 à 4 échecs -> pas encore bloqué
-    for (let i = 1; i <= 4; i++) {
-        const res = await RateLimiter.recordFailedAttempt(testIdentifier);
-        assert.strictEqual(res.locked, false, `Tentative ${i} ne doit pas verrouiller.`);
+    // 1 à 5 tentatives -> acceptées
+    for (let i = 1; i <= 5; i++) {
+        const res = await reserveQuota([rule], 'test 22');
+        assert.strictEqual(res.allowed, true, `Tentative ${i} ne doit pas être bloquée : ${JSON.stringify(res)}`);
     }
 
-    // 5ème échec -> verrouillé
-    const res5 = await RateLimiter.recordFailedAttempt(testIdentifier);
-    assert.strictEqual(res5.locked, true, 'La 5ème tentative doit verrouiller l\'accès.');
-
-    // Vérification de verrouillage
-    const check = await RateLimiter.isRateLimited(testIdentifier);
-    assert.strictEqual(check.limited, true, 'L\'identifiant doit être considéré comme limité.');
-
-    // Nettoyage
-    await RateLimiter.resetAttempts(testIdentifier);
+    // 6e tentative -> bloquée, avec un délai d'attente
+    const res6 = await reserveQuota([rule], 'test 22');
+    assert.strictEqual(res6.allowed, false, 'La 6e tentative doit être bloquée.');
+    assert.ok(!res6.allowed && res6.reason === 'EXCEEDED' && res6.retryAfterSeconds > 0, `refus attendu (EXCEEDED) : ${JSON.stringify(res6)}`);
 });
 
 test('23. Première Activation : Durée 60 jours Standard vs 90 jours Founder', () => {

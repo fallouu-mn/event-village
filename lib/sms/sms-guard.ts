@@ -1,13 +1,19 @@
 /**
- * Lot 1C.9 — garde anti-abus SMS : chaque SMS est facturé au client.
+ * Garde anti-abus SMS : chaque SMS est facturé au client (lot 1C.9, complété au lot 4.8).
  *
- * Avant tout envoi, une réservation atomique en base (lib/security/quota.ts) consomme :
- *  - pour tout SMS : la limite quotidienne par destinataire et le plafond global quotidien ;
- *  - pour un OTP : en plus, les limites par numéro (15 min, jour) et par IP (heure, jour).
+ * Avant tout envoi, une réservation atomique en base (lib/security/quota.ts) consomme, tout ou rien :
+ *  - OTP : le plafond global quotidien en entier (SMS_GLOBAL_DAILY_CAP), et ses propres compteurs
+ *    par numéro (15 min, jour) et par IP (heure, jour) ;
+ *  - autres SMS (notifications, invitations) : le plafond global jusqu'à (100 − part OTP) % seulement
+ *    (SMS_GLOBAL_OTP_RESERVED_PERCENT) — le reste du plafond est réservé à l'OTP —, la limite
+ *    quotidienne par destinataire (SMS_PER_PHONE_DAY, notifications seulement) et, quand un compte
+ *    connecté déclenche l'envoi (`actorId`), la limite quotidienne par compte (SMS_PER_ACCOUNT_DAY).
+ * Les compteurs par destinataire de l'OTP et des notifications sont distincts : des notifications
+ * vers un numéro n'épuisent pas ses codes de connexion.
  * Le destinataire est compté sous sa forme facturée (formatMTargetPhoneNumber) : « 77… »,
  * « +221… » et « 00221… » partagent un compteur.
- * Plafond global atteint : alerte journalisée (audit_logs) et notification in-app aux
- * superadmins, une fois par jour, jamais par SMS.
+ * Plafond atteint (global, ou part non OTP) : alerte journalisée (audit_logs) et notification in-app
+ * aux superadmins, une fois par jour et par type, jamais par SMS.
  * Garde indisponible : refus (fail-closed), jamais d'envoi « à l'aveugle ».
  */
 import { getServerEnv } from '@/lib/env';
@@ -24,6 +30,11 @@ export interface SmsContext {
     category?: SmsCategory;
     /** IP du demandeur (catégorie OTP) : limite par IP. */
     ip?: string | null;
+    /**
+     * Compte connecté dont l'action déclenche l'envoi (invitation, équipe, transfert, billet gratuit…) :
+     * limite quotidienne par compte (SMS_PER_ACCOUNT_DAY), hors OTP.
+     */
+    actorId?: string | null;
     /** Réservation obtenue plus tôt (routes OTP : réserver avant d'enregistrer le code). */
     reservation?: SmsReservation;
 }
@@ -44,39 +55,59 @@ export type SmsReserveResult =
     | { ok: true; reservation: SmsReservation }
     | { ok: false; refusal: Required<Pick<SmsSendResult, 'code'>> & { message: string; retryAfterSeconds?: number } };
 
+/** Part du plafond global ouverte aux SMS non OTP : floor(plafond × (100 − part OTP) / 100). */
+export function nonOtpGlobalCap(): number {
+    const env = getServerEnv();
+    return Math.floor((env.SMS_GLOBAL_DAILY_CAP * (100 - env.SMS_GLOBAL_OTP_RESERVED_PERCENT)) / 100);
+}
+
 function rulesFor(recipient: string, ctx: SmsContext): QuotaRule[] {
     const env = getServerEnv();
-    const rules: QuotaRule[] = [
-        { scope: 'sms_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY },
-        { scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: env.SMS_GLOBAL_DAILY_CAP },
-    ];
     if ((ctx.category ?? 'TRANSACTIONAL') === 'OTP') {
-        rules.push(
+        const rules: QuotaRule[] = [
+            { scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: env.SMS_GLOBAL_DAILY_CAP },
             { scope: 'sms_otp_phone', bucket: recipient, windowSecs: 900, max: env.SMS_OTP_PER_PHONE_15MIN },
             { scope: 'sms_otp_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_OTP_PER_PHONE_DAY },
-        );
+        ];
         if (ctx.ip) {
             rules.push(
                 { scope: 'sms_otp_ip', bucket: ctx.ip, windowSecs: 3600, max: env.SMS_OTP_PER_IP_HOUR },
                 { scope: 'sms_otp_ip', bucket: ctx.ip, windowSecs: DAY, max: env.SMS_OTP_PER_IP_DAY },
             );
         }
+        return rules;
     }
+    // Même compteur global que l'OTP, plafonné plus bas : les non OTP s'arrêtent à la part qui leur
+    // est ouverte, l'OTP continue jusqu'au plafond entier.
+    const rules: QuotaRule[] = [
+        { scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: nonOtpGlobalCap() },
+        { scope: 'sms_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY },
+    ];
+    if (ctx.actorId) rules.push({ scope: 'sms_account', bucket: ctx.actorId, windowSecs: DAY, max: env.SMS_PER_ACCOUNT_DAY });
     return rules;
 }
 
-/** Alerte « plafond global atteint », une fois par jour UTC : journal d'audit + in-app superadmins. */
-async function raiseGlobalCapAlert(context: Record<string, unknown>): Promise<void> {
-    const first = await reserveQuota([{ scope: 'sms_alert', bucket: 'global_cap', windowSecs: DAY, max: 1 }], 'alerte plafond SMS');
+type CapKind = 'GLOBAL' | 'NON_OTP_SHARE';
+
+/** Alerte de plafond, une fois par jour UTC et par type : journal d'audit + in-app superadmins. */
+async function raiseCapAlert(kind: CapKind, context: Record<string, unknown>): Promise<void> {
+    const bucket = kind === 'GLOBAL' ? 'global_cap' : 'non_otp_share';
+    const first = await reserveQuota([{ scope: 'sms_alert', bucket, windowSecs: DAY, max: 1 }], 'alerte plafond SMS');
     if (!first.allowed) return; // déjà signalé aujourd'hui (ou garde indisponible, déjà journalisé)
-    const cap = getServerEnv().SMS_GLOBAL_DAILY_CAP;
-    console.error(`[SMS_QUOTA] plafond global quotidien atteint (${cap} SMS) : envois suspendus jusqu'à minuit UTC`);
+    const env = getServerEnv();
+    const cap = env.SMS_GLOBAL_DAILY_CAP;
+    const limit = kind === 'GLOBAL' ? cap : nonOtpGlobalCap();
+    const action = kind === 'GLOBAL' ? 'SMS_GLOBAL_DAILY_CAP_REACHED' : 'SMS_NON_OTP_DAILY_SHARE_REACHED';
+    const content = kind === 'GLOBAL'
+        ? `Le plafond de ${cap} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar).`
+        : `La part des SMS hors codes de connexion (${limit} sur ${cap} par jour) est atteinte : seuls les codes OTP partent encore jusqu'à minuit (UTC, heure de Dakar).`;
+    console.error(`[SMS_QUOTA] ${action} (${limit} SMS sur un plafond de ${cap})`);
     const supabase = getServiceRoleClient();
     const { error: auditErr } = await supabase.from('audit_logs').insert({
         user_role: 'SYSTEM',
-        action: 'SMS_GLOBAL_DAILY_CAP_REACHED',
+        action,
         object_type: 'sms_quota',
-        metadata: { ...context, cap },
+        metadata: { ...context, cap, limit, reserved_otp_percent: env.SMS_GLOBAL_OTP_RESERVED_PERCENT },
     });
     if (auditErr) console.error('[SMS_QUOTA] journalisation de l’alerte impossible :', auditErr.message);
     const { data: admins, error: adminsErr } = await supabase.from('user_roles').select('user_id').eq('role', 'SUPERADMIN');
@@ -87,13 +118,13 @@ async function raiseGlobalCapAlert(context: Record<string, unknown>): Promise<vo
     if (!admins?.length) return;
     const { error: notifErr } = await supabase.from('notifications').insert(admins.map((a) => ({
         user_id: a.user_id,
-        type: 'SMS_DAILY_CAP_REACHED',
-        title: 'Plafond quotidien de SMS atteint',
-        content: `Le plafond de ${cap} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar).`,
+        type: kind === 'GLOBAL' ? 'SMS_DAILY_CAP_REACHED' : 'SMS_NON_OTP_SHARE_REACHED',
+        title: kind === 'GLOBAL' ? 'Plafond quotidien de SMS atteint' : 'Part quotidienne des SMS hors OTP atteinte',
+        content,
         channel: 'PUSH',
         status: 'SENT',
         sent_at: new Date().toISOString(),
-        metadata: { ...context, cap },
+        metadata: { ...context, cap, limit },
     })));
     if (notifErr) console.error('[SMS_QUOTA] notification des superadmins impossible :', notifErr.message);
 }
@@ -107,12 +138,22 @@ export async function reserveSms(to: string, ctx: SmsContext = {}): Promise<SmsR
         return { ok: false, refusal: { code: 'SMS_GUARD_UNAVAILABLE', message: 'Service SMS momentanément indisponible.' } };
     }
     if (result.scope === 'sms_global') {
-        await raiseGlobalCapAlert({ category });
+        await raiseCapAlert(category === 'OTP' ? 'GLOBAL' : 'NON_OTP_SHARE', { category });
         return {
             ok: false,
             refusal: {
                 code: 'SMS_DAILY_CAP_REACHED',
                 message: "L'envoi de SMS est momentanément suspendu. Réessayez plus tard ou contactez le support.",
+                retryAfterSeconds: result.retryAfterSeconds,
+            },
+        };
+    }
+    if (result.scope === 'sms_account') {
+        return {
+            ok: false,
+            refusal: {
+                code: 'SMS_ACCOUNT_LIMIT_REACHED',
+                message: 'Limite quotidienne de SMS de votre compte atteinte. Réessayez demain ou contactez le support.',
                 retryAfterSeconds: result.retryAfterSeconds,
             },
         };

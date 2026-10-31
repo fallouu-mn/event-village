@@ -10,7 +10,9 @@ import { mTargetService } from '@/lib/sms/mtarget.service';
 import { storeOtp } from '@/lib/auth/otp-store';
 import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
-import { RateLimiter } from '@/lib/security/rate-limiter';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
+import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { addUserRole, grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
 
@@ -87,36 +89,20 @@ export async function POST(req: NextRequest) {
         }
         const normalizedPhone = e164;
 
-        // 0. Rate limiting (Faille 2.2 & Hardening) — invitations SMS (20/24h et 20/h par partenaire, 3/jour par numéro cible)
-        const partnerDailyRateKey  = `sms_daily_quota_partner:${user.id}`;
-        const partnerHourlyRateKey = `sms_invite_partner:${user.id}`;
-        const phoneRateKey         = `sms_invite_phone:${normalizedPhone}`;
-
-        const [partnerDailyLimit, partnerHourlyLimit, phoneLimit] = await Promise.all([
-            RateLimiter.isRateLimited(partnerDailyRateKey, { maxAttempts: 20, windowSeconds: 86400, lockoutSeconds: 86400, failClosed: true }),
-            RateLimiter.isRateLimited(partnerHourlyRateKey, { maxAttempts: 20, windowSeconds: 3600, lockoutSeconds: 3600 }),
-            RateLimiter.isRateLimited(phoneRateKey, { maxAttempts: 3, windowSeconds: 86400, lockoutSeconds: 86400 }),
-        ]);
-
-        if (partnerDailyLimit.limited) {
-            return NextResponse.json({
-                error: 'Quota SMS journalier atteint : maximum 20 invitations par 24h par partenaire. Contactez le support pour augmenter votre quota.',
-                code: 'PARTNER_DAILY_SMS_QUOTA_EXCEEDED',
-            }, { status: 429 });
-        }
-
-        if (partnerHourlyLimit.limited) {
-            return NextResponse.json({
-                error: 'Limite d\'envoi atteinte : maximum 20 invitations par heure par partenaire. Réessayez plus tard.',
-                code: 'PARTNER_INVITE_RATE_LIMIT',
-            }, { status: 429 });
-        }
-
-        if (phoneLimit.limited) {
-            return NextResponse.json({
-                error: 'Trop d\'invitations envoyées à ce numéro aujourd\'hui (maximum 3 par 24h).',
-                code: 'PHONE_INVITE_RATE_LIMIT',
-            }, { status: 429 });
+        // 0. Lot 4.8 : quotas en base, réservés ensemble (tout ou rien) avant tout autre contrôle — chaque
+        //    tentative compte : INVITE_PER_PARTNER_HOUR par partenaire, INVITE_PER_PHONE_DAY par numéro
+        //    invité (tous partenaires confondus). Garde indisponible : refus (503). Les SMS envoyés sont
+        //    en plus comptés sur le compte du partenaire (SMS_PER_ACCOUNT_DAY, lib/sms/sms-guard.ts).
+        const env = getServerEnv();
+        const quota = await reserveQuota([
+            { scope: 'invite_partner', bucket: user.id, windowSecs: 3600, max: env.INVITE_PER_PARTNER_HOUR },
+            { scope: 'invite_phone', bucket: normalizedPhone, windowSecs: 86400, max: env.INVITE_PER_PHONE_DAY },
+        ], 'invitation contrôleur');
+        if (!quota.allowed) {
+            const byPhone = quota.reason === 'EXCEEDED' && quota.scope === 'invite_phone';
+            return quotaRefusalResponse(quota, byPhone
+                ? { error: `Trop d'invitations envoyées à ce numéro aujourd'hui (maximum ${env.INVITE_PER_PHONE_DAY} par jour).`, code: 'PHONE_INVITE_RATE_LIMIT' }
+                : { error: `Limite d'invitations atteinte : maximum ${env.INVITE_PER_PARTNER_HOUR} par heure. Réessayez plus tard.`, code: 'PARTNER_INVITE_RATE_LIMIT' });
         }
 
         // 1. Vérifier que les événements appartiennent bien au partenaire et sont éligibles
@@ -376,16 +362,19 @@ export async function POST(req: NextRequest) {
         const setupLink = `${baseUrl}/controller/setup?phone=${encodeURIComponent(normalizedPhone)}`;
 
         let smsSent = false;
+        let smsRefusal: string | null = null;
         try {
             if (isNewUser) {
                 const smsRes = await mTargetService.sendControllerInvite(
                     normalizedPhone,
                     otpCode,
                     setupLink,
-                    first_name && first_name !== 'Contrôleur' ? first_name : undefined
+                    first_name && first_name !== 'Contrôleur' ? first_name : undefined,
+                    { actorId: user.id }
                 );
                 smsSent = smsRes.success;
                 if (!smsRes.success) {
+                    smsRefusal = smsRes.code ?? 'SMS_NOT_DELIVERED';
                     console.warn('[invite-controller] SMS mTarget non délivré:', smsRes.error);
                 }
             } else {
@@ -397,36 +386,37 @@ export async function POST(req: NextRequest) {
                 const evSuffix = countEv > 1 ? `pour ${countEv} événements` : `pour l'événement`;
                 const loginLink = `${baseUrl}/login`;
                 const smsMsg = `Event Village : ${greeting}vous avez été désigné comme contrôleur ${evSuffix}. Connectez-vous avec vos identifiants habituels : ${loginLink}`;
-                const smsRes = await mTargetService.sendNotification(normalizedPhone, smsMsg);
+                const smsRes = await mTargetService.sendNotification(normalizedPhone, smsMsg, { actorId: user.id });
                 smsSent = smsRes.success;
                 if (!smsRes.success) {
+                    smsRefusal = smsRes.code ?? 'SMS_NOT_DELIVERED';
                     console.warn('[invite-controller] SMS notification non délivré:', smsRes.error);
                 }
             }
         } catch (smsErr) {
+            smsRefusal = 'SMS_NOT_DELIVERED';
             console.warn('[invite-controller] SMS non bloquant:', smsErr instanceof Error ? smsErr.message : smsErr);
         }
 
-        // Enregistrer la tentative pour le rate limiting (Faille 2.2 & Hardening)
-        await Promise.all([
-            RateLimiter.recordAttempt(partnerDailyRateKey),
-            RateLimiter.recordAttempt(partnerHourlyRateKey),
-            RateLimiter.recordAttempt(phoneRateKey),
-        ]);
-
         const countEvents = targetEventIds.length;
         const msgSuffix = countEvents > 1 ? `sur ${countEvents} événements` : `sur l'événement`;
-        const actionMsg = isNewUser
-            ? `Contrôleur créé et assigné ${msgSuffix}. SMS avec code d'activation envoyé.`
+        const baseMsg = isNewUser
+            ? `Contrôleur créé et assigné ${msgSuffix}.`
             : anyNewlyAssigned
-                ? `Contrôleur assigné avec succès ${msgSuffix}. SMS envoyé.`
-                : `Droits mis à jour ${msgSuffix}. Nouveau SMS d'accès envoyé.`;
+                ? `Contrôleur assigné avec succès ${msgSuffix}.`
+                : `Droits mis à jour ${msgSuffix}.`;
+        // Lot 4.8 : le partenaire sait si le SMS est parti (refus de la garde anti-abus compris).
+        const actionMsg = smsSent
+            ? `${baseMsg} ${isNewUser ? "SMS avec code d'activation envoyé." : 'SMS envoyé.'}`
+            : `${baseMsg} SMS non envoyé (${smsRefusal ?? 'SMS_NOT_DELIVERED'}) : renvoyez l'invitation plus tard.`;
 
         return NextResponse.json({
             success:      true,
             assignments:  finalAssignments,
             assignment:   finalAssignments[0] || null,
             is_new_user:  isNewUser,
+            sms_sent:     smsSent,
+            sms_refusal:  smsRefusal,
             message:      actionMsg,
             // Lot 1C.1 : le code d'activation n'est jamais renvoyé au partenaire (il part par SMS).
         }, { status: anyNewlyAssigned || isNewUser ? 201 : 200 });

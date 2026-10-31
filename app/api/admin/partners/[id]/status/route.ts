@@ -57,6 +57,13 @@ export async function PATCH(
         }
 
         const oldStatus = currentPartner.status;
+        // Lot 4.8 (point 5 du lot 1C) : un statut inchangé n'écrit rien et ne renvoie aucun SMS.
+        if (oldStatus === newStatus) {
+            return NextResponse.json(
+                { error: `Le partenaire est déjà au statut ${newStatus}.`, code: 'STATUS_UNCHANGED' },
+                { status: 409 }
+            );
+        }
         const userId = currentPartner.user_id;
         const partnerPhone = currentPartner.phone || (currentPartner.users as any)?.phone;
         const companyName = currentPartner.company_name;
