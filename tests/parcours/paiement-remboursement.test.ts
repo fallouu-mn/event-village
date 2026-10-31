@@ -48,6 +48,9 @@ async function unhonorable(label: string, operator: 'WAVE' | 'ORANGE_MONEY') {
     const r2 = await checkout(rival, cart(ev.eventId, [[cat, 1]], rival));
     providerSays(r2.payment!, 'SUCCESS');
     await deliverWebhook(r2.payment!, { token: 'valid' });
+    // Le paiement du premier acheteur aboutit malgré tout chez SamirPay : remboursement.
+    providerSays(r.payment!, 'SUCCESS');
+    await deliverWebhook(r.payment!, { token: 'valid' });
     return { buyer, payment: r.payment! };
 }
 

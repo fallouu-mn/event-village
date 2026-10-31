@@ -205,7 +205,9 @@ export async function checkout(buyer: Buyer, body: Record<string, unknown>, opts
     const json = (await res.json()) as Record<string, unknown>;
     let payment: PaymentRow | null = null;
     if (typeof json.payment_id === 'string') payment = await paymentById(json.payment_id);
-    else {
+    else if (res.status === 200) {
+        // Repli (ancien contrat sans payment_id) : seulement pour une réponse acceptée, sinon un
+        // achat concurrent refusé se verrait attribuer le paiement de l'autre acheteur.
         const fresh = initCalls().find((c) => !before.has(c.orderId));
         if (fresh) payment = await paymentByOrder(fresh.orderId);
     }
