@@ -1,0 +1,173 @@
+TAP version 13
+# Subtest: Lot 3.6 — soldes et retraits
+    # Subtest: solde organisateur : prix faciaux des billets payés en ligne seulement ; vente espèces et invitation n’ajoutent rien
+    ok 1 - solde organisateur : prix faciaux des billets payés en ligne seulement ; vente espèces et invitation n’ajoutent rien
+      ---
+      duration_ms: 528.832533
+      type: 'test'
+      ...
+    # Subtest: fonds en attente jusqu’à la fin de l’événement + 48 h ; disponibles dès la confirmation si payout_hold_enabled = false (non rétroactif)
+    ok 2 - fonds en attente jusqu’à la fin de l’événement + 48 h ; disponibles dès la confirmation si payout_hold_enabled = false (non rétroactif)
+      ---
+      duration_ms: 676.805042
+      type: 'test'
+      ...
+    # Subtest: date de fin absente : date de début à 23:59 (Africa/Dakar) + 48 h
+    ok 3 - date de fin absente : date de début à 23:59 (Africa/Dakar) + 48 h
+      ---
+      duration_ms: 429.092739
+      type: 'test'
+      ...
+    # Subtest: deux retraits simultanés qui dépassent ensemble le solde : un seul accepté
+    not ok 4 - deux retraits simultanés qui dépassent ensemble le solde : un seul accepté
+      ---
+      duration_ms: 438.295681
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:2:13653'
+      failureType: 'testCodeFailure'
+      error: |-
+        une seule demande acceptée : [{"ok":true,"status":"PROCESSING","cashout_id":"73888a56-6c2d-426f-ae29-56cb6c008313","fee_amount":60,"net_amount":5940,"gross_amount":6000,"withdrawal_id":"b2d23aee-f407-4ae5-a47f-cbe73f48d8a0"},{"ok":true,"status":"PROCESSING","cashout_id":"0d33ff84-2c21-41ba-bfef-ddaa8cd785b1","fee_amount":60,"net_amount":5940,"gross_amount":6000,"withdrawal_id":"ee6ffda0-6574-41e8-b128-65e6f839be98"}]
+        
+        2 !== 1
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 1
+      actual: 2
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:287:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: montants et comptes refusés : BELOW_MINIMUM (seuil 5 000 F), INVALID_AMOUNT, INSUFFICIENT_BALANCE, NOT_PARTNER
+    ok 5 - montants et comptes refusés : BELOW_MINIMUM (seuil 5 000 F), INVALID_AMOUNT, INSUFFICIENT_BALANCE, NOT_PARTNER
+      ---
+      duration_ms: 609.089901
+      type: 'test'
+      ...
+    # Subtest: virement bancaire refusé tant que finance.withdrawal_bank_enabled est désactivé (BANK_DISABLED)
+    ok 6 - virement bancaire refusé tant que finance.withdrawal_bank_enabled est désactivé (BANK_DISABLED)
+      ---
+      duration_ms: 432.505417
+      type: 'test'
+      ...
+    # Subtest: frais de 1 % arrondis au FCFA supérieur ; cashout WITHDRAWAL-<id> au montant net, vers le numéro déclaré
+    ok 7 - frais de 1 % arrondis au FCFA supérieur ; cashout WITHDRAWAL-<id> au montant net, vers le numéro déclaré
+      ---
+      duration_ms: 534.27423
+      type: 'test'
+      ...
+    # Subtest: délai dépassé après envoi : cashout INCERTAIN, aucun second envoi, retrait non REJECTED, solde toujours réservé
+    ok 8 - délai dépassé après envoi : cashout INCERTAIN, aucun second envoi, retrait non REJECTED, solde toujours réservé
+      ---
+      duration_ms: 488.466465
+      type: 'test'
+      ...
+    # Subtest: refus explicite de SamirPay : retrait REJECTED, écriture RETRAIT_ANNULE, solde rendu
+    ok 9 - refus explicite de SamirPay : retrait REJECTED, écriture RETRAIT_ANNULE, solde rendu
+      ---
+      duration_ms: 474.255175
+      type: 'test'
+      ...
+    # Subtest: solde de parrainage distinct du solde organisateur ; retirable au FCFA inférieur ; commissions allouées
+    ok 10 - solde de parrainage distinct du solde organisateur ; retirable au FCFA inférieur ; commissions allouées
+      ---
+      duration_ms: 457.416491
+      type: 'test'
+      ...
+[requireActiveSession] accès refusé à /api/withdrawals/request : compte 6333b0e9-e60b-469e-8a9d-60eb92948bfd au statut SUSPENDU
+[requireActiveSession] accès refusé à /api/withdrawals/otp : compte 6333b0e9-e60b-469e-8a9d-60eb92948bfd au statut SUSPENDU
+[requireActiveSession] accès refusé à /api/finance/balance : compte 6333b0e9-e60b-469e-8a9d-60eb92948bfd au statut SUSPENDU
+    # Subtest: compte SUSPENDU : retrait, code de retrait et solde refusés (ACCOUNT_NOT_ACTIVE)
+    ok 11 - compte SUSPENDU : retrait, code de retrait et solde refusés (ACCOUNT_NOT_ACTIVE)
+      ---
+      duration_ms: 439.72929
+      type: 'test'
+      ...
+    # Subtest: Idempotency-Key : même clé → même retrait, un seul cashout, un seul envoi ; RPC : DUPLICATE avant le contrôle du solde
+    ok 12 - Idempotency-Key : même clé → même retrait, un seul cashout, un seul envoi ; RPC : DUPLICATE avant le contrôle du solde
+      ---
+      duration_ms: 521.755612
+      type: 'test'
+      ...
+    # Subtest: GET /api/finance/balance : disponible, en attente, retraits en cours et historique ; 401 sans session
+    ok 13 - GET /api/finance/balance : disponible, en attente, retraits en cours et historique ; 401 sans session
+      ---
+      duration_ms: 409.403565
+      type: 'test'
+      ...
+    # Subtest: contrôle statique : plus d’envoi d’argent hors du module de cashout, plus de request_withdrawal
+    ok 14 - contrôle statique : plus d’envoi d’argent hors du module de cashout, plus de request_withdrawal
+      ---
+      duration_ms: 12.796466
+      type: 'test'
+      ...
+    # Subtest: ancienne RPC request_withdrawal supprimée
+    ok 15 - ancienne RPC request_withdrawal supprimée
+      ---
+      duration_ms: 8.385461
+      type: 'test'
+      ...
+    1..15
+not ok 1 - Lot 3.6 — soldes et retraits
+  ---
+  duration_ms: 6463.293955
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:2:8255'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] finance-retraits — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] finance-retraits — purge des réservations échues : {"expired":0}
+[INVARIANT] finance-retraits — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] finance-retraits — (d)(e)(f) : 1 violation(s)
+[INVARIANT-FIN]   (e) d993bda2-d76a-4db3-a8b2-bd81581e90dd/ORGANISATEUR : solde total -2000.00, disponible -2000.00
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts
+  ---
+  duration_ms: 71.201763
+  location: '/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:2:1548'
+  failureType: 'hookFailed'
+  error: |-
+    invariant financier violé :
+    (e) d993bda2-d76a-4db3-a8b2-bd81581e90dd/ORGANISATEUR : solde total -2000.00, disponible -2000.00
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'solde total -2000.00, disponible -2000.00',
+    +     objet: 'd993bda2-d76a-4db3-a8b2-bd81581e90dd/ORGANISATEUR',
+    +     regle: 'e'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'e'
+      objet: 'd993bda2-d76a-4db3-a8b2-bd81581e90dd/ORGANISATEUR'
+      detail: 'solde total -2000.00, disponible -2000.00'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertFinanceInvariants (/home/runner/work/event-village/event-village/tests/helpers/finance-invariants.ts:109:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:39:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..1
+# tests 15
+# suites 1
+# pass 14
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6542.063944
