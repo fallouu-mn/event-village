@@ -40,8 +40,16 @@ function isoDate(daysFromNow: number): string {
     return d.toISOString().slice(0, 10);
 }
 
-function fail(step: string, error: { message: string } | null | undefined): never {
-    throw new Error(`[seed-test] ${step} : ${error?.message || 'erreur inconnue'}`);
+function fail(step: string, error: { message: string; code?: string; details?: string | null; hint?: string | null } | null | undefined): never {
+    const parts = [error?.message || 'erreur inconnue'];
+    if (error?.code) parts.push(`code=${error.code}`);
+    if (error?.details) parts.push(`details=${error.details}`);
+    if (error?.hint) parts.push(`hint=${error.hint}`);
+    throw new Error(`[seed-test] ${step} : ${parts.join(' | ')}`);
+}
+
+function logStep(message: string): void {
+    console.log(`[seed-test] ${message}`);
 }
 
 // ── 1. platform_settings ─────────────────────────────────────────────────────
@@ -266,26 +274,31 @@ async function main(): Promise<void> {
     const started = Date.now();
     console.log(`[seed-test] Instance : ${process.env.NEXT_PUBLIC_SUPABASE_URL}`);
 
+    logStep('platform_settings…');
     await ensurePlatformSettings();
 
     const userIds = {} as Record<FixtureUserKey, string>;
     for (const key of Object.keys(FIXTURE_USERS) as FixtureUserKey[]) {
+        logStep(`utilisateur ${key}…`);
         userIds[key] = await ensureUser(key);
     }
     summary.users = userIds;
 
     const partnerIds = {} as Record<FixturePartnerKey, string>;
     for (const key of Object.keys(FIXTURE_PARTNERS) as FixturePartnerKey[]) {
+        logStep(`partenaire ${key}…`);
         partnerIds[key] = await ensurePartner(key, userIds[FIXTURE_PARTNERS[key].userKey]);
     }
     summary.partners = partnerIds;
 
     const eventIds: Record<string, { id: string; categories: Record<string, string> }> = {};
     for (const key of Object.keys(FIXTURE_EVENTS) as FixtureEventKey[]) {
+        logStep(`événement ${key}…`);
         eventIds[key] = await ensureEvent(key, partnerIds[FIXTURE_EVENTS[key].partner]);
     }
     summary.events = eventIds;
 
+    logStep('affectation contrôleur…');
     await ensureControllerAssignment(eventIds[CONTROLLER_A_EVENT].id, userIds.CONTROLLER_A, userIds.PARTNER_A);
     summary.controller_assignment = { event: CONTROLLER_A_EVENT, controller: 'CONTROLLER_A', can_accept_cash: true };
 

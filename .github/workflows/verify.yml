@@ -8,6 +8,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
@@ -37,10 +40,14 @@ jobs:
           version: 2.122.0
 
       - name: Démarrer Supabase local (services nécessaires aux tests uniquement)
-        run: supabase start -x studio,imgproxy,logflare,vector,edge-runtime
+        run: |
+          set -o pipefail
+          supabase start -x studio,imgproxy,logflare,vector,edge-runtime 2>&1 | tee /tmp/supabase-start.log
 
       - name: Appliquer toutes les migrations depuis zéro (supabase db reset)
-        run: supabase db reset
+        run: |
+          set -o pipefail
+          supabase db reset 2>&1 | tee /tmp/db-reset.log
 
       - name: Générer .env.test depuis l'instance locale
         run: |
@@ -61,12 +68,60 @@ jobs:
           echo ".env.test généré : $(grep -c . .env.test) lignes (URL=${API_URL})"
 
       - name: Seed de test (idempotent, données fictives)
-        run: npm run seed:test
+        run: |
+          set -o pipefail
+          npm run seed:test 2>&1 | tee /tmp/seed.log
 
       - name: Vérification complète (typecheck → lint → tests → build)
-        run: npm run verify
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee /tmp/verify.log
 
-      - name: Journaux des suites de tests
+      - name: Annotations d'erreur (extraits bruts des journaux)
+        if: failure()
+        run: |
+          for f in /tmp/db-reset.log /tmp/seed.log /tmp/verify.log; do
+            [ -f "$f" ] || continue
+            msg=$(tail -c 1800 "$f" | tr '\r\n' '  ' | sed 's/%/%25/g')
+            echo "::error title=$(basename "$f")::${msg}"
+          done
+
+      - name: Publier les journaux bruts sur la branche ci-results
+        if: always()
+        env:
+          RUN_DIR: runs/${{ github.run_number }}-${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -e
+          mkdir -p /tmp/ci-results && cd /tmp/ci-results
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          if git fetch -q origin ci-results 2>/dev/null; then
+            git checkout -q -b ci-results FETCH_HEAD
+          else
+            git checkout -q --orphan ci-results
+          fi
+          mkdir -p "$RUN_DIR"
+          for f in supabase-start db-reset seed verify; do
+            [ -f "/tmp/$f.log" ] && cp "/tmp/$f.log" "$RUN_DIR/$f.log"
+          done
+          if [ -d "$GITHUB_WORKSPACE/.test-logs" ]; then cp -r "$GITHUB_WORKSPACE/.test-logs" "$RUN_DIR/test-logs"; fi
+          {
+            echo "run_id=${{ github.run_id }}"
+            echo "run_number=${{ github.run_number }}"
+            echo "sha=${{ github.sha }}"
+            echo "ref=${{ github.ref }}"
+            echo "job_status=${JOB_STATUS}"
+            echo "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "$RUN_DIR/run.txt"
+          git add -A
+          git commit -q -m "ci-results: run ${{ github.run_number }} (${{ github.sha }}) — ${JOB_STATUS}"
+          git push -q origin ci-results
+          echo "Journaux publiés : ${{ github.server_url }}/${{ github.repository }}/tree/ci-results/${RUN_DIR}"
+
+      - name: Journaux des suites de tests (artefact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
