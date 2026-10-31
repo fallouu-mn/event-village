@@ -8,14 +8,17 @@
  *    aux superadmins, aucun SMS ;
  *  - garde indisponible (EXECUTE retiré au service_role) → 503, aucun SMS ;
  *  - inscription d'un numéro déjà inscrit → 409 sans SMS ;
- *  - hook SMS de Supabase Auth : un fragment du secret ne suffit plus.
+ *  - hook SMS de Supabase Auth : un fragment du secret ne suffit plus ; une signature Standard
+ *    Webhooks valide relaie le SMS, une signature à l'horodatage périmé (rejeu) est refusée.
  */
 import '../helpers/env';
 import { describe, test, before } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Client } from 'pg';
+import { NextRequest } from 'next/server';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { resetServerEnvCache } from '../../lib/env';
 import { loadFixtures } from '../helpers/fixtures';
@@ -23,7 +26,7 @@ import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
 import { POST as registerClient } from '../../app/api/auth/register/route';
 import { POST as smsHook } from '../../app/api/auth/sms-hook/route';
 import { getFakes } from '../fakes';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { BASE_URL, jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
 
 const LIMITS = {
     SMS_OTP_PER_PHONE_15MIN: '2',
@@ -40,6 +43,20 @@ function freshIp(): string {
 
 function otpRequest(phone: string, ip: string) {
     return jsonRequest('/api/auth/send-otp', { phone }, { 'x-forwarded-for': `${ip}, 10.0.0.1` });
+}
+
+/** Appel du hook signé comme Supabase Auth (Standard Webhooks : HMAC-SHA256 de « id.horodatage.corps »). */
+function signedHookRequest(body: unknown, timestamp = Math.floor(Date.now() / 1000)): NextRequest {
+    const raw = JSON.stringify(body);
+    const secret = String(process.env.SUPABASE_AUTH_HOOK_SECRET);
+    const key = Buffer.from(secret.replace(/^v1,/, '').replace(/^whsec_/, ''), 'base64');
+    const id = `msg_${crypto.randomUUID()}`;
+    const signature = crypto.createHmac('sha256', key).update(`${id}.${timestamp}.${raw}`).digest('base64');
+    return new NextRequest(`${BASE_URL}/api/auth/sms-hook`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'webhook-id': id, 'webhook-timestamp': String(timestamp), 'webhook-signature': `v1,${signature}` },
+        body: raw,
+    });
 }
 
 async function globalCountToday(): Promise<number> {
@@ -147,6 +164,23 @@ describe('Anti-abus SMS', () => {
         const secret = String(process.env.SUPABASE_AUTH_HOOK_SECRET);
         const res = await smsHook(jsonRequest('/api/auth/sms-hook', { user: { phone }, sms: { otp: '123456' } }, { authorization: `Bearer ${secret.slice(0, 2)}` }));
         assert.equal(res.status, 401, `fragment du secret : HTTP ${res.status}`);
+        assert.equal(getFakes().sms.messagesTo(phone).length, 0, 'aucun SMS relayé');
+    });
+
+    test('hook SMS de Supabase Auth : signature Standard Webhooks valide → SMS relayé', async () => {
+        const phone = randomSenegalPhone('77');
+        const res = await smsHook(signedHookRequest({ user: { phone }, sms: { otp: '482913' } }));
+        assert.equal(res.status, 200, `signature valide : HTTP ${res.status} ${JSON.stringify(await res.json())}`);
+        const sent = getFakes().sms.messagesTo(phone);
+        assert.equal(sent.length, 1, 'un SMS relayé');
+        assert.ok(sent[0].message.includes('482913'), 'le code reçu de Supabase Auth est transmis');
+    });
+
+    test('hook SMS de Supabase Auth : signature valide mais horodatage périmé (rejeu) → 401, aucun SMS', async () => {
+        const phone = randomSenegalPhone('77');
+        const tenMinutesAgo = Math.floor(Date.now() / 1000) - 600;
+        const res = await smsHook(signedHookRequest({ user: { phone }, sms: { otp: '482913' } }, tenMinutesAgo));
+        assert.equal(res.status, 401, `horodatage périmé : HTTP ${res.status}`);
         assert.equal(getFakes().sms.messagesTo(phone).length, 0, 'aucun SMS relayé');
     });
 

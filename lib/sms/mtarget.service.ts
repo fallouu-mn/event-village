@@ -3,52 +3,58 @@
  *
  * L'envoi effectif passe par l'adaptateur fourni par le registre d'intégrations :
  * MTarget en production, faux adaptateur (sans réseau) en test.
+ *
+ * Lot 1C.9 : point d'envoi unique, gardé. Chaque SMS consomme d'abord une réservation de quota
+ * en base (lib/sms/sms-guard.ts) ; un refus ou une garde indisponible renvoie un échec explicite
+ * (code SMS_RATE_LIMITED / SMS_DAILY_CAP_REACHED / SMS_GUARD_UNAVAILABLE) sans rien envoyer.
+ * Aucun autre module n'appelle l'adaptateur SMS directement (contrôlé par les tests).
  */
-import { getSmsAdapter, integrationsMode } from '@/lib/integrations/registry';
-import type { SmsAdapter, SmsSendResult } from '@/lib/integrations/types';
-import { MTargetHttpAdapter, type MTargetConfig } from './mtarget-http.adapter';
+import { getSmsAdapter } from '@/lib/integrations/registry';
+import type { SmsSendResult } from '@/lib/integrations/types';
+import { formatMTargetPhoneNumber } from './mtarget-http.adapter';
+import { reserveSms, type SmsContext } from './sms-guard';
 
 export { formatMTargetPhoneNumber } from './mtarget-http.adapter';
 export type { MTargetConfig } from './mtarget-http.adapter';
+export { reserveSms, smsRefusalHttp, type SmsCategory, type SmsContext, SmsReservation } from './sms-guard';
 
 export type MTargetSendResult = SmsSendResult;
 
 export class MTargetService {
-    private readonly dedicatedAdapter: SmsAdapter | null;
-
     /**
-     * @param config Configuration explicite (identifiants, URL). Lorsqu'elle est fournie
-     *               hors mode test, un adaptateur HTTP dédié est utilisé. En mode test
-     *               (EV_INTEGRATIONS=fake), le faux adaptateur du registre est toujours
-     *               utilisé : aucune configuration ne peut rétablir le réseau.
+     * Envoie un SMS après réservation de quota. Catégorie par défaut : TRANSACTIONAL
+     * (limite quotidienne par destinataire + plafond global).
      */
-    constructor(config?: MTargetConfig) {
-        this.dedicatedAdapter = config && integrationsMode() === 'real' ? new MTargetHttpAdapter(config) : null;
+    async sendSms(to: string, message: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
+        let reservation = ctx.reservation;
+        if (!reservation) {
+            const reserved = await reserveSms(to, ctx);
+            if (!reserved.ok) {
+                console.warn(`[SMS] envoi refusé par la garde (${reserved.refusal.code}) vers ${formatMTargetPhoneNumber(to).slice(0, 6)}…`);
+                return {
+                    success: false,
+                    recipient: formatMTargetPhoneNumber(to),
+                    error: reserved.refusal.message,
+                    code: reserved.refusal.code,
+                    retryAfterSeconds: reserved.refusal.retryAfterSeconds,
+                };
+            }
+            reservation = reserved.reservation;
+        }
+        reservation.consume(to);
+        return getSmsAdapter().sendSms(to, message);
     }
 
-    private adapter(): SmsAdapter {
-        return this.dedicatedAdapter ?? getSmsAdapter();
-    }
-
-    /**
-     * Envoie un SMS générique.
-     */
-    async sendSms(to: string, message: string): Promise<MTargetSendResult> {
-        return this.adapter().sendSms(to, message);
-    }
-
-    /**
-     * Envoi spécifique d'un code OTP (utilisé par le Hook Supabase Auth)
-     */
-    async sendOtp(phone: string, otpCode: string): Promise<MTargetSendResult> {
+    /** Code OTP (catégorie OTP : limites par numéro et par IP en plus). */
+    async sendOtp(phone: string, otpCode: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
         const message = `Votre code de verification Event Village est : ${otpCode}. Valable 10 minutes.`;
-        return this.sendSms(phone, message);
+        return this.sendSms(phone, message, { category: 'OTP', ...ctx });
     }
 
-    async sendControllerInvite(phone: string, otpCode: string, setupLink: string, firstName?: string): Promise<MTargetSendResult> {
+    async sendControllerInvite(phone: string, otpCode: string, setupLink: string, firstName?: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
         const greeting = firstName && firstName.trim() ? `Bonjour ${firstName.trim()}, vous etes invite` : `Vous etes invite`;
         const message = `Event Village : ${greeting} comme controleur. Code : ${otpCode} (valable 24h). Activez votre compte : ${setupLink}`;
-        return this.sendSms(phone, message);
+        return this.sendSms(phone, message, { category: 'CONTROLLER_INVITE', ...ctx });
     }
 
     async sendControllerActivationConfirmation(phone: string): Promise<MTargetSendResult> {
@@ -79,8 +85,8 @@ export class MTargetService {
     /**
      * Envoi de notification métier (ex: confirmation d'achat de ticket, validation de réservation)
      */
-    async sendNotification(phone: string, message: string): Promise<MTargetSendResult> {
-        return this.sendSms(phone, message);
+    async sendNotification(phone: string, message: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
+        return this.sendSms(phone, message, ctx);
     }
 }
 

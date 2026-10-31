@@ -56,9 +56,11 @@ Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éd
 | `SAMIRPAY_WEBHOOK_SECRET` | requis au lot 2 | compte SamirPay de production |
 | `MTARGET_USERNAME`, `MTARGET_PASSWORD`, `MTARGET_SENDER`, `MTARGET_SERVICE_ID` | oui (le SMS est le canal essentiel : sans `MTARGET_USERNAME` / `MTARGET_PASSWORD`, les routes serveur refusent de démarrer) | compte MTarget, identifiants renouvelés |
 | `RESEND_API_KEY`, `NOTIFICATION_FROM_EMAIL`, `SUPPORT_EMAIL` | non : sans `RESEND_API_KEY`, le canal email est désactivé (un avertissement au démarrage, aucun envoi tenté) ; SMS et notifications in-app partent normalement | compte Resend du client, à configurer plus tard (clé nouvelle, domaine vérifié) |
-| `SUPABASE_AUTH_HOOK_SECRET` | oui | **nouveau** secret généré à l'étape 6 (jamais la valeur du projet de test, publiée) |
+| `SUPABASE_AUTH_HOOK_SECRET` | oui (sans lui, le hook SMS refuse tout appel) | **nouveau** secret généré à l'étape 6 (jamais la valeur du projet de test, publiée) |
 | `CRON_SECRET` | oui | secret aléatoire propre aux tâches planifiées |
 | `OTP_HASH_SECRET` | oui | secret aléatoire dédié (`openssl rand -hex 32`), différent de toute autre clé ; le changer invalide seulement les codes OTP en cours (10 min) |
+| `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | non (défauts : 3, 10, 10, 30, 30, 1000) | à ajuster au budget SMS du client ; le plafond global quotidien bloque tout SMS et alerte les SUPERADMIN (notification in-app, journal d'audit) |
+| `CLIENT_IP_SOURCE` | non (défaut `x-forwarded-for`) | garder `x-forwarded-for` uniquement derrière un hébergeur qui réécrit l'en-tête (Vercel) ; sinon `x-real-ip` ou `none` (pas de limite par IP) |
 | `EV_INTEGRATIONS` | non | ne pas définir (valeur `fake` interdite en production) |
 
 Règles :
@@ -71,6 +73,8 @@ Règles :
 1. **Authentication > Hooks > Send SMS hook** : type HTTPS, URL `https://<domaine>/api/auth/sms-hook`.
 2. Générer le secret dans ce même écran, le reporter dans `SUPABASE_AUTH_HOOK_SECRET` de l'application, redéployer.
 3. Tester l'envoi d'un OTP vers un numéro de l'équipe.
+
+Le hook n'accepte que la signature Standard Webhooks de Supabase (horodatage à ± 5 minutes) ou le secret complet ; chaque envoi passe par les limites anti-abus des OTP et le plafond global.
 
 ## 7. Tâches planifiées
 

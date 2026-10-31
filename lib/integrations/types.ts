@@ -20,6 +20,9 @@ export interface SmsSendResult {
     recipient: string;
     error?: string;
     rawResponse?: unknown;
+    /** Lot 1C.9 : refus de la garde anti-abus (aucun SMS envoyé). */
+    code?: 'SMS_RATE_LIMITED' | 'SMS_DAILY_CAP_REACHED' | 'SMS_GUARD_UNAVAILABLE';
+    retryAfterSeconds?: number;
 }
 
 export interface SmsAdapter {

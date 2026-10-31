@@ -1,4 +1,5 @@
 import { mTargetService } from '@/lib/sms/mtarget.service';
+import type { SmsContext } from '@/lib/sms/sms-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { EmailService, EmailTemplates } from '@/lib/email/email.service';
 import { emailChannelAvailable } from '@/lib/notifications/channels';
@@ -379,13 +380,15 @@ export class NotificationService {
         email?: string;
         phone?: string;
         resetCode: string;
+        /** Lot 1C.9 : réservation anti-abus obtenue par la route avant l'enregistrement du code. */
+        sms?: SmsContext;
     }): Promise<NotificationResult> {
         const smsMessage = `Event Village: Votre code de réinitialisation est : ${params.resetCode}. Valable 10 minutes.`;
 
         let smsSent = false;
         if (params.phone) {
             try {
-                const res = await mTargetService.sendSms(params.phone, smsMessage);
+                const res = await mTargetService.sendSms(params.phone, smsMessage, params.sms ?? { category: 'OTP' });
                 smsSent = res.success;
             } catch (err) {
                 console.warn('[NotificationService] SMS reset password:', err instanceof Error ? err.message : err);

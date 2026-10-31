@@ -1,134 +1,102 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { mTargetService } from '@/lib/sms/mtarget.service';
+import { mTargetService, reserveSms } from '@/lib/sms/mtarget.service';
+import { smsRefusalResponse } from '@/lib/sms/sms-http';
+import { toSenegaleseE164 } from '@/lib/validations/auth';
 
 export const dynamic = 'force-dynamic';
 
+/** Écart maximal accepté entre l'horodatage signé et l'horloge du serveur (Standard Webhooks). */
+const SIGNATURE_TOLERANCE_SECONDS = 5 * 60;
+
+function safeEqual(a: string, b: string): boolean {
+    const ba = Buffer.from(a);
+    const bb = Buffer.from(b);
+    return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+
 /**
- * Valide la signature d'un Webhook Supabase Auth (Support Standard Webhooks / Svix et Bearer Token)
+ * Lot 1C.9 — authentification du hook « Send SMS » de Supabase Auth.
+ * Accepte uniquement :
+ *  - une signature Standard Webhooks (webhook-id, webhook-timestamp, webhook-signature) calculée
+ *    avec le secret, horodatage à ± 5 minutes ;
+ *  - ou le secret complet en Bearer (comparaison à temps constant).
+ * L'ancienne version acceptait toute sous-chaîne du secret (`secret.includes(token)`) et
+ * relayait sans contrôle quand le secret n'était pas configuré.
  */
-function verifySupabaseHookSignature(req: NextRequest, rawBody: string, secret: string): boolean {
-    if (!secret) return true;
+function isAuthorizedHookCall(req: NextRequest, rawBody: string, secret: string): boolean {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+    if (token && safeEqual(token, secret)) return true;
 
-    // 1. Vérification par header direct (Bearer Token ou Header personnalisé)
-    const authHeader = req.headers.get('authorization') || req.headers.get('x-supabase-auth-hook-secret');
-    const token = authHeader?.replace(/^Bearer\s+/i, '');
-    if (token && (token === secret || secret.includes(token))) {
-        return true;
-    }
+    const webhookId = req.headers.get('webhook-id');
+    const webhookTimestamp = req.headers.get('webhook-timestamp');
+    const webhookSignature = req.headers.get('webhook-signature');
+    if (!webhookId || !webhookTimestamp || !webhookSignature) return false;
 
-    // 2. Vérification par Signature HMAC-SHA256 (Format Svix / Standard Webhooks de Supabase)
-    const webhookId = req.headers.get('webhook-id') || req.headers.get('svix-id') || req.headers.get('msg-id');
-    const webhookTimestamp = req.headers.get('webhook-timestamp') || req.headers.get('svix-timestamp');
-    const webhookSignature = req.headers.get('webhook-signature') || req.headers.get('svix-signature');
+    const timestamp = Number(webhookTimestamp);
+    if (!Number.isInteger(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > SIGNATURE_TOLERANCE_SECONDS) return false;
 
-    if (webhookSignature && webhookTimestamp && webhookId) {
-        try {
-            // Extraction de la clé base64 (suppression des préfixes v1, et whsec_)
-            let secretKey = secret;
-            if (secretKey.startsWith('v1,')) {
-                secretKey = secretKey.substring(3);
-            }
-            if (secretKey.startsWith('whsec_')) {
-                secretKey = secretKey.substring(6);
-            }
-
-            const keyBuffer = Buffer.from(secretKey, 'base64');
-            const toSign = `${webhookId}.${webhookTimestamp}.${rawBody}`;
-            const computedBase64 = crypto
-                .createHmac('sha256', keyBuffer)
-                .update(toSign)
-                .digest('base64');
-
-            // Le header contient une ou plusieurs signatures séparées par des espaces (ex: "v1,signature1 v1,signature2")
-            const passedSignatures = webhookSignature
-                .split(' ')
-                .map((sig) => sig.replace(/^v1,/, ''));
-
-            if (passedSignatures.some((sig) => sig === computedBase64)) {
-                return true;
-            }
-        } catch (err) {
-            console.warn('[SMS Hook] Erreur lors du calcul de la signature HMAC Svix:', err);
-        }
-    }
-
-    return false;
+    // Secret Supabase : « v1,whsec_<base64> »
+    const key = Buffer.from(secret.replace(/^v1,/, '').replace(/^whsec_/, ''), 'base64');
+    const expected = crypto.createHmac('sha256', key).update(`${webhookId}.${webhookTimestamp}.${rawBody}`).digest('base64');
+    // L'en-tête peut porter plusieurs signatures : « v1,sig1 v1,sig2 »
+    return webhookSignature
+        .split(' ')
+        .filter((sig) => sig.startsWith('v1,'))
+        .some((sig) => safeEqual(sig.slice(3), expected));
 }
 
 /**
  * Route API /api/auth/sms-hook
- * Hook Webhook appelé par Supabase Auth lors de l'émission d'un code OTP par SMS.
+ * Hook appelé par Supabase Auth lors de l'émission d'un code OTP par SMS.
+ * L'envoi passe par la garde anti-abus (limites par numéro et plafond global, catégorie OTP).
  */
 export async function POST(req: NextRequest) {
     try {
         const rawBody = await req.text();
 
-        // 1. Sécurisation du Hook : Vérification de la signature ou du token partagé
+        // 1. Secret obligatoire : sans lui, le hook serait un relais SMS ouvert
         const hookSecret = process.env.SUPABASE_AUTH_HOOK_SECRET;
-        if (hookSecret) {
-            const isValid = verifySupabaseHookSignature(req, rawBody, hookSecret);
-            if (!isValid) {
-                console.warn('[SMS Hook] Tentative d\'accès non autorisée : signature ou secret invalide.');
-                return NextResponse.json(
-                    { error: 'Unauthorized : signature ou secret de webhook invalide.' },
-                    { status: 401 }
-                );
-            }
+        if (!hookSecret) {
+            console.error('[SMS Hook] SUPABASE_AUTH_HOOK_SECRET absent : appel refusé.');
+            return NextResponse.json({ error: 'Hook SMS non configuré.', code: 'SMS_HOOK_NOT_CONFIGURED' }, { status: 503 });
+        }
+        if (!isAuthorizedHookCall(req, rawBody, hookSecret)) {
+            console.warn('[SMS Hook] Appel refusé : signature ou secret invalide.');
+            return NextResponse.json({ error: 'Signature ou secret de webhook invalide.' }, { status: 401 });
         }
 
-        // 2. Parsing du payload JSON
-        let body: Record<string, any>;
+        // 2. Payload JSON
+        let body: { user?: { phone?: unknown }; sms?: { otp?: unknown } };
         try {
             body = JSON.parse(rawBody);
         } catch {
-            return NextResponse.json(
-                { error: 'Payload JSON invalide.' },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
         }
 
-        // 3. Extraction du numéro de téléphone et du code OTP (Compatibilité formats Supabase Auth)
-        const phone = body.user?.phone || body.recipient || body.phone || body.to;
-        const otpCode = body.sms?.otp || body.otp || body.code || body.token;
-
-        if (!phone || !otpCode) {
-            console.error('[SMS Hook] Données manquantes dans le payload Supabase:', { phone: !!phone, otp: !!otpCode });
-            return NextResponse.json(
-                { error: 'Numéro de téléphone ou code OTP manquant.' },
-                { status: 400 }
-            );
+        // 3. Destinataire et code (format du hook Send SMS de Supabase Auth)
+        const phone = typeof body.user?.phone === 'string' ? toSenegaleseE164(body.user.phone) : null;
+        const otpCode = typeof body.sms?.otp === 'string' || typeof body.sms?.otp === 'number' ? String(body.sms.otp) : '';
+        if (!phone) {
+            return NextResponse.json({ error: 'Numéro de téléphone absent ou non sénégalais.', code: 'INVALID_PHONE' }, { status: 400 });
+        }
+        if (!/^\d{4,10}$/.test(otpCode)) {
+            return NextResponse.json({ error: 'Code OTP absent ou invalide.' }, { status: 400 });
         }
 
-        // 4. Envoi du SMS OTP via MTarget Service
-        const sendResult = await mTargetService.sendOtp(phone, otpCode.toString());
-
+        // 4. Garde anti-abus puis envoi
+        const reserved = await reserveSms(phone, { category: 'OTP' });
+        if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
+        const sendResult = await mTargetService.sendOtp(phone, otpCode, { reservation: reserved.reservation });
         if (!sendResult.success) {
             console.error('[SMS Hook] Échec de transmission MTarget:', sendResult.error);
-            return NextResponse.json(
-                {
-                    error: sendResult.error || 'Erreur lors de l\'envoi du SMS via MTarget',
-                    recipient: sendResult.recipient,
-                },
-                { status: 502 }
-            );
+            return NextResponse.json({ error: 'Envoi du SMS impossible.' }, { status: 502 });
         }
 
-        // 5. Réponse 200 OK à Supabase Auth
-        return NextResponse.json(
-            {
-                status: 'success',
-                messageId: sendResult.messageId,
-                recipient: sendResult.recipient,
-            },
-            { status: 200 }
-        );
+        return NextResponse.json({ status: 'success', messageId: sendResult.messageId }, { status: 200 });
     } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : 'Erreur interne du serveur';
         console.error('[SMS Hook] Exception inattendue:', errorMsg);
-        return NextResponse.json(
-            { error: errorMsg },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Erreur interne du serveur.' }, { status: 500 });
     }
 }

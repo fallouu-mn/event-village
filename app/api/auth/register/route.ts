@@ -4,6 +4,10 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { RegisterClientSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { storeOtp } from '@/lib/auth/otp-store';
+import { reserveSms } from '@/lib/sms/sms-guard';
+import { smsRefusalResponse } from '@/lib/sms/sms-http';
+import { getClientIp } from '@/lib/security/client-ip';
+import { findExistingAccount } from '@/lib/auth/existing-account';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +37,19 @@ export async function POST(req: NextRequest) {
 
         const assignedRole = 'CLIENT' as const;
 
+        // 1 bis. Lot 1C.9 : un numéro ou un email déjà inscrit ne déclenche aucun SMS (facturé).
+        const existing = await findExistingAccount(normalizedPhone, effectiveEmail);
+        if (existing) {
+            return NextResponse.json(
+                { error: 'Ce numéro de téléphone ou cet email est déjà associé à un compte. Veuillez vous connecter.' },
+                { status: 409 }
+            );
+        }
+
+        // 1 ter. Réservation anti-abus (numéro, IP, plafond global) avant d'enregistrer le code.
+        const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: getClientIp(req) });
+        if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
+
         // 2. Générer et envoyer le SMS OTP EN PREMIER — aucun compte ne sera créé si la livraison échoue
         const otpCode = randomInt(100000, 1000000).toString();
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
@@ -45,11 +62,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
         }
 
-        try {
-            await mTargetService.sendOtp(normalizedPhone, otpCode);
-        } catch (smsErr) {
-            const smsMsg = smsErr instanceof Error ? smsErr.message : 'Échec envoi SMS';
-            console.error('[API /api/auth/register] Échec envoi SMS OTP:', smsMsg);
+        // L'adaptateur renvoie success:false sans lever : le résultat est contrôlé (lot 1C.9).
+        const smsResult = await mTargetService.sendOtp(normalizedPhone, otpCode, { reservation: reserved.reservation });
+        if (!smsResult.success) {
+            console.error('[API /api/auth/register] Échec envoi SMS OTP:', smsResult.error);
             return NextResponse.json(
                 { error: 'Impossible d\'envoyer le code de vérification SMS. Vérifiez votre numéro et réessayez.' },
                 { status: 503 }

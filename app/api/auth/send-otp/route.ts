@@ -5,6 +5,9 @@ import { NotificationService } from '@/lib/notifications/notification.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { storeOtp } from '@/lib/auth/otp-store';
+import { reserveSms } from '@/lib/sms/sms-guard';
+import { smsRefusalResponse } from '@/lib/sms/sms-http';
+import { getClientIp } from '@/lib/security/client-ip';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,19 +43,6 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Protection Anti-Bombardement SMS (Rate Limiting)
-        const { RateLimiter } = await import('@/lib/security/rate-limiter');
-        const limitCheck = await RateLimiter.isRateLimited(`otp_send_${normalizedPhone}`);
-        if (limitCheck.limited) {
-            return NextResponse.json(
-                {
-                    error: `Trop de demandes d'envoi SMS. Par sécurité, veuillez patienter ${limitCheck.remainingSeconds || 60} secondes.`,
-                    remainingSeconds: limitCheck.remainingSeconds || 60,
-                },
-                { status: 429 }
-            );
-        }
-
         const supabase = getServiceRoleClient();
 
         // Si demande de réinitialisation de mot de passe, vérifier l'existence du compte
@@ -72,6 +62,11 @@ export async function POST(req: NextRequest) {
             }
             userEmail = userRecord.email || undefined;
         }
+
+        // 0. Lot 1C.9 : réservation anti-abus (numéro, IP, plafond global) AVANT d'enregistrer le
+        //    code : un refus ne doit pas remplacer le code en attente du titulaire du numéro.
+        const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: getClientIp(req) });
+        if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
         // 1. Génération du code OTP à 6 chiffres
         const otpCode = generateOtpCode();
@@ -94,13 +89,15 @@ export async function POST(req: NextRequest) {
                 phone: normalizedPhone,
                 resetCode: otpCode,
                 email: userEmail,
+                sms: { reservation: reserved.reservation },
             });
-            sendSuccess = notifRes.smsSent || notifRes.emailSent;
+            // Le code ne part que par SMS : emailSent ne signifie pas qu'un email est parti.
+            sendSuccess = notifRes.smsSent;
             if (!sendSuccess) {
                 errorMessage = 'Impossible d\'envoyer le SMS de réinitialisation.';
             }
         } else {
-            const sendResult = await mTargetService.sendOtp(normalizedPhone, otpCode);
+            const sendResult = await mTargetService.sendOtp(normalizedPhone, otpCode, { reservation: reserved.reservation });
             sendSuccess = sendResult.success;
             errorMessage = sendResult.error;
         }
@@ -116,7 +113,6 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        await RateLimiter.recordFailedAttempt(`otp_send_${normalizedPhone}`);
         return NextResponse.json({
             success: true,
             message: purpose === 'PASSWORD_RESET'

@@ -17,6 +17,8 @@ import { z } from 'zod';
 
 const optionalUrl = z.string().url().optional();
 const optionalString = z.string().min(1).optional();
+/** Limite entière positive lue dans l'environnement, avec une valeur par défaut prudente. */
+const limit = (fallback: number) => z.coerce.number().int().positive().default(fallback);
 
 const serverEnvSchema = z.object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -45,6 +47,17 @@ const serverEnvSchema = z.object({
     MTARGET_PASSWORD: z.string().min(1, 'mot de passe MTarget requis (canal SMS obligatoire)'),
     MTARGET_SERVICE_ID: optionalString,
     MTARGET_SENDER: optionalString,
+
+    // Anti-abus SMS (lot 1C.9) : chaque SMS est facturé. Compteurs en base, fenêtres fixes.
+    SMS_OTP_PER_PHONE_15MIN: limit(3),
+    SMS_OTP_PER_PHONE_DAY: limit(10),
+    SMS_OTP_PER_IP_HOUR: limit(10),
+    SMS_OTP_PER_IP_DAY: limit(30),
+    SMS_PER_PHONE_DAY: limit(30), // tout SMS (notifications comprises), par destinataire
+    SMS_GLOBAL_DAILY_CAP: limit(1000), // tous SMS confondus, par jour UTC (minuit à Dakar)
+    // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
+    // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
+    CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),
 
     // Email Resend (optionnel, lot 1C.8 : sans clé, le canal email est désactivé)
     RESEND_API_KEY: optionalString,
