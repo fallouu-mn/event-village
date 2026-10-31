@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
-import { getServerSessionUser, serverIsAdmin } from '@/lib/auth/session';
+import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { PARTNER_DOCUMENTS_BUCKET, findClaimedDocumentPath, findUploadByToken, isDocType, legacyDocumentPath } from '@/lib/partners/documents';
 
 export const dynamic = 'force-dynamic';
@@ -58,14 +58,11 @@ export async function GET(req: NextRequest) {
             return noStore({ error: 'Paramètres partnerId et docType (id_card ou business_doc) requis.' }, 400);
         }
 
-        const user = await getServerSessionUser(req);
-        if (!user) return noStore({ error: 'Authentification requise.', code: 'AUTH_REQUIRED' }, 401);
         // Le titulaire d'un dossier en attente de validation consulte ses pièces ; un compte
         // suspendu ou supprimé, non (les admins sont contrôlés par verifyAdminAuth).
-        if (user.status !== 'ACTIF' && user.status !== 'EN_ATTENTE') {
-            console.warn(`[API /api/partner/documents/signed-url] compte ${user.id} au statut ${user.status} : refus`);
-            return noStore({ error: `Votre compte n'est pas actif (statut ${user.status}). Contactez le support.`, code: 'ACCOUNT_NOT_ACTIVE' }, 403);
-        }
+        const session = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
+        if (session.response) return session.response;
+        const user = session.user;
 
         const supabase = getServiceRoleClient();
         const { data: partner, error: partnerErr } = await supabase.from('partners').select('id, user_id, id_card_url, business_doc_url').eq('id', partnerId).maybeSingle();

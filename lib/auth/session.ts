@@ -41,13 +41,19 @@ export type ActiveSessionResult =
  * Lot 1B.6 — contrôle commun des routes /api/partner/* et /api/tickets/* :
  * session obligatoire (401) et compte ACTIF obligatoire (403, code ACCOUNT_NOT_ACTIVE).
  * Usage : `const s = await requireActiveSession(req); if (s.response) return s.response;`
+ * Lot 1C.2 : `allowStatuses` élargit explicitement les statuts admis pour une route donnée
+ * (ex. EN_ATTENTE : titulaire d'un dossier partenaire en cours de validation).
  */
-export async function requireActiveSession(req: NextRequest): Promise<ActiveSessionResult> {
+export async function requireActiveSession(
+    req: NextRequest,
+    options: { allowStatuses?: readonly string[] } = {}
+): Promise<ActiveSessionResult> {
+    const allowed = options.allowStatuses ?? ['ACTIF'];
     const user = await getServerSessionUser(req);
     if (!user) {
         return { response: NextResponse.json({ error: 'Authentification requise.', code: 'AUTH_REQUIRED' }, { status: 401 }) };
     }
-    if (user.status !== 'ACTIF') {
+    if (!allowed.includes(user.status)) {
         console.warn(`[requireActiveSession] accès refusé à ${new URL(req.url).pathname} : compte ${user.id} au statut ${user.status}`);
         return {
             response: NextResponse.json(
