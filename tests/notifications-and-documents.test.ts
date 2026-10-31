@@ -22,12 +22,13 @@ test('1. SÉCURITÉ KYC & VISUALISATION DOCUMENTS : Présence des boutons d\'act
     );
 
     // Vérifier les boutons d'action au lieu de simples badges
+    // Lot 1C.2 : l'URL signée se demande par dossier et type de pièce, plus par chemin.
     assert.ok(
-        dashboardContent.includes('handleViewDocument(selectedPartner.id_card_url'),
+        dashboardContent.includes("handleViewDocument(selectedPartner.id, 'id_card'"),
         'Un bouton d\'ouverture doit être disponible pour la pièce d\'identité'
     );
     assert.ok(
-        dashboardContent.includes('handleViewDocument(selectedPartner.business_doc_url'),
+        dashboardContent.includes("handleViewDocument(selectedPartner.id, 'business_doc'"),
         'Un bouton d\'ouverture doit être disponible pour le document NINEA/RCCM'
     );
 });
