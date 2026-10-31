@@ -80,7 +80,7 @@ test('9. Route API Hook Supabase : Extraction valide du format standard Supabase
 });
 
 test('10. Route API Hook Supabase : Signature Svix HMAC-SHA256 valide (v1,whsec_...)', async () => {
-    const secret = 'v1,whsec_eqdLkTwdTSs+uH/YT5xpiT93nofGIebmpuM/xA/2VWkiPqxcWGH+DhNkp4n0Yju9DhJkP5FQW4RhybDR';
+    const secret = 'v1,whsec_ZXZlbnQtdmlsbGFnZS10ZXN0LW9ubHktaG9vay1zZWNyZXQtTk9ULVJFQUw=' // valeur FACTICE (lot 1A : l'ancienne valeur était le secret réel);
     process.env.SUPABASE_AUTH_HOOK_SECRET = secret;
 
     const payload = JSON.stringify({
