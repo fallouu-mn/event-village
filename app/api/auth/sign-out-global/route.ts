@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Session invalide' }, { status: 401 });
         }
 
-        await supabase.auth.admin.signOut(user.id, 'global');
+        // Lot 1C.3 : auth.admin.signOut attend un JWT ; l'appel avec user.id était sans effet.
+        if (!(await revokeUserSessions(user.id, { reason: 'USER_SIGN_OUT_GLOBAL', actorId: user.id }))) {
+            return NextResponse.json({ error: 'Déconnexion de tous les appareils impossible. Réessayez.' }, { status: 500 });
+        }
 
         return NextResponse.json({ success: true });
     } catch (err: unknown) {

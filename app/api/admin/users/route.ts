@@ -4,6 +4,7 @@ import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { grantUserRoles, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
+import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export const dynamic = 'force-dynamic';
 
@@ -277,7 +278,20 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        // 6. Journal d'audit inaltérable
+        // 6. Lot 1C.3 : rôle retiré ou compte non actif → sessions révoquées (déconnexion forcée réelle)
+        const rolesRemoved = (roleChange?.removed.length ?? 0) > 0;
+        const deactivated = status !== undefined && status !== 'ACTIF';
+        if (rolesRemoved || deactivated) {
+            const revoked = await revokeUserSessions(userId, {
+                reason: deactivated ? `STATUS_${status}` : 'ROLES_REMOVED',
+                actorId: auth.user!.id,
+            });
+            if (!revoked) {
+                return NextResponse.json({ error: 'Compte mis à jour, mais la révocation des sessions a échoué. Réessayez.' }, { status: 500 });
+            }
+        }
+
+        // 7. Journal d'audit inaltérable
         await AdminService.logAudit({
             userId: auth.user!.id,
             userRole: auth.user!.role,

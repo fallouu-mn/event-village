@@ -3,6 +3,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { NotificationService } from '@/lib/notifications/notification.service';
+import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +102,11 @@ export async function PATCH(
                     updated_at: new Date().toISOString(),
                 })
                 .eq('id', userId);
+
+            // Lot 1C.3 : suspension → sessions du compte partenaire révoquées
+            if (newStatus === 'SUSPENDU' && !(await revokeUserSessions(userId, { reason: 'PARTNER_SUSPENDED', actorId: auth.user!.id }))) {
+                return NextResponse.json({ error: 'Partenaire suspendu, mais la révocation des sessions a échoué. Réessayez.' }, { status: 500 });
+            }
         }
 
         // 4. Enregistrement dans le Journal d'Audit inaltérable (audit_logs)

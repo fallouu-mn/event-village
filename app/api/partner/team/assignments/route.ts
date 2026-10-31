@@ -10,6 +10,7 @@ import { ShiftService } from '@/lib/shifts/shift.service';
 import { grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { maskPersonName } from '@/lib/security/mask';
+import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,8 +151,10 @@ export async function PATCH(req: NextRequest) {
                 user_metadata: { is_temporary_controller_account: false },
             });
             if (metaErr) console.warn('[PATCH team/assignments] métadonnée is_temporary_controller_account :', metaErr.message);
-            const { error: signOutErr } = await supabase.auth.admin.signOut(controllerId, 'global');
-            if (signOutErr) console.warn('[PATCH team/assignments] déconnexion des sessions :', signOutErr.message);
+            // Lot 1C.3 : révocation réelle des sessions (auth.admin.signOut(userId) était sans effet)
+            if (!(await revokeUserSessions(controllerId, { reason: 'CONTROLLER_REMOVED', actorId: user.id }))) {
+                return NextResponse.json({ error: 'Rôle Contrôleur retiré, mais la révocation des sessions a échoué. Réessayez.' }, { status: 500 });
+            }
         }
 
         // 3. Récupérer les affectations actuelles de ce contrôleur chez ce partenaire

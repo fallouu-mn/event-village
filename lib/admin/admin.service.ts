@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export interface FinancialReconciliationItem {
     paymentId: string;
@@ -300,6 +301,10 @@ export class AdminService {
         });
         if (authUpdateErr) {
             throw new Error(`Anonymisation du compte de connexion impossible : ${authUpdateErr.message}`);
+        }
+        // Lot 1C.3 : sessions et jetons de rafraîchissement révoqués explicitement, sans dépendre du bannissement
+        if (!(await revokeUserSessions(targetUserId, { reason: 'USER_ANONYMIZED', actorId: actor.id }))) {
+            throw new Error('Révocation des sessions du compte anonymisé impossible.');
         }
 
         // 4. DB PUBLIQUE users (Anonymisation RGPD)

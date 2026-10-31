@@ -6,6 +6,7 @@ import { NotificationService } from '@/lib/notifications/notification.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { ShiftService } from '@/lib/shifts/shift.service';
 import { removeUserRole } from '@/lib/auth/roles';
+import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,11 +138,9 @@ export async function DELETE(
             });
             if (metaErr) console.warn('[DELETE team/controller] métadonnée is_temporary_controller_account :', metaErr.message);
 
-            // Invalider les sessions GoTrue actives pour purger l'ancien token JWT CONTROLEUR
-            try {
-                await supabase.auth.admin.signOut(controllerId, 'global');
-            } catch (authSignOutErr) {
-                console.warn('[DELETE team/controller] signOut auth non-bloquant:', authSignOutErr);
+            // Lot 1C.3 : révocation réelle des sessions (auth.admin.signOut(userId) était sans effet)
+            if (!(await revokeUserSessions(controllerId, { reason: 'CONTROLLER_REMOVED', actorId: user.id }))) {
+                return NextResponse.json({ error: 'Rôle Contrôleur retiré, mais la révocation des sessions a échoué. Réessayez.' }, { status: 500 });
             }
 
             // Supprimer tout OTP résiduel
