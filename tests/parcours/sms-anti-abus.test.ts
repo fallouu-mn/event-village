@@ -119,10 +119,14 @@ describe('Anti-abus SMS', () => {
             assert.equal(body.code, 'SMS_GUARD_UNAVAILABLE');
             assert.equal(getFakes().sms.messagesTo(phone).length, 0, 'aucun SMS sans garde');
         } finally {
-            await db.query('GRANT EXECUTE ON FUNCTION public.quota_reserve(jsonb) TO service_role').catch((e: Error) => {
-                throw new Error(`restauration du droit EXECUTE impossible : ${e.message}`);
-            });
-            await db.end();
+            // La connexion est fermée même si la restauration échoue (sinon le processus de test ne se termine pas).
+            try {
+                await db.query('GRANT EXECUTE ON FUNCTION public.quota_reserve(jsonb) TO service_role').catch((e: Error) => {
+                    throw new Error(`restauration du droit EXECUTE impossible : ${e.message}`);
+                });
+            } finally {
+                await db.end();
+            }
         }
     });
 
