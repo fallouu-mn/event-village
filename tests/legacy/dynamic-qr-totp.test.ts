@@ -397,32 +397,36 @@ describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', a
     });
 
     // ─────────────────────────────────────────────────────────────
-    // TEST 6 : Saisie Manuelle (Fallback d'urgence avec contrôle visuel d'identité)
+    // TEST 6 : Identifiant nu présenté à la caméra — REFUSÉ
+    // [lot 4] Réécrit : le numéro de billet seul (TCK-...) était composté comme une « saisie manuelle »
+    // (contournement du QR dynamique, audit scan-security-1). Contrat du lot 4 : un payload caméra qui
+    // n'est pas EVT1:<UUID>:<6 chiffres> donne dynamic_qr_required et le billet reste VALIDE ; la saisie
+    // manuelle a son propre corps ({ eventId, manualTicketNumber, identityVerified }) et est couverte par
+    // tests/parcours/acces-qr.test.ts.
     // ─────────────────────────────────────────────────────────────
-    await test('6. Saisie Manuelle Fallback : Numéro statique accepté avec identité du porteur', async () => {
+    await test('6. Identifiant nu (numéro de billet sans code dynamique) refusé, billet non composté', async () => {
         const ticket = await createTestTicket('T6');
 
-        // Saisie manuelle directe du ticket_number (TCK-...) sans QR dynamique
         const scanReq = new NextRequest('http://localhost:3000/api/controller/scan', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${ctrlToken}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ qr_code: ticket.ticket_number }),
+            body: JSON.stringify({ eventId, payload: ticket.ticket_number }),
         });
 
         const scanRes = await controllerScan(scanReq);
         assert.equal(scanRes.status, 200);
         const scanData = await scanRes.json();
 
-        assert.equal(scanData.scan_result, 'valid');
-        assert.equal(scanData.ticket_info.is_manual_entry, true);
-        assert.equal(scanData.ticket_info.holder_name, 'Moussa Diop');
+        assert.equal(scanData.result, 'dynamic_qr_required');
+        assert.equal(scanData.ticket, undefined, 'aucune donnée de billet pour un identifiant nu');
 
-        // Vérification en base
-        const { data: dbTicket } = await supabase.from('tickets').select('status').eq('id', ticket.id).single();
-        assert.equal(dbTicket?.status, 'UTILISE');
+        // Vérification en base : le billet n'est pas composté
+        const { data: dbTicket } = await supabase.from('tickets').select('status, checked_in_at').eq('id', ticket.id).single();
+        assert.equal(dbTicket?.status, 'VALIDE');
+        assert.equal(dbTicket?.checked_in_at, null);
     });
 
     // ─────────────────────────────────────────────────────────────
