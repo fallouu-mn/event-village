@@ -1,27 +1,20 @@
 /**
  * EMAIL SERVICE — Event Village
- * Implémentation via l'API REST Resend (https://resend.com)
- * Aucune dépendance npm requise — utilise fetch() natif (Node 18+)
+ * Templates HTML + façade d'envoi. Le transport (Resend en production, faux
+ * adaptateur en test) est fourni par lib/integrations/registry.
  *
  * Pour activer : ajouter RESEND_API_KEY=re_xxxx dans .env.local
  * Tant que la clé est absente, les envois sont journalisés (pas de crash).
  */
 
+import { getEmailAdapter } from '@/lib/integrations/registry';
+import type { EmailSendPayload, EmailSendResult } from '@/lib/integrations/types';
+
 // ── Types ─────────────────────────────────────────────────────────────────
 
-export interface EmailResult {
-    sent: boolean;
-    id?: string;
-    error?: string;
-}
+export type EmailResult = EmailSendResult;
 
-interface SendPayload {
-    to: string | string[];
-    subject: string;
-    html: string;
-    from?: string;
-    replyTo?: string;
-}
+type SendPayload = EmailSendPayload;
 
 // ── Helpers HTML ──────────────────────────────────────────────────────────
 
@@ -658,55 +651,13 @@ export const EmailTemplates = {
 // ── EmailService ──────────────────────────────────────────────────────────
 
 export class EmailService {
-    private static readonly RESEND_API = 'https://api.resend.com/emails';
-
-    private static fromAddress(): string {
-        const addr = process.env.NOTIFICATION_FROM_EMAIL || 'notifications@eventvillage.sn';
-        return `Event Village <${addr}>`;
-    }
-
     /**
-     * Envoie un email via l'API Resend.
+     * Envoie un email via l'adaptateur fourni par le registre d'intégrations
+     * (Resend en production, faux adaptateur sans réseau en test).
      * Retourne toujours — l'échec ne propage pas d'exception.
      */
     static async send(payload: SendPayload): Promise<EmailResult> {
-        const apiKey = process.env.RESEND_API_KEY;
-
-        if (!apiKey) {
-            console.warn('[EmailService] RESEND_API_KEY manquant — email non expédié :', payload.subject);
-            return { sent: false, error: 'RESEND_API_KEY_MISSING' };
-        }
-
-        try {
-            const res = await fetch(EmailService.RESEND_API, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    from: payload.from ?? EmailService.fromAddress(),
-                    to: Array.isArray(payload.to) ? payload.to : [payload.to],
-                    subject: payload.subject,
-                    html: payload.html,
-                    ...(payload.replyTo ? { reply_to: payload.replyTo } : {}),
-                }),
-            });
-
-            if (!res.ok) {
-                const errBody = await res.json().catch(() => ({})) as Record<string, unknown>;
-                const msg = (errBody.message as string) || `HTTP ${res.status}`;
-                console.warn('[EmailService] Resend API error:', msg, '— sujet:', payload.subject);
-                return { sent: false, error: msg };
-            }
-
-            const data = await res.json() as { id?: string };
-            return { sent: true, id: data.id };
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : 'network_error';
-            console.warn('[EmailService] Exception envoi:', msg, '— sujet:', payload.subject);
-            return { sent: false, error: msg };
-        }
+        return getEmailAdapter().send(payload);
     }
 
     /**

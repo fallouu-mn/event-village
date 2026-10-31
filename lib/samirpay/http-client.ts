@@ -13,34 +13,40 @@ import {
     SamirPayCashoutResponse,
     SamirPaySoldeResponse,
 } from './types';
+import type { PaymentGateway } from '@/lib/integrations/types';
+import { getServerEnv } from '@/lib/env';
 
-export class SamirPayClient {
+export class SamirPayHttpClient implements PaymentGateway {
+    private get env() {
+        return getServerEnv();
+    }
+
     private get baseUrl(): string {
-        return (process.env.SAMIRPAY_API_URL || '').replace(/\/+$/, '');
+        return this.env.SAMIRPAY_API_URL.replace(/\/+$/, '');
     }
 
     private get cashinUrl(): string {
-        return process.env.SAMIRPAY_CASHIN_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/direct/initPayment` : '');
+        return this.env.SAMIRPAY_CASHIN_URL || `${this.baseUrl}/api/tiers/direct/initPayment`;
     }
 
     private get cashoutUrl(): string {
-        return process.env.SAMIRPAY_CASHOUT_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/payments/send` : '');
+        return this.env.SAMIRPAY_CASHOUT_URL || `${this.baseUrl}/api/tiers/payments/send`;
     }
 
     private get soldeUrl(): string {
-        return process.env.SAMIRPAY_SOLDE_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/payments/solde` : '');
+        return this.env.SAMIRPAY_SOLDE_URL || `${this.baseUrl}/api/tiers/payments/solde`;
     }
 
     private get statusUrl(): string {
-        return process.env.SAMIRPAY_STATUS_URL || (this.baseUrl ? `${this.baseUrl}/api/tiers/direct/status` : (this.cashinUrl ? this.cashinUrl.replace(/initPayment\/?$/, 'status') : ''));
+        return this.env.SAMIRPAY_STATUS_URL || `${this.baseUrl}/api/tiers/direct/status`;
     }
 
     private get apiKey(): string {
-        return process.env.SAMIRPAY_API_KEY || '';
+        return this.env.SAMIRPAY_API_KEY;
     }
 
     private get secretKey(): string {
-        return process.env.SAMIRPAY_SECRET_KEY || '';
+        return this.env.SAMIRPAY_SECRET_KEY;
     }
 
     private readonly timeoutMs: number = 15000;
@@ -48,7 +54,7 @@ export class SamirPayClient {
     constructor() {
         // Validation stricte de l'environnement serveur
         if (typeof window !== 'undefined') {
-            throw new Error('SamirPayClient ne doit JAMAIS être instancié ou exécuté côté client/navigateur.');
+            throw new Error('SamirPayHttpClient ne doit JAMAIS être instancié ou exécuté côté client/navigateur.');
         }
     }
 
@@ -332,5 +338,3 @@ export class SamirPayClient {
     }
 }
 
-// Instance singleton côté serveur
-export const samirPayClient = new SamirPayClient();
