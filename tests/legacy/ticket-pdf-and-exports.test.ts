@@ -15,7 +15,6 @@ import { TicketPdfService } from '../../lib/tickets/ticket-pdf.service';
 import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
 import { NotificationService } from '../../lib/notifications/notification.service';
 import { GET as getTicketPdfRoute } from '../../app/api/tickets/[id]/pdf/route';
-import { generateTotp, verifyTotp } from '../../lib/security/totp';
 
 describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (12 TESTS)', async () => {
     const supabase = getServiceRoleClient();
@@ -363,22 +362,5 @@ describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (
         await supabase.from('tickets').delete().eq('id', tP2P!.id);
     });
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // TEST 12 : Non-régression QR/TOTP + Scan contrôleur
-    // ─────────────────────────────────────────────────────────────────────────
-    await test('TEST 12 : Non-régression — QR/TOTP RFC 6238 et scan/compostage atomique', async () => {
-        // 1. Calcul du code TOTP en direct
-        const currentTotp = generateTotp(secretTotpSecretA);
-        const isValid = verifyTotp(currentTotp.code, secretTotpSecretA);
-        assert.equal(isValid, true, 'Le code TOTP généré doit être valide selon RFC 6238');
-
-        // 2. RPC de check-in / compostage
-        const { data: checkinRes, error: checkinErr } = await supabase.rpc('atomic_ticket_checkin', {
-            p_ticket_id: ticketValidAId,
-            p_controller_id: buyerAUserId,
-        });
-
-        assert.equal(checkinErr, null, 'Le scan doit s\'exécuter sans erreur SQL');
-        assert.ok(checkinRes, 'Le scan doit retourner le payload JSON de compostage');
-    });
+    // [lot 4 — cas supprimé] TEST 12 Non-régression QR/TOTP et compostage : generateTotp, verifyTotp et RPC atomic_ticket_checkin supprimés (verifyTicketCode, compostage par la RPC ticket_scan) ; couvert par tests/parcours/acces-totp.test.ts et tests/parcours/acces-scan.test.ts
 });

@@ -11,12 +11,11 @@ import { createClient } from '@supabase/supabase-js';
 import '../helpers/env';
 
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { PUT as putScan, POST as postScan } from '../../app/api/controller/scan/route';
+import { POST as postScan } from '../../app/api/controller/scan/route';
 import { POST as controllerSetup } from '../../app/api/controller/setup/route';
 import { POST as inviteController } from '../../app/api/partner/team/invite/route';
 import { PATCH as patchAssignments } from '../../app/api/partner/team/assignments/route';
 import { DELETE as deleteController } from '../../app/api/partner/team/controller/[controllerId]/route';
-import { RateLimiter } from '../../lib/security/rate-limiter';
 
 describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async () => {
     const supabase = getServiceRoleClient();
@@ -26,6 +25,14 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
         { auth: { persistSession: false, autoRefreshToken: false } }
     );
     const ts = Date.now().toString().slice(-6);
+
+    // [lot 4] lib/security/rate-limiter.ts supprimé : les quotas sont des compteurs en base (quota_counters,
+    // réservés par reserveQuota de lib/security/quota.ts). Remise à zéro équivalente des anciennes clés :
+    // sms_invite_phone → invite_phone, sms_invite_partner → invite_partner.
+    const resetQuota = async (scope: string, bucket: string) => {
+        const { error } = await supabase.from('quota_counters').delete().eq('scope', scope).eq('bucket', bucket);
+        if (error) throw new Error(`remise à zéro du quota ${scope}/${bucket} : ${error.message}`);
+    };
 
     const partnerUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
     const partnerId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
@@ -88,7 +95,7 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
         });
 
         // Nettoyer rate limits initiaux
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerUserId}`);
+        await resetQuota('invite_partner', partnerUserId);
     });
 
     after(async () => {
@@ -101,70 +108,7 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
         await supabase.from('users').update({ role: 'CLIENT', status: 'ACTIF' }).in('id', [victimClientId, clientBId]);
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // TEST 1.1 : IDOR Encaissement Cash (PUT /api/controller/scan)
-    // ─────────────────────────────────────────────────────────────
-    await test('TEST 1.1 : Faille 1.1 — Protection IDOR Encaissement Cash (PUT /api/controller/scan)', async () => {
-        // Commande 1 légitime (5 000 F)
-        const { data: legitOrder } = await supabase.from('orders').insert({
-            order_number: 'ORD-LGT-' + ts,
-            partner_id: partnerId,
-            client_id: ctrlUserId,
-            subtotal: 5000,
-            total_amount: 5000,
-            order_status: 'CONFIRMEE',
-            payment_status: 'SUCCESS',
-            delivery_mode: 'SUR_PLACE',
-        }).select().single();
-
-        // Billet lié à commande 1
-        const { data: ticket1 } = await supabase.from('tickets').insert({
-            ticket_number: 'TCK-LGT-' + ts,
-            event_id: eventId,
-            category_id: catId,
-            order_id: legitOrder.id,
-            price: 5000,
-            status: 'VALIDE',
-            qr_code: 'TCK-LGT-' + ts,
-            user_id: ctrlUserId,
-        }).select().single();
-
-        // Commande cible victime (500 000 F, PENDING)
-        const { data: victimOrder } = await supabase.from('orders').insert({
-            order_number: 'ORD-VIC-' + ts,
-            partner_id: partnerId,
-            client_id: victimClientId,
-            subtotal: 500000,
-            total_amount: 500000,
-            order_status: 'EN_ATTENTE',
-            payment_status: 'PENDING',
-            delivery_mode: 'SUR_PLACE',
-        }).select().single();
-
-        // Tentative d'injection IDOR : valider commande victime via ticket 1
-        const idorReq = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'PUT',
-            headers: {
-                Authorization: 'Bearer ' + ctrlToken,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                ticket_id: ticket1.id,
-                order_id: victimOrder.id, // INJECTION
-            }),
-        });
-
-        const idorRes = await putScan(idorReq);
-        const idorJson = await idorRes.json();
-
-        // Vérification : rejeté avec code 403
-        assert.equal(idorRes.status, 403, 'L\'attaque IDOR doit être rejetée avec 403');
-        assert.ok(idorJson.error.includes('sécurité') || idorJson.error.includes('correspond pas'), 'Message de sécurité attendu');
-
-        // Vérification en DB : la commande victime est TOUJOURS PENDING
-        const { data: freshVictim } = await supabase.from('orders').select('payment_status').eq('id', victimOrder.id).single();
-        assert.equal(freshVictim?.payment_status, 'PENDING', 'La commande victime ne doit jamais être passée en SUCCESS');
-    });
+    // [lot 4 — cas supprimé] TEST 1.1 : Faille 1.1 — Protection IDOR Encaissement Cash : PUT /api/controller/scan { ticket_id, order_id } retiré ; l'encaissement ne reçoit plus de commande, il part d'un scan cash_required du même scanneur ({ scanId, eventId } → ticket_cash_checkin, commande lue en base sous verrou) ; couvert par tests/parcours/acces-encaissement.test.ts
 
     // ─────────────────────────────────────────────────────────────
     // TEST 1.2 : Account Takeover via /api/controller/setup
@@ -241,8 +185,8 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
         const { data: vClient } = await supabase.from('users').select('phone').eq('id', victimClientId).single();
 
         // Réinitialiser rate limits pour le test
-        await RateLimiter.resetAttempts(`sms_invite_phone:${vClient?.phone}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerUserId}`);
+        await resetQuota('invite_phone', vClient?.phone);
+        await resetQuota('invite_partner', partnerUserId);
 
         const inviteReq = new NextRequest('http://localhost:3000/api/partner/team/invite', {
             method: 'POST',
@@ -266,75 +210,8 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
             'Le compte client promu ne doit PAS être marqué temporaire');
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // TEST 2.1 : Partenaire scannant son propre événement
-    // ─────────────────────────────────────────────────────────────
-    await test('TEST 2.1 : Faille 2.1 — Résolution partners.id pour le scan partenaire', async () => {
-        const { data: partnerTicket } = await supabase.from('tickets').insert({
-            ticket_number: 'TCK-PTEST-' + ts,
-            event_id: eventId,
-            category_id: catId,
-            price: 5000,
-            status: 'VALIDE',
-            qr_code: 'TCK-PTEST-' + ts,
-            user_id: ctrlUserId,
-        }).select().single();
-
-        const scanReq = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'POST',
-            headers: {
-                Authorization: 'Bearer ' + partnerToken,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                qr_code: 'TCK-PTEST-' + ts,
-            }),
-        });
-
-        const scanRes = await postScan(scanReq);
-        const scanJson = await scanRes.json();
-
-        assert.equal(scanRes.status, 200);
-        assert.equal(scanJson.scan_result, 'valid', 'Le scan par le partenaire propriétaire doit être validé');
-
-        // Vérification statut du ticket
-        const { data: updatedTicket } = await supabase.from('tickets').select('status').eq('id', partnerTicket.id).single();
-        assert.equal(updatedTicket?.status, 'UTILISE', 'Le ticket doit être marqué UTILISE');
-    });
-
-    // ─────────────────────────────────────────────────────────────
-    // TEST 2.2 : Rate Limiting invitations SMS
-    // ─────────────────────────────────────────────────────────────
-    await test('TEST 2.2 : Faille 2.2 — Rate Limiting sur les invitations SMS', async () => {
-        const testPhone = '+22177000' + ts.slice(-4);
-        const phoneRateKey = `sms_invite_phone:${testPhone}`;
-        await RateLimiter.resetAttempts(phoneRateKey);
-
-        // Simuler 3 envois consécutifs
-        await RateLimiter.recordAttempt(phoneRateKey);
-        await RateLimiter.recordAttempt(phoneRateKey);
-        await RateLimiter.recordAttempt(phoneRateKey);
-
-        // 4ème tentative : doit être bloquée
-        const fourthReq = new NextRequest('http://localhost:3000/api/partner/team/invite', {
-            method: 'POST',
-            headers: {
-                Authorization: 'Bearer ' + partnerToken,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                event_ids: [eventId],
-                phone: testPhone,
-            }),
-        });
-
-        const fourthRes = await inviteController(fourthReq);
-        const fourthJson = await fourthRes.json();
-
-        assert.equal(fourthRes.status, 429, 'La 4ème invitation doit être bloquée avec 429');
-        assert.equal(fourthJson.code, 'PHONE_INVITE_RATE_LIMIT');
-        await RateLimiter.resetAttempts(phoneRateKey);
-    });
+    // [lot 4 — cas supprimé] TEST 2.1 : Faille 2.1 — Résolution partners.id pour le scan partenaire : corps { qr_code } et champ scan_result retirés (identifiant nu → dynamic_qr_required) ; couvert par tests/parcours/acces-scan.test.ts (partenaire propriétaire : valid par la même route)
+    // [lot 4 — cas supprimé] TEST 2.2 : Faille 2.2 — Rate Limiting sur les invitations SMS : RateLimiter.recordAttempt supprimé (compteurs en base, reserveQuota) ; couvert par tests/parcours/acces-limiteurs.test.ts (invitation : INVITE_PER_PHONE_DAY par numéro invité)
 
     // ─────────────────────────────────────────────────────────────
     // TEST 2.3 : Handshake PATCH /api/partner/team/assignments
@@ -391,21 +268,7 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
         assert.equal(userPromoted?.role, 'CONTROLEUR', 'Le rôle doit être promu avec confirmation');
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // TEST 3.1 : RateLimiter Fail-Closed
-    // ─────────────────────────────────────────────────────────────
-    await test('TEST 3.1 : Faille 3.1 — RateLimiter mode failClosed', async () => {
-        // Tester le comportement failClosed quand la DB est inaccessible ou erreur SQL
-        const resultFailClosed = await RateLimiter.isRateLimited('test_fail_closed_key', {
-            failClosed: true,
-            maxAttempts: 0, // Déclenche immédiatement le blocage
-        });
-        assert.equal(resultFailClosed.limited, true, 'Doit bloquer immédiatement');
-
-        // Vérifier l'option failClosed lors d'erreur
-        const options = { failClosed: true, maxAttempts: 5 };
-        assert.equal(options.failClosed, true);
-    });
+    // [lot 4 — cas supprimé] TEST 3.1 : Faille 3.1 — RateLimiter mode failClosed : RateLimiter.isRateLimited supprimé ; fail-closed de reserveQuota couvert par tests/parcours/acces-limiteurs.test.ts (EXECUTE retiré sur quota_reserve → 503)
 
     // ─────────────────────────────────────────────────────────────
     // TEST 3.2 : Rejet scan si utilisateur suspendu ou inactif
@@ -470,8 +333,8 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
             (process.env as any).NODE_ENV = 'production';
 
             const phone = '+22177888' + ts.slice(-4);
-            await RateLimiter.resetAttempts(`sms_invite_phone:${phone}`);
-            await RateLimiter.resetAttempts(`sms_invite_partner:${partnerUserId}`);
+            await resetQuota('invite_phone', phone);
+            await resetQuota('invite_partner', partnerUserId);
 
             const prodReq = new NextRequest('http://localhost:3000/api/partner/team/invite', {
                 method: 'POST',
@@ -490,7 +353,7 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
             const prodJson = await prodRes.json();
 
             assert.equal(prodJson.otp_code, undefined, 'otp_code doit être STRICTEMENT undefined en production');
-            await RateLimiter.resetAttempts(`sms_invite_phone:${phone}`);
+            await resetQuota('invite_phone', phone);
         } finally {
             (process.env as any).NODE_ENV = origEnv;
         }

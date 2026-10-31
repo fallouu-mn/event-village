@@ -2,7 +2,6 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
@@ -10,16 +9,6 @@ import { createClient } from '@supabase/supabase-js';
 import '../helpers/env';
 
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { POST as controllerScanRoute } from '../../app/api/controller/scan/route';
-import { POST as partnerInviteRoute } from '../../app/api/partner/team/invite/route';
-import { RateLimiter } from '../../lib/security/rate-limiter';
-import {
-    generateTotp,
-    verifyTotp,
-    buildDynamicQrPayload,
-    deriveTicketTotpSecret,
-    TOTP_STEP_SECONDS,
-} from '../../lib/security/totp';
 import {
     CAMERA_SCAN_THROTTLE_MS,
     CAMERA_INACTIVITY_TIMEOUT_MS,
@@ -122,16 +111,13 @@ describe('SCANNER SECURITY HARDENING & QUICK WINS TEST SUITE', async () => {
         }
 
         // Nettoyer les rate limits de test
-        await RateLimiter.resetAttempts(`controller_scan:${ctrlUserId}`);
-        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerUserId}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerUserId}`);
+        // [lot 4] Remise à zéro par RateLimiter retirée (lib/security/rate-limiter.ts supprimé) : aucun cas conservé
+        // n'appelle plus le scan ni l'invitation.
     });
 
     after(async () => {
         // Nettoyage
-        await RateLimiter.resetAttempts(`controller_scan:${ctrlUserId}`);
-        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerUserId}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerUserId}`);
+        // [lot 4] Remise à zéro par RateLimiter retirée (voir before()).
 
         if (createdTickets.length > 0) {
             await supabase.from('tickets').delete().in('id', createdTickets.map(t => t.id));
@@ -145,135 +131,9 @@ describe('SCANNER SECURITY HARDENING & QUICK WINS TEST SUITE', async () => {
         }
     });
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // QUICK WIN 1 : Rate limiting sur POST /api/controller/scan (5 req/s par contrôleur, 429 au-delà)
-    // ─────────────────────────────────────────────────────────────────────────────
-    await test('1. Rate limiting sur POST /api/controller/scan — Rafale concurrente via Promise.allSettled()', async () => {
-        await RateLimiter.resetAttempts(`controller_scan:${ctrlUserId}`);
-
-        // Envoi d'une rafale de 8 requêtes SIMULTANÉES avec Promise.allSettled
-        const burstPromises = Array.from({ length: 8 }, (_, i) => {
-            const ticket = createdTickets[i % createdTickets.length];
-            const secret = deriveTicketTotpSecret(ticket.id);
-            const { code } = generateTotp(secret);
-            const dynamicQr = buildDynamicQrPayload(ticket.ticket_number, code);
-
-            const req = new NextRequest('http://localhost:3000/api/controller/scan', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${ctrlToken}`,
-                },
-                body: JSON.stringify({ qr_code: dynamicQr }),
-            });
-            return controllerScanRoute(req);
-        });
-
-        const burstResults = await Promise.allSettled(burstPromises);
-        const statusCodes = [];
-
-        for (const res of burstResults) {
-            assert.equal(res.status, 'fulfilled');
-            if (res.status === 'fulfilled') {
-                statusCodes.push(res.value.status);
-            }
-        }
-
-        const count429 = statusCodes.filter(s => s === 429).length;
-        const countNon429 = statusCodes.filter(s => s !== 429).length;
-
-        console.log(`   Burst stats : total=${statusCodes.length}, allowed=${countNon429}, rate_limited(429)=${count429}`);
-        assert.ok(count429 > 0, `Au moins une requête doit être rejetée avec 429 (obtenu: ${count429}/8)`);
-        assert.ok(countNon429 <= 5, `Au maximum 5 requêtes doivent être autorisées par seconde (obtenu: ${countNon429})`);
-    });
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // QUICK WIN 2 : Optimisation des requêtes statistiques (évite double COUNT(*) lourd)
-    // ─────────────────────────────────────────────────────────────────────────────
-    await test('2. Optimisation des requêtes statistiques — Retourne les stats légères sans overhead COUNT(*)', async () => {
-        await RateLimiter.resetAttempts(`controller_scan:${ctrlUserId}`);
-
-        // Créer un billet frais non encore utilisé
-        const ticketNum = `TCK-STATS-OPT-${ts}`;
-        const { data: freshTicket, error: ftErr } = await supabase.from('tickets').insert({
-            ticket_number: ticketNum,
-            qr_code: `EV-STATS-${ts}`,
-            event_id: eventId,
-            category_id: categoryId,
-            user_id: clientUserId,
-            price: 15000,
-            status: 'VALIDE',
-        }).select().single();
-        if (ftErr || !freshTicket) throw new Error(`Erreur creation fresh ticket: ${ftErr?.message}`);
-        createdTickets.push(freshTicket);
-
-        const secret = deriveTicketTotpSecret(freshTicket.id);
-        const { code } = generateTotp(secret);
-        const dynamicQr = buildDynamicQrPayload(freshTicket.ticket_number, code);
-
-        const startMs = Date.now();
-        const req = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${ctrlToken}`,
-            },
-            body: JSON.stringify({ qr_code: dynamicQr }),
-        });
-
-        const res = await controllerScanRoute(req);
-        const durationMs = Date.now() - startMs;
-        const data = await res.json();
-
-        assert.equal(res.status, 200);
-        assert.equal(data.scan_result, 'valid');
-        assert.ok(data.stats, 'Le champ stats doit être présent');
-        assert.ok(typeof data.stats.scanned_today === 'number', 'scanned_today doit être un nombre');
-        console.log(`   Scan validé avec stats optimisées en ${durationMs}ms (scanned_today: ${data.stats.scanned_today})`);
-    });
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // QUICK WIN 3 : Tolérance TOTP élargie à ±40s (toleranceWindows: 2) & Rejet screenshot WhatsApp
-    // ─────────────────────────────────────────────────────────────────────────────
-    await test('3. Tolérance TOTP élargie à ±40s — Valide à T+30s (latence 3G/horloge) et REJETÉ à T+70s (capture WhatsApp)', async () => {
-        const testSecret = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-        const nowSec = Math.floor(Date.now() / 1000);
-
-        // 1. Code généré à T = 0
-        const { code: generatedCode } = generateTotp(testSecret, nowSec, TOTP_STEP_SECONDS);
-
-        // 2. Vérification immédiate à T = 0 (step delta 0) -> VALIDE
-        const isValidAtT0 = verifyTotp(generatedCode, testSecret, {
-            timestampSeconds: nowSec,
-            toleranceWindows: 2,
-            stepSeconds: TOTP_STEP_SECONDS,
-        });
-        assert.equal(isValidAtT0, true, 'Code valide immédiatement à T = 0');
-
-        // 3. Vérification à T + 30s (latence réseau / léger décalage horloge, delta ~ 1 à 2 steps) -> VALIDE avec ±40s
-        const isValidAtT30 = verifyTotp(generatedCode, testSecret, {
-            timestampSeconds: nowSec + 30,
-            toleranceWindows: 2,
-            stepSeconds: TOTP_STEP_SECONDS,
-        });
-        assert.equal(isValidAtT30, true, 'Code toujours valide à T + 30s sous tolérance ±40s (réseau mobile)');
-
-        // 4. Capture d'écran WhatsApp transmise : scannée à T + 70s (delta > 3 steps) -> REJET STRICT
-        const isValidAtT70 = verifyTotp(generatedCode, testSecret, {
-            timestampSeconds: nowSec + 70,
-            toleranceWindows: 2,
-            stepSeconds: TOTP_STEP_SECONDS,
-        });
-        assert.equal(isValidAtT70, false, 'Capture WhatsApp à T + 70s STRICTEMENT REJETÉE (> 40s)');
-
-        // 5. Capture d'écran WhatsApp scannée à T + 120s (2 minutes après) -> REJET STRICT
-        const isValidAtT120 = verifyTotp(generatedCode, testSecret, {
-            timestampSeconds: nowSec + 120,
-            toleranceWindows: 2,
-            stepSeconds: TOTP_STEP_SECONDS,
-        });
-        assert.equal(isValidAtT120, false, 'Capture WhatsApp à T + 120s STRICTEMENT REJETÉE');
-    });
+    // [lot 4 — cas supprimé] 1. Rate limiting sur POST /api/controller/scan (rafale) : RateLimiter et ancien code dynamique (deriveTicketTotpSecret, generateTotp, buildDynamicQrPayload) supprimés, quota en base SCAN_PER_SCANNER_10S ; couvert par tests/parcours/acces-limiteurs.test.ts (rafale → 429 rate_limited, compteur en base)
+    // [lot 4 — cas supprimé] 2. Optimisation des requêtes statistiques : RateLimiter et ancien code dynamique supprimés ; la réponse du scan n'a plus de champ stats (scanned_today) ; compostage couvert par tests/parcours/acces-scan.test.ts ; non couvert : statistiques du scanneur
+    // [lot 4 — cas supprimé] 3. Tolérance TOTP élargie à ±40s : generateTotp et verifyTotp supprimés, la tolérance est désormais de ±1 pas de 20 s ; couvert par tests/parcours/acces-totp.test.ts (verifyTicketCode, code de plus de 40 s refusé)
 
     // ─────────────────────────────────────────────────────────────────────────────
     // QUICK WIN 4 : Throttling scan caméra (120-150ms) + Veille 45s + Coupure Torche
@@ -312,47 +172,5 @@ describe('SCANNER SECURITY HARDENING & QUICK WINS TEST SUITE', async () => {
         console.log(`   Hardware checks : Throttling=${CAMERA_SCAN_THROTTLE_MS}ms, SleepTimeout=${CAMERA_INACTIVITY_TIMEOUT_MS}ms, TorchExtinguish=OK`);
     });
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // QUICK WIN 5 : Quota SMS journalier par partenaire (20 SMS / 24h)
-    // ─────────────────────────────────────────────────────────────────────────────
-    await test('5. Quota SMS journalier par partenaire (20/24h) — Blocage 429 dès dépassement du quota', async () => {
-        const partnerDailyRateKey = `sms_daily_quota_partner:${partnerUserId}`;
-        await RateLimiter.resetAttempts(partnerDailyRateKey);
-
-        // Simuler l'enregistrement de 20 invitations envoyées dans les dernières 24h
-        for (let i = 0; i < 20; i++) {
-            await RateLimiter.recordAttempt(partnerDailyRateKey);
-        }
-
-        // Vérifier que le rate limiter déclare le quota dépassé
-        const limitCheck = await RateLimiter.isRateLimited(partnerDailyRateKey, {
-            maxAttempts: 20,
-            windowSeconds: 86400,
-            lockoutSeconds: 86400,
-            failClosed: true,
-        });
-        assert.equal(limitCheck.limited, true, 'Le quota journalier doit être limité après 20 tentatives');
-
-        // Tester l'appel API qui doit retourner 429 et PARTNER_DAILY_SMS_QUOTA_EXCEEDED
-        const req = new NextRequest('http://localhost:3000/api/partner/team/invite', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${partnerToken}`,
-            },
-            body: JSON.stringify({
-                event_ids: [eventId],
-                phone: '+221770009999',
-                first_name: 'Test',
-                last_name: 'Quota',
-            }),
-        });
-
-        const res = await partnerInviteRoute(req);
-        const data = await res.json();
-
-        assert.equal(res.status, 429);
-        assert.equal(data.code, 'PARTNER_DAILY_SMS_QUOTA_EXCEEDED');
-        console.log(`   Quota journalier 20 SMS/24h atteint : statut=${res.status}, code=${data.code}`);
-    });
+    // [lot 4 — cas supprimé] 5. Quota SMS journalier par partenaire (20/24h) : RateLimiter.recordAttempt et isRateLimited supprimés, code PARTNER_DAILY_SMS_QUOTA_EXCEEDED retiré (INVITE_PER_PARTNER_HOUR → 429 PARTNER_INVITE_RATE_LIMIT, SMS_PER_ACCOUNT_DAY sur le compte du partenaire) ; couvert par tests/parcours/acces-limiteurs.test.ts
 });

@@ -10,7 +10,6 @@ import { createClient } from '@supabase/supabase-js';
 import '../helpers/env';
 
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { deriveTicketTotpSecret, generateTotp, verifyTotp, TOTP_STEP_SECONDS } from '../../lib/security/totp';
 
 describe('CHANTIER 2 — PHASE 1 : SCHÉMA, MIGRATION & INTÉGRITÉ DU TRANSFERT P2P (12 TESTS)', async () => {
     const supabase = getServiceRoleClient();
@@ -484,33 +483,7 @@ describe('CHANTIER 2 — PHASE 1 : SCHÉMA, MIGRATION & INTÉGRITÉ DU TRANSFERT
         console.log('   ✅ TEST 10 : RLS tickets_read 100% étanche');
     });
 
-    test('TEST 11 : Non-régression atomic_ticket_checkin() & TOTP validation', async () => {
-        // Vérifier que le secret TOTP et la validation du QR restent 100% fonctionnels
-        const { data: ticket } = await supabase
-            .from('tickets')
-            .select('id, qr_code, totp_secret')
-            .eq('id', ticket1Id)
-            .single();
-
-        assert.ok(ticket, 'Ticket récupéré pour le test TOTP');
-        const secret = ticket.totp_secret || deriveTicketTotpSecret(ticket.id);
-        const { code } = generateTotp(secret, undefined, TOTP_STEP_SECONDS);
-        const isValid = verifyTotp(code, secret, { toleranceWindows: 2, stepSeconds: TOTP_STEP_SECONDS });
-
-        assert.strictEqual(isValid, true, 'Code TOTP généré est valide');
-
-        // Test RPC atomic_ticket_checkin
-        const { data: checkinRes, error: checkinErr } = await supabase.rpc('atomic_ticket_checkin', {
-            p_ticket_id: ticket1Id,
-            p_controller_id: partnerUserId,
-        });
-
-        if (!checkinErr && checkinRes) {
-            assert.strictEqual(checkinRes.already_used, false, 'Premier scan valide');
-        }
-
-        console.log('   ✅ TEST 11 : atomic_ticket_checkin() et TOTP opérationnels');
-    });
+    // [lot 4 — cas supprimé] TEST 11 : Non-régression atomic_ticket_checkin() & TOTP : deriveTicketTotpSecret, generateTotp, verifyTotp et RPC atomic_ticket_checkin supprimés ; couvert par tests/parcours/acces-totp.test.ts et tests/parcours/acces-scan.test.ts
 
     test('TEST 12 : Vérification syntaxique et intégrité du fichier de migration SQL 20260908000001_ticket_transfers_p2p.sql', async () => {
         const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20260908000001_ticket_transfers_p2p.sql');

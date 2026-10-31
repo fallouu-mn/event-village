@@ -13,7 +13,6 @@ import { getServiceRoleClient } from '../../lib/supabase/server';
 import { POST as inviteController } from '../../app/api/partner/team/invite/route';
 import { DELETE as deleteController } from '../../app/api/partner/team/controller/[controllerId]/route';
 import { POST as requestWithdrawal } from '../../app/api/withdrawals/request/route';
-import { RateLimiter } from '../../lib/security/rate-limiter';
 
 describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', async () => {
     const supabase = getServiceRoleClient();
@@ -23,6 +22,14 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         { auth: { persistSession: false, autoRefreshToken: false } }
     );
     const ts = Date.now().toString().slice(-6);
+
+    // [lot 4] lib/security/rate-limiter.ts supprimé : les quotas sont des compteurs en base (quota_counters,
+    // réservés par reserveQuota de lib/security/quota.ts). Remise à zéro équivalente des anciennes clés :
+    // sms_invite_phone → invite_phone, sms_invite_partner → invite_partner, sms_daily_quota_partner → sms_account.
+    const resetQuota = async (scope: string, bucket: string) => {
+        const { error } = await supabase.from('quota_counters').delete().eq('scope', scope).eq('bucket', bucket);
+        if (error) throw new Error(`remise à zéro du quota ${scope}/${bucket} : ${error.message}`);
+    };
 
     // Identifiants de test
     let partnerAUserId: string;
@@ -103,11 +110,11 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
             status: 'ACTIF',
         }).eq('id', clientUserId);
 
-        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerAUserId}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerBUserId}`);
-        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerAUserId}`);
-        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerBUserId}`);
+        await resetQuota('invite_phone', clientPhoneNormalized);
+        await resetQuota('invite_partner', partnerAUserId);
+        await resetQuota('invite_partner', partnerBUserId);
+        await resetQuota('sms_account', partnerAUserId);
+        await resetQuota('sms_account', partnerBUserId);
 
         await supabase.auth.admin.updateUserById(clientUserId, {
             password: process.env.LEGACY_TEST_PASSWORD!,
@@ -162,9 +169,9 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         });
 
         // Nettoyer les compteurs de rate limit pour les identifiants de test
-        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerAUserId}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerBUserId}`);
+        await resetQuota('invite_phone', clientPhoneNormalized);
+        await resetQuota('invite_partner', partnerAUserId);
+        await resetQuota('invite_partner', partnerBUserId);
     });
 
     after(async () => {
@@ -371,11 +378,11 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
     // ──────────────────────────────────────────────────────────
     await test('TEST 4 : Smart Delete Cas B (Partagé) -> Suppression par Partenaire A préserve le rôle CONTROLEUR et l\'affectation Partenaire B', async () => {
         // Reset rate limiters before test
-        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerAUserId}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerBUserId}`);
-        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerAUserId}`);
-        await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerBUserId}`);
+        await resetQuota('invite_phone', clientPhoneNormalized);
+        await resetQuota('invite_partner', partnerAUserId);
+        await resetQuota('invite_partner', partnerBUserId);
+        await resetQuota('sms_account', partnerAUserId);
+        await resetQuota('sms_account', partnerBUserId);
 
         // 1. Réassigner chez Partenaire A (avec confirmation car le user est redevenu CLIENT)
         const reInviteAReq = new NextRequest('http://localhost:3000/api/partner/team/invite', {
@@ -394,7 +401,7 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         assert.ok([200, 201].includes(reInviteARes.status));
 
         // Reset phone rate limit for second invite in same test
-        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
+        await resetQuota('invite_phone', clientPhoneNormalized);
 
         // 2. Partenaire B invite également ce contrôleur (déjà CONTROLEUR -> pas de confirmation requise)
         const inviteBReq = new NextRequest('http://localhost:3000/api/partner/team/invite', {
@@ -477,8 +484,8 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         assert.equal(userReset?.status, 'ACTIF', 'Toujours ACTIF');
 
         // Reset rate limiter for the test phone so re-invitations in the same test pass
-        await RateLimiter.resetAttempts(`sms_invite_phone:${clientPhoneNormalized}`);
-        await RateLimiter.resetAttempts(`sms_invite_partner:${partnerAUserId}`);
+        await resetQuota('invite_phone', clientPhoneNormalized);
+        await resetQuota('invite_partner', partnerAUserId);
 
         // 2. Partenaire A ré-invite ce numéro sans confirmation
         const reInviteReq1 = new NextRequest('http://localhost:3000/api/partner/team/invite', {

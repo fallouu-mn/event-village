@@ -11,7 +11,6 @@ import { createClient } from '@supabase/supabase-js';
 import '../helpers/env';
 
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { POST as scanTicket } from '../../app/api/controller/scan/route';
 import { GET as getAssignments } from '../../app/api/controller/assignments/route';
 import { POST as inviteController } from '../../app/api/partner/team/invite/route';
 import { GET as getTeamAll, DELETE as removeAllPartnerEvents } from '../../app/api/partner/team/all/route';
@@ -480,56 +479,8 @@ describe('CYCLE DE VIE DU CONTRÔLEUR — SUITE DE VALIDATION 14 POINTS (§CDC V
         }
     });
 
-    // ──────────────────────────────────────────────────────────
-    // TEST 9 : Événement terminé → scan refusé
-    // ──────────────────────────────────────────────────────────
-    await test('TEST 9: Événement terminé → refus strict de scan (Partie 7 CDC)', async () => {
-        // Mettre l'événement A à l'état TERMINE
-        await supabase.from('events').update({ status: 'TERMINE' }).eq('id', eventAId);
-        // Affecter proprement le contrôleur à cet événement
-        await supabase.from('event_controllers').delete().eq('event_id', eventAId).eq('user_id', controllerXUserId);
-        const { error: insErr9 } = await supabase.from('event_controllers').insert({
-            event_id: eventAId,
-            user_id: controllerXUserId,
-            can_accept_cash: false,
-            created_by: partnerAUserId,
-        });
-        assert.ifError(insErr9);
-
-        const scanReq = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${controllerXToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ qr_code: ticketEventA.ticket_number }),
-        });
-        const scanRes = await scanTicket(scanReq);
-        const scanData = await scanRes.json();
-
-        assert.equal(scanRes.status, 400, 'Le scan sur événement terminé doit renvoyer HTTP 400');
-        assert.equal(scanData.scan_result, 'event_ended', 'Le résultat doit être event_ended');
-        assert.match(scanData.message, /terminé/i, 'Le message doit expliciter la clôture');
-    });
-
-    // ──────────────────────────────────────────────────────────
-    // TEST 10 : Contrôleur A tente d'accéder à l'événement de Partenaire B → Refus
-    // ──────────────────────────────────────────────────────────
-    await test('TEST 10: Contrôleur A tente de scanner un billet de l\'événement Partenaire B → 403', async () => {
-        const scanReq = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${controllerXToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ qr_code: ticketPartnerB.ticket_number }),
-        });
-        const scanRes = await scanTicket(scanReq);
-        const scanData = await scanRes.json();
-
-        assert.equal(scanRes.status, 403, 'Accès à un événement non assigné doit être 403');
-        assert.equal(scanData.scan_result, 'unauthorized');
-    });
+    // [lot 4 — cas supprimé] TEST 9: Événement terminé → refus de scan : corps { qr_code } et champ scan_result retirés (un événement TERMINE donne HTTP 200 { result: 'event_ended' }) ; couvert par tests/parcours/acces-fenetre.test.ts (TERMINE → event_ended)
+    // [lot 4 — cas supprimé] TEST 10: Contrôleur A scanne un billet d'un événement du partenaire B : corps { qr_code } et résultat unauthorized retirés (403 SCAN_FORBIDDEN sans donnée de billet) ; couvert par tests/parcours/acces-scan.test.ts (périmètre du scanneur)
 
     // ──────────────────────────────────────────────────────────
     // TEST 11 : Deux contrôleurs sur le même événement

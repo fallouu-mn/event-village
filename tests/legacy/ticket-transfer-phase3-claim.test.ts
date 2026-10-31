@@ -14,7 +14,6 @@ import { getServiceRoleClient } from '../../lib/supabase/server';
 import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
 import { GET as getClaimRoute, POST as claimRoute } from '../../app/api/tickets/claim/[token]/route';
 import { POST as cancelRoute } from '../../app/api/tickets/transfers/[id]/cancel/route';
-import { generateTotp, verifyTotp, buildDynamicQrPayload, TOTP_STEP_SECONDS } from '../../lib/security/totp';
 
 describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ P2P (18 TESTS)', async () => {
     const supabase = getServiceRoleClient();
@@ -355,67 +354,10 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
         console.log('   ✅ TEST 6 : Protection atomique contre les doubles réclamations simultanées validée');
     });
 
-    test('TEST 7 — CRITIQUE ANTI-FRAUDE : Ancien QR Révoqué (REJETÉ) & Nouveau QR Opérationnel (ACCEPTÉ)', async () => {
-        // 1. État avant CLAIM : Récupération des secrets de l'ancien propriétaire (Buyer A)
-        const { data: ticketBefore } = await supabase.from('tickets').select('*').eq('id', tAntiFraudeId).single();
-        const oldSecret = ticketBefore!.totp_secret;
-        const oldQrCode = ticketBefore!.qr_code;
-
-        // Génération du TOTP et payload QR de l'ancien propriétaire
-        const oldTotpData = generateTotp(oldSecret, undefined, TOTP_STEP_SECONDS);
-        const oldQrPayload = buildDynamicQrPayload(oldQrCode, oldTotpData.code);
-
-        // Validation avant claim : l'ancien QR est bien valide
-        const isValidBefore = verifyTotp(oldTotpData.code, oldSecret, { stepSeconds: TOTP_STEP_SECONDS });
-        assert.strictEqual(isValidBefore, true, 'Avant claim : QR ancien propriétaire est valide');
-
-        // 2. INITIATION & CLAIM par Buyer B
-        const initTransfer = await TicketTransferService.initiateTransfer(buyerAUserId, tAntiFraudeId, '+221772345678');
-        const claimResult = await TicketTransferService.claimTransfer(buyerBUserId, initTransfer.claim_token);
-        assert.strictEqual(claimResult.success, true);
-
-        // 3. État après CLAIM : Récupération des nouveaux secrets
-        const { data: ticketAfter } = await supabase.from('tickets').select('*').eq('id', tAntiFraudeId).single();
-        const newSecret = ticketAfter!.totp_secret;
-        const newQrCode = ticketAfter!.qr_code;
-
-        // 4. TEST DE SÉCURITÉ MAJEUR : L'ancien QR code / screenshot est-il rejeté contre le nouveau secret ?
-        const isOldQrValidAfterClaim = verifyTotp(oldTotpData.code, newSecret, { stepSeconds: TOTP_STEP_SECONDS });
-        assert.strictEqual(isOldQrValidAfterClaim, false, '🛡️ ANTI-FRAUDE : L\'ancien TOTP est STRICTEMENT REJETÉ après le claim !');
-
-        // 5. Validation du nouveau QR code généré par le nouveau propriétaire
-        const newTotpData = generateTotp(newSecret, undefined, TOTP_STEP_SECONDS);
-        const newQrPayload = buildDynamicQrPayload(newQrCode, newTotpData.code);
-        const isNewQrValid = verifyTotp(newTotpData.code, newSecret, { stepSeconds: TOTP_STEP_SECONDS });
-
-        assert.strictEqual(isNewQrValid, true, 'Le nouveau QR du nouveau propriétaire est VALIDÉ avec succès');
-        assert.notStrictEqual(oldQrPayload, newQrPayload, 'Le payload QR a été intégralement régénéré');
-
-        console.log('   🛡️ ✅ TEST 7 : Preuve anti-fraude absolue validée (Ancien QR = REJETÉ, Nouveau QR = ACCEPTÉ)');
-    });
-
-    test('TEST 8 : security_version (Incrémentation stricte N -> N + 1)', async () => {
-        const { data: ticketDb } = await supabase.from('tickets').select('*').eq('id', tAntiFraudeId).single();
-        if (ticketDb && ticketDb.security_version !== undefined && ticketDb.security_version !== null) {
-            assert.strictEqual(ticketDb.security_version >= 2, true, 'security_version a été incrémentée');
-        } else {
-            assert.ok(true, 'security_version gérée au niveau applicatif / schéma');
-        }
-        console.log('   ✅ TEST 8 : Incrémentation security_version vérifiée');
-    });
-
-    test('TEST 9 : Ancien qr_code != Nouveau qr_code (Révocation de l identifiant QR statique)', async () => {
-        const { data: ticketDb } = await supabase.from('tickets').select('qr_code').eq('id', tAntiFraudeId).single();
-        assert.notStrictEqual(ticketDb!.qr_code, `EV-QR-INIT-FRAUDE-${ts}`, 'Le qr_code a changé');
-        assert.ok(ticketDb!.qr_code.startsWith('EV-QR-'), 'Préfixe standard respecté');
-        console.log('   ✅ TEST 9 : Rotation de l identifiant qr_code validée');
-    });
-
-    test('TEST 10 : Ancien totp_secret != Nouveau totp_secret (Révocation de la clé cryptographique)', async () => {
-        const { data: ticketDb } = await supabase.from('tickets').select('totp_secret').eq('id', tAntiFraudeId).single();
-        assert.strictEqual(ticketDb!.totp_secret.length, 64, 'Nouveau secret 32 octets (64 hex chars)');
-        console.log('   ✅ TEST 10 : Nouveau secret cryptographique TOTP généré et actif');
-    });
+    // [lot 4 — cas supprimé] TEST 7 — Ancien QR révoqué et nouveau QR opérationnel : generateTotp, verifyTotp et buildDynamicQrPayload supprimés ; couvert par tests/parcours/acces-totp.test.ts (transfert : code de l'ancien secret refusé, nouveau porteur accepté) et tests/parcours/acces-qr.test.ts (identifiants régénérés, ancien QR et ancien numéro refusés)
+    // [lot 4 — cas supprimé] TEST 8 : security_version (N → N + 1) : lisait le billet réclamé par le cas 7 (supprimé) ; non couvert : l'incrément de security_version par ticket_transfer_claim n'est vérifié par aucune suite active
+    // [lot 4 — cas supprimé] TEST 9 : Ancien qr_code != Nouveau qr_code : lisait le billet réclamé par le cas 7 (supprimé) ; couvert par tests/parcours/acces-qr.test.ts (qr_code régénéré au transfert)
+    // [lot 4 — cas supprimé] TEST 10 : Ancien totp_secret != Nouveau totp_secret : lisait le billet réclamé par le cas 7 (supprimé) ; couvert par tests/parcours/acces-qr.test.ts et tests/parcours/acces-totp.test.ts (totp_secret régénéré au transfert)
 
     test('TEST 11 : Annulation par le propriétaire (CANCELLED, déverrouillage, user_id inchangé)', async () => {
         // Initiation d'un transfert sur tCancelNominalId
@@ -520,41 +462,6 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
         console.log('   ✅ TEST 16 : Re-transfert d un billet expiré validé');
     });
 
-    test('TEST 17 : Non-régression QR/TOTP d un billet NON transféré', async () => {
-        // tNonTransfereId n'a subi aucun transfert
-        const { data: ticketDb } = await supabase.from('tickets').select('*').eq('id', tNonTransfereId).single();
-        const isLocked = await TicketTransferService.isTicketLocked(tNonTransfereId);
-        assert.strictEqual(isLocked, false, 'transfer_locked false');
-
-        const totp = generateTotp(ticketDb!.totp_secret);
-        const isValid = verifyTotp(totp.code, ticketDb!.totp_secret);
-        assert.strictEqual(isValid, true, 'TOTP opérationnel');
-
-        console.log('   ✅ TEST 17 : Non-régression totale sur les billets standards');
-    });
-
-    test('TEST 18 : Non-régression scan/compostage existant (atomic_ticket_checkin)', async () => {
-        // Compostage réel du billet non transféré
-        const { data: checkinResult, error: checkinErr } = await supabase.rpc('atomic_ticket_checkin', {
-            p_ticket_id: tNonTransfereId,
-            p_controller_id: partnerId,
-        });
-
-        // Si l'environnement distant a la fonction RPC, on vérifie son résultat
-        if (!checkinErr && checkinResult) {
-            assert.strictEqual(checkinResult.success, true, 'Compostage réussi');
-        } else {
-            // Mise à jour de check-in standard
-            await supabase.from('tickets').update({
-                status: 'UTILISE',
-                checked_in_at: new Date().toISOString(),
-            }).eq('id', tNonTransfereId);
-        }
-
-        const { data: tUsedDb } = await supabase.from('tickets').select('status, checked_in_at').eq('id', tNonTransfereId).single();
-        assert.strictEqual(tUsedDb!.status, 'UTILISE', 'Statut UTILISE');
-        assert.ok(tUsedDb!.checked_in_at, 'checked_in_at présent');
-
-        console.log('   ✅ TEST 18 : Non-régression compostage / check-in validée');
-    });
+    // [lot 4 — cas supprimé] TEST 17 : Non-régression QR/TOTP d'un billet non transféré : generateTotp et verifyTotp supprimés ; couvert par tests/parcours/acces-totp.test.ts (verifyTicketCode)
+    // [lot 4 — cas supprimé] TEST 18 : Non-régression compostage (atomic_ticket_checkin) : RPC atomic_ticket_checkin supprimée (remplacée par ticket_scan) ; couvert par tests/parcours/acces-scan.test.ts (compostage atomique)
 });

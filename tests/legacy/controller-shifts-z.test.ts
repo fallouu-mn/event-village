@@ -15,7 +15,6 @@ import { POST as openShiftRoute } from '../../app/api/controller/shifts/open/rou
 import { POST as closeShiftRoute } from '../../app/api/controller/shifts/close/route';
 import { GET as getActiveShiftRoute } from '../../app/api/controller/shifts/active/route';
 import { POST as generatePinRoute } from '../../app/api/partner/events/[id]/regisseur-pin/route';
-import { POST as controllerScanRoute, PUT as controllerCashConfirmRoute } from '../../app/api/controller/scan/route';
 import { DELETE as removeControllerRoute } from '../../app/api/partner/team/controller/[controllerId]/route';
 
 describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1 & §4.2)', async () => {
@@ -153,12 +152,13 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
         ]);
 
         // Nettoyer les shifts résiduels
-        ShiftService._clearMemory();
+        // [lot 4] ShiftService._clearMemory() supprimé : plus de repli en mémoire, les caisses ne vivent qu'en base
+        // (controller_shifts, nettoyées dans after()).
     });
 
     after(async () => {
         // Nettoyage en cascade
-        ShiftService._clearMemory();
+        // [lot 4] ShiftService._clearMemory() supprimé (voir before()).
         if (createdTicketIds.length > 0) {
             await supabase.from('tickets').delete().in('id', createdTicketIds);
         }
@@ -268,101 +268,7 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
         assert.match(openData.error, /incorrect|invalide/i, 'Message explicite PIN invalide');
     });
 
-    // ──────────────────────────────────────────────────────────
-    // TEST 4 : ENCAISSEMENT CASH PENDANT UN SHIFT OUVERT (CUMUL EXACT)
-    // ──────────────────────────────────────────────────────────
-    await test('4. Encaissement cash pendant shift ouvert → expected_cash_total s\'incrémente atomiquement', async () => {
-        // Récupérer le shift actif ouvert au Test 1
-        const activeShift = await ShiftService.getActiveShift(ctrlUserId, activeEventId);
-        assert.ok(activeShift, 'Shift actif trouvé');
-        assert.equal(activeShift.status, 'OUVERT');
-        const initialExpected = Number(activeShift.expected_cash_total);
-
-        // 4.1 Premier billet cash (10 000 FCFA)
-        const order1Id = crypto.randomUUID();
-        createdOrderIds.push(order1Id);
-        const { error: ord1Err } = await supabase.from('orders').insert({
-            id: order1Id,
-            order_number: `CMD-CASH1-${ts}-${Date.now()}`,
-            client_id: clientUserId,
-            partner_id: partnerId,
-            subtotal: 10000,
-            total_amount: 10000,
-            delivery_mode: 'SUR_PLACE',
-            payment_status: 'PENDING',
-            order_status: 'EN_ATTENTE',
-        });
-        if (ord1Err) throw new Error(`Erreur creation order 1: ${ord1Err.message}`);
-
-        const { data: ticket1, error: tck1Err } = await supabase.from('tickets').insert({
-            event_id: activeEventId,
-            category_id: catId,
-            user_id: clientUserId,
-            order_id: order1Id,
-            ticket_number: `TCK-CASH1-${ts}`,
-            qr_code: `EV-CASH1-${ts}`,
-            price: 10000,
-            status: 'VALIDE',
-        }).select().single();
-        if (tck1Err || !ticket1) throw new Error(`Erreur creation ticket 1: ${tck1Err?.message}`);
-        createdTicketIds.push(ticket1.id);
-
-        const putReq1 = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'PUT',
-            headers: {
-                Authorization: `Bearer ${ctrlToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ ticket_id: ticket1.id, order_id: order1Id }),
-        });
-        const putRes1 = await controllerCashConfirmRoute(putReq1);
-        assert.equal(putRes1.status, 200, 'Premier encaissement cash validé');
-
-        // 4.2 Deuxième billet cash (10 000 FCFA)
-        const order2Id = crypto.randomUUID();
-        createdOrderIds.push(order2Id);
-        const { error: ord2Err } = await supabase.from('orders').insert({
-            id: order2Id,
-            order_number: `CMD-CASH2-${ts}-${Date.now()}`,
-            client_id: clientUserId,
-            partner_id: partnerId,
-            subtotal: 10000,
-            total_amount: 10000,
-            delivery_mode: 'SUR_PLACE',
-            payment_status: 'PENDING',
-            order_status: 'EN_ATTENTE',
-        });
-        if (ord2Err) throw new Error(`Erreur creation order 2: ${ord2Err.message}`);
-
-        const { data: ticket2, error: tck2Err } = await supabase.from('tickets').insert({
-            event_id: activeEventId,
-            category_id: catId,
-            user_id: clientUserId,
-            order_id: order2Id,
-            ticket_number: `TCK-CASH2-${ts}`,
-            qr_code: `EV-CASH2-${ts}`,
-            price: 10000,
-            status: 'VALIDE',
-        }).select().single();
-        if (tck2Err || !ticket2) throw new Error(`Erreur creation ticket 2: ${tck2Err?.message}`);
-        createdTicketIds.push(ticket2.id);
-
-        const putReq2 = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'PUT',
-            headers: {
-                Authorization: `Bearer ${ctrlToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ ticket_id: ticket2.id, order_id: order2Id }),
-        });
-        const putRes2 = await controllerCashConfirmRoute(putReq2);
-        assert.equal(putRes2.status, 200, 'Deuxième encaissement cash validé');
-
-        // Vérification de l'incrémentation exacte : initial (0) + 10 000 + 10 000 = 20 000 FCFA
-        const updatedShift = await ShiftService.getActiveShift(ctrlUserId, activeEventId);
-        assert.ok(updatedShift);
-        assert.equal(Number(updatedShift.expected_cash_total), initialExpected + 20000, 'Total attendu cumulé exact (20 000 FCFA)');
-    });
+    // [lot 4 — cas supprimé] 4. Encaissement cash pendant shift ouvert : PUT /api/controller/scan { ticket_id, order_id } (encaissement direct, sans scan préalable) retiré ; l'encaissement part d'un scan cash_required du même scanneur ({ scanId, eventId } → RPC ticket_cash_checkin) ; couvert par tests/parcours/acces-encaissement.test.ts
 
     // ──────────────────────────────────────────────────────────
     // TEST 5 : CLÔTURE SANS ÉCART
@@ -395,81 +301,8 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
         assert.equal(closeData.summary.declared_cash_total, expected);
     });
 
-    // ──────────────────────────────────────────────────────────
-    // TEST 6 : CLÔTURE AVEC ÉCART SANS JUSTIFICATION FOURNIE
-    // ──────────────────────────────────────────────────────────
-    await test('6. Clôture AVEC écart sans justification fournie → rejetée 400', async () => {
-        // Ouvrir une nouvelle session de caisse
-        const openShift = await ShiftService.openShift(ctrlUserId, {
-            eventId: activeEventId,
-            openingFloatAmount: 10000,
-            regisseurPin: regisseurPin,
-        });
-        assert.equal(openShift.status, 'OUVERT');
-
-        // Enregistrer un encaissement de 10 000 F
-        await ShiftService.recordCashPayment(openShift.id, 10000);
-
-        // Tentative de clôture avec un déficit de 3 000 F (déclaré 7 000 au lieu de 10 000) SANS justification
-        const closeReq = new NextRequest('http://localhost:3000/api/controller/shifts/close', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${ctrlToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                shift_id: openShift.id,
-                declared_cash_total: 7000, // Écart = -3000
-                discrepancy_justification: '', // Justification vide
-                regisseur_pin: regisseurPin,
-            }),
-        });
-        const closeRes = await closeShiftRoute(closeReq);
-        assert.equal(closeRes.status, 400, 'Rejetée avec statut 400');
-        const closeData = await closeRes.json();
-        assert.match(closeData.error, /justification est obligatoire/i, 'Message imposant la justification');
-    });
-
-    // ──────────────────────────────────────────────────────────
-    // TEST 7 : CLÔTURE AVEC ÉCART + JUSTIFICATION + PIN
-    // ──────────────────────────────────────────────────────────
-    await test('7. Clôture avec écart + justification + PIN → succès, écart enregistré & alerte notifiée', async () => {
-        const shift = await ShiftService.getActiveShift(ctrlUserId, activeEventId);
-        assert.ok(shift, 'Shift ouvert trouvé');
-
-        const justification = 'Rendu de monnaie manquant pour client pressé au guichet 2.';
-        const closeReq = new NextRequest('http://localhost:3000/api/controller/shifts/close', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${ctrlToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                shift_id: shift.id,
-                declared_cash_total: 7000, // Attendu: 10000, écart: -3000
-                discrepancy_justification: justification,
-                regisseur_pin: regisseurPin,
-            }),
-        });
-        const closeRes = await closeShiftRoute(closeReq);
-        assert.equal(closeRes.status, 200, 'Clôture acceptée avec justification');
-        const closeData = await closeRes.json();
-
-        assert.equal(closeData.shift.status, 'CLOTURE');
-        assert.equal(closeData.shift.discrepancy_amount, -3000, 'Écart de -3000 F enregistré');
-        assert.equal(closeData.shift.discrepancy_justification, justification, 'Justification enregistrée');
-
-        // Vérification de la notification déclenchée en base pour le partenaire
-        const { data: notifications } = await supabase
-            .from('notifications')
-            .select('*')
-            .eq('user_id', partnerUserId)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-        assert.ok(notifications && notifications.length > 0, 'Notification générée en base');
-        assert.match(notifications[0].title, /Écart de caisse/i, 'Titre de notification sur l\'écart');
-    });
+    // [lot 4 — cas supprimé] 6. Clôture AVEC écart sans justification fournie : ShiftService.recordCashPayment supprimé (le total attendu n'est incrémenté que par ticket_cash_checkin et counter_sale) ; incrément couvert par tests/parcours/acces-encaissement.test.ts et tests/parcours/acces-guichet.test.ts ; non couvert : refus de clôture sans justification (JUSTIFICATION_REQUIRED)
+    // [lot 4 — cas supprimé] 7. Clôture avec écart + justification + PIN : clôturait la caisse ouverte par le cas 6 (supprimé) avec l'écart produit par recordCashPayment ; non couvert : aucune suite active ne clôture une caisse par /api/controller/shifts/close (écart, justification, alerte au partenaire)
 
     // ──────────────────────────────────────────────────────────
     // TEST 8 : TENTATIVE DE RETRAIT D'AFFECTATION D'UN CONTRÔLEUR AVEC SHIFT OUVERT
@@ -502,59 +335,5 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
         });
     });
 
-    // ──────────────────────────────────────────────────────────
-    // TEST 9 : NON-RÉGRESSION SCAN EN LIGNE (SANS SHIFT OUVERT)
-    // ──────────────────────────────────────────────────────────
-    await test('9. Non-régression : scan de billet déjà payé en ligne fonctionne SANS shift ouvert', async () => {
-        // Vérifier qu'aucun shift n'est ouvert pour ce contrôleur
-        const openShift = await ShiftService.getActiveShift(ctrlUserId, activeEventId);
-        assert.equal(openShift, null, 'Aucun shift ouvert');
-
-        // Billet acheté et payé en ligne (payment_status = SUCCESS)
-        const orderId = crypto.randomUUID();
-        createdOrderIds.push(orderId);
-        const { error: ordErr } = await supabase.from('orders').insert({
-            id: orderId,
-            order_number: `CMD-ONLINE-${ts}-${Date.now()}`,
-            client_id: clientUserId,
-            partner_id: partnerId,
-            subtotal: 10000,
-            total_amount: 10000,
-            delivery_mode: 'SUR_PLACE',
-            payment_status: 'SUCCESS',
-            order_status: 'CONFIRMEE',
-        });
-        if (ordErr) throw new Error(`Erreur creation order online: ${ordErr.message}`);
-
-        const { data: onlineTicket, error: tckErr } = await supabase.from('tickets').insert({
-            event_id: activeEventId,
-            category_id: catId,
-            user_id: clientUserId,
-            order_id: orderId,
-            ticket_number: `TCK-ONLINE-${ts}`,
-            qr_code: `EV-ONLINE-${ts}`,
-            price: 10000,
-            status: 'VALIDE',
-        }).select().single();
-        if (tckErr || !onlineTicket) throw new Error(`Erreur creation ticket online: ${tckErr?.message}`);
-        createdTicketIds.push(onlineTicket.id);
-
-        // Scan normal par le contrôleur (POST /api/controller/scan)
-        const scanReq = new NextRequest('http://localhost:3000/api/controller/scan', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${ctrlToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ qr_code: onlineTicket.qr_code }),
-        });
-        const scanRes = await controllerScanRoute(scanReq);
-        assert.equal(scanRes.status, 200, 'Scan de billet prépayé accepté sans shift');
-        const scanData = await scanRes.json();
-        assert.equal(scanData.scan_result, 'valid', 'Compostage valide et autorisé');
-
-        // Vérification en base que le billet est bien UTILISE
-        const { data: dbTicket } = await supabase.from('tickets').select('status').eq('id', onlineTicket.id).single();
-        assert.equal(dbTicket?.status, 'UTILISE', 'Billet composté atomiquement en base');
-    });
+    // [lot 4 — cas supprimé] 9. Non-régression : scan de billet déjà payé en ligne SANS shift ouvert : corps { qr_code } et champ scan_result du scan retirés (contrat { eventId, payload } → { result }, identifiant nu refusé) ; couvert par tests/parcours/acces-scan.test.ts
 });
