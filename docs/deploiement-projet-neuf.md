@@ -58,6 +58,7 @@ Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éd
 | `RESEND_API_KEY`, `NOTIFICATION_FROM_EMAIL`, `SUPPORT_EMAIL` | oui pour l'envoi d'emails | compte Resend, clé nouvelle, domaine vérifié |
 | `SUPABASE_AUTH_HOOK_SECRET` | oui | **nouveau** secret généré à l'étape 6 (jamais la valeur du projet de test, publiée) |
 | `CRON_SECRET` | oui | secret aléatoire propre aux tâches planifiées |
+| `OTP_HASH_SECRET` | oui | secret aléatoire dédié (`openssl rand -hex 32`), différent de toute autre clé ; le changer invalide seulement les codes OTP en cours (10 min) |
 | `EV_INTEGRATIONS` | non | ne pas définir (valeur `fake` interdite en production) |
 
 Règles :

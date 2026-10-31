@@ -52,6 +52,9 @@ const serverEnvSchema = z.object({
     NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
     SUPPORT_EMAIL: z.string().email().optional(),
 
+    // Codes OTP : secret HMAC dédié (lot 1C.4), sans valeur de repli
+    OTP_HASH_SECRET: z.string().min(32, 'OTP_HASH_SECRET requis : secret aléatoire de 32 caractères au moins'),
+
     // Divers
     SUPERADMIN_PHONE: optionalString,
     SUPABASE_AUTH_HOOK_SECRET: optionalString,
@@ -97,6 +100,11 @@ export function getServerEnv(): ServerEnv {
 
     if (parsed.data.EV_INTEGRATIONS === 'fake' && parsed.data.NODE_ENV === 'production') {
         throw new ServerEnvError(['EV_INTEGRATIONS=fake est interdit en production']);
+    }
+    for (const reused of ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_AUTH_HOOK_SECRET'] as const) {
+        if (parsed.data[reused] && parsed.data[reused] === parsed.data.OTP_HASH_SECRET) {
+            throw new ServerEnvError([`OTP_HASH_SECRET doit être un secret dédié, différent de ${reused}`]);
+        }
     }
 
     cached = parsed.data;

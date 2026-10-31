@@ -4,7 +4,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RegisterPartnerSchema, normalizePhoneNumber } from '../lib/validations/auth';
 import { RateLimiter } from '../lib/security/rate-limiter';
-import { SensitiveActionService } from '../lib/security/sensitive-action.service';
 import { NotificationService } from '../lib/notifications/notification.service';
 import { AdminService } from '../lib/admin/admin.service';
 
