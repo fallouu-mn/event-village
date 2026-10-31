@@ -3,7 +3,8 @@
  *  - 01-detection.sql s'exécute en lecture seule et renvoie les colonnes attendues ;
  *  - sa section A classe chaque rôle élevé réclamé (ALERTE / A_VERIFIER / INFO) d'après
  *    user_roles et la trace serveur, sur des comptes synthétiques (transaction annulée) ;
- *  - 02-hotfix.sql s'applique deux fois de suite sans erreur (idempotence, transaction) ;
+ *  - 02-hotfix.sql s'applique deux fois de suite sans erreur (idempotence), dans une
+ *    transaction annulée depuis le lot 1B (il fige l'état du lot 1A) ;
  *  - 03-verification.sql ne renvoie que des OK sur une base migrée.
  */
 import '../helpers/env';
@@ -11,7 +12,6 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Client } from 'pg';
 import crypto from 'node:crypto';
 import { inRolledBackTransaction, inspect } from '../helpers/db';
 
@@ -31,14 +31,20 @@ describe('Scripts de hotfix du lot 1A', () => {
     });
 
     test('02-hotfix.sql : appliqué deux fois sans erreur (idempotent)', async () => {
-        const client = new Client({ connectionString: process.env.SUPABASE_DB_URL });
-        await client.connect();
-        try {
-            await client.query(read('02-hotfix.sql'));
-            await client.query(read('02-hotfix.sql'));
-        } finally {
-            await client.end();
-        }
+        // Lot 1B : le script fige l'état du lot 1A. Appliqué pour de bon sur la base partagée, il
+        // rétablissait users_select_policy avec is_controller() (supprimée par la migration 1B.3)
+        // pour toutes les suites suivantes. Il est désormais appliqué deux fois dans une
+        // transaction annulée : l'idempotence reste prouvée, la base n'est pas modifiée.
+        const body = read('02-hotfix.sql');
+        const lines = body.split(/\r?\n/);
+        const begin = lines.findIndex((l) => /^\s*BEGIN\s*;\s*$/i.test(l));
+        const commit = lines.map((l) => /^\s*COMMIT\s*;\s*$/i.test(l)).lastIndexOf(true);
+        assert.ok(begin >= 0 && commit > begin, '02-hotfix.sql doit être encadré par BEGIN; … COMMIT;');
+        const inner = lines.slice(begin + 1, commit).join('\n');
+        await inRolledBackTransaction(async (c) => {
+            await c.query(inner);
+            await c.query(inner);
+        });
     });
 
     test('01-detection.sql section A : gravité par rôle réclamé, selon user_roles et la trace serveur', async () => {
