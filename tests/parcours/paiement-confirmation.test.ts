@@ -115,6 +115,6 @@ describe('Confirmation atomique', () => {
         const [t] = (await eventTickets(ev.eventId)).filter((x) => x.user_id === buyer.userId);
         assert.ok(t, 'billet émis');
         assert.equal(Number(t.price), 2500, 'prix du billet = prix au paiement');
-        assert.equal(Number((await paymentById(payment.id)).amount), 2500, 'montant du paiement inchangé');
+        assert.equal(Number((await paymentById(payment.id)).amount), 2625, 'montant du paiement inchangé (lot 3 : prix 2 500 + frais de service acheteur 125)');
     });
 });

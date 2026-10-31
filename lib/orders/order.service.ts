@@ -1,6 +1,6 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { ProductService } from '../products/product.service';
-import { FinancialCalculatorService } from '../payments/financial-calculator.service';
+import { computeBreakdown } from '../finance/engine';
 
 export interface OrderItemInput {
     product_id: string;
@@ -132,21 +132,15 @@ export class OrderService {
             }
         }
 
-        // 2. Calculs financiers
+        // 2. Calculs financiers : moteur unique (finance_compute, taux lus dans les réglages, aucun
+        //    repli). Frais de service à la charge de l'acheteur, calculés comme au paiement
+        //    (PaymentService.createPayment : une ligne = montant dû de la commande, livraison comprise,
+        //    arrondi au FCFA supérieur) ; le partenaire reçoit le prix facial (total_amount).
         const deliveryFee = input.delivery_fee || 0;
-        const totalAmountBeforeDelivery = subtotal; // Pour le calcul commission, selon config. Par défaut sur le subtotal ou total ? Le CDC précise orderTotalAmount.
-        // Assuming CDC orderTotalAmount = subtotal for commission basis, wait: total_amount = subtotal + delivery_fee.
-        // The FinancialCalculator uses total_amount. Let's pass total_amount.
         const orderTotal = subtotal + deliveryFee;
-
-        // Appel au FinancialCalculatorService (R7)
-        // Utilise 5.0% par défaut
-        const financials = FinancialCalculatorService.calculateOrderFinancials({
-            orderTotalAmount: subtotal // Generally commission is on subtotal (food), not on delivery
-        });
-
-        // The platformCommissionAmount is the service_fee.
-        const serviceFee = financials.platformCommissionAmount;
+        const serviceFee = orderTotal > 0
+            ? (await computeBreakdown('ORDER', [{ unit_price: orderTotal, quantity: 1 }], null)).service_fee
+            : 0;
 
         // 3. Création de la commande
         const orderNumber = this.generateOrderNumber();

@@ -13,7 +13,7 @@ import { isSamirPayError } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import type { CreatePaymentInput } from '@/lib/validations/payment';
 import { hashCallbackToken, paymentView } from './checkout.service';
-import { computeTicketingFees } from './fees';
+import { computeBreakdown, readFinanceSetting, type FinanceTarget } from '@/lib/finance/engine';
 import { normalizePayerPhone } from './payer-phone';
 import { rpcWithRetry } from './rpc';
 
@@ -174,8 +174,11 @@ export class PaymentService {
             throw new PaymentInputError('Numéro du payeur invalide (mobile sénégalais, 9 chiffres).', 'INVALID_PAYER_PHONE');
         }
 
-        // 2. Frais (calcul inchangé)
-        const fees = await computeTicketingFees(payableAmount, { subscription: input.targetType === 'SUBSCRIPTION' });
+        // 2. Répartition par le moteur financier unique (lot 3) : frais de service à la charge de
+        //    l'acheteur pour les cibles marché, aucun pour un abonnement ; taux recopiés sur le paiement.
+        const fees = await computeBreakdown(input.targetType as FinanceTarget, [{ unit_price: payableAmount, quantity: 1 }], input.operator);
+        const delayHours = await readFinanceSetting<number>('finance.payout_delay_hours');
+        const holdEnabled = await readFinanceSetting<boolean>('finance.payout_hold_enabled');
 
         // 3. Paiement PENDING, opérateur et téléphone payeur persistés, empreinte du jeton de callback
         const ms = Date.now();
@@ -192,15 +195,20 @@ export class PaymentService {
             table_reservation_id: tableResRefId,
             subscription_plan_id: subscriptionRefId,
             payment_target: input.targetType,
-            amount: payableAmount,
+            amount: fees.total_amount,
+            facial_amount: fees.facial_amount,
             currency: 'XOF',
             is_platform_payment: true,
             aggregator: 'SAMIRPAY',
-            aggregator_fee: fees.aggregatorFee,
-            service_fee: fees.serviceFee,
-            gross_event_village_revenue: fees.grossRevenue,
-            net_event_village_revenue: fees.netRevenue,
-            partner_payout_amount: fees.partnerPayout,
+            aggregator_fee: fees.aggregator_fee,
+            service_fee: fees.service_fee,
+            gross_event_village_revenue: fees.gross_event_village_revenue,
+            net_event_village_revenue: fees.net_event_village_revenue,
+            partner_payout_amount: fees.partner_payout_amount,
+            service_fee_rate: fees.service_fee_rate,
+            aggregator_fee_rate: fees.aggregator_fee_rate,
+            payout_delay_hours: delayHours,
+            payout_hold_enabled: holdEnabled,
             status: 'PENDING',
             idempotency_key: `IDEMP-${externalOrderId}`,
             operator: input.operator,
@@ -213,7 +221,7 @@ export class PaymentService {
         // 4. Cashin direct SamirPay
         try {
             const init = await samirPayClient.initDirectPayment({
-                amount: payableAmount,
+                amount: fees.total_amount,
                 orderId: externalOrderId,
                 callBackUrl: `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/samirpay?t=${token}`,
                 operatorName: input.operator,

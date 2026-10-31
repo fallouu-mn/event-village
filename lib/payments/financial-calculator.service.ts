@@ -1,6 +1,9 @@
 /**
- * Service de Calcul Financier & Réconciliation CDC V3.0 (Annexes B & C, §78-79, §114, §126)
- * Élimine tout taux uniforme codé en dur et applique les règles de répartition exactes par module.
+ * @deprecated Lot 3 — plus aucun appelant applicatif : la répartition des paiements est calculée par le
+ * moteur financier unique (SQL finance_compute, lib/finance/engine.ts) et les rapports lisent le grand
+ * livre. Conservé pour les suites tests/legacy (quarantaine) et les imports inertes de
+ * lib/events/event.service.ts et lib/halls/hall.service.ts. Aucun taux par défaut : chaque taux est
+ * fourni par l'appelant (un taux à 0 est valide).
  */
 
 export interface TicketingFinancialBreakdown {
@@ -47,19 +50,18 @@ export class FinancialCalculatorService {
     /**
      * Annexe C du CDC : Calcul Billetterie
      * - Ticket 1 000 FCFA
-     * - Frais de service 5% (50 FCFA) -> Total payé par l'acheteur = 1 050 FCFA
-     * - Frais agrégateur 1.5% × 1 050 = 15.75 FCFA
+     * - Frais de service (taux fourni, ex. 5 % = 50 FCFA) -> Total payé par l'acheteur = 1 050 FCFA
+     * - Frais agrégateur (taux fourni, ex. 1,5 %) × 1 050 = 15.75 FCFA
      * - L'organisateur reçoit 1 000 FCFA (le prix plein facial)
      * - Event Village conserve 34.25 FCFA (Frais de service 50 - Frais agrégateur 15.75)
      */
     public static calculateTicketingFinancials(params: {
         ticketFacialPrice: number;
-        serviceFeeRatePercent?: number; // Défaut CDC : 5%
-        aggregatorFeeRatePercent?: number; // Défaut Wave/OM : 1.5%
+        serviceFeeRatePercent: number;
+        aggregatorFeeRatePercent: number;
     }): TicketingFinancialBreakdown {
         const ticketFacialPrice = Number(params.ticketFacialPrice) || 0;
-        const serviceFeeRatePercent = params.serviceFeeRatePercent !== undefined ? params.serviceFeeRatePercent : 5.0;
-        const aggregatorFeeRatePercent = params.aggregatorFeeRatePercent !== undefined ? params.aggregatorFeeRatePercent : 1.5;
+        const { serviceFeeRatePercent, aggregatorFeeRatePercent } = params;
 
         // Frais de service acheteur
         const serviceFeeAmount = Number((ticketFacialPrice * (serviceFeeRatePercent / 100)).toFixed(2));
@@ -93,12 +95,11 @@ export class FinancialCalculatorService {
      */
     public static calculateOrderFinancials(params: {
         orderTotalAmount: number;
-        commissionRatePercent?: number; // Configurable Superadmin (ex: 5.0%)
-        aggregatorFeeRatePercent?: number; // Défaut Wave/OM : 1.5%
+        commissionRatePercent: number;
+        aggregatorFeeRatePercent: number;
     }): OrderFinancialBreakdown {
         const orderTotalAmount = Number(params.orderTotalAmount) || 0;
-        const commissionRatePercent = params.commissionRatePercent !== undefined ? params.commissionRatePercent : 5.0;
-        const aggregatorFeeRatePercent = params.aggregatorFeeRatePercent !== undefined ? params.aggregatorFeeRatePercent : 1.5;
+        const { commissionRatePercent, aggregatorFeeRatePercent } = params;
 
         // Commission prélevée par la plateforme
         const platformCommissionAmount = Number((orderTotalAmount * (commissionRatePercent / 100)).toFixed(2));
@@ -129,12 +130,11 @@ export class FinancialCalculatorService {
      */
     public static calculateHallFinancials(params: {
         hallTotalAmount: number;
-        depositPercentage?: number; // Configurable par salle (défaut 30%)
-        aggregatorFeeRatePercent?: number;
+        depositPercentage: number;
+        aggregatorFeeRatePercent: number;
     }): HallFinancialBreakdown {
         const hallTotalAmount = Number(params.hallTotalAmount) || 0;
-        const depositPercentage = params.depositPercentage !== undefined ? params.depositPercentage : 30.0;
-        const aggregatorFeeRatePercent = params.aggregatorFeeRatePercent !== undefined ? params.aggregatorFeeRatePercent : 1.5;
+        const { depositPercentage, aggregatorFeeRatePercent } = params;
 
         const depositAmount = Number((hallTotalAmount * (depositPercentage / 100)).toFixed(2));
         const balanceAmount = Number((hallTotalAmount - depositAmount).toFixed(2));
@@ -153,17 +153,15 @@ export class FinancialCalculatorService {
     }
 
     /**
-     * §126 du CDC : Retraits Partenaire
-     * Seuil minimum 5 000 FCFA, Frais 1%
+     * §126 du CDC : Retraits Partenaire (seuil et taux fournis par l'appelant)
      */
     public static calculateWithdrawal(params: {
         requestedAmount: number;
-        feeRatePercent?: number; // 1.0%
-        minThreshold?: number; // 5 000 FCFA
+        feeRatePercent: number;
+        minThreshold: number;
     }): WithdrawalFinancialBreakdown {
         const requestedAmount = Number(params.requestedAmount) || 0;
-        const feeRatePercent = params.feeRatePercent !== undefined ? params.feeRatePercent : 1.0;
-        const minThreshold = params.minThreshold !== undefined ? params.minThreshold : 5000;
+        const { feeRatePercent, minThreshold } = params;
 
         if (requestedAmount < minThreshold) {
             return {

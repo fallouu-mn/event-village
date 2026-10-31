@@ -13,7 +13,9 @@
  *  5. checkout_create_payment : paiement PENDING + réservations de TOUT le panier, tout ou rien ;
  *  6. cashin direct SamirPay (callBackUrl portant un jeton propre au paiement) ; tout échec libère
  *     les réservations (payment_release).
- * Les montants suivent le calcul existant (lib/payments/fees.ts), inchangé au lot 2.
+ * Lot 3 : les montants sont calculés en base par le moteur financier unique (checkout_create_payment
+ * appelle finance_compute : prix lus sous verrou, frais de service par billet à la charge de
+ * l'acheteur) ; SamirPay reçoit exactement le total enregistré sur le paiement.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -22,7 +24,6 @@ import { getServerEnv } from '@/lib/env';
 import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
 import { reserveQuota } from '@/lib/security/quota';
-import { computeTicketingFees } from './fees';
 import { normalizePayerPhone } from './payer-phone';
 import { rpcWithRetry } from './rpc';
 import { notifyStockMilestones } from './stock-notifications';
@@ -78,6 +79,8 @@ export function paymentView(p: Record<string, unknown>, extra: Record<string, un
         payment_id: p.id,
         status: p.status,
         amount: Number(p.amount),
+        facial_amount: p.facial_amount === null || p.facial_amount === undefined ? null : Number(p.facial_amount),
+        service_fee: Number(p.service_fee ?? 0),
         currency: p.currency ?? 'XOF',
         operator,
         expires_at: p.held_expires_at ?? null,
@@ -168,21 +171,14 @@ export async function startTicketCheckout(params: {
     }
 
     // 5. Paiement + réservations, tout ou rien
-    const fees = await computeTicketingFees(payable);
     const ids = newIdentifiers();
     const token = randomBytes(32).toString('base64url');
-    const { data: created, error: createErr } = await rpcWithRetry<{ ok: boolean; duplicate?: boolean; payment_id?: string; problems?: SaleProblem[]; expires_at?: string }>('checkout_create_payment', {
+    const { data: created, error: createErr } = await rpcWithRetry<{ ok: boolean; duplicate?: boolean; payment_id?: string; problems?: SaleProblem[]; expires_at?: string; amount?: number }>('checkout_create_payment', {
         p: {
             client_id: params.userId,
             event_id: input.eventId,
             partner_id: event.partner_id,
             items: priced,
-            amount: payable,
-            aggregator_fee: fees.aggregatorFee,
-            service_fee: fees.serviceFee,
-            gross_revenue: fees.grossRevenue,
-            net_revenue: fees.netRevenue,
-            partner_payout: fees.partnerPayout,
             operator,
             payer_phone: payerPhone,
             callback_token_hash: hashCallbackToken(token),
@@ -206,12 +202,14 @@ export async function startTicketCheckout(params: {
         return problemsOutcome(created?.problems ?? []);
     }
     const paymentId = created.payment_id!;
+    const amount = Number(created.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error(`Montant du paiement ${paymentId} invalide : ${created.amount}`);
 
     // 6. Cashin direct SamirPay
     const callBackUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/samirpay?t=${token}`;
     try {
         const init = await samirPayClient.initDirectPayment({
-            amount: payable,
+            amount,
             orderId: ids.externalOrderId,
             callBackUrl,
             operatorName: operator,

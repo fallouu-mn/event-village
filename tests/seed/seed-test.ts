@@ -325,6 +325,13 @@ async function ensureFixturePayment(ticketNumber: string, ownerId: string, categ
             client_id: ownerId,
             payment_target: 'TICKET',
             amount: price,
+            // Lot 3 : répartition explicite (fixture sans frais de service), cohérente avec l'invariant (d)
+            facial_amount: price,
+            service_fee: 0,
+            aggregator_fee: 0,
+            gross_event_village_revenue: 0,
+            net_event_village_revenue: 0,
+            partner_payout_amount: price,
             currency: 'XOF',
             is_platform_payment: true,
             status: 'SUCCESS',

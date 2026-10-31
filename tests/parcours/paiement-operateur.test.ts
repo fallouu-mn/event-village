@@ -34,7 +34,7 @@ describe('Opérateur de paiement', () => {
             const call = initCalls().find((c) => c.orderId === p.external_order_id)!;
             assert.equal(call.args.operatorName, operator, 'opérateur envoyé à SamirPay');
             assert.equal(call.args.telephone, b.phone9, 'téléphone envoyé à SamirPay (9 chiffres)');
-            assert.equal(String(call.args.amount), '4000', 'montant envoyé en chaîne');
+            assert.equal(String(call.args.amount), '4200', 'montant envoyé en chaîne (lot 3 : prix 4 000 + frais de service acheteur 200)');
             assert.ok(String(call.args.callBackUrl).includes('/api/webhooks/samirpay?t='), 'callBackUrl avec jeton');
             assert.equal(r.body.operator, operator, 'opérateur renvoyé à l’interface');
             assert.equal((await pollStatus(b.accessToken, p.id)).body.operator, operator, 'opérateur exposé par la route de statut');

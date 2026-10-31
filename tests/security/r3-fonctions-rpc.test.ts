@@ -15,7 +15,7 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['has_admin_permission', { p_user_id: ZERO_UUID, p_permission: 'users.write' }],
     ['create_hall_reservation_atomic', { p_hall_id: ZERO_UUID, p_client_id: ZERO_UUID, p_start_date: '2030-01-01', p_end_date: '2030-01-02' }],
     ['create_table_reservation_atomic', { p_table_id: ZERO_UUID, p_client_id: ZERO_UUID, p_reservation_date: '2030-01-01', p_reservation_time: '20:00', p_guest_count: 2 }],
-    ['request_withdrawal', { p_user_id: ZERO_UUID, p_gross_amount: 5000, p_fee_rate: 1, p_fee_amount: 50, p_net_amount: 4950, p_payment_details: {} }],
+    // Lot 3 : request_withdrawal supprimée, remplacée par withdrawal_request (plus bas)
     ['atomic_ticket_checkin', { p_ticket_id: ZERO_UUID, p_controller_id: ZERO_UUID }],
     ['atomic_partner_remove_controller', { p_partner_id: ZERO_UUID, p_controller_id: ZERO_UUID }],
     ['generate_referral_code', { p_user_id: ZERO_UUID, p_phone: '770000000' }],
@@ -28,6 +28,18 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
     ['free_tickets_claim', { p_user_id: ZERO_UUID, p_event_id: ZERO_UUID, p_items: [] }],
     ['payment_webhook_record', { p_dedupe_key: '0'.repeat(64), p_raw_body: '', p_headers: {}, p_token_present: false, p_order_id: null, p_transaction_id: null }],
+    // Lot 3 : finance (service_role uniquement)
+    ['finance_setting_set', { p_key: 'finance.service_fee_rate', p_value: { value: 0 }, p_actor: ZERO_UUID, p_reason: 'TEST' }],
+    ['fin_setting', { p_key: 'finance.service_fee_rate' }],
+    ['finance_compute', { p_target: 'TICKET', p_lines: [{ unit_price: 1000, quantity: 1 }], p_operator: 'WAVE' }],
+    ['finance_quote', { p_event_id: ZERO_UUID, p_items: [], p_operator: null }],
+    ['finance_account_balance', { p_owner: ZERO_UUID, p_kind: 'PARRAINAGE' }],
+    ['ticket_refund_request', { p_ticket_id: ZERO_UUID, p_actor: ZERO_UUID, p_reason: 'TEST' }],
+    ['cashout_finalize', { p_cashout_id: ZERO_UUID, p_outcome: 'CONFIRME', p_detail: 'TEST' }],
+    ['withdrawal_request', { p: {} }],
+    ['referral_commissions_release', {}],
+    ['finance_partner_summary', { p_partner_id: ZERO_UUID, p_event_id: null }],
+    ['finance_platform_revenue', { p_from: null, p_to: null }],
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */

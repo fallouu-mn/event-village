@@ -110,8 +110,10 @@ test('Test 2 : CRÉATION COMMANDE & CALCUL FINANCIER', async () => {
         assert.equal(order.subtotal, 13000);
         assert.equal(order.total_amount, 14000);
         
-        // Commission (5% de subtotal par défaut) = 13000 * 0.05 = 650
-        assert.equal(order.service_fee, 650);
+        // Lot 3 : frais de service payés par l'acheteur, calculés par le moteur unique sur le montant
+        // débité (total 14 000, taux finance.service_fee_rate de 5 %, FCFA supérieur) = 700.
+        // Avant le lot 3 : commission de 5 % du sous-total prélevée sur le partenaire (650).
+        assert.equal(order.service_fee, 700);
 
         assert.equal(order.payment_status, 'PENDING');
         assert.equal(order.order_status, 'EN_ATTENTE');

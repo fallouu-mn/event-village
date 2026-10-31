@@ -51,6 +51,11 @@ export async function POST(req: NextRequest) {
         if (!key || !value) {
             return NextResponse.json({ error: 'Clé et valeur requises.' }, { status: 400 });
         }
+        // Lot 3 : les réglages financiers (finance.*) ne passent que par /api/admin/finance-settings
+        // (SUPERADMIN, valeur validée et historisée en base) ; cette route écrit avec le service_role.
+        if (String(key).startsWith('finance.')) {
+            return NextResponse.json({ error: 'Réglage financier : utilisez /api/admin/finance-settings (SUPERADMIN).', code: 'FINANCE_SETTING' }, { status: 403 });
+        }
 
         const supabase = getServiceRoleClient();
 
