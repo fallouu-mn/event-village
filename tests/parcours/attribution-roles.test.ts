@@ -16,7 +16,7 @@ import { bearer, loadFixtures, signInAs } from '../helpers/fixtures';
 import { POST as partnerRegister } from '../../app/api/partner/register/route';
 import { POST as adminCreateUser } from '../../app/api/admin/users/route';
 import { POST as inviteController } from '../../app/api/partner/team/invite/route';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 
 const service = getServiceRoleClient();
 
@@ -52,8 +52,7 @@ describe('Attribution des rôles par les routes serveur', () => {
             email,
             password: STRONG_PASSWORD,
             confirmPassword: STRONG_PASSWORD,
-            idCardUrl: 'tests/cni-fictive.pdf',
-            businessDocUrl: 'tests/rccm-fictif.pdf',
+            ...(await uploadRegistrationDocuments()),
         }));
         const body = await res.json();
         assert.ok(res.status < 300, `inscription partenaire : HTTP ${res.status} ${JSON.stringify(body)}`);

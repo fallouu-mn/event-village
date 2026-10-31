@@ -18,7 +18,7 @@ import { POST as registerClient } from '../../app/api/auth/register/route';
 import { POST as registerPartner } from '../../app/api/partner/register/route';
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 
 /** Code du dernier SMS contenant un code à 6 chiffres (l'inscription partenaire envoie ensuite un avis sans code). */
 function codeFromLastSms(phone: string): string {
@@ -91,8 +91,7 @@ describe('Parcours OTP serveur', () => {
             email: randomEmail('otp-partenaire'),
             password: STRONG_PASSWORD,
             confirmPassword: STRONG_PASSWORD,
-            idCardUrl: 'tests/cni-fictive.pdf',
-            businessDocUrl: 'tests/rccm-fictif.pdf',
+            ...(await uploadRegistrationDocuments()),
         }));
         const body = await res.json();
         assert.ok(res.status < 300, `inscription partenaire : HTTP ${res.status} ${JSON.stringify(body)}`);
