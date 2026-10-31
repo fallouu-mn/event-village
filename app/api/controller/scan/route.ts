@@ -16,7 +16,8 @@ const CameraSchema = z.object({ eventId: z.string().uuid(), payload: z.string().
 const ManualSchema = z.object({
     eventId: z.string().uuid(),
     manualTicketNumber: z.string().trim().min(4).max(60),
-    identityVerified: z.boolean().optional(),
+    // Contrat : seule la valeur true vaut « pièce vérifiée » ; toute autre valeur donne manual_entry_refused
+    identityVerified: z.unknown().optional(),
 });
 const CashSchema = z.object({ scanId: z.string().uuid(), eventId: z.string().uuid() });
 
