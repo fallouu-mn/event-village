@@ -66,7 +66,7 @@ checks(point, ok, detail) AS (
            (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist) AND anon_exec AND auth_exec AND provolatile IN ('s', 'i') AND config LIKE '%search_path=%')
              = (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist))
            AND (SELECT COUNT(DISTINCT proname) FROM fns WHERE proname IN (SELECT name FROM whitelist)) = 6,
-           (SELECT string_agg(proname || ':' || CASE WHEN anon_exec AND auth_exec THEN 'exec' ELSE 'NON-exec' END || ':' || provolatile, ', ') FROM fns WHERE proname IN (SELECT name FROM whitelist))
+           (SELECT string_agg(proname || ':' || CASE WHEN anon_exec AND auth_exec THEN 'exec' ELSE 'NON-exec' END || ':' || provolatile::text, ', ') FROM fns WHERE proname IN (SELECT name FROM whitelist))
     UNION ALL
     SELECT '1A.3 RPC métier exécutables par service_role',
            NOT EXISTS (SELECT 1 FROM fns WHERE proname NOT IN (SELECT name FROM whitelist) AND NOT service_exec),

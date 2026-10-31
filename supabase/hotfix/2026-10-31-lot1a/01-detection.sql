@@ -53,9 +53,23 @@ rls_helpers(name) AS (
     VALUES ('is_admin'), ('is_superadmin'), ('is_controller'), ('has_role'), ('is_partner_owner'), ('auth_user_role')
 )
 
--- A — rôle élevé réclamé dans les métadonnées d'inscription
+-- A — rôle élevé réclamé dans les métadonnées d'inscription.
+--     Avant le lot 1A, les parcours légitimes passaient AUSSI le rôle en métadonnée (inscription
+--     partenaire, création par un admin). La trace serveur distingue ces cas d'un signUp public :
+--       PARTENAIRE → une fiche partners existe ; CONTROLEUR → une affectation event_controllers existe ;
+--       ADMIN / SUPERADMIN → une entrée d'audit CREATE_USER ou SUPERADMIN_BOOTSTRAP existe.
+--     ALERTE = rôle réellement détenu SANS trace serveur ; A_VERIFIER = rôle détenu avec trace ;
+--     INFO = rôle réclamé mais non détenu (tentative sans effet, ou compte corrigé).
 SELECT 'A_metadata_role_eleve' AS controle,
-       CASE WHEN ur.role IS NOT NULL THEN 'ALERTE' ELSE 'A_VERIFIER' END AS gravite,
+       CASE
+           WHEN ur.role IS NULL THEN 'INFO'
+           WHEN (ur.role = 'PARTENAIRE' AND EXISTS (SELECT 1 FROM public.partners p WHERE p.user_id = u.id))
+             OR (ur.role = 'CONTROLEUR' AND EXISTS (SELECT 1 FROM public.event_controllers ec WHERE ec.user_id = u.id))
+             OR (ur.role IN ('ADMIN', 'SUPERADMIN') AND EXISTS (SELECT 1 FROM public.audit_logs a
+                     WHERE a.object_id = u.id AND a.action IN ('CREATE_USER', 'SUPERADMIN_BOOTSTRAP')))
+             THEN 'A_VERIFIER'
+           ELSE 'ALERTE'
+       END AS gravite,
        u.id::text AS objet_id,
        u.created_at AS cree_le,
        jsonb_build_object(
@@ -65,7 +79,7 @@ SELECT 'A_metadata_role_eleve' AS controle,
            'role_effectif_user_roles', ur.role,
            'derniere_connexion', u.last_sign_in_at,
            'confirmation_envoyee_le', u.confirmation_sent_at,
-           'note', 'ALERTE = le rôle réclamé est réellement détenu dans user_roles'
+           'note', 'ALERTE = rôle réclamé, détenu, sans trace d''attribution serveur'
        ) AS details
   FROM auth.users u
   LEFT JOIN public.user_roles ur
