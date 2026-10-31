@@ -70,3 +70,71 @@ END $$;
 
 REVOKE ALL ON TABLE public.otp_codes FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.otp_codes TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- 1A.3 — Fonctions du schéma public : droits EXECUTE minimaux (R3)
+-- ----------------------------------------------------------------------------
+-- Groupe a — aides utilisées par les politiques RLS : restent exécutables par anon ET
+-- authenticated (les politiques sans clause TO s'évaluent aussi pour anon ; leur retirer
+-- EXECUTE casserait toute lecture protégée). Lecture seule (STABLE), search_path fixé.
+-- Groupe b — RPC métier : service_role uniquement.
+-- Groupe c — fonctions de triggers : aucun EXECUTE pour les rôles API (le déclenchement
+-- d'un trigger ne vérifie pas ce privilège).
+-- Les fonctions appartenant à une extension ne sont pas modifiées.
+
+-- Composte n'importe quel billet en se fiant à l'identifiant de contrôleur passé en paramètre ;
+-- aucun appelant applicatif (grep : 0 occurrence hors migrations).
+DROP FUNCTION IF EXISTS public.validate_and_check_in_ticket(text, uuid);
+
+-- Fonctions d'exécution de SQL arbitraire : absentes des migrations, mais appelées sur le projet
+-- de test (rpc/exec_sql). Supprimées si elles existent, quelle que soit leur signature.
+DO $$
+DECLARE
+    r record;
+BEGIN
+    FOR r IN
+        SELECT p.oid::regprocedure AS sig
+          FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public'
+           AND p.proname IN ('exec_sql', 'execute_sql', 'run_sql', 'exec')
+           AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+    LOOP
+        EXECUTE format('DROP FUNCTION %s', r.sig);
+    END LOOP;
+END $$;
+
+DO $$
+DECLARE
+    v_whitelist CONSTANT text[] := ARRAY['is_admin', 'is_superadmin', 'is_controller', 'has_role', 'is_partner_owner', 'auth_user_role'];
+    r record;
+BEGIN
+    FOR r IN
+        SELECT p.oid::regprocedure AS sig, p.proname, p.prosecdef, p.proconfig
+          FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public'
+           AND p.prokind = 'f'
+           AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+    LOOP
+        IF r.proname = ANY (v_whitelist) THEN
+            -- Groupe a
+            EXECUTE format('ALTER FUNCTION %s SET search_path = public', r.sig);
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO anon, authenticated, service_role', r.sig);
+        ELSE
+            -- Groupes b et c
+            EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', r.sig);
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', r.sig);
+            IF r.prosecdef AND NOT EXISTS (SELECT 1 FROM unnest(COALESCE(r.proconfig, ARRAY[]::text[])) c WHERE c LIKE 'search_path=%') THEN
+                EXECUTE format('ALTER FUNCTION %s SET search_path = public, extensions', r.sig);
+            END IF;
+        END IF;
+    END LOOP;
+END $$;
+
+-- Fonctions futures : plus d'EXECUTE implicite. La forme globale retire le défaut PostgreSQL
+-- (EXECUTE à PUBLIC) ; la forme par schéma retire les droits accordés par Supabase à anon et
+-- authenticated. Une nouvelle aide RLS devra recevoir un GRANT explicite (et entrer dans la liste
+-- blanche de tests/schema/fonctions-privileges.test.ts).
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
