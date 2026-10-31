@@ -170,11 +170,38 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
         );
     });
 
-    test('vérification de billet par un simple CLIENT → refusée', async () => {
+    test('vérification de billet : refusée à un CLIENT et au partenaire d’un autre événement, acceptée pour le contrôleur affecté', async () => {
+        // Billet dédié (la vérification réussie le composte) sur A_PUBLIE, appartenant à CLIENT_BIS.
+        const fx = await loadFixtures();
+        const suffix = Math.random().toString(36).slice(2, 10).toUpperCase();
+        const ticketNumber = `TCK-VERIFY-${suffix}`;
+        const { error: insErr } = await getServiceRoleClient().from('tickets').insert({
+            event_id: fx.events.A_PUBLIE.id,
+            category_id: fx.events.A_PUBLIE.categories.Standard.id,
+            user_id: fx.users.CLIENT_BIS.id,
+            ticket_number: ticketNumber,
+            qr_code: `EV-QR-VERIFY-${suffix}`,
+            price: fx.events.A_PUBLIE.categories.Standard.price,
+            status: 'VALIDE',
+        });
+        assert.equal(insErr, null, `billet dédié : ${insErr?.message}`);
+
         const client = await signInAs('CLIENT_BIS');
-        const res = await verifyTicket(jsonRequest('/api/tickets/verify', { ticketNumber: FIXTURE_TICKETS.CLIENT_A_STANDARD.ticketNumber }, bearer(client.accessToken)));
-        const body = await res.json();
-        assert.equal(res.status, 403, `HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
+        const asClient = await verifyTicket(jsonRequest('/api/tickets/verify', { ticketNumber }, bearer(client.accessToken)));
+        assert.equal(asClient.status, 403, `CLIENT : HTTP ${asClient.status} ${JSON.stringify(await asClient.json()).slice(0, 300)}`);
+
+        const partnerB = await signInAs('PARTNER_B');
+        const asOtherPartner = await verifyTicket(jsonRequest('/api/tickets/verify', { ticketNumber }, bearer(partnerB.accessToken)));
+        assert.equal(asOtherPartner.status, 403, `partenaire B : HTTP ${asOtherPartner.status} ${JSON.stringify(await asOtherPartner.json()).slice(0, 300)}`);
+
+        const { data: still } = await getServiceRoleClient().from('tickets').select('status').eq('ticket_number', ticketNumber).single();
+        assert.equal(still?.status, 'VALIDE', 'le billet ne doit pas avoir été composté par un compte hors périmètre');
+
+        const controller = await signInAs('CONTROLLER_A');
+        const asController = await verifyTicket(jsonRequest('/api/tickets/verify', { ticketNumber }, bearer(controller.accessToken)));
+        const body = await asController.json();
+        assert.equal(asController.status, 200, `contrôleur affecté : HTTP ${asController.status} ${JSON.stringify(body).slice(0, 300)}`);
+        assert.equal(body.status, 'valid');
     });
 
     test('toutes les routes /api/partner/* et /api/tickets/* passent par le helper commun', () => {
