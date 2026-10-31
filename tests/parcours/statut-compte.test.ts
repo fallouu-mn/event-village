@@ -206,7 +206,21 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
         const fx = await loadFixtures();
         const suffix = Math.random().toString(36).slice(2, 10).toUpperCase();
         const ticketNumber = `TCK-VERIFY-${suffix}`;
+        // Lot 2 : un billet payant VALIDE a son paiement SUCCESS et sa réservation convertie
+        // (invariant global vérifié par les suites de paiement).
+        const price = fx.events.A_PUBLIE.categories.Standard.price;
+        const { data: pay, error: payErr } = await getServiceRoleClient().from('payments').insert({
+            transaction_id: `TX-VERIFY-${suffix}`, client_id: fx.users.CLIENT_BIS.id, payment_target: 'TICKET', amount: price,
+            currency: 'XOF', is_platform_payment: true, status: 'SUCCESS', paid_at: new Date().toISOString(),
+        }).select('id').single();
+        assert.equal(payErr, null, `paiement du billet dédié : ${payErr?.message}`);
+        const { error: resErr } = await getServiceRoleClient().from('stock_reservations').insert({
+            payment_id: pay!.id, category_id: fx.events.A_PUBLIE.categories.Standard.id, quantity: 1, unit_price: price,
+            status: 'CONVERTED', expires_at: new Date().toISOString(), closed_at: new Date().toISOString(), close_reason: 'TEST',
+        });
+        assert.equal(resErr, null, `réservation convertie du billet dédié : ${resErr?.message}`);
         const { error: insErr } = await getServiceRoleClient().from('tickets').insert({
+            payment_id: pay!.id,
             event_id: fx.events.A_PUBLIE.id,
             category_id: fx.events.A_PUBLIE.categories.Standard.id,
             user_id: fx.users.CLIENT_BIS.id,

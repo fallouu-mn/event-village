@@ -281,10 +281,15 @@ async function ensureFixtureTicket(
     const { data: existing, error: findErr } = await supabase.from('tickets').select('id').eq('ticket_number', spec.ticketNumber).maybeSingle();
     if (findErr) fail(`tickets.find(${key})`, findErr);
 
+    // Lot 2 : un billet payant VALIDE a toujours son paiement SUCCESS (invariant b) et la
+    // réservation convertie correspondante (invariant a) ; aucune incidence sur held_quantity.
+    const paymentId = await ensureFixturePayment(spec.ticketNumber, ownerId, categoryId, Number(category.price));
+
     const row = {
         event_id: eventId,
         category_id: categoryId,
         user_id: ownerId,
+        payment_id: paymentId,
         ticket_number: spec.ticketNumber,
         qr_code: spec.qrCode,
         price: category.price,
@@ -308,7 +313,37 @@ async function ensureFixtureTicket(
     return created.id;
 }
 
-/** sold_quantity = billets VALIDE/UTILISE réellement émis, held_quantity = 0 (base de référence des tests). */
+/** Paiement SUCCESS (et réservation CONVERTED) d'un billet de référence, idempotent. */
+async function ensureFixturePayment(ticketNumber: string, ownerId: string, categoryId: string, price: number): Promise<string> {
+    const transactionId = `TX-FIXTURE-${ticketNumber}`;
+    const { data: found, error: findErr } = await supabase.from('payments').select('id').eq('transaction_id', transactionId).maybeSingle();
+    if (findErr) fail(`payments.find(${ticketNumber})`, findErr);
+    let paymentId = found?.id as string | undefined;
+    if (!paymentId) {
+        const { data: created, error } = await supabase.from('payments').insert({
+            transaction_id: transactionId,
+            client_id: ownerId,
+            payment_target: 'TICKET',
+            amount: price,
+            currency: 'XOF',
+            is_platform_payment: true,
+            status: 'SUCCESS',
+            paid_at: new Date().toISOString(),
+            provider_status: 'FIXTURE',
+            metadata: { fixture: true },
+        }).select('id').single();
+        if (error || !created) fail(`payments.insert(${ticketNumber})`, error);
+        paymentId = created.id as string;
+    }
+    const { error: resErr } = await supabase.from('stock_reservations').upsert({
+        payment_id: paymentId, category_id: categoryId, quantity: 1, unit_price: price, status: 'CONVERTED',
+        expires_at: new Date().toISOString(), closed_at: new Date().toISOString(), close_reason: 'FIXTURE',
+    }, { onConflict: 'payment_id,category_id' });
+    if (resErr) fail(`stock_reservations.upsert(${ticketNumber})`, resErr);
+    return paymentId;
+}
+
+/** sold_quantity = billets VALIDE/UTILISE réellement émis ; held_quantity = réservations ACTIVE (lot 2). */
 async function syncCategoryCounters(categoryId: string): Promise<void> {
     const { count, error } = await supabase
         .from('tickets')
@@ -316,9 +351,12 @@ async function syncCategoryCounters(categoryId: string): Promise<void> {
         .eq('category_id', categoryId)
         .in('status', ['VALIDE', 'UTILISE']);
     if (error) fail('tickets.count', error);
+    const { data: active, error: actErr } = await supabase.from('stock_reservations').select('quantity').eq('category_id', categoryId).eq('status', 'ACTIVE');
+    if (actErr) fail('stock_reservations.active', actErr);
+    const held = (active ?? []).reduce((sum, r) => sum + Number(r.quantity), 0);
     const { error: upErr } = await supabase
         .from('ticket_categories')
-        .update({ sold_quantity: count ?? 0, held_quantity: 0, updated_at: new Date().toISOString() })
+        .update({ sold_quantity: count ?? 0, held_quantity: held, updated_at: new Date().toISOString() })
         .eq('id', categoryId);
     if (upErr) fail('ticket_categories.counters', upErr);
 }
