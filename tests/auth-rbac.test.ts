@@ -1,3 +1,5 @@
+// [lot 0] Garde-fou anti-base réelle + environnement de test (.env.test, instance locale)
+import './helpers/env';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';

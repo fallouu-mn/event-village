@@ -10,17 +10,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Chargement des variables d'environnement si exécuté directement
-const envPath = path.resolve(process.cwd(), '.env.local');
-if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, 'utf8');
-    envContent.split('\n').forEach(line => {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-            const [k, ...v] = trimmed.split('=');
-            process.env[k.trim()] = v.join('=').trim();
-        }
-    });
-}
+// [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
+// et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
+import './helpers/env';
 
 describe('CHUNK 5 — PHASE 1 : ÉRADICATION DES BUGS CRITIQUES', () => {
     const supabase = getServiceRoleClient();

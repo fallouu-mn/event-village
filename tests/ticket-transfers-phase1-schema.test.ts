@@ -5,18 +5,9 @@ import * as path from 'path';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-// Chargement des variables d'environnement (.env.local)
-const envPath = path.resolve(process.cwd(), '.env.local');
-if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, 'utf8');
-    envContent.split('\n').forEach(line => {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-            const [k, ...v] = trimmed.split('=');
-            process.env[k.trim()] = v.join('=').trim();
-        }
-    });
-}
+// [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
+// et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
+import './helpers/env';
 
 import { getServiceRoleClient } from '../lib/supabase/server';
 import { deriveTicketTotpSecret, generateTotp, verifyTotp, TOTP_STEP_SECONDS } from '../lib/security/totp';
@@ -521,9 +512,9 @@ describe('CHANTIER 2 — PHASE 1 : SCHÉMA, MIGRATION & INTÉGRITÉ DU TRANSFERT
         console.log('   ✅ TEST 11 : atomic_ticket_checkin() et TOTP opérationnels');
     });
 
-    test('TEST 12 : Vérification syntaxique et intégrité du fichier de migration SQL 20260908_ticket_transfers_p2p.sql', async () => {
-        const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20260908_ticket_transfers_p2p.sql');
-        assert.ok(fs.existsSync(migrationPath), 'Fichier de migration 20260908_ticket_transfers_p2p.sql existant');
+    test('TEST 12 : Vérification syntaxique et intégrité du fichier de migration SQL 20260908000001_ticket_transfers_p2p.sql', async () => {
+        const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20260908000001_ticket_transfers_p2p.sql');
+        assert.ok(fs.existsSync(migrationPath), 'Fichier de migration 20260908000001_ticket_transfers_p2p.sql existant');
 
         const sqlContent = fs.readFileSync(migrationPath, 'utf8');
         assert.ok(sqlContent.includes('CREATE TABLE IF NOT EXISTS public.ticket_transfers'), 'CREATE TABLE ticket_transfers présent');
@@ -533,6 +524,6 @@ describe('CHANTIER 2 — PHASE 1 : SCHÉMA, MIGRATION & INTÉGRITÉ DU TRANSFERT
         assert.ok(sqlContent.includes('chk_tickets_security_version'), 'Contrainte security_version présente');
         assert.ok(sqlContent.includes('ENABLE ROW LEVEL SECURITY'), 'RLS activée');
 
-        console.log('   ✅ TEST 12 : Migration SQL 20260908_ticket_transfers_p2p.sql 100% conforme et complète');
+        console.log('   ✅ TEST 12 : Migration SQL 20260908000001_ticket_transfers_p2p.sql 100% conforme et complète');
     });
 });
