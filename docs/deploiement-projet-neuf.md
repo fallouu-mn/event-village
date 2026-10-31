@@ -60,7 +60,11 @@ Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éd
 | `CRON_SECRET` | oui (les routes `/api/cron` des paiements refusent tout appel sans lui, sans repli) | secret aléatoire propre aux tâches planifiées |
 | `PAYMENT_HOLD_MINUTES`, `CHECKOUT_PER_USER_15MIN`, `CHECKOUT_PER_USER_DAY`, `CLAIM_FREE_PER_USER_HOUR`, `PAYMENT_RECONCILE_MIN_AGE_MINUTES`, `PAYMENT_PENDING_MAX_AGE_MINUTES`, `PAYMENT_LATE_SUCCESS_WINDOW_HOURS` | non (défauts : 15, 10, 50, 20, 2, 60, 48) | durée de réservation du stock, quotas d'achat par compte, fenêtres de la réconciliation (lot 2) |
 | `OTP_HASH_SECRET` | oui | secret aléatoire dédié (`openssl rand -hex 32`), différent de toute autre clé ; le changer invalide seulement les codes OTP en cours (10 min) |
-| `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | non (défauts : 3, 10, 10, 30, 30, 1000) | à ajuster au budget SMS du client ; le plafond global quotidien bloque tout SMS et alerte les SUPERADMIN (notification in-app, journal d'audit) |
+| `TICKET_TOTP_MASTER_KEY` | oui (sans repli) | secret aléatoire dédié (`openssl rand -hex 32`, 32 caractères au moins), différent de toute autre clé : clé maître du code dynamique des billets (QR) ; le changer invalide seulement les QR affichés (rafraîchis toutes les 20 s) |
+| `REGISSEUR_PIN_KEY` | oui (sans repli) | secret aléatoire dédié (`openssl rand -hex 32`, 32 caractères au moins), différent de toute autre clé et de `TICKET_TOTP_MASTER_KEY` : clé du hachage des PIN régisseur ; le changer oblige les organisateurs à régénérer leurs PIN |
+| `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | non (défauts : 3, 10, 10, 30, 30, 1000) | à ajuster au budget SMS du client ; `SMS_PER_PHONE_DAY` ne compte que les notifications (l'OTP a ses propres compteurs par numéro) ; le plafond global quotidien bloque tout SMS et alerte les SUPERADMIN (notification in-app, journal d'audit) |
+| `SMS_GLOBAL_OTP_RESERVED_PERCENT`, `SMS_PER_ACCOUNT_DAY` | non (défauts : 30, 30) | part du plafond global réservée à l'OTP (les autres SMS s'arrêtent à 100 − part %) ; SMS non OTP qu'un même compte connecté peut déclencher par jour (invitations, équipe, transferts, billets gratuits) |
+| `SCAN_PER_SCANNER_10S`, `CASH_COLLECT_PER_SCANNER_MIN`, `LIVE_CODE_PER_USER_MIN`, `RESOLVE_PHONE_PER_IP_HOUR`, `VERIFY_OTP_PER_PHONE_15MIN`, `CONTROLLER_SETUP_PER_PHONE_HOUR`, `PARTNER_REGISTER_PER_IP_HOUR`, `INVITE_PER_PARTNER_HOUR`, `INVITE_PER_PHONE_DAY`, `REGISSEUR_PIN_PER_SHIFT_15MIN` | non (défauts : 30, 20, 60, 30, 10, 10, 10, 20, 3, 5) | quotas en base (lot 4) : chaque tentative compte ; au-delà, HTTP 429 ; garde injoignable, HTTP 503 |
 | `CLIENT_IP_SOURCE` | non (défaut `x-forwarded-for`) | garder `x-forwarded-for` uniquement derrière un hébergeur qui réécrit l'en-tête (Vercel) ; sinon `x-real-ip` ou `none` (pas de limite par IP) |
 | `DOCUMENT_UPLOADS_PER_IP_HOUR` | non (défaut 20) | dépôts publics de pièces d'inscription partenaire, par IP et par heure |
 | `EV_INTEGRATIONS` | non | ne pas définir (valeur `fake` interdite en production) |
@@ -68,7 +72,8 @@ Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éd
 Règles :
 
 - aucune clé du projet de test ou de l'ancien `.env.local` n'est réutilisée ;
-- `SUPABASE_AUTH_HOOK_SECRET` sert aussi, à ce jour, de clé de dérivation des QR dynamiques et du sel des PIN régisseur (retiré au lot 4) : il doit être unique à la production.
+- `SUPABASE_AUTH_HOOK_SECRET` ne sert plus qu'au hook SMS (lot 4 : QR dynamiques et PIN régisseur ont leurs clés dédiées `TICKET_TOTP_MASTER_KEY` et `REGISSEUR_PIN_KEY`) ; il doit être unique à la production ;
+- `OTP_HASH_SECRET`, `TICKET_TOTP_MASTER_KEY` et `REGISSEUR_PIN_KEY` sont trois secrets différents : le serveur refuse de démarrer si l'un d'eux reprend la valeur d'un autre ou d'une autre clé (service_role, hook, cron, SamirPay).
 
 ## 6. Paiements SamirPay (lot 2)
 

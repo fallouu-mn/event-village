@@ -1,155 +1,76 @@
-import crypto from 'crypto';
+/**
+ * Lot 4.2 — code dynamique des billets, QR « EVT1:<UUID du billet>:<code à 6 chiffres> ».
+ *
+ * Clé effective du billet = HMAC-SHA256(TICKET_TOTP_MASTER_KEY, « ticket-totp:v2:<id>:<totp_secret> ») :
+ * totp_secret est propre au billet (en base, généré à l'émission, régénéré au transfert) et la clé
+ * maître n'est jamais en base, si bien que lire la colonne ne suffit pas à calculer un code. Plus
+ * aucune dérivation depuis SUPABASE_AUTH_HOOK_SECRET ni depuis la clé service_role.
+ * Pas de 20 s, troncature HOTP sur 6 chiffres, tolérance ±1 pas (un code de plus de 40 s est
+ * toujours refusé), comparaison en temps constant.
+ */
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { getServerEnv } from '@/lib/env';
 
 export const TOTP_STEP_SECONDS = 20;
+export const TOTP_DRIFT_STEPS = 1;
 export const TOTP_PREFIX = 'EVT1';
 
-/**
- * Génère un secret cryptographique fort (32 octets hexadécimaux).
- */
-export function generateTotpSecret(): string {
-    return crypto.randomBytes(32).toString('hex');
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SECRET = /^[0-9a-f]{64}$/;
+const PAYLOAD = /^EVT1:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d{6})$/i;
+
+function ticketKey(ticketId: string, totpSecret: string): Buffer {
+    if (!UUID.test(ticketId)) throw new Error('Identifiant de billet invalide pour le code dynamique.');
+    if (!SECRET.test(totpSecret)) throw new Error(`Secret du billet ${ticketId} invalide.`);
+    return createHmac('sha256', getServerEnv().TICKET_TOTP_MASTER_KEY)
+        .update(`ticket-totp:v2:${ticketId.toLowerCase()}:${totpSecret}`)
+        .digest();
 }
 
-/**
- * Dérivation de secours d'un secret déterministe par billet si la colonne en base
- * est absente ou nulle sur les billets historiques (sécurité serveur garantie).
- */
-export function deriveTicketTotpSecret(ticketId: string): string {
-    // Lot 1C.6 : plus de valeur littérale de repli (secret codé en dur). Secret dédié : lot 4.
-    const masterKey = process.env.SUPABASE_AUTH_HOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!masterKey) throw new Error('Clé de dérivation des QR dynamiques absente (SUPABASE_AUTH_HOOK_SECRET ou SUPABASE_SERVICE_ROLE_KEY).');
-    return crypto.createHmac('sha256', masterKey).update(`ticket_secret_${ticketId}`).digest('hex');
+function hotp(key: Buffer, counter: number): string {
+    const message = Buffer.alloc(8);
+    message.writeBigUInt64BE(BigInt(counter));
+    const digest = createHmac('sha1', key).update(message).digest();
+    const offset = digest[digest.length - 1] & 0x0f;
+    const binary = ((digest[offset] & 0x7f) << 24) | (digest[offset + 1] << 16) | (digest[offset + 2] << 8) | digest[offset + 3];
+    return String(binary % 1_000_000).padStart(6, '0');
 }
 
-/**
- * Calcule un code TOTP (RFC 6238) à 6 chiffres pour un horodatage donné.
- */
-export function generateTotp(
-    secret: string,
-    timestampSecondsOrMs?: number,
-    stepSeconds: number = TOTP_STEP_SECONDS
-): { code: string; step: number; timeRemaining: number } {
-    const now = typeof timestampSecondsOrMs === 'number'
-        ? (timestampSecondsOrMs > 1e11 ? Math.floor(timestampSecondsOrMs / 1000) : Math.floor(timestampSecondsOrMs))
-        : Math.floor(Date.now() / 1000);
-    const step = Math.floor(now / stepSeconds);
-    const timeRemaining = stepSeconds - (now % stepSeconds);
-
-    const counterBuffer = Buffer.alloc(8);
-    counterBuffer.writeBigInt64BE(BigInt(step));
-
-    const hmac = crypto.createHmac('sha256', secret).update(counterBuffer).digest();
-    const offset = hmac[hmac.length - 1] & 0x0f;
-    const binary =
-        ((hmac[offset] & 0x7f) << 24) |
-        ((hmac[offset + 1] & 0xff) << 16) |
-        ((hmac[offset + 2] & 0xff) << 8) |
-        (hmac[offset + 3] & 0xff);
-
-    const code = String(binary % 1000000).padStart(6, '0');
-    return { code, step, timeRemaining };
+export function counterAt(at: Date): number {
+    return Math.floor(at.getTime() / 1000 / TOTP_STEP_SECONDS);
 }
 
-/**
- * Vérifie un token TOTP avec une tolérance de fenêtres temporelles (±toleranceWindows steps).
- * Par défaut ±1 step (ex: -20s, 0s, +20s) pour absorber la dérive d'horloge et la latence réseau.
- * Retourne true si le code est valide dans la fenêtre autorisée, false sinon.
- */
-export function verifyTotp(
-    token: string,
-    secret: string,
-    options?: {
-        timestamp?: number;
-        timestampSeconds?: number;
-        stepSeconds?: number;
-        toleranceWindows?: number;
-    }
-): boolean {
-    const cleanToken = token.trim();
-    if (!/^\d{6}$/.test(cleanToken)) {
-        return false;
-    }
-
-    const stepSeconds = options?.stepSeconds ?? TOTP_STEP_SECONDS;
-    const tolerance = options?.toleranceWindows ?? 2; // ±2 fenêtres (±40s) : robustesse latence réseau 3G/4G + dérive horloge
-
-    let nowSeconds: number;
-    if (typeof options?.timestamp === 'number') {
-        nowSeconds = options.timestamp > 1e11 ? Math.floor(options.timestamp / 1000) : Math.floor(options.timestamp);
-    } else if (typeof options?.timestampSeconds === 'number') {
-        nowSeconds = options.timestampSeconds > 1e11 ? Math.floor(options.timestampSeconds / 1000) : Math.floor(options.timestampSeconds);
-    } else {
-        nowSeconds = Math.floor(Date.now() / 1000);
-    }
-
-    const currentStep = Math.floor(nowSeconds / stepSeconds);
-
-    for (let delta = -tolerance; delta <= tolerance; delta++) {
-        const step = currentStep + delta;
-        const counterBuffer = Buffer.alloc(8);
-        counterBuffer.writeBigInt64BE(BigInt(step));
-
-        const hmac = crypto.createHmac('sha256', secret).update(counterBuffer).digest();
-        const offset = hmac[hmac.length - 1] & 0x0f;
-        const binary =
-            ((hmac[offset] & 0x7f) << 24) |
-            ((hmac[offset + 1] & 0xff) << 16) |
-            ((hmac[offset + 2] & 0xff) << 8) |
-            (hmac[offset + 3] & 0xff);
-
-        const expectedCode = String(binary % 1000000).padStart(6, '0');
-        if (expectedCode === cleanToken) {
-            return true;
-        }
-    }
-
-    return false;
+/** Secondes avant le prochain pas (rafraîchissement du QR affiché). */
+export function secondsUntilNextStep(at: Date = new Date()): number {
+    const elapsed = (at.getTime() / 1000) % TOTP_STEP_SECONDS;
+    return Math.max(1, Math.ceil(TOTP_STEP_SECONDS - elapsed));
 }
 
-/**
- * Construit le payload compact à encoder dans le QR Code.
- * Format: EVT1:<identifiant_billet>:<totp_6_chiffres>
- * Ex: EVT1:EV-QR-47fae32a8901:482910
- */
-export function buildDynamicQrPayload(ticketIdentifier: string, totpCode: string): string {
-    return `${TOTP_PREFIX}:${ticketIdentifier}:${totpCode}`;
+export function generateTicketCode(ticketId: string, totpSecret: string, at: Date = new Date()): string {
+    return hotp(ticketKey(ticketId, totpSecret), counterAt(at));
 }
 
-/**
- * Analyse une chaîne scannée pour détecter si elle est dynamique (EVT1) ou statique/manuelle.
- */
-export function parseDynamicQrPayload(raw: string): {
-    isDynamic: boolean;
-    identifier: string;
-    token?: string;
-} {
-    const trimmed = (raw || '').trim();
-    if (trimmed.startsWith(`${TOTP_PREFIX}:`)) {
-        const parts = trimmed.split(':');
-        if (parts.length >= 3) {
-            return {
-                isDynamic: true,
-                identifier: parts[1],
-                token: parts[2],
-            };
-        }
+/** Vrai si le code correspond au pas courant ou à un pas voisin (±1), comparaison en temps constant. */
+export function verifyTicketCode(ticketId: string, totpSecret: string, code: string, at: Date = new Date()): boolean {
+    if (!/^\d{6}$/.test(code)) return false;
+    const key = ticketKey(ticketId, totpSecret);
+    const counter = counterAt(at);
+    const received = Buffer.from(code);
+    let match = false;
+    for (let drift = -TOTP_DRIFT_STEPS; drift <= TOTP_DRIFT_STEPS; drift++) {
+        const expected = Buffer.from(hotp(key, counter + drift));
+        if (expected.length === received.length && timingSafeEqual(expected, received)) match = true;
     }
+    return match;
+}
 
-    // Format sans préfixe mais avec séparateur (ex: <identifier>:<token_6_digits>)
-    if (trimmed.includes(':')) {
-        const parts = trimmed.split(':');
-        if (parts.length === 2 && /^\d{6}$/.test(parts[1])) {
-            return {
-                isDynamic: true,
-                identifier: parts[0],
-                token: parts[1],
-            };
-        }
-    }
+export function buildTicketPayload(ticketId: string, code: string): string {
+    return `${TOTP_PREFIX}:${ticketId.toLowerCase()}:${code}`;
+}
 
-    // Identifiant direct (ticket_number, qr_code statique, ou saisie manuelle)
-    return {
-        isDynamic: false,
-        identifier: trimmed,
-    };
+/** Payload de QR dynamique, rien d'autre : un identifiant nu (numéro, qr_code, UUID seul) renvoie null. */
+export function parseTicketPayload(raw: string): { ticketId: string; code: string } | null {
+    const match = PAYLOAD.exec(String(raw ?? '').trim());
+    if (!match) return null;
+    return { ticketId: match[1].toLowerCase(), code: match[2] };
 }

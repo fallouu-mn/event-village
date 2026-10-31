@@ -6,13 +6,16 @@
  * - Ne jamais importer ce module depuis un composant client : il lit `process.env`
  *   en entier et contient des secrets.
  *
- * Replis restants, à remplacer par des secrets dédiés (lot 4) :
- *  - lib/security/totp.ts : clé HMAC de dérivation = SUPABASE_AUTH_HOOK_SECRET
- *    || SUPABASE_SERVICE_ROLE_KEY (lot 1C.6 : plus de valeur littérale de repli)
- *  - lib/shifts/shift.service.ts : sel du PIN régisseur, même chaîne (lot 1C.6 : idem)
- *  - app/api/cron/moratoriums/route.ts et app/api/cron/ticket-transfers/route.ts :
- *    CRON_SECRET || SUPABASE_SERVICE_ROLE_KEY (et cron non protégé si les deux manquent) ; les crons
- *    du lot 2 (lib/security/cron-auth.ts) exigent CRON_SECRET, sans repli
+ * Secrets dédiés, sans valeur de repli, distincts entre eux et des autres secrets (contrôlé ici) :
+ * OTP_HASH_SECRET (lot 1C.4), TICKET_TOTP_MASTER_KEY (code dynamique des billets, lot 4) et
+ * REGISSEUR_PIN_KEY (PIN régisseur, lot 4).
+ *
+ * Repli restant : app/api/cron/moratoriums/route.ts et app/api/cron/ticket-transfers/route.ts
+ * acceptent CRON_SECRET || SUPABASE_SERVICE_ROLE_KEY ; les crons du lot 2 (lib/security/cron-auth.ts)
+ * exigent CRON_SECRET, sans repli.
+ *
+ * Le cache est invalidé par resetServerEnvCache() : les tests qui changent une limite dans leur
+ * processus l'appellent après avoir modifié process.env.
  */
 import { z } from 'zod';
 
@@ -53,8 +56,12 @@ const serverEnvSchema = z.object({
     SMS_OTP_PER_PHONE_DAY: limit(10),
     SMS_OTP_PER_IP_HOUR: limit(10),
     SMS_OTP_PER_IP_DAY: limit(30),
-    SMS_PER_PHONE_DAY: limit(30), // tout SMS (notifications comprises), par destinataire
+    SMS_PER_PHONE_DAY: limit(30), // notifications (hors OTP) par destinataire ; l'OTP a ses propres compteurs (lot 4)
     SMS_GLOBAL_DAILY_CAP: limit(1000), // tous SMS confondus, par jour UTC (minuit à Dakar)
+    // Lot 4 : SMS non OTP déclenchés par un compte connecté (invitations, équipe, transferts, billets gratuits)
+    SMS_PER_ACCOUNT_DAY: limit(30),
+    // Lot 4 : part du plafond global réservée à l'OTP ; les SMS non OTP s'arrêtent à (100 − part) %
+    SMS_GLOBAL_OTP_RESERVED_PERCENT: z.coerce.number().int().min(0).max(100).default(30),
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Lot 2 : chaîne paiement → billet
@@ -67,6 +74,18 @@ const serverEnvSchema = z.object({
     PAYMENT_PENDING_MAX_AGE_MINUTES: limit(60), // au-delà, un paiement encore PENDING chez SamirPay expire
     PAYMENT_LATE_SUCCESS_WINDOW_HOURS: limit(48), // succès tardifs recherchés sur les paiements EXPIRED/CANCELLED
     PAYMENT_RECONCILE_BATCH: limit(50),
+    // Lot 4 : quotas en base (lib/security/quota.ts), toutes les tentatives comptées, refus si la garde
+    // ne répond pas. Fenêtres fixes : 10 s, minute, 15 min, heure, jour.
+    SCAN_PER_SCANNER_10S: limit(30), // scans par scanneur (contrôleur, partenaire, admin)
+    CASH_COLLECT_PER_SCANNER_MIN: limit(20), // encaissements espèces par scanneur
+    LIVE_CODE_PER_USER_MIN: limit(60), // codes dynamiques demandés par compte
+    RESOLVE_PHONE_PER_IP_HOUR: limit(30), // résolutions numéro → compte, par IP
+    VERIFY_OTP_PER_PHONE_15MIN: limit(10), // vérifications de code OTP, par numéro
+    CONTROLLER_SETUP_PER_PHONE_HOUR: limit(10), // activations de compte contrôleur, par numéro
+    PARTNER_REGISTER_PER_IP_HOUR: limit(10), // inscriptions partenaire, par IP
+    INVITE_PER_PARTNER_HOUR: limit(20), // invitations de contrôleurs, par partenaire
+    INVITE_PER_PHONE_DAY: limit(3), // invitations reçues par un numéro, tous partenaires confondus
+    REGISSEUR_PIN_PER_SHIFT_15MIN: limit(5), // vérifications du PIN régisseur
     // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
     // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
     CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),
@@ -78,6 +97,12 @@ const serverEnvSchema = z.object({
 
     // Codes OTP : secret HMAC dédié (lot 1C.4), sans valeur de repli
     OTP_HASH_SECRET: z.string().min(32, 'OTP_HASH_SECRET requis : secret aléatoire de 32 caractères au moins'),
+    // Lot 4 : clé maître du code dynamique des billets (lib/security/totp.ts) et clé du PIN régisseur
+    // (lib/shifts/shift.service.ts), sans valeur de repli
+    TICKET_TOTP_MASTER_KEY: z.string({ required_error: 'TICKET_TOTP_MASTER_KEY requis : secret aléatoire dédié (openssl rand -hex 32)' })
+        .min(32, 'TICKET_TOTP_MASTER_KEY requis : secret aléatoire de 32 caractères au moins'),
+    REGISSEUR_PIN_KEY: z.string({ required_error: 'REGISSEUR_PIN_KEY requis : secret aléatoire dédié (openssl rand -hex 32)' })
+        .min(32, 'REGISSEUR_PIN_KEY requis : secret aléatoire de 32 caractères au moins'),
 
     // Divers
     SUPERADMIN_PHONE: optionalString,
@@ -91,6 +116,20 @@ const serverEnvSchema = z.object({
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
 let cached: ServerEnv | null = null;
+
+/** Secrets dédiés : chacun doit différer des autres secrets et des autres secrets dédiés. */
+const DEDICATED_SECRETS = ['OTP_HASH_SECRET', 'TICKET_TOTP_MASTER_KEY', 'REGISSEUR_PIN_KEY'] as const;
+const OTHER_SECRETS = ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_AUTH_HOOK_SECRET', 'CRON_SECRET', 'SAMIRPAY_SECRET_KEY', 'SAMIRPAY_API_KEY'] as const;
+
+function dedicatedSecretReuse(env: ServerEnv): string[] {
+    const issues: string[] = [];
+    DEDICATED_SECRETS.forEach((key, i) => {
+        for (const other of [...OTHER_SECRETS, ...DEDICATED_SECRETS.slice(i + 1)]) {
+            if (env[other] && env[other] === env[key]) issues.push(`${key} doit être un secret dédié, différent de ${other}`);
+        }
+    });
+    return issues;
+}
 
 export class ServerEnvError extends Error {
     constructor(public readonly issues: string[]) {
@@ -125,11 +164,8 @@ export function getServerEnv(): ServerEnv {
     if (parsed.data.EV_INTEGRATIONS === 'fake' && parsed.data.NODE_ENV === 'production') {
         throw new ServerEnvError(['EV_INTEGRATIONS=fake est interdit en production']);
     }
-    for (const reused of ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_AUTH_HOOK_SECRET'] as const) {
-        if (parsed.data[reused] && parsed.data[reused] === parsed.data.OTP_HASH_SECRET) {
-            throw new ServerEnvError([`OTP_HASH_SECRET doit être un secret dédié, différent de ${reused}`]);
-        }
-    }
+    const reuse = dedicatedSecretReuse(parsed.data);
+    if (reuse.length > 0) throw new ServerEnvError(reuse);
 
     cached = parsed.data;
     return cached;

@@ -1,81 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverHasAnyRole } from '@/lib/auth/session';
+import { requireActiveSession } from '@/lib/auth/session';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
+import { buildTicketPayload, generateTicketCode, secondsUntilNextStep, TOTP_STEP_SECONDS } from '@/lib/security/totp';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { generateTotp, buildDynamicQrPayload, TOTP_STEP_SECONDS, deriveTicketTotpSecret } from '@/lib/security/totp';
 
 export const dynamic = 'force-dynamic';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * GET /api/tickets/[id]/live-code
- * Génère le code TOTP dynamique pour l'affichage sécurisé du QR Code (Wallet Client).
- * Le secret cryptographique ne quitte JAMAIS le serveur.
+ * GET /api/tickets/[id]/live-code — QR dynamique du billet (lot 4.2, 4.3) : réservé au PORTEUR du
+ * billet (tout autre compte, personnel compris, reçoit 404 sans donnée), billet VALIDE uniquement.
+ * Payload « EVT1:<UUID>:<code> », code à 6 chiffres renouvelé toutes les 20 s ; `expires_in` donne
+ * le temps restant du pas courant pour que l'interface rafraîchisse au bon moment.
  */
-export async function GET(
-    req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
-) {
-    try {
-        const activeSession = await requireActiveSession(req);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user) {
-            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        }
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
+    const { id } = await Promise.resolve(context.params);
+    if (!id || !UUID.test(id)) return NextResponse.json({ error: 'Billet introuvable.' }, { status: 404 });
 
-        const resolvedParams = await Promise.resolve(context?.params);
-        const ticketId = resolvedParams?.id;
-        if (!ticketId) {
-            return NextResponse.json({ error: 'Identifiant de billet requis.' }, { status: 400 });
-        }
-
-        const supabase = getServiceRoleClient();
-
-        // 1. Récupération du billet
-        const { data: ticket, error: tErr } = await supabase
-            .from('tickets')
-            .select('id, ticket_number, qr_code, status, user_id, event_id')
-            .eq('id', ticketId)
-            .maybeSingle();
-
-        if (tErr || !ticket) {
-            return NextResponse.json({ error: 'Billet introuvable.' }, { status: 404 });
-        }
-
-        // 2. Contrôle des droits d'accès
-        const isOwner = ticket.user_id === user.id;
-        const isStaff = serverHasAnyRole(user, ['ADMIN', 'SUPERADMIN', 'CONTROLEUR', 'PARTENAIRE']);
-        if (!isOwner && !isStaff) {
-            return NextResponse.json({ error: 'Accès non autorisé à ce billet.' }, { status: 403 });
-        }
-
-        // 3. Vérification du statut du billet
-        if (ticket.status !== 'VALIDE') {
-            return NextResponse.json({
-                error: `Ce billet est ${ticket.status === 'UTILISE' ? 'déjà utilisé' : ticket.status}.`,
-                status: ticket.status,
-                is_active: false,
-            }, { status: 400 });
-        }
-
-        // 4. Calcul du secret (colonne DB ou dérivation cryptographique serveur)
-        const secret = (ticket as any).totp_secret || deriveTicketTotpSecret(ticket.id);
-
-        // 5. Génération du TOTP courant (fenêtre de 20 secondes)
-        const { code, timeRemaining } = generateTotp(secret, undefined, TOTP_STEP_SECONDS);
-
-        // 6. Construction du payload compact (EVT1:<qr_code>:<6_digits>)
-        const qrPayload = buildDynamicQrPayload(ticket.qr_code, code);
-
-        return NextResponse.json({
-            success: true,
-            ticket_id: ticket.id,
-            qr_payload: qrPayload,
-            totp_code: code,
-            expires_in: timeRemaining,
-            step_seconds: TOTP_STEP_SECONDS,
-        });
-    } catch (err: unknown) {
-        console.error('[GET /api/tickets/[id]/live-code] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur.' }, { status: 500 });
+    const quota = await reserveQuota([{ scope: 'live_code_user', bucket: session.user.id, windowSecs: 60, max: getServerEnv().LIVE_CODE_PER_USER_MIN }], 'live-code');
+    if (!quota.allowed) {
+        if (quota.reason === 'UNAVAILABLE') return NextResponse.json({ error: 'Code momentanément indisponible.' }, { status: 503 });
+        return NextResponse.json({ error: 'Trop de demandes : patientez quelques secondes.' }, { status: 429, headers: { 'Retry-After': String(quota.retryAfterSeconds) } });
     }
+
+    const { data: ticket, error } = await getServiceRoleClient()
+        .from('tickets')
+        .select('id, user_id, status, totp_secret')
+        .eq('id', id)
+        .maybeSingle();
+    if (error) {
+        console.error(`[live-code] lecture du billet ${id} impossible :`, error.message);
+        return NextResponse.json({ error: 'Code momentanément indisponible.' }, { status: 500 });
+    }
+    if (!ticket || ticket.user_id !== session.user.id) return NextResponse.json({ error: 'Billet introuvable.' }, { status: 404 });
+    if (ticket.status !== 'VALIDE') {
+        return NextResponse.json({ error: 'Ce billet n’est plus valable à l’entrée.', status: ticket.status }, { status: 409 });
+    }
+    const now = new Date();
+    const code = generateTicketCode(ticket.id as string, String(ticket.totp_secret), now);
+    return NextResponse.json(
+        { payload: buildTicketPayload(ticket.id as string, code), step_seconds: TOTP_STEP_SECONDS, expires_in: secondsUntilNextStep(now) },
+        { headers: { 'Cache-Control': 'no-store' } });
 }
