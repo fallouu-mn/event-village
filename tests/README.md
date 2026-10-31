@@ -19,17 +19,29 @@ npx supabase start            # nécessite Docker Desktop
 npx supabase db reset         # toutes les migrations depuis zéro + supabase/seed.sql
 cp .env.test.example .env.test   # puis reporter ANON_KEY / SERVICE_ROLE_KEY de `npx supabase status`
 npm run seed:test             # comptes, partenaires, événements et catégories de test (idempotent)
-npm test                      # toutes les suites de tests/, une par processus, récapitulatif + total
+npm test                      # toutes les suites de tests/ (hors legacy), une par processus, récapitulatif + total
 ```
 
 Autres commandes :
 
 - `npm run test:security` — suites de `tests/security/` (vide pour l'instant).
+- `npm run test:legacy` — suites héritées en quarantaine (voir ci-dessous).
 - `node scripts/run-tests.mjs --filter scan` — sous-ensemble par nom.
 - `node scripts/run-tests.mjs tests/payment.test.ts` — une suite précise.
 - `npm run verify` — typecheck → lint → test → build, avec `.env.test` chargé.
 
 Les sorties brutes de chaque suite sont conservées dans `.test-logs/` (ignoré par git).
+
+## Suites héritées en quarantaine (`tests/legacy/`)
+
+Les 31 suites écrites avant le lot 0 dépendent d'identifiants de la base distante
+(comptes, partenaires, événements) et, pour certaines, affirment des comportements que
+l'audit a classés comme failles. Elles ont été exécutées une fois sur la base locale
+seedée (run CI 3) : aucune ne passe en l'état. Elles sont conservées sans modification
+de logique dans `tests/legacy/` (seuls les chemins d'import relatifs ont été ajustés),
+exclues de `npm test`, et seront réécrites lot par lot avec les fixtures. Pour les
+exécuter malgré tout : `npm run test:legacy`. L'inventaire détaillé (statut, cause,
+adaptation, comportements fautifs encodés) est dans `docs/lot0-rapport.md`.
 
 ## Fixtures (après `npm run seed:test`)
 

@@ -1,9 +1,9 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { paymentService } from '../lib/payments/payment.service';
-import { NotificationService } from '../lib/notifications/notification.service';
-import { samirPayClient } from '../lib/samirpay/client';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { paymentService } from '../../lib/payments/payment.service';
+import { NotificationService } from '../../lib/notifications/notification.service';
+import { samirPayClient } from '../../lib/samirpay/client';
 import { randomUUID } from 'crypto';
 
 import * as fs from 'fs';
@@ -12,7 +12,7 @@ import * as path from 'path';
 // Chargement des variables d'environnement si exécuté directement
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 describe('CHUNK 5 — PHASE 1 : ÉRADICATION DES BUGS CRITIQUES', () => {
     const supabase = getServiceRoleClient();

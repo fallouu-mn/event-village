@@ -15,9 +15,9 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { EventService } from '../lib/events/event.service';
+import { EventService } from '../../lib/events/event.service';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';

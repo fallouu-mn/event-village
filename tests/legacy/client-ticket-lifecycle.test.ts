@@ -7,15 +7,15 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { paymentService } from '../lib/payments/payment.service';
-import { NotificationService } from '../lib/notifications/notification.service';
-import { GET as getTicketsRoute } from '../app/api/tickets/route';
-import { POST as claimFreeRoute } from '../app/api/tickets/claim-free/route';
-import { POST as controllerScanRoute } from '../app/api/controller/scan/route';
-import { GET as getLiveCodeRoute } from '../app/api/tickets/[id]/live-code/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { paymentService } from '../../lib/payments/payment.service';
+import { NotificationService } from '../../lib/notifications/notification.service';
+import { GET as getTicketsRoute } from '../../app/api/tickets/route';
+import { POST as claimFreeRoute } from '../../app/api/tickets/claim-free/route';
+import { POST as controllerScanRoute } from '../../app/api/controller/scan/route';
+import { GET as getLiveCodeRoute } from '../../app/api/tickets/[id]/live-code/route';
 
 describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONFORMITÉ)', async () => {
     const supabase = getServiceRoleClient();

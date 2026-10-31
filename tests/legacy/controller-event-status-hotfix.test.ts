@@ -8,13 +8,13 @@ import { createClient } from '@supabase/supabase-js';
 // Chargement des variables d'environnement
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { POST as inviteController } from '../app/api/partner/team/invite/route';
-import { PATCH as updateAssignments } from '../app/api/partner/team/assignments/route';
-import { POST as scanTicket } from '../app/api/controller/scan/route';
-import { INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '../lib/events/event-status';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { POST as inviteController } from '../../app/api/partner/team/invite/route';
+import { PATCH as updateAssignments } from '../../app/api/partner/team/assignments/route';
+import { POST as scanTicket } from '../../app/api/controller/scan/route';
+import { INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '../../lib/events/event-status';
 
 describe('HOTFIX MÉTIER — AFFECTATION CONTRÔLEUR ↔ ÉTAT DE L\'ÉVÉNEMENT (12 TESTS + ANTI-CONTOURNEMENT)', async () => {
     const supabase = getServiceRoleClient();

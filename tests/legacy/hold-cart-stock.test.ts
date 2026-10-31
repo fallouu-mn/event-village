@@ -6,11 +6,11 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { EventService } from '../lib/events/event.service';
-import { paymentService } from '../lib/payments/payment.service';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { EventService } from '../../lib/events/event.service';
+import { paymentService } from '../../lib/payments/payment.service';
 
 describe('CHANTIER 1 : HOLD CART — RÉSERVATION TEMPORAIRE DE STOCK (7 TESTS)', async () => {
     const supabase = getServiceRoleClient();

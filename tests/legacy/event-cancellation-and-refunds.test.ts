@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { EventCancellationService } from '../lib/events/event-cancellation.service';
-import { EventService } from '../lib/events/event.service';
-import { TicketTransferService } from '../lib/tickets/ticket-transfer.service';
-import { isEventEligibleForController, getEventEligibilityRejectionReason } from '../lib/events/event-status';
+import { EventCancellationService } from '../../lib/events/event-cancellation.service';
+import { EventService } from '../../lib/events/event.service';
+import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
+import { isEventEligibleForController, getEventEligibilityRejectionReason } from '../../lib/events/event-status';
 import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -11,7 +11,7 @@ import * as path from 'path';
 // Chargement de l'environnement local
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';

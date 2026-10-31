@@ -8,17 +8,17 @@ import { createClient } from '@supabase/supabase-js';
 // Chargement des variables d'environnement
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { POST as scanTicket } from '../app/api/controller/scan/route';
-import { GET as getAssignments } from '../app/api/controller/assignments/route';
-import { POST as inviteController } from '../app/api/partner/team/invite/route';
-import { GET as getTeamAll, DELETE as removeAllPartnerEvents } from '../app/api/partner/team/all/route';
-import { DELETE as removeSingleEvent } from '../app/api/partner/team/[eventId]/route';
-import { PATCH as updateAssignments } from '../app/api/partner/team/assignments/route';
-import { DELETE as deleteControllerFromTeam } from '../app/api/partner/team/controller/[controllerId]/route';
-import { GET as getPartnerFinance } from '../app/api/partner/finance/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { POST as scanTicket } from '../../app/api/controller/scan/route';
+import { GET as getAssignments } from '../../app/api/controller/assignments/route';
+import { POST as inviteController } from '../../app/api/partner/team/invite/route';
+import { GET as getTeamAll, DELETE as removeAllPartnerEvents } from '../../app/api/partner/team/all/route';
+import { DELETE as removeSingleEvent } from '../../app/api/partner/team/[eventId]/route';
+import { PATCH as updateAssignments } from '../../app/api/partner/team/assignments/route';
+import { DELETE as deleteControllerFromTeam } from '../../app/api/partner/team/controller/[controllerId]/route';
+import { GET as getPartnerFinance } from '../../app/api/partner/finance/route';
 
 describe('CYCLE DE VIE DU CONTRÔLEUR — SUITE DE VALIDATION 14 POINTS (§CDC V3.0)', async () => {
     const supabase = getServiceRoleClient();

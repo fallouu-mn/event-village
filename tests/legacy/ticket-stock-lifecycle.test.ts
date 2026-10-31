@@ -7,17 +7,17 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { EventService } from '../lib/events/event.service';
-import { paymentService } from '../lib/payments/payment.service';
-import { NotificationService } from '../lib/notifications/notification.service';
-import { GET as getEventRoute } from '../app/api/events/[id]/route';
-import { GET as getTicketsRoute } from '../app/api/tickets/route';
-import { POST as claimFreeRoute } from '../app/api/tickets/claim-free/route';
-import { POST as controllerScanRoute } from '../app/api/controller/scan/route';
-import { PATCH as updateCategoryRoute } from '../app/api/partner/events/[id]/categories/[categoryId]/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { EventService } from '../../lib/events/event.service';
+import { paymentService } from '../../lib/payments/payment.service';
+import { NotificationService } from '../../lib/notifications/notification.service';
+import { GET as getEventRoute } from '../../app/api/events/[id]/route';
+import { GET as getTicketsRoute } from '../../app/api/tickets/route';
+import { POST as claimFreeRoute } from '../../app/api/tickets/claim-free/route';
+import { POST as controllerScanRoute } from '../../app/api/controller/scan/route';
+import { PATCH as updateCategoryRoute } from '../../app/api/partner/events/[id]/categories/[categoryId]/route';
 
 describe('CYCLE DE VIE COMPLET DES BILLETS — 22 TESTS D\'INTÉGRATION ET DE CONFORMITÉ', async () => {
     const supabase = getServiceRoleClient();

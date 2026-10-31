@@ -7,13 +7,13 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { POST as inviteController } from '../app/api/partner/team/invite/route';
-import { DELETE as deleteController } from '../app/api/partner/team/controller/[controllerId]/route';
-import { POST as requestWithdrawal } from '../app/api/withdrawals/request/route';
-import { RateLimiter } from '../lib/security/rate-limiter';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { POST as inviteController } from '../../app/api/partner/team/invite/route';
+import { DELETE as deleteController } from '../../app/api/partner/team/controller/[controllerId]/route';
+import { POST as requestWithdrawal } from '../../app/api/withdrawals/request/route';
+import { RateLimiter } from '../../lib/security/rate-limiter';
 
 describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', async () => {
     const supabase = getServiceRoleClient();

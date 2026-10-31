@@ -8,11 +8,11 @@ import { createClient } from '@supabase/supabase-js';
 // Chargement des variables d'environnement
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { POST as scanTicket } from '../app/api/controller/scan/route';
-import { resolvePostLoginRoute } from '../lib/auth/resolve-post-login-route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { POST as scanTicket } from '../../app/api/controller/scan/route';
+import { resolvePostLoginRoute } from '../../lib/auth/resolve-post-login-route';
 
 describe('MODULE CONTRÔLEUR — WORKFLOW COMPLET & TESTS CRITIQUES (§Audit)', () => {
     const supabase = getServiceRoleClient();

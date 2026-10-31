@@ -7,16 +7,16 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { ShiftService } from '../lib/shifts/shift.service';
-import { POST as openShiftRoute } from '../app/api/controller/shifts/open/route';
-import { POST as closeShiftRoute } from '../app/api/controller/shifts/close/route';
-import { GET as getActiveShiftRoute } from '../app/api/controller/shifts/active/route';
-import { POST as generatePinRoute } from '../app/api/partner/events/[id]/regisseur-pin/route';
-import { POST as controllerScanRoute, PUT as controllerCashConfirmRoute } from '../app/api/controller/scan/route';
-import { DELETE as removeControllerRoute } from '../app/api/partner/team/controller/[controllerId]/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { ShiftService } from '../../lib/shifts/shift.service';
+import { POST as openShiftRoute } from '../../app/api/controller/shifts/open/route';
+import { POST as closeShiftRoute } from '../../app/api/controller/shifts/close/route';
+import { GET as getActiveShiftRoute } from '../../app/api/controller/shifts/active/route';
+import { POST as generatePinRoute } from '../../app/api/partner/events/[id]/regisseur-pin/route';
+import { POST as controllerScanRoute, PUT as controllerCashConfirmRoute } from '../../app/api/controller/scan/route';
+import { DELETE as removeControllerRoute } from '../../app/api/partner/team/controller/[controllerId]/route';
 
 describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1 & §4.2)', async () => {
     const supabase = getServiceRoleClient();

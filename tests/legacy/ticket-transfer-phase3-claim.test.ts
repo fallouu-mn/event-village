@@ -8,13 +8,13 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { TicketTransferService } from '../lib/tickets/ticket-transfer.service';
-import { GET as getClaimRoute, POST as claimRoute } from '../app/api/tickets/claim/[token]/route';
-import { POST as cancelRoute } from '../app/api/tickets/transfers/[id]/cancel/route';
-import { generateTotp, verifyTotp, buildDynamicQrPayload, TOTP_STEP_SECONDS } from '../lib/security/totp';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
+import { GET as getClaimRoute, POST as claimRoute } from '../../app/api/tickets/claim/[token]/route';
+import { POST as cancelRoute } from '../../app/api/tickets/transfers/[id]/cancel/route';
+import { generateTotp, verifyTotp, buildDynamicQrPayload, TOTP_STEP_SECONDS } from '../../lib/security/totp';
 
 describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ P2P (18 TESTS)', async () => {
     const supabase = getServiceRoleClient();

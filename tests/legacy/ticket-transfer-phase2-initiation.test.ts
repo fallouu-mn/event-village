@@ -8,11 +8,11 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { TicketTransferService } from '../lib/tickets/ticket-transfer.service';
-import { POST as initiateTransferRoute } from '../app/api/tickets/[id]/transfer/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
+import { POST as initiateTransferRoute } from '../../app/api/tickets/[id]/transfer/route';
 
 describe('CHANTIER 2 — PHASE 2 : INITIATION DU TRANSFERT DE BILLET P2P (9 TESTS)', async () => {
     const supabase = getServiceRoleClient();

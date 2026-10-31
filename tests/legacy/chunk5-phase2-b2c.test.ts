@@ -1,13 +1,13 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { getServiceRoleClient } from '../lib/supabase/server';
+import { getServiceRoleClient } from '../../lib/supabase/server';
 import * as fs from 'fs';
 import * as path from 'path';
 
 // Chargement des variables d'environnement si exécuté directement
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENTS', () => {
     const supabase = getServiceRoleClient();
@@ -296,7 +296,7 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         assert.ok(overdueRes);
 
         // Appel direct du service d'expiration
-        const { paymentService } = await import('../lib/payments/payment.service');
+        const { paymentService } = await import('../../lib/payments/payment.service');
         const cronResult = await paymentService.expireOverdueMoratoriums();
 
         assert.ok(cronResult.expiredCount >= 1, 'La réservation en moratoire dépassé doit être expirée');
@@ -330,7 +330,7 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         assert.ok(ticketToScan);
 
         // Appel direct du handler de l'API /api/tickets/verify
-        const { POST: verifyTicket } = await import('../app/api/tickets/verify/route');
+        const { POST: verifyTicket } = await import('../../app/api/tickets/verify/route');
         const { NextRequest } = await import('next/server');
 
         // 1. Premier scan -> Succès attendu (Compostage)
@@ -416,7 +416,7 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         assert.ok(comm1 && comm2);
 
         // 2. Mock des appels HTTP samirPayClient (getSolde et sendCashout)
-        const { samirPayClient } = await import('../lib/samirpay/client');
+        const { samirPayClient } = await import('../../lib/samirpay/client');
         const originalSendCashout = samirPayClient.sendCashout;
         const originalGetSolde = samirPayClient.getSolde;
 
@@ -444,7 +444,7 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         };
 
         // 3. Exécution du retrait de 15 000 FCFA
-        const { WithdrawalService } = await import('../lib/payments/withdrawal.service');
+        const { WithdrawalService } = await import('../../lib/payments/withdrawal.service');
         const withdrawalService = new WithdrawalService();
 
         const withdrawalResult = await withdrawalService.processWithdrawal(testClientAId, {

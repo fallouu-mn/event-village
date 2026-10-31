@@ -7,12 +7,12 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { POST as controllerScan } from '../app/api/controller/scan/route';
-import { POST as verifyTicket } from '../app/api/tickets/verify/route';
-import { GET as getLiveCode } from '../app/api/tickets/[id]/live-code/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { POST as controllerScan } from '../../app/api/controller/scan/route';
+import { POST as verifyTicket } from '../../app/api/tickets/verify/route';
+import { GET as getLiveCode } from '../../app/api/tickets/[id]/live-code/route';
 import {
     generateTotp,
     verifyTotp,
@@ -20,7 +20,7 @@ import {
     parseDynamicQrPayload,
     deriveTicketTotpSecret,
     TOTP_STEP_SECONDS,
-} from '../lib/security/totp';
+} from '../../lib/security/totp';
 
 describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', async () => {
     const supabase = getServiceRoleClient();

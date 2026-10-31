@@ -3,11 +3,11 @@ import * as path from 'path';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 import { createClient } from '@supabase/supabase-js';
-import { PartnerDashboardService } from '../lib/partner/partner-dashboard.service';
-import { FinancialCalculatorService } from '../lib/payments/financial-calculator.service';
+import { PartnerDashboardService } from '../../lib/partner/partner-dashboard.service';
+import { FinancialCalculatorService } from '../../lib/payments/financial-calculator.service';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;

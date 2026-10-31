@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import { TableService } from '../lib/tables/table.service';
+import { TableService } from '../../lib/tables/table.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';

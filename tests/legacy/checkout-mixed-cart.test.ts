@@ -7,10 +7,10 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { POST as checkoutRoute } from '../app/api/checkout/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { POST as checkoutRoute } from '../../app/api/checkout/route';
 
 describe('CHECKOUT PANIER MULTI-CATÉGORIES — 5 TESTS D\'INTÉGRATION', async () => {
     const supabase = getServiceRoleClient();

@@ -1,10 +1,10 @@
 // [lot 0] Garde-fou anti-base réelle + environnement de test (.env.test, instance locale)
-import './helpers/env';
+import '../helpers/env';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
-import { formatMTargetPhoneNumber, MTargetService } from '../lib/sms/mtarget.service';
-import { POST } from '../app/api/auth/sms-hook/route';
+import { formatMTargetPhoneNumber, MTargetService } from '../../lib/sms/mtarget.service';
+import { POST } from '../../app/api/auth/sms-hook/route';
 import { NextRequest } from 'next/server';
 
 test('1. Formatage MTarget : numéro local sénégalais "77 123 45 67"', () => {

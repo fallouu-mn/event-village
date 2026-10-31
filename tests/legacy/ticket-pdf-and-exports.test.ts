@@ -8,15 +8,15 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { TicketPdfService } from '../lib/tickets/ticket-pdf.service';
-import { TicketTransferService } from '../lib/tickets/ticket-transfer.service';
-import { NotificationService } from '../lib/notifications/notification.service';
-import { paymentService } from '../lib/payments/payment.service';
-import { GET as getTicketPdfRoute } from '../app/api/tickets/[id]/pdf/route';
-import { generateTotp, verifyTotp } from '../lib/security/totp';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { TicketPdfService } from '../../lib/tickets/ticket-pdf.service';
+import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
+import { NotificationService } from '../../lib/notifications/notification.service';
+import { paymentService } from '../../lib/payments/payment.service';
+import { GET as getTicketPdfRoute } from '../../app/api/tickets/[id]/pdf/route';
+import { generateTotp, verifyTotp } from '../../lib/security/totp';
 
 describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (12 TESTS)', async () => {
     const supabase = getServiceRoleClient();
@@ -392,7 +392,7 @@ describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (
     // TEST 10 : Non-régression Hold Cart
     // ─────────────────────────────────────────────────────────────────────────
     await test('TEST 10 : Non-régression — Hold Cart toujours 100% opérationnel', async () => {
-        const { EventService } = await import('../lib/events/event.service');
+        const { EventService } = await import('../../lib/events/event.service');
         const initialHeld = await EventService.getActiveHeldQuantity(testCategoryId);
         assert.strictEqual(typeof initialHeld, 'number');
 

@@ -7,10 +7,10 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { deriveTicketTotpSecret, generateTotp, verifyTotp, TOTP_STEP_SECONDS } from '../lib/security/totp';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { deriveTicketTotpSecret, generateTotp, verifyTotp, TOTP_STEP_SECONDS } from '../../lib/security/totp';
 
 describe('CHANTIER 2 — PHASE 1 : SCHÉMA, MIGRATION & INTÉGRITÉ DU TRANSFERT P2P (12 TESTS)', async () => {
     const supabase = getServiceRoleClient();

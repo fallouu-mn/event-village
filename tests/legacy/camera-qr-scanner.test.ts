@@ -6,10 +6,10 @@ import * as path from 'path';
 // Chargement des variables d'environnement
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { detectScannerSupport } from '../lib/scanner/support';
-import { getServiceRoleClient } from '../lib/supabase/server';
+import { detectScannerSupport } from '../../lib/scanner/support';
+import { getServiceRoleClient } from '../../lib/supabase/server';
 
 describe('SCANNER QR CAMÉRA — DÉTECTION CASCADE & INTÉGRATION PIPELINE (§39-§40)', () => {
     const supabase = getServiceRoleClient();
@@ -141,7 +141,7 @@ describe('SCANNER QR CAMÉRA — DÉTECTION CASCADE & INTÉGRATION PIPELINE (§3
         assert.ok(ticket);
 
         // Simulation de la détection de la caméra alimentant /api/tickets/verify
-        const { POST: verifyTicket } = await import('../app/api/tickets/verify/route');
+        const { POST: verifyTicket } = await import('../../app/api/tickets/verify/route');
         const { NextRequest } = await import('next/server');
 
         const req = new NextRequest('http://localhost:3000/api/tickets/verify', {

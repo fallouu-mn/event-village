@@ -1,12 +1,12 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { EventService } from '../lib/events/event.service';
-import { NotificationService } from '../lib/notifications/notification.service';
-import { POST as claimFreeRoute } from '../app/api/tickets/claim-free/route';
-import { GET as getEventRoute } from '../app/api/events/[id]/route';
-import { PATCH as updatePartnerCategoryRoute } from '../app/api/partner/events/[id]/categories/[categoryId]/route';
-import { POST as controllerScanRoute } from '../app/api/controller/scan/route';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { EventService } from '../../lib/events/event.service';
+import { NotificationService } from '../../lib/notifications/notification.service';
+import { POST as claimFreeRoute } from '../../app/api/tickets/claim-free/route';
+import { GET as getEventRoute } from '../../app/api/events/[id]/route';
+import { PATCH as updatePartnerCategoryRoute } from '../../app/api/partner/events/[id]/categories/[categoryId]/route';
+import { POST as controllerScanRoute } from '../../app/api/controller/scan/route';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
 import * as fs from 'fs';
@@ -14,7 +14,7 @@ import * as path from 'path';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 describe('BILLETTERIE EVENT VILLAGE — AUDIT E2E & BLINDAGE FINAL (20 POINTS CDC V3.0)', () => {
     const supabase = getServiceRoleClient();

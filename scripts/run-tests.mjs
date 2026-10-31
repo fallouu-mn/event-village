@@ -13,7 +13,7 @@
  * purs (calculs financiers, machines à états) sans remettre en cause ce lanceur.
  *
  * Options :
- *   --dir <dossier>      dossier à parcourir récursivement (défaut : tests)
+ *   --dir <dossier>      dossier à parcourir récursivement (défaut : tests ; le sous-dossier legacy est ignoré)
  *   --filter <texte>     ne garde que les suites dont le chemin contient <texte>
  *   --timeout <ms>       délai maximal par suite (défaut : 600000 = 10 min)
  *   --list               affiche les suites sans les exécuter
@@ -45,11 +45,14 @@ function parseArgs(argv) {
 
 function discover(dir) {
     const abs = path.resolve(ROOT, dir);
+    const isLegacyRoot = path.basename(abs) === 'legacy';
     if (!fs.existsSync(abs)) return [];
     const out = [];
     const walk = (d) => {
         for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
             if (entry.name === 'node_modules') continue;
+            // tests/legacy : suites héritées non portables (lot 0), exécutées uniquement via npm run test:legacy
+            if (entry.isDirectory() && entry.name === 'legacy' && !isLegacyRoot) continue;
             const full = path.join(d, entry.name);
             if (entry.isDirectory()) walk(full);
             else if (entry.isFile() && entry.name.endsWith('.test.ts')) out.push(full);

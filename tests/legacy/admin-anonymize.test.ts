@@ -2,14 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
-import { AdminService } from '../lib/admin/admin.service';
+import { AdminService } from '../../lib/admin/admin.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
 // Chargement de l'environnement local
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';

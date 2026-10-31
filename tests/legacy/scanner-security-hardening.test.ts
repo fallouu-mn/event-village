@@ -7,24 +7,24 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { POST as controllerScanRoute } from '../app/api/controller/scan/route';
-import { POST as partnerInviteRoute } from '../app/api/partner/team/invite/route';
-import { RateLimiter } from '../lib/security/rate-limiter';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { POST as controllerScanRoute } from '../../app/api/controller/scan/route';
+import { POST as partnerInviteRoute } from '../../app/api/partner/team/invite/route';
+import { RateLimiter } from '../../lib/security/rate-limiter';
 import {
     generateTotp,
     verifyTotp,
     buildDynamicQrPayload,
     deriveTicketTotpSecret,
     TOTP_STEP_SECONDS,
-} from '../lib/security/totp';
+} from '../../lib/security/totp';
 import {
     CAMERA_SCAN_THROTTLE_MS,
     CAMERA_INACTIVITY_TIMEOUT_MS,
-} from '../components/scan/CameraQrScanner';
-import { setTorchState } from '../lib/hardware/torch';
+} from '../../components/scan/CameraQrScanner';
+import { setTorchState } from '../../lib/hardware/torch';
 
 describe('SCANNER SECURITY HARDENING & QUICK WINS TEST SUITE', async () => {
     const supabase = getServiceRoleClient();

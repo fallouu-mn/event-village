@@ -8,15 +8,15 @@ import { createClient } from '@supabase/supabase-js';
 // Chargement des variables d'environnement
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { getServiceRoleClient } from '../lib/supabase/server';
-import { PUT as putScan, POST as postScan } from '../app/api/controller/scan/route';
-import { POST as controllerSetup } from '../app/api/controller/setup/route';
-import { POST as inviteController } from '../app/api/partner/team/invite/route';
-import { PATCH as patchAssignments } from '../app/api/partner/team/assignments/route';
-import { DELETE as deleteController } from '../app/api/partner/team/controller/[controllerId]/route';
-import { RateLimiter } from '../lib/security/rate-limiter';
+import { getServiceRoleClient } from '../../lib/supabase/server';
+import { PUT as putScan, POST as postScan } from '../../app/api/controller/scan/route';
+import { POST as controllerSetup } from '../../app/api/controller/setup/route';
+import { POST as inviteController } from '../../app/api/partner/team/invite/route';
+import { PATCH as patchAssignments } from '../../app/api/partner/team/assignments/route';
+import { DELETE as deleteController } from '../../app/api/partner/team/controller/[controllerId]/route';
+import { RateLimiter } from '../../lib/security/rate-limiter';
 
 describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async () => {
     const supabase = getServiceRoleClient();

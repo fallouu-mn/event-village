@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { EventService } from '../lib/events/event.service';
-import { PaymentService } from '../lib/payments/payment.service';
-import { samirPayClient } from '../lib/samirpay/client';
+import { EventService } from '../../lib/events/event.service';
+import { PaymentService } from '../../lib/payments/payment.service';
+import { samirPayClient } from '../../lib/samirpay/client';
 import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,7 +10,7 @@ import * as path from 'path';
 // Chargement de l'environnement local
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';

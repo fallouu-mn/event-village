@@ -14,11 +14,11 @@ import { createClient } from '@supabase/supabase-js';
 
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
-import './helpers/env';
+import '../helpers/env';
 
-import { PaymentService } from '../lib/payments/payment.service';
-import { EventCancellationService } from '../lib/events/event-cancellation.service';
-import { samirPayClient } from '../lib/samirpay/client';
+import { PaymentService } from '../../lib/payments/payment.service';
+import { EventCancellationService } from '../../lib/events/event-cancellation.service';
+import { samirPayClient } from '../../lib/samirpay/client';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
