@@ -86,13 +86,15 @@ export const FIXTURE_EVENTS: Record<string, FixtureEventSpec> = {
         daysFromNow: 20,
         categories: [{ name: 'Standard', price: 4000, total: 8 }],
     },
-    B_ANNULE: {
+    /** Annulation enregistrée, événement encore PUBLIE (visible de tous) : cas où la politique
+     *  de event_cancellations était seule à protéger les annulations des autres partenaires. */
+    B_ANNULATION: {
         partner: 'B',
-        slug: 'test-fixture-b-annule',
-        title: 'TEST Gala B (annulé)',
-        status: 'ANNULE',
+        slug: 'test-fixture-b-annulation',
+        title: 'TEST Gala B (annulation enregistrée, encore publié)',
+        status: 'PUBLIE',
         daysFromNow: 25,
-        categories: [],
+        categories: [{ name: 'Standard', price: 4000, total: 5 }],
     },
 };
 
@@ -125,8 +127,8 @@ export const FIXTURE_TICKETS = {
 
 /** Annulations d'événement émises par le seed (lot 1B.4) : celle de B ne doit pas être lisible par A. */
 export const FIXTURE_CANCELLATIONS = {
-    B_ANNULE: {
-        event: 'B_ANNULE' as FixtureEventKey,
+    B_ANNULATION: {
+        event: 'B_ANNULATION' as FixtureEventKey,
         cancelledBy: 'PARTNER_B' as FixtureUserKey,
         internalReason: 'Annulation de test (fixture lot 1B)',
         publicNotice: 'Événement de test annulé.',

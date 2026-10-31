@@ -89,6 +89,18 @@ describe('R9 — écritures partenaire par REST', () => {
         assert.deepEqual(foreign, [], `annulations d'autres partenaires lisibles : ${foreign.length}`);
     });
 
+    test("partenaire A qui écrit une annulation sur l'événement publié de B → refusé", async () => {
+        const a = await partnerA();
+        const b = await publicEvent('B_ANNULATION');
+        const res = await a.client.from('event_cancellations').insert({
+            event_id: b.eventId,
+            cancelled_by: a.userId,
+            internal_reason: "R9 annulation de l'événement d'un autre partenaire",
+        }).select('id');
+        if (wasWritten(res)) await a.client.from('event_cancellations').delete().eq('id', (res.data as { id: string }[])[0].id);
+        assertDenied(res.error, "écriture d'une annulation sur l'événement d'un autre partenaire");
+    });
+
     test('partenaire A qui écrit une annulation par REST → refusé', async () => {
         const a = await partnerA();
         const { data: draft } = await a.client.from('events').select('id').eq('slug', FIXTURE_EVENTS.A_BROUILLON.slug).single();

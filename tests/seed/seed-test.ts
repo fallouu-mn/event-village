@@ -8,8 +8,8 @@
  *    à l'événement publié de A, ADMIN, SUPERADMIN), mot de passe commun TEST_PASSWORD ;
  *  - platform_settings complets (dont ticketing_fee_config) ;
  *  - partenaire A : un événement PUBLIE (Standard 5 000 F × 10, VIP 15 000 F × 3),
- *    un BROUILLON, un événement passé ; partenaire B : un événement PUBLIE et un événement
- *    ANNULE avec sa fiche d'annulation ;
+ *    un BROUILLON, un événement passé ; partenaire B : un événement PUBLIE et un second
+ *    événement PUBLIE avec une fiche d'annulation enregistrée ;
  *  - un compte client SUSPENDU ; un billet de référence sur l'événement de A et un sur celui de B.
  *
  * Les tests résolvent les UUID via tests/helpers/fixtures.ts, jamais en dur.
