@@ -19,6 +19,15 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['atomic_ticket_checkin', { p_ticket_id: ZERO_UUID, p_controller_id: ZERO_UUID }],
     ['atomic_partner_remove_controller', { p_partner_id: ZERO_UUID, p_controller_id: ZERO_UUID }],
     ['generate_referral_code', { p_user_id: ZERO_UUID, p_phone: '770000000' }],
+    // Lot 2 : chaîne paiement → billet (service_role uniquement)
+    ['ticket_sale_problems', { p_event_id: ZERO_UUID, p_items: [] }],
+    ['checkout_create_payment', { p: {} }],
+    ['payment_release', { p_payment_id: ZERO_UUID, p_status: 'FAILED', p_reason: 'TEST' }],
+    ['stock_reservations_expire', {}],
+    ['refund_request', { p_payment_id: ZERO_UUID, p_reason: 'TEST', p_kind: 'REFUND' }],
+    ['payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
+    ['free_tickets_claim', { p_user_id: ZERO_UUID, p_event_id: ZERO_UUID, p_items: [] }],
+    ['payment_webhook_record', { p_dedupe_key: '0'.repeat(64), p_raw_body: '', p_headers: {}, p_token_present: false, p_order_id: null, p_transaction_id: null }],
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */
