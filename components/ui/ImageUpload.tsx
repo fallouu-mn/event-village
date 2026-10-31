@@ -85,6 +85,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
 
             {value ? (
                 <div className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- aperçu local (blob/data URL) avant upload : next/image inapplicable */}
                     <img
                         src={value}
                         alt="Apercu"

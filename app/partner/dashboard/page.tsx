@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Calendar,
@@ -56,7 +56,7 @@ export default function PartnerDashboardPage() {
   } | null>(null);
   const activationCalledRef = React.useRef(false);
 
-  const loadDashboard = async (showToast = false) => {
+  const loadDashboard = useCallback(async (showToast = false) => {
     try {
       if (showToast) setIsRefreshing(true);
       const res = await fetch('/api/partner/dashboard', {
@@ -80,12 +80,12 @@ export default function PartnerDashboardPage() {
       setIsLoadingData(false);
       setIsRefreshing(false);
     }
-  };
+  }, [session?.access_token, toast]);
 
   useEffect(() => {
     if (!user?.id) return;
     loadDashboard();
-  }, [user?.id, session?.access_token]);
+  }, [user?.id, loadDashboard]);
 
   // Handle trial activation
   useEffect(() => {
@@ -118,7 +118,7 @@ export default function PartnerDashboardPage() {
           toast.error("Activation de la période d'essai échouée.");
         });
     }
-  }, [user?.id, isAuthLoading, partner?.trial_started_at, partner?.trial_ends_at, partner?.is_founder, partner?.status]);
+  }, [user?.id, isAuthLoading, partner?.trial_started_at, partner?.trial_ends_at, partner?.is_founder, partner?.status, toast]);
 
   const isPending = partner?.status === 'EN_ATTENTE';
   const isSuspended = partner?.status === 'SUSPENDU';

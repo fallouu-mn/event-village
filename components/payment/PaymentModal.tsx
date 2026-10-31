@@ -419,6 +419,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
             {/* QR Code Image */}
             <div className="p-3 rounded-2xl bg-white border border-slate-200 dark:border-zinc-700 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element -- QR de paiement en data URL généré à la volée : next/image inapplicable */}
               <img
                 src={qrCode.startsWith('data:image') ? qrCode : `data:image/png;base64,${qrCode}`}
                 alt="QR Code de paiement"

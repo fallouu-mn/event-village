@@ -437,7 +437,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
             <div className="space-y-1 max-w-xs">
               <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">Scanner en veille</h4>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                Mis en veille après 45s d'inactivité pour économiser la batterie.
+                Mis en veille après 45s d&apos;inactivité pour économiser la batterie.
               </p>
             </div>
             <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); wakeUpScanner(); }}>

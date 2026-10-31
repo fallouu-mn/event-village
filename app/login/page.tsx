@@ -171,7 +171,7 @@ function LoginPageContent() {
         if (messageParam === 'account_activated') {
             setSuccessMessage('Compte activé avec succès. Connectez-vous avec votre mot de passe.');
         }
-    }, [errorParam]);
+    }, [errorParam, searchParams]);
 
     // Décompte pour renvoi OTP
     useEffect(() => {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
 import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -162,12 +162,15 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const toast = {
-    success: (msg: string) => addToast('success', msg),
-    error: (msg: string) => addToast('error', msg),
-    info: (msg: string) => addToast('info', msg),
-    warning: (msg: string) => addToast('warning', msg),
-  };
+  const toast = useMemo(
+    () => ({
+      success: (msg: string) => addToast('success', msg),
+      error: (msg: string) => addToast('error', msg),
+      info: (msg: string) => addToast('info', msg),
+      warning: (msg: string) => addToast('warning', msg),
+    }),
+    [addToast]
+  );
 
   return (
     <ToastContext.Provider value={{ toast }}>
@@ -181,15 +184,18 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 };
 
+// Repli hors provider : référence stable (évite de relancer les effets qui dépendent de `toast`)
+const NOOP_TOAST: ToastContextType['toast'] = {
+  success: () => {},
+  error: () => {},
+  info: () => {},
+  warning: () => {},
+};
+
 export const useToast = (): ToastContextType['toast'] => {
   const context = useContext(ToastContext);
   if (!context) {
-    return {
-      success: () => {},
-      error: () => {},
-      info: () => {},
-      warning: () => {},
-    };
+    return NOOP_TOAST;
   }
   return context.toast;
 };

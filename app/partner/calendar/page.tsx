@@ -30,7 +30,7 @@ export default function PartnerCalendarPage() {
       })
       .catch(() => { toast.error('Impossible de charger le calendrier des événements.'); })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [toast]);
 
   return (
     <div className="space-y-6 pb-16">
