@@ -35,8 +35,12 @@ async function assertAllRedirect(cookies: SessionCookie[], who: string): Promise
 describe('R6 — rôles déclarés dans user_metadata', () => {
     test('signUp avec data.roles = [SUPERADMIN] → /admin, /partner et /scan redirigent', async () => {
         const attacker = await signUpAttacker('r6-signup', { roles: ['SUPERADMIN'] });
-        const { data } = await attacker.client.auth.getUser();
-        assert.deepEqual(data.user?.user_metadata?.roles, ['SUPERADMIN'], 'précondition : la métadonnée forgée est bien présente');
+        // Précondition : le jeton émis à l'inscription porte les rôles forgés dans ses claims
+        // user_metadata (en base, le trigger de synchronisation les a déjà réécrits).
+        const { data: sessionData } = await attacker.client.auth.getSession();
+        const token = sessionData.session?.access_token ?? '';
+        const claims = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { user_metadata?: { roles?: string[] } };
+        assert.deepEqual(claims.user_metadata?.roles, ['SUPERADMIN'], 'précondition : le jeton porte les rôles forgés');
         await assertAllRedirect(await sessionCookies(attacker.client), 'inscription avec roles forgés');
     });
 
