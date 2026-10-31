@@ -4,6 +4,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
+import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,6 +124,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
             .delete()
             .eq('id', assignmentId);
 
+        // Lot 4.7 : caisse ouverte → refus du trigger controller_removal_guard (CONTROLLER_HAS_OPEN_SHIFT)
+        if (isControllerRemovalBlocked(delErr)) {
+            return NextResponse.json(controllerRemovalConflict(), { status: 409 });
+        }
         if (delErr) {
             console.error('[DELETE team/eventId] event_controllers delete:', delErr.message, delErr.details);
             return NextResponse.json({ error: 'Impossible de retirer le contrôleur.' }, { status: 500 });
@@ -139,7 +144,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
         // Notification SMS au contrôleur
         if (ctrlUser?.phone) {
             try {
-                await mTargetService.sendControllerRevocationNotice(ctrlUser.phone, eventTitle);
+                await mTargetService.sendControllerRevocationNotice(ctrlUser.phone, eventTitle, { actorId: user.id });
             } catch (smsErr) {
                 console.warn('[DELETE team/eventId] SMS retrait non-bloquant:', smsErr instanceof Error ? smsErr.message : smsErr);
             }

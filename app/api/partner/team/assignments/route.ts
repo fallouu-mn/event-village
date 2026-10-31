@@ -6,7 +6,7 @@ import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
-import { ShiftService } from '@/lib/shifts/shift.service';
+import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { maskPersonName } from '@/lib/security/mask';
@@ -183,25 +183,24 @@ export async function PATCH(req: NextRequest) {
             }
         }
 
-        // 4. Supprimer les événements décochés
+        // 4. Supprimer les événements décochés. Lot 4.7 : une caisse OUVERT sur l'un d'eux fait refuser
+        //    la suppression entière par le trigger controller_removal_guard (CONTROLLER_HAS_OPEN_SHIFT).
         if (toRemove.length > 0) {
-            // Blocage si une session de caisse est encore OUVERTE sur l'un des événements à retirer
-            const hasOpenShift = await ShiftService.hasActiveShift(controllerId, toRemove);
-            if (hasOpenShift) {
-                return NextResponse.json({
-                    error: 'Ce contrôleur a une session de caisse ouverte, clôturez-la avant de le retirer.',
-                    code: 'OPEN_SHIFT_EXISTS',
-                }, { status: 400 });
-            }
-
             const idsToDelete = (currentAssignments ?? [])
                 .filter(a => toRemove.includes(a.event_id))
                 .map(a => a.id);
 
-            await supabase
+            const { error: delErr } = await supabase
                 .from('event_controllers')
                 .delete()
                 .in('id', idsToDelete);
+            if (isControllerRemovalBlocked(delErr)) {
+                return NextResponse.json(controllerRemovalConflict(), { status: 409 });
+            }
+            if (delErr) {
+                console.error('[PATCH team/assignments] retrait des affectations :', delErr.message);
+                return NextResponse.json({ error: 'Impossible de retirer les affectations décochées.' }, { status: 500 });
+            }
         }
 
         // 5. Insérer les nouveaux événements cochés
@@ -240,7 +239,7 @@ export async function PATCH(req: NextRequest) {
         // 8. Notifications
         if (ctrlUser?.phone) {
             try {
-                await mTargetService.sendControllerAssignmentsUpdatedNotice(ctrlUser.phone, requestedEventIds.length);
+                await mTargetService.sendControllerAssignmentsUpdatedNotice(ctrlUser.phone, requestedEventIds.length, { actorId: user.id });
             } catch (smsErr) {
                 console.warn('[PATCH team/assignments] SMS non-bloquant:', smsErr);
             }

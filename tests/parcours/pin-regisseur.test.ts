@@ -13,7 +13,8 @@ test('PIN régisseur : génération, vérification du bon PIN, refus d\'un PIN e
     const fx = await loadFixtures();
     const eventId = fx.events.A_PUBLIE.id;
 
-    const { pin } = await ShiftService.generateRegisseurPin(eventId, fx.users.PARTNER_A.id);
+    // Lot 4.7 : la (re)génération du PIN doit être confirmée explicitement ; aucune caisse n'est ouverte ici.
+    const { pin } = await ShiftService.generateRegisseurPin(eventId, fx.users.PARTNER_A.id, { confirm: true });
     assert.match(pin, /^\d{6}$/, 'PIN à 6 chiffres');
 
     const ok = await ShiftService.verifyRegisseurPin(eventId, pin, fx.users.CONTROLLER_A.id);

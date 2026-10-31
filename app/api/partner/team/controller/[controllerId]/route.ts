@@ -4,8 +4,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
-import { ShiftService } from '@/lib/shifts/shift.service';
-import { removeUserRole } from '@/lib/auth/roles';
+import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export const dynamic = 'force-dynamic';
@@ -57,64 +56,21 @@ export async function DELETE(
             partnerId = p.id;
         }
 
-        // 2. Récupérer les événements du partenaire
-        let eventsQuery = supabase.from('events').select('id, title');
-        if (partnerId) {
-            eventsQuery = eventsQuery.eq('partner_id', partnerId);
-        }
-        const { data: partnerEvents } = await eventsQuery;
-        const partnerEventIds = (partnerEvents ?? []).map(e => e.id);
-
-        // 2.bis Blocage si une session de caisse est encore OUVERTE (Pre-Mortem §2.1 & Phase 5)
-        const hasOpenShift = await ShiftService.hasActiveShift(controllerId, partnerEventIds);
-        if (hasOpenShift) {
-            return NextResponse.json({
-                error: 'Ce contrôleur a une session de caisse ouverte, clôturez-la avant de le retirer.',
-                code: 'OPEN_SHIFT_EXISTS',
-            }, { status: 400 });
-        }
-
-        // 3. Suppression atomique protégée contre les race conditions multi-partenaires (Faille 3.3)
-        let isExclusivelyInThisTeam = false;
-        let remainingAssignments = 0;
-
-        // Tentative d'exécution atomique via fonction PostgreSQL (advisory lock + FOR UPDATE)
+        // 2-3. Suppression atomique (verrou consultatif + FOR UPDATE, Faille 3.3). Lot 4.7 : une caisse
+        //    OUVERT fait refuser toute la transaction par le trigger controller_removal_guard (affectation
+        //    ou rôle CONTROLEUR) → 409 ; plus de pré-contrôle applicatif ni de repli si la RPC échoue.
         const { data: rpcResult, error: rpcErr } = await supabase.rpc('atomic_partner_remove_controller', {
             p_partner_id: partnerId,
             p_controller_id: controllerId,
         });
-
-        if (!rpcErr && rpcResult) {
-            isExclusivelyInThisTeam = !!rpcResult.is_exclusive;
-            remainingAssignments = rpcResult.remaining_assignments ?? 0;
-        } else {
-            // Fallback applicatif si l'RPC n'est pas disponible dans l'environnement
-            if (partnerEventIds.length > 0) {
-                await supabase
-                    .from('event_controllers')
-                    .delete()
-                    .eq('user_id', controllerId)
-                    .in('event_id', partnerEventIds);
-            }
-
-            const { count: remCount } = await supabase
-                .from('event_controllers')
-                .select('id', { count: 'exact', head: true })
-                .eq('user_id', controllerId);
-
-            remainingAssignments = remCount ?? 0;
-            isExclusivelyInThisTeam = remainingAssignments === 0;
-
-            if (isExclusivelyInThisTeam) {
-                // MULTI-RÔLE : retirer CONTROLEUR de user_roles ; le trigger recalcule users.role.
-                // Lot 1B.6 : le statut du compte n'est jamais modifié par une route partenaire.
-                const { error: roleErr } = await removeUserRole(controllerId, 'CONTROLEUR');
-                if (roleErr) {
-                    console.error('[DELETE team/controller] retrait du rôle CONTROLEUR :', roleErr);
-                    return NextResponse.json({ error: 'Retrait du rôle Contrôleur impossible.' }, { status: 500 });
-                }
-            }
+        if (isControllerRemovalBlocked(rpcErr)) {
+            return NextResponse.json(controllerRemovalConflict(), { status: 409 });
         }
+        if (rpcErr || !rpcResult) {
+            console.error('[DELETE team/controller] atomic_partner_remove_controller :', rpcErr?.message ?? 'réponse vide');
+            return NextResponse.json({ error: 'Retrait du contrôleur impossible.' }, { status: 500 });
+        }
+        const isExclusivelyInThisTeam = !!rpcResult.is_exclusive;
 
         // 4. Récupérer les infos du contrôleur pour la notification
         const { data: ctrlProfile } = await supabase
@@ -128,6 +84,9 @@ export async function DELETE(
         // le statut du compte n'est pas modifié (lot 1B.6 : un compte SUSPENDU le reste).
         if (isExclusivelyInThisTeam && ctrlProfile) {
             const { error: roleDelErr } = await supabase.from('user_roles').delete().eq('user_id', controllerId).eq('role', 'CONTROLEUR');
+            if (isControllerRemovalBlocked(roleDelErr)) {
+                return NextResponse.json(controllerRemovalConflict(), { status: 409 });
+            }
             if (roleDelErr) {
                 console.error('[DELETE team/controller] retrait du rôle CONTROLEUR :', roleDelErr.message);
                 return NextResponse.json({ error: 'Retrait du rôle Contrôleur impossible.' }, { status: 500 });
@@ -156,7 +115,7 @@ export async function DELETE(
         // 7. Notification SMS
         if (ctrlProfile?.phone) {
             try {
-                await mTargetService.sendControllerAccountDeletedNotice(ctrlProfile.phone);
+                await mTargetService.sendControllerAccountDeletedNotice(ctrlProfile.phone, { actorId: user.id });
             } catch (smsErr) {
                 console.warn('[DELETE team/controller] SMS non bloquant:', smsErr);
             }

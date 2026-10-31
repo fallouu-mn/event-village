@@ -5,6 +5,7 @@ import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { isEventEligibleForController } from '@/lib/events/event-status';
+import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -228,6 +229,10 @@ export async function DELETE(req: NextRequest) {
             .delete()
             .in('id', assignmentIds);
 
+        // Lot 4.7 : une caisse ouverte sur l'un des événements → refus du trigger (aucune affectation retirée)
+        if (isControllerRemovalBlocked(delErr)) {
+            return NextResponse.json(controllerRemovalConflict(), { status: 409 });
+        }
         if (delErr) {
             console.error('[DELETE team/all] delete error:', delErr.message);
             return NextResponse.json({ error: 'Impossible de retirer les affectations.' }, { status: 500 });
@@ -243,7 +248,7 @@ export async function DELETE(req: NextRequest) {
         // 6. SMS notification (non bloquante)
         if (ctrlUser?.phone) {
             try {
-                await mTargetService.sendControllerAllEventsRevokedNotice(ctrlUser.phone);
+                await mTargetService.sendControllerAllEventsRevokedNotice(ctrlUser.phone, { actorId: user.id });
             } catch (smsErr) {
                 console.warn('[DELETE team/all] SMS non bloquant:', smsErr instanceof Error ? smsErr.message : smsErr);
             }

@@ -1,51 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
-import { ShiftService } from '@/lib/shifts/shift.service';
+import { z } from 'zod';
+import { requireActiveSession, serverIsAdmin, serverIsPartner } from '@/lib/auth/session';
+import { asShiftRefusal, ShiftService } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
+const BodySchema = z.object({
+    confirm: z.boolean().optional(),
+    confirmOpenShifts: z.boolean().optional(),
+});
+
 /**
- * POST /api/partner/events/[id]/regisseur-pin
- * Génération sécurisée d'un code PIN régisseur pour l'événement.
- * - Accessible uniquement au PARTENAIRE propriétaire ou ADMIN/SUPERADMIN.
- * - Le PIN est stocké haché en base.
- * - Le PIN en clair est renvoyé UNE SEULE FOIS au partenaire.
+ * POST /api/partner/events/[id]/regisseur-pin — génération du code PIN régisseur (lot 4.7).
+ *  - partenaire propriétaire de l'événement ou admin ;
+ *  - { confirm: true } obligatoire (l'ancien code cesse d'être valable) ;
+ *  - caisse(s) ouverte(s) : 409 OPEN_SHIFTS (avec leur nombre), sauf { confirmOpenShifts: true } ;
+ *  - PIN renvoyé une seule fois en clair, jamais son haché ; génération journalisée (audit_logs).
  */
 export async function POST(
     req: NextRequest,
     context: { params: Promise<{ id: string }> | { id: string } }
 ) {
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
+    const user = session.user;
+    if (!serverIsPartner(user)) {
+        return NextResponse.json({ error: 'Accès non autorisé.', code: 'FORBIDDEN_ROLE' }, { status: 403 });
+    }
+
+    const { id: eventId } = await Promise.resolve(context.params);
+    if (!eventId) {
+        return NextResponse.json({ error: 'ID événement manquant.' }, { status: 400 });
+    }
+
+    // Corps absent ou vide : aucune confirmation (refus explicite par le service)
+    const text = await req.text();
+    let raw: unknown = {};
+    if (text.trim()) {
+        try {
+            raw = JSON.parse(text);
+        } catch {
+            return NextResponse.json({ error: 'Corps JSON invalide.', code: 'INVALID_BODY' }, { status: 400 });
+        }
+    }
+    const parsed = BodySchema.safeParse(raw);
+    if (!parsed.success) {
+        return NextResponse.json({ error: 'Corps invalide : confirm et confirmOpenShifts sont des booléens.', code: 'INVALID_BODY' }, { status: 400 });
+    }
+
     try {
-        const activeSession = await requireActiveSession(req);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user) {
-            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        }
-        if (!serverIsPartner(user)) {
-            return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
-        }
-
-        const resolvedParams = await Promise.resolve(context?.params);
-        const eventId = resolvedParams?.id;
-        if (!eventId) {
-            return NextResponse.json({ error: 'ID événement manquant.' }, { status: 400 });
-        }
-
-        const result = await ShiftService.generateRegisseurPin(
-            eventId,
-            serverHasRole(user, 'PARTENAIRE') ? user.id : undefined
-        );
-
+        const result = await ShiftService.generateRegisseurPin(eventId, user.id, {
+            confirm: parsed.data.confirm,
+            confirmOpenShifts: parsed.data.confirmOpenShifts,
+            actorIsAdmin: serverIsAdmin(user),
+            actorRole: user.role,
+        });
         return NextResponse.json({
             success: true,
             pin: result.pin,
             event_id: result.eventId,
-            message: 'Code PIN régisseur généré avec succès. Notez-le bien : il ne sera plus affiché en clair.',
+            open_shifts: result.openShifts,
+            message: 'Code PIN régisseur généré. Notez-le : il ne sera plus affiché en clair.',
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne.';
-        console.error('[API regisseur-pin POST]', msg);
-        return NextResponse.json({ error: msg }, { status: 400 });
+        const refusal = asShiftRefusal(err);
+        if (refusal) return NextResponse.json(refusal.body, { status: refusal.status });
+        console.error('[API regisseur-pin POST]', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Génération du code PIN momentanément impossible.', code: 'PIN_GENERATION_FAILED' }, { status: 500 });
     }
 }

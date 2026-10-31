@@ -9,6 +9,7 @@ import {
     Clock, RefreshCw, Loader2, Users, FileText, ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/Toast';
 import { ZSummaryModal } from '@/components/shifts/ShiftModals';
 import type { Shift, ShiftSummary } from '@/lib/shifts/shift.service';
@@ -28,6 +29,8 @@ export default function PartnerEventCaissePage() {
     const [generatedPin, setGeneratedPin]   = useState<string | null>(null);
     const [pinCopied, setPinCopied]         = useState(false);
     const [showPinModal, setShowPinModal]   = useState(false);
+    // Lot 4.7 : régénération confirmée ; seconde confirmation si des caisses sont ouvertes (409 OPEN_SHIFTS)
+    const [pinConfirm, setPinConfirm] = useState<{ step: 'confirm' } | { step: 'open_shifts'; count: number } | null>(null);
 
     // Inspection Z modal
     const [selectedSummary, setSelectedSummary] = useState<ShiftSummary | null>(null);
@@ -61,22 +64,30 @@ export default function PartnerEventCaissePage() {
         if (eventId) fetchEventData();
     }, [eventId, fetchEventData]);
 
-    // Génération du PIN Régisseur
-    const handleGeneratePin = async () => {
+    // Génération du PIN Régisseur : toujours confirmée ; caisses ouvertes → confirmation explicite
+    const requestPin = async (confirmOpenShifts: boolean) => {
         setGeneratingPin(true);
         try {
             const res = await fetch(`/api/partner/events/${eventId}/regisseur-pin`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: true, confirmOpenShifts }),
             });
             const data = await res.json();
+            if (res.status === 409 && data.code === 'OPEN_SHIFTS') {
+                setPinConfirm({ step: 'open_shifts', count: Number(data.open_shifts) || openShiftsCount });
+                return;
+            }
             if (!res.ok || !data.success) {
+                setPinConfirm(null);
                 toast.error(data.error || 'Erreur lors de la génération du code PIN.');
                 return;
             }
 
+            setPinConfirm(null);
             setGeneratedPin(data.pin);
             setShowPinModal(true);
-            toast.success('Code PIN régisseur généré avec succès !');
+            toast.success('Nouveau code PIN régisseur généré.');
         } catch {
             toast.error('Erreur réseau.');
         } finally {
@@ -114,8 +125,12 @@ export default function PartnerEventCaissePage() {
     const totalOpeningFloat = shifts.reduce((acc, s) => acc + (Number(s.opening_float_amount) || 0), 0);
     const totalExpectedCash = shifts.reduce((acc, s) => acc + (Number(s.expected_cash_total) || 0), 0);
     const totalDeclaredCash = shifts.reduce((acc, s) => acc + (Number(s.declared_cash_total) || 0), 0);
-    const totalDiscrepancy  = shifts.reduce((acc, s) => acc + (Number(s.discrepancy_amount) || 0), 0);
+    // Écart : sessions clôturées seulement (une session ouverte n'a pas encore d'écart, partner-ux-15)
+    const totalDiscrepancy  = shifts
+        .filter(s => s.status !== 'OUVERT')
+        .reduce((acc, s) => acc + (Number(s.discrepancy_amount) || 0), 0);
     const openShiftsCount   = shifts.filter(s => s.status === 'OUVERT').length;
+    const discrepancyNeutral = openShiftsCount > 0 && totalDiscrepancy === 0;
     const closedShiftsCount = shifts.filter(s => s.status === 'CLOTURE').length;
     const disputeShiftsCount= shifts.filter(s => s.status === 'LITIGE').length;
 
@@ -174,12 +189,12 @@ export default function PartnerEventCaissePage() {
                         <h2 className="text-base font-black text-slate-900 dark:text-white">Code PIN Régisseur de Caisse</h2>
                     </div>
                     <p className="text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">
-                        Le code PIN régisseur est requis par les contrôleurs pour valider l&apos;ouverture (remise du fond de caisse) et co-signer la clôture (procès-verbal Z de caisse). Il est stocké de façon cryptographiquement hachée.
+                        Le code PIN régisseur co-signe la clôture de chaque caisse (procès-verbal Z) et peut valider son ouverture (remise du fond de caisse). Seule son empreinte salée est conservée : générer un nouveau code annule l&apos;ancien.
                     </p>
                 </div>
 
                 <Button
-                    onClick={handleGeneratePin}
+                    onClick={() => setPinConfirm({ step: 'confirm' })}
                     disabled={generatingPin}
                     className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm py-2.5 px-4 rounded-xl"
                 >
@@ -234,23 +249,29 @@ export default function PartnerEventCaissePage() {
 
                 {/* 4. Écart Net Global */}
                 <div className={`p-4 rounded-2xl border shadow-sm space-y-1 ${
-                    totalDiscrepancy === 0
-                        ? 'bg-emerald-500/5 border-emerald-500/30'
-                        : totalDiscrepancy < 0
-                            ? 'bg-red-500/10 border-red-500/30'
-                            : 'bg-amber-500/10 border-amber-500/30'
+                    discrepancyNeutral
+                        ? 'bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800'
+                        : totalDiscrepancy === 0
+                            ? 'bg-emerald-500/5 border-emerald-500/30'
+                            : totalDiscrepancy < 0
+                                ? 'bg-red-500/10 border-red-500/30'
+                                : 'bg-amber-500/10 border-amber-500/30'
                 }`}>
                     <div className="flex items-center justify-between text-slate-400">
-                        <span className="text-xs font-bold uppercase tracking-wider">Écart Net Global</span>
-                        <AlertTriangle size={16} className={totalDiscrepancy === 0 ? 'text-emerald-500' : 'text-red-500'} />
+                        <span className="text-xs font-bold uppercase tracking-wider">Écart (sessions clôturées)</span>
+                        <AlertTriangle size={16} className={discrepancyNeutral ? 'text-slate-400' : totalDiscrepancy === 0 ? 'text-emerald-500' : 'text-red-500'} />
                     </div>
                     <p className={`text-2xl font-black font-mono ${
-                        totalDiscrepancy === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                        discrepancyNeutral
+                            ? 'text-slate-900 dark:text-white'
+                            : totalDiscrepancy === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
                     }`}>
                         {totalDiscrepancy > 0 ? `+${totalDiscrepancy.toLocaleString('fr-FR')}` : totalDiscrepancy.toLocaleString('fr-FR')} <span className="text-xs font-bold">F</span>
                     </p>
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                        {totalDiscrepancy === 0 ? 'Comptabilité 100% exacte' : 'Divergences constatées'}
+                        {openShiftsCount > 0
+                            ? `${openShiftsCount} session(s) encore ouverte(s) : écart provisoire`
+                            : totalDiscrepancy === 0 ? 'Aucun écart sur les sessions clôturées' : 'Divergences constatées'}
                     </p>
                 </div>
             </div>
@@ -273,7 +294,7 @@ export default function PartnerEventCaissePage() {
                         <Receipt size={32} className="mx-auto text-slate-300 dark:text-zinc-700" />
                         <p className="text-xs font-bold text-slate-600 dark:text-zinc-400">Aucune session de caisse pour le moment</p>
                         <p className="text-[11px] text-slate-400 max-w-md mx-auto">
-                            Dès qu&apos;un contrôleur habilité ouvre sa session de caisse avec le PIN régisseur, son activité apparaîtra ici en temps réel.
+                            Dès qu&apos;un contrôleur habilité ouvre sa session de caisse, son activité apparaîtra ici en temps réel.
                         </p>
                     </div>
                 ) : (
@@ -293,7 +314,7 @@ export default function PartnerEventCaissePage() {
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-zinc-800 text-slate-700 dark:text-zinc-300">
                                 {shifts.map((s) => {
-                                    const userObj = (s as any).users;
+                                    const userObj = s.users;
                                     const ctrlName = userObj ? `${userObj.first_name || ''} ${userObj.last_name || ''}`.trim() : 'Contrôleur';
                                     const hasDiscrepancy = s.discrepancy_amount !== null && s.discrepancy_amount !== 0;
 
@@ -418,6 +439,20 @@ export default function PartnerEventCaissePage() {
                     </div>
                 </div>
             )}
+
+            {/* ── Confirmations de génération du PIN ── */}
+            <ConfirmDialog
+                isOpen={pinConfirm !== null}
+                onClose={() => { if (!generatingPin) setPinConfirm(null); }}
+                onConfirm={() => requestPin(pinConfirm?.step === 'open_shifts')}
+                isLoading={generatingPin}
+                variant={pinConfirm?.step === 'open_shifts' ? 'danger' : 'warning'}
+                title={pinConfirm?.step === 'open_shifts' ? 'Des caisses sont encore ouvertes' : 'Générer un nouveau code PIN ?'}
+                message={pinConfirm?.step === 'open_shifts'
+                    ? `${pinConfirm.count} caisse(s) ouverte(s) : leur clôture exigera le nouveau code. Transmettez-le aux contrôleurs concernés. Régénérer quand même ?`
+                    : 'L’ancien code régisseur cessera immédiatement d’être valable. Transmettez le nouveau code au régisseur présent sur place.'}
+                confirmLabel={pinConfirm?.step === 'open_shifts' ? 'Régénérer quand même' : 'Générer le code'}
+            />
 
             {/* ── Modal Ticket Z de Caisse ── */}
             <ZSummaryModal
