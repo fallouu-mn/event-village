@@ -138,3 +138,16 @@ END $$;
 -- blanche de tests/schema/fonctions-privileges.test.ts).
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 1A.4 — Écritures directes par l'API REST (R4, R6, R5 en partie)
+-- ----------------------------------------------------------------------------
+-- Billets, paiements et journal d'audit ne s'écrivent que côté serveur (service_role) ou par
+-- les triggers SECURITY DEFINER (audit_log_changes). Grep : aucune écriture sur ces tables
+-- depuis un client navigateur ou anon (voir rapport).
+DROP POLICY IF EXISTS "tickets_insert_auth" ON public.tickets;          -- billet VALIDE forgeable par tout compte
+DROP POLICY IF EXISTS "tickets_update_controller" ON public.tickets;    -- tout contrôleur modifiait tout billet
+DROP POLICY IF EXISTS "payments_insert_auth" ON public.payments;        -- paiement SUCCESS forgeable par tout compte
+DROP POLICY IF EXISTS "audit_logs_insert_system" ON public.audit_logs;  -- WITH CHECK (TRUE) : journal falsifiable
+
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.audit_logs FROM anon, authenticated;
