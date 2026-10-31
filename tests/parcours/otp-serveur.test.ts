@@ -20,12 +20,13 @@ import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
 
+/** Code du dernier SMS contenant un code à 6 chiffres (l'inscription partenaire envoie ensuite un avis sans code). */
 function codeFromLastSms(phone: string): string {
     const received = getFakes().sms.messagesTo(phone);
     assert.ok(received.length >= 1, `un SMS envoyé au ${phone} (faux adaptateur)`);
-    const code = received[received.length - 1].message.match(/\b(\d{6})\b/)?.[1];
-    assert.ok(code, `code OTP lisible dans le SMS : ${received[received.length - 1].message}`);
-    return code;
+    const withCode = received.map((m) => m.message.match(/\b(\d{6})\b/)?.[1]).filter((c): c is string => Boolean(c));
+    assert.ok(withCode.length >= 1, `aucun code OTP dans les SMS envoyés : ${received.map((m) => m.message).join(' | ')}`);
+    return withCode[withCode.length - 1];
 }
 
 /** Simule une autre instance : plus rien en mémoire du processus émetteur. */
