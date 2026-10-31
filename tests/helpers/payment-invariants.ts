@@ -1,8 +1,8 @@
 /**
  * Lot 2 — invariant global de la chaîne paiement → billet, vérifié à la fin de chaque suite de
  * paiement par une requête SQL sur la base LOCALE (lecture seule) :
- *  (a) aucun paiement SUCCESS de billetterie sans ses billets (nombre exact = quantités réservées) ;
- *  (b) aucun billet payant VALIDE ou UTILISE sans paiement SUCCESS ;
+ *  (a) aucun paiement SUCCESS (ou PARTIAL, lot 3) de billetterie sans ses billets (nombre exact = quantités réservées) ;
+ *  (b) aucun billet payant VALIDE ou UTILISE sans paiement SUCCESS ou PARTIAL (remboursement partiel, lot 3) ;
  *  (c) pour chaque catégorie : sold + held ≤ total, et held = somme des réservations non expirées.
  *
  * (c) est vérifié deux fois :
@@ -27,18 +27,18 @@ WITH reserved AS (
       FROM public.stock_reservations GROUP BY category_id
 )
 SELECT 'a' AS regle, p.id::text AS objet,
-       format('paiement SUCCESS : %s billet(s) émis pour %s réservé(s)', coalesce(i.n, 0), coalesce(r.qty, 0)) AS detail
+       format('paiement %s : %s billet(s) émis pour %s réservé(s)', p.status, coalesce(i.n, 0), coalesce(r.qty, 0)) AS detail
   FROM public.payments p
   LEFT JOIN reserved r ON r.payment_id = p.id
   LEFT JOIN issued i ON i.payment_id = p.id
- WHERE p.status = 'SUCCESS' AND p.payment_target = 'TICKET' AND p.is_platform_payment
+ WHERE p.status IN ('SUCCESS', 'PARTIAL') AND p.payment_target = 'TICKET' AND p.is_platform_payment
    AND (coalesce(i.n, 0) = 0 OR coalesce(i.n, 0) <> coalesce(r.qty, 0))
 UNION ALL
-SELECT 'b', t.id::text, format('billet %s à %s F sans paiement SUCCESS (%s)', t.status, t.price, coalesce(p.status::text, 'aucun paiement'))
+SELECT 'b', t.id::text, format('billet %s à %s F sans paiement SUCCESS ni PARTIAL (%s)', t.status, t.price, coalesce(p.status::text, 'aucun paiement'))
   FROM public.tickets t
   LEFT JOIN public.payments p ON p.id = t.payment_id
  WHERE t.price > 0 AND t.status IN ('VALIDE', 'UTILISE')
-   AND (p.id IS NULL OR p.status <> 'SUCCESS')
+   AND (p.id IS NULL OR p.status NOT IN ('SUCCESS', 'PARTIAL'))
 UNION ALL
 SELECT 'c', c.id::text, format('sold %s + held %s > total %s', c.sold_quantity, c.held_quantity, c.total_quantity)
   FROM public.ticket_categories c
