@@ -1,38 +1,37 @@
 'use client';
 
+/**
+ * Scanner du contrôleur (lot 4) — voie unique /api/controller/scan.
+ *  - Caméra : QR dynamique EVT1 uniquement ; saisie manuelle distincte avec pièce d'identité vérifiée.
+ *  - Statut HTTP lu (components/scan/scan-client) : 401 → connexion ; 403, 429, 5xx et réseau sont des
+ *    incidents techniques (carte neutre, ni voix wolof, ni compteur de refus).
+ *  - cash_required : caméra et saisie en pause jusqu'à la décision ; un refus du serveur à
+ *    l'encaissement reste affiché avec des actions explicites (ouvrir la caisse, réessayer, abandonner).
+ *  - Statistiques lues sur le serveur (/api/controller/assignments), jamais incrémentées à la main.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getBrowserClient } from '@/lib/supabase/client';
-import {
-    Calendar, MapPin, Ticket, ScanLine, Banknote,
-    CheckCircle2, XCircle, AlertTriangle, Clock,
-    Loader2, LogOut, Keyboard, Camera, ChevronDown,
-    ArrowLeft, Volume2, VolumeX, WifiOff, RefreshCw,
-} from 'lucide-react';
 import Link from 'next/link';
+import {
+    ArrowLeft, Banknote, Calendar, Camera, ChevronDown, Keyboard, Loader2, LogOut, MapPin, PauseCircle,
+    ShieldAlert, Ticket, Users, Volume2, VolumeX, AlertTriangle,
+} from 'lucide-react';
+import { getBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CameraQrScanner } from '@/components/scan/CameraQrScanner';
-import { isEventEligibleForController } from '@/lib/events/event-status';
+import { CombatFlashOverlay } from '@/components/scan/CombatFlashOverlay';
+import { ManualEntryForm } from '@/components/scan/ManualEntryForm';
+import { ScanResultPanel } from '@/components/scan/ScanResultPanel';
 import {
-    ShiftStatusBanner,
-    OpenShiftModal,
-    CloseShiftModal,
-    ZSummaryModal,
-} from '@/components/shifts/ShiftModals';
+    combatTypeFor, confirmCashCheckin, formatFcfa, isTechnicalOutcome, isTicketRefusal, postScan, titleFor, wolofTypeFor,
+    type ScanOutcome, type ScanRequest,
+} from '@/components/scan/scan-client';
+import { isEventEligibleForController } from '@/lib/events/event-status';
+import { ShiftStatusBanner, OpenShiftModal, CloseShiftModal, ZSummaryModal } from '@/components/shifts/ShiftModals';
 import type { Shift, ShiftSummary } from '@/lib/shifts/shift.service';
 import { triggerCombatSensoryFeedback, type CombatFeedbackType } from '@/lib/hardware/feedback';
-import { CombatFlashOverlay } from '@/components/scan/CombatFlashOverlay';
-import {
-    playWolofAudio,
-    repeatLastWolofAudio,
-    stopWolofAudio,
-    isWolofMuted,
-    toggleWolofMuted,
-    hasWolofAudio,
-    normalizeWolofAudioType,
-    WOLOF_AUDIO_MESSAGES,
-} from '@/lib/hardware/wolof-audio';
+import { playWolofAudio, repeatLastWolofAudio, stopWolofAudio, isWolofMuted, toggleWolofMuted } from '@/lib/hardware/wolof-audio';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -48,38 +47,22 @@ interface Assignment {
     events: EventInfo; stats: EventStats;
 }
 
-type ScanResult =
-    | 'valid'
-    | 'already_used'
-    | 'invalid'
-    | 'unauthorized'
-    | 'wrong_event'
-    | 'payment_required'
-    | 'cash_required'
-    | 'qr_expired'
-    | 'network_error'
-    | null;
-
-interface ScanFeedback {
-    result: ScanResult;
-    message: string;
-    ticket_info?: {
-        ticket_number?: string;
-        event_title?: string;
-        category?: string;
-        checked_in_at?: string;
-        amount_due?: number;
-        ticket_id?: string;
-        order_id?: string;
-        holder_name?: string;
-        is_manual_entry?: boolean;
-    };
-    stats?: EventStats;
-}
-
 type InputMode = 'camera' | 'manual';
 
+interface HistoryEntry { key: string; at: string; outcome: ScanOutcome }
+
 const FEEDBACK_DISPLAY_MS = 3500;
+const STATS_REFRESH_DEBOUNCE_MS = 800;
+const SCANNER_PATH = '/controller/scanner';
+
+function eventStatusLabel(status?: string): string | null {
+    switch (status) {
+        case 'TERMINE': return 'Terminé';
+        case 'SUSPENDU': return 'Suspendu';
+        case 'ANNULE': return 'Annulé';
+        default: return null;
+    }
+}
 
 // ── Composant Principal ──────────────────────────────────────────
 
@@ -97,16 +80,17 @@ export default function ControllerScannerPage() {
 
     // Scanner
     const [inputMode, setInputMode]           = useState<InputMode>('camera');
-    const [manualCode, setManualCode]         = useState('');
     const [isVerifying, setIsVerifying]       = useState(false);
-    const [feedback, setFeedback]             = useState<ScanFeedback | null>(null);
+    const [feedback, setFeedback]             = useState<ScanOutcome | null>(null);
+    const [cashError, setCashError]           = useState<ScanOutcome | null>(null);
     const [cashConfirming, setCashConfirming] = useState(false);
     const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Mute Audio Wolof
     const [isMuted, setIsMuted] = useState(false);
 
-    // Flash plein écran de combat (Haute visibilité foule / nuit)
+    // Flash plein écran (haute visibilité foule / nuit)
     const [combatFlash, setCombatFlash] = useState<{
         status: CombatFeedbackType;
         message?: string;
@@ -116,574 +100,303 @@ export default function ControllerScannerPage() {
         durationMs?: number;
     } | null>(null);
 
-    // Historique des scans de la session
-    const [scanHistory, setScanHistory] = useState<(ScanFeedback & { _key: string })[]>([]);
+    const [scanHistory, setScanHistory] = useState<HistoryEntry[]>([]);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-    // ── Sessions de caisse (Z de Caisse - Pre-mortem §2.1 & §4.2) ──
+    // Sessions de caisse
     const [activeShift, setActiveShift]               = useState<Shift | null>(null);
     const [showOpenShiftModal, setShowOpenShiftModal]   = useState(false);
     const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
     const [showZSummaryModal, setShowZSummaryModal]     = useState(false);
     const [zSummary, setZSummary]                       = useState<ShiftSummary | null>(null);
 
-    // Initialisation état mute
+    /** Encaissement espèces en attente de décision : caméra et saisie en pause. */
+    const cashPending = feedback?.result === 'cash_required';
+
     useEffect(() => {
         setIsMuted(isWolofMuted());
     }, []);
 
     const handleToggleMute = useCallback(() => {
-        const nextMuted = toggleWolofMuted();
-        setIsMuted(nextMuted);
+        setIsMuted(toggleWolofMuted());
     }, []);
 
     const handleRepeatWolof = useCallback(async () => {
-        await repeatLastWolofAudio('wolof', feedback?.result || combatFlash?.status);
-    }, [feedback?.result, combatFlash?.status]);
+        const wolof = feedback ? wolofTypeFor(feedback) : null;
+        await repeatLastWolofAudio('wolof', wolof ?? undefined);
+    }, [feedback]);
+
+    /** Session expirée (HTTP 401) : retour à la connexion, jamais un « billet invalide ». */
+    const redirectIfSessionExpired = useCallback((outcome: ScanOutcome): boolean => {
+        if (outcome.httpStatus !== 401) return false;
+        router.replace(`/login?redirect=${encodeURIComponent(SCANNER_PATH)}`);
+        return true;
+    }, [router]);
 
     const fetchActiveShift = useCallback(async (eventId: string) => {
         try {
-            const res = await fetch(`/api/controller/shifts/active?event_id=${eventId}`, {
-                cache: 'no-store',
-            });
+            const res = await fetch(`/api/controller/shifts/active?event_id=${eventId}`, { cache: 'no-store' });
             const data = await res.json();
-            if (data.success) {
-                setActiveShift(data.shift || null);
-            }
-        } catch {
-            // Silencieux
+            if (res.ok && data.success) setActiveShift(data.shift || null);
+            else console.warn('[scanner] caisse active illisible :', res.status, data?.error);
+        } catch (err) {
+            console.warn('[scanner] caisse active : réseau indisponible', err instanceof Error ? err.message : String(err));
         }
     }, []);
 
-    // ── Fetch assignations & état contrôleur ──
+    // ── Assignations, état du contrôleur et statistiques (serveur) ──
     const fetchAssignments = useCallback(async () => {
         try {
             const res = await fetch('/api/controller/assignments', {
                 cache: 'no-store',
                 headers: { 'Cache-Control': 'no-cache' },
             });
+            if (res.status === 401) {
+                router.replace(`/login?redirect=${encodeURIComponent(SCANNER_PATH)}`);
+                return;
+            }
             const data = await res.json();
             if (data.success) {
                 const list: Assignment[] = data.assignments ?? [];
                 setAssignments(list);
-                if (data.controller?.id) {
-                    setControllerId(data.controller.id);
-                }
+                if (data.controller?.id) setControllerId(data.controller.id);
                 if (data.controller) {
                     const name = [data.controller.first_name, data.controller.last_name].filter(Boolean).join(' ');
                     setControllerName(name || 'Contrôleur');
                 }
-
-                // Réajustement immédiat de l'événement sélectionné
                 setSelected(current => {
                     if (list.length === 0) return null;
-                    if (!current) {
-                        const active = list.find(a => a.events?.status !== 'TERMINE');
-                        return active || list[0];
-                    }
-                    const stillAssigned = list.find(a => a.events?.id === current.events?.id);
-                    if (stillAssigned) {
-                        return stillAssigned;
-                    }
-                    const fallback = list.find(a => a.events?.status !== 'TERMINE');
-                    return fallback || list[0];
+                    if (!current) return list.find(a => a.events?.status !== 'TERMINE') || list[0];
+                    return list.find(a => a.events?.id === current.events?.id)
+                        || list.find(a => a.events?.status !== 'TERMINE')
+                        || list[0];
                 });
+                setError('');
             } else {
                 setError(data.error || 'Impossible de charger les événements.');
             }
-        } catch {
+        } catch (err) {
+            console.warn('[scanner] assignations : réseau indisponible', err instanceof Error ? err.message : String(err));
             setError('Erreur réseau.');
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [router]);
 
-    // Chargement initial
+    /** Rafraîchit les compteurs depuis le serveur (regroupe les rafales de scans et d'événements Realtime). */
+    const scheduleStatsRefresh = useCallback(() => {
+        if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
+        statsTimerRef.current = setTimeout(() => { void fetchAssignments(); }, STATS_REFRESH_DEBOUNCE_MS);
+    }, [fetchAssignments]);
+
     useEffect(() => {
-        fetchAssignments();
+        void fetchAssignments();
         const supabase = getBrowserClient();
-        supabase.auth.getUser().then((res: any) => {
+        supabase.auth.getUser().then((res: { data?: { user?: { id?: string } | null } }) => {
             if (res.data?.user?.id) setControllerId(res.data.user.id);
         });
     }, [fetchAssignments]);
 
-    // ── Synchronisation du shift actif de caisse ──
     useEffect(() => {
-        if (selected?.events?.id && selected?.can_accept_cash) {
-            fetchActiveShift(selected.events.id);
-        } else {
-            setActiveShift(null);
-        }
+        if (selected?.events?.id && selected?.can_accept_cash) void fetchActiveShift(selected.events.id);
+        else setActiveShift(null);
     }, [selected?.events?.id, selected?.can_accept_cash, fetchActiveShift]);
 
-    // ── Supabase Realtime : Affectations contrôleur ──
+    // ── Realtime : affectations du contrôleur ──
     useEffect(() => {
         if (!controllerId) return;
         const supabase = getBrowserClient();
         const channel = supabase
             .channel(`scanner-assignments-${controllerId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'event_controllers',
-                    filter: `user_id=eq.${controllerId}`,
-                },
-                () => {
-                    fetchAssignments();
-                }
-            )
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'event_controllers', filter: `user_id=eq.${controllerId}` },
+                () => { void fetchAssignments(); })
             .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [controllerId, fetchAssignments]);
 
-    // ── Supabase Realtime : Statut des événements (TERMINE, etc.) ──
+    // ── Realtime : statut des événements ──
     useEffect(() => {
         const supabase = getBrowserClient();
         const channel = supabase
             .channel('scanner-events-live')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'events',
-                },
-                (payload: any) => {
-                    const updated = payload.new as any;
-                    if (!updated?.id) return;
-                    setAssignments(prev => prev.map(a => {
-                        if (a.events?.id === updated.id) {
-                            return {
-                                ...a,
-                                events: {
-                                    ...a.events,
-                                    status: updated.status,
-                                    title: updated.title ?? a.events.title,
-                                    date: updated.start_date ?? a.events.date,
-                                }
-                            };
-                        }
-                        return a;
-                    }));
-                    setSelected(prev => {
-                        if (!prev || prev.events?.id !== updated.id) return prev;
-                        return {
-                            ...prev,
-                            events: {
-                                ...prev.events,
-                                status: updated.status,
-                                title: updated.title ?? prev.events.title,
-                                date: updated.start_date ?? prev.events.date,
-                            }
-                        };
-                    });
-                }
-            )
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'events' }, (payload: { new: Record<string, unknown> }) => {
+                const updated = payload.new as { id?: string; status?: string; title?: string; start_date?: string };
+                if (!updated?.id) return;
+                const patch = (a: Assignment): Assignment => a.events?.id === updated.id
+                    ? { ...a, events: { ...a.events, status: updated.status ?? a.events.status, title: updated.title ?? a.events.title, date: updated.start_date ?? a.events.date } }
+                    : a;
+                setAssignments(prev => prev.map(patch));
+                setSelected(prev => (prev ? patch(prev) : prev));
+            })
             .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, []);
 
-    // ── Supabase Realtime : Statut du compte contrôleur (Désactivation / Révocation) ──
+    // ── Realtime : désactivation du compte (le rôle est suivi par le middleware et les affectations) ──
     useEffect(() => {
         if (!controllerId) return;
         const supabase = getBrowserClient();
         const channel = supabase
             .channel(`scanner-user-live-${controllerId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'users',
-                    filter: `id=eq.${controllerId}`,
-                },
-                async (payload: any) => {
-                    const u = payload.new as any;
-                    if (u && (u.status === 'SUSPENDU' || u.status === 'INACTIF' || u.role !== 'CONTROLEUR')) {
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${controllerId}` },
+                async (payload: { new: Record<string, unknown> }) => {
+                    const status = (payload.new as { status?: string })?.status;
+                    if (status === 'SUSPENDU' || status === 'INACTIF' || status === 'SUPPRIME') {
                         await supabase.auth.signOut({ scope: 'global' });
                         router.push('/login?error=account_deactivated');
                     }
-                }
-            )
+                })
             .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [controllerId, router]);
 
-    // ── Supabase Realtime : Comptage dynamique des billets de l'événement en direct ──
+    // ── Realtime : billets compostés de l'événement (toutes portes) → compteurs serveur ──
     useEffect(() => {
         if (!selected?.events?.id) return;
         const eventId = selected.events.id;
         const supabase = getBrowserClient();
-
         const channel = supabase
             .channel(`scanner-tickets-live-${eventId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'tickets',
-                    filter: `event_id=eq.${eventId}`,
-                },
-                (payload: any) => {
-                    const newT = payload.new as any;
-                    if (newT?.status === 'UTILISE') {
-                        setSelected(prev => {
-                            if (!prev || prev.events?.id !== eventId) return prev;
-                            return {
-                                ...prev,
-                                stats: {
-                                    ...prev.stats,
-                                    scanned_today: (prev.stats?.scanned_today ?? 0) + 1,
-                                    total_tickets: prev.stats?.total_tickets ?? 0,
-                                }
-                            };
-                        });
-                        setAssignments(prev => prev.map(a => {
-                            if (a.events?.id === eventId) {
-                                return {
-                                    ...a,
-                                    stats: {
-                                        ...a.stats,
-                                        scanned_today: (a.stats?.scanned_today ?? 0) + 1,
-                                        total_tickets: a.stats?.total_tickets ?? 0,
-                                    }
-                                };
-                            }
-                            return a;
-                        }));
-                    }
-                }
-            )
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tickets', filter: `event_id=eq.${eventId}` },
+                (payload: { new: Record<string, unknown> }) => {
+                    if ((payload.new as { status?: string })?.status === 'UTILISE') scheduleStatsRefresh();
+                })
             .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [selected?.events?.id, scheduleStatsRefresh]);
 
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [selected?.events?.id]);
-
-    // ── Nettoyage timer et audio ──
     useEffect(() => () => {
         if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+        if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
         stopWolofAudio();
     }, []);
 
-    // ── Orchestrateur Centralisé Anti-Conflit des Feedbacks (Phase 5) ──
-    const orchestrateScanFeedback = useCallback((params: {
-        scanResult: ScanResult;
-        message: string;
-        ticketInfo?: ScanFeedback['ticket_info'];
-        stats?: EventStats;
-        isNetworkError?: boolean;
-        eventId?: string;
-    }) => {
-        const { scanResult, message, ticketInfo, stats, isNetworkError, eventId } = params;
+    // ── Retour du scan : flash, voix, carte, historique, compteur de refus ──
+    const presentOutcome = useCallback((outcome: ScanOutcome, eventId: string | undefined) => {
+        const technical = isTechnicalOutcome(outcome);
+        const combatType = combatTypeFor(outcome);
 
-        // 1. Détermination du type de combat visuel & haptique
-        let combatType: CombatFeedbackType = 'reject';
-        let wolofType: string | null = null;
-
-        if (isNetworkError) {
-            combatType = 'network_error';
-            wolofType = null; // Pas d'accusation du spectateur sur coupure réseau
-        } else if (scanResult === 'valid') {
-            combatType = 'valid';
-            wolofType = null; // Pas de voix obligatoire sur succès (rapidité file)
-        } else if (scanResult === 'already_used') {
-            combatType = 'already_used';
-            wolofType = 'ALREADY_USED';
-        } else if (scanResult === 'unauthorized' || scanResult === 'wrong_event') {
-            combatType = 'wrong_event';
-            wolofType = 'WRONG_EVENT';
-        } else if (scanResult === 'invalid') {
-            combatType = 'invalid';
-            wolofType = 'INVALID';
-        } else if (scanResult === 'qr_expired') {
-            combatType = 'qr_expired';
-            wolofType = null;
-        } else if (scanResult === 'cash_required' || scanResult === 'payment_required') {
-            combatType = 'cash_required';
-            wolofType = null;
-        } else {
-            combatType = 'reject';
-            wolofType = 'INVALID';
+        // Incident technique : aucun signal de rejet (ni son, ni vibration, ni voix)
+        if (!technical) triggerCombatSensoryFeedback(combatType);
+        const wolof = wolofTypeFor(outcome);
+        if (wolof) {
+            playWolofAudio(wolof).catch((err: unknown) => console.warn('[scanner] voix wolof indisponible', err instanceof Error ? err.message : String(err)));
         }
 
-        // 2. Déclenchement matériel multi-sensoriel (1 seule vibration + 1 seul son synthétisé)
-        triggerCombatSensoryFeedback(combatType);
-
-        // 3. Déclenchement vocalisation Wolof (non-bloquant)
-        if (wolofType) {
-            playWolofAudio(wolofType).catch(() => {});
-        }
-
-        // 4. Déclenchement Flash Plein Écran de combat
         setCombatFlash({
             status: combatType,
-            message,
-            holderName: ticketInfo?.holder_name,
-            category: ticketInfo?.category,
-            ticketNumber: ticketInfo?.ticket_number,
+            message: technical ? `${titleFor(outcome)} — ${outcome.message}` : outcome.message,
+            holderName: outcome.ticket?.holder,
+            category: outcome.ticket?.category,
+            ticketNumber: outcome.ticket?.ticket_number,
             durationMs: combatType === 'valid' ? 1000 : 3500,
         });
 
-        // 5. Mise à jour de la carte de feedback & de l'historique
-        const fb: ScanFeedback = {
-            result: scanResult,
-            message,
-            ticket_info: ticketInfo,
-            stats,
-        };
-        setFeedback(fb);
-        setScanHistory(prev => [{ ...fb, _key: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }, ...prev].slice(0, 15));
+        setFeedback(outcome);
+        setScanHistory(prev => [{ key: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString(), outcome }, ...prev].slice(0, 15));
 
-        // 6. Incrémentation compteur refus (uniquement pour les vrais rejets de billets, JAMAIS sur coupure réseau)
-        if (!isNetworkError && scanResult && scanResult !== 'valid' && scanResult !== 'cash_required' && eventId) {
-            setRefusedCountMap(prev => ({
-                ...prev,
-                [eventId]: (prev[eventId] ?? 0) + 1,
-            }));
+        // Compteur « billets refusés » : refus du billet seulement (jamais un incident technique)
+        if (eventId && isTicketRefusal(outcome)) {
+            setRefusedCountMap(prev => ({ ...prev, [eventId]: (prev[eventId] ?? 0) + 1 }));
         }
 
-        // 7. Auto-clear timer (sauf pour cash_required)
-        if (scanResult !== 'cash_required') {
-            if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+        if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+        // Un encaissement en attente et un incident technique restent affichés jusqu'à l'action suivante
+        if (outcome.result !== 'cash_required' && !technical) {
             feedbackTimerRef.current = setTimeout(() => setFeedback(null), FEEDBACK_DISPLAY_MS);
         }
     }, []);
 
-    // ── Scan handler ──
-    const handleScan = useCallback(async (code: string) => {
-        if (isVerifying || !code.trim()) return;
+    // ── Scan (caméra ou saisie manuelle) ──
+    const runScan = useCallback(async (request: ScanRequest) => {
+        if (cashPending) return;
+        if (isVerifying) return;
         setIsVerifying(true);
-        setFeedback(null);
-
-        const currentEventId = selected?.events?.id;
-
+        setCashError(null);
         try {
-            const res = await fetch('/api/controller/scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ qr_code: code.trim() }),
-            });
-            const data = await res.json();
-
-            // Différenciation Unauthorized vs Wrong Event
-            let finalResult: ScanResult = data.scan_result || 'invalid';
-            if (data.scan_result === 'unauthorized' || data.scan_result === 'event_ended' || data.scan_result === 'event_suspended' || data.scan_result === 'event_not_ready') {
-                finalResult = 'wrong_event';
-            }
-
-            const message = data.message || data.error || 'Erreur inconnue.';
-
-            // Mise à jour stats en temps réel
-            if (data.stats && selected) {
-                setSelected(prev => prev ? { ...prev, stats: data.stats } : prev);
-                setAssignments(prev => prev.map(a => a.events?.id === selected.events?.id ? { ...a, stats: data.stats } : a));
-            }
-
-            orchestrateScanFeedback({
-                scanResult: finalResult,
-                message,
-                ticketInfo: data.ticket_info,
-                stats: data.stats,
-                isNetworkError: false,
-                eventId: currentEventId,
-            });
-
-        } catch {
-            // Gestion erreur réseau stricte (Phase 0-E & Phase 1)
-            orchestrateScanFeedback({
-                scanResult: 'network_error',
-                message: 'Vérification impossible : Problème de connexion réseau ou serveur.',
-                isNetworkError: true,
-                eventId: currentEventId,
-            });
+            const outcome = await postScan(request);
+            if (redirectIfSessionExpired(outcome)) return;
+            presentOutcome(outcome, request.eventId);
+            if (outcome.result === 'valid') scheduleStatsRefresh();
         } finally {
             setIsVerifying(false);
-            setManualCode('');
         }
-    }, [isVerifying, selected, orchestrateScanFeedback]);
+    }, [cashPending, isVerifying, redirectIfSessionExpired, presentOutcome, scheduleStatsRefresh]);
 
-    // ── Cash confirm ──
+    const handleCameraScan = useCallback((code: string) => {
+        const eventId = selected?.events?.id;
+        const payload = code.trim();
+        if (!eventId || !payload) return;
+        void runScan({ eventId, payload });
+    }, [selected?.events?.id, runScan]);
+
+    const handleManualScan = useCallback(async (manualTicketNumber: string, identityVerified: boolean) => {
+        const eventId = selected?.events?.id;
+        if (!eventId) return;
+        await runScan({ eventId, manualTicketNumber, identityVerified });
+    }, [selected?.events?.id, runScan]);
+
+    // ── Encaissement espèces (PUT, tout ou rien côté serveur) ──
     const handleConfirmCash = async () => {
-        if (!feedback?.ticket_info?.ticket_id) return;
-
-        // Vérification de sécurité : session de caisse obligatoire si can_accept_cash
+        const eventId = selected?.events?.id;
+        if (!feedback?.scanId || !eventId) return;
         if (selected?.can_accept_cash && !activeShift) {
+            // La carte d'encaissement reste affichée : l'encaissement reprend une fois la caisse ouverte
             setShowOpenShiftModal(true);
-            orchestrateScanFeedback({
-                scanResult: 'invalid',
-                message: "Session de caisse fermée. Vous devez ouvrir votre caisse avec le régisseur avant d'encaisser des espèces.",
-                isNetworkError: false,
-                eventId: selected?.events?.id,
-            });
             return;
         }
-
         setCashConfirming(true);
-        const currentEventId = selected?.events?.id;
-
         try {
-            const res = await fetch('/api/controller/scan', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ticket_id: feedback.ticket_info.ticket_id,
-                    order_id: feedback.ticket_info.order_id,
-                }),
-            });
-            const data = await res.json();
-            const resultStatus: ScanResult = data.scan_result || (data.error ? 'invalid' : 'valid');
-            const message = data.message || data.error || 'Erreur lors de l\'encaissement.';
-
-            // Incrémentation immédiate du solde attendu de caisse
-            if (resultStatus === 'valid' && activeShift && feedback.ticket_info.amount_due) {
-                const amount = Number(feedback.ticket_info.amount_due) || 0;
-                setActiveShift(prev => prev ? {
-                    ...prev,
-                    expected_cash_total: Number((Number(prev.expected_cash_total) + amount).toFixed(2)),
-                } : prev);
+            const outcome = await confirmCashCheckin(feedback.scanId, eventId);
+            if (redirectIfSessionExpired(outcome)) return;
+            if (outcome.result === 'valid' && !outcome.failure) {
+                setCashError(null);
+                presentOutcome({ ...outcome, ticket: feedback.ticket, message: outcome.amount !== undefined ? `Encaissé : ${formatFcfa(outcome.amount)}. Entrée validée.` : outcome.message }, eventId);
+                if (selected?.can_accept_cash) void fetchActiveShift(eventId);
+                scheduleStatsRefresh();
+            } else {
+                // Refus du serveur : rien n'est encaissé ni composté ; l'écran reste jusqu'à une action explicite
+                setCashError(outcome);
             }
-
-            if (data.stats && selected) {
-                setSelected(prev => prev ? { ...prev, stats: data.stats } : prev);
-                setAssignments(prev => prev.map(a => a.events?.id === selected.events?.id ? { ...a, stats: data.stats } : a));
-            } else if (selected && resultStatus === 'valid') {
-                setSelected(prev => prev ? {
-                    ...prev,
-                    stats: {
-                        scanned_today: (prev.stats?.scanned_today ?? 0) + 1,
-                        total_tickets: prev.stats?.total_tickets ?? 0,
-                    },
-                } : prev);
-                setAssignments(prev => prev.map(a => a.events?.id === selected.events?.id ? {
-                    ...a,
-                    stats: {
-                        scanned_today: (a.stats?.scanned_today ?? 0) + 1,
-                        total_tickets: a.stats?.total_tickets ?? 0,
-                    }
-                } : a));
-            }
-
-            orchestrateScanFeedback({
-                scanResult: resultStatus,
-                message,
-                ticketInfo: feedback.ticket_info,
-                stats: data.stats,
-                isNetworkError: false,
-                eventId: currentEventId,
-            });
-
-        } catch {
-            orchestrateScanFeedback({
-                scanResult: 'network_error',
-                message: 'Erreur réseau lors de la validation du paiement.',
-                isNetworkError: true,
-                eventId: currentEventId,
-            });
         } finally {
             setCashConfirming(false);
         }
     };
 
-    // ── Logout (global — invalide toutes les sessions) ──
+    /** Abandon de l'encaissement : le spectateur n'entre pas, le scan reprend. */
+    const handleAbandonCash = () => {
+        setCashError(null);
+        setFeedback(null);
+    };
+
     const handleLogout = async () => {
         const supabase = getBrowserClient();
         await supabase.auth.signOut({ scope: 'global' });
         router.push('/login');
     };
 
-    // ── Feedback Color Helper ──
-    const feedbackStyles = (result: ScanResult) => {
-        switch (result) {
-            case 'valid':
-                return {
-                    bg: 'bg-emerald-50 dark:bg-emerald-950/40',
-                    border: 'border-emerald-400 dark:border-emerald-700',
-                    text: 'text-emerald-700 dark:text-emerald-300',
-                    icon: <CheckCircle2 size={24} className="text-emerald-500" />
-                };
-            case 'qr_expired':
-                return {
-                    bg: 'bg-amber-50 dark:bg-amber-950/40',
-                    border: 'border-amber-400 dark:border-amber-700',
-                    text: 'text-amber-700 dark:text-amber-300',
-                    icon: <Clock size={24} className="text-amber-500" />
-                };
-            case 'already_used':
-                return {
-                    bg: 'bg-red-50 dark:bg-red-950/40',
-                    border: 'border-red-400 dark:border-red-700',
-                    text: 'text-red-700 dark:text-red-300',
-                    icon: <AlertTriangle size={24} className="text-red-500" />
-                };
-            case 'wrong_event':
-            case 'unauthorized':
-                return {
-                    bg: 'bg-amber-50 dark:bg-amber-950/40',
-                    border: 'border-amber-400 dark:border-amber-700',
-                    text: 'text-amber-700 dark:text-amber-300',
-                    icon: <AlertTriangle size={24} className="text-amber-500" />
-                };
-            case 'cash_required':
-                return {
-                    bg: 'bg-blue-50 dark:bg-blue-950/40',
-                    border: 'border-blue-400 dark:border-blue-700',
-                    text: 'text-blue-700 dark:text-blue-300',
-                    icon: <Banknote size={24} className="text-blue-500" />
-                };
-            case 'payment_required':
-                return {
-                    bg: 'bg-orange-50 dark:bg-orange-950/40',
-                    border: 'border-orange-400 dark:border-orange-700',
-                    text: 'text-orange-700 dark:text-orange-300',
-                    icon: <Banknote size={24} className="text-orange-500" />
-                };
-            case 'network_error':
-                return {
-                    bg: 'bg-slate-100 dark:bg-zinc-800/80',
-                    border: 'border-slate-300 dark:border-zinc-600',
-                    text: 'text-slate-800 dark:text-zinc-200',
-                    icon: <WifiOff size={24} className="text-slate-500" />
-                };
-            default:
-                return {
-                    bg: 'bg-red-50 dark:bg-red-950/40',
-                    border: 'border-red-400 dark:border-red-700',
-                    text: 'text-red-700 dark:text-red-300',
-                    icon: <XCircle size={24} className="text-red-500" />
-                };
-        }
+    const selectEvent = (a: Assignment) => {
+        setSelected(a);
+        setFeedback(null);
+        setCashError(null);
     };
 
-    // ── Rendu : Loading / Error / Empty ──
+    // ── Rendu : chargement / erreur / aucune affectation ──
 
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center py-20 gap-3">
-                <Loader2 size={32} className="animate-spin text-[#FF5722]" />
-                <p className="text-sm text-slate-500 dark:text-zinc-400">Chargement…</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-3" role="status">
+                <Loader2 size={32} aria-hidden="true" className="animate-spin text-[#FF5722]" />
+                <p className="text-sm text-slate-600 dark:text-zinc-300">Chargement…</p>
             </div>
         );
     }
 
     if (error) {
         return (
-            <div className="text-center py-16 space-y-3">
-                <p className="text-sm text-red-500">{error}</p>
-                <Button variant="outline" onClick={() => router.refresh()}>Réessayer</Button>
+            <div className="text-center py-16 space-y-3" role="alert">
+                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+                <Button variant="outline" onClick={() => { setLoading(true); void fetchAssignments(); }}>Réessayer</Button>
             </div>
         );
     }
@@ -692,25 +405,25 @@ export default function ControllerScannerPage() {
         return (
             <>
                 <div className="text-center py-16 space-y-4">
-                    <Calendar size={48} className="text-slate-300 dark:text-zinc-600 mx-auto" />
-                    <h2 className="text-sm font-bold text-slate-600 dark:text-zinc-400">Aucun événement assigné</h2>
-                    <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-sm mx-auto">
+                    <Calendar size={48} aria-hidden="true" className="text-slate-300 dark:text-zinc-600 mx-auto" />
+                    <h2 className="text-base font-bold text-slate-700 dark:text-zinc-200">Aucun événement assigné</h2>
+                    <p className="text-sm text-slate-600 dark:text-zinc-300 max-w-sm mx-auto">
                         Vous serez informé lorsqu&apos;un nouvel événement vous sera assigné.
                     </p>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
                         <Link
                             href="/"
-                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-bold text-slate-700 dark:text-zinc-200 transition-colors min-h-[44px]"
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-sm font-bold text-slate-700 dark:text-zinc-200 transition-colors min-h-[44px]"
                         >
-                            <ArrowLeft size={14} />
+                            <ArrowLeft size={14} aria-hidden="true" />
                             <span>Retour à l&apos;accueil</span>
                         </Link>
                         <button
                             type="button"
                             onClick={() => setShowLogoutConfirm(true)}
-                            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-red-500 transition-colors min-h-[44px]"
+                            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-zinc-300 hover:text-red-600 transition-colors min-h-[44px]"
                         >
-                            <LogOut size={14} /> Se déconnecter
+                            <LogOut size={14} aria-hidden="true" /> Se déconnecter
                         </button>
                     </div>
                 </div>
@@ -727,14 +440,12 @@ export default function ControllerScannerPage() {
         );
     }
 
-    // ── Calcul métriques Phase 4 ──
     const currentRefused = selected?.events?.id ? (refusedCountMap[selected.events.id] ?? 0) : 0;
-
-    // ── Rendu Principal ──
+    const eventStatus = selected?.events?.status;
+    const scanDisabled = cashPending || isVerifying;
 
     return (
         <div className="space-y-4">
-            {/* ── Overlay Flash Plein Écran de Combat (Haute Visibilité Foule & Nuit) ── */}
             <CombatFlashOverlay
                 status={combatFlash?.status ?? null}
                 message={combatFlash?.message}
@@ -746,168 +457,116 @@ export default function ControllerScannerPage() {
                 onRepeatWolof={handleRepeatWolof}
             />
 
-            {/* Barre de navigation / Retour & Contrôles Audio */}
-            <div className="flex items-center justify-between gap-2 bg-white dark:bg-zinc-900 px-3 py-2 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-2xs">
+            {/* Barre de navigation et voix wolof */}
+            <div className="flex items-center justify-between gap-2 bg-white dark:bg-zinc-900 px-3 py-2 rounded-2xl border border-slate-200 dark:border-zinc-800">
                 <Link
                     href="/"
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-colors py-1.5 px-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 min-h-[44px]"
+                    className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-colors py-1.5 px-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 min-h-[44px]"
                     title="Basculer vers l'espace client (billetterie, réservations, commandes)"
                 >
-                    <ArrowLeft size={15} className="text-[#FF5722] shrink-0" />
+                    <ArrowLeft size={15} aria-hidden="true" className="text-[#FF5722] shrink-0" />
                     <span className="hidden sm:inline">Mon espace Client</span>
                     <span className="sm:hidden">Client</span>
                 </Link>
 
                 <div className="flex items-center gap-2">
-                    {/* Commutateur Mute Voix Wolof (Phase 3) */}
                     <button
                         type="button"
                         onClick={handleToggleMute}
                         data-testid="toggle-wolof-mute-btn"
-                        className={`min-h-[44px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all border ${
+                        aria-pressed={!isMuted}
+                        className={`min-h-[44px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-sm font-bold transition-colors border ${
                             isMuted
-                                ? 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 border-slate-200 dark:border-zinc-700'
-                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-2xs'
+                                ? 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border-slate-300 dark:border-zinc-600'
+                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-400 dark:border-emerald-700'
                         }`}
-                        aria-label={isMuted ? "Voix Wolof désactivée. Cliquer pour activer." : "Voix Wolof activée. Cliquer pour désactiver."}
-                        title={isMuted ? "Voix Wolof désactivée" : "Voix Wolof activée"}
+                        aria-label={isMuted ? 'Voix wolof désactivée. Activer.' : 'Voix wolof activée. Désactiver.'}
                     >
-                        {isMuted ? <VolumeX size={16} className="text-slate-400 shrink-0" /> : <Volume2 size={16} className="text-emerald-500 shrink-0" />}
-                        <span className="hidden sm:inline">Voix Wolof :</span>
+                        {isMuted ? <VolumeX size={16} aria-hidden="true" className="shrink-0" /> : <Volume2 size={16} aria-hidden="true" className="shrink-0" />}
+                        <span className="hidden sm:inline">Voix wolof :</span>
                         <span className="uppercase font-black">{isMuted ? 'OFF' : 'ON'}</span>
                     </button>
-
                     {controllerName && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#FF5722]/10 text-[#FF5722] border border-[#FF5722]/20">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#FF5722]/10 text-[#C2410C] dark:text-[#FF8A65] border border-[#FF5722]/30">
                             Contrôleur
                         </span>
                     )}
                 </div>
             </div>
 
-            {/* ── Phase 5 : Sélecteur d'événement responsive (Mobile dropdown / Desktop pills) ── */}
+            {/* Sélecteur d'événement */}
             {assignments.length > 1 && (
                 <div className="space-y-1.5">
-                    <label htmlFor="scanner-event-select" className="text-xs font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider block">
-                        Mes événements ({assignments.length}) :
+                    <label htmlFor="scanner-event-select" className="text-xs font-black text-slate-600 dark:text-zinc-300 uppercase tracking-wider block">
+                        Mes événements ({assignments.length})
                     </label>
-
-                    {/* Sélecteur mobile (< 640px) */}
-                    <div className="relative sm:hidden">
+                    <div className="relative">
                         <select
                             id="scanner-event-select"
                             value={selected?.id ?? ''}
                             onChange={(e) => {
                                 const found = assignments.find(a => a.id === e.target.value);
-                                if (found) { setSelected(found); setFeedback(null); }
+                                if (found) selectEvent(found);
                             }}
-                            className="w-full min-h-[44px] pl-3 pr-9 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold text-slate-900 dark:text-white appearance-none focus:outline-none focus:border-[#FF5722] truncate shadow-sm"
+                            disabled={cashPending}
+                            className="w-full min-h-[48px] pl-3 pr-9 py-2.5 rounded-xl border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-sm font-bold text-slate-900 dark:text-white appearance-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] disabled:opacity-60"
                         >
-                            {assignments.map(a => (
-                                <option key={a.id} value={a.id}>
-                                    {a.events?.title || 'Sans titre'} {a.events?.status === 'TERMINE' ? ' [Terminé]' : a.events?.status === 'SUSPENDU' ? ' [Suspendu]' : ''}
-                                </option>
-                            ))}
+                            {assignments.map(a => {
+                                const label = eventStatusLabel(a.events?.status);
+                                return (
+                                    <option key={a.id} value={a.id}>
+                                        {a.events?.title || 'Sans titre'}{label ? ` [${label}]` : ''}
+                                    </option>
+                                );
+                            })}
                         </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    </div>
-
-                    {/* Sélecteur Desktop / Tablet (>= 640px) */}
-                    <div className="hidden sm:flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                        {assignments.map(a => {
-                            const evDate = a.events?.date ? new Date(a.events.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '';
-                            const isCurrent = selected?.id === a.id;
-                            return (
-                                <button
-                                    key={a.id}
-                                    type="button"
-                                    onClick={() => { setSelected(a); setFeedback(null); }}
-                                    className={`shrink-0 min-h-[44px] px-3.5 py-2 rounded-xl border text-left transition-all ${
-                                        isCurrent
-                                            ? 'border-[#FF5722] bg-[#FF5722]/5 font-bold shadow-sm'
-                                            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700'
-                                    }`}
-                                >
-                                    <div className="flex items-center gap-1.5">
-                                        <p className="text-xs text-slate-900 dark:text-white truncate max-w-[180px]">
-                                            {a.events?.title ?? 'Sans titre'}
-                                        </p>
-                                        {a.events?.status === 'TERMINE' && (
-                                             <span className="text-[8px] font-bold text-amber-600 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded">
-                                                Terminé
-                                            </span>
-                                        )}
-                                        {a.events?.status === 'SUSPENDU' && (
-                                            <span className="text-[8px] font-bold text-red-600 bg-red-500/10 border border-red-500/20 px-1 py-0.5 rounded">
-                                                Suspendu
-                                            </span>
-                                        )}
-                                    </div>
-                                    {evDate && <p className="text-[9px] text-slate-400 dark:text-zinc-500 mt-0.5">{evDate}</p>}
-                                </button>
-                            );
-                        })}
+                        <ChevronDown size={16} aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                     </div>
                 </div>
             )}
 
             {selected && (
                 <>
-                    {/* En-tête événement compact */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm">
+                    {/* En-tête de l'événement */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                                <h2 className="text-xs font-black text-slate-900 dark:text-white truncate">{selected.events?.title}</h2>
-                                {selected.events?.status === 'TERMINE' && (
-                                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20 uppercase tracking-wider shrink-0">
-                                        Terminé
+                                <h2 className="text-sm font-black text-slate-900 dark:text-white truncate">{selected.events?.title}</h2>
+                                {eventStatusLabel(eventStatus) && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/30 uppercase tracking-wider shrink-0">
+                                        {eventStatusLabel(eventStatus)}
                                     </span>
                                 )}
                             </div>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-zinc-500 mt-0.5">
-                                {selected.events?.location && <span className="flex items-center gap-0.5"><MapPin size={9} /> {selected.events.location}</span>}
-                                {selected.can_accept_cash && <span className="flex items-center gap-0.5 text-emerald-500 font-bold"><Banknote size={9} /> Cash OK</span>}
+                            <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-zinc-300 mt-0.5">
+                                {selected.events?.location && <span className="flex items-center gap-1"><MapPin size={12} aria-hidden="true" /> {selected.events.location}</span>}
+                                {selected.can_accept_cash && <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-300 font-bold"><Banknote size={12} aria-hidden="true" /> Encaissement autorisé</span>}
                             </div>
                         </div>
                     </div>
 
-                    {/* ── Hiérarchie Visuelle des Statistiques Scanner ── */}
-                    <div className="grid grid-cols-3 gap-2 sm:gap-3 p-3 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm">
-                        {/* 1. Billets Valides (Métrique Principale) */}
-                        <div className="flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 text-center">
-                            <span className="text-lg sm:text-xl mb-0.5" role="img" aria-label="Billets">🎫</span>
-                            <span className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight leading-none">
-                                {selected.stats?.total_tickets ?? 0}
-                            </span>
-                            <span className="text-[10px] sm:text-xs font-bold text-slate-600 dark:text-zinc-300 mt-1">
-                                Billets valides
-                            </span>
+                    {/* Statistiques (serveur) */}
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3 p-3 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
+                        <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 text-center">
+                            <Ticket size={20} aria-hidden="true" className="text-emerald-700 dark:text-emerald-300 mb-1" />
+                            <span className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-300 font-mono leading-none">{selected.stats?.total_tickets ?? 0}</span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-zinc-200 mt-1">Billets valides</span>
                         </div>
-
-                        {/* 2. Arrivées (Scannés Aujourd'hui) */}
-                        <div className="flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-xl bg-[#FF5722]/5 dark:bg-[#FF5722]/10 border border-[#FF5722]/20 text-center">
-                            <span className="text-lg sm:text-xl mb-0.5" role="img" aria-label="Arrivées">👥</span>
-                            <span className="text-xl sm:text-2xl font-black text-[#FF5722] font-mono tracking-tight leading-none">
-                                {selected.stats?.scanned_today ?? 0}
-                            </span>
-                            <span className="text-[10px] sm:text-xs font-bold text-slate-600 dark:text-zinc-300 mt-1">
-                                Arrivées
-                            </span>
+                        <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-[#FF5722]/5 dark:bg-[#FF5722]/10 border border-[#FF5722]/20 text-center">
+                            <Users size={20} aria-hidden="true" className="text-[#C2410C] dark:text-[#FF8A65] mb-1" />
+                            <span className="text-xl sm:text-2xl font-black text-[#C2410C] dark:text-[#FF8A65] font-mono leading-none">{selected.stats?.scanned_today ?? 0}</span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-zinc-200 mt-1">Arrivées</span>
                         </div>
-
-                        {/* 3. Billets Refusés */}
-                        <div className="flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 text-center">
-                            <span className="text-lg sm:text-xl mb-0.5" role="img" aria-label="Refusés">⚠️</span>
-                            <span className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tracking-tight leading-none">
-                                {currentRefused}
-                            </span>
-                            <span className="text-[10px] sm:text-xs font-bold text-slate-600 dark:text-zinc-300 mt-1">
-                                Billets refusés
-                            </span>
+                        <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 text-center">
+                            <ShieldAlert size={20} aria-hidden="true" className="text-amber-700 dark:text-amber-300 mb-1" />
+                            <span className="text-xl sm:text-2xl font-black text-amber-700 dark:text-amber-300 font-mono leading-none">{currentRefused}</span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-zinc-200 mt-1">Billets refusés</span>
                         </div>
+                        <p className="sr-only" role="status" aria-atomic="true">
+                            {`${selected.stats?.scanned_today ?? 0} arrivées, ${currentRefused} billets refusés`}
+                        </p>
                     </div>
 
-                    {/* ── Sessions de caisse (Z de Caisse) ── */}
                     {selected.can_accept_cash && (
                         <ShiftStatusBanner
                             canAcceptCash={selected.can_accept_cash}
@@ -917,230 +576,177 @@ export default function ControllerScannerPage() {
                         />
                     )}
 
-                    {/* État vide des scans */}
-                    {(selected.stats?.scanned_today ?? 0) === 0 && (
-                        <div className="px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-dashed border-slate-200 dark:border-zinc-700 text-center">
-                            <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">
-                                « Aucune entrée pour le moment — Les statistiques apparaîtront dès les premiers contrôles. »
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Blocage si événement non opérationnel */}
-                    {!isEventEligibleForController(selected.events?.status) ? (
-                        <div className={`p-6 rounded-2xl border text-center space-y-2 ${
-                            selected.events?.status === 'SUSPENDU'
-                                ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40'
-                                : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40'
+                    {!isEventEligibleForController(eventStatus) ? (
+                        <div role="status" className={`p-6 rounded-2xl border text-center space-y-2 ${
+                            eventStatus === 'SUSPENDU' || eventStatus === 'ANNULE'
+                                ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-900/60'
+                                : 'bg-amber-50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60'
                         }`}>
-                            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                selected.events?.status === 'SUSPENDU'
-                                    ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
-                                    : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-                            }`}>
-                                <AlertTriangle size={14} />
-                                {selected.events?.status === 'SUSPENDU' ? 'Événement Suspendu' :
-                                 selected.events?.status === 'TERMINE' ? 'Événement Terminé' :
-                                 'Événement Non Opérationnel'}
-                            </div>
+                            <p className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-white/70 dark:bg-zinc-900/70 text-slate-800 dark:text-zinc-100">
+                                <AlertTriangle size={14} aria-hidden="true" />
+                                {eventStatus === 'SUSPENDU' ? 'Événement suspendu'
+                                    : eventStatus === 'TERMINE' ? 'Événement terminé'
+                                    : eventStatus === 'ANNULE' ? 'Événement annulé'
+                                    : 'Événement non publié'}
+                            </p>
                             <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
-                                {selected.events?.status === 'SUSPENDU'
-                                    ? 'Les contrôles d\'accès sont temporairement suspendus sur cet événement.'
-                                    : selected.events?.status === 'TERMINE'
-                                    ? 'Les scans ne sont plus autorisés sur cet événement.'
-                                    : 'Cet événement n\'est pas encore validé pour les contrôles.'}
+                                {eventStatus === 'SUSPENDU' ? 'Les contrôles d’accès sont suspendus sur cet événement.'
+                                    : eventStatus === 'TERMINE' ? 'Les scans ne sont plus autorisés sur cet événement.'
+                                    : eventStatus === 'ANNULE' ? 'Événement annulé : aucune entrée n’est possible, les billets sont remboursés.'
+                                    : 'Le contrôle ouvrira quand l’événement sera publié.'}
                             </p>
                         </div>
                     ) : (
                         <>
-                            {/* ── Feedback Scan ── */}
-                            {feedback && (() => {
-                                const s = feedbackStyles(feedback.result);
-                                const hasWolof = hasWolofAudio(feedback.result);
-                                const wolofType = normalizeWolofAudioType(feedback.result);
-                                const wolofText = wolofType ? WOLOF_AUDIO_MESSAGES[wolofType]?.wolof : null;
-
-                                return (
-                                    <div className={`p-4 rounded-2xl border ${s.bg} ${s.border} space-y-3 transition-all animate-in fade-in duration-200`}>
-                                        <div className="flex items-start gap-3">
-                                            <div className="shrink-0 mt-0.5">{s.icon}</div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className={`text-sm font-bold ${s.text}`}>
-                                                    {feedback.result === 'valid' && 'Accès Autorisé'}
-                                                    {feedback.result === 'qr_expired' && 'QR Code Expiré (Anti-Fraude)'}
-                                                    {feedback.result === 'already_used' && 'Billet Déjà Utilisé'}
-                                                    {feedback.result === 'wrong_event' && 'Mauvais Événement'}
-                                                    {feedback.result === 'unauthorized' && 'Non Autorisé'}
-                                                    {feedback.result === 'invalid' && 'Billet Invalide'}
-                                                    {feedback.result === 'payment_required' && 'Paiement Requis'}
-                                                    {feedback.result === 'cash_required' && 'Encaissement Espèces'}
-                                                    {feedback.result === 'network_error' && 'Vérification Impossible'}
-                                                </p>
-                                                <p className={`text-xs ${s.text} opacity-90 mt-0.5 font-medium`}>{feedback.message}</p>
-                                                {wolofText && (
-                                                    <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold italic mt-1">
-                                                        « {wolofText} »
-                                                    </p>
-                                                )}
-                                                {feedback.ticket_info?.category && (
-                                                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 font-mono">
-                                                        {feedback.ticket_info.category} — {feedback.ticket_info.ticket_number}
-                                                    </p>
-                                                )}
-                                                {feedback.ticket_info?.holder_name && (
-                                                    <p className="text-xs font-semibold text-slate-700 dark:text-zinc-300 mt-1 flex items-center gap-1.5">
-                                                        <span>Porteur : {feedback.ticket_info.holder_name}</span>
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Bouton Répéter en Wolof sur la carte de feedback */}
-                                        {hasWolof && (
-                                            <div className="pt-1">
-                                                <button
-                                                    type="button"
-                                                    data-testid="feedback-card-repeat-wolof-btn"
-                                                    onClick={handleRepeatWolof}
-                                                    className="w-full min-h-[44px] py-2.5 px-3 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-700/80 text-xs font-black text-slate-800 dark:text-white flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-98"
-                                                >
-                                                    <Volume2 size={16} className="text-[#FF5722] shrink-0" />
-                                                    <span>🔊 Répéter en Wolof pour le spectateur</span>
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {/* Bouton encaissement espèces */}
-                                        {feedback.result === 'cash_required' && feedback.ticket_info?.amount_due && (
-                                            <Button
-                                                variant="primary"
-                                                fullWidth
-                                                size="lg"
-                                                isLoading={cashConfirming}
-                                                onClick={handleConfirmCash}
-                                                className="min-h-[44px]"
-                                            >
-                                                <Banknote size={16} className="mr-1.5" />
-                                                Confirmer {feedback.ticket_info.amount_due.toLocaleString('fr-FR')} FCFA et Valider l&apos;entrée
+                            {/* Encaissement espèces en attente ou refusé par le serveur */}
+                            {cashPending && feedback && (
+                                cashError ? (
+                                    <ScanResultPanel outcome={cashError} title="Encaissement non enregistré">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-zinc-100">
+                                            Rien n’a été encaissé ni validé. Ne laissez pas entrer le spectateur tant que l’encaissement n’est pas confirmé.
+                                        </p>
+                                        <div className="grid gap-2 sm:grid-cols-3">
+                                            {cashError.code === 'CASH_NO_OPEN_SHIFT' && (
+                                                <Button variant="primary" size="lg" className="min-h-[48px]" onClick={() => setShowOpenShiftModal(true)}>
+                                                    Ouvrir ma caisse
+                                                </Button>
+                                            )}
+                                            {cashError.code !== 'CASH_SCAN_EXPIRED' && (
+                                                <Button variant="secondary" size="lg" className="min-h-[48px]" isLoading={cashConfirming} onClick={handleConfirmCash}>
+                                                    Réessayer l’encaissement
+                                                </Button>
+                                            )}
+                                            <Button variant="outline" size="lg" className="min-h-[48px]" onClick={handleAbandonCash}>
+                                                {cashError.code === 'CASH_SCAN_EXPIRED' ? 'Fermer et rescanner le billet' : 'Abandonner (pas d’entrée)'}
                                             </Button>
+                                        </div>
+                                    </ScanResultPanel>
+                                ) : (
+                                    <ScanResultPanel outcome={feedback}>
+                                        {selected.can_accept_cash ? (
+                                            <div className="grid gap-2 sm:grid-cols-2">
+                                                <Button variant="primary" size="lg" className="min-h-[48px]" isLoading={cashConfirming} onClick={handleConfirmCash}>
+                                                    <Banknote size={18} aria-hidden="true" className="mr-1.5" />
+                                                    {feedback.amountDue !== undefined ? `J’ai reçu ${formatFcfa(feedback.amountDue)} : valider l’entrée` : 'J’ai reçu les espèces : valider l’entrée'}
+                                                </Button>
+                                                <Button variant="outline" size="lg" className="min-h-[48px]" onClick={handleAbandonCash} disabled={cashConfirming}>
+                                                    Annuler (le spectateur ne paie pas)
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <p className="text-sm font-semibold text-slate-800 dark:text-zinc-100">
+                                                    Vous n’êtes pas habilité à encaisser : orientez le spectateur vers la caisse de l’événement.
+                                                </p>
+                                                <Button variant="outline" size="lg" fullWidth className="min-h-[48px]" onClick={handleAbandonCash}>
+                                                    Fermer et reprendre le scan
+                                                </Button>
+                                            </>
                                         )}
-                                    </div>
-                                );
-                            })()}
+                                    </ScanResultPanel>
+                                )
+                            )}
 
-                            {/* ── Toggle Camera / Manuel (Touch targets >= 44px) ── */}
-                            <div className="flex gap-2">
+                            {/* Résultat du dernier scan */}
+                            {feedback && !cashPending && (
+                                <ScanResultPanel outcome={feedback} onRepeatWolof={handleRepeatWolof} />
+                            )}
+
+                            {/* Mode : caméra ou saisie manuelle */}
+                            <div className="flex gap-2" role="group" aria-label="Mode de contrôle">
                                 <button
                                     type="button"
-                                    onClick={() => { setInputMode('camera'); setFeedback(null); }}
-                                    className={`flex-1 min-h-[44px] flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                                        inputMode === 'camera'
-                                            ? 'bg-[#FF5722] text-white shadow-sm'
-                                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                                    aria-pressed={inputMode === 'camera'}
+                                    onClick={() => { setInputMode('camera'); if (!cashPending) setFeedback(null); }}
+                                    className={`flex-1 min-h-[48px] flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] ${
+                                        inputMode === 'camera' ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-200 dark:hover:bg-zinc-700'
                                     }`}
                                 >
-                                    <Camera size={14} /> Caméra
+                                    <Camera size={16} aria-hidden="true" /> Caméra
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => { setInputMode('manual'); setFeedback(null); }}
-                                    className={`flex-1 min-h-[44px] flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                                        inputMode === 'manual'
-                                            ? 'bg-[#FF5722] text-white shadow-sm'
-                                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                                    aria-pressed={inputMode === 'manual'}
+                                    onClick={() => { setInputMode('manual'); if (!cashPending) setFeedback(null); }}
+                                    className={`flex-1 min-h-[48px] flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] ${
+                                        inputMode === 'manual' ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-200 dark:hover:bg-zinc-700'
                                     }`}
                                 >
-                                    <Keyboard size={14} /> Manuel
+                                    <Keyboard size={16} aria-hidden="true" /> Saisie manuelle
                                 </button>
                             </div>
 
-                            {/* ── Scanner Caméra ── */}
-                            {inputMode === 'camera' && (
+                            {inputMode === 'camera' && !cashPending && (
                                 <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-800">
                                     <CameraQrScanner
-                                        onScan={handleScan}
-                                        isVerifying={isVerifying}
+                                        onScan={handleCameraScan}
+                                        isVerifying={scanDisabled}
                                         onSwitchToManual={() => setInputMode('manual')}
                                         autoResumeDelayMs={2500}
                                     />
                                 </div>
                             )}
-
-                            {/* ── Saisie Manuelle ── */}
-                            {inputMode === 'manual' && (
-                                <form
-                                    onSubmit={e => { e.preventDefault(); handleScan(manualCode); }}
-                                    className="space-y-3"
-                                >
-                                    <div className="relative">
-                                        <ScanLine size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                        <input
-                                            type="text"
-                                            placeholder="TCK-... ou code à 6 chiffres"
-                                            value={manualCode}
-                                            onChange={e => setManualCode(e.target.value)}
-                                            className="w-full min-h-[44px] pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-mono text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#FF5722]/30"
-                                            autoFocus
-                                        />
-                                    </div>
-                                    <p className="text-[10px] text-slate-500 dark:text-zinc-400">
-                                        En cas de problème caméra, saisissez le numéro du billet (TCK-...) ou le code dynamique pour contrôle d&apos;identité.
+                            {inputMode === 'camera' && cashPending && (
+                                <div role="status" className="p-4 rounded-2xl border border-dashed border-blue-400 dark:border-blue-700 bg-blue-50/60 dark:bg-blue-950/20 flex items-center gap-3">
+                                    <PauseCircle size={24} aria-hidden="true" className="text-blue-700 dark:text-blue-300 shrink-0" />
+                                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                                        Caméra en pause : confirmez ou annulez l’encaissement en cours avant de scanner le billet suivant.
                                     </p>
-                                    <Button
-                                        type="submit"
-                                        variant="primary"
-                                        fullWidth
-                                        size="lg"
-                                        className="min-h-[44px]"
-                                        isLoading={isVerifying}
-                                        disabled={!manualCode.trim()}
-                                    >
-                                        Vérifier le billet
-                                    </Button>
-                                </form>
+                                </div>
+                            )}
+
+                            {inputMode === 'manual' && (
+                                <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
+                                    <ManualEntryForm
+                                        onSubmit={handleManualScan}
+                                        isSubmitting={isVerifying}
+                                        disabled={cashPending}
+                                        disabledReason="Saisie en pause : tranchez d’abord l’encaissement en cours."
+                                    />
+                                </div>
                             )}
                         </>
                     )}
 
-                    {/* ── Historique Session ── */}
+                    {/* Historique de la session */}
                     {scanHistory.length > 0 && (
-                        <div className="space-y-1.5">
-                            <h3 className="text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
+                        <section className="space-y-1.5" aria-labelledby="scanner-history-title">
+                            <h3 id="scanner-history-title" className="text-xs font-black text-slate-600 dark:text-zinc-300 uppercase tracking-wider">
                                 Derniers scans
                             </h3>
-                            <div className="space-y-1">
-                                {scanHistory.slice(0, 8).map((h) => {
-                                    const color = h.result === 'valid' ? 'text-emerald-500'
-                                        : h.result === 'already_used' ? 'text-amber-500'
-                                        : 'text-red-500';
+                            <ul className="space-y-1">
+                                {scanHistory.slice(0, 8).map(({ key, at, outcome }) => {
+                                    const technical = isTechnicalOutcome(outcome);
+                                    const dot = technical ? 'bg-slate-400'
+                                        : outcome.result === 'valid' ? 'bg-emerald-500'
+                                        : isTicketRefusal(outcome) ? 'bg-red-500'
+                                        : 'bg-amber-500';
                                     return (
-                                        <div key={h._key} className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-white dark:bg-zinc-900/50 border border-slate-100 dark:border-zinc-800/50">
-                                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${h.result === 'valid' ? 'bg-emerald-500' : h.result === 'already_used' ? 'bg-amber-500' : 'bg-red-500'}`} />
-                                            <span className={`text-[11px] truncate flex-1 ${color}`}>
-                                                {h.ticket_info?.ticket_number || h.message}
+                                        <li key={key} className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-white dark:bg-zinc-900/50 border border-slate-100 dark:border-zinc-800/50">
+                                            <span aria-hidden="true" className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+                                            <span className="text-xs font-semibold text-slate-800 dark:text-zinc-100 truncate flex-1">
+                                                {titleFor(outcome)}{outcome.ticket?.ticket_number ? ` · ${outcome.ticket.ticket_number}` : ''}
                                             </span>
-                                            <span className="text-[9px] text-slate-300 dark:text-zinc-600 shrink-0">
-                                                {h.ticket_info?.category || (h.result === 'valid' ? 'OK' : h.result === 'already_used' ? 'Doublon' : 'Erreur')}
-                                            </span>
-                                        </div>
+                                            <time dateTime={at} className="text-[11px] text-slate-500 dark:text-zinc-400 shrink-0 font-mono">
+                                                {new Date(at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                            </time>
+                                        </li>
                                     );
                                 })}
-                            </div>
-                        </div>
+                            </ul>
+                        </section>
                     )}
 
-                    {/* Pied — Déconnexion (Touch target >= 44px) */}
                     <div className="flex justify-center pt-4 pb-8">
                         <button
                             type="button"
                             onClick={() => setShowLogoutConfirm(true)}
-                            className="min-h-[44px] px-4 py-2.5 rounded-xl flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-500 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition-colors"
+                            className="min-h-[44px] px-4 py-2.5 rounded-xl flex items-center gap-1.5 text-sm text-slate-600 dark:text-zinc-300 hover:text-red-600 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition-colors"
                         >
-                            <LogOut size={14} /> Se déconnecter
+                            <LogOut size={14} aria-hidden="true" /> Se déconnecter
                         </button>
                     </div>
 
-                    {/* Modals de session de caisse (Z de Caisse) */}
                     <OpenShiftModal
                         isOpen={showOpenShiftModal}
                         onClose={() => setShowOpenShiftModal(false)}
@@ -1167,7 +773,6 @@ export default function ControllerScannerPage() {
                         onClose={() => setShowZSummaryModal(false)}
                         summary={zSummary}
                     />
-
                 </>
             )}
 
@@ -1183,3 +788,4 @@ export default function ControllerScannerPage() {
         </div>
     );
 }
+
