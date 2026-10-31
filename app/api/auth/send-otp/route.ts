@@ -4,7 +4,7 @@ import { mTargetService } from '@/lib/sms/mtarget.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { storeOtp } from '@/lib/auth/otp-store';
+import { storeOtp, type OtpPurpose } from '@/lib/auth/otp-store';
 import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
@@ -30,6 +30,10 @@ export async function POST(req: NextRequest) {
 
         const rawPhone = body.phone?.trim();
         const purpose = (body.purpose || body.type || 'AUTH').toUpperCase();
+        // Lot 3 : objet enregistré avec le code (un code ne vaut que pour son objet)
+        const otpPurpose: OtpPurpose = purpose === 'PASSWORD_RESET' ? 'PASSWORD_RESET'
+            : ['REGISTER', 'SIGNUP', 'INSCRIPTION'].includes(purpose) ? 'REGISTER'
+            : 'LOGIN';
 
         if (!rawPhone) {
             return NextResponse.json({ error: 'Numéro de téléphone requis.' }, { status: 400 });
@@ -74,7 +78,7 @@ export async function POST(req: NextRequest) {
 
         // 2-3. Lot 1B.7 : enregistrement en base, seule source de vérité (aucun cache mémoire).
         try {
-            await storeOtp(normalizedPhone, otpCode, new Date(expiresAt));
+            await storeOtp(normalizedPhone, otpCode, new Date(expiresAt), otpPurpose);
         } catch (storeErr) {
             console.error('[API /api/auth/send-otp]', storeErr instanceof Error ? storeErr.message : storeErr);
             return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });

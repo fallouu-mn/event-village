@@ -365,7 +365,7 @@ export async function POST(req: NextRequest) {
         if (isNewUser) {
             // Lot 1B.7 : code d'activation en base uniquement (vérifié par /api/controller/setup).
             try {
-                await storeOtp(normalizedPhone, otpCode, new Date(expiresAt));
+                await storeOtp(normalizedPhone, otpCode, new Date(expiresAt), 'CONTROLLER_SETUP');
             } catch (storeErr) {
                 console.error('[invite-controller]', storeErr instanceof Error ? storeErr.message : storeErr);
                 return NextResponse.json({ error: 'Impossible de préparer le code d\'activation. Réessayez.' }, { status: 500 });

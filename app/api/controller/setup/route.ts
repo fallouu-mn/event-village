@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
         }
 
         // 1. Lot 1B.7 : vérification en base uniquement (le code est consommé en fin de parcours).
-        const otpCheck = await checkStoredOtp(normalizedPhone, otp_code);
+        const otpCheck = await checkStoredOtp(normalizedPhone, otp_code, 'CONTROLLER_SETUP');
         if (!otpCheck.ok) {
             const attempt = await RateLimiter.recordFailedAttempt(rateLimitKey, { failClosed: true });
             if (otpCheck.reason !== 'INVALID') {

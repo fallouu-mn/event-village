@@ -177,7 +177,8 @@ describe('Remboursement automatique et module de cashout', () => {
 
     test('code : aucun numéro de repli, aucun opérateur par défaut, un seul module d’envoi', () => {
         const offenders: string[] = [];
-        const allowed = new Set(['lib/payments/cashout.service.ts', 'lib/payments/withdrawal.service.ts']);
+        // Lot 3 : les retraits passent par le module de cashout, plus aucune exemption
+        const allowed = new Set(['lib/payments/cashout.service.ts']);
         const walk = (dir: string) => {
             for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
                 const full = path.join(dir, e.name);

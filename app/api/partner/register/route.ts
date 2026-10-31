@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
         // Lot 1B.7 : le code est enregistré en base AVANT l'envoi (vérifiable depuis toute instance).
         try {
-            await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt));
+            await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt), 'REGISTER');
         } catch (storeErr) {
             console.error('[API /api/partner/register]', storeErr instanceof Error ? storeErr.message : storeErr);
             return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });

@@ -9,6 +9,10 @@
  * Lot 1C.4 : le code n'est jamais stocké en clair. Seule son empreinte HMAC-SHA256 (secret
  * dédié OTP_HASH_SECRET, message lié au numéro) est enregistrée ; la comparaison se fait en
  * temps constant.
+ *
+ * Lot 3 : chaque code porte un objet (otp_codes.purpose). Un code émis pour un objet (connexion,
+ * inscription, retrait…) n'est jamais accepté pour un autre : la recherche se fait par numéro ET
+ * objet, et un essai pour un autre objet ne touche pas au code (point 9 du lot 1C).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getServerEnv } from '@/lib/env';
@@ -16,6 +20,11 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const OTP_MAX_ATTEMPTS = 5;
 const OTP_HASH_DOMAIN = 'event-village:otp:v1';
+
+export const OTP_PURPOSES = ['LOGIN', 'REGISTER', 'PASSWORD_RESET', 'CONTROLLER_SETUP', 'WITHDRAWAL'] as const;
+export type OtpPurpose = (typeof OTP_PURPOSES)[number];
+/** Objets acceptés par la vérification du parcours de compte (/api/auth/verify-otp). */
+export const ACCOUNT_OTP_PURPOSES: readonly OtpPurpose[] = ['LOGIN', 'REGISTER', 'PASSWORD_RESET'];
 
 export type OtpFailureReason = 'INVALID' | 'EXPIRED' | 'TOO_MANY_ATTEMPTS';
 export type OtpCheck = { ok: true; id: string } | { ok: false; reason: OtpFailureReason };
@@ -33,11 +42,12 @@ function otpHashMatches(storedHex: string, phone: string, code: string): boolean
     return stored.length === 32 && candidate.length === 32 && timingSafeEqual(stored, candidate);
 }
 
-/** Enregistre un code OTP pour un numéro normalisé. Lève une erreur si l'écriture échoue. */
-export async function storeOtp(phone: string, code: string, expiresAt: Date): Promise<string> {
+/** Enregistre un code OTP pour un numéro normalisé et un objet. Lève une erreur si l'écriture échoue. */
+export async function storeOtp(phone: string, code: string, expiresAt: Date, purpose: OtpPurpose): Promise<string> {
+    if (!OTP_PURPOSES.includes(purpose)) throw new Error(`Objet de code OTP inconnu : ${purpose}`);
     const { data, error } = await getServiceRoleClient()
         .from('otp_codes')
-        .insert({ phone, code_hash: hashOtpCode(phone, code), expires_at: expiresAt.toISOString(), verified: false, attempts: 0 })
+        .insert({ phone, purpose, code_hash: hashOtpCode(phone, code), expires_at: expiresAt.toISOString(), verified: false, attempts: 0 })
         .select('id')
         .single();
     if (error || !data) {
@@ -46,13 +56,19 @@ export async function storeOtp(phone: string, code: string, expiresAt: Date): Pr
     return data.id as string;
 }
 
-/** Contrôle le code sans le consommer. Un essai faux incrémente le compteur du code courant. */
-export async function checkStoredOtp(phone: string, code: string): Promise<OtpCheck> {
+/**
+ * Contrôle le code sans le consommer, pour l'objet (ou les objets) attendu(s). Un essai faux
+ * incrémente le compteur du code courant de cet objet ; un code d'un autre objet n'est pas lu.
+ */
+export async function checkStoredOtp(phone: string, code: string, purpose: OtpPurpose | readonly OtpPurpose[]): Promise<OtpCheck> {
+    const purposes = (Array.isArray(purpose) ? purpose : [purpose]) as OtpPurpose[];
+    if (purposes.length === 0 || purposes.some((p) => !OTP_PURPOSES.includes(p))) throw new Error(`Objet de code OTP inconnu : ${purposes.join(', ')}`);
     const supabase = getServiceRoleClient();
     const { data: record, error } = await supabase
         .from('otp_codes')
         .select('id, code_hash, expires_at, attempts')
         .eq('phone', phone)
+        .in('purpose', purposes)
         .eq('verified', false)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -83,8 +99,8 @@ export async function consumeStoredOtp(id: string): Promise<boolean> {
 }
 
 /** Contrôle puis consomme. */
-export async function verifyStoredOtp(phone: string, code: string): Promise<OtpCheck> {
-    const check = await checkStoredOtp(phone, code);
+export async function verifyStoredOtp(phone: string, code: string, purpose: OtpPurpose | readonly OtpPurpose[]): Promise<OtpCheck> {
+    const check = await checkStoredOtp(phone, code, purpose);
     if (!check.ok) return check;
     return (await consumeStoredOtp(check.id)) ? check : { ok: false, reason: 'INVALID' };
 }

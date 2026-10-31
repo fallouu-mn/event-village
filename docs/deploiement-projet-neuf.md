@@ -76,6 +76,23 @@ Règles :
 - Le webhook est adressé par SamirPay au `callBackUrl` transmis à chaque paiement (`https://<domaine>/api/webhooks/samirpay?t=<jeton du paiement>`) : aucune configuration côté SamirPay, mais `NEXT_PUBLIC_APP_URL` doit être l'URL publique HTTPS définitive.
 - Le solde du compte partenaire SamirPay doit couvrir les remboursements : il est vérifié avant chaque envoi (refus et alerte aux SUPERADMIN sinon).
 
+## 6 ter. Finance (lot 3)
+
+- **Réglages financiers** : clés `finance.*` de `platform_settings`, créées par la migration `20261101000002_lot3_reglages.sql` avec les valeurs par défaut ci-dessous. Elles ne sont modifiables que par un SUPERADMIN, par `PUT /api/admin/finance-settings` (valeur validée en base, motif obligatoire, historique dans `platform_settings_history`). Une modification ne s'applique qu'aux opérations suivantes : les taux sont recopiés sur chaque paiement, commission et retrait au moment où ils naissent.
+
+  | Clé | Défaut | Rôle |
+  |---|---|---|
+  | `finance.service_fee_rate` | 5 | frais de service payés par l'acheteur (% du prix, au FCFA supérieur par billet) |
+  | `finance.aggregator_fee_rate.WAVE` / `.ORANGE_MONEY` | 1,5 / 1,5 | frais SamirPay sur le total payé, par opérateur |
+  | `finance.cancellation_aggregator_fee_bearer` | EVENT_VILLAGE | qui supporte les frais d'agrégateur perdus quand l'organisateur rembourse ou annule |
+  | `finance.payout_hold_enabled` / `finance.payout_delay_hours` | true / 48 | fonds organisateur disponibles à la fin de l'événement + délai |
+  | `finance.withdrawal_fee_rate` / `finance.withdrawal_min_amount` | 1 / 5 000 | frais (FCFA supérieur) et seuil de retrait |
+  | `finance.withdrawal_bank_enabled` | false | retraits par virement bancaire |
+  | `finance.referral_availability_days` | 7 (7 à 14) | délai avant qu'une commission de parrainage soit disponible |
+
+- **Retraits** : par Wave ou Orange Money uniquement (le virement reste fermé tant que le réglage est faux), confirmés par un code SMS envoyé au téléphone du compte, versés par le module de cashout. Le solde SamirPay doit couvrir aussi les retraits. Un envoi à l'issue incertaine n'est jamais relancé : il reste réservé jusqu'à vérification manuelle par un SUPERADMIN (alerte reçue).
+- **Grand livre** : les soldes organisateur et parrainage sont calculés depuis `finance_ledger` ; un projet neuf démarre vide (aucune reprise d'historique n'est prévue).
+
 ## 6 bis. Hook SMS de Supabase Auth
 
 1. **Authentication > Hooks > Send SMS hook** : type HTTPS, URL `https://<domaine>/api/auth/sms-hook`.
@@ -92,6 +109,7 @@ Toutes les routes `/api/cron/*` s'appellent avec l'en-tête `Authorization: Bear
 |---|---|---|
 | `/api/cron/payments-reconcile` | toutes les 5 minutes (**obligatoire**) | statut SamirPay des paiements en attente : confirmation (billets), échec ou annulation (stock rendu), expiration des paiements trop anciens, succès tardifs, confirmation et contrôle des remboursements ; le webhook SamirPay n'étant envoyé qu'en cas de succès, c'est le seul moyen de connaître FAILED et CANCELLED |
 | `/api/cron/stock-reservations` | toutes les 5 minutes | purge des réservations de stock échues (aussi faite au début de la réconciliation) |
+| `/api/cron/referral-commissions` | horaire | commissions de parrainage arrivées à échéance : EN ATTENTE → DISPONIBLE (le solde les rend déjà disponibles à leur date ; le cron met le statut affiché à jour) |
 | `/api/cron/moratoriums` | quotidienne | moratoires des réservations de salle |
 | `/api/cron/ticket-transfers` | horaire | expiration des transferts de billets |
 

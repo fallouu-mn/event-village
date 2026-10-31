@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
+import { ACCOUNT_OTP_PURPOSES, otpFailureMessage, verifyStoredOtp, type OtpPurpose } from '@/lib/auth/otp-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
     try {
-        let body: { phone?: string; otpCode?: string; isLogin?: boolean };
+        let body: { phone?: string; otpCode?: string; isLogin?: boolean; purpose?: string };
         try {
             body = await req.json();
         } catch {
@@ -46,7 +46,11 @@ export async function POST(req: NextRequest) {
 
         // 1-2. Lot 1B.7 : vérification en base uniquement (otp_codes), indépendante de l'instance
         //      qui a émis le code. Une erreur de lecture ou d'écriture est une erreur serveur.
-        const check = await verifyStoredOtp(normalizedPhone, otpCode);
+        // Lot 3 : seuls les codes du parcours de compte (connexion, inscription, réinitialisation)
+        // sont acceptés ici ; un code de retrait ou d'activation de contrôleur n'ouvre jamais de session.
+        const requested = typeof body.purpose === 'string' ? body.purpose.toUpperCase() as OtpPurpose : null;
+        const purposes = requested && ACCOUNT_OTP_PURPOSES.includes(requested) ? [requested] : ACCOUNT_OTP_PURPOSES;
+        const check = await verifyStoredOtp(normalizedPhone, otpCode, purposes);
         if (!check.ok) {
             await RateLimiter.recordFailedAttempt(`otp_verify_${normalizedPhone}`);
             const { message, status } = otpFailureMessage(check.reason);
