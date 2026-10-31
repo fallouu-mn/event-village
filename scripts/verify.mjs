@@ -43,6 +43,37 @@ if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(host)) {
 
 process.env.NEXT_TELEMETRY_DISABLED = '1';
 
+/**
+ * Environnement de l'étape build :
+ *  - sans EV_INTEGRATIONS : les faux adaptateurs ne concernent que les tests ; un build
+ *    de production avec EV_INTEGRATIONS=fake est refusé par lib/env.ts ;
+ *  - clés de .env.local neutralisées : `next build` charge .env.local s'il existe, mais ne
+ *    remplace jamais une variable déjà définie. Chaque clé absente de .env.test reçoit donc
+ *    une valeur vide (traitée comme absente par lib/env.ts) pour qu'aucune valeur du
+ *    projet distant n'entre dans le build de vérification.
+ */
+function buildEnv() {
+    const env = { ...process.env };
+    delete env.EV_INTEGRATIONS;
+    const neutralized = [];
+    const localPath = path.resolve(ROOT, '.env.local');
+    if (fs.existsSync(localPath)) {
+        for (const rawLine of fs.readFileSync(localPath, 'utf8').split(/\r?\n/)) {
+            const line = rawLine.trim();
+            if (!line || line.startsWith('#') || !line.includes('=')) continue;
+            const key = line.slice(0, line.indexOf('=')).trim();
+            if (env[key] === undefined) {
+                env[key] = '';
+                neutralized.push(key);
+            }
+        }
+    }
+    if (neutralized.length > 0) {
+        console.log(`[verify] build : ${neutralized.length} clé(s) de .env.local neutralisée(s) : ${neutralized.join(', ')}`);
+    }
+    return env;
+}
+
 const steps = [
     ['typecheck', 'npm run typecheck'],
     ['lint', 'npm run lint'],
@@ -53,7 +84,8 @@ const steps = [
 const started = Date.now();
 for (const [name, command] of steps) {
     console.log(`\n═══════════════ verify › ${name} : ${command} ═══════════════`);
-    const result = spawnSync(command, { cwd: ROOT, env: process.env, stdio: 'inherit', shell: true });
+    const env = name === 'build' ? buildEnv() : process.env;
+    const result = spawnSync(command, { cwd: ROOT, env, stdio: 'inherit', shell: true });
     if (result.status !== 0) {
         console.error(`\n[verify] ÉCHEC à l'étape "${name}" (code ${result.status ?? result.signal}).`);
         process.exit(result.status ?? 1);
