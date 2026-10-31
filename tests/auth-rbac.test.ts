@@ -227,18 +227,10 @@ test('17. Audit log → journalisation d’un changement de statut', () => {
     assert.equal(auditRecord.new_value.status, 'VALIDE');
 });
 
-test('18. Bootstrapping Superadmin : Élévation automatique pour le numéro racine (+221770000000 / 770000000)', () => {
-    const superadminPhones = ['+221770000000', '770000000', '00221770000000', '773780756', '+221773780756'];
-    for (const p of superadminPhones) {
-        const clean = p.replace(/\D/g, '').replace(/^00/, '');
-        const isSuper = clean === '221770000000' || clean === '770000000' || clean === '221773780756' || clean === '773780756';
-        assert.equal(isSuper, true, `Le numéro ${p} doit être reconnu comme Superadmin`);
-    }
-
-    const standardPhone = '+221771234567';
-    const isStandardSuper = standardPhone.replace(/\D/g, '').replace(/^00/, '') === '221770000000';
-    assert.equal(isStandardSuper, false, 'Un numéro ordinaire ne doit pas être Superadmin');
-});
+// [lot 1A] Test 18 supprimé : il affirmait (sur des constantes, sans appeler le code) que les numéros
+// 770000000 / 773780756 devaient être promus SUPERADMIN à l'inscription. Ce bootstrap par téléphone
+// est une faille (téléphone fourni en métadonnée) et a été supprimé : voir tests/security/r1-inscription-roles.test.ts
+// et tests/parcours/bootstrap-superadmin.test.ts (bootstrap par procédure serveur).
 
 test('19. Smart Routing : Redirection post-connexion selon le rôle', () => {
     assert.equal(resolveSmartRoute('SUPERADMIN'), '/admin');

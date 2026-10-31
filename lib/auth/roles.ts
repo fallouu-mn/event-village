@@ -75,6 +75,23 @@ export async function addUserRole(userId: string, role: UserRoleType): Promise<{
     return {};
 }
 
+/**
+ * Attribution explicite de rôles par le serveur (service_role), seule voie d'obtention des rôles
+ * PARTENAIRE, CONTROLEUR, ADMIN et SUPERADMIN depuis le lot 1A (le trigger d'inscription ne
+ * crée plus que CLIENT). Idempotente. Lève une erreur si l'écriture échoue.
+ * L'insertion dans user_roles déclenche la synchronisation des rôles vers le jeton.
+ */
+export async function grantUserRoles(userId: string, roles: UserRoleType[]): Promise<void> {
+    const unique = Array.from(new Set<UserRoleType>(['CLIENT', ...roles]));
+    const supabase = getServiceRoleClient();
+    const { error } = await supabase
+        .from('user_roles')
+        .upsert(unique.map((role) => ({ user_id: userId, role })), { onConflict: 'user_id,role', ignoreDuplicates: true });
+    if (error) {
+        throw new Error(`Attribution des rôles ${unique.join(', ')} impossible : ${error.message}`);
+    }
+}
+
 export async function removeUserRole(userId: string, role: UserRoleType): Promise<{ error?: string }> {
     const supabase = getServiceRoleClient();
     const { error } = await supabase

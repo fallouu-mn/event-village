@@ -7,6 +7,7 @@ import { NotificationService } from '@/lib/notifications/notification.service';
 import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { otpMemoryCache } from '@/lib/sms/otp-cache';
+import { grantUserRoles } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +73,6 @@ export async function POST(req: NextRequest) {
             user_metadata: {
                 first_name: data.firstName.trim(),
                 last_name: data.lastName.trim(),
-                role: 'PARTENAIRE',
                 company_name: data.companyName.trim(),
             },
         });
@@ -90,6 +90,15 @@ export async function POST(req: NextRequest) {
         }
 
         const userId = authData.user.id;
+
+        // 1 bis. Attribution explicite du rôle PARTENAIRE (lot 1A : le trigger d'inscription ne crée
+        //        plus que CLIENT ; les métadonnées ne sont plus une source de rôle).
+        try {
+            await grantUserRoles(userId, ['PARTENAIRE']);
+        } catch (roleErr) {
+            console.error('[API /api/partner/register] Attribution du rôle PARTENAIRE impossible:', roleErr);
+            return NextResponse.json({ error: 'Erreur lors de la configuration du compte partenaire.' }, { status: 500 });
+        }
 
         // 2. Synchronisation dans public.users avec rôle PARTENAIRE et statut EN_ATTENTE
         await supabase.from('users').upsert({

@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
+import { grantUserRoles, type UserRoleType } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
+
+const ASSIGNABLE_ROLES: readonly UserRoleType[] = ['CLIENT', 'PARTENAIRE', 'CONTROLEUR', 'ADMIN', 'SUPERADMIN'];
 
 /**
  * GET /api/admin/users
@@ -90,7 +93,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Nom, prénom, téléphone et mot de passe requis.' }, { status: 400 });
         }
 
-        const targetRole = role || 'CLIENT';
+        const targetRole = (role || 'CLIENT') as UserRoleType;
+        if (!ASSIGNABLE_ROLES.includes(targetRole)) {
+            return NextResponse.json({ error: `Rôle inconnu : ${String(role)}.` }, { status: 400 });
+        }
 
         // Protection contre l'élévation de privilèges
         if (targetRole === 'SUPERADMIN' && auth.user!.role !== 'SUPERADMIN') {
@@ -117,7 +123,6 @@ export async function POST(req: NextRequest) {
             user_metadata: {
                 first_name: firstName.trim(),
                 last_name: lastName.trim(),
-                role: targetRole,
             },
         });
 
@@ -127,6 +132,14 @@ export async function POST(req: NextRequest) {
         }
 
         const userId = authData.user.id;
+
+        // 1 bis. Attribution explicite du rôle (lot 1A : le trigger d'inscription ne crée plus que CLIENT).
+        try {
+            await grantUserRoles(userId, [targetRole]);
+        } catch (roleErr) {
+            console.error('[API /api/admin/users POST] Attribution du rôle impossible:', roleErr);
+            return NextResponse.json({ error: 'Compte créé mais attribution du rôle impossible. Réessayez.' }, { status: 500 });
+        }
 
         // 2. Synchronisation dans public.users
         const { error: upsertErr } = await supabase.from('users').upsert({
