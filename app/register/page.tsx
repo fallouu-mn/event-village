@@ -156,15 +156,17 @@ export default function RegisterPage() {
             await refreshProfile();
 
             // 3. Récupération du rôle réel de l'utilisateur pour le Smart Routing
+            //    (lot 1B.1 : profil en base uniquement, jamais user_metadata)
             let userRole: string = 'CLIENT';
             if (signInData?.user?.id) {
-                const { data: userProfile } = await supabase
+                const { data: userProfile, error: profileErr } = await supabase
                     .from('users')
                     .select('role')
                     .eq('id', signInData.user.id)
                     .maybeSingle();
+                if (profileErr) console.error('[Register] lecture du profil pour la redirection :', profileErr.message);
 
-                userRole = (userProfile as { role?: string } | null)?.role || (signInData.user.user_metadata?.role as string) || 'CLIENT';
+                userRole = (userProfile as { role?: string } | null)?.role || 'CLIENT';
             }
 
             // 4. Smart Routing post-inscription selon le rôle

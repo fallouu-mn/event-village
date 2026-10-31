@@ -33,17 +33,6 @@ const PUBLIC_EXACT_ROUTES = [
     '/controller/setup',
 ];
 
-function parseRoles(userMetadata: Record<string, unknown> | undefined | null): string[] {
-    if (!userMetadata) return ['CLIENT'];
-    const rolesField = userMetadata.roles;
-    if (Array.isArray(rolesField) && rolesField.length > 0) {
-        return rolesField as string[];
-    }
-    const legacyRole = userMetadata.role as string | undefined;
-    if (legacyRole) return [legacyRole];
-    return ['CLIENT'];
-}
-
 function hasRole(roles: string[], role: string): boolean {
     return roles.includes(role);
 }
@@ -52,6 +41,13 @@ function hasAnyRole(roles: string[], required: string[]): boolean {
     return required.some(r => roles.includes(r));
 }
 
+/**
+ * Lot 1B.1 — les rôles ne se lisent jamais dans user_metadata (modifiable par l'utilisateur via
+ * auth.updateUser). Ils sont lus dans public.user_roles, source unique utilisée aussi par la RLS
+ * et les routes serveur, avec la session de l'utilisateur (politique « ses propres rôles »).
+ * La lecture n'a lieu que sur les zones protégées et les pages d'authentification.
+ * En cas d'échec de lecture : accès refusé et journalisé, jamais de repli sur le jeton.
+ */
 export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl;
 
@@ -71,6 +67,11 @@ export async function middleware(req: NextRequest) {
         pathname === '/login' ||
         pathname === '/register' ||
         pathname === '/forgot-password';
+
+    const isAdminArea = pathname.startsWith('/admin') || pathname.startsWith('/api/admin');
+    const isScanArea = pathname === '/scan' || pathname.startsWith('/scan/') || pathname === '/partner/scan' || pathname.startsWith('/partner/scan/');
+    const isControllerArea = pathname.startsWith('/controller') || pathname.startsWith('/api/controller');
+    const isPartnerArea = pathname.startsWith('/partner') && pathname !== '/partner/register';
 
     let supabaseResponse = NextResponse.next({ request: req });
 
@@ -105,6 +106,13 @@ export async function middleware(req: NextRequest) {
         return redirectResponse;
     }
 
+    function deny(apiMessage: string, pageUrl: string, status = 403) {
+        if (pathname.startsWith('/api/')) {
+            return NextResponse.json({ error: apiMessage }, { status });
+        }
+        return redirect(new URL(pageUrl, req.url));
+    }
+
     if (!user) {
         if (isPublicExact || isPublicDynamic) {
             return supabaseResponse;
@@ -122,23 +130,27 @@ export async function middleware(req: NextRequest) {
         return redirect(loginUrl);
     }
 
-    // Extraire les rôles depuis le JWT (synchronisé par le trigger PostgreSQL)
-    let roles = parseRoles(user.user_metadata);
+    if (!(isAuthPage || isAdminArea || isScanArea || isControllerArea || isPartnerArea)) {
+        return supabaseResponse;
+    }
+
+    // Rôles en base (public.user_roles), avec la session de l'utilisateur.
+    const { data: roleRows, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id);
+
+    if (rolesError) {
+        console.error(`[middleware] lecture des rôles impossible pour ${user.id} sur ${pathname} :`, rolesError.code, rolesError.message);
+        if (isAuthPage) {
+            return redirect(new URL('/', req.url));
+        }
+        return deny('Vérification des droits impossible. Réessayez.', '/?error=roles_unavailable', 503);
+    }
+    const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
 
     // Utilisateur connecté sur une page d'auth → rediriger selon les rôles
     if (isAuthPage) {
-        // Vérification DB si le JWT porte uniquement CLIENT (fallback si JWT pas encore rafraîchi)
-        if (roles.length === 1 && roles[0] === 'CLIENT') {
-            const { data: dbProfile } = await supabase
-                .from('users')
-                .select('role')
-                .eq('id', user.id)
-                .maybeSingle();
-            if (dbProfile?.role && dbProfile.role !== 'CLIENT') {
-                roles = [dbProfile.role];
-            }
-        }
-
         if (hasAnyRole(roles, ['ADMIN', 'SUPERADMIN'])) {
             return redirect(new URL('/admin/dashboard', req.url));
         }
@@ -154,68 +166,43 @@ export async function middleware(req: NextRequest) {
     // ── RBAC MULTI-RÔLE ──────────────────────────────────────────────────
 
     // /admin/* → nécessite ADMIN ou SUPERADMIN
-    if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
+    if (isAdminArea) {
         if (!hasAnyRole(roles, ['ADMIN', 'SUPERADMIN'])) {
-            if (pathname.startsWith('/api/')) {
-                return NextResponse.json(
-                    { error: 'Accès non autorisé : Rôle Administrateur requis.' },
-                    { status: 403 }
-                );
-            }
-            return redirect(new URL('/?error=unauthorized_admin', req.url));
+            return deny('Accès non autorisé : Rôle Administrateur requis.', '/?error=unauthorized_admin');
         }
         return supabaseResponse;
     }
 
     // /scan → CONTROLEUR, ADMIN, SUPERADMIN, PARTENAIRE
-    if (pathname === '/scan' || pathname.startsWith('/scan/') || pathname === '/partner/scan' || pathname.startsWith('/partner/scan/')) {
+    if (isScanArea) {
         if (!hasAnyRole(roles, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN', 'PARTENAIRE'])) {
             return redirect(new URL('/?error=unauthorized_scanner', req.url));
         }
         return supabaseResponse;
     }
 
-    // /controller/* → nécessite CONTROLEUR (+ ADMIN/SUPERADMIN)
-    if (pathname.startsWith('/controller') || pathname.startsWith('/api/controller')) {
-        // Vérification DB pour fraîcheur (invalider sessions après rétrogradation)
-        const { data: dbRoles } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', user.id);
-
-        const freshRoles = (dbRoles && dbRoles.length > 0)
-            ? dbRoles.map((r: { role: string }) => r.role)
-            : roles;
-
-        // Vérifier aussi le statut du compte
-        const { data: dbProfile } = await supabase
+    // /controller/* → nécessite CONTROLEUR (+ ADMIN/SUPERADMIN) et un compte ACTIF
+    if (isControllerArea) {
+        const { data: dbProfile, error: profileError } = await supabase
             .from('users')
             .select('status')
             .eq('id', user.id)
             .maybeSingle();
 
-        if (!dbProfile || dbProfile.status !== 'ACTIF' || !hasAnyRole(freshRoles, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'])) {
-            if (pathname.startsWith('/api/')) {
-                return NextResponse.json(
-                    { error: 'Accès non autorisé : Rôle Contrôleur actif requis.' },
-                    { status: 403 }
-                );
-            }
-            return redirect(new URL('/login?error=unauthorized_controller', req.url));
+        if (profileError) {
+            console.error(`[middleware] lecture du statut impossible pour ${user.id} :`, profileError.code, profileError.message);
+            return deny('Vérification du compte impossible. Réessayez.', '/login?error=unauthorized_controller', 503);
+        }
+        if (!dbProfile || dbProfile.status !== 'ACTIF' || !hasAnyRole(roles, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'])) {
+            return deny('Accès non autorisé : Rôle Contrôleur actif requis.', '/login?error=unauthorized_controller');
         }
         return supabaseResponse;
     }
 
     // /partner/* → nécessite PARTENAIRE (+ ADMIN/SUPERADMIN)
-    if (pathname.startsWith('/partner') && pathname !== '/partner/register') {
+    if (isPartnerArea) {
         if (!hasAnyRole(roles, ['PARTENAIRE', 'ADMIN', 'SUPERADMIN'])) {
-            if (pathname.startsWith('/api/')) {
-                return NextResponse.json(
-                    { error: 'Accès non autorisé : Rôle Partenaire requis.' },
-                    { status: 403 }
-                );
-            }
-            return redirect(new URL('/?error=unauthorized_partner', req.url));
+            return deny('Accès non autorisé : Rôle Partenaire requis.', '/?error=unauthorized_partner');
         }
         return supabaseResponse;
     }

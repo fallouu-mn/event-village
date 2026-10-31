@@ -45,15 +45,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function parseRolesFromMetadata(meta: Record<string, unknown> | undefined): string[] {
-    if (!meta) return ['CLIENT'];
-    const rolesField = meta.roles;
-    if (Array.isArray(rolesField) && rolesField.length > 0) return rolesField as string[];
-    const legacyRole = meta.role as string | undefined;
-    if (legacyRole) return [legacyRole];
-    return ['CLIENT'];
-}
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -62,78 +53,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
 
-    const fetchUserProfile = useCallback(async (userId: string, currentSession?: Session | null) => {
+    /**
+     * Lot 1B.1 — profil et rôles viennent uniquement du serveur (/api/auth/me : public.users et
+     * public.user_roles). Jamais de user_metadata, modifiable par l'utilisateur. Si le serveur ne
+     * répond pas, aucun rôle n'est accordé (profil null) et l'erreur est journalisée.
+     */
+    const fetchUserProfile = useCallback(async (_userId: string, currentSession?: Session | null) => {
         try {
-            // 1. Essayer de récupérer le profil complet et les multi-rôles via /api/auth/me (backend Service Role)
-            try {
-                const res = await fetch('/api/auth/me', {
-                    headers: currentSession?.access_token ? { 'Authorization': `Bearer ${currentSession.access_token}` } : {}
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data?.authenticated && data?.profile) {
-                        setProfile(data.profile);
-                        setPartner(data.partner || null);
-                        return;
-                    }
-                }
-            } catch {
-                // Fallback direct si l'API n'est pas encore disponible
-            }
-
-            // 2. Fallback direct via client Supabase sur users
-            const supabase = getBrowserClient();
-            const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', userId)
-                .maybeSingle();
-
-            if (userError) {
-                console.warn('[AuthProvider] Chargement fallback user:', userError.message);
-            }
-
-            let partnerData: PartnerProfile | null = null;
-            if (userData) {
-                const meta = currentSession?.user?.user_metadata || {};
-                const metaRoles = parseRolesFromMetadata(meta as Record<string, unknown>);
-                const dbRoles: string[] = (metaRoles && metaRoles.length > 0 && !metaRoles.includes('CLIENT'))
-                    ? metaRoles
-                    : [userData.role as string || 'CLIENT'];
-
-                const userProfile: UserProfile = {
-                    ...(userData as Omit<UserProfile, 'roles'>),
-                    roles: dbRoles,
-                };
-
-                if (dbRoles.includes('PARTENAIRE')) {
-                    const { data } = await supabase
-                        .from('partners')
-                        .select('id, company_name, commercial_name, status, is_verified, trial_started_at, trial_ends_at, is_founder')
-                        .eq('user_id', userId)
-                        .maybeSingle();
-                    partnerData = data ? (data as unknown as PartnerProfile) : null;
-                }
-                setProfile(userProfile);
-                setPartner(partnerData);
-            } else if (currentSession?.user) {
-                const meta = currentSession.user.user_metadata || {};
-                const sessionRoles = parseRolesFromMetadata(meta as Record<string, unknown>);
-                setProfile({
-                    id: currentSession.user.id,
-                    first_name: (meta.first_name as string) || 'Utilisateur',
-                    last_name: (meta.last_name as string) || 'Event Village',
-                    phone: currentSession.user.phone || (meta.phone as string) || '',
-                    email: currentSession.user.email || null,
-                    role: (meta.role as UserProfile['role']) || 'CLIENT',
-                    roles: sessionRoles,
-                    status: 'ACTIF',
-                    referral_status: 'STANDARD',
-                });
+            const res = await fetch('/api/auth/me', {
+                headers: currentSession?.access_token ? { 'Authorization': `Bearer ${currentSession.access_token}` } : {}
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data?.authenticated || !data?.profile) {
+                console.error(`[AuthProvider] /api/auth/me : HTTP ${res.status}`, data?.error ?? '');
+                setProfile(null);
                 setPartner(null);
+                return;
             }
+            setProfile(data.profile as UserProfile);
+            setPartner((data.partner as PartnerProfile | null) || null);
         } catch (err) {
-            console.error('[AuthProvider] Erreur globale fetchUserProfile:', err);
+            console.error('[AuthProvider] chargement du profil impossible :', err);
+            setProfile(null);
+            setPartner(null);
         }
     }, []);
 

@@ -36,29 +36,8 @@ export function getPrimaryRole(roles: string[] | undefined | null): UserRoleType
     return 'CLIENT';
 }
 
-export function parseRolesFromJwt(userMetadata: Record<string, unknown> | undefined | null): string[] {
-    if (!userMetadata) return ['CLIENT'];
-    const rolesField = userMetadata.roles;
-    if (Array.isArray(rolesField) && rolesField.length > 0) {
-        return rolesField as string[];
-    }
-    const legacyRole = userMetadata.role as string | undefined;
-    if (legacyRole) return [legacyRole];
-    return ['CLIENT'];
-}
-
-export async function getUserRolesFromDb(userId: string): Promise<UserRoleType[]> {
-    const supabase = getServiceRoleClient();
-    const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId);
-
-    if (error || !data || data.length === 0) {
-        return ['CLIENT'];
-    }
-    return data.map(r => r.role as UserRoleType);
-}
+// Lot 1B.1 : parseRolesFromJwt (rôles lus dans user_metadata) et getUserRolesFromDb (repli
+// silencieux sur CLIENT en cas d'erreur) supprimés ; aucun appelant dans le code applicatif.
 
 export async function addUserRole(userId: string, role: UserRoleType): Promise<{ error?: string }> {
     const supabase = getServiceRoleClient();

@@ -49,11 +49,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const isUserLoggedIn = mounted && (isAuthenticated || !!user);
   const roles = mounted ? (profile?.roles || []) : [];
-  const rawRole = mounted ? (profile?.role || (user?.user_metadata?.role as string) || '') : '';
-  const cleanPhone = mounted ? (profile?.phone || (user?.user_metadata?.phone as string) || '').replace(/\D/g, '') : '';
-  const isSuperadminNumber = mounted && (cleanPhone === '221770000000' || cleanPhone === '770000000' || cleanPhone === '221773780756' || cleanPhone === '773780756');
-
-  const isSuperAdmin = roles.includes('SUPERADMIN') || isSuperadminNumber;
+  // Lot 1B.1 : rôles uniquement depuis le profil servi par /api/auth/me (user_roles),
+  // ni user_metadata ni numéro de téléphone « magique ».
+  const isSuperAdmin = roles.includes('SUPERADMIN');
   const isAdmin = isSuperAdmin || roles.includes('ADMIN');
   const isPartner = roles.includes('PARTENAIRE');
   const isController = roles.includes('CONTROLEUR') || isAdmin;

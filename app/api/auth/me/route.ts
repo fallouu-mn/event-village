@@ -18,44 +18,37 @@ export async function GET(req: NextRequest) {
 
         const supabase = getServiceRoleClient();
 
-        // Récupérer le profil complet de l'utilisateur
-        const { data: userData } = await supabase
+        // Profil complet de l'utilisateur
+        const { data: userData, error: userErr } = await supabase
             .from('users')
             .select('*')
             .eq('id', user.id)
             .maybeSingle();
+        if (userErr) throw new Error(`lecture du profil : ${userErr.message}`);
+        if (!userData) {
+            return NextResponse.json({ authenticated: true, error: 'Profil introuvable.', profile: null, roles: [] }, { status: 404 });
+        }
 
-        // Récupérer les rôles depuis user_roles
-        const { data: userRolesData } = await supabase
+        // Lot 1B.1 : rôles depuis user_roles uniquement (source de la RLS), sans repli.
+        const { data: userRolesData, error: rolesErr } = await supabase
             .from('user_roles')
             .select('role')
             .eq('user_id', user.id);
-
-        const roles: string[] = (userRolesData && userRolesData.length > 0)
-            ? userRolesData.map((r: { role: string }) => r.role)
-            : (userData?.role ? [userData.role] : user.roles || ['CLIENT']);
+        if (rolesErr) throw new Error(`lecture des rôles : ${rolesErr.message}`);
+        const roles: string[] = (userRolesData || []).map((r: { role: string }) => r.role);
 
         let partnerData = null;
         if (roles.includes('PARTENAIRE')) {
-            const { data: partnerRec } = await supabase
+            const { data: partnerRec, error: partnerErr } = await supabase
                 .from('partners')
                 .select('id, company_name, commercial_name, status, is_verified, trial_started_at, trial_ends_at, is_founder')
                 .eq('user_id', user.id)
                 .maybeSingle();
+            if (partnerErr) throw new Error(`lecture de la fiche partenaire : ${partnerErr.message}`);
             partnerData = partnerRec || null;
         }
 
-        const profile = userData ? {
-            ...userData,
-            roles,
-        } : {
-            id: user.id,
-            email: user.email,
-            phone: user.phone,
-            role: user.role || 'CLIENT',
-            roles,
-            status: user.status || 'ACTIF',
-        };
+        const profile = { ...userData, roles };
 
         return NextResponse.json({
             authenticated: true,
