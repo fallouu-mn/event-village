@@ -4,9 +4,29 @@ import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 
 export const dynamic = 'force-dynamic';
 
+const PAGE_SIZE = 1000;
+
+interface ReadResult { error: { message: string } | null }
+
+/** Lève une erreur explicite si une lecture a échoué (jamais de KPI calculé sur une lecture ratée). */
+function ensure<T extends ReadResult>(label: string, res: T): T {
+    if (res.error) throw new Error(`Lecture impossible (${label}) : ${res.error.message}`);
+    return res;
+}
+
+/** Nombre exact de lignes (requête HEAD : aucune troncature à max_rows). */
+async function countOf(label: string, query: PromiseLike<{ count: number | null; error: { message: string } | null }>): Promise<number> {
+    const res = ensure(label, await query);
+    return res.count ?? 0;
+}
+
 /**
  * GET /api/admin/metrics
- * Fournit les KPIs réels agrégés depuis Supabase (CDC V3) et les derniers logs d'audit
+ * KPIs agrégés depuis Supabase (CDC V3, lot 3 contrat G) et derniers journaux d'audit.
+ *  - Volume et revenu Event Village : finance_platform_revenue, paiements plateforme uniquement
+ *    (is_platform_payment = true ; espèces et paiements directs exclus, §76) ; revenu net EV =
+ *    Σ (net − part annulée par les remboursements). Aucun taux appliqué ici.
+ *  - Comptages par requêtes HEAD exactes (pas de troncature à 1 000 lignes).
  */
 export async function GET(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'statistics.read' });
@@ -14,57 +34,59 @@ export async function GET(req: NextRequest) {
 
     try {
         const supabase = getServiceRoleClient();
+        const head = { count: 'exact' as const, head: true };
 
-        // Toutes les requêtes sont indépendantes — lancement en parallèle
-        const [partnersRes, usersRes, paymentsRes, commissionsRes, ticketsRes, auditLogsRes, platformRateRes] = await Promise.all([
-            supabase.from('partners').select('id, status'),
-            supabase.from('users').select('id, role, referral_status'),
-            supabase.from('payments').select('amount').eq('status', 'SUCCESS'),
-            supabase.from('referral_commissions').select('amount'),
-            supabase.from('tickets').select('*', { count: 'exact', head: true }),
+        const sumCommissions = async (): Promise<number> => {
+            let total = 0;
+            for (let from = 0; ; from += PAGE_SIZE) {
+                const { data } = ensure('commissions de parrainage', await supabase
+                    .from('referral_commissions')
+                    .select('id, amount')
+                    .neq('status', 'CANCELLED')
+                    .order('id', { ascending: true })
+                    .range(from, from + PAGE_SIZE - 1));
+                for (const c of data ?? []) total += Number(c.amount);
+                if (!data || data.length < PAGE_SIZE) return total;
+            }
+        };
+
+        const [
+            totalPartners, pendingPartners, validatedPartners, rejectedPartners,
+            totalUsers, clientsCount, controllersCount, adminsCount, activeAmbassadors,
+            totalTickets, totalCommissions, revenueRes, auditLogsRes,
+        ] = await Promise.all([
+            countOf('partenaires', supabase.from('partners').select('id', head)),
+            countOf('partenaires en attente', supabase.from('partners').select('id', head).eq('status', 'EN_ATTENTE')),
+            countOf('partenaires validés', supabase.from('partners').select('id', head).eq('status', 'VALIDE')),
+            countOf('partenaires rejetés', supabase.from('partners').select('id', head).eq('status', 'REJETE')),
+            countOf('utilisateurs', supabase.from('users').select('id', head)),
+            countOf('clients', supabase.from('users').select('id', head).eq('role', 'CLIENT')),
+            countOf('contrôleurs', supabase.from('users').select('id', head).eq('role', 'CONTROLEUR')),
+            countOf('administrateurs', supabase.from('users').select('id', head).in('role', ['ADMIN', 'SUPERADMIN'])),
+            countOf('ambassadeurs', supabase.from('users').select('id', head).eq('referral_status', 'AMBASSADEUR')),
+            countOf('billets', supabase.from('tickets').select('id', head)),
+            sumCommissions(),
+            supabase.rpc('finance_platform_revenue', { p_from: null, p_to: null }),
             supabase.from('audit_logs')
                 .select('id, action, object_type, user_role, created_at, user_id')
                 .order('created_at', { ascending: false })
                 .limit(10),
-            supabase.from('platform_settings').select('value').eq('key', 'platform_commission_rate').maybeSingle(),
         ]);
 
-        const partners = partnersRes.data || [];
-        const users = usersRes.data || [];
-        const payments = paymentsRes.data || [];
-        const commissions = commissionsRes.data || [];
-        const auditLogs = auditLogsRes.data || [];
-
-        const totalPartners = partners.length;
-        const pendingPartners = partners.filter(p => p.status === 'EN_ATTENTE').length;
-        const validatedPartners = partners.filter(p => p.status === 'VALIDE').length;
-        const rejectedPartners = partners.filter(p => p.status === 'REJETE').length;
-
-        const totalUsers = users.length;
-        const activeAmbassadors = users.filter(u => u.referral_status === 'AMBASSADEUR').length;
-        const clientsCount = users.filter(u => u.role === 'CLIENT').length;
-        const controllersCount = users.filter(u => u.role === 'CONTROLEUR').length;
-        const adminsCount = users.filter(u => u.role === 'ADMIN' || u.role === 'SUPERADMIN').length;
-
-        // Taux de commission EV — lecture DB obligatoire (FIN-1)
-        let evCommissionRate = 0;
-        let configWarning: string | null = null;
-        if (platformRateRes.data?.value?.rate) {
-            evCommissionRate = Number(platformRateRes.data.value.rate) / 100;
-        } else {
-            configWarning = 'Configuration financière manquante: platform_commission_rate. Exécutez la migration 0012 ou insérez la valeur via le SQL Editor Supabase. Les revenus nets affichent 0 en attendant.';
-        }
-
-        const totalVolume = payments.reduce((acc, p) => acc + Number(p.amount || 0), 0);
-        const totalCommissions = commissions.reduce((acc, c) => acc + Number(c.amount || 0), 0);
-        const netRevenue = totalVolume > 0 ? Math.round(totalVolume * evCommissionRate) : 0;
-        const totalTickets = ticketsRes.count || 0;
+        const revenue = ensure('revenu Event Village', revenueRes).data as Record<string, unknown> | null;
+        if (!revenue) throw new Error('Lecture impossible (revenu Event Village) : réponse vide');
+        const auditLogs = ensure('journal d’audit', auditLogsRes).data ?? [];
 
         return NextResponse.json({
             success: true,
             kpis: {
-                totalVolume,
-                netRevenue,
+                totalVolume: Number(revenue.volume),
+                netRevenue: Number(revenue.net_revenue),
+                grossRevenue: Number(revenue.gross_revenue),
+                serviceFees: Number(revenue.service_fees),
+                aggregatorFees: Number(revenue.aggregator_fees),
+                refundedAmount: Number(revenue.refunded),
+                platformPayments: Number(revenue.payments),
                 totalCommissions,
                 validatedPartners,
                 pendingPartners,
@@ -78,7 +100,7 @@ export async function GET(req: NextRequest) {
                 totalTickets,
             },
             recentAuditLogs: auditLogs,
-            configWarning,
+            configWarning: null,
         });
     } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';

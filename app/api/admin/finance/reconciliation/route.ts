@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
         });
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Erreur interne de rapprochement financier';
+        console.error('[API /api/admin/finance/reconciliation] Erreur:', msg);
         return NextResponse.json({ error: msg }, { status: 500 });
     }
 }

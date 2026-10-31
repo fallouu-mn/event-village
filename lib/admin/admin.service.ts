@@ -6,11 +6,19 @@ export interface FinancialReconciliationItem {
     transactionReference: string;
     targetType: string;
     targetId: string;
+    /** Total débité au client (prix facial + frais de service). */
     grossAmount: number;
+    /** Prix facial (null pour un paiement antérieur au lot 3). */
+    facialAmount: number | null;
+    serviceFee: number;
     paymentMethod: string;
     aggregatorFee: number;
-    platformFeeRate: number;
+    /** Taux de frais de service recopié sur le paiement à sa création (null avant le lot 3). */
+    platformFeeRate: number | null;
+    platformGrossRevenue: number;
+    /** Revenu net EV effectif : net − part annulée par les remboursements. */
     platformNetRevenue: number;
+    refundedAmount: number;
     partnerPayout: number;
     referralCommissionN1: number;
     referralCommissionN2: number;
@@ -24,6 +32,7 @@ export interface FinancialReconciliationSummary {
     period: string;
     totalTransactionsCount: number;
     totalGrossVolume: number;
+    totalServiceFees: number;
     totalAggregatorFees: number;
     totalPlatformNetRevenue: number;
     totalPartnerPayouts: number;
@@ -32,6 +41,53 @@ export interface FinancialReconciliationSummary {
     totalRefunds: number;
     platformNetBalance: number;
     discrepanciesCount: number;
+}
+
+interface ReconciliationPaymentRow {
+    id: string;
+    transaction_id: string;
+    external_transaction_id: string | null;
+    payment_target: string;
+    operator: string | null;
+    status: string;
+    amount: number;
+    facial_amount: number | null;
+    service_fee: number;
+    service_fee_rate: number | null;
+    aggregator_fee: number;
+    gross_event_village_revenue: number;
+    net_event_village_revenue: number;
+    refunded_net_revenue: number | null;
+    refunded_amount: number | null;
+    partner_payout_amount: number;
+    order_id: string | null;
+    hall_reservation_id: string | null;
+    table_reservation_id: string | null;
+    subscription_plan_id: string | null;
+    event_id: string | null;
+    created_at: string;
+}
+
+/** Statuts d'un paiement dont l'argent a été encaissé (avant ou après remboursement). */
+const ENCASHED_STATUSES = ['SUCCESS', 'PARTIAL', 'REFUNDED', 'REFUND_PENDING'];
+const PAGE_SIZE = 1000;
+const ID_CHUNK = 200;
+
+/**
+ * Lit toutes les lignes d'une requête paginée (plafond max_rows de PostgREST) ; toute erreur de
+ * lecture est remontée, jamais ignorée.
+ */
+async function fetchAllRows<T>(
+    label: string,
+    page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+    const rows: T[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await page(from, from + PAGE_SIZE - 1);
+        if (error) throw new Error(`Lecture impossible (${label}) : ${error.message}`);
+        rows.push(...((data ?? []) as T[]));
+        if (!data || data.length < PAGE_SIZE) return rows;
+    }
 }
 
 export const BLACKLISTED_WORDS = [
@@ -51,7 +107,14 @@ export const BLACKLISTED_WORDS = [
 
 export class AdminService {
     /**
-     * Rapprochement Financier Global (§84)
+     * Rapprochement financier global (CDC §84, lot 3 contrat G).
+     * Paiements plateforme uniquement (is_platform_payment = true) : les espèces et autres paiements
+     * hors plateforme ne sont ni un encaissement ni un revenu Event Village (§76). Montants lus tels
+     * qu'ils ont été persistés par le moteur financier unique à la création du paiement (jamais
+     * recalculés avec des taux courants) ; revenu EV = net − part annulée par les remboursements.
+     * Statut « ALL » : paiements encaissés (SUCCESS, PARTIAL, REFUNDED, REFUND_PENDING).
+     * Contrôle d'écart par paiement : total = reversement partenaire + revenu brut EV, et
+     * revenu brut EV = revenu net EV + frais d'agrégateur.
      */
     static async getFinancialReconciliation(options?: {
         startDate?: string;
@@ -62,135 +125,122 @@ export class AdminService {
         items: FinancialReconciliationItem[];
     }> {
         const supabase = getServiceRoleClient();
+        const status = options?.status && options.status !== 'ALL' ? options.status : null;
 
-        let paymentsQuery = supabase
-            .from('payments')
-            .select(`
-                id,
-                amount,
-                payment_method,
-                payment_target,
-                target_id,
-                status,
-                external_transaction_id,
-                created_at
-            `)
-            .order('created_at', { ascending: false });
-
-        if (options?.status && options.status !== 'ALL') {
-            paymentsQuery = paymentsQuery.eq('status', options.status as any);
-        }
-
-        if (options?.startDate) {
-            paymentsQuery = paymentsQuery.gte('created_at', options.startDate);
-        }
-
-        if (options?.endDate) {
-            paymentsQuery = paymentsQuery.lte('created_at', options.endDate);
-        }
-
-        const { data: payments } = await paymentsQuery;
-
-        // Récupération des commissions liées
-        const { data: commissions } = await supabase
-            .from('referral_commissions')
-            .select('payment_id, amount, generation');
-
-        // Récupération des retraits payés
-        const { data: withdrawals } = await supabase
-            .from('withdrawals')
-            .select('net_amount, fee_amount, status')
-            .eq('status', 'PAID');
-
-        // Récupération des remboursements
-        const { data: refunds } = await supabase
-            .from('refunds')
-            .select('amount, status')
-            .eq('status', 'SUCCESS');
-
-        const commMap: Record<string, { n1: number; n2: number }> = {};
-        commissions?.forEach((c) => {
-            if (!commMap[c.payment_id]) commMap[c.payment_id] = { n1: 0, n2: 0 };
-            if (c.generation === 'N1') commMap[c.payment_id].n1 += Number(c.amount || 0);
-            if (c.generation === 'N2') commMap[c.payment_id].n2 += Number(c.amount || 0);
+        const payments = await fetchAllRows<ReconciliationPaymentRow>('rapprochement : paiements', (from, to) => {
+            let q = supabase
+                .from('payments')
+                .select('id, transaction_id, external_transaction_id, payment_target, operator, status, amount, facial_amount, service_fee, service_fee_rate, aggregator_fee, gross_event_village_revenue, net_event_village_revenue, refunded_net_revenue, refunded_amount, partner_payout_amount, order_id, hall_reservation_id, table_reservation_id, subscription_plan_id, event_id, created_at')
+                .eq('is_platform_payment', true);
+            q = status ? q.eq('status', status) : q.in('status', ENCASHED_STATUSES);
+            if (options?.startDate) q = q.gte('created_at', options.startDate);
+            if (options?.endDate) q = q.lte('created_at', options.endDate);
+            return q.order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to);
         });
 
+        // Commissions de parrainage des paiements retenus (annulées exclues, régularisations négatives incluses)
+        const commMap: Record<string, { n1: number; n2: number }> = {};
+        const ids = payments.map((p) => p.id);
+        for (let i = 0; i < ids.length; i += ID_CHUNK) {
+            const chunk = ids.slice(i, i + ID_CHUNK);
+            const rows = await fetchAllRows<{ payment_id: string; amount: number; generation: string }>('rapprochement : commissions', (from, to) => supabase
+                .from('referral_commissions')
+                .select('id, payment_id, amount, generation')
+                .in('payment_id', chunk)
+                .neq('status', 'CANCELLED')
+                .order('id', { ascending: true })
+                .range(from, to));
+            for (const c of rows) {
+                if (!commMap[c.payment_id]) commMap[c.payment_id] = { n1: 0, n2: 0 };
+                if (c.generation === 'N1') commMap[c.payment_id].n1 += Number(c.amount);
+                if (c.generation === 'N2') commMap[c.payment_id].n2 += Number(c.amount);
+            }
+        }
+
+        // Retraits versés et remboursements versés par la plateforme, sur la même période
+        const withdrawals = await fetchAllRows<{ net_amount: number }>('rapprochement : retraits', (from, to) => {
+            let q = supabase.from('withdrawals').select('id, net_amount').eq('status', 'PAID');
+            if (options?.startDate) q = q.gte('created_at', options.startDate);
+            if (options?.endDate) q = q.lte('created_at', options.endDate);
+            return q.order('id', { ascending: true }).range(from, to);
+        });
+        const refunds = await fetchAllRows<{ amount: number }>('rapprochement : remboursements', (from, to) => {
+            let q = supabase.from('refunds').select('id, amount').eq('status', 'PROCESSED').eq('settlement', 'PLATEFORME');
+            if (options?.startDate) q = q.gte('created_at', options.startDate);
+            if (options?.endDate) q = q.lte('created_at', options.endDate);
+            return q.order('id', { ascending: true }).range(from, to);
+        });
+
+        const cents = (n: number) => Math.round(n * 100);
         let totalGrossVolume = 0;
+        let totalServiceFees = 0;
         let totalAggregatorFees = 0;
         let totalPlatformNetRevenue = 0;
         let totalPartnerPayouts = 0;
         let totalReferralCommissions = 0;
         let discrepanciesCount = 0;
 
-        const items: FinancialReconciliationItem[] = (payments || []).map((p) => {
-            const gross = Number(p.amount || 0);
-            totalGrossVolume += gross;
+        const items: FinancialReconciliationItem[] = payments.map((p) => {
+            const grossAmount = Number(p.amount);
+            const serviceFee = Number(p.service_fee);
+            const aggregatorFee = Number(p.aggregator_fee);
+            const evGross = Number(p.gross_event_village_revenue);
+            const evNet = Number(p.net_event_village_revenue);
+            const platformNetRevenue = evNet - Number(p.refunded_net_revenue ?? 0);
+            const partnerPayout = Number(p.partner_payout_amount);
+            const n1 = commMap[p.id]?.n1 ?? 0;
+            const n2 = commMap[p.id]?.n2 ?? 0;
 
-            // Frais agrégateur (Wave 1%, Orange Money 1.5%, etc.)
-            let aggRate = 0.015;
-            if (p.payment_method === 'WAVE' || p.payment_method === 'WAVE_DIRECT') aggRate = 0.01;
-            else if (p.payment_method === 'CARTE_BANCAIRE') aggRate = 0.025;
+            const gapCents = Math.abs(cents(grossAmount) - cents(partnerPayout + evGross)) + Math.abs(cents(evGross) - cents(evNet + aggregatorFee));
+            if (gapCents > 0) discrepanciesCount += 1;
 
-            const aggregatorFee = Math.round(gross * aggRate);
+            totalGrossVolume += grossAmount;
+            totalServiceFees += serviceFee;
             totalAggregatorFees += aggregatorFee;
-
-            // Commission Event Village (ex: 6.5% par défaut)
-            const platformFeeRate = 6.5;
-            const platformNetRevenue = Math.round(gross * (platformFeeRate / 100));
             totalPlatformNetRevenue += platformNetRevenue;
-
-            // Reversement partenaire
-            const partnerPayout = Math.max(0, gross - aggregatorFee - platformNetRevenue);
             totalPartnerPayouts += partnerPayout;
-
-            // Commissions Parrainage
-            const n1 = commMap[p.id]?.n1 || 0;
-            const n2 = commMap[p.id]?.n2 || 0;
-            const totalComms = n1 + n2;
-            totalReferralCommissions += totalComms;
-
-            // Calcul d'écart (doit être égal à 0)
-            const expectedSum = aggregatorFee + platformNetRevenue + partnerPayout;
-            const discrepancy = Math.abs(gross - expectedSum);
-            if (discrepancy > 1) discrepanciesCount += 1;
+            totalReferralCommissions += n1 + n2;
 
             return {
                 paymentId: p.id,
-                transactionReference: p.external_transaction_id || `TX-${p.id.slice(0, 8)}`,
-                targetType: p.payment_target || 'ORDER',
-                targetId: p.target_id || '',
-                grossAmount: gross,
-                paymentMethod: p.payment_method || 'SAMIRPAY',
+                transactionReference: p.external_transaction_id || p.transaction_id,
+                targetType: p.payment_target,
+                targetId: p.order_id || p.hall_reservation_id || p.table_reservation_id || p.subscription_plan_id || p.event_id || '',
+                grossAmount,
+                facialAmount: p.facial_amount === null ? null : Number(p.facial_amount),
+                serviceFee,
+                paymentMethod: p.operator || 'SAMIRPAY',
                 aggregatorFee,
-                platformFeeRate,
+                platformFeeRate: p.service_fee_rate === null ? null : Number(p.service_fee_rate),
+                platformGrossRevenue: evGross,
                 platformNetRevenue,
+                refundedAmount: Number(p.refunded_amount ?? 0),
                 partnerPayout,
                 referralCommissionN1: n1,
                 referralCommissionN2: n2,
-                totalReferralCommissions: totalComms,
-                discrepancy,
-                status: p.status || 'PENDING',
+                totalReferralCommissions: n1 + n2,
+                discrepancy: gapCents / 100,
+                status: p.status,
                 createdAt: p.created_at,
             };
         });
 
-        const totalWithdrawalsPaid = withdrawals?.reduce((acc, w) => acc + Number(w.net_amount || 0), 0) || 0;
-        const totalRefunds = refunds?.reduce((acc, r) => acc + Number(r.amount || 0), 0) || 0;
-
-        const platformNetBalance = totalPlatformNetRevenue - totalReferralCommissions;
+        const totalWithdrawalsPaid = withdrawals.reduce((acc, w) => acc + Number(w.net_amount), 0);
+        const totalRefunds = refunds.reduce((acc, r) => acc + Number(r.amount), 0);
 
         return {
             summary: {
                 period: options?.startDate ? `${options.startDate} au ${options.endDate || 'ce jour'}` : 'Toutes périodes',
                 totalTransactionsCount: items.length,
                 totalGrossVolume,
+                totalServiceFees,
                 totalAggregatorFees,
                 totalPlatformNetRevenue,
                 totalPartnerPayouts,
                 totalReferralCommissions,
                 totalWithdrawalsPaid,
                 totalRefunds,
-                platformNetBalance,
+                platformNetBalance: totalPlatformNetRevenue - totalReferralCommissions,
                 discrepanciesCount,
             },
             items,
