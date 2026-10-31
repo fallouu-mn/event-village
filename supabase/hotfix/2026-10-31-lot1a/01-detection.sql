@@ -53,39 +53,57 @@ rls_helpers(name) AS (
     VALUES ('is_admin'), ('is_superadmin'), ('is_controller'), ('has_role'), ('is_partner_owner'), ('auth_user_role')
 )
 
--- A — rôle élevé réclamé dans les métadonnées d'inscription.
---     Avant le lot 1A, les parcours légitimes passaient AUSSI le rôle en métadonnée (inscription
---     partenaire, création par un admin). La trace serveur distingue ces cas d'un signUp public :
---       PARTENAIRE → une fiche partners existe ; CONTROLEUR → une affectation event_controllers existe ;
---       ADMIN / SUPERADMIN → une entrée d'audit CREATE_USER ou SUPERADMIN_BOOTSTRAP existe.
---     ALERTE = rôle réellement détenu SANS trace serveur ; A_VERIFIER = rôle détenu avec trace ;
---     INFO = rôle réclamé mais non détenu (tentative sans effet, ou compte corrigé).
+-- A — rôle élevé réclamé dans les métadonnées (champ « role » ou tableau « roles »).
+--     Une métadonnée ne prouve pas à elle seule une inscription malveillante :
+--       - avant le lot 1A, les parcours légitimes passaient AUSSI le rôle en métadonnée
+--         (inscription partenaire, création par un admin) ;
+--       - le trigger sync_user_roles_to_jwt recopie les rôles détenus dans « roles », et le
+--         premier par ordre alphabétique dans « role » (CLIENT pour un compte CLIENT + SUPERADMIN).
+--     Chaque rôle élevé réclamé est donc évalué séparément (une ligne par compte et par rôle),
+--     contre user_roles et contre la trace laissée par la route serveur qui l'attribue :
+--       PARTENAIRE → fiche partners ;
+--       CONTROLEUR → affectation event_controllers, ou audit CREATE_USER / CONTROLLER_ACCOUNT_ACTIVATED ;
+--       ADMIN / SUPERADMIN → audit CREATE_USER ou SUPERADMIN_BOOTSTRAP.
+--     ALERTE = rôle réclamé, détenu, SANS trace serveur ; A_VERIFIER = détenu avec trace ;
+--     INFO = réclamé mais non détenu (tentative sans effet, ou compte corrigé).
 SELECT 'A_metadata_role_eleve' AS controle,
        CASE
-           WHEN ur.role IS NULL THEN 'INFO'
-           WHEN (ur.role = 'PARTENAIRE' AND EXISTS (SELECT 1 FROM public.partners p WHERE p.user_id = u.id))
-             OR (ur.role = 'CONTROLEUR' AND EXISTS (SELECT 1 FROM public.event_controllers ec WHERE ec.user_id = u.id))
-             OR (ur.role IN ('ADMIN', 'SUPERADMIN') AND EXISTS (SELECT 1 FROM public.audit_logs a
-                     WHERE a.object_id = u.id AND a.action IN ('CREATE_USER', 'SUPERADMIN_BOOTSTRAP')))
+           WHEN NOT EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = c.user_id AND ur.role::text = c.role)
+             THEN 'INFO'
+           WHEN (c.role = 'PARTENAIRE' AND EXISTS (SELECT 1 FROM public.partners p WHERE p.user_id = c.user_id))
+             OR (c.role = 'CONTROLEUR' AND (EXISTS (SELECT 1 FROM public.event_controllers ec WHERE ec.user_id = c.user_id)
+                     OR EXISTS (SELECT 1 FROM public.audit_logs a WHERE a.object_id = c.user_id
+                                  AND a.action IN ('CREATE_USER', 'CONTROLLER_ACCOUNT_ACTIVATED'))))
+             OR (c.role IN ('ADMIN', 'SUPERADMIN') AND EXISTS (SELECT 1 FROM public.audit_logs a
+                     WHERE a.object_id = c.user_id AND a.action IN ('CREATE_USER', 'SUPERADMIN_BOOTSTRAP')))
              THEN 'A_VERIFIER'
            ELSE 'ALERTE'
        END AS gravite,
-       u.id::text AS objet_id,
+       c.user_id::text AS objet_id,
        u.created_at AS cree_le,
        jsonb_build_object(
            'email', u.email, 'phone', u.phone,
+           'role_reclame', c.role,
            'metadata_role', u.raw_user_meta_data->>'role',
            'metadata_roles', u.raw_user_meta_data->'roles',
-           'role_effectif_user_roles', ur.role,
+           'roles_detenus', (SELECT jsonb_agg(ur.role::text ORDER BY ur.role::text) FROM public.user_roles ur WHERE ur.user_id = c.user_id),
            'derniere_connexion', u.last_sign_in_at,
            'confirmation_envoyee_le', u.confirmation_sent_at,
            'note', 'ALERTE = rôle réclamé, détenu, sans trace d''attribution serveur'
        ) AS details
-  FROM auth.users u
-  LEFT JOIN public.user_roles ur
-         ON ur.user_id = u.id AND ur.role::text = (u.raw_user_meta_data->>'role')
- WHERE u.raw_user_meta_data->>'role' IN ('ADMIN', 'SUPERADMIN', 'PARTENAIRE', 'CONTROLEUR')
-    OR (u.raw_user_meta_data->'roles') ?| ARRAY['ADMIN', 'SUPERADMIN']
+  FROM (
+        SELECT DISTINCT u0.id AS user_id, claimed.role
+          FROM auth.users u0
+         CROSS JOIN LATERAL (
+                SELECT u0.raw_user_meta_data->>'role' AS role
+                UNION
+                SELECT jsonb_array_elements_text(
+                           CASE WHEN jsonb_typeof(u0.raw_user_meta_data->'roles') = 'array'
+                                THEN u0.raw_user_meta_data->'roles' ELSE '[]'::jsonb END)
+               ) claimed
+         WHERE claimed.role IN ('ADMIN', 'SUPERADMIN', 'PARTENAIRE', 'CONTROLEUR')
+       ) c
+  JOIN auth.users u ON u.id = c.user_id
 
 UNION ALL
 -- B — téléphone de bootstrap SUPERADMIN fourni en métadonnée (auth.users.phone vide)
