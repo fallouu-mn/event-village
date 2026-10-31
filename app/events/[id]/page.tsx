@@ -33,7 +33,13 @@ const EventMap = dynamic(
 );
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { PaymentModal } from '@/components/payment/PaymentModal';
+import {
+  PaymentModal,
+  isUncertainOutcome,
+  readJsonBody,
+  readPaymentError,
+  useIdempotencyKey,
+} from '@/components/payment/PaymentModal';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { getBrowserClient } from '@/lib/supabase/client';
@@ -49,6 +55,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<Record<string, number>>({});
+  // Clé d'idempotence du panier gratuit : conservée tant que le panier et l'issue incertaine ne changent pas.
+  const freeCheckoutAttempt = useIdempotencyKey();
 
   const updateCartQty = (categoryId: string, delta: number) => {
     setCart(prev => {
@@ -216,41 +224,84 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     }
     if (cartTotalQty === 0) return;
 
-    // Si le panier ne contient QUE des billets gratuits
+    // Panier entièrement gratuit : /api/checkout émet les billets tout de suite, sans opérateur.
     if (hasFreeOnly) {
+      if (isClaimingFree) return;
+      const payload = {
+        eventId,
+        items: cartItems.map(item => ({ categoryId: item.id, quantity: item.qty })),
+      };
+      const idempotencyKey = freeCheckoutAttempt.keyFor(JSON.stringify(payload));
       setIsClaimingFree(true);
       try {
         const res = await fetch('/api/checkout', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
             ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
           },
-          body: JSON.stringify({
-            eventId,
-            items: cartItems.map(item => ({ categoryId: item.id, quantity: item.qty })),
-          }),
+          body: JSON.stringify(payload),
         });
-        const data = await res.json();
-        if (data.success) {
+        const body = await readJsonBody(res, 'événement/checkout');
+
+        if (res.ok) {
+          const isFreeConfirmation =
+            typeof body === 'object' && body !== null && (body as { free?: unknown }).free === true;
+          if (!isFreeConfirmation) {
+            // Issue incertaine : la clé est conservée, un nouvel essai ne dupliquera pas les billets.
+            console.error('[événement] réponse inattendue du checkout gratuit :', body);
+            toast.error('Réponse inattendue du serveur. Patientez un instant puis réessayez.');
+            return;
+          }
+          freeCheckoutAttempt.reset();
           toast.success(
             cartTotalQty > 1
               ? `${cartTotalQty} billets gratuits réservés avec succès !`
               : 'Billet gratuit réservé avec succès !'
           );
           router.push('/tickets');
-        } else {
-          toast.error(data.error || 'Erreur lors de la réservation.');
+          return;
         }
-      } catch {
-        toast.error('Erreur réseau. Veuillez réessayer.');
+
+        const failure = readPaymentError(res.status, body);
+        if (!isUncertainOutcome(res.status)) freeCheckoutAttempt.reset();
+        if (res.status === 401) {
+          toast.error(failure.message);
+          router.push(`/login?redirect=${encodeURIComponent(`/events/${eventId}`)}`);
+          return;
+        }
+        if (failure.code === 'OPERATOR_REQUIRED') {
+          // Le serveur a calculé un montant à payer : les prix affichés n'étaient plus à jour.
+          toast.error('Le prix de ce panier a changé : vérifiez le récapitulatif puis relancez.');
+          void loadEvent(false);
+          return;
+        }
+        toast.error(
+          failure.problems.length > 0
+            ? failure.problems
+                .map(problem => {
+                  const name = cartItems.find(item => item.id === problem.categoryId)?.name;
+                  return name ? `${name} : ${problem.message}` : problem.message;
+                })
+                .join(' ')
+            : failure.message
+        );
+        if (failure.code === 'INSUFFICIENT_STOCK' || failure.code === 'SALE_CHECK_FAILED') {
+          void loadEvent(false);
+        }
+      } catch (err) {
+        // Issue incertaine : la clé est conservée pour le prochain essai.
+        console.error('[événement] réservation gratuite impossible :', err);
+        toast.error('Connexion impossible. Vérifiez votre réseau puis réessayez.');
       } finally {
         setIsClaimingFree(false);
       }
       return;
     }
 
-    // Sinon, ouvrir le PaymentModal pour les billets payants
+    // Panier avec au moins un billet payant : PaymentModal envoie TOUT le panier (gratuits compris,
+    // émis à la confirmation du paiement).
     setIsPaymentOpen(true);
   };
 
@@ -687,17 +738,14 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         </div>
       )}
 
-      {/* Modale de Paiement SamirPay — Checkout multi-catégories */}
+      {/* Modale de Paiement SamirPay — panier complet (payants et gratuits) via /api/checkout */}
       <PaymentModal
         isOpen={isPaymentOpen}
         onClose={() => setIsPaymentOpen(false)}
-        targetType="TICKET"
-        targetId={cartItems.find((item: any) => (item.price || 0) > 0)?.id || ''}
-        quantity={cartItems.filter((item: any) => (item.price || 0) > 0).reduce((sum: number, item: any) => sum + item.qty, 0)}
+        eventId={eventId}
+        checkoutItems={cartItems.map((item: any) => ({ categoryId: item.id, quantity: item.qty, label: item.name }))}
         amountFormatted={`${cartTotal.toLocaleString('fr-FR')} FCFA`}
         title={`${event.title} (${cartItems.map((item: any) => `${item.qty}x ${item.name}`).join(' + ')})`}
-        checkoutItems={cartItems.filter((item: any) => (item.price || 0) > 0).map((item: any) => ({ categoryId: item.id, quantity: item.qty }))}
-        eventId={eventId}
         onPaymentSuccess={() => {
           setIsPaymentOpen(false);
           router.push('/tickets');
