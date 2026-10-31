@@ -259,10 +259,16 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
         assert.equal(still?.status, 'VALIDE', 'le billet ne doit pas avoir été composté par un compte hors périmètre');
 
         const controller = await signInAs('CONTROLLER_A');
-        const asController = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(controller.accessToken)));
-        const body = await asController.json();
-        assert.equal(asController.status, 200, `contrôleur affecté : HTTP ${asController.status} ${JSON.stringify(body).slice(0, 300)}`);
-        assert.equal(body.result, 'valid');
+        try {
+            const asController = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(controller.accessToken)));
+            const body = await asController.json();
+            assert.equal(asController.status, 200, `contrôleur affecté : HTTP ${asController.status} ${JSON.stringify(body).slice(0, 300)}`);
+            assert.equal(body.result, 'valid');
+        } finally {
+            // Fixture partagée : CONTROLLER_A ne reste affecté qu'à A_PUBLIE (r8-controleur-lectures)
+            const { error: unassignErr } = await service.from('event_controllers').delete().eq('event_id', ev!.id).eq('user_id', fx.users.CONTROLLER_A.id);
+            assert.equal(unassignErr, null, `retrait de l'affectation temporaire : ${unassignErr?.message}`);
+        }
     });
 
     test('toutes les routes /api/partner/* et /api/tickets/* passent par le helper commun', () => {
