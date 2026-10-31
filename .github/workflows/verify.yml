@@ -77,6 +77,15 @@ jobs:
           set -o pipefail
           npm run verify 2>&1 | tee /tmp/verify.log
 
+      - name: Journal du conteneur Supabase Auth (diagnostic en cas d'échec)
+        if: failure()
+        run: |
+          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_(auth|db)_" ); do
+            echo "===== $c =====" >> /tmp/containers.log
+            docker logs --tail 300 "$c" >> /tmp/containers.log 2>&1 || true
+          done
+          grep -iE "error|sqlstate|failed" /tmp/containers.log | tail -60 || true
+
       - name: Annotations d'erreur (extraits bruts des journaux)
         if: failure()
         run: |
@@ -104,7 +113,7 @@ jobs:
             git checkout -q --orphan ci-results
           fi
           mkdir -p "$RUN_DIR"
-          for f in supabase-start db-reset seed verify; do
+          for f in supabase-start db-reset seed verify containers; do
             [ -f "/tmp/$f.log" ] && cp "/tmp/$f.log" "$RUN_DIR/$f.log"
           done
           if [ -d "$GITHUB_WORKSPACE/.test-logs" ]; then cp -r "$GITHUB_WORKSPACE/.test-logs" "$RUN_DIR/test-logs"; fi
