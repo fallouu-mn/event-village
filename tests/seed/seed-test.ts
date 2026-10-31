@@ -86,12 +86,11 @@ async function findAuthUserIdByEmail(email: string): Promise<string | null> {
 
 async function ensureUser(key: FixtureUserKey): Promise<string> {
     const spec = FIXTURE_USERS[key];
+    // Lot 1C.5 : aucun rôle dans les métadonnées ; les rôles sont dans user_roles (source unique).
     const metadata = {
         first_name: spec.firstName,
         last_name: spec.lastName,
         phone: spec.phone,
-        role: spec.primaryRole,
-        roles: [...spec.roles],
         is_test_fixture: true,
     };
 
