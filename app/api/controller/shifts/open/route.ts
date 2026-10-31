@@ -1,57 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServerSessionUser } from '@/lib/auth/session';
-import { ShiftService } from '@/lib/shifts/shift.service';
+import { requireActiveSession } from '@/lib/auth/session';
+import { asShiftRefusal, ShiftService } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
+// Deux nommages acceptés : contrat du lot 4 (eventId, openingFloat, regisseurPin) et écran historique
+// (event_id, opening_float_amount, regisseur_pin).
 const OpenShiftSchema = z.object({
-    event_id: z.string().uuid('ID événement invalide.'),
-    opening_float_amount: z.coerce.number().min(0, 'Le fond de caisse doit être positif ou nul.'),
-    regisseur_pin: z.string().min(4, 'Code PIN régisseur invalide.').max(6, 'Code PIN régisseur invalide.'),
-});
+    eventId: z.string().uuid('ID événement invalide.').optional(),
+    event_id: z.string().uuid('ID événement invalide.').optional(),
+    openingFloat: z.coerce.number().min(0, 'Le fond de caisse doit être positif ou nul.').optional(),
+    opening_float_amount: z.coerce.number().min(0, 'Le fond de caisse doit être positif ou nul.').optional(),
+    regisseurPin: z.string().trim().max(8, 'Code PIN régisseur invalide.').optional().nullable(),
+    regisseur_pin: z.string().trim().max(8, 'Code PIN régisseur invalide.').optional().nullable(),
+}).transform((d) => ({
+    eventId: d.eventId ?? d.event_id ?? '',
+    openingFloat: d.openingFloat ?? d.opening_float_amount ?? 0,
+    regisseurPin: (d.regisseurPin ?? d.regisseur_pin ?? '') || null,
+})).refine((d) => !!d.eventId, { message: 'ID événement requis.' });
 
 /**
- * POST /api/controller/shifts/open
- * Ouverture officielle d'une session de caisse par un contrôleur.
- * Vérifie :
- * - Rôle et habilitation can_accept_cash = true
- * - Fenêtre horaire de l'événement ([-2h, +4h])
- * - Code PIN régisseur (avec protection anti-brute-force)
- * - Absence de session déjà ouverte
+ * POST /api/controller/shifts/open — ouverture d'une session de caisse (lot 4.5), par la RPC shift_open :
+ * contrôleur affecté avec la permission espèces, partenaire propriétaire ou admin ; événement ouvert au
+ * contrôle ; une seule caisse ouverte par compte et par événement. PIN régisseur facultatif : fourni, il
+ * est vérifié (quota par compte et événement) et la caisse est marquée ouverte sous PIN.
  */
 export async function POST(req: NextRequest) {
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
+
+    const body = await req.json().catch(() => null);
+    const parsed = OpenShiftSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+        return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Données invalides.', code: 'INVALID_BODY' }, { status: 400 });
+    }
+
     try {
-        const user = await getServerSessionUser(req);
-        if (!user) {
-            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        }
-
-        const body = await req.json().catch(() => ({}));
-        const parse = OpenShiftSchema.safeParse(body);
-        if (!parse.success) {
-            return NextResponse.json({
-                error: parse.error.issues[0]?.message || 'Données invalides.',
-            }, { status: 400 });
-        }
-
-        const { event_id, opening_float_amount, regisseur_pin } = parse.data;
-
-        const shift = await ShiftService.openShift(user.id, {
-            eventId: event_id,
-            openingFloatAmount: opening_float_amount,
-            regisseurPin: regisseur_pin,
+        const shift = await ShiftService.openShift(session.user.id, {
+            eventId: parsed.data.eventId,
+            openingFloatAmount: parsed.data.openingFloat,
+            regisseurPin: parsed.data.regisseurPin,
         });
-
         return NextResponse.json({
             success: true,
             shift,
-            message: 'Session de caisse ouverte avec succès. Vous êtes désormais habilité à encaisser des espèces.',
+            message: 'Session de caisse ouverte. Vous pouvez encaisser des espèces pour cet événement.',
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne.';
-        console.error('[API controller/shifts/open POST]', msg);
-        const status = msg.includes('PIN') ? 401 : 400;
-        return NextResponse.json({ error: msg }, { status });
+        const refusal = asShiftRefusal(err);
+        if (refusal) return NextResponse.json(refusal.body, { status: refusal.status });
+        console.error('[API controller/shifts/open POST]', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Ouverture de caisse momentanément impossible.', code: 'SHIFT_OPEN_FAILED' }, { status: 500 });
     }
 }

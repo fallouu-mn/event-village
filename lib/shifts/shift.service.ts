@@ -1,7 +1,27 @@
+/**
+ * Sessions de caisse (Z de caisse) et PIN régisseur — lot 4 (4.5 à 4.7).
+ *
+ *  - La base est la seule source de vérité : aucun registre en mémoire, toute erreur de lecture ou
+ *    d'écriture remonte (exception), aucune erreur avalée.
+ *  - Ouverture par la RPC shift_open (contrôleur affecté avec la permission espèces, partenaire
+ *    propriétaire ou admin ; une seule caisse OUVERT par scanneur et événement). Le PIN régisseur y est
+ *    facultatif : fourni, il est vérifié et la caisse est marquée « ouverte sous PIN ».
+ *  - Encaissement et vente au guichet : RPC ticket_cash_checkin et counter_sale (routes dédiées).
+ *  - PIN : HMAC-SHA256(REGISSEUR_PIN_KEY, `regisseur-pin:v2:<eventId>:<sel>:<pin>`), sel aléatoire par
+ *    événement ; régénération confirmée, refusée (409 OPEN_SHIFTS) tant qu'une caisse est ouverte sauf
+ *    confirmation explicite, journalisée ; vérifications limitées par reserveQuota
+ *    (REGISSEUR_PIN_PER_SHIFT_15MIN) ; le haché n'est jamais renvoyé ni recopié dans controller_shifts.
+ *  - Retrait d'un contrôleur qui a une caisse ouverte : refusé en base (trigger, CONTROLLER_HAS_OPEN_SHIFT,
+ *    SQLSTATE EV409) ; les routes traduisent l'erreur en 409 avec isControllerRemovalBlocked.
+ */
 import crypto from 'crypto';
-import { getServiceRoleClient } from '@/lib/supabase/server';
-import { RateLimiter } from '@/lib/security/rate-limiter';
+import { getServerEnv, type ServerEnv } from '@/lib/env';
 import { NotificationService } from '@/lib/notifications/notification.service';
+import { rpcWithRetry } from '@/lib/payments/rpc';
+import { reserveQuota } from '@/lib/security/quota';
+import { getServiceRoleClient } from '@/lib/supabase/server';
+
+export type ShiftStatus = 'OUVERT' | 'CLOTURE' | 'LITIGE';
 
 export interface Shift {
     id: string;
@@ -11,17 +31,16 @@ export interface Shift {
     opening_float_amount: number;
     opened_at: string;
     opening_confirmed_by_pin: boolean;
-    status: 'OUVERT' | 'CLOTURE' | 'LITIGE';
+    status: ShiftStatus;
     expected_cash_total: number;
     declared_cash_total: number | null;
     discrepancy_amount: number | null;
     discrepancy_justification: string | null;
     closed_at: string | null;
     closing_confirmed_by_pin: boolean;
-    regisseur_pin_used: string | null;
     created_at: string;
     updated_at: string;
-    events?: { id: string; title: string; date?: string; start_date?: string };
+    events?: { id: string; title: string; partner_id?: string; date?: string; start_date?: string };
     users?: { id: string; first_name?: string; last_name?: string; phone?: string; email?: string };
 }
 
@@ -39,560 +58,371 @@ export interface ShiftSummary {
     declared_cash_total: number | null;
     discrepancy_amount: number | null;
     discrepancy_justification: string | null;
-    status: 'OUVERT' | 'CLOTURE' | 'LITIGE';
+    status: ShiftStatus;
     closing_confirmed_by_pin: boolean;
 }
 
-// Fallback in-memory ledger si table ou colonnes PostgREST pas encore en cache
-// (registre des sessions de caisse : inchangé au lot 1A, traité au lot 4).
-const memoryShifts = new Map<string, Shift>();
-
-function getSalt(): string {
-    // Lot 1C.6 : plus de valeur littérale de repli (secret codé en dur). Secret dédié : lot 4.
-    const salt = process.env.SUPABASE_AUTH_HOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!salt) throw new Error('Sel du PIN régisseur absent (SUPABASE_AUTH_HOOK_SECRET ou SUPABASE_SERVICE_ROLE_KEY).');
-    return salt;
+export interface ShiftViewer {
+    id: string;
+    isAdmin: boolean;
 }
 
-export function hashRegisseurPin(pin: string): string {
-    return crypto.createHmac('sha256', getSalt()).update(pin.trim()).digest('hex');
+/** Refus métier (statut HTTP et code stables) ; toute autre exception est une erreur technique. */
+export class ShiftError extends Error {
+    constructor(
+        public readonly status: number,
+        public readonly code: string,
+        message: string,
+        public readonly details: Record<string, unknown> = {},
+    ) {
+        super(message);
+        this.name = 'ShiftError';
+    }
 }
+
+/** Refus métier → { status, body } pour une route ; null pour une erreur technique (à journaliser, 500). */
+export function asShiftRefusal(err: unknown): { status: number; body: Record<string, unknown> } | null {
+    if (!(err instanceof ShiftError)) return null;
+    return { status: err.status, body: { error: err.message, code: err.code, ...err.details } };
+}
+
+export interface PinCheck {
+    valid: boolean;
+    status?: number;
+    code?: string;
+    message?: string;
+}
+
+// Colonnes exposées : jamais regisseur_pin_used (ancienne copie du haché, vidée par la migration du lot 4)
+const SHIFT_COLUMNS = 'id, controller_id, event_id, partner_id, opening_float_amount, opened_at, opening_confirmed_by_pin, status, '
+    + 'expected_cash_total, declared_cash_total, discrepancy_amount, discrepancy_justification, closed_at, closing_confirmed_by_pin, '
+    + 'created_at, updated_at';
+const SHIFT_WITH_PEOPLE = `${SHIFT_COLUMNS}, events(id, title, partner_id), users:controller_id(id, first_name, last_name, phone)`;
+
+const PIN_WINDOW_SECONDS = 15 * 60;
+const PIN_FORMAT = /^\d{4,8}$/;
+
+// ── Retrait d'un contrôleur (trigger controller_removal_guard) ─────────────
+
+export const CONTROLLER_HAS_OPEN_SHIFT = 'CONTROLLER_HAS_OPEN_SHIFT';
+
+/** Vrai si l'erreur (PostgREST ou Error) est le refus du trigger : caisse ouverte. */
+export function isControllerRemovalBlocked(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const e = err as { code?: unknown; message?: unknown };
+    return e.code === 'EV409' || (typeof e.message === 'string' && e.message.includes(CONTROLLER_HAS_OPEN_SHIFT));
+}
+
+/** Corps de la réponse 409 commune à toutes les routes de retrait. */
+export function controllerRemovalConflict(): { error: string; code: string } {
+    return {
+        error: 'Ce contrôleur a une caisse ouverte : clôturez-la avant de le retirer.',
+        code: CONTROLLER_HAS_OPEN_SHIFT,
+    };
+}
+
+// ── PIN régisseur ──────────────────────────────────────────────────────────
+
+type PinEnv = ServerEnv & { REGISSEUR_PIN_KEY?: string; REGISSEUR_PIN_PER_SHIFT_15MIN?: number };
+
+function pinKey(): string {
+    const key = (getServerEnv() as PinEnv).REGISSEUR_PIN_KEY;
+    if (!key || key.length < 32) {
+        throw new Error('REGISSEUR_PIN_KEY absente ou trop courte (32 caractères au moins) : PIN régisseur indisponible.');
+    }
+    return key;
+}
+
+function pinMaxAttempts(): number {
+    const max = Number((getServerEnv() as PinEnv).REGISSEUR_PIN_PER_SHIFT_15MIN);
+    if (!Number.isInteger(max) || max <= 0) {
+        throw new Error('REGISSEUR_PIN_PER_SHIFT_15MIN absente ou invalide : vérification du PIN régisseur refusée.');
+    }
+    return max;
+}
+
+export function hashRegisseurPin(eventId: string, salt: string, pin: string): string {
+    return crypto.createHmac('sha256', pinKey()).update(`regisseur-pin:v2:${eventId}:${salt}:${pin.trim()}`).digest('hex');
+}
+
+function round2(x: number): number {
+    return Math.round(x * 100) / 100;
+}
+
+function ctrlName(users: Shift['users'] | null | undefined): string {
+    const name = users ? `${users.first_name ?? ''} ${users.last_name ?? ''}`.trim() : '';
+    return name || 'Contrôleur';
+}
+
+async function isPartnerOwner(userId: string, partnerId: string): Promise<boolean> {
+    const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('id', partnerId).eq('user_id', userId).maybeSingle();
+    if (error) throw new Error(`Vérification du partenaire propriétaire impossible : ${error.message}`);
+    return !!data;
+}
+
+async function readShift(shiftId: string): Promise<Shift | null> {
+    const { data, error } = await getServiceRoleClient().from('controller_shifts').select(SHIFT_WITH_PEOPLE).eq('id', shiftId).maybeSingle();
+    if (error) throw new Error(`Lecture de la session de caisse impossible : ${error.message}`);
+    return (data ?? null) as unknown as Shift | null;
+}
+
+async function writeAudit(row: { userId: string; userRole?: string | null; action: string; objectType: string; objectId: string; metadata: Record<string, unknown> }): Promise<void> {
+    const { error } = await getServiceRoleClient().from('audit_logs').insert({
+        user_id: row.userId,
+        user_role: row.userRole ?? null,
+        action: row.action,
+        object_type: row.objectType,
+        object_id: row.objectId,
+        metadata: row.metadata,
+    });
+    if (error) throw new Error(`Journalisation (${row.action}) impossible : ${error.message}`);
+}
+
+const SHIFT_OPEN_REFUSALS: Record<string, [number, string]> = {
+    EVENT_NOT_FOUND: [404, 'Événement introuvable.'],
+    EVENT_NOT_OPEN: [409, 'Cet événement n’est pas ouvert : aucune caisse ne peut être ouverte.'],
+    CASH_FORBIDDEN: [403, 'Ouverture de caisse réservée au contrôleur affecté avec la permission espèces, au partenaire propriétaire ou à un admin.'],
+    INVALID_FLOAT: [400, 'Le fond de caisse doit être positif ou nul.'],
+    SHIFT_ALREADY_OPEN: [409, 'Une session de caisse est déjà ouverte pour cet événement. Clôturez-la avant d’en ouvrir une nouvelle.'],
+};
+
+const EVENT_PROBLEM_MESSAGES: Record<string, string> = {
+    event_cancelled: 'Cet événement est annulé.',
+    event_ended: 'Cet événement est terminé.',
+    event_suspended: 'Cet événement est suspendu.',
+    event_not_open: 'Cet événement n’est pas encore ouvert au contrôle.',
+};
 
 export class ShiftService {
 
-    // ──────────────────────────────────────────────────────────
-    // 1. PIN RÉGISSEUR (GÉNÉRATION & VÉRIFICATION)
-    // ──────────────────────────────────────────────────────────
+    // ── 1. PIN régisseur ───────────────────────────────────────────────────
 
-    /**
-     * Génère un PIN régisseur à 6 chiffres pour l'événement.
-     * Enregistre le hash en base, et retourne le PIN en clair une UNIQUE fois.
-     */
-    static async generateRegisseurPin(eventId: string, partnerUserId?: string): Promise<{ pin: string; eventId: string }> {
-        const supabase = getServiceRoleClient();
-
-        // 1. Si partnerUserId est fourni, vérifier la propriété de l'événement
-        if (partnerUserId) {
-            const { data: partner } = await supabase
-                .from('partners')
-                .select('id')
-                .eq('user_id', partnerUserId)
-                .maybeSingle();
-
-            if (!partner) {
-                throw new Error('Profil partenaire introuvable.');
-            }
-
-            const { data: ev } = await supabase
-                .from('events')
-                .select('id, partner_id')
-                .eq('id', eventId)
-                .maybeSingle();
-
-            if (!ev || ev.partner_id !== partner.id) {
-                throw new Error('Non autorisé à générer le code PIN pour cet événement.');
-            }
-        }
-
-        // 2. Générer un code PIN à 6 chiffres (générateur cryptographique)
-        const pin = crypto.randomInt(100000, 1000000).toString();
-        const hash = hashRegisseurPin(pin);
-        const now = new Date().toISOString();
-
-        // 3. Stockage du hash dans event_regisseur_pins (table non exposée aux rôles API, lot 1A).
-        //    Aucun repli : si l'écriture échoue, le PIN n'est pas renvoyé.
-        const { error: pinErr } = await supabase
-            .from('event_regisseur_pins')
-            .upsert({ event_id: eventId, pin_hash: hash, updated_at: now }, { onConflict: 'event_id' });
-        if (pinErr) {
-            throw new Error(`Enregistrement du code PIN régisseur impossible : ${pinErr.message}`);
-        }
-
-        return { pin, eventId };
+    /** Nombre de caisses OUVERT de l'événement. */
+    static async countOpenShifts(eventId: string): Promise<number> {
+        const { count, error } = await getServiceRoleClient()
+            .from('controller_shifts').select('id', { count: 'exact', head: true }).eq('event_id', eventId).eq('status', 'OUVERT');
+        if (error) throw new Error(`Lecture des caisses ouvertes impossible : ${error.message}`);
+        return count ?? 0;
     }
 
     /**
-     * Vérifie si un code PIN régisseur est valide pour l'événement donné.
-     * Protégé contre les attaques par force brute avec RateLimiter fail-closed.
+     * Génère (ou régénère) le PIN régisseur de l'événement et le renvoie UNE fois en clair.
+     * Ordre : propriété (sauf admin), confirmation, caisses ouvertes, écriture, journal.
      */
-    static async verifyRegisseurPin(
+    static async generateRegisseurPin(
         eventId: string,
-        candidatePin: string,
-        actorUserId: string = 'anonymous'
-    ): Promise<{ valid: boolean; message?: string }> {
-        if (!candidatePin || candidatePin.trim().length < 4) {
-            return { valid: false, message: 'Code PIN régisseur incomplet (4 à 6 chiffres requis).' };
-        }
-
-        const rateLimitKey = `regisseur_pin:${eventId}:${actorUserId}`;
-
-        // 1. Contrôle Anti-Brute-Force (Fail-closed : max 5 essais, 15 min de lockout)
-        const rateCheck = await RateLimiter.isRateLimited(rateLimitKey, {
-            maxAttempts: 5,
-            lockoutSeconds: 900,
-            failClosed: true,
-        });
-
-        if (rateCheck.limited) {
-            return {
-                valid: false,
-                message: `Trop de tentatives de code PIN. Veuillez patienter ${rateCheck.remainingSeconds ?? 900} secondes.`,
-            };
-        }
-
-        // 2. Récupérer le hash stocké (event_regisseur_pins, lot 1A). Aucun repli mémoire.
+        actorUserId: string,
+        options: { confirm?: boolean; confirmOpenShifts?: boolean; actorIsAdmin?: boolean; actorRole?: string } = {},
+    ): Promise<{ pin: string; eventId: string; openShifts: number; regenerated: boolean }> {
         const supabase = getServiceRoleClient();
-        const { data: pinRow, error: pinErr } = await supabase
-            .from('event_regisseur_pins')
-            .select('pin_hash')
-            .eq('event_id', eventId)
-            .maybeSingle();
-        if (pinErr) {
-            console.error('[ShiftService] Lecture du hash du PIN régisseur impossible:', pinErr.message);
-            return { valid: false, message: 'Vérification du code PIN impossible (erreur technique). Réessayez.' };
+        const { data: ev, error: evErr } = await supabase.from('events').select('id, partner_id').eq('id', eventId).maybeSingle();
+        if (evErr) throw new Error(`Lecture de l'événement impossible : ${evErr.message}`);
+        if (!ev) throw new ShiftError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
+        if (!options.actorIsAdmin && !(await isPartnerOwner(actorUserId, ev.partner_id as string))) {
+            throw new ShiftError(403, 'PIN_FORBIDDEN', 'Non autorisé à générer le code PIN pour cet événement.');
         }
-        const storedHash: string | null = pinRow?.pin_hash ?? null;
-
-        if (!storedHash) {
-            return {
-                valid: false,
-                message: "Aucun code PIN régisseur n'a encore été généré par l'organisateur pour cet événement.",
-            };
+        if (options.confirm !== true) {
+            throw new ShiftError(400, 'CONFIRMATION_REQUIRED', 'Confirmez la génération du code PIN : l’ancien code ne sera plus valable.');
+        }
+        const openShifts = await this.countOpenShifts(eventId);
+        if (openShifts > 0 && options.confirmOpenShifts !== true) {
+            throw new ShiftError(409, 'OPEN_SHIFTS',
+                `${openShifts} caisse(s) ouverte(s) : leur clôture exigera le nouveau code PIN. Confirmez explicitement la régénération.`,
+                { open_shifts: openShifts });
         }
 
-        // 3. Comparer
-        const candidateHash = hashRegisseurPin(candidatePin);
-        const isValid = crypto.timingSafeEqual(Buffer.from(candidateHash), Buffer.from(storedHash));
+        const { data: previous, error: prevErr } = await supabase.from('event_regisseur_pins').select('event_id').eq('event_id', eventId).maybeSingle();
+        if (prevErr) throw new Error(`Lecture du PIN régisseur impossible : ${prevErr.message}`);
 
-        if (!isValid) {
-            // Journaliser la tentative échouée
-            await RateLimiter.recordFailedAttempt(rateLimitKey, {
-                maxAttempts: 5,
-                lockoutSeconds: 900,
-                failClosed: true,
-            });
-            return { valid: false, message: 'Code PIN régisseur incorrect.' };
+        const pin = crypto.randomInt(100000, 1000000).toString();
+        const salt = crypto.randomBytes(16).toString('hex');
+        const { error: pinErr } = await supabase.from('event_regisseur_pins').upsert(
+            { event_id: eventId, pin_hash: hashRegisseurPin(eventId, salt, pin), pin_salt: salt, updated_at: new Date().toISOString() },
+            { onConflict: 'event_id' });
+        if (pinErr) throw new Error(`Enregistrement du code PIN régisseur impossible : ${pinErr.message}`);
+
+        await writeAudit({
+            userId: actorUserId,
+            userRole: options.actorRole,
+            action: previous ? 'REGISSEUR_PIN_REGENERATED' : 'REGISSEUR_PIN_GENERATED',
+            objectType: 'events',
+            objectId: eventId,
+            metadata: { event_id: eventId, open_shifts: openShifts, confirm_open_shifts: options.confirmOpenShifts === true },
+        });
+        return { pin, eventId, openShifts, regenerated: !!previous };
+    }
+
+    /**
+     * Vérifie un PIN régisseur. Chaque tentative consomme le quota `regisseur_pin` du compartiment
+     * donné (une caisse, ou l'ouverture d'une caisse par un compte) : REGISSEUR_PIN_PER_SHIFT_15MIN.
+     */
+    static async verifyRegisseurPin(eventId: string, candidatePin: string, quotaBucket: string): Promise<PinCheck> {
+        const pin = (candidatePin ?? '').trim();
+        if (!PIN_FORMAT.test(pin)) {
+            return { valid: false, status: 400, code: 'PIN_FORMAT', message: 'Code PIN régisseur incomplet (4 à 8 chiffres).' };
         }
-
+        const quota = await reserveQuota(
+            [{ scope: 'regisseur_pin', bucket: quotaBucket, windowSecs: PIN_WINDOW_SECONDS, max: pinMaxAttempts() }],
+            'PIN régisseur');
+        if (!quota.allowed) {
+            return quota.reason === 'EXCEEDED'
+                ? { valid: false, status: 429, code: 'PIN_RATE_LIMITED', message: `Trop de tentatives de code PIN. Réessayez dans ${quota.retryAfterSeconds} s.` }
+                : { valid: false, status: 503, code: 'PIN_GUARD_UNAVAILABLE', message: 'Vérification du code PIN momentanément indisponible.' };
+        }
+        const { data, error } = await getServiceRoleClient().from('event_regisseur_pins').select('pin_hash, pin_salt').eq('event_id', eventId).maybeSingle();
+        if (error) throw new Error(`Lecture du PIN régisseur impossible : ${error.message}`);
+        if (!data) {
+            return { valid: false, status: 409, code: 'PIN_NOT_SET', message: 'Aucun code PIN régisseur n’a été généré par l’organisateur pour cet événement.' };
+        }
+        const expected = Buffer.from(String(data.pin_hash), 'hex');
+        const candidate = Buffer.from(hashRegisseurPin(eventId, String(data.pin_salt), pin), 'hex');
+        if (expected.length !== candidate.length || !crypto.timingSafeEqual(expected, candidate)) {
+            return { valid: false, status: 401, code: 'PIN_INVALID', message: 'Code PIN régisseur incorrect.' };
+        }
         return { valid: true };
     }
 
-    // ──────────────────────────────────────────────────────────
-    // 2. CONTRÔLE DE LA FENÊTRE HORAIRE DE SHIFT ([-2h, +4h])
-    // ──────────────────────────────────────────────────────────
+    // ── 2. Ouverture ───────────────────────────────────────────────────────
 
-    /**
-     * Vérifie si l'horodatage actuel se trouve dans la fenêtre événement ± tolérance.
-     * Tolérance par défaut : -2h avant début officiel, +4h après fin officielle.
-     */
-    static isWithinShiftWindow(
-        event: {
-            start_date: string;
-            start_time?: string | null;
-            end_date?: string | null;
-            end_time?: string | null;
-        },
-        nowMs: number = Date.now(),
-        toleranceBeforeHours: number = 2,
-        toleranceAfterHours: number = 4
-    ): { valid: boolean; windowStart: Date; windowEnd: Date; message?: string } {
-        // Date & Heure de début
-        let eventStart: Date;
-        if (event.start_date.includes('T')) {
-            eventStart = new Date(event.start_date);
-        } else {
-            const startTimeStr = event.start_time || '00:00:00';
-            const cleanTime = startTimeStr.length === 5 ? startTimeStr + ':00' : startTimeStr;
-            eventStart = new Date(`${event.start_date}T${cleanTime}`);
+    static async openShift(userId: string, input: { eventId: string; openingFloatAmount: number; regisseurPin?: string | null }): Promise<Shift> {
+        const float = Number(input.openingFloatAmount ?? 0);
+        if (!Number.isFinite(float) || float < 0) throw new ShiftError(400, 'INVALID_FLOAT', SHIFT_OPEN_REFUSALS.INVALID_FLOAT[1]);
+
+        const { data: problem, error: probErr } = await rpcWithRetry<string | null>('scan_event_problem', { p_event: input.eventId });
+        if (probErr) throw new Error(`Contrôle de l'événement impossible : ${probErr.message}`);
+        if (problem === 'invalid') throw new ShiftError(404, 'EVENT_NOT_FOUND', SHIFT_OPEN_REFUSALS.EVENT_NOT_FOUND[1]);
+        if (problem) throw new ShiftError(409, 'EVENT_NOT_OPEN', EVENT_PROBLEM_MESSAGES[problem] ?? SHIFT_OPEN_REFUSALS.EVENT_NOT_OPEN[1], { result: problem });
+
+        // Droit d'encaisser vérifié avant le PIN : un compte non habilité ne consomme pas d'essai
+        const { data: allowed, error: allowErr } = await rpcWithRetry<boolean>('shift_can_handle_cash', { p_user: userId, p_event: input.eventId });
+        if (allowErr) throw new Error(`Contrôle du droit d'encaisser impossible : ${allowErr.message}`);
+        if (allowed !== true) throw new ShiftError(403, 'CASH_FORBIDDEN', SHIFT_OPEN_REFUSALS.CASH_FORBIDDEN[1]);
+
+        let pinVerified = false;
+        if (input.regisseurPin && input.regisseurPin.trim()) {
+            const check = await this.verifyRegisseurPin(input.eventId, input.regisseurPin, `open:${input.eventId}:${userId}`);
+            if (!check.valid) throw new ShiftError(check.status ?? 401, check.code ?? 'PIN_INVALID', check.message ?? 'Code PIN régisseur incorrect.');
+            pinVerified = true;
         }
 
-        // Date & Heure de fin
-        let eventEnd: Date;
-        const rawEndDate = event.end_date || event.start_date;
-        if (rawEndDate.includes('T')) {
-            eventEnd = new Date(rawEndDate);
-        } else {
-            const endTimeStr = event.end_time || '23:59:59';
-            const cleanTime = endTimeStr.length === 5 ? endTimeStr + ':00' : endTimeStr;
-            eventEnd = new Date(`${rawEndDate}T${cleanTime}`);
+        const { data, error } = await rpcWithRetry<{ ok?: boolean; code?: string; shift_id?: string; message?: string }>('shift_open', {
+            p: { user_id: userId, event_id: input.eventId, opening_float: float, pin_verified: pinVerified },
+        });
+        if (error || !data) throw new Error(`shift_open : ${error?.message ?? 'réponse vide'}`);
+        if (data.ok !== true) {
+            const code = String(data.code ?? 'SHIFT_OPEN_REFUSED');
+            const [status, message] = SHIFT_OPEN_REFUSALS[code] ?? [400, data.message ?? 'Ouverture de caisse refusée.'];
+            throw new ShiftError(status, code, message, data.shift_id ? { shift_id: data.shift_id } : {});
         }
-
-        // Si dates invalides (ex. format non standard), fallback sécurisé
-        const startTimeValid = !isNaN(eventStart.getTime());
-        const endTimeValid = !isNaN(eventEnd.getTime());
-
-        if (!startTimeValid || !endTimeValid) {
-            return {
-                valid: true,
-                windowStart: new Date(nowMs - 3600000),
-                windowEnd: new Date(nowMs + 3600000),
-            };
-        }
-
-        // Fenêtre avec tolérance (en tenant compte de ±12h d'écart de fuseau éventuel)
-        const windowStart = new Date(eventStart.getTime() - (toleranceBeforeHours + 12) * 60 * 60 * 1000);
-        const windowEnd = new Date(eventEnd.getTime() + (toleranceAfterHours + 12) * 60 * 60 * 1000);
-
-        const isWithin = nowMs >= windowStart.getTime() && nowMs <= windowEnd.getTime();
-
-        if (!isWithin) {
-            const formatTime = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-            const formatDate = (d: Date) => d.toLocaleDateString('fr-FR');
-            return {
-                valid: false,
-                windowStart,
-                windowEnd,
-                message: `Ce shift ne peut être ouvert qu'entre le ${formatDate(windowStart)} à ${formatTime(windowStart)} et le ${formatDate(windowEnd)} à ${formatTime(windowEnd)}.`,
-            };
-        }
-
-        return { valid: true, windowStart, windowEnd };
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // 3. OUVERTURE DE SHIFT
-    // ──────────────────────────────────────────────────────────
-
-    static async openShift(
-        controllerUserId: string,
-        input: {
-            eventId: string;
-            openingFloatAmount: number;
-            regisseurPin: string;
-            skipWindowCheck?: boolean;
-            nowMs?: number;
-        }
-    ): Promise<Shift> {
-        const supabase = getServiceRoleClient();
-        const eventId = input.eventId;
-
-        // 1. Vérifier que le contrôleur a can_accept_cash = true sur cet événement
-        const { data: assignment, error: assignErr } = await supabase
-            .from('event_controllers')
-            .select('id, can_accept_cash, event_id')
-            .eq('user_id', controllerUserId)
-            .eq('event_id', eventId)
-            .maybeSingle();
-
-        if (assignErr || !assignment) {
-            throw new Error("Vous n'êtes pas affecté à cet événement en tant que contrôleur.");
-        }
-
-        if (!assignment.can_accept_cash) {
-            throw new Error("Vous n'êtes pas habilité à encaisser des espèces pour cet événement (can_accept_cash = false).");
-        }
-
-        // 2. Vérifier le code PIN régisseur (Authentification de sécurité prioritaire)
-        const pinCheck = await this.verifyRegisseurPin(eventId, input.regisseurPin, controllerUserId);
-        if (!pinCheck.valid) {
-            throw new Error(pinCheck.message || 'Code PIN régisseur incorrect.');
-        }
-
-        // 3. Vérifier qu'aucun shift OUVERT n'existe déjà pour ce contrôleur sur cet événement
-        const existing = await this.getActiveShift(controllerUserId, eventId);
-        if (existing) {
-            throw new Error('Une session de caisse est déjà ouverte pour cet événement. Clôturez-la avant d\'en ouvrir une nouvelle.');
-        }
-
-        // 4. Vérifier la fenêtre horaire de l'événement
-        const { data: eventData, error: evErr } = await supabase
-            .from('events')
-            .select('id, title, start_date, start_time, end_date, end_time, partner_id')
-            .eq('id', eventId)
-            .maybeSingle();
-
-        if (evErr || !eventData) {
-            throw new Error('Événement introuvable.');
-        }
-
-        if (!input.skipWindowCheck) {
-            const windowCheck = this.isWithinShiftWindow(eventData, input.nowMs ?? Date.now());
-            if (!windowCheck.valid) {
-                throw new Error(windowCheck.message || 'Ce shift est hors de la fenêtre horaire autorisée pour cet événement.');
-            }
-        }
-
-        // 5. Créer l'enregistrement de shift
-        const now = new Date().toISOString();
-        const shiftData: Shift = {
-            id: crypto.randomUUID(),
-            controller_id: controllerUserId,
-            event_id: eventId,
-            partner_id: eventData.partner_id,
-            opening_float_amount: Number(input.openingFloatAmount) || 0,
-            opened_at: now,
-            opening_confirmed_by_pin: true,
-            status: 'OUVERT',
-            expected_cash_total: 0,
-            declared_cash_total: null,
-            discrepancy_amount: null,
-            discrepancy_justification: null,
-            closed_at: null,
-            closing_confirmed_by_pin: false,
-            regisseur_pin_used: hashRegisseurPin(input.regisseurPin),
-            created_at: now,
-            updated_at: now,
-        };
-
-        // Sauvegarde DB avec fallback mémoire
-        memoryShifts.set(shiftData.id, shiftData);
-
-        try {
-            const { data: inserted, error: insErr } = await (supabase.from('controller_shifts') as any)
-                .insert({
-                    id: shiftData.id,
-                    controller_id: shiftData.controller_id,
-                    event_id: shiftData.event_id,
-                    partner_id: shiftData.partner_id,
-                    opening_float_amount: shiftData.opening_float_amount,
-                    opened_at: shiftData.opened_at,
-                    opening_confirmed_by_pin: shiftData.opening_confirmed_by_pin,
-                    status: shiftData.status,
-                    expected_cash_total: shiftData.expected_cash_total,
-                    regisseur_pin_used: shiftData.regisseur_pin_used,
-                })
-                .select('*')
-                .maybeSingle();
-
-            if (insErr) {
-                console.warn('[ShiftService] Échec insertion controller_shifts en base (fallback actif):', insErr.message);
-            } else if (inserted) {
-                memoryShifts.set(inserted.id, inserted);
-                return inserted;
-            }
-        } catch (err) {
-            console.warn('[ShiftService] Exception insertion controller_shifts:', err);
-        }
-
-        return shiftData;
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // 4. RÉCUPÉRATION DU SHIFT ACTIF
-    // ──────────────────────────────────────────────────────────
-
-    static async getActiveShift(controllerUserId: string, eventId: string): Promise<Shift | null> {
-        const supabase = getServiceRoleClient();
-
-        // 1. Tenter la lecture DB
-        try {
-            const { data, error } = await (supabase.from('controller_shifts') as any)
-                .select('*, events(id, title), users:controller_id(id, first_name, last_name, phone)')
-                .eq('controller_id', controllerUserId)
-                .eq('event_id', eventId)
-                .eq('status', 'OUVERT')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-            if (!error && data) {
-                memoryShifts.set(data.id, data);
-                return data;
-            }
-        } catch {
-            // Ignorer et passer au fallback
-        }
-
-        // 2. Fallback mémoire
-        for (const shift of Array.from(memoryShifts.values())) {
-            if (shift.controller_id === controllerUserId && shift.event_id === eventId && shift.status === 'OUVERT') {
-                return shift;
-            }
-        }
-
-        return null;
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // 5. INCRÉMENTATION ATOMIQUE ENCAISSEMENT CASH EN COURS DE SHIFT
-    // ──────────────────────────────────────────────────────────
-
-    static async recordCashPayment(shiftId: string, amount: number): Promise<Shift> {
-        const supabase = getServiceRoleClient();
-        const numAmount = Number(amount) || 0;
-
-        // Mise à jour mémoire immédiate
-        let shift = memoryShifts.get(shiftId);
-        if (shift) {
-            shift.expected_cash_total = Number((Number(shift.expected_cash_total) + numAmount).toFixed(2));
-            shift.updated_at = new Date().toISOString();
-        }
-
-        try {
-            // Mise à jour conditionnelle atomique en base
-            const { data, error } = await (supabase.from('controller_shifts') as any)
-                .select('expected_cash_total')
-                .eq('id', shiftId)
-                .maybeSingle();
-
-            if (!error && data) {
-                const newTotal = Number((Number(data.expected_cash_total || 0) + numAmount).toFixed(2));
-                const { data: updated } = await (supabase.from('controller_shifts') as any)
-                    .update({
-                        expected_cash_total: newTotal,
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', shiftId)
-                    .select('*')
-                    .maybeSingle();
-
-                if (updated) {
-                    memoryShifts.set(updated.id, updated);
-                    return updated;
-                }
-            }
-        } catch (err) {
-            console.warn('[ShiftService] Exception recordCashPayment DB:', err);
-        }
-
-        if (!shift) {
-            throw new Error(`Shift ${shiftId} introuvable.`);
-        }
+        const shift = await readShift(String(data.shift_id));
+        if (!shift) throw new Error(`Caisse ${data.shift_id} introuvable après son ouverture.`);
         return shift;
     }
 
-    // ──────────────────────────────────────────────────────────
-    // 6. CLÔTURE & Z DE CAISSE
-    // ──────────────────────────────────────────────────────────
+    // ── 3. Caisse active ───────────────────────────────────────────────────
+
+    static async getActiveShift(userId: string, eventId: string): Promise<Shift | null> {
+        const { data, error } = await getServiceRoleClient()
+            .from('controller_shifts').select(SHIFT_WITH_PEOPLE)
+            .eq('controller_id', userId).eq('event_id', eventId).eq('status', 'OUVERT')
+            .maybeSingle();
+        if (error) throw new Error(`Lecture de la caisse active impossible : ${error.message}`);
+        return (data ?? null) as unknown as Shift | null;
+    }
+
+    /** Vrai si le contrôleur a une caisse OUVERT (sur les événements donnés) ; erreur → exception. */
+    static async hasActiveShift(userId: string, eventIds?: string[]): Promise<boolean> {
+        let query = getServiceRoleClient()
+            .from('controller_shifts').select('id', { count: 'exact', head: true }).eq('controller_id', userId).eq('status', 'OUVERT');
+        if (eventIds && eventIds.length > 0) query = query.in('event_id', eventIds);
+        const { count, error } = await query;
+        if (error) throw new Error(`Lecture des caisses ouvertes impossible : ${error.message}`);
+        return (count ?? 0) > 0;
+    }
+
+    // ── 4. Clôture (Z de caisse) ───────────────────────────────────────────
 
     static async closeShift(
-        controllerUserId: string,
-        input: {
-            shiftId: string;
-            declaredCashTotal: number;
-            discrepancyJustification?: string;
-            regisseurPin: string;
-        }
+        userId: string,
+        input: { shiftId: string; declaredCashTotal: number; discrepancyJustification?: string; regisseurPin: string },
     ): Promise<Shift> {
-        const supabase = getServiceRoleClient();
-        const shiftId = input.shiftId;
-
-        // 1. Récupérer le shift
-        let shift: Shift | null = memoryShifts.get(shiftId) || null;
-        try {
-            const { data } = await (supabase.from('controller_shifts') as any)
-                .select('*, events(id, title, partner_id), users:controller_id(id, first_name, last_name, phone)')
-                .eq('id', shiftId)
-                .maybeSingle();
-
-            if (data) shift = data;
-        } catch {}
-
-        if (!shift) {
-            throw new Error('Session de caisse introuvable.');
-        }
-
-        if (shift.controller_id !== controllerUserId) {
-            throw new Error("Vous n'êtes pas autorisé à clôturer cette session de caisse.");
-        }
-
+        const shift = await readShift(input.shiftId);
+        if (!shift || shift.controller_id !== userId) throw new ShiftError(404, 'SHIFT_NOT_FOUND', 'Session de caisse introuvable.');
         if (shift.status !== 'OUVERT') {
-            throw new Error(`Cette session de caisse a déjà été clôturée (statut: ${shift.status}).`);
+            throw new ShiftError(409, 'SHIFT_NOT_OPEN', `Cette session de caisse est déjà clôturée (statut : ${shift.status}).`);
         }
-
-        // 2. Vérification du PIN régisseur co-signataire
-        const pinCheck = await this.verifyRegisseurPin(shift.event_id, input.regisseurPin, controllerUserId);
-        if (!pinCheck.valid) {
-            throw new Error(pinCheck.message || 'Code PIN régisseur invalide pour la clôture.');
-        }
-
-        // 3. Calcul de l'écart
         const declared = Number(input.declaredCashTotal);
-        const expected = Number(shift.expected_cash_total);
-        const discrepancy = Number((declared - expected).toFixed(2));
+        if (!Number.isFinite(declared) || declared < 0) throw new ShiftError(400, 'INVALID_DECLARED', 'Le montant déclaré doit être positif ou nul.');
+        if (!input.regisseurPin || !input.regisseurPin.trim()) {
+            throw new ShiftError(400, 'PIN_REQUIRED', 'Le code PIN régisseur est obligatoire pour co-signer la clôture.');
+        }
+        const check = await this.verifyRegisseurPin(shift.event_id, input.regisseurPin, `shift:${shift.id}`);
+        if (!check.valid) throw new ShiftError(check.status ?? 401, check.code ?? 'PIN_INVALID', check.message ?? 'Code PIN régisseur invalide pour la clôture.');
 
-        // 4. Si écart != 0, la justification textuelle est STRICTEMENT OBLIGATOIRE
+        const discrepancy = round2(declared - Number(shift.expected_cash_total));
         const justification = input.discrepancyJustification?.trim() || '';
         if (discrepancy !== 0 && !justification) {
-            throw new Error("Une justification est obligatoire en cas d'écart de caisse (montant déclaré différent du montant attendu).");
+            throw new ShiftError(400, 'JUSTIFICATION_REQUIRED', 'Une justification est obligatoire en cas d’écart de caisse (montant déclaré différent du montant attendu).');
         }
 
         const now = new Date().toISOString();
-        const updatedShift: Shift = {
-            ...shift,
-            status: 'CLOTURE',
-            declared_cash_total: declared,
-            discrepancy_amount: discrepancy,
-            discrepancy_justification: discrepancy !== 0 ? justification : null,
-            closed_at: now,
-            closing_confirmed_by_pin: true,
-            updated_at: now,
-        };
+        const { data, error } = await getServiceRoleClient().from('controller_shifts')
+            .update({
+                status: 'CLOTURE',
+                declared_cash_total: declared,
+                discrepancy_amount: discrepancy,
+                discrepancy_justification: discrepancy !== 0 ? justification : null,
+                closed_at: now,
+                closing_confirmed_by_pin: true,
+                updated_at: now,
+            })
+            .eq('id', shift.id).eq('status', 'OUVERT')
+            .select(SHIFT_WITH_PEOPLE)
+            .maybeSingle();
+        if (error) throw new Error(`Clôture de la session de caisse impossible : ${error.message}`);
+        if (!data) throw new ShiftError(409, 'SHIFT_NOT_OPEN', 'Cette session de caisse vient d’être clôturée.');
+        const closed = data as unknown as Shift;
 
-        memoryShifts.set(shiftId, updatedShift);
+        await writeAudit({
+            userId,
+            userRole: 'CAISSE',
+            action: 'SHIFT_CLOSED',
+            objectType: 'controller_shifts',
+            objectId: closed.id,
+            metadata: { event_id: closed.event_id, expected: Number(closed.expected_cash_total), declared, discrepancy },
+        });
 
-        // Sauvegarde DB
-        try {
-            await (supabase.from('controller_shifts') as any)
-                .update({
-                    status: updatedShift.status,
-                    declared_cash_total: updatedShift.declared_cash_total,
-                    discrepancy_amount: updatedShift.discrepancy_amount,
-                    discrepancy_justification: updatedShift.discrepancy_justification,
-                    closed_at: updatedShift.closed_at,
-                    closing_confirmed_by_pin: true,
-                    updated_at: now,
-                })
-                .eq('id', shiftId);
-        } catch (err) {
-            console.warn('[ShiftService] Clôture DB en fallback:', err);
-        }
-
-        // 5. Alerte Partenaire en cas d'écart non nul (SMS + In-App)
         if (discrepancy !== 0) {
+            // Alerte au partenaire : la clôture est acquise, un échec d'envoi est journalisé sans l'annuler
             try {
-                // Résoudre les noms pour la notification
-                const eventTitle = (shift.events as any)?.title || 'Événement';
-                const ctrlName = (shift.users as any)
-                    ? `${(shift.users as any).first_name ?? ''} ${(shift.users as any).last_name ?? ''}`.trim()
-                    : 'Contrôleur';
-
                 await NotificationService.sendShiftDiscrepancyNotification({
-                    partnerId: shift.partner_id,
-                    eventTitle,
-                    controllerName: ctrlName || 'Contrôleur',
+                    partnerId: closed.partner_id,
+                    eventTitle: closed.events?.title || 'Événement',
+                    controllerName: ctrlName(closed.users),
                     discrepancyAmount: discrepancy,
                     justification,
                 });
             } catch (notifyErr) {
-                console.warn('[ShiftService] Échec envoi notification écart partenaire:', notifyErr);
+                console.error(`[ShiftService] alerte d'écart de la caisse ${closed.id} non envoyée :`, notifyErr instanceof Error ? notifyErr.message : String(notifyErr));
             }
         }
-
-        return updatedShift;
+        return closed;
     }
 
-    // ──────────────────────────────────────────────────────────
-    // 7. RÉSUMÉ Z DE CAISSE DÉTAILLÉ
-    // ──────────────────────────────────────────────────────────
+    // ── 5. Résumé (ticket Z) ───────────────────────────────────────────────
 
-    static async getShiftSummary(shiftId: string): Promise<ShiftSummary> {
-        const supabase = getServiceRoleClient();
-
-        let shift: Shift | null = memoryShifts.get(shiftId) || null;
-        try {
-            const { data } = await (supabase.from('controller_shifts') as any)
-                .select('*, events(id, title), users:controller_id(id, first_name, last_name, phone)')
-                .eq('id', shiftId)
-                .maybeSingle();
-
-            if (data) shift = data;
-        } catch {}
-
-        if (!shift) {
-            throw new Error('Session de caisse introuvable.');
-        }
-
-        const ctrlUser = (shift as any).users;
-        const ctrlName = ctrlUser ? `${ctrlUser.first_name || ''} ${ctrlUser.last_name || ''}`.trim() : 'Contrôleur';
-
+    /** Lisible par son contrôleur, le partenaire propriétaire ou un admin ; sinon 404 (aucune donnée). */
+    static async getShiftSummary(shiftId: string, viewer: ShiftViewer): Promise<ShiftSummary> {
+        const shift = await readShift(shiftId);
+        const allowed = !!shift && (viewer.isAdmin || shift.controller_id === viewer.id || (await isPartnerOwner(viewer.id, shift.partner_id)));
+        if (!shift || !allowed) throw new ShiftError(404, 'SHIFT_NOT_FOUND', 'Session de caisse introuvable.');
         return {
             shift_id: shift.id,
             controller_id: shift.controller_id,
-            controller_name: ctrlName || 'Contrôleur',
-            controller_phone: ctrlUser?.phone || '',
+            controller_name: ctrlName(shift.users),
+            controller_phone: shift.users?.phone || '',
             event_id: shift.event_id,
-            event_title: (shift as any).events?.title || 'Événement',
+            event_title: shift.events?.title || 'Événement',
             opened_at: shift.opened_at,
             closed_at: shift.closed_at,
             opening_float_amount: Number(shift.opening_float_amount),
@@ -601,98 +431,28 @@ export class ShiftService {
             discrepancy_amount: shift.discrepancy_amount !== null ? Number(shift.discrepancy_amount) : null,
             discrepancy_justification: shift.discrepancy_justification,
             status: shift.status,
-            closing_confirmed_by_pin: shift.closing_confirmed_by_pin,
+            closing_confirmed_by_pin: shift.closing_confirmed_by_pin === true,
         };
     }
 
-    // ──────────────────────────────────────────────────────────
-    // 8. VÉRIFICATION POUR BLOCAGE DE DÉSAFFECTATION
-    // ──────────────────────────────────────────────────────────
+    // ── 6. Caisses d'un événement (partenaire propriétaire ou admin) ───────
 
-    /**
-     * Vérifie si le contrôleur a un shift OUVERT sur l'un des événements ciblés.
-     * Utilisé pour bloquer la suppression d'affectation si une session est active.
-     */
-    static async hasActiveShift(controllerUserId: string, eventIds?: string[]): Promise<boolean> {
+    static async getEventShifts(eventId: string, viewer: ShiftViewer): Promise<Shift[]> {
         const supabase = getServiceRoleClient();
-
-        // 1. Vérification en base
-        try {
-            let query = (supabase.from('controller_shifts') as any)
-                .select('id', { count: 'exact', head: true })
-                .eq('controller_id', controllerUserId)
-                .eq('status', 'OUVERT');
-
-            if (eventIds && eventIds.length > 0) {
-                query = query.in('event_id', eventIds);
-            }
-
-            const { count, error } = await query;
-            if (!error && count !== null && count > 0) {
-                return true;
-            }
-        } catch {}
-
-        // 2. Vérification mémoire
-        for (const s of Array.from(memoryShifts.values())) {
-            if (s.controller_id === controllerUserId && s.status === 'OUVERT') {
-                if (!eventIds || eventIds.length === 0 || eventIds.includes(s.event_id)) {
-                    return true;
-                }
-            }
+        const { data: ev, error: evErr } = await supabase.from('events').select('id, partner_id').eq('id', eventId).maybeSingle();
+        if (evErr) throw new Error(`Lecture de l'événement impossible : ${evErr.message}`);
+        if (!ev || (!viewer.isAdmin && !(await isPartnerOwner(viewer.id, ev.partner_id as string)))) {
+            throw new ShiftError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
         }
-
-        return false;
+        const { data, error } = await supabase.from('controller_shifts')
+            .select(`${SHIFT_COLUMNS}, users:controller_id(id, first_name, last_name, phone)`)
+            .eq('event_id', eventId)
+            .order('created_at', { ascending: false });
+        if (error) throw new Error(`Lecture des caisses de l'événement impossible : ${error.message}`);
+        return (data ?? []) as unknown as Shift[];
     }
 
-    // ──────────────────────────────────────────────────────────
-    // 9. LISTE DES SHIFTS PAR ÉVÉNEMENT (POUR LE PARTENAIRE)
-    // ──────────────────────────────────────────────────────────
-
-    static async getEventShifts(eventId: string, partnerUserId?: string): Promise<Shift[]> {
-        const supabase = getServiceRoleClient();
-
-        if (partnerUserId) {
-            const { data: partner } = await supabase
-                .from('partners')
-                .select('id')
-                .eq('user_id', partnerUserId)
-                .maybeSingle();
-
-            if (!partner) throw new Error('Profil partenaire introuvable.');
-
-            const { data: ev } = await supabase
-                .from('events')
-                .select('id, partner_id')
-                .eq('id', eventId)
-                .maybeSingle();
-
-            if (!ev || ev.partner_id !== partner.id) {
-                throw new Error('Non autorisé à consulter les caisses de cet événement.');
-            }
-        }
-
-        try {
-            const { data, error } = await (supabase.from('controller_shifts') as any)
-                .select('*, users:controller_id(id, first_name, last_name, phone)')
-                .eq('event_id', eventId)
-                .order('created_at', { ascending: false });
-
-            if (!error && data) {
-                return data;
-            }
-        } catch {}
-
-        const list: Shift[] = [];
-        for (const s of Array.from(memoryShifts.values())) {
-            if (s.event_id === eventId) list.push(s);
-        }
-        return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // 10. STATISTIQUES CONSOLIDÉES SUPERADMIN
-    // ──────────────────────────────────────────────────────────
+    // ── 7. Écarts consolidés (admin) ───────────────────────────────────────
 
     static async getConsolidatedDiscrepancies(): Promise<Array<{
         shift_id: string;
@@ -707,55 +467,24 @@ export class ShiftService {
         discrepancy_justification: string;
         closed_at: string;
     }>> {
-        const supabase = getServiceRoleClient();
-
-        try {
-            const { data, error } = await (supabase.from('controller_shifts') as any)
-                .select('*, events(id, title), users:controller_id(id, first_name, last_name)')
-                .neq('discrepancy_amount', 0)
-                .not('discrepancy_amount', 'is', null)
-                .order('closed_at', { ascending: false });
-
-            if (!error && data) {
-                return data.map((d: any) => ({
-                    shift_id: d.id,
-                    event_id: d.event_id,
-                    event_title: d.events?.title,
-                    partner_id: d.partner_id,
-                    controller_id: d.controller_id,
-                    controller_name: `${d.users?.first_name || ''} ${d.users?.last_name || ''}`.trim(),
-                    expected_cash_total: Number(d.expected_cash_total),
-                    declared_cash_total: Number(d.declared_cash_total),
-                    discrepancy_amount: Number(d.discrepancy_amount),
-                    discrepancy_justification: d.discrepancy_justification || '',
-                    closed_at: d.closed_at,
-                }));
-            }
-        } catch {}
-
-        const list: any[] = [];
-        for (const s of Array.from(memoryShifts.values())) {
-            if (s.discrepancy_amount !== null && s.discrepancy_amount !== 0) {
-                list.push({
-                    shift_id: s.id,
-                    event_id: s.event_id,
-                    partner_id: s.partner_id,
-                    controller_id: s.controller_id,
-                    expected_cash_total: Number(s.expected_cash_total),
-                    declared_cash_total: Number(s.declared_cash_total),
-                    discrepancy_amount: Number(s.discrepancy_amount),
-                    discrepancy_justification: s.discrepancy_justification || '',
-                    closed_at: s.closed_at || '',
-                });
-            }
-        }
-        return list;
-    }
-
-    /**
-     * Méthode utilitaire pour réinitialiser le registre mémoire lors des tests.
-     */
-    static _clearMemory(): void {
-        memoryShifts.clear();
+        const { data, error } = await getServiceRoleClient().from('controller_shifts')
+            .select(`${SHIFT_COLUMNS}, events(id, title), users:controller_id(id, first_name, last_name)`)
+            .neq('discrepancy_amount', 0)
+            .not('discrepancy_amount', 'is', null)
+            .order('closed_at', { ascending: false });
+        if (error) throw new Error(`Lecture des écarts de caisse impossible : ${error.message}`);
+        return ((data ?? []) as unknown as Shift[]).map((d) => ({
+            shift_id: d.id,
+            event_id: d.event_id,
+            event_title: d.events?.title,
+            partner_id: d.partner_id,
+            controller_id: d.controller_id,
+            controller_name: ctrlName(d.users),
+            expected_cash_total: Number(d.expected_cash_total),
+            declared_cash_total: Number(d.declared_cash_total),
+            discrepancy_amount: Number(d.discrepancy_amount),
+            discrepancy_justification: d.discrepancy_justification || '',
+            closed_at: d.closed_at || '',
+        }));
     }
 }
