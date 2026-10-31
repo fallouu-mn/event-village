@@ -280,25 +280,26 @@ export class AdminService {
 
         // 3. AUTH SUPABASE (Libération de l'Email et du Téléphone + Ban définitif 100 ans)
         // ATTENTION : Ne JAMAIS utiliser auth.admin.deleteUser pour éviter le hard delete en cascade.
-        try {
-            await supabase.auth.admin.updateUserById(targetUserId, {
-                email: anonymizedEmail,
-                email_confirm: true,
-                phone: `+000000${targetUserId.replace(/-/g, '').slice(0, 6)}`,
-                phone_confirm: false,
-                ban_duration: '876000h', // 100 ans
-                user_metadata: {
-                    is_anonymized: true,
-                    anonymized_at: new Date().toISOString(),
-                    role: 'CLIENT',
-                    first_name: 'Utilisateur',
-                    last_name: 'Supprimé',
-                },
-            });
-            // Déconnexion immédiate de toutes les sessions actives
-            await supabase.auth.admin.signOut(targetUserId, 'global');
-        } catch (authErr) {
-            console.warn('[AdminService.anonymizeUser] Notice mise à jour auth:', authErr);
+        // Lot 1B.9 : l'ancien téléphone synthétique (+000000…) était refusé par GoTrue (format E.164) ;
+        // l'erreur, renvoyée et non levée, était ignorée : ni l'email, ni le téléphone, ni le
+        // bannissement n'étaient appliqués et le compte restait connectable. Numéro synthétique
+        // valide et unique (indicatif 999, non attribué) ; tout échec interrompt l'anonymisation.
+        const authPhoneDigits = BigInt(`0x${targetUserId.replace(/-/g, '')}`).toString().slice(-12).padStart(12, '0');
+        const { error: authUpdateErr } = await supabase.auth.admin.updateUserById(targetUserId, {
+            email: anonymizedEmail,
+            email_confirm: true,
+            phone: `+999${authPhoneDigits}`,
+            phone_confirm: false,
+            ban_duration: '876000h', // 100 ans
+            user_metadata: {
+                is_anonymized: true,
+                anonymized_at: new Date().toISOString(),
+                first_name: 'Utilisateur',
+                last_name: 'Supprimé',
+            },
+        });
+        if (authUpdateErr) {
+            throw new Error(`Anonymisation du compte de connexion impossible : ${authUpdateErr.message}`);
         }
 
         // 4. DB PUBLIQUE users (Anonymisation RGPD)
@@ -355,17 +356,20 @@ export class AdminService {
 
         // 5. NETTOYAGE DES AFFECTATIONS (Droit à l'oubli opérationnel)
         // Supprimer des équipes d'événements et des permissions (sans toucher aux shifts ni commandes)
-        await supabase.from('event_controllers').delete().eq('user_id', targetUserId);
-        await supabase.from('user_roles').delete().eq('user_id', targetUserId).eq('role', 'CONTROLEUR');
-        try { await (supabase.from('admin_permissions') as any).delete().eq('admin_id', targetUserId); } catch {}
-
-        if (originalPhone) {
-            try {
-                await (supabase.from('otp_codes') as any)
+        const cleanups = await Promise.all([
+            supabase.from('event_controllers').delete().eq('user_id', targetUserId),
+            supabase.from('user_roles').delete().eq('user_id', targetUserId).eq('role', 'CONTROLEUR'),
+            (supabase.from('admin_permissions') as any).delete().eq('admin_id', targetUserId),
+            originalPhone
+                ? (supabase.from('otp_codes') as any)
                     .delete()
-                    .or(`phone.eq.${originalPhone},phone.eq.${originalPhone.replace('+', '')},phone.eq.${anonymizedPhone}`);
-            } catch {}
-        }
+                    .or(`phone.eq.${originalPhone},phone.eq.${originalPhone.replace('+', '')},phone.eq.${anonymizedPhone}`)
+                : Promise.resolve({ error: null }),
+        ]);
+        const cleanupLabels = ['event_controllers', 'user_roles CONTROLEUR', 'admin_permissions', 'otp_codes'];
+        cleanups.forEach((res: { error: { message: string } | null }, i: number) => {
+            if (res.error) console.error(`[AdminService.anonymizeUser] nettoyage ${cleanupLabels[i]} :`, res.error.message);
+        });
 
         // 6. Journalisation d'audit inaltérable
         await AdminService.logAudit({
