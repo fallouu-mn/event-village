@@ -2,7 +2,8 @@
  * Lot 4 — invariant du contrôle d'accès, extension des invariants des lots 2 et 3, vérifié à la fin
  * de chaque suite du lot par une requête SQL sur la base LOCALE (lecture seule) :
  *  (g) tout billet UTILISE a exactement une ligne ticket_scans acceptée, faite par un scanneur autorisé
- *      pour son événement (contrôleur affecté, partenaire propriétaire ou admin) ;
+ *      pour son événement au moment du scan (contrôleur affecté, partenaire propriétaire ou admin : rôle
+ *      recopié sur la ligne, scanner_role) ; un retrait ultérieur de l'affectation ne rend pas le scan illégitime ;
  *  (h) pour chaque caisse : total attendu = somme des paiements hors plateforme qui lui sont rattachés
  *      (encaissements au scan et ventes au guichet) ;
  *  (i) aucun paiement hors plateforme n'a de frais, de revenu Event Village, de reversement plateforme,
@@ -16,11 +17,7 @@ import { assertFinanceInvariants } from './finance-invariants';
 export const ACCESS_INVARIANT_SQL = `
 WITH accepted AS (
     SELECT s.ticket_id, count(*) AS n,
-           count(*) FILTER (WHERE
-               EXISTS (SELECT 1 FROM public.event_controllers ec WHERE ec.event_id = t.event_id AND ec.user_id = s.scanner_id)
-            OR EXISTS (SELECT 1 FROM public.events e JOIN public.partners p ON p.id = e.partner_id WHERE e.id = t.event_id AND p.user_id = s.scanner_id)
-            OR EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = s.scanner_id AND r.role IN ('ADMIN', 'SUPERADMIN'))
-           ) AS authorized
+           count(*) FILTER (WHERE s.scanner_role IN ('CONTROLEUR', 'PARTENAIRE', 'ADMIN') AND s.event_id = t.event_id) AS authorized
       FROM public.ticket_scans s
       JOIN public.tickets t ON t.id = s.ticket_id
      WHERE s.accepted
