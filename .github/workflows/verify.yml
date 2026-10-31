@@ -1,0 +1,75 @@
+name: verify
+
+on:
+  push:
+    branches:
+      - main
+      - 'fix/**'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · tests (Supabase local) · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.0
+
+      - name: Démarrer Supabase local (services nécessaires aux tests uniquement)
+        run: supabase start -x studio,imgproxy,logflare,vector,edge-runtime
+
+      - name: Appliquer toutes les migrations depuis zéro (supabase db reset)
+        run: supabase db reset
+
+      - name: Générer .env.test depuis l'instance locale
+        run: |
+          supabase status -o env > /tmp/supabase.env
+          set -a
+          # shellcheck disable=SC1091
+          . /tmp/supabase.env
+          set +a
+          ANON="${ANON_KEY:-${PUBLISHABLE_KEY:-}}"
+          SERVICE="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+          if [ -z "$API_URL" ] || [ -z "$ANON" ] || [ -z "$SERVICE" ]; then
+            echo "Impossible de lire API_URL / ANON_KEY / SERVICE_ROLE_KEY depuis supabase status"; exit 1
+          fi
+          sed -e "s#^NEXT_PUBLIC_SUPABASE_URL=.*#NEXT_PUBLIC_SUPABASE_URL=${API_URL}#" \
+              -e "s#^NEXT_PUBLIC_SUPABASE_ANON_KEY=.*#NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON}#" \
+              -e "s#^SUPABASE_SERVICE_ROLE_KEY=.*#SUPABASE_SERVICE_ROLE_KEY=${SERVICE}#" \
+              .env.test.example > .env.test
+          echo ".env.test généré : $(grep -c . .env.test) lignes (URL=${API_URL})"
+
+      - name: Seed de test (idempotent, données fictives)
+        run: npm run seed:test
+
+      - name: Vérification complète (typecheck → lint → tests → build)
+        run: npm run verify
+
+      - name: Journaux des suites de tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: .test-logs/
+          if-no-files-found: ignore
