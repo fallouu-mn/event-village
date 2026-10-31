@@ -12,6 +12,8 @@ const PUBLIC_PREFIXES = [
     '/api/partner/documents/signed-url',
     '/api/payments',
     '/api/events',
+    // Lot 2 : tâches planifiées (Vercel Cron, pg_cron) sans session ; chaque route exige CRON_SECRET.
+    '/api/cron',
     '/branding',
     '/favicon.ico',
     '/icon-192x192.png',
