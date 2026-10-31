@@ -48,11 +48,12 @@ describe('Scripts de hotfix du lot 1A', () => {
     });
 
     test('01-detection.sql section A : gravité par rôle réclamé, selon user_roles et la trace serveur', async () => {
-        // Comptes synthétiques créés dans une transaction annulée. L'UPDATE des métadonnées
-        // reproduit ce que fait GoTrue après les triggers d'insertion : il réécrit
-        // raw_user_meta_data avec les données envoyées au signUp.
+        // Comptes synthétiques créés dans une transaction annulée. Les métadonnées sont posées
+        // explicitement : elles reproduisent l'état des comptes du projet de test, où le trigger
+        // recopiait les rôles (« roles », et le premier par ordre alphabétique dans « role »).
+        // Depuis le lot 1C.5, le trigger n'écrit plus dans raw_user_meta_data.
         const ids = {
-            bootstrap: crypto.randomUUID(), // SUPERADMIN via bootstrap serveur : rôles recopiés par le trigger, « role » = CLIENT
+            bootstrap: crypto.randomUUID(), // SUPERADMIN via bootstrap serveur, métadonnées historiques « role » = CLIENT
             forged: crypto.randomUUID(), // ADMIN réclamé à l'inscription et détenu, sans trace serveur
             attempt: crypto.randomUUID(), // SUPERADMIN réclamé, jamais détenu
             adminCreated: crypto.randomUUID(), // CONTROLEUR créé par l'API admin, sans affectation
@@ -73,11 +74,13 @@ describe('Scripts de hotfix du lot 1A', () => {
 
             await grant(ids.bootstrap, 'SUPERADMIN');
             await audit(ids.bootstrap, 'SUPERADMIN_BOOTSTRAP');
+            await signupMetadata(ids.bootstrap, { role: 'CLIENT', roles: ['CLIENT', 'SUPERADMIN'] });
             await grant(ids.forged, 'ADMIN');
             await signupMetadata(ids.forged, { role: 'ADMIN' });
             await signupMetadata(ids.attempt, { role: 'SUPERADMIN', roles: ['SUPERADMIN'] });
             await grant(ids.adminCreated, 'CONTROLEUR');
             await audit(ids.adminCreated, 'CREATE_USER');
+            await signupMetadata(ids.adminCreated, { role: 'CLIENT', roles: ['CLIENT', 'CONTROLEUR'] });
 
             const res = await c.query(read('01-detection.sql'));
             const last = Array.isArray(res) ? res[res.length - 1] : res;

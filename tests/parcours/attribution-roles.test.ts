@@ -4,8 +4,9 @@
  *  - inscription partenaire → rôle PARTENAIRE ;
  *  - création d'un compte par un SUPERADMIN → rôle demandé ;
  *  - invitation d'un contrôleur par un partenaire → rôle CONTROLEUR.
- * Dans chaque cas, le rôle doit figurer dans user_roles (source des politiques RLS) et
- * dans les métadonnées du jeton (synchronisées par trigger depuis user_roles).
+ * Dans chaque cas, le rôle doit figurer dans user_roles (source des politiques RLS) et être
+ * accordé à la session du compte (has_role). Depuis le lot 1C.5, aucun rôle n'est recopié
+ * dans user_metadata : la session ne doit y porter ni « role » ni « roles ».
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -26,18 +27,21 @@ async function rolesOf(userId: string): Promise<string[]> {
     return (data || []).map((r) => r.role as string).sort();
 }
 
-async function jwtRoles(email: string, password: string): Promise<string[]> {
+async function assertSessionRole(email: string, password: string, role: string): Promise<void> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
     const { data, error } = await anon.auth.signInWithPassword({ email, password });
     assert.equal(error, null, `connexion ${email} : ${error?.message}`);
-    const roles = (data.user?.user_metadata?.roles as string[] | undefined) || [];
-    return [...roles].sort();
+    const { data: granted, error: rpcErr } = await anon.rpc('has_role', { p_role: role });
+    assert.equal(rpcErr, null, `has_role(${role}) : ${rpcErr?.message}`);
+    assert.equal(granted, true, `la session doit détenir ${role}`);
+    const meta = data.user?.user_metadata ?? {};
+    assert.ok(!('role' in meta) && !('roles' in meta), `aucun rôle dans user_metadata (lot 1C.5) : ${JSON.stringify(meta)}`);
 }
 
 describe('Attribution des rôles par les routes serveur', () => {
-    test('inscription partenaire → PARTENAIRE dans user_roles et dans le jeton', async () => {
+    test('inscription partenaire → PARTENAIRE dans user_roles et pour la session', async () => {
         const email = randomEmail('partenaire');
         const phone = randomSenegalPhone('77');
         const res = await partnerRegister(jsonRequest('/api/partner/register', {
@@ -63,10 +67,10 @@ describe('Attribution des rôles par les routes serveur', () => {
 
         const { data: partner } = await service.from('partners').select('status').eq('user_id', user.id).single();
         assert.equal(partner?.status, 'EN_ATTENTE');
-        assert.ok((await jwtRoles(email, STRONG_PASSWORD)).includes('PARTENAIRE'), 'le jeton doit porter PARTENAIRE');
+        await assertSessionRole(email, STRONG_PASSWORD, 'PARTENAIRE');
     });
 
-    test('création d\'un compte CONTROLEUR par un SUPERADMIN → CONTROLEUR dans user_roles et dans le jeton', async () => {
+    test('création d\'un compte CONTROLEUR par un SUPERADMIN → CONTROLEUR dans user_roles et pour la session', async () => {
         const superadmin = await signInAs('SUPERADMIN');
         const email = randomEmail('cree-par-admin');
         const res = await adminCreateUser(jsonRequest('/api/admin/users', {
@@ -80,7 +84,7 @@ describe('Attribution des rôles par les routes serveur', () => {
         const body = await res.json();
         assert.equal(res.status, 200, `création par admin : HTTP ${res.status} ${JSON.stringify(body)}`);
         assert.ok((await rolesOf(body.userId)).includes('CONTROLEUR'), 'user_roles doit contenir CONTROLEUR');
-        assert.ok((await jwtRoles(email, STRONG_PASSWORD)).includes('CONTROLEUR'), 'le jeton doit porter CONTROLEUR');
+        await assertSessionRole(email, STRONG_PASSWORD, 'CONTROLEUR');
     });
 
     test('invitation d\'un contrôleur par le partenaire A → CONTROLEUR dans user_roles + affectation', async () => {
