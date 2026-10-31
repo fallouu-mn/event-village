@@ -39,14 +39,14 @@ const serverEnvSchema = z.object({
     SAMIRPAY_SOLDE_URL: optionalUrl,
     SAMIRPAY_STATUS_URL: optionalUrl,
 
-    // SMS MTarget (optionnel : sans identifiants, l'envoi échoue proprement)
-    MTARGET_API_URL: optionalUrl,
-    MTARGET_USERNAME: optionalString,
-    MTARGET_PASSWORD: optionalString,
+    // SMS MTarget (obligatoire, lot 1C.8 : le SMS est le canal essentiel)
+    MTARGET_API_URL: optionalUrl, // défaut : API publique MTarget (lib/sms/mtarget-http.adapter.ts)
+    MTARGET_USERNAME: z.string().min(1, 'identifiant MTarget requis (canal SMS obligatoire)'),
+    MTARGET_PASSWORD: z.string().min(1, 'mot de passe MTarget requis (canal SMS obligatoire)'),
     MTARGET_SERVICE_ID: optionalString,
     MTARGET_SENDER: optionalString,
 
-    // Email Resend (optionnel : sans clé, l'envoi est journalisé)
+    // Email Resend (optionnel, lot 1C.8 : sans clé, le canal email est désactivé)
     RESEND_API_KEY: optionalString,
     NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
     SUPPORT_EMAIL: z.string().email().optional(),

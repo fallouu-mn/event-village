@@ -1,6 +1,7 @@
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { EmailService, EmailTemplates } from '@/lib/email/email.service';
+import { emailChannelAvailable } from '@/lib/notifications/channels';
 
 export interface NotificationResult {
     smsSent: boolean;
@@ -196,8 +197,8 @@ export class NotificationService {
             }
         }
 
-        // ── Email → chaque admin qui a un email ───────────────────────────
-        if (params.emailTemplate) {
+        // ── Email → chaque admin qui a un email (canal optionnel, lot 1C.8) ──
+        if (params.emailTemplate && emailChannelAvailable()) {
             const emails = admins.map(a => a.email).filter(Boolean) as string[];
             if (emails.length === 0) {
                 console.warn('[NOTIFY SUPERADMIN WARNING] Aucun admin n\'a d\'email → Email ignoré');

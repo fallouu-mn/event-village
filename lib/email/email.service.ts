@@ -3,11 +3,13 @@
  * Templates HTML + façade d'envoi. Le transport (Resend en production, faux
  * adaptateur en test) est fourni par lib/integrations/registry.
  *
- * Pour activer : ajouter RESEND_API_KEY=re_xxxx dans .env.local
- * Tant que la clé est absente, les envois sont journalisés (pas de crash).
+ * Canal optionnel (lot 1C.8) : sans RESEND_API_KEY, aucun envoi n'est tenté et un seul
+ * avertissement est émis pour le processus (lib/notifications/channels.ts). Le SMS reste le
+ * canal essentiel.
  */
 
 import { getEmailAdapter } from '@/lib/integrations/registry';
+import { emailChannelAvailable } from '@/lib/notifications/channels';
 import type { EmailSendPayload, EmailSendResult } from '@/lib/integrations/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -657,6 +659,7 @@ export class EmailService {
      * Retourne toujours — l'échec ne propage pas d'exception.
      */
     static async send(payload: SendPayload): Promise<EmailResult> {
+        if (!emailChannelAvailable()) return { sent: false, error: 'EMAIL_CHANNEL_DISABLED' };
         return getEmailAdapter().send(payload);
     }
 
@@ -668,6 +671,7 @@ export class EmailService {
         recipients: string[],
         payload: Omit<SendPayload, 'to'>,
     ): Promise<{ sent: number; failed: number }> {
+        if (!emailChannelAvailable()) return { sent: 0, failed: 0 };
         const valid = recipients.filter(Boolean).filter(r => r.includes('@'));
         if (valid.length === 0) return { sent: 0, failed: 0 };
 

@@ -54,8 +54,8 @@ Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éd
 | `SAMIRPAY_API_URL` | oui | `https://app.samirpay.com/samirpays` (jamais l'URL sandbox) |
 | `SAMIRPAY_API_KEY`, `SAMIRPAY_SECRET_KEY` | oui | compte SamirPay de **production**, clés nouvelles |
 | `SAMIRPAY_WEBHOOK_SECRET` | requis au lot 2 | compte SamirPay de production |
-| `MTARGET_USERNAME`, `MTARGET_PASSWORD`, `MTARGET_SENDER`, `MTARGET_SERVICE_ID` | oui pour l'envoi de SMS | compte MTarget, identifiants renouvelés |
-| `RESEND_API_KEY`, `NOTIFICATION_FROM_EMAIL`, `SUPPORT_EMAIL` | oui pour l'envoi d'emails | compte Resend, clé nouvelle, domaine vérifié |
+| `MTARGET_USERNAME`, `MTARGET_PASSWORD`, `MTARGET_SENDER`, `MTARGET_SERVICE_ID` | oui (le SMS est le canal essentiel : sans `MTARGET_USERNAME` / `MTARGET_PASSWORD`, les routes serveur refusent de démarrer) | compte MTarget, identifiants renouvelés |
+| `RESEND_API_KEY`, `NOTIFICATION_FROM_EMAIL`, `SUPPORT_EMAIL` | non : sans `RESEND_API_KEY`, le canal email est désactivé (un avertissement au démarrage, aucun envoi tenté) ; SMS et notifications in-app partent normalement | compte Resend du client, à configurer plus tard (clé nouvelle, domaine vérifié) |
 | `SUPABASE_AUTH_HOOK_SECRET` | oui | **nouveau** secret généré à l'étape 6 (jamais la valeur du projet de test, publiée) |
 | `CRON_SECRET` | oui | secret aléatoire propre aux tâches planifiées |
 | `OTP_HASH_SECRET` | oui | secret aléatoire dédié (`openssl rand -hex 32`), différent de toute autre clé ; le changer invalide seulement les codes OTP en cours (10 min) |

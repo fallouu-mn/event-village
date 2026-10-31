@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // instrumentation.ts : avertissement unique au démarrage si le canal email est désactivé (lot 1C.8)
+  experimental: { instrumentationHook: true },
   poweredByHeader: false,
   compress: true,
   images: {

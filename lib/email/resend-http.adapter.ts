@@ -1,7 +1,8 @@
 /**
  * Adaptateur email réel — API REST Resend (https://resend.com).
  * Seul endroit du code qui parle au réseau Resend.
- * Sans RESEND_API_KEY, l'envoi est journalisé et retourné en échec contrôlé (pas d'exception).
+ * Sans RESEND_API_KEY, EmailService n'appelle pas cet adaptateur (lot 1C.8,
+ * lib/notifications/channels.ts) ; le contrôle ci-dessous reste une défense en profondeur.
  */
 import type { EmailAdapter, EmailSendPayload, EmailSendResult } from '@/lib/integrations/types';
 
