@@ -151,3 +151,52 @@ DROP POLICY IF EXISTS "payments_insert_auth" ON public.payments;        -- paiem
 DROP POLICY IF EXISTS "audit_logs_insert_system" ON public.audit_logs;  -- WITH CHECK (TRUE) : journal falsifiable
 
 REVOKE INSERT, UPDATE, DELETE ON TABLE public.audit_logs FROM anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 1A.5 — Lectures exposées à anon
+-- ----------------------------------------------------------------------------
+-- a) users_select_policy : la branche « propriétaire d'un partenaire VALIDE » rendait lisibles
+--    par anon les nom, email et téléphone de ces comptes. Les pages publiques obtiennent le nom
+--    de l'organisateur côté serveur (partners.commercial_name via /api/events, service_role) ;
+--    grep : aucune lecture de users d'autrui depuis un client navigateur.
+--    La branche is_controller() relève du lot 1B (politiques contrôleur).
+DROP POLICY IF EXISTS "users_select_policy" ON public.users;
+CREATE POLICY "users_select_policy" ON public.users
+    FOR SELECT USING (
+        id = auth.uid()
+        OR is_admin()
+        OR is_controller()
+    );
+
+-- b) Hash du PIN régisseur : déplacé de events (lisible par anon via events_read_public) vers une
+--    table non exposée aux rôles API. Seul lib/shifts/shift.service.ts (service_role) y accède.
+CREATE TABLE IF NOT EXISTS public.event_regisseur_pins (
+    event_id   UUID PRIMARY KEY REFERENCES public.events(id) ON DELETE CASCADE,
+    pin_hash   TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.event_regisseur_pins IS 'Hash (HMAC-SHA256) du code PIN régisseur par événement. Accès service_role uniquement.';
+
+ALTER TABLE public.event_regisseur_pins ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.event_regisseur_pins FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.event_regisseur_pins TO service_role;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'regisseur_pin_hash'
+    ) THEN
+        EXECUTE $copy$
+            INSERT INTO public.event_regisseur_pins (event_id, pin_hash, updated_at)
+            SELECT id, regisseur_pin_hash, COALESCE(regisseur_pin_updated_at, now())
+              FROM public.events
+             WHERE regisseur_pin_hash IS NOT NULL
+            ON CONFLICT (event_id) DO NOTHING
+        $copy$;
+    END IF;
+END $$;
+
+ALTER TABLE public.events DROP COLUMN IF EXISTS regisseur_pin_hash;
+ALTER TABLE public.events DROP COLUMN IF EXISTS regisseur_pin_updated_at;

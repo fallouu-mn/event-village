@@ -44,8 +44,8 @@ export interface ShiftSummary {
 }
 
 // Fallback in-memory ledger si table ou colonnes PostgREST pas encore en cache
+// (registre des sessions de caisse : inchangé au lot 1A, traité au lot 4).
 const memoryShifts = new Map<string, Shift>();
-const memoryPins = new Map<string, { hash: string; updatedAt: string }>();
 
 function getSalt(): string {
     return process.env.SUPABASE_AUTH_HOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'event-village-regisseur-pin-salt-2026';
@@ -91,24 +91,18 @@ export class ShiftService {
             }
         }
 
-        // 2. Générer un code PIN à 6 chiffres aléatoire
-        const pin = Math.floor(100000 + Math.random() * 900000).toString();
+        // 2. Générer un code PIN à 6 chiffres (générateur cryptographique)
+        const pin = crypto.randomInt(100000, 1000000).toString();
         const hash = hashRegisseurPin(pin);
         const now = new Date().toISOString();
 
-        // Stocker en mémoire secours
-        memoryPins.set(eventId, { hash, updatedAt: now });
-
-        // Tenter mise à jour en base
-        try {
-            await (supabase.from('events') as any)
-                .update({
-                    regisseur_pin_hash: hash,
-                    regisseur_pin_updated_at: now,
-                })
-                .eq('id', eventId);
-        } catch (err) {
-            console.warn('[ShiftService] Mise à jour regisseur_pin_hash en base échouée (fallback mémoire utilisé):', err);
+        // 3. Stockage du hash dans event_regisseur_pins (table non exposée aux rôles API, lot 1A).
+        //    Aucun repli : si l'écriture échoue, le PIN n'est pas renvoyé.
+        const { error: pinErr } = await supabase
+            .from('event_regisseur_pins')
+            .upsert({ event_id: eventId, pin_hash: hash, updated_at: now }, { onConflict: 'event_id' });
+        if (pinErr) {
+            throw new Error(`Enregistrement du code PIN régisseur impossible : ${pinErr.message}`);
         }
 
         return { pin, eventId };
@@ -143,26 +137,18 @@ export class ShiftService {
             };
         }
 
-        // 2. Récupérer le hash stocké
-        let storedHash: string | null = null;
-        const memoryEntry = memoryPins.get(eventId);
-        if (memoryEntry) {
-            storedHash = memoryEntry.hash;
-        } else {
-            const supabase = getServiceRoleClient();
-            try {
-                const { data: ev } = await (supabase.from('events') as any)
-                    .select('regisseur_pin_hash')
-                    .eq('id', eventId)
-                    .maybeSingle();
-
-                if (ev?.regisseur_pin_hash) {
-                    storedHash = ev.regisseur_pin_hash;
-                }
-            } catch (err) {
-                console.warn('[ShiftService] Lecture hash en base échouée:', err);
-            }
+        // 2. Récupérer le hash stocké (event_regisseur_pins, lot 1A). Aucun repli mémoire.
+        const supabase = getServiceRoleClient();
+        const { data: pinRow, error: pinErr } = await supabase
+            .from('event_regisseur_pins')
+            .select('pin_hash')
+            .eq('event_id', eventId)
+            .maybeSingle();
+        if (pinErr) {
+            console.error('[ShiftService] Lecture du hash du PIN régisseur impossible:', pinErr.message);
+            return { valid: false, message: 'Vérification du code PIN impossible (erreur technique). Réessayez.' };
         }
+        const storedHash: string | null = pinRow?.pin_hash ?? null;
 
         if (!storedHash) {
             return {
@@ -768,6 +754,5 @@ export class ShiftService {
      */
     static _clearMemory(): void {
         memoryShifts.clear();
-        memoryPins.clear();
     }
 }
