@@ -313,63 +313,9 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         assert.equal(resAfter.payment_status, 'CANCELLED');
     });
 
-    test('7. SCANNER QR CODE & COMPOSTAGE (§39-§40) : Validation réelle via /api/tickets/verify, anti-réutilisation et audit', async () => {
-        // Création d'un billet valide pour le test de scan
-        const rawQr = `EV-QR-SCAN-TEST-${Date.now()}`;
-        const ticketNum = `TKT-SCAN-${Date.now()}`;
-        const { data: ticketToScan } = await supabase.from('tickets').insert({
-            event_id: testEventId,
-            category_id: testCategoryId,
-            user_id: testClientAId,
-            ticket_number: ticketNum,
-            price: 20000,
-            qr_code: rawQr,
-            status: 'VALIDE',
-        }).select().single();
-
-        assert.ok(ticketToScan);
-
-        // Appel direct du handler de l'API /api/tickets/verify
-        const { POST: verifyTicket } = await import('../../app/api/tickets/verify/route');
-        const { NextRequest } = await import('next/server');
-
-        // 1. Premier scan -> Succès attendu (Compostage)
-        const req1 = new NextRequest('http://localhost:3000/api/tickets/verify', {
-            method: 'POST',
-            body: JSON.stringify({ qrCode: rawQr }),
-        });
-        const res1 = await verifyTicket(req1);
-        const data1 = await res1.json();
-
-        assert.equal(res1.status, 200);
-        assert.equal(data1.status, 'valid');
-        assert.ok(data1.ticketInfo);
-
-        // Vérification en base de données : le ticket doit être marqué UTILISE
-        const { data: checkedTicket } = await supabase.from('tickets').select('status, checked_in_at').eq('id', ticketToScan.id).single();
-        assert.equal(checkedTicket?.status, 'UTILISE');
-        assert.ok(checkedTicket?.checked_in_at);
-
-        // 2. Second scan immédiat du même QR Code -> Rejet strict (Anti-doublon)
-        const req2 = new NextRequest('http://localhost:3000/api/tickets/verify', {
-            method: 'POST',
-            body: JSON.stringify({ qrCode: rawQr }),
-        });
-        const res2 = await verifyTicket(req2);
-        const data2 = await res2.json();
-
-        assert.equal(data2.status, 'already_used');
-
-        // 3. Scan d'un billet inexistant -> Rejet
-        const req3 = new NextRequest('http://localhost:3000/api/tickets/verify', {
-            method: 'POST',
-            body: JSON.stringify({ qrCode: 'INEXISTANT-FAKE-QR' }),
-        });
-        const res3 = await verifyTicket(req3);
-        const data3 = await res3.json();
-
-        assert.equal(data3.status, 'invalid');
-    });
+    // [lot 1B — cas supprimé] 7. SCANNER QR CODE & COMPOSTAGE
+    // Appelait /api/tickets/verify sans session (voir lot 1B.6). Compostage et refus hors périmètre couverts par
+    // tests/parcours/statut-compte.test.ts ; anti-réutilisation du compostage par la suite contrôleur (/api/controller/scan).
 
     test('8. CASHOUT SAMIRPAY AUTOMATIQUE (§83) : Exécution du retrait, calcul des frais 1% et mise à jour des statuts', async () => {
         // 1. Insertion d'un paiement de référence et de commissions disponibles pour Client A

@@ -123,48 +123,8 @@ describe('SCANNER QR CAMÉRA — DÉTECTION CASCADE & INTÉGRATION PIPELINE (§3
     });
 
     // 2. Test d'intégration du pipeline unifié post-détection
-    test('2. Pipeline Unifié : Code QR scanné transmis à /api/tickets/verify -> Compostage et audit', async () => {
-        const testQr = `EV-QR-CAMERA-${Date.now()}`;
-        const ticketNum = `TKT-CAM-${Date.now()}`;
-
-        // Insertion d'un billet valide
-        const { data: ticket } = await supabase.from('tickets').insert({
-            event_id: testEventId,
-            category_id: testCategoryId,
-            user_id: testClientId,
-            ticket_number: ticketNum,
-            price: 25000,
-            qr_code: testQr,
-            status: 'VALIDE',
-        }).select().single();
-
-        assert.ok(ticket);
-
-        // Simulation de la détection de la caméra alimentant /api/tickets/verify
-        const { POST: verifyTicket } = await import('../../app/api/tickets/verify/route');
-        const { NextRequest } = await import('next/server');
-
-        const req = new NextRequest('http://localhost:3000/api/tickets/verify', {
-            method: 'POST',
-            body: JSON.stringify({ qrCode: testQr }),
-        });
-
-        const res = await verifyTicket(req);
-        const data = await res.json();
-
-        assert.equal(res.status, 200);
-        assert.equal(data.status, 'valid');
-        assert.equal(data.ticketInfo?.ticketNumber, ticketNum);
-        assert.equal(data.ticketInfo?.category, 'Pass Caméra VIP');
-
-        // Vérification de la mutation réelle en base
-        const { data: updatedTicket } = await supabase
-            .from('tickets')
-            .select('status, checked_in_at')
-            .eq('id', ticket.id)
-            .single();
-
-        assert.equal(updatedTicket?.status, 'UTILISE');
-        assert.ok(updatedTicket?.checked_in_at);
-    });
+    // [lot 1B — cas supprimé] 2. Pipeline Unifié : Code QR scanné transmis à /api/tickets/verify
+    // Appelait /api/tickets/verify sans session : depuis le lot 1B.6, la vérification exige un contrôleur affecté,
+    // le partenaire propriétaire de l'événement ou un admin (401/403 sinon). Couvert par tests/parcours/statut-compte.test.ts
+    // (« vérification de billet » : contrôleur affecté → valide et composté ; CLIENT et partenaire d'un autre événement → 403).
 });

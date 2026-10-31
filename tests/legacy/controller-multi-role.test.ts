@@ -262,9 +262,10 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         assert.equal(usersWithPhone[0].role, 'CONTROLEUR', 'Rôle promu en CONTROLEUR');
         assert.equal(usersWithPhone[0].status, 'ACTIF', 'Statut ACTIF maintenu');
 
-        // Vérification Supabase Auth metadata
-        const { data: authUser } = await supabase.auth.admin.getUserById(clientUserId);
-        assert.equal(authUser.user?.user_metadata?.role, 'CONTROLEUR', 'Auth metadata mis à jour à CONTROLEUR');
+        // [lot 1B.1] Les rôles ne s'écrivent plus dans user_metadata (modifiable par l'utilisateur) :
+        // vérification dans user_roles, source de la RLS et des routes serveur.
+        const { data: rolesAfterInvite } = await supabase.from('user_roles').select('role').eq('user_id', clientUserId);
+        assert.ok((rolesAfterInvite || []).some((r: { role: string }) => r.role === 'CONTROLEUR'), 'user_roles contient CONTROLEUR');
 
         // Vérification affectation créée
         const { data: assignments } = await supabase
@@ -345,9 +346,9 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         assert.equal(userAfterDelete?.role, 'CLIENT', 'Rôle rétrogradé proprement à CLIENT');
         assert.equal(userAfterDelete?.status, 'ACTIF', 'DIRECTIVE CRITIQUE : statut STRICTEMENT ACTIF (jamais SUSPENDU)');
 
-        // Vérification Supabase Auth metadata & purge rôle
-        const { data: authUserAfterDelete } = await supabase.auth.admin.getUserById(clientUserId);
-        assert.equal(authUserAfterDelete.user?.user_metadata?.role, 'CLIENT', 'Auth metadata rétrogradé à CLIENT');
+        // [lot 1B.1] Purge du rôle vérifiée dans user_roles (plus de rôle dans user_metadata).
+        const { data: rolesAfterDelete } = await supabase.from('user_roles').select('role').eq('user_id', clientUserId);
+        assert.ok(!(rolesAfterDelete || []).some((r: { role: string }) => r.role === 'CONTROLEUR'), 'user_roles ne contient plus CONTROLEUR');
 
         // Vérification suppression de l'affectation
         const { count: remainingAssigns } = await supabase

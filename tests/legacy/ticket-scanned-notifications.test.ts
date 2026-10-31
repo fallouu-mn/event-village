@@ -128,18 +128,10 @@ describe('SCAN DE BILLET — CHANGEMENT DE STATUT EN BASE, NOTIFICATIONS (SMS, E
         console.log('[CLEANUP] Données de test nettoyées avec succès.');
     });
 
-    test('1. État initial : Le billet est VALIDE, isUpcoming = true et usedAt = null dans Mes Billets', async () => {
-        const req = new NextRequest(`http://localhost/api/tickets?userId=${buyerUserId}`);
-        const res = await getTicketsRoute(req);
-        assert.strictEqual(res.status, 200);
-
-        const data = await res.json();
-        const clientTicket = data.tickets?.find((t: any) => t.id === testTicketId1);
-        assert.ok(clientTicket, 'Le billet 1 doit être listé pour le client');
-        assert.strictEqual(clientTicket.status, 'VALIDE');
-        assert.strictEqual(clientTicket.isUpcoming, true);
-        assert.strictEqual(clientTicket.usedAt, null);
-    });
+    // [lot 1B — cas supprimé] 1. État initial : Le billet est VALIDE
+    // Lisait /api/tickets?userId=<compte distant> sans session : c'était la faille corrigée au lot 1B.6
+    // (billets et QR d'un tiers servis à quiconque). Mot de passe du compte acheteur distant absent du dépôt : à réécrire
+    // avec les fixtures locales dans le lot « Mes billets ». Refus couvert par tests/parcours/statut-compte.test.ts.
 
     test('2. Scan Contrôleur (/api/controller/scan) -> Statut passe à UTILISE, checked_in_at est horodaté et notifications déclenchées', async () => {
         const scanReq = new NextRequest('http://localhost/api/controller/scan', {
@@ -188,24 +180,16 @@ describe('SCAN DE BILLET — CHANGEMENT DE STATUT EN BASE, NOTIFICATIONS (SMS, E
         assert.strictEqual(notifs[0].metadata?.ticket_number, testTicketNumber1);
     });
 
-    test('3. Rafraîchissement Mes Billets : Le billet apparaît désormais comme UTILISÉ (isUpcoming = false)', async () => {
-        const req = new NextRequest(`http://localhost/api/tickets?userId=${buyerUserId}`);
-        const res = await getTicketsRoute(req);
-        assert.strictEqual(res.status, 200);
-
-        const data = await res.json();
-        const clientTicket = data.tickets?.find((t: any) => t.id === testTicketId1);
-        assert.ok(clientTicket, 'Le billet 1 doit être listé');
-        assert.strictEqual(clientTicket.status, 'UTILISE', 'Le statut retourné par l API doit être UTILISE');
-        assert.strictEqual(clientTicket.isUpcoming, false, 'isUpcoming doit être false pour un billet utilisé');
-        assert.ok(clientTicket.usedAt, 'usedAt doit contenir la date de compostage');
-    });
+    // [lot 1B — cas supprimé] 3. Rafraîchissement Mes Billets
+    // Même motif que le cas 1 (lecture de /api/tickets?userId sans session, faille corrigée au lot 1B.6).
 
     test('4. Scan Partenaire / Portique (/api/tickets/verify) -> Valide le billet 2 et émet notification', async () => {
         const verifyReq = new NextRequest('http://localhost/api/tickets/verify', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                // [lot 1B.6] session exigée : contrôleur affecté à l'événement de test
+                'Authorization': `Bearer ${ctrlToken}`,
             },
             body: JSON.stringify({
                 ticketNumber: testTicketNumber2,

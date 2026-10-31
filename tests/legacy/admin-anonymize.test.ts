@@ -240,9 +240,11 @@ test('1. ANONYMISATION RGPD SUPERADMIN : Soft delete avec intégrité financièr
             const { data: authUserRecord } = await adminClient.auth.admin.getUserById(clientUserId);
             if (authUserRecord?.user) {
                 assert.strictEqual(authUserRecord.user.email, `${clientUserId}@deleted.eventvillage.sn`, 'Auth email brouillé');
+                // [lot 1B.9] numéro synthétique valide pour GoTrue (indicatif 999 non attribué) ;
+                // l'ancien « +000000… » était refusé et l'anonymisation côté Auth n'avait pas lieu.
                 assert.ok(
-                    !authUserRecord.user.phone || authUserRecord.user.phone === '' || authUserRecord.user.phone.startsWith('+000000') || authUserRecord.user.phone.startsWith('000000'),
-                    'Le numéro de téléphone a été libéré côté auth.'
+                    (authUserRecord.user.phone || '').replace('+', '').startsWith('999'),
+                    `Le numéro de téléphone a été libéré côté auth (actuel : ${authUserRecord.user.phone})`
                 );
                 assert.ok(
                     Boolean(authUserRecord.user.banned_until),

@@ -434,10 +434,10 @@ describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', a
         const { code: liveCode } = generateTotp(secret, Date.now(), TOTP_STEP_SECONDS);
         const payload = buildDynamicQrPayload(ticket.qr_code, liveCode);
 
-        // 1. Scan valide
+        // 1. Scan valide — [lot 1B.6] session du partenaire propriétaire de l'événement exigée
         const verifyReq = new NextRequest('http://localhost:3000/api/tickets/verify', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${partnerToken}` },
             body: JSON.stringify({ qrCode: payload }),
         });
 
@@ -455,7 +455,7 @@ describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', a
 
         const expReq = new NextRequest('http://localhost:3000/api/tickets/verify', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${partnerToken}` },
             body: JSON.stringify({ qrCode: expPayload }),
         });
 
