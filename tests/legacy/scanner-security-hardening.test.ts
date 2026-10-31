@@ -49,20 +49,20 @@ describe('SCANNER SECURITY HARDENING & QUICK WINS TEST SUITE', async () => {
     before(async () => {
         // Authentifier le partenaire
         const { data: pUser } = await supabase.from('users').select('email').eq('id', partnerUserId).single();
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pUser?.email || 'partenaireA@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerToken = pAuth?.session?.access_token!;
         assert.ok(partnerToken, 'Token Partenaire obtenu');
 
         // Authentifier le contrôleur
         const { data: cUser } = await supabase.from('users').select('email').eq('id', ctrlUserId).single();
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: cAuth } = await publicAuth.auth.signInWithPassword({
             email: cUser?.email!,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         ctrlToken = cAuth?.session?.access_token!;
         assert.ok(ctrlToken, 'Token Contrôleur obtenu');

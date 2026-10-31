@@ -62,8 +62,8 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
             role: 'CLIENT',
             status: 'ACTIF',
         });
-        await supabase.auth.admin.updateUserById(buyerAUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
-        const { data: bAAuth } = await publicAuth.auth.signInWithPassword({ email: bAEmail, password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(buyerAUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        const { data: bAAuth } = await publicAuth.auth.signInWithPassword({ email: bAEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         buyerAToken = bAAuth?.session?.access_token || '';
 
         const { data: bBUser } = await supabase.auth.admin.getUserById(buyerBUserId);
@@ -77,8 +77,8 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
             role: 'CLIENT',
             status: 'ACTIF',
         });
-        await supabase.auth.admin.updateUserById(buyerBUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
-        const { data: bBAuth } = await publicAuth.auth.signInWithPassword({ email: bBEmail, password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(buyerBUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        const { data: bBAuth } = await publicAuth.auth.signInWithPassword({ email: bBEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         buyerBToken = bBAuth?.session?.access_token || '';
 
         const { data: bCUser } = await supabase.auth.admin.getUserById(buyerCUserId);
@@ -92,8 +92,8 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
             role: 'CLIENT',
             status: 'ACTIF',
         });
-        await supabase.auth.admin.updateUserById(buyerCUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
-        const { data: bCAuth } = await publicAuth.auth.signInWithPassword({ email: bCEmail, password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(buyerCUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        const { data: bCAuth } = await publicAuth.auth.signInWithPassword({ email: bCEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         buyerCToken = bCAuth?.session?.access_token || '';
 
         // Inscription des rôles CLIENT

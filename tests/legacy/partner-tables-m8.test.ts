@@ -78,16 +78,16 @@ async function runTests() {
         const clientAEmail = `clientA_${Date.now()}@test.com`;
         const clientBEmail = `clientB_${Date.now()}@test.com`;
 
-        const { data: pA, error: e1 } = await adminSupabase.auth.admin.createUser({ email: partnerAEmail, password: 'password123', email_confirm: true });
+        const { data: pA, error: e1 } = await adminSupabase.auth.admin.createUser({ email: partnerAEmail, password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true });
         if (e1) throw new Error('Create user pA: ' + e1.message);
         
-        const { data: pB, error: e2 } = await adminSupabase.auth.admin.createUser({ email: partnerBEmail, password: 'password123', email_confirm: true });
+        const { data: pB, error: e2 } = await adminSupabase.auth.admin.createUser({ email: partnerBEmail, password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true });
         if (e2) throw new Error('Create user pB: ' + e2.message);
         
-        const { data: cA, error: e3 } = await adminSupabase.auth.admin.createUser({ email: clientAEmail, password: 'password123', email_confirm: true });
+        const { data: cA, error: e3 } = await adminSupabase.auth.admin.createUser({ email: clientAEmail, password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true });
         if (e3) throw new Error('Create user cA: ' + e3.message);
         
-        const { data: cB, error: e4 } = await adminSupabase.auth.admin.createUser({ email: clientBEmail, password: 'password123', email_confirm: true });
+        const { data: cB, error: e4 } = await adminSupabase.auth.admin.createUser({ email: clientBEmail, password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true });
         if (e4) throw new Error('Create user cB: ' + e4.message);
 
         partnerAId = pA.user!.id;
@@ -133,11 +133,11 @@ async function runTests() {
 
 
         // Login pour RLS
-        const { data: loginA } = await anonSupabase.auth.signInWithPassword({ email: partnerAEmail, password: 'password123' });
+        const { data: loginA } = await anonSupabase.auth.signInWithPassword({ email: partnerAEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         const tokenA = loginA.session!.access_token;
         const authSupabaseA = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: `Bearer ${tokenA}` } } });
 
-        const { data: loginB } = await anonSupabase.auth.signInWithPassword({ email: partnerBEmail, password: 'password123' });
+        const { data: loginB } = await anonSupabase.auth.signInWithPassword({ email: partnerBEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         const tokenB = loginB.session!.access_token;
         const authSupabaseB = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: `Bearer ${tokenB}` } } });
 

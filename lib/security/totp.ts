@@ -15,7 +15,9 @@ export function generateTotpSecret(): string {
  * est absente ou nulle sur les billets historiques (sécurité serveur garantie).
  */
 export function deriveTicketTotpSecret(ticketId: string): string {
-    const masterKey = process.env.SUPABASE_AUTH_HOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'event-village-totp-master-salt-2026';
+    // Lot 1C.6 : plus de valeur littérale de repli (secret codé en dur). Secret dédié : lot 4.
+    const masterKey = process.env.SUPABASE_AUTH_HOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!masterKey) throw new Error('Clé de dérivation des QR dynamiques absente (SUPABASE_AUTH_HOOK_SECRET ou SUPABASE_SERVICE_ROLE_KEY).');
     return crypto.createHmac('sha256', masterKey).update(`ticket_secret_${ticketId}`).digest('hex');
 }
 

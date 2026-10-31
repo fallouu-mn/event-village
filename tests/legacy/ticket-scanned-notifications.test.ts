@@ -43,11 +43,11 @@ describe('SCAN DE BILLET — CHANGEMENT DE STATUT EN BASE, NOTIFICATIONS (SMS, E
 
         const { data: ctrlAuthUser } = await supabase.auth.admin.getUserById(ctrlUserId);
         const ctrlEmail = ctrlAuthUser?.user?.email || 'ctrl@eventvillage.sn';
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
 
         const { data: cAuth } = await publicAuth.auth.signInWithPassword({
             email: ctrlEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         ctrlToken = cAuth.session?.access_token || '';
         assert.ok(ctrlToken, 'Token Contrôleur généré');

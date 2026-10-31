@@ -6,12 +6,11 @@
  * - Ne jamais importer ce module depuis un composant client : il lit `process.env`
  *   en entier et contient des secrets.
  *
- * Replis à retirer au lot 4 (listés ici pour traçabilité, NON modifiés dans ce lot) :
- *  - lib/security/totp.ts L18 : clé HMAC de dérivation = SUPABASE_AUTH_HOOK_SECRET
- *    || SUPABASE_SERVICE_ROLE_KEY || 'event-village-totp-master-salt-2026'
- *  - lib/shifts/shift.service.ts L51 : sel du PIN régisseur = SUPABASE_AUTH_HOOK_SECRET
- *    || SUPABASE_SERVICE_ROLE_KEY || 'event-village-regisseur-pin-salt-2026'
- *  - app/api/cron/moratoriums/route.ts L22 et app/api/cron/ticket-transfers/route.ts :
+ * Replis restants, à remplacer par des secrets dédiés (lot 4) :
+ *  - lib/security/totp.ts : clé HMAC de dérivation = SUPABASE_AUTH_HOOK_SECRET
+ *    || SUPABASE_SERVICE_ROLE_KEY (lot 1C.6 : plus de valeur littérale de repli)
+ *  - lib/shifts/shift.service.ts : sel du PIN régisseur, même chaîne (lot 1C.6 : idem)
+ *  - app/api/cron/moratoriums/route.ts et app/api/cron/ticket-transfers/route.ts :
  *    CRON_SECRET || SUPABASE_SERVICE_ROLE_KEY (et cron non protégé si les deux manquent)
  */
 import { z } from 'zod';

@@ -10,6 +10,7 @@ import * as path from 'path';
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
 import './helpers/env';
+import { TEST_PASSWORD } from './helpers/fixture-data';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -23,7 +24,7 @@ test('1. UX / MUTATION UNIQUE : 1 clic valide déclenche exactement 1 création 
     const email = `partner.ux.${suffix}@eventvillage.sn`;
 
     const { data: authUser } = await adminClient.auth.admin.createUser({
-        email, password: 'Password123!', email_confirm: true, phone, phone_confirm: true,
+        email, password: TEST_PASSWORD, email_confirm: true, phone, phone_confirm: true,
         user_metadata: { first_name: 'Partner', last_name: 'UX', phone },
     });
     if (!authUser?.user) throw new Error('Création utilisateur échouée');
@@ -68,11 +69,11 @@ test('2. PROTECTION ANTI-DOUBLE CLIC CONCURRENT : 2 clics simultanés sur une r�
     const phoneC = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
 
     const { data: authP } = await adminClient.auth.admin.createUser({
-        email: `partner.double.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneP, phone_confirm: true,
+        email: `partner.double.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,
         user_metadata: { first_name: 'P', last_name: 'Double', phone: phoneP },
     });
     const { data: authC } = await adminClient.auth.admin.createUser({
-        email: `client.double.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneC, phone_confirm: true,
+        email: `client.double.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneC, phone_confirm: true,
         user_metadata: { first_name: 'C', last_name: 'Double', phone: phoneC },
     });
 

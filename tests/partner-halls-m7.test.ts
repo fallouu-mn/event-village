@@ -9,6 +9,7 @@ import * as path from 'path';
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
 import './helpers/env';
+import { TEST_PASSWORD } from './helpers/fixture-data';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -23,7 +24,7 @@ test('1. CONFIGURATION SALLE (§42/§45) : Création avec acompte personnalisé 
     const email = `partner.hall.${suffix}@eventvillage.sn`;
 
     const { data: authUser } = await adminClient.auth.admin.createUser({
-        email, password: 'Password123!', email_confirm: true, phone, phone_confirm: true,
+        email, password: TEST_PASSWORD, email_confirm: true, phone, phone_confirm: true,
         user_metadata: { first_name: 'Propriétaire', last_name: 'Salle', phone },
     });
     if (!authUser?.user) throw new Error('Création utilisateur échouée');
@@ -88,15 +89,15 @@ test('2. DISPONIBILITÉ & CONCURRENCE RÉELLE (§43-§44) : Deux réservations s
     const phoneC2 = `+22175${Math.floor(1000000 + Math.random() * 9000000)}`;
 
     const { data: authP } = await adminClient.auth.admin.createUser({
-        email: `partner.conflict.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneP, phone_confirm: true,
+        email: `partner.conflict.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,
         user_metadata: { first_name: 'P', last_name: 'P', phone: phoneP },
     });
     const { data: authC1 } = await adminClient.auth.admin.createUser({
-        email: `client1.conflict.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneC1, phone_confirm: true,
+        email: `client1.conflict.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneC1, phone_confirm: true,
         user_metadata: { first_name: 'C1', last_name: 'C1', phone: phoneC1 },
     });
     const { data: authC2 } = await adminClient.auth.admin.createUser({
-        email: `client2.conflict.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneC2, phone_confirm: true,
+        email: `client2.conflict.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneC2, phone_confirm: true,
         user_metadata: { first_name: 'C2', last_name: 'C2', phone: phoneC2 },
     });
 
@@ -193,11 +194,11 @@ test('3. INVARIANT FINANCIER ACOMPTE + SOLDE = TOTAL (§45-§47) & MORATOIRE', a
     const phoneC = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
 
     const { data: authP } = await adminClient.auth.admin.createUser({
-        email: `partner.fin.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneP, phone_confirm: true,
+        email: `partner.fin.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,
         user_metadata: { first_name: 'P', last_name: 'P', phone: phoneP },
     });
     const { data: authC } = await adminClient.auth.admin.createUser({
-        email: `client.fin.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneC, phone_confirm: true,
+        email: `client.fin.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneC, phone_confirm: true,
         user_metadata: { first_name: 'C', last_name: 'C', phone: phoneC },
     });
 
@@ -277,11 +278,11 @@ test('4. CYCLE DE STATUT RÉSERVATION (§47-§48) : EN_ATTENTE -> CONFIRMEE -> A
     const phoneC = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
 
     const { data: authP } = await adminClient.auth.admin.createUser({
-        email: `partner.cycle.h.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneP, phone_confirm: true,
+        email: `partner.cycle.h.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,
         user_metadata: { first_name: 'P', last_name: 'P', phone: phoneP },
     });
     const { data: authC } = await adminClient.auth.admin.createUser({
-        email: `client.cycle.h.${suffix}@eventvillage.sn`, password: 'Password123!', email_confirm: true, phone: phoneC, phone_confirm: true,
+        email: `client.cycle.h.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneC, phone_confirm: true,
         user_metadata: { first_name: 'C', last_name: 'C', phone: phoneC },
     });
 

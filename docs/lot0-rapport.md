@@ -552,8 +552,8 @@ Les journaux bruts de chaque run sont publiés sur la branche `ci-results` (doss
 ### Dette technique signalée
 
 14. **Replis à retirer au lot 4** (listés en tête de `lib/env.ts`, non modifiés) :
-    - `lib/security/totp.ts` L18 : clé HMAC de dérivation TOTP = `SUPABASE_AUTH_HOOK_SECRET || SUPABASE_SERVICE_ROLE_KEY || 'event-village-totp-master-salt-2026'` ;
-    - `lib/shifts/shift.service.ts` L51 : sel du PIN régisseur, même chaîne avec `'event-village-regisseur-pin-salt-2026'` ;
+    - `lib/security/totp.ts` L18 : clé HMAC de dérivation TOTP = `SUPABASE_AUTH_HOOK_SECRET || SUPABASE_SERVICE_ROLE_KEY || '<valeur de repli retirée (lot 1C.6)>'` ;
+    - `lib/shifts/shift.service.ts` L51 : sel du PIN régisseur, même chaîne avec `'<valeur de repli retirée (lot 1C.6)>'` ;
     - `app/api/cron/moratoriums/route.ts` L22 et `app/api/cron/ticket-transfers/route.ts` L22 : `CRON_SECRET || SUPABASE_SERVICE_ROLE_KEY`, cron non protégé si les deux manquent.
 
     Autres valeurs par défaut relevées : `NEXT_PUBLIC_APP_URL || 'https://eventvillage.sn'` dans `lib/email/email.service.ts` L21, `lib/payments/payment.service.ts` L328, `lib/tickets/ticket-transfer.service.ts` L320, `app/api/checkout/route.ts` L224 ; `|| 'http://localhost:3000'` dans `app/api/partner/team/invite/route.ts` L376 (lien d'activation contrôleur faux en production si la variable manque) ; identifiant de service MTarget `'36233'` par défaut.

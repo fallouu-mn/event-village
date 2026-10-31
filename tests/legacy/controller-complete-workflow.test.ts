@@ -46,12 +46,12 @@ describe('MODULE CONTRÔLEUR — WORKFLOW COMPLET & TESTS CRITIQUES (§Audit)', 
         clientUserId = '03301357-7980-4b26-ad8c-228e24565afe';
 
         // 1. Mise à niveau du compte contrôleur et obtention du vrai JWT session via le client public
-        await supabase.auth.admin.updateUserById(controllerUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(controllerUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         await supabase.from('users').update({ role: 'CONTROLEUR', status: 'ACTIF' }).eq('id', controllerUserId);
 
         const { data: signInCtrl, error: sErr } = await publicAuthClient.auth.signInWithPassword({
             email: controllerEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         if (sErr || !signInCtrl?.session?.access_token) {
             throw new Error(`Échec login contrôleur: ${sErr?.message}`);

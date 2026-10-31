@@ -49,10 +49,10 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         partnerAId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
         await supabase.from('users').update({ role: 'PARTENAIRE', status: 'ACTIF' }).eq('id', partnerAUserId);
         const { data: pAUser } = await supabase.from('users').select('email').eq('id', partnerAUserId).single();
-        await supabase.auth.admin.updateUserById(partnerAUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerAUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: sA } = await publicAuthClient.auth.signInWithPassword({
             email: pAUser?.email || 'partenaireA@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerAToken = sA?.session?.access_token || '';
         assert.ok(partnerAToken, 'Token Partenaire A généré avec succès');
@@ -62,10 +62,10 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         partnerBId = '9cdc4247-d1fe-483b-b5e2-12671b069134';
         await supabase.from('users').update({ role: 'PARTENAIRE', status: 'ACTIF' }).eq('id', partnerBUserId);
         const { data: pBUser } = await supabase.from('users').select('email').eq('id', partnerBUserId).single();
-        await supabase.auth.admin.updateUserById(partnerBUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerBUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: sB } = await publicAuthClient.auth.signInWithPassword({
             email: pBUser?.email || 'partenaireB@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerBToken = sB?.session?.access_token || '';
         assert.ok(partnerBToken, 'Token Partenaire B généré avec succès');
@@ -110,13 +110,13 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         await RateLimiter.resetAttempts(`sms_daily_quota_partner:${partnerBUserId}`);
 
         await supabase.auth.admin.updateUserById(clientUserId, {
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
             user_metadata: { role: 'CLIENT', first_name: 'Moussa', last_name: 'Diop' },
         });
 
         const { data: sClient } = await publicAuthClient.auth.signInWithPassword({
             email: clientEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         clientToken = sClient?.session?.access_token || '';
         assert.ok(clientToken, 'Token Client généré avec succès');
@@ -289,10 +289,10 @@ describe('MULTI-CASQUETTE CLIENT + CONTRÔLEUR (SANS DOUBLON & SMART DELETE)', a
         assert.ok(orders && orders.length > 0, 'Les commandes client passées sont toujours présentes et liées');
 
         // Vérification que le contrôleur peut demander un retrait portefeuille (rôle CONTROLEUR éligible)
-        await supabase.auth.admin.updateUserById(clientUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(clientUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: sFresh } = await publicAuthClient.auth.signInWithPassword({
             email: clientEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         const freshCtrlToken = sFresh?.session?.access_token || '';
 

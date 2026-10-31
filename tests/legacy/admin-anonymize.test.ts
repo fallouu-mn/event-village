@@ -47,7 +47,7 @@ test('1. ANONYMISATION RGPD SUPERADMIN : Soft delete avec intégrité financièr
         try {
             const { data: authClient } = await adminClient.auth.admin.createUser({
                 email: clientEmail,
-                password: 'Password123!',
+                password: process.env.LEGACY_TEST_PASSWORD!,
                 email_confirm: true,
                 phone: clientPhone,
                 phone_confirm: true,

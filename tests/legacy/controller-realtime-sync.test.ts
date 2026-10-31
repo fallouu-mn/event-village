@@ -45,10 +45,10 @@ describe('SYNCHRONISATION EN DIRECT & TEMPS RÉEL DU CONTRÔLEUR (TESTS A À E)'
         partnerUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
         partnerId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
         const { data: pUser } = await supabase.from('users').select('email').eq('id', partnerUserId).single();
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: sP } = await publicAuthClient.auth.signInWithPassword({
             email: pUser?.email || 'partenaireA@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerToken = sP?.session?.access_token || '';
 
@@ -56,7 +56,7 @@ describe('SYNCHRONISATION EN DIRECT & TEMPS RÉEL DU CONTRÔLEUR (TESTS A À E)'
         controllerUserId = 'fe9318ac-1f65-4e80-980f-f00626f1a003';
         controllerEmail = 'clientA_1788284499885@test.com';
         controllerPhone = `+22177${ts}99`;
-        await supabase.auth.admin.updateUserById(controllerUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(controllerUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         await supabase.from('users').update({
             role: 'CONTROLEUR',
             status: 'ACTIF',
@@ -67,7 +67,7 @@ describe('SYNCHRONISATION EN DIRECT & TEMPS RÉEL DU CONTRÔLEUR (TESTS A À E)'
 
         const { data: sC } = await publicAuthClient.auth.signInWithPassword({
             email: controllerEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         controllerToken = sC?.session?.access_token || '';
 

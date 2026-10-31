@@ -48,7 +48,10 @@ export interface ShiftSummary {
 const memoryShifts = new Map<string, Shift>();
 
 function getSalt(): string {
-    return process.env.SUPABASE_AUTH_HOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'event-village-regisseur-pin-salt-2026';
+    // Lot 1C.6 : plus de valeur littérale de repli (secret codé en dur). Secret dédié : lot 4.
+    const salt = process.env.SUPABASE_AUTH_HOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!salt) throw new Error('Sel du PIN régisseur absent (SUPABASE_AUTH_HOOK_SECRET ou SUPABASE_SERVICE_ROLE_KEY).');
+    return salt;
 }
 
 export function hashRegisseurPin(pin: string): string {

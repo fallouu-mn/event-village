@@ -33,7 +33,7 @@ test('1. ISOLATION PUBLIQUE : Les événements en BROUILLON sont invisibles publ
         phone,
         phone_confirm: true,
         user_metadata: { first_name: 'Organisateur', last_name: 'Test', phone },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     // 2. Upsert the user in the public users table
@@ -141,7 +141,7 @@ test('2. ANTI-FALSIFICATION OWNERSHIP : Dérivation stricte du partner_id et blo
     const phoneB = `+22178${Math.floor(1000000 + Math.random() * 9000000)}`;
     const emailA = `partner.a.${suffix}@eventvillage.sn`;
     const emailB = `partner.b.${suffix}@eventvillage.sn`;
-    const password = 'Password123!';
+    const password = process.env.LEGACY_TEST_PASSWORD!;
 
     // 1. Update partner A's auth and metadata
     await adminClient.auth.admin.updateUserById(partnerAUserId, {
@@ -295,7 +295,7 @@ test('3. PROTECTION ANTI-SURVENTE (RACE CONDITION) : Deux paiements réels concu
         phone: phoneP,
         phone_confirm: true,
         user_metadata: { first_name: 'Organisateur', last_name: 'Test', phone: phoneP },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     // 2. Update Buyer1 (Client A) auth and metadata
@@ -305,7 +305,7 @@ test('3. PROTECTION ANTI-SURVENTE (RACE CONDITION) : Deux paiements réels concu
         phone: phoneBuyer1,
         phone_confirm: true,
         user_metadata: { first_name: 'Acheteur', last_name: 'Un', phone: phoneBuyer1 },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     // 3. Update Buyer2 (Controller X) auth and metadata, and temporarily set role to CLIENT
@@ -315,7 +315,7 @@ test('3. PROTECTION ANTI-SURVENTE (RACE CONDITION) : Deux paiements réels concu
         phone: phoneBuyer2,
         phone_confirm: true,
         user_metadata: { first_name: 'Acheteur', last_name: 'Deux', phone: phoneBuyer2 },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
     // Temporarily change role to CLIENT for this test
     await adminClient.from('users').update({ role: 'CLIENT' }).eq('id', buyer2Id);
@@ -498,7 +498,7 @@ test('4. CYCLE DE VIE COMPLET DES STATUTS (§31) : BROUILLON -> EN_ATTENTE -> Re
         phone: phoneP,
         phone_confirm: true,
         user_metadata: { first_name: 'Partner', last_name: 'Cycle', phone: phoneP },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     // 2. Update Partner B's auth and metadata (temporarily for admin role in this test)
@@ -508,7 +508,7 @@ test('4. CYCLE DE VIE COMPLET DES STATUTS (§31) : BROUILLON -> EN_ATTENTE -> Re
         phone: phoneAdmin,
         phone_confirm: true,
         user_metadata: { first_name: 'Admin', last_name: 'Control', phone: phoneAdmin },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     // 3. Upsert both users in the public users table
@@ -650,7 +650,7 @@ test('5. SÉCURITÉ ANTI-BILLET GRATUIT & VALIDATION PAR WEBHOOK SAMIRPAY : Bloc
         phone: phoneP,
         phone_confirm: true,
         user_metadata: { first_name: 'Partner', last_name: 'Pay', phone: phoneP },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     // 2. Update Client A's auth and metadata
@@ -660,7 +660,7 @@ test('5. SÉCURITÉ ANTI-BILLET GRATUIT & VALIDATION PAR WEBHOOK SAMIRPAY : Bloc
         phone: phoneClient,
         phone_confirm: true,
         user_metadata: { first_name: 'Client', last_name: 'Pay', phone: phoneClient },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     // 3. Upsert both users in the public users table
@@ -875,7 +875,7 @@ test('6. ENCAISSEMENT GUICHET CONTROLEUR (§76) & INVITATIONS PARTENAIRE (§160)
         phone: phoneP,
         phone_confirm: true,
         user_metadata: { first_name: 'Partner', last_name: 'Guichet', phone: phoneP },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     await adminClient.auth.admin.updateUserById(ctrlUserId, {
@@ -884,7 +884,7 @@ test('6. ENCAISSEMENT GUICHET CONTROLEUR (§76) & INVITATIONS PARTENAIRE (§160)
         phone: phoneCtrl,
         phone_confirm: true,
         user_metadata: { first_name: 'Controleur', last_name: 'Guichet', phone: phoneCtrl },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
     await adminClient.from('users').update({ role: 'CONTROLEUR' }).eq('id', ctrlUserId);
 
@@ -894,7 +894,7 @@ test('6. ENCAISSEMENT GUICHET CONTROLEUR (§76) & INVITATIONS PARTENAIRE (§160)
         phone: phoneClient1,
         phone_confirm: true,
         user_metadata: { first_name: 'Client', last_name: 'Cash', phone: phoneClient1 },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
 
     await adminClient.auth.admin.updateUserById(guestId, {
@@ -903,7 +903,7 @@ test('6. ENCAISSEMENT GUICHET CONTROLEUR (§76) & INVITATIONS PARTENAIRE (§160)
         phone: phoneGuest,
         phone_confirm: true,
         user_metadata: { first_name: 'VIP', last_name: 'Guest', phone: phoneGuest },
-        password: 'Password123!'
+        password: process.env.LEGACY_TEST_PASSWORD!
     });
     await adminClient.from('users').update({ role: 'CLIENT' }).eq('id', guestId);
 

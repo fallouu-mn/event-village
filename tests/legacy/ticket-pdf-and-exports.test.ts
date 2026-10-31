@@ -57,8 +57,8 @@ describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (
             role: 'CLIENT',
             status: 'ACTIF',
         });
-        await supabase.auth.admin.updateUserById(buyerAUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
-        const { data: bAAuth } = await publicAuth.auth.signInWithPassword({ email: bAEmail, password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(buyerAUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        const { data: bAAuth } = await publicAuth.auth.signInWithPassword({ email: bAEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         buyerAToken = bAAuth?.session?.access_token || '';
 
         const { data: bBUser } = await supabase.auth.admin.getUserById(buyerBUserId);
@@ -72,8 +72,8 @@ describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (
             role: 'CLIENT',
             status: 'ACTIF',
         });
-        await supabase.auth.admin.updateUserById(buyerBUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
-        const { data: bBAuth } = await publicAuth.auth.signInWithPassword({ email: bBEmail, password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(buyerBUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        const { data: bBAuth } = await publicAuth.auth.signInWithPassword({ email: bBEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         buyerBToken = bBAuth?.session?.access_token || '';
 
         // 2. Événement de test

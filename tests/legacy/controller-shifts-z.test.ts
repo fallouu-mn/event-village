@@ -48,7 +48,7 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
     before(async () => {
         // 1. Obtenir les tokens d'accès
         const { data: pUser } = await supabase.from('users').select('email').eq('id', partnerUserId).single();
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
 
         // S'assurer que le partenaire a le rôle PARTENAIRE
         await supabase.from('user_roles').upsert({
@@ -58,13 +58,13 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
 
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pUser?.email || 'partenaireA@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerToken = pAuth?.session?.access_token!;
         assert.ok(partnerToken, 'Token Partenaire obtenu');
 
         const { data: cUser } = await supabase.from('users').select('email').eq('id', ctrlUserId).single();
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
 
         // S'assurer que le contrôleur a le statut ACTIF et rôle CONTROLEUR
         await supabase.from('users').update({ role: 'CONTROLEUR', status: 'ACTIF' }).eq('id', ctrlUserId);
@@ -76,16 +76,16 @@ describe('MODULE "Z DE CAISSE" & FENÊTRE DE SHIFT CONTRÔLEUR (PRE-MORTEM §2.1
         // Re-login to get fresh session with updated role
         const { data: cAuthFresh } = await publicAuth.auth.signInWithPassword({
             email: cUser?.email!,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         ctrlToken = cAuthFresh?.session?.access_token!;
         assert.ok(ctrlToken, 'Token Contrôleur obtenu (après mise à jour du rôle)');
 
         const { data: clUser } = await supabase.from('users').select('email').eq('id', clientUserId).single();
-        await supabase.auth.admin.updateUserById(clientUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(clientUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: clAuth } = await publicAuth.auth.signInWithPassword({
             email: clUser?.email!,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         clientToken = clAuth?.session?.access_token!;
         assert.ok(clientToken, 'Token Client obtenu');

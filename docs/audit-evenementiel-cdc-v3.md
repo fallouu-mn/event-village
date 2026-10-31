@@ -264,7 +264,7 @@ Les tableaux ci-dessous résument les constats de sévérité élevée et moyenn
 - Fichiers hors de contrôle : `event.service.ts` 1 773 lignes, `notification.service.ts` 1 347, `payment.service.ts` 1 179, `controller/scanner/page.tsx` 1 185, `partner/events/new/page.tsx` 1 131, `partner/team/page.tsx` 1 339.
 - Code défensif « au cas où la migration manque » (repli sans verrou si la RPC n'existe pas, `hasHeldCol`, `try/catch` vides) : symptôme d'un schéma non maîtrisé, et cause directe de R9.
 - Routes mortes ou de débogage exposées : `/api/tickets/verify`, `/api/events/[id]/tickets/purchase`, `/api/test-notify-superadmins`, `/scan` → `/partner/scan`.
-- Variables d'environnement non validées au démarrage ; valeurs par défaut dangereuses (`'event-village-totp-master-salt-2026'`, `CRON_SECRET || SERVICE_ROLE_KEY`).
+- Variables d'environnement non validées au démarrage ; valeurs par défaut dangereuses (`'<valeur de repli retirée (lot 1C.6)>'`, `CRON_SECRET || SERVICE_ROLE_KEY`).
 - Pas de types générés Supabase, `any` et `as any` répandus, deux conventions pour `params` (Promise ou objet).
 - Dépôt encombré de synthèses générées par IA à la racine (`DIAGNOSTIC.md`, `FIX_SUMMARY.md`, `IMPROVEMENTS_SUMMARY.md`, `IMPLEMENTATION_SUMMARY.md`, `TEST_SUMMARY.md`, `agent-production-audit-final.md`) dont les affirmations (« 100 % pass », « blindage ») ne résistent pas à la lecture du code.
 - `docs/architecture.md` décrit une structure (`app/(client)`, `lib/referrals`, `lib/qr`, Vitest, Playwright, `docs/database.md`) qui n'existe pas.

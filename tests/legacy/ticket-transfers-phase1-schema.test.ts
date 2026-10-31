@@ -184,19 +184,19 @@ describe('CHANTIER 2 — PHASE 1 : SCHÉMA, MIGRATION & INTÉGRITÉ DU TRANSFERT
 
         const { data: bAUser } = await supabase.auth.admin.getUserById(buyerAUserId);
         const bAEmail = bAUser?.user?.email || 'buyerA@eventvillage.sn';
-        await supabase.auth.admin.updateUserById(buyerAUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        await supabase.auth.admin.updateUserById(buyerAUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
         const { data: bAAuth } = await publicAuth.auth.signInWithPassword({
             email: bAEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         buyerAToken = bAAuth?.session?.access_token || '';
 
         const { data: bBUser } = await supabase.auth.admin.getUserById(buyerBUserId);
         const bBEmail = bBUser?.user?.email || 'buyerB@eventvillage.sn';
-        await supabase.auth.admin.updateUserById(buyerBUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        await supabase.auth.admin.updateUserById(buyerBUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
         const { data: bBAuth } = await publicAuth.auth.signInWithPassword({
             email: bBEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         buyerBToken = bBAuth?.session?.access_token || '';
 

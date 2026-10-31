@@ -54,13 +54,13 @@ describe('CYCLE DE VIE COMPLET DES BILLETS — 22 TESTS D\'INTÉGRATION ET DE CO
         await supabase.from('user_roles').insert({ user_id: partnerUserId, role: 'PARTENAIRE' });
         await supabase.auth.admin.updateUserById(partnerUserId, {
             email: pEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
             email_confirm: true,
             user_metadata: { role: 'PARTENAIRE' }
         });
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerToken = pAuth?.session?.access_token || '';
         assert.ok(partnerToken !== '', 'partnerToken obtenu');
@@ -71,10 +71,10 @@ describe('CYCLE DE VIE COMPLET DES BILLETS — 22 TESTS D\'INTÉGRATION ET DE CO
         await supabase.from('users').update({ status: 'ACTIF', role: 'PARTENAIRE', phone: '221770006744' }).eq('id', otherPartnerUserId);
         await supabase.from('user_roles').delete().eq('user_id', otherPartnerUserId);
         await supabase.from('user_roles').insert({ user_id: otherPartnerUserId, role: 'PARTENAIRE' });
-        await supabase.auth.admin.updateUserById(otherPartnerUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
+        await supabase.auth.admin.updateUserById(otherPartnerUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
         const { data: opAuth } = await publicAuth.auth.signInWithPassword({
             email: opEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         otherPartnerToken = opAuth?.session?.access_token || '';
         assert.ok(otherPartnerToken, 'otherPartnerToken obtenu');
@@ -85,10 +85,10 @@ describe('CYCLE DE VIE COMPLET DES BILLETS — 22 TESTS D\'INTÉGRATION ET DE CO
         await supabase.from('users').update({ status: 'ACTIF', role: 'CLIENT', first_name: 'Acheteur', last_name: 'Alpha', phone: '221771234567' }).eq('id', buyerAUserId);
         await supabase.from('user_roles').delete().eq('user_id', buyerAUserId);
         await supabase.from('user_roles').insert({ user_id: buyerAUserId, role: 'CLIENT' });
-        await supabase.auth.admin.updateUserById(buyerAUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT' } });
+        await supabase.auth.admin.updateUserById(buyerAUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT' } });
         const { data: bAAuth } = await publicAuth.auth.signInWithPassword({
             email: bAEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         buyerAToken = bAAuth?.session?.access_token || '';
         assert.ok(buyerAToken, 'buyerAToken obtenu');
@@ -99,10 +99,10 @@ describe('CYCLE DE VIE COMPLET DES BILLETS — 22 TESTS D\'INTÉGRATION ET DE CO
         await supabase.from('users').update({ status: 'ACTIF', role: 'CONTROLEUR', first_name: 'Contrôleur', last_name: 'Officiel', phone: '221772223344' }).eq('id', ctrlUserId);
         await supabase.from('user_roles').delete().eq('user_id', ctrlUserId);
         await supabase.from('user_roles').insert({ user_id: ctrlUserId, role: 'CONTROLEUR' });
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
         const { data: cAuth } = await publicAuth.auth.signInWithPassword({
             email: cEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         ctrlToken = cAuth?.session?.access_token || '';
         assert.ok(ctrlToken, 'ctrlToken obtenu');

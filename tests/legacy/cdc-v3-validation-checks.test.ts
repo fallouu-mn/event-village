@@ -66,7 +66,7 @@ test('3. VRAI TEST D\'INTÉGRATION RLS MULTI-TENANT : Partner A avec son token n
 
     const { data: pAUser } = await adminClient.from('users').select('email').eq('id', partnerAUserId).single();
     const testEmailA = pAUser?.email || 'fallouu.dev@gmail.com';
-    const testPassword = 'Password123!';
+    const testPassword = process.env.LEGACY_TEST_PASSWORD!;
 
     await adminClient.auth.admin.updateUserById(partnerAUserId, { password: testPassword });
 

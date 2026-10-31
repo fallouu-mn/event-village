@@ -51,10 +51,10 @@ describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', a
         await supabase.from('users').update({ status: 'ACTIF', role: 'PARTENAIRE', phone: '221770006743' }).eq('id', partnerUserId);
         await supabase.from('user_roles').delete().eq('user_id', partnerUserId);
         await supabase.from('user_roles').insert({ user_id: partnerUserId, role: 'PARTENAIRE' });
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
+        await supabase.auth.admin.updateUserById(partnerUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerToken = pAuth?.session?.access_token!;
         assert.ok(partnerToken, 'Token Partenaire obtenu');
@@ -64,10 +64,10 @@ describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', a
         await supabase.from('users').update({ status: 'ACTIF', role: 'CONTROLEUR', phone: '221772223344' }).eq('id', ctrlUserId);
         await supabase.from('user_roles').delete().eq('user_id', ctrlUserId);
         await supabase.from('user_roles').insert({ user_id: ctrlUserId, role: 'CONTROLEUR' });
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
         const { data: cAuth } = await publicAuth.auth.signInWithPassword({
             email: cEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         ctrlToken = cAuth?.session?.access_token!;
         assert.ok(ctrlToken, 'Token Contrôleur obtenu');
@@ -77,10 +77,10 @@ describe('ANTI-FRAUDE QR CODE DYNAMIQUE (TOTP RFC 6238 — PRE-MORTEM §1.2)', a
         await supabase.from('users').update({ status: 'ACTIF', role: 'CLIENT', phone: '221771234567' }).eq('id', clientUserId);
         await supabase.from('user_roles').delete().eq('user_id', clientUserId);
         await supabase.from('user_roles').insert({ user_id: clientUserId, role: 'CLIENT' });
-        await supabase.auth.admin.updateUserById(clientUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT' } });
+        await supabase.auth.admin.updateUserById(clientUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT' } });
         const { data: clAuth } = await publicAuth.auth.signInWithPassword({
             email: clEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         clientToken = clAuth?.session?.access_token!;
         assert.ok(clientToken, 'Token Client obtenu');

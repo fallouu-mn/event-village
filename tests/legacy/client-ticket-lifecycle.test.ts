@@ -55,10 +55,10 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
         await supabase.from('users').update({ status: 'ACTIF', role: 'CLIENT', first_name: 'Client', last_name: 'Test', phone: '221771234567' }).eq('id', buyerUserId);
         await supabase.from('user_roles').delete().eq('user_id', buyerUserId);
         await supabase.from('user_roles').insert({ user_id: buyerUserId, role: 'CLIENT' });
-        await supabase.auth.admin.updateUserById(buyerUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT' } });
+        await supabase.auth.admin.updateUserById(buyerUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT' } });
         const { data: bAuth } = await publicAuth.auth.signInWithPassword({
             email: bEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         buyerToken = bAuth?.session?.access_token || '';
         assert.ok(buyerToken, 'buyerToken obtenu');
@@ -68,10 +68,10 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
         await supabase.from('users').update({ status: 'ACTIF', role: 'CONTROLEUR', phone: '221772223344' }).eq('id', ctrlUserId);
         await supabase.from('user_roles').delete().eq('user_id', ctrlUserId);
         await supabase.from('user_roles').insert({ user_id: ctrlUserId, role: 'CONTROLEUR' });
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CONTROLEUR' } });
         const { data: cAuth } = await publicAuth.auth.signInWithPassword({
             email: cEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         ctrlToken = cAuth?.session?.access_token || '';
         assert.ok(ctrlToken, 'ctrlToken obtenu');
@@ -81,10 +81,10 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
         await supabase.from('users').update({ status: 'ACTIF', role: 'PARTENAIRE', phone: '221770006743' }).eq('id', partnerUserId);
         await supabase.from('user_roles').delete().eq('user_id', partnerUserId);
         await supabase.from('user_roles').insert({ user_id: partnerUserId, role: 'PARTENAIRE' });
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
+        await supabase.auth.admin.updateUserById(partnerUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'PARTENAIRE' } });
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerToken = pAuth?.session?.access_token || '';
         assert.ok(partnerToken, 'partnerToken obtenu');

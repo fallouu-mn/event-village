@@ -56,10 +56,10 @@ describe('HOTFIX MÉTIER — AFFECTATION CONTRÔLEUR ↔ ÉTAT DE L\'ÉVÉNEMENT
         partnerAUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
         partnerAId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
         const { data: pAUser } = await supabase.from('users').select('email').eq('id', partnerAUserId).single();
-        await supabase.auth.admin.updateUserById(partnerAUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerAUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: sA } = await publicAuthClient.auth.signInWithPassword({
             email: pAUser?.email || 'partenaireA@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerAToken = sA?.session?.access_token || '';
 
@@ -67,10 +67,10 @@ describe('HOTFIX MÉTIER — AFFECTATION CONTRÔLEUR ↔ ÉTAT DE L\'ÉVÉNEMENT
         partnerBUserId = '775818bd-1833-4e99-843d-3f5ecf8196e3';
         partnerBId = '9cdc4247-d1fe-483b-b5e2-12671b069134';
         const { data: pBUser } = await supabase.from('users').select('email').eq('id', partnerBUserId).single();
-        await supabase.auth.admin.updateUserById(partnerBUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerBUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: sB } = await publicAuthClient.auth.signInWithPassword({
             email: pBUser?.email || 'partenaireB@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerBToken = sB?.session?.access_token || '';
 
@@ -78,7 +78,7 @@ describe('HOTFIX MÉTIER — AFFECTATION CONTRÔLEUR ↔ ÉTAT DE L\'ÉVÉNEMENT
         controllerUserId = 'fe9318ac-1f65-4e80-980f-f00626f1a003';
         controllerEmail = 'clientA_1788284499885@test.com';
         controllerPhone = `+22177${ts}99`;
-        await supabase.auth.admin.updateUserById(controllerUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(controllerUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         await supabase.from('users').update({
             role: 'CONTROLEUR',
             status: 'ACTIF',
@@ -89,7 +89,7 @@ describe('HOTFIX MÉTIER — AFFECTATION CONTRÔLEUR ↔ ÉTAT DE L\'ÉVÉNEMENT
 
         const { data: sCtrl } = await publicAuthClient.auth.signInWithPassword({
             email: controllerEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         controllerToken = sCtrl?.session?.access_token || '';
 

@@ -41,18 +41,18 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
     before(async () => {
         // Obtenir tokens
         const { data: pUser } = await supabase.from('users').select('email').eq('id', partnerUserId).single();
-        await supabase.auth.admin.updateUserById(partnerUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(partnerUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: pAuth } = await publicAuth.auth.signInWithPassword({
             email: pUser?.email || 'partenaireA@test.com',
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         partnerToken = pAuth?.session?.access_token!;
 
         const { data: cUser } = await supabase.from('users').select('email').eq('id', ctrlUserId).single();
-        await supabase.auth.admin.updateUserById(ctrlUserId, { password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(ctrlUserId, { password: process.env.LEGACY_TEST_PASSWORD! });
         const { data: cAuth } = await publicAuth.auth.signInWithPassword({
             email: cUser?.email!,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         ctrlToken = cAuth?.session?.access_token!;
 
@@ -171,7 +171,7 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
     // ─────────────────────────────────────────────────────────────
     await test('TEST 1.2 : Faille 1.2 — Protection ATO (/api/controller/setup)', async () => {
         const { data: victimUser } = await supabase.from('users').select('phone, email').eq('id', victimClientId).single();
-        const originalPassword = 'SecureOriginalPass123!';
+        const originalPassword = `${process.env.LEGACY_TEST_PASSWORD}-original`; // lot 1C.6 : plus de littéral
         await supabase.auth.admin.updateUserById(victimClientId, {
             password: originalPassword,
             user_metadata: { is_temporary_controller_account: false, role: 'CLIENT' },
@@ -196,7 +196,7 @@ describe('VÉRIFICATION ET VALIDATION DES 10 CORRECTIFS DE SÉCURITÉ', async ()
         });
 
         // Appel malveillant vers /api/controller/setup
-        const hackerPassword = 'MaliciousNewPassword123!';
+        const hackerPassword = `${process.env.LEGACY_TEST_PASSWORD}-hacker`; // lot 1C.6 : plus de littéral
         const setupReq = new NextRequest('http://localhost:3000/api/controller/setup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

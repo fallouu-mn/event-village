@@ -9,6 +9,7 @@ import { OrderService } from '../lib/orders/order.service';
 // [lot 0] Chargement de .env.local supprimé : l'environnement de test (.env.test, instance Supabase locale)
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
 import './helpers/env';
+import { TEST_PASSWORD } from './helpers/fixture-data';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -22,11 +23,11 @@ async function createTestUsers(prefix: string) {
     const emailC = `client.m9.${uniqueSuffix}@eventvillage.sn`;
 
     const { data: authP, error: errP } = await adminClient.auth.admin.createUser({
-        email: emailP, password: 'Password123!', email_confirm: true, phone: phoneP, phone_confirm: true,
+        email: emailP, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,
         user_metadata: { first_name: 'P', last_name: 'P', phone: phoneP },
     });
     const { data: authC, error: errC } = await adminClient.auth.admin.createUser({
-        email: emailC, password: 'Password123!', email_confirm: true, phone: phoneC, phone_confirm: true,
+        email: emailC, password: TEST_PASSWORD, email_confirm: true, phone: phoneC, phone_confirm: true,
         user_metadata: { first_name: 'C', last_name: 'C', phone: phoneC },
     });
 

@@ -6,6 +6,7 @@ import { RegisterPartnerSchema, normalizePhoneNumber } from '../lib/validations/
 import { RateLimiter } from '../lib/security/rate-limiter';
 import { NotificationService } from '../lib/notifications/notification.service';
 import { AdminService } from '../lib/admin/admin.service';
+import { TEST_PASSWORD } from './helpers/fixture-data';
 
 test('1. Register Partenaire : Schéma strict avec documents obligatoires (Bucket Privé) et statut initial EN_ATTENTE', () => {
     const validPayload = {
@@ -19,8 +20,8 @@ test('1. Register Partenaire : Schéma strict avec documents obligatoires (Bucke
         lastName: 'Diallo',
         phone: '77 456 78 90',
         email: 'aminata@royal.sn',
-        password: 'Password123!',
-        confirmPassword: 'Password123!',
+        password: TEST_PASSWORD,
+        confirmPassword: TEST_PASSWORD,
         idCardUrl: 'pending_registrations/id_card_aminata_123.pdf',
         businessDocUrl: 'pending_registrations/business_rccm_royal_123.pdf',
     };

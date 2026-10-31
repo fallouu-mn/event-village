@@ -144,14 +144,14 @@ describe('CHANTIER 2 — PHASE 2 : INITIATION DU TRANSFERT DE BILLET P2P (9 TEST
 
         const { data: bAUser } = await supabase.auth.admin.getUserById(buyerAUserId);
         const bAEmail = bAUser?.user?.email || 'buyerA@eventvillage.sn';
-        await supabase.auth.admin.updateUserById(buyerAUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
-        const { data: bAAuth } = await publicAuth.auth.signInWithPassword({ email: bAEmail, password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(buyerAUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        const { data: bAAuth } = await publicAuth.auth.signInWithPassword({ email: bAEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         buyerAToken = bAAuth?.session?.access_token || '';
 
         const { data: bBUser } = await supabase.auth.admin.getUserById(buyerBUserId);
         const bBEmail = bBUser?.user?.email || 'buyerB@eventvillage.sn';
-        await supabase.auth.admin.updateUserById(buyerBUserId, { password: 'Password123!', email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
-        const { data: bBAuth } = await publicAuth.auth.signInWithPassword({ email: bBEmail, password: 'Password123!' });
+        await supabase.auth.admin.updateUserById(buyerBUserId, { password: process.env.LEGACY_TEST_PASSWORD!, email_confirm: true, user_metadata: { role: 'CLIENT', roles: ['CLIENT'] } });
+        const { data: bBAuth } = await publicAuth.auth.signInWithPassword({ email: bBEmail, password: process.env.LEGACY_TEST_PASSWORD! });
         buyerBToken = bBAuth?.session?.access_token || '';
 
         console.log(`[SETUP] Event: ${testEventId}, Tickets: [${ticket1Id}, ${ticket2Id}, ${ticket3Id}]`);

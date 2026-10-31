@@ -50,13 +50,13 @@ describe('CHECKOUT PANIER MULTI-CATÉGORIES — 5 TESTS D\'INTÉGRATION', async 
         await supabase.from('user_roles').delete().eq('user_id', buyerUserId);
         await supabase.from('user_roles').insert({ user_id: buyerUserId, role: 'CLIENT' });
         await supabase.auth.admin.updateUserById(buyerUserId, {
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
             email_confirm: true,
             user_metadata: { role: 'CLIENT' }
         });
         const { data: bAuth } = await publicAuth.auth.signInWithPassword({
             email: buyerEmail,
-            password: 'Password123!',
+            password: process.env.LEGACY_TEST_PASSWORD!,
         });
         buyerToken = bAuth?.session?.access_token || '';
         assert.ok(buyerToken, 'Token acheteur obtenu');
