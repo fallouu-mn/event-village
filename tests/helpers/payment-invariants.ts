@@ -2,7 +2,8 @@
  * Lot 2 — invariant global de la chaîne paiement → billet, vérifié à la fin de chaque suite de
  * paiement par une requête SQL sur la base LOCALE (lecture seule) :
  *  (a) aucun paiement SUCCESS (ou PARTIAL, lot 3) de billetterie sans ses billets (nombre exact = quantités réservées) ;
- *  (b) aucun billet payant VALIDE ou UTILISE sans paiement SUCCESS ou PARTIAL (remboursement partiel, lot 3) ;
+ *  (b) aucun billet payant VALIDE ou UTILISE sans paiement SUCCESS ou PARTIAL (remboursement partiel, lot 3),
+ *      hors billet VALIDE « à régler sur place » d'une commande impayée (encaissement au contrôle, lot 4) ;
  *  (c) pour chaque catégorie : sold + held ≤ total, et held = somme des réservations non expirées.
  *
  * (c) est vérifié deux fois :
@@ -39,6 +40,9 @@ SELECT 'b', t.id::text, format('billet %s à %s F sans paiement SUCCESS ni PARTI
   LEFT JOIN public.payments p ON p.id = t.payment_id
  WHERE t.price > 0 AND t.status IN ('VALIDE', 'UTILISE')
    AND (p.id IS NULL OR p.status NOT IN ('SUCCESS', 'PARTIAL'))
+   -- Lot 4 : billet « à régler sur place » (commande impayée, encaissement au contrôle) : état légitime
+   AND NOT (t.payment_id IS NULL AND t.status = 'VALIDE' AND EXISTS (
+           SELECT 1 FROM public.orders o WHERE o.id = t.order_id AND o.payment_status <> 'SUCCESS'))
 UNION ALL
 SELECT 'c', c.id::text, format('sold %s + held %s > total %s', c.sold_quantity, c.held_quantity, c.total_quantity)
   FROM public.ticket_categories c
