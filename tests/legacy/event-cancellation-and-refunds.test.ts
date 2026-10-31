@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { EventCancellationService } from '../../lib/events/event-cancellation.service';
-import { EventService } from '../../lib/events/event.service';
 import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
 import { isEventEligibleForController, getEventEligibilityRejectionReason } from '../../lib/events/event-status';
 import { createClient } from '@supabase/supabase-js';
@@ -548,70 +547,4 @@ test('7. RÈGLES MÉTIER SCANNER : Le statut ANNULE bloque immédiatement les co
     assert.strictEqual(rejectionReason, "L'événement a été annulé.");
 });
 
-test('8. HOLD CART & ACHAT DE BILLETS BLOQUÉS SUR ÉVÉNEMENT ANNULÉ', async () => {
-    if (!supabaseUrl || !serviceRoleKey) return;
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data: partnerA } = await adminClient.from('partners').select('id').eq('user_id', partnerAUserId).single();
-    assert.ok(partnerA?.id);
-
-    const suffix = Date.now().toString().slice(-6);
-
-    const { data: event, error: evErr } = await adminClient
-        .from('events')
-        .insert({
-            partner_id: partnerA.id,
-            title: `Hold Cart Cancel Test ${suffix}`,
-            description: 'Test purchase rejection on cancelled event',
-            start_date: '2026-11-30',
-            start_time: '20:00',
-            location: 'Dakar',
-            status: 'PUBLIE',
-        })
-        .select('*')
-        .single();
-
-    assert.ifError(evErr);
-
-    const { data: cat, error: catErr } = await adminClient
-        .from('ticket_categories')
-        .insert({
-            event_id: event.id,
-            name: 'Pass Standard',
-            price: 5000,
-            total_quantity: 10,
-            sold_quantity: 0,
-            is_active: true,
-        })
-        .select('*')
-        .single();
-
-    assert.ifError(catErr);
-
-    try {
-        // Annuler l'événement
-        await EventCancellationService.cancelEvent(
-            event.id,
-            partnerAUserId,
-            'PARTENAIRE',
-            'Annulation avant tentative d\'achat'
-        );
-
-        // Toute tentative de réservation via reserveTicketsAtomic doit être rejetée
-        await assert.rejects(
-            async () => {
-                await EventService.reserveTicketsAtomic({
-                    eventId: event.id,
-                    categoryId: cat.id,
-                    quantity: 1,
-                    userId: clientAUserId,
-                });
-            },
-            /billetterie n'est ouverte que pour les événements au statut PUBLIE/
-        );
-
-    } finally {
-        await adminClient.from('ticket_categories').delete().eq('event_id', event.id);
-        await adminClient.from('events').delete().eq('id', event.id);
-    }
-});
+// [lot 2 — cas supprimé] 8. Achat bloqué sur événement annulé : le refus reposait sur EventService.reserveTicketsAtomic, supprimé (contrôles du checkout avant la RPC checkout_create_payment) ; couvert par tests/parcours/paiement-controles.test.ts (événement non publié → 400 : même branche status <> 'PUBLIE', testée sur un brouillon)

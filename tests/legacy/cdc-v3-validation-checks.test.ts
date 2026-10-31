@@ -179,7 +179,9 @@ test('4. VRAI CONTRÔLE BACKEND PRODUIT INTERDIT : Refus de paiement et aucune l
                 targetType: 'ORDER',
                 targetId: order!.id,
                 operator: 'WAVE',
-                customerPhone: '+221770000000',
+                // [lot 2] customerPhone → payerPhone : createPayment exige operator et payerPhone ; le refus
+                // « produit interdit » est levé avant la normalisation du téléphone, assertions inchangées.
+                payerPhone: '+221770000000',
             });
         } catch (err: any) {
             threwError = true;
@@ -261,77 +263,4 @@ test('5. VRAIE EXPIRATION AUTOMATIQUE DES MORATOIRES EN BASE DE DONNÉES', async
     }
 });
 
-test('6. VRAI REMBOURSEMENT & INVARIANT EN BASE DE DONNÉES (Total − Payé = Solde)', async () => {
-    if (!supabaseUrl || !serviceRoleKey) return;
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
-    const partnerAUserId = 'e706a7a2-502c-4396-9e91-4dc6720388f7';
-    const partnerAId = 'a917b7ac-d542-4c2b-b5d8-ab38f866b2e7';
-    const uniqueSuffix = Date.now().toString().slice(-6);
-
-    const clientId = partnerAUserId;
-
-    // 1. Commande de 80 000 FCFA payée en totalité
-    const orderNumber = `EV-ORD-REFUND-${uniqueSuffix}`;
-    const { data: order, error: oErr } = await adminClient.from('orders').insert({
-        order_number: orderNumber,
-        client_id: clientId,
-        partner_id: partnerAId,
-        subtotal: 80000,
-        total_amount: 80000,
-        paid_amount: 80000,
-        balance_amount: 0,
-        delivery_mode: 'RETRAIT',
-        order_status: 'CONFIRMEE',
-        payment_status: 'SUCCESS',
-    }).select('id').single();
-    assert.ok(!oErr && order?.id, `Création commande Test 6: ${oErr?.message}`);
-
-    // 2. Transaction de paiement SUCCESS
-    const txId = `EV-TX-REFUND-${uniqueSuffix}`;
-    const { data: payment, error: pErr } = await adminClient.from('payments').insert({
-        transaction_id: txId,
-        client_id: clientId,
-        partner_id: partnerAId,
-        order_id: order.id,
-        amount: 80000,
-        status: 'SUCCESS',
-        payment_target: 'ORDER',
-    }).select('id, order_id').single();
-    assert.ok(!pErr && payment?.id, `Création paiement Test 6: ${pErr?.message}`);
-
-    try {
-        // 3. Exécution du remboursement partiel de 30 000 FCFA
-        const refundResult = await paymentService.processRefund({
-            paymentId: payment.id,
-            refundAmount: 30000,
-            reason: 'Test Remboursement Partiel CDC',
-        });
-
-        assert.strictEqual(refundResult.success, true);
-        assert.strictEqual(refundResult.newPaidAmount, 50000);
-        assert.strictEqual(refundResult.newBalanceAmount, 30000);
-
-        // 4. Re-lecture réelle de la commande en base de données
-        const { data: dbOrder, error: orderErr } = await adminClient
-            .from('orders')
-            .select('total_amount, paid_amount, balance_amount, payment_status')
-            .eq('id', order.id)
-            .single();
-
-        assert.ok(!orderErr && dbOrder, 'Lecture de la commande en base');
-        const dbTotal = Number(dbOrder.total_amount);
-        const dbPaid = Number(dbOrder.paid_amount);
-        const dbBalance = Number(dbOrder.balance_amount);
-
-        assert.strictEqual(dbTotal, 80000, 'Total inchangé en base = 80 000 FCFA');
-        assert.strictEqual(dbPaid, 50000, 'Nouveau Payé en base = 50 000 FCFA');
-        assert.strictEqual(dbBalance, 30000, 'Nouveau Solde en base = 30 000 FCFA');
-        assert.strictEqual(dbOrder.payment_status, 'PARTIAL', 'Statut = PARTIAL');
-        assert.strictEqual(dbTotal - dbPaid, dbBalance, 'Invariant Total - Payé = Solde vérifié en base');
-    } finally {
-        await adminClient.from('refunds').delete().eq('payment_id', payment.id);
-        await adminClient.from('payments').delete().eq('id', payment.id);
-        await adminClient.from('orders').delete().eq('id', order.id);
-    }
-});
+// [lot 2 — cas supprimé] 6. Remboursement partiel et invariant Total − Payé = Solde : PaymentService.processRefund supprimé (remboursements par le module de cashout) ; couvert par tests/parcours/paiement-remboursement.test.ts (remboursement partiel d'une commande sans équivalent)

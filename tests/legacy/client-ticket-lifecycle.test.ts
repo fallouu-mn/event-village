@@ -10,7 +10,6 @@ import { createClient } from '@supabase/supabase-js';
 import '../helpers/env';
 
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { paymentService } from '../../lib/payments/payment.service';
 import { NotificationService } from '../../lib/notifications/notification.service';
 import { GET as getTicketsRoute } from '../../app/api/tickets/route';
 import { POST as claimFreeRoute } from '../../app/api/tickets/claim-free/route';
@@ -39,8 +38,6 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
     let eventId: string;
     let paidCatId: string;
     let freeCatId: string;
-    let transactionId: string;
-    let externalOrderId: string;
 
     const createdTicketIds: string[] = [];
     const createdPaymentIds: string[] = [];
@@ -153,93 +150,9 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
         console.log('[TEARDOWN] Nettoyage complet terminé.');
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // TEST 1 : Achat Multi-Billets (N=3) - Création de 3 lignes distinctes
-    // ─────────────────────────────────────────────────────────────
-    test('Test 1 : Achat Multi-Billets (N=3) - Création de 3 lignes de billets distinctes', async () => {
-        const start = Date.now();
-        const quantity = 3;
-
-        // 1. Initialiser le paiement avec quantity=3
-        const paymentRes = await paymentService.createPayment(buyerUserId, {
-            targetType: 'TICKET',
-            targetId: paidCatId,
-            operator: 'WAVE',
-            customerPhone: '771234567',
-            customerEmail: 'client.test@eventvillage.sn',
-            customerName: 'Client Test Multi-Achat',
-            quantity,
-        });
-
-        assert.ok(paymentRes.payment_id, 'Paiement doit être créé');
-        transactionId = paymentRes.transaction_id;
-        externalOrderId = paymentRes.order_id;
-        createdPaymentIds.push(paymentRes.payment_id);
-
-        // 2. Simuler le Webhook SamirPay de succès
-        const formData = new FormData();
-        formData.append('transaction_id', `TX_WAVE_${ts}`);
-        formData.append('order_id', externalOrderId);
-        formData.append('status', 'SUCCESS');
-        formData.append('amount', '15000');
-        const webhookRes = await paymentService.handleSamirPayWebhook(formData);
-
-        assert.strictEqual(webhookRes.success, true, 'Webhook doit traiter le paiement avec succès');
-
-        // 3. Relecture DB : Exactement 3 billets créés pour cette catégorie
-        const { data: tickets, error } = await supabase
-            .from('tickets')
-            .select('*')
-            .eq('category_id', paidCatId)
-            .order('created_at', { ascending: true });
-
-        assert.ok(!error && tickets, 'Lecture des billets en DB sans erreur');
-        assert.strictEqual(tickets.length, 3, 'Doit avoir généré exactement 3 billets distincts');
-
-        // Vérifier l'unicité des IDs, numéros et QR codes
-        const ids = new Set(tickets.map(t => t.id));
-        const ticketNumbers = new Set(tickets.map(t => t.ticket_number));
-        const qrCodes = new Set(tickets.map(t => t.qr_code));
-
-        assert.strictEqual(ids.size, 3, 'Chaque billet doit avoir un UUID distinct');
-        assert.strictEqual(ticketNumbers.size, 3, 'Chaque billet doit avoir un numéro de billet unique');
-        assert.strictEqual(qrCodes.size, 3, 'Chaque billet doit avoir un token QR code unique');
-
-        tickets.forEach(t => createdTicketIds.push(t.id));
-        console.log(`  ✓ 3 Billets générés avec succès (${Date.now() - start}ms) : ${Array.from(ticketNumbers).join(', ')}`);
-    });
-
-    // ─────────────────────────────────────────────────────────────
-    // TEST 2 : Calcul financier exact pour N billets
-    // ─────────────────────────────────────────────────────────────
-    test('Test 2 : Calcul financier exact pour N=3 billets (5 000 FCFA x 3 = 15 000 FCFA)', async () => {
-        const { data: payment } = await supabase
-            .from('payments')
-            .select('*')
-            .eq('transaction_id', transactionId)
-            .single();
-
-        assert.ok(payment, 'Paiement trouvé');
-        assert.strictEqual(Number(payment.amount), 15000, 'Le montant total du paiement doit être 15 000 FCFA');
-        assert.strictEqual(payment.payment_target, 'TICKET');
-        assert.strictEqual(payment.status, 'SUCCESS');
-        console.log('  ✓ Montant exact vérifié : 15 000 FCFA');
-    });
-
-    // ─────────────────────────────────────────────────────────────
-    // TEST 3 : Décrémentation atomique de l'inventaire (-3)
-    // ─────────────────────────────────────────────────────────────
-    test('Test 3 : Décrémentation atomique de l\'inventaire de la catégorie (-3)', async () => {
-        const { data: cat } = await supabase
-            .from('ticket_categories')
-            .select('sold_quantity, total_quantity')
-            .eq('id', paidCatId)
-            .single();
-
-        assert.ok(cat, 'Catégorie trouvée');
-        assert.strictEqual(cat.sold_quantity, 3, 'Le sold_quantity doit être égal à 3');
-        console.log(`  ✓ Inventaire décrémenté : ${cat.sold_quantity}/${cat.total_quantity} vendus`);
-    });
+    // [lot 2 — cas supprimé] Test 1 Achat multi-billets (N=3) : createPayment(TICKET) et PaymentService.handleSamirPayWebhook supprimés (checkout puis RPC payment_confirm) ; couvert par tests/parcours/paiement-confirmation.test.ts et tests/parcours/paiement-webhook.test.ts
+    // [lot 2 — cas supprimé] Test 2 Montant exact pour N=3 : lisait le paiement créé par le test 1 (supprimé) ; couvert par tests/parcours/paiement-confirmation.test.ts (montants lus, pas recalculés)
+    // [lot 2 — cas supprimé] Test 3 Décrément du stock (-3) : vérifiait l'effet du test 1 (supprimé) ; couvert par tests/parcours/paiement-confirmation.test.ts (held sans double décrément)
 
     // ─────────────────────────────────────────────────────────────
     // TEST 4 : Réservation de billets gratuits (N=2) via /api/tickets/claim-free
@@ -331,54 +244,8 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
         console.log(`  ✓ Alerte Vente Organisateur validée : "${orgNotif.title}"`);
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // TEST 8 : Idempotence stricte du webhook de paiement
-    // ─────────────────────────────────────────────────────────────
-    test('Test 8 : Idempotence stricte — Renvoi du webhook ne duplique aucun billet', async () => {
-        // Rejouer le webhook avec le même order_id
-        const secondFormData = new FormData();
-        secondFormData.append('transaction_id', `TX_WAVE_${ts}`);
-        secondFormData.append('order_id', externalOrderId);
-        secondFormData.append('status', 'SUCCESS');
-        secondFormData.append('amount', '15000');
-        const secondWebhookRes = await paymentService.handleSamirPayWebhook(secondFormData);
-
-        assert.strictEqual(secondWebhookRes.success, true, 'Webhook ré-exécuté avec succès sans crash');
-
-        // Vérifier qu'aucun nouveau billet n'a été créé
-        const { data: currentTickets } = await supabase
-            .from('tickets')
-            .select('id')
-            .eq('category_id', paidCatId);
-
-        assert.strictEqual(currentTickets?.length, 3, 'Le nombre de billets payants doit rester exactement 3');
-        console.log('  ✓ Idempotence validée : 0 billet dupliqué');
-    });
-
-    // ─────────────────────────────────────────────────────────────
-    // TEST 9 : API GET /api/tickets renvoie isUpcoming=true pour billets VALIDE
-    // ─────────────────────────────────────────────────────────────
-    test('Test 9 : API GET /api/tickets renvoie les billets avec isUpcoming=true pour les billets VALIDE', async () => {
-        const req = new NextRequest(`http://localhost:3000/api/tickets?userId=${buyerUserId}`, {
-            method: 'GET',
-            headers: { Authorization: `Bearer ${buyerToken}` },
-        });
-
-        const res = await getTicketsRoute(req);
-        const data = await res.json();
-
-        assert.strictEqual(res.status, 200);
-        assert.ok(Array.isArray(data.tickets), 'Doit renvoyer un tableau de tickets');
-        assert.ok(data.tickets.length >= 5, 'Doit contenir au moins les 5 billets créés (3 payants + 2 gratuits)');
-
-        const testTickets = data.tickets.filter((t: any) => createdTicketIds.includes(t.id));
-        testTickets.forEach((t: any) => {
-            assert.strictEqual(t.status, 'VALIDE', `Billet ${t.ticketNumber} doit être VALIDE`);
-            assert.strictEqual(t.isUpcoming, true, `Billet ${t.ticketNumber} doit être isUpcoming=true`);
-        });
-
-        console.log(`  ✓ API Billets : ${testTickets.length} billets actifs avec isUpcoming=true`);
-    });
+    // [lot 2 — cas supprimé] Test 8 Idempotence du webhook : PaymentService.handleSamirPayWebhook supprimé ; couvert par tests/parcours/paiement-webhook.test.ts (rejeu) et tests/parcours/paiement-confirmation.test.ts
+    // [lot 2 — cas supprimé] Test 9 GET /api/tickets, isUpcoming=true : l'assertion « au moins 5 billets (3 payants + 2 gratuits) » dépend des billets payants du test 1 (supprimé) ; non couvert pour isUpcoming=true (isUpcoming=false reste vérifié par le test 13)
 
     // ─────────────────────────────────────────────────────────────
     // TEST 10 : Scan & Compostage du Billet 1 par le contrôleur
@@ -554,27 +421,7 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
         console.log('  ✓ Live-Code refusé pour billet déjà utilisé');
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // TEST 18 : Rejet du surbooking / Capacité insuffisante
-    // ─────────────────────────────────────────────────────────────
-    test('Test 18 : Rejet du surbooking — Achat au-delà de la capacité restante bloqué', async () => {
-        try {
-            await paymentService.createPayment(buyerUserId, {
-                targetType: 'TICKET',
-                targetId: paidCatId,
-                operator: 'WAVE',
-                customerPhone: '771234567',
-                customerEmail: 'client.test@eventvillage.sn',
-                customerName: 'Client Surbooking',
-                quantity: 100, // Capacité restante = 47
-            });
-            assert.fail('Devrait lever une exception de capacité insuffisante');
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            assert.ok(msg.includes('insuffisante') || msg.includes('disponible'), 'Message d\'erreur de capacité attendu');
-            console.log(`  ✓ Surbooking bloqué avec succès : "${msg}"`);
-        }
-    });
+    // [lot 2 — cas supprimé] Test 18 Rejet du surbooking : createPayment(TICKET) supprimé (refus USE_TICKET_CHECKOUT) ; couvert par tests/parcours/paiement-reservation.test.ts (dernière place, panier partiel)
 
     // ─────────────────────────────────────────────────────────────
     // TEST 19 : Isolation RLS & Confidentialité Acheteurs

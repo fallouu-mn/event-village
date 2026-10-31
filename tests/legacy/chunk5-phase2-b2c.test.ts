@@ -366,26 +366,19 @@ describe('CHUNK 5 — PHASE 2 : HYDRATATION B2C & VALIDATION DES PARCOURS CLIENT
         const originalSendCashout = samirPayClient.sendCashout;
         const originalGetSolde = samirPayClient.getSolde;
 
+        // [lot 2] mock aligné sur le contrat SamirPay (SamirPaySoldeResult, SamirPayCashoutResult)
         samirPayClient.getSolde = async () => ({
-            status: 'success',
-            success: true,
             solde: 1000000,
+            entityName: null,
         });
 
         let cashoutCalledWith: any = null;
+        // [lot 2] mock aligné sur le contrat SamirPay
         samirPayClient.sendCashout = async (payload) => {
             cashoutCalledWith = payload;
             return {
-                success: true,
-                message: 'Cashout exécuté avec succès',
-                transaction_id: `TX-SAMIR-CASHOUT-${Date.now()}`,
-                reference: (payload as any).externalReference || `TX-SAMIR-REF-${Date.now()}`,
-                status: 'PAID',
-                data: {
-                    transaction_id: `TX-SAMIR-CASHOUT-${Date.now()}`,
-                    status: 'PAID',
-                    amount: payload.amount,
-                }
+                transactionId: `TX-SAMIR-CASHOUT-${Date.now()}`,
+                status: 'SUCCESS',
             };
         };
 

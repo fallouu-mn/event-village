@@ -14,7 +14,6 @@ import { getServiceRoleClient } from '../../lib/supabase/server';
 import { TicketPdfService } from '../../lib/tickets/ticket-pdf.service';
 import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
 import { NotificationService } from '../../lib/notifications/notification.service';
-import { paymentService } from '../../lib/payments/payment.service';
 import { GET as getTicketPdfRoute } from '../../app/api/tickets/[id]/pdf/route';
 import { generateTotp, verifyTotp } from '../../lib/security/totp';
 
@@ -335,91 +334,8 @@ describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (
         );
     });
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // TEST 9 : Webhook SUCCESS répété -> Idempotence stricte (0 notification en double)
-    // ─────────────────────────────────────────────────────────────────────────
-    await test('TEST 9 : Webhook SUCCESS répété (Idempotence stricte — Aucun traitement en double)', async () => {
-        const orderId = `ORD-IDEMP-${ts}`;
-        const transactionId = `TX-IDEMP-${ts}`;
-
-        // 1. Création de l'enregistrement de paiement en base avec status PENDING
-        const { data: p, error: pErr } = await supabase.from('payments').insert({
-            external_order_id: orderId,
-            transaction_id: transactionId,
-            client_id: buyerAUserId,
-            partner_id: partnerId,
-            amount: 25000,
-            currency: 'XOF',
-            is_platform_payment: true,
-            status: 'PENDING',
-            payment_target: 'TICKET',
-            ticket_id: ticketValidAId,
-            idempotency_key: `IDEMP-${orderId}`,
-            metadata: {
-                event_id: testEventId,
-                category_id: testCategoryId,
-                customer_phone: '+221771234567',
-                customer_name: 'Mamadou Diallo',
-            },
-        }).select('*').single();
-        if (pErr || !p) throw new Error(`Payment insert failed: ${pErr?.message || JSON.stringify(pErr)}`);
-
-        // 2. Premier appel webhook (SUCCESS)
-        const webhookPayload = {
-            order_id: orderId,
-            transaction_id: transactionId,
-            status: 'SUCCESS',
-            amount: '25000',
-        };
-
-        const firstWebhook = await paymentService.handleSamirPayWebhook(webhookPayload);
-        assert.ok(firstWebhook.success, 'Le 1er webhook doit être accepté avec succès');
-
-        // 3. Deuxième appel webhook identique (Simulation de répétition réseau SamirPay)
-        const secondWebhook = await paymentService.handleSamirPayWebhook(webhookPayload);
-        assert.ok(secondWebhook.success, 'Le 2nd webhook doit répondre avec succès (Idempotence)');
-        assert.equal(secondWebhook.message, 'Transaction déjà confirmée.', 'Doit détecter immédiatement que la transaction a déjà été traitée');
-
-        // 4. Vérification en base : le paiement reste unique et au statut SUCCESS
-        const { data: finalPayment } = await supabase.from('payments').select('status').eq('id', p.id).single();
-        assert.equal(finalPayment?.status, 'SUCCESS');
-
-        // Nettoyage paiement test
-        await supabase.from('payments').delete().eq('id', p.id);
-    });
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // TEST 10 : Non-régression Hold Cart
-    // ─────────────────────────────────────────────────────────────────────────
-    await test('TEST 10 : Non-régression — Hold Cart toujours 100% opérationnel', async () => {
-        const { EventService } = await import('../../lib/events/event.service');
-        const initialHeld = await EventService.getActiveHeldQuantity(testCategoryId);
-        assert.strictEqual(typeof initialHeld, 'number');
-
-        // Initier un paiement temporaire qui place 1 billet en hold
-        const payRes = await paymentService.createPayment(buyerAUserId, {
-            targetType: 'TICKET',
-            targetId: testCategoryId,
-            quantity: 1,
-            operator: 'WAVE',
-            customerPhone: '771234567',
-        });
-        assert.ok(payRes.success);
-
-        const heldDuring = await EventService.getActiveHeldQuantity(testCategoryId);
-        assert.strictEqual(heldDuring, initialHeld + 1, 'Le stock doit être incrémenté en hold temporaire');
-
-        // Échec du paiement -> libération immédiate du hold
-        await paymentService.handleSamirPayWebhook({
-            order_id: payRes.order_id,
-            transaction_id: `TX-FAIL-${Date.now()}`,
-            status: 'FAILED',
-            amount: '25000',
-        });
-
-        const heldAfter = await EventService.getActiveHeldQuantity(testCategoryId);
-        assert.strictEqual(heldAfter, initialHeld, 'Le hold doit être libéré après échec');
-    });
+    // [lot 2 — cas supprimé] TEST 9 Webhook SUCCESS répété (idempotence) : PaymentService.handleSamirPayWebhook supprimé (webhook par lib/payments/webhook.service.ts, émission par la RPC payment_confirm) ; couvert par tests/parcours/paiement-webhook.test.ts et tests/parcours/paiement-confirmation.test.ts
+    // [lot 2 — cas supprimé] TEST 10 Non-régression Hold Cart : EventService.getActiveHeldQuantity, PaymentService.handleSamirPayWebhook et createPayment(TICKET) supprimés (réservation en base par la RPC checkout_create_payment) ; couvert par tests/parcours/paiement-reservation.test.ts
 
     // ─────────────────────────────────────────────────────────────────────────
     // TEST 11 : Non-régression Transfert P2P
