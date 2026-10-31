@@ -1,84 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireActiveSession } from '@/lib/auth/session';
+import { getServerEnv } from '@/lib/env';
+import { loadPayment, reconcilePayment } from '@/lib/payments/confirmation.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { samirPayClient } from '@/lib/samirpay/client';
-import { mapSamirPayStatus } from '@/lib/samirpay/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-    req: NextRequest,
-    { params }: { params: { transactionId: string } }
-) {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RECONCILABLE = new Set(['PENDING', 'EXPIRED', 'CANCELLED']);
+
+/**
+ * GET /api/payments/[id]/status — statut d'un paiement, pour son propriétaire uniquement.
+ * Lecture seule : si le paiement n'est pas final, elle peut demander une réconciliation (statut
+ * SamirPay avec l'identifiant enregistré, puis la même RPC que le webhook) ; elle n'écrit jamais
+ * elle-même un statut. Identifiant : UUID du paiement (plus de recherche .or() interpolée).
+ */
+export async function GET(req: NextRequest, context: { params: Promise<{ transactionId: string }> | { transactionId: string } }) {
+    const { transactionId: id } = await Promise.resolve(context?.params);
+    if (!id || !UUID.test(id)) {
+        return NextResponse.json({ error: 'Identifiant de paiement invalide.' }, { status: 400 });
+    }
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
     try {
-        const transactionId = params.transactionId;
-        if (!transactionId) {
-            return NextResponse.json(
-                { success: false, error: 'Identifiant de transaction manquant.' },
-                { status: 400 }
-            );
+        let payment = await loadPayment(id);
+        if (!payment || payment.client_id !== session.user.id) {
+            return NextResponse.json({ error: 'Paiement introuvable.' }, { status: 404 });
         }
-
-        const supabase = getServiceRoleClient();
-
-        // 1. Consultation en base PostgreSQL
-        const { data: payment, error } = await supabase
-            .from('payments')
-            .select('id, transaction_id, external_order_id, external_transaction_id, client_id, amount, currency, status, provider_status, paid_at, created_at')
-            .or(`transaction_id.eq.${transactionId},external_order_id.eq.${transactionId}`)
-            .single();
-
-        if (error || !payment) {
-            return NextResponse.json(
-                { success: false, error: 'Paiement introuvable.' },
-                { status: 404 }
-            );
+        const row = payment as unknown as Record<string, unknown>;
+        const lastCheck = row.last_reconciled_at ? new Date(String(row.last_reconciled_at)).getTime() : 0;
+        const due = Date.now() - lastCheck >= getServerEnv().STATUS_POLL_RECONCILE_SECONDS * 1000;
+        if (RECONCILABLE.has(payment.status) && !row.provider_final && payment.external_transaction_id && due) {
+            await reconcilePayment(payment, 'STATUS_POLL');
+            payment = (await loadPayment(id))!;
         }
-
-        // 2. Si le statut est encore PENDING, vérification de fallback auprès de SamirPay
-        if (payment.status === 'PENDING' && payment.external_order_id) {
-            try {
-                const checkRes = await samirPayClient.checkTransactionStatus(payment.external_order_id);
-                if (checkRes && checkRes.status) {
-                    const mapped = mapSamirPayStatus(checkRes.status);
-                    if (mapped === 'SUCCESS') {
-                        // Mise à jour de confirmation
-                        await supabase
-                            .from('payments')
-                            .update({
-                                status: 'SUCCESS',
-                                external_transaction_id: checkRes.transaction_id || payment.external_transaction_id,
-                                provider_status: checkRes.status,
-                                paid_at: new Date().toISOString(),
-                                updated_at: new Date().toISOString(),
-                            })
-                            .eq('id', payment.id);
-
-                        payment.status = 'SUCCESS';
-                    }
-                }
-            } catch (fallbackError) {
-                // Silently keep current DB status if SamirPay check fails temporarily
-                console.warn('[PaymentStatusFallback] Erreur vérification statut auprès de SamirPay', fallbackError);
-            }
-        }
-
+        const { data: tickets, error } = await getServiceRoleClient().from('tickets').select('id').eq('payment_id', id);
+        if (error) throw new Error(`lecture des billets : ${error.message}`);
+        const view = payment as unknown as Record<string, unknown>;
         return NextResponse.json({
-            success: true,
-            payment: {
-                id: payment.id,
-                transaction_id: payment.transaction_id,
-                order_id: payment.external_order_id,
-                status: payment.status,
-                amount: payment.amount,
-                currency: payment.currency,
-                paid_at: payment.paid_at,
-            },
-        });
-    } catch (error: unknown) {
-        console.error('[API /api/payments/[transactionId]/status] Erreur:', error);
-        return NextResponse.json(
-            { success: false, error: error instanceof Error ? error.message : 'Erreur interne serveur.' },
-            { status: 500 }
-        );
+            payment_id: payment.id,
+            status: payment.status,
+            amount: Number(payment.amount),
+            currency: payment.currency ?? 'XOF',
+            operator: view.operator ?? null,
+            expires_at: view.held_expires_at ?? null,
+            ticket_ids: (tickets ?? []).map((t) => t.id),
+        }, { headers: { 'Cache-Control': 'no-store' } });
+    } catch (err) {
+        console.error(`[API /api/payments/${id}/status] erreur interne :`, err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Statut momentanément indisponible.' }, { status: 500 });
     }
 }
