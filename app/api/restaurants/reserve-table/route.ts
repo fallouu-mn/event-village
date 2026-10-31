@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/restaurants/reserve-table
- * Crée une réservation de table en base avec gestion d'acompte
+ * Crée une réservation de table en base avec gestion d'acompte.
+ * Lot 4.0 : session ACTIVE obligatoire (401 sans session, 403 compte non actif) ; le client est
+ * toujours le compte de la session, un `clientId` envoyé dans le corps est ignoré.
+ * Point ouvert (hors lot 4.0) : `tableId` n'est pas rapproché de `partnerId`, aucun contrôle de
+ * conflit ni de capacité, et une réservation hors plateforme passe SUCCESS sans encaissement.
  */
 export async function POST(req: NextRequest) {
     try {
+        const session = await requireActiveSession(req);
+        if (session.response) return session.response;
+        const clientId = session.user.id;
         const supabase = getServiceRoleClient();
-        const authHeader = req.headers.get('authorization');
-        const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-        let userId: string | null = null;
-        if (token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            userId = user?.id || null;
-        }
 
         let body: {
             partnerId: string;
@@ -27,18 +27,12 @@ export async function POST(req: NextRequest) {
             reservationTime: string;
             guestCount: number;
             isPlatformPayment: boolean;
-            clientId?: string;
         };
 
         try {
             body = await req.json();
         } catch {
             return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
-        }
-
-        const effectiveUserId = userId || body.clientId;
-        if (!effectiveUserId) {
-            return NextResponse.json({ error: 'Connexion requise pour réserver une table.' }, { status: 401 });
         }
 
         const { partnerId, reservationDate, reservationTime, guestCount, isPlatformPayment } = body;
@@ -85,7 +79,7 @@ export async function POST(req: NextRequest) {
             .insert({
                 partner_id: partnerId,
                 table_id: selectedTableId || null,
-                client_id: effectiveUserId,
+                client_id: clientId,
                 reservation_date: reservationDate,
                 reservation_time: reservationTime,
                 guest_count: guestCount,

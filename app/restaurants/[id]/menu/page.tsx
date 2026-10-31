@@ -22,7 +22,7 @@ import { useToast } from '@/components/ui/Toast';
 
 export default function RestaurantMenuPage({ params }: { params: { id: string } }) {
   const restaurantId = params.id;
-  const { user } = useAuth();
+  const { isAuthenticated, session } = useAuth();
   const router = useRouter();
   const toast = useToast();
 
@@ -79,18 +79,26 @@ export default function RestaurantMenuPage({ params }: { params: { id: string } 
 
   const handleCheckout = async () => {
     if (isSubmitting || totalCartCount === 0) return;
+    // Lot 4.0 : la commande est passée au nom de la session (cookie ou jeton), jamais d'un identifiant envoyé.
+    if (!isAuthenticated) {
+      toast.error('Connectez-vous pour passer commande.');
+      router.push(`/login?redirect=${encodeURIComponent(`/restaurants/${restaurantId}/menu`)}`);
+      return;
+    }
     setIsSubmitting(true);
 
     try {
       const itemsPayload = Object.entries(cart).map(([id, quantity]) => ({ id, quantity }));
       const res = await fetch('/api/orders/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
           partnerId,
           items: itemsPayload,
           deliveryMode,
-          clientId: user?.id,
         }),
       });
 

@@ -27,7 +27,7 @@ import { useToast } from '@/components/ui/Toast';
 
 export default function HallDetailPage({ params }: { params: { id: string } }) {
   const hallId = params.id;
-  const { user } = useAuth();
+  const { isAuthenticated, session } = useAuth();
   const router = useRouter();
   const toast = useToast();
 
@@ -106,17 +106,25 @@ export default function HallDetailPage({ params }: { params: { id: string } }) {
 
   const handleStartBooking = async () => {
     if (isSubmitting) return;
+    // Lot 4.0 : la réservation est faite au nom de la session (cookie ou jeton), jamais d'un identifiant envoyé.
+    if (!isAuthenticated) {
+      toast.error('Connectez-vous pour réserver une salle.');
+      router.push(`/login?redirect=${encodeURIComponent(`/halls/${hallId}`)}`);
+      return;
+    }
     setIsSubmitting(true);
 
     try {
       const res = await fetch('/api/halls/reserve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
           hallId: hall.id,
           startDate,
           durationDays,
-          clientId: user?.id,
         }),
       });
 

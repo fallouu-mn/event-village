@@ -1,40 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/orders/create
- * Crée une commande de repas / traiteur en base et retourne l'ID réel pour paiement
+ * Crée une commande de repas / traiteur en base et retourne l'ID réel pour paiement.
+ * Lot 4.0 : session ACTIVE obligatoire (401 sans session, 403 compte non actif) ; le client est
+ * toujours le compte de la session, un `clientId` envoyé dans le corps est ignoré.
  */
 export async function POST(req: NextRequest) {
     try {
+        const session = await requireActiveSession(req);
+        if (session.response) return session.response;
+        const clientId = session.user.id;
         const supabase = getServiceRoleClient();
-        const authHeader = req.headers.get('authorization');
-        const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-        let userId: string | null = null;
-        if (token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            userId = user?.id || null;
-        }
 
         let body: {
             partnerId: string;
             items: Array<{ id: string; quantity: number }>;
             deliveryMode: 'LIVRAISON' | 'RETRAIT' | 'SUR_PLACE';
-            clientId?: string;
         };
 
         try {
             body = await req.json();
         } catch {
             return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
-        }
-
-        const effectiveUserId = userId || body.clientId;
-        if (!effectiveUserId) {
-            return NextResponse.json({ error: 'Connexion requise pour passer une commande.' }, { status: 401 });
         }
 
         const { partnerId, items, deliveryMode } = body;
@@ -83,7 +75,7 @@ export async function POST(req: NextRequest) {
             .from('orders')
             .insert({
                 order_number: orderNumber,
-                client_id: effectiveUserId,
+                client_id: clientId,
                 partner_id: partnerId,
                 subtotal,
                 total_amount: subtotal,

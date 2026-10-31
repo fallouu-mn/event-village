@@ -1,40 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/halls/reserve
- * Crée une intention de réservation de salle avec calcul d'acompte et moratoire 48h (CDC V3)
+ * Crée une intention de réservation de salle avec calcul d'acompte et moratoire 48h (CDC V3).
+ * Lot 4.0 : session ACTIVE obligatoire (401 sans session, 403 compte non actif) ; le client est
+ * toujours le compte de la session, un `clientId` envoyé dans le corps est ignoré.
  */
 export async function POST(req: NextRequest) {
     try {
+        const session = await requireActiveSession(req);
+        if (session.response) return session.response;
+        const clientId = session.user.id;
         const supabase = getServiceRoleClient();
-        const authHeader = req.headers.get('authorization');
-        const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-        let userId: string | null = null;
-        if (token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            userId = user?.id || null;
-        }
 
         let body: {
             hallId: string;
             startDate: string;
             durationDays: number;
-            clientId?: string;
         };
 
         try {
             body = await req.json();
         } catch {
             return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
-        }
-
-        const effectiveUserId = userId || body.clientId;
-        if (!effectiveUserId) {
-            return NextResponse.json({ error: 'Connexion requise pour réserver une salle.' }, { status: 401 });
         }
 
         const { hallId, startDate, durationDays } = body;
@@ -91,7 +83,7 @@ export async function POST(req: NextRequest) {
             .insert({
                 hall_id: hallId,
                 partner_id: hall.partner_id,
-                client_id: effectiveUserId,
+                client_id: clientId,
                 start_date: startDate,
                 end_date: endDateStr,
                 total_amount: totalAmount,

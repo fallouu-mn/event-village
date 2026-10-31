@@ -19,7 +19,7 @@ import { useToast } from '@/components/ui/Toast';
 
 export default function TableReservationPage({ params }: { params: { id: string } }) {
   const restaurantId = params.id;
-  const { user } = useAuth();
+  const { isAuthenticated, session } = useAuth();
   const router = useRouter();
   const toast = useToast();
 
@@ -70,19 +70,27 @@ export default function TableReservationPage({ params }: { params: { id: string 
 
   const handleStartBooking = async () => {
     if (isSubmitting) return;
+    // Lot 4.0 : la réservation est faite au nom de la session (cookie ou jeton), jamais d'un identifiant envoyé.
+    if (!isAuthenticated) {
+      toast.error('Connectez-vous pour réserver une table.');
+      router.push(`/login?redirect=${encodeURIComponent(`/restaurants/${restaurantId}/tables`)}`);
+      return;
+    }
     setIsSubmitting(true);
 
     try {
       const res = await fetch('/api/restaurants/reserve-table', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
           partnerId,
           reservationDate,
           reservationTime,
           guestCount,
           isPlatformPayment,
-          clientId: user?.id,
         }),
       });
 

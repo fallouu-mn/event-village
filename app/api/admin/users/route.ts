@@ -5,6 +5,7 @@ import { AdminService } from '@/lib/admin/admin.service';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { grantUserRoles, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 import { revokeUserSessions } from '@/lib/auth/sessions';
+import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -198,7 +199,7 @@ export async function PATCH(req: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
 
     try {
-        let body: { userId?: string; role?: string; roles?: unknown; referralStatus?: 'STANDARD' | 'AMBASSADEUR'; status?: string };
+        let body: { userId?: string; role?: string; roles?: unknown; referralStatus?: unknown; status?: string };
         try {
             body = await req.json();
         } catch {
@@ -208,6 +209,26 @@ export async function PATCH(req: NextRequest) {
         const { userId, role, roles: requestedRoles, referralStatus, status } = body;
         if (!userId) {
             return NextResponse.json({ error: 'userId requis.' }, { status: 400 });
+        }
+
+        // Lot 4.0 : le statut ambassadeur fixe les taux de commission. SUPERADMIN seul (users.write
+        // ne suffit pas, sur un tiers comme sur soi-même), valeur STANDARD ou AMBASSADEUR ; contrôlé
+        // avant toute écriture (rôles compris).
+        let referralValue: 'STANDARD' | 'AMBASSADEUR' | undefined;
+        if (referralStatus !== undefined) {
+            if (!auth.user!.roles.includes('SUPERADMIN')) {
+                return NextResponse.json(
+                    { error: 'Seul un SUPERADMIN peut modifier le statut ambassadeur.', code: 'REFERRAL_STATUS_SUPERADMIN_ONLY' },
+                    { status: 403 }
+                );
+            }
+            if (referralStatus !== 'STANDARD' && referralStatus !== 'AMBASSADEUR') {
+                return NextResponse.json(
+                    { error: `Statut de parrainage invalide : ${JSON.stringify(referralStatus)} (STANDARD ou AMBASSADEUR).`, code: 'INVALID_REFERRAL_STATUS' },
+                    { status: 400 }
+                );
+            }
+            referralValue = referralStatus;
         }
 
         // Lot 1B.8 : `roles` fixe l'ensemble exact des rôles ; `role` (contrat historique) vaut
@@ -259,11 +280,23 @@ export async function PATCH(req: NextRequest) {
         }
 
         // 4. Rôles : ajout et retrait dans user_roles (le trigger recalcule users.role)
-        const roleChange = targetRoles ? await setUserRoles(userId, targetRoles) : null;
+        //    Lot 4.7 : retirer CONTROLEUR à un compte qui a une caisse OUVERT est refusé par le trigger
+        //    controller_removal_guard (CONTROLLER_HAS_OPEN_SHIFT) → 409, rien d'autre n'est modifié.
+        let roleChange: Awaited<ReturnType<typeof setUserRoles>> | null = null;
+        if (targetRoles) {
+            try {
+                roleChange = await setUserRoles(userId, targetRoles);
+            } catch (roleErr) {
+                if (isControllerRemovalBlocked(roleErr)) {
+                    return NextResponse.json(controllerRemovalConflict(), { status: 409 });
+                }
+                throw roleErr;
+            }
+        }
 
         // 5. Autres attributs du profil (le rôle legacy n'est plus écrit directement)
         const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (referralStatus) updatePayload.referral_status = referralStatus;
+        if (referralValue) updatePayload.referral_status = referralValue;
         if (status) updatePayload.status = status;
 
         const { data: updatedUser, error } = await supabase
