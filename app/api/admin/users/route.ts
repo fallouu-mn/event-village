@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
-import { grantUserRoles, type UserRoleType } from '@/lib/auth/roles';
+import { grantUserRoles, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -195,21 +195,32 @@ export async function PATCH(req: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
 
     try {
-        let body: { userId?: string; role?: string; referralStatus?: 'STANDARD' | 'AMBASSADEUR'; status?: string };
+        let body: { userId?: string; role?: string; roles?: unknown; referralStatus?: 'STANDARD' | 'AMBASSADEUR'; status?: string };
         try {
             body = await req.json();
         } catch {
             return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
         }
 
-        const { userId, role, referralStatus, status } = body;
+        const { userId, role, roles: requestedRoles, referralStatus, status } = body;
         if (!userId) {
             return NextResponse.json({ error: 'userId requis.' }, { status: 400 });
         }
 
+        // Lot 1B.8 : `roles` fixe l'ensemble exact des rôles ; `role` (contrat historique) vaut
+        // `roles: [role]`. CLIENT est toujours conservé. Écriture dans user_roles, source de la RLS.
+        let targetRoles: UserRoleType[] | null = null;
+        if (requestedRoles !== undefined || role !== undefined) {
+            const list: unknown = requestedRoles !== undefined ? requestedRoles : [role];
+            if (!Array.isArray(list) || list.length === 0 || list.some((r) => !ASSIGNABLE_ROLES.includes(r as UserRoleType))) {
+                return NextResponse.json({ error: `Rôles invalides : ${JSON.stringify(list)}.` }, { status: 400 });
+            }
+            targetRoles = list as UserRoleType[];
+        }
+
         const supabase = getServiceRoleClient();
 
-        // 1. Récupération du profil cible
+        // 1. Récupération du profil cible et de ses rôles effectifs
         const { data: targetUser, error: targetErr } = await supabase
             .from('users')
             .select('*')
@@ -220,8 +231,16 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: 'Utilisateur cible introuvable.' }, { status: 404 });
         }
 
+        const { data: targetRoleRows, error: targetRolesErr } = await supabase.from('user_roles').select('role').eq('user_id', userId);
+        if (targetRolesErr) {
+            console.error('[API /api/admin/users PATCH] lecture des rôles cibles :', targetRolesErr.message);
+            return NextResponse.json({ error: 'Lecture des rôles du compte impossible.' }, { status: 500 });
+        }
+        const targetCurrentRoles = (targetRoleRows || []).map((r) => r.role as string);
+        const actorIsSuperadmin = auth.user!.roles.includes('SUPERADMIN');
+
         // 2. Protection contre l'élévation de privilèges Superadmin
-        if (role === 'SUPERADMIN' && auth.user!.role !== 'SUPERADMIN') {
+        if (targetRoles?.includes('SUPERADMIN') && !actorIsSuperadmin) {
             return NextResponse.json(
                 { error: 'Seul un Superadmin peut élever un utilisateur au rang de SUPERADMIN.' },
                 { status: 403 }
@@ -229,15 +248,18 @@ export async function PATCH(req: NextRequest) {
         }
 
         // 3. Protection contre la modification d'un Superadmin par un Admin ordinaire
-        if (targetUser.role === 'SUPERADMIN' && auth.user!.role !== 'SUPERADMIN') {
+        if ((targetCurrentRoles.includes('SUPERADMIN') || targetUser.role === 'SUPERADMIN') && !actorIsSuperadmin) {
             return NextResponse.json(
                 { error: 'Impossible de modifier un compte SUPERADMIN sans être soi-même SUPERADMIN.' },
                 { status: 403 }
             );
         }
 
-        const updatePayload: any = { updated_at: new Date().toISOString() };
-        if (role) updatePayload.role = role;
+        // 4. Rôles : ajout et retrait dans user_roles (le trigger recalcule users.role)
+        const roleChange = targetRoles ? await setUserRoles(userId, targetRoles) : null;
+
+        // 5. Autres attributs du profil (le rôle legacy n'est plus écrit directement)
+        const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
         if (referralStatus) updatePayload.referral_status = referralStatus;
         if (status) updatePayload.status = status;
 
@@ -253,21 +275,25 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        // 4. Journal d'audit inaltérable
+        // 6. Journal d'audit inaltérable
         await AdminService.logAudit({
             userId: auth.user!.id,
             userRole: auth.user!.role,
             action: 'UPDATE_USER',
             objectType: 'users',
             objectId: userId,
-            oldValue: { role: targetUser.role, referral_status: targetUser.referral_status, status: targetUser.status },
-            newValue: updatePayload,
+            oldValue: { roles: targetCurrentRoles, role: targetUser.role, referral_status: targetUser.referral_status, status: targetUser.status },
+            newValue: {
+                ...updatePayload,
+                ...(roleChange ? { roles: roleChange.after, roles_added: roleChange.added, roles_removed: roleChange.removed } : {}),
+            },
             metadata: { target_email: targetUser.email },
         });
 
         return NextResponse.json({
             success: true,
             user: updatedUser,
+            roles: roleChange ? roleChange.after : targetCurrentRoles,
             message: 'Utilisateur mis à jour avec succès.',
         });
     } catch (err: unknown) {

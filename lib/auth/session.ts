@@ -66,7 +66,7 @@ export async function getServerSessionUser(req: NextRequest): Promise<ServerUser
 
         const supabase = getServiceRoleClient();
 
-        const [{ data: profile, error: profErr }, { data: userRoles }] = await Promise.all([
+        const [{ data: profile, error: profErr }, { data: userRoles, error: rolesErr }] = await Promise.all([
             supabase
                 .from('users')
                 .select('id, email, phone, role, status, first_name, last_name')
@@ -81,12 +81,14 @@ export async function getServerSessionUser(req: NextRequest): Promise<ServerUser
         if (profErr || !profile) {
             return null;
         }
-
-        const dbRoles = (userRoles || []).map(r => r.role as string);
-        if (profile.role && !dbRoles.includes(profile.role)) {
-            dbRoles.push(profile.role);
+        if (rolesErr) {
+            throw new Error(`lecture des rôles de ${authUser.id} impossible : ${rolesErr.message}`);
         }
-        const roles = dbRoles.length > 0 ? dbRoles : ['CLIENT'];
+
+        // Lot 1B.8 : user_roles est la seule source des rôles (comme la RLS). Le rôle legacy
+        // users.role n'est plus ajouté : il pouvait diverger (écriture directe) et accorder côté
+        // serveur un rôle que la base refusait.
+        const roles = (userRoles || []).map(r => r.role as string);
 
         return {
             id: profile.id,

@@ -83,39 +83,40 @@ export async function removeUserRole(userId: string, role: UserRoleType): Promis
     return {};
 }
 
-export async function setUserRoles(userId: string, roles: UserRoleType[]): Promise<{ error?: string }> {
-    const supabase = getServiceRoleClient();
+export interface RoleChange {
+    before: UserRoleType[];
+    after: UserRoleType[];
+    added: UserRoleType[];
+    removed: UserRoleType[];
+}
 
-    const { data: existing } = await supabase
+/**
+ * Lot 1B.8 — fixe exactement l'ensemble des rôles d'un compte dans user_roles (CLIENT toujours
+ * conservé). Ajouts puis retraits ; la moindre erreur est levée (aucune écriture ignorée).
+ * Le trigger de synchronisation recalcule users.role à chaque ligne modifiée.
+ */
+export async function setUserRoles(userId: string, roles: UserRoleType[]): Promise<RoleChange> {
+    const supabase = getServiceRoleClient();
+    const target = Array.from(new Set<UserRoleType>(['CLIENT', ...roles]));
+
+    const { data: existing, error: readErr } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId);
+    if (readErr) throw new Error(`Lecture des rôles de ${userId} impossible : ${readErr.message}`);
 
-    const existingRoles = (existing || []).map(r => r.role as UserRoleType);
-    const toAdd = roles.filter(r => !existingRoles.includes(r));
-    const toRemove = existingRoles.filter(r => !roles.includes(r));
+    const before = (existing || []).map(r => r.role as UserRoleType);
+    const added = target.filter(r => !before.includes(r));
+    const removed = before.filter(r => !target.includes(r));
 
-    const ops: PromiseLike<unknown>[] = [];
-
-    if (toAdd.length > 0) {
-        ops.push(
-            supabase.from('user_roles').insert(
-                toAdd.map(role => ({ user_id: userId, role }))
-            )
-        );
+    if (added.length > 0) {
+        const { error } = await supabase.from('user_roles').insert(added.map(role => ({ user_id: userId, role })));
+        if (error) throw new Error(`Ajout des rôles ${added.join(', ')} impossible : ${error.message}`);
+    }
+    if (removed.length > 0) {
+        const { error } = await supabase.from('user_roles').delete().eq('user_id', userId).in('role', removed);
+        if (error) throw new Error(`Retrait des rôles ${removed.join(', ')} impossible : ${error.message}`);
     }
 
-    if (toRemove.length > 0) {
-        for (const role of toRemove) {
-            ops.push(
-                supabase.from('user_roles').delete().eq('user_id', userId).eq('role', role)
-            );
-        }
-    }
-
-    if (ops.length > 0) {
-        await Promise.all(ops);
-    }
-
-    return {};
+    return { before: before.sort(), after: target.sort(), added, removed };
 }
