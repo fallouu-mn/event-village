@@ -1,48 +1,46 @@
 /**
- * Service Métier de Paiement — Event Village.
- * Centralise l'orchestration des paiements, le calcul strict des montants/frais
- * depuis PostgreSQL, l'appel à SamirPay et le traitement idempotent des webhooks.
+ * Service de paiement — cibles hors billetterie (commande, réservation de salle ou de table,
+ * abonnement). Lot 2 : la billetterie passe par lib/payments/checkout.service.ts ; confirmation,
+ * webhook et réconciliation par lib/payments/confirmation.service.ts et webhook.service.ts.
+ * Initiation conforme au contrat SamirPay : cashin direct, opérateur Wave ou Orange Money et
+ * téléphone payeur (9 chiffres) obligatoires et persistés, callBackUrl portant un jeton propre au
+ * paiement. Le montant est toujours relu en base ; le calcul des frais est inchangé (lot 3).
  */
-
+import crypto from 'node:crypto';
+import { getServerEnv } from '@/lib/env';
 import { samirPayClient } from '@/lib/samirpay/client';
-import { mapSamirPayStatus } from '@/lib/samirpay/types';
+import { isSamirPayError } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { CreatePaymentInput, SamirPayWebhookSchema } from '@/lib/validations/payment';
-import { EventService } from '@/lib/events/event.service';
-import { NotificationService } from '@/lib/notifications/notification.service';
-import { mTargetService } from '@/lib/sms/mtarget.service';
-import crypto from 'crypto';
+import type { CreatePaymentInput } from '@/lib/validations/payment';
+import { hashCallbackToken, paymentView } from './checkout.service';
+import { computeTicketingFees } from './fees';
+import { normalizePayerPhone } from './payer-phone';
+import { rpcWithRetry } from './rpc';
 
-export interface CreatePaymentResult {
-    success: boolean;
-    payment_id: string;
-    order_id: string;
-    transaction_id: string;
-    payment_url?: string;
-    redirect_url?: string;   // Deep link OM ou Wave (data.urls.OM / data.urls.WAVE)
-    qr_code?: string;        // QR Code base64 pour paiement Desktop
-    is_push_ussd?: boolean;
-    amount: number;
-    currency: string;
-    status: string;
+export class PaymentInputError extends Error {
+    constructor(message: string, readonly code: string, readonly httpStatus = 400) {
+        super(message);
+        this.name = 'PaymentInputError';
+    }
 }
 
 export class PaymentService {
     /**
-     * Crée une transaction de paiement sécurisée côté serveur.
-     * Le montant est obligatoirement récupéré depuis la base de données.
+     * Crée et initie le paiement d'une cible hors billetterie. Le montant est récupéré en base,
+     * jamais fourni par le client.
      */
-    public async createPayment(userId: string, input: CreatePaymentInput): Promise<CreatePaymentResult> {
+    public async createPayment(userId: string, input: CreatePaymentInput): Promise<Record<string, unknown>> {
+        if (input.targetType === 'TICKET') {
+            throw new PaymentInputError('Les billets se paient par le checkout.', 'USE_TICKET_CHECKOUT');
+        }
         const supabase = getServiceRoleClient();
+        const env = getServerEnv();
 
         let payableAmount = 0;
         let partnerId: string | null = null;
         let orderRefId: string | null = null;
         let hallResRefId: string | null = null;
         let tableResRefId: string | null = null;
-        let ticketRefId: string | null = null;
-        let eventRefId: string | null = null;
-        let categoryRefId: string | null = null;
         let subscriptionRefId: string | null = null;
         let description = '';
 
@@ -137,66 +135,6 @@ export class PaymentService {
                 break;
             }
 
-            case 'TICKET': {
-                // Vérifie d'abord si input.targetId est un ticket_id existant ou une ticket_category_id
-                const { data: ticket } = await supabase
-                    .from('tickets')
-                    .select('*, events(partner_id)')
-                    .eq('id', input.targetId)
-                    .maybeSingle();
-
-                if (ticket) {
-                    if (ticket.user_id !== userId) {
-                        throw new Error('Non autorisé.');
-                    }
-                    if (ticket.status === 'VALIDE' || ticket.status === 'UTILISE') {
-                        throw new Error('Ce ticket est déjà validé.');
-                    }
-                    payableAmount = Number(ticket.price);
-                    partnerId = ticket.events?.partner_id || null;
-                    ticketRefId = ticket.id;
-                    eventRefId = ticket.event_id;
-                    categoryRefId = ticket.category_id;
-                    description = `Ticket ${ticket.ticket_number}`;
-                } else {
-                    // C'est un achat direct via ticket_category
-                    const { data: category, error: catError } = await supabase
-                        .from('ticket_categories')
-                        .select('*, events(id, title, partner_id, status)')
-                        .eq('id', input.targetId)
-                        .single();
-
-                    if (catError || !category) {
-                        throw new Error('Catégorie de ticket introuvable.');
-                    }
-
-                    const eventStatus = (category.events as any)?.status;
-                    if (eventStatus !== 'PUBLIE') {
-                        if (eventStatus === 'SUSPENDU') {
-                            throw new Error('Cet événement est temporairement suspendu. La billetterie est indisponible.');
-                        }
-                        throw new Error('La billetterie de cet événement n\'est pas disponible.');
-                    }
-
-                    const quantity = input.quantity && Number(input.quantity) > 0 ? Number(input.quantity) : 1;
-
-                    const availableQty = Math.max(0, Number(category.total_quantity || 0) - Number(category.sold_quantity || 0));
-                    if (availableQty <= 0) {
-                        throw new Error(`Épuisé : Aucun billet restant disponible pour la catégorie "${category.name}".`);
-                    }
-                    if (quantity > availableQty) {
-                        throw new Error(`Capacité insuffisante : Il ne reste que ${availableQty} place(s) disponible(s) pour la catégorie "${category.name}".`);
-                    }
-
-                    payableAmount = Number(category.price) * quantity;
-                    partnerId = category.events?.partner_id || null;
-                    eventRefId = category.event_id;
-                    categoryRefId = category.id;
-                    description = `${quantity > 1 ? `${quantity}x Billets` : 'Billet'} ${category.events?.title || ''} - ${category.name}`;
-                }
-                break;
-            }
-
             case 'SUBSCRIPTION': {
                 const { data: plan, error } = await supabase
                     .from('subscription_plans')
@@ -229,809 +167,71 @@ export class PaymentService {
         }
 
         if (payableAmount <= 0) {
-            throw new Error('Le montant à régler doit être supérieur à zéro.');
+            throw new PaymentInputError('Le montant à régler doit être supérieur à zéro.', 'NOTHING_TO_PAY');
+        }
+        const payerPhone = normalizePayerPhone(input.payerPhone);
+        if (!payerPhone) {
+            throw new PaymentInputError('Numéro du payeur invalide (mobile sénégalais, 9 chiffres).', 'INVALID_PAYER_PHONE');
         }
 
-        // 2. Lecture des taux depuis platform_settings (jamais hardcodés côté service)
-        const { data: ticketingConfig, error: ticketingConfigError } = await supabase
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'ticketing_fee_config')
-            .maybeSingle();
+        // 2. Frais (calcul inchangé)
+        const fees = await computeTicketingFees(payableAmount, { subscription: input.targetType === 'SUBSCRIPTION' });
 
-        if (ticketingConfigError || !ticketingConfig?.value?.service_fee_rate || !ticketingConfig?.value?.aggregator_fee_rate) {
-            console.error('[PaymentService] ticketing_fee_config manquant en DB:', ticketingConfigError);
-            throw new Error('Configuration des frais de paiement manquante. Contactez le support.');
-        }
-
-        // Taux en pourcentage (ex: 5.0) → fraction (0.05)
-        const serviceFeeRate = Number(ticketingConfig.value.service_fee_rate) / 100;
-        const aggregatorFeeRate = Number(ticketingConfig.value.aggregator_fee_rate) / 100;
-
-        const aggregatorFee = Math.round(payableAmount * aggregatorFeeRate * 100) / 100;
-        let serviceFee = Math.round(payableAmount * serviceFeeRate * 100) / 100;
-        let grossRevenue = serviceFee;
-        let netRevenue = Math.max(0, grossRevenue - aggregatorFee);
-        let partnerPayout = Math.max(0, payableAmount - serviceFee);
-
-        // Cas particulier : Les abonnements vont à 100% à la plateforme Event Village
-        if (input.targetType === 'SUBSCRIPTION') {
-            serviceFee = 0;
-            grossRevenue = payableAmount;
-            netRevenue = Math.max(0, grossRevenue - aggregatorFee);
-            partnerPayout = 0;
-        }
-
-        // 3. Génération d'identifiants uniques
-        const now = Date.now();
-        const randomSuffix = crypto.randomBytes(3).toString('hex').toUpperCase();
-        const internalTransactionId = `TX-EV-${now}-${randomSuffix}`;
-        const externalOrderId = `ORD-EV-${now}-${randomSuffix}`;
-
-        // 4. Création de l'enregistrement de paiement avec statut PENDING
-        const { data: paymentRecord, error: insertError } = await supabase
-            .from('payments')
-            .insert({
-                transaction_id: internalTransactionId,
-                external_order_id: externalOrderId,
-                client_id: userId,
-                partner_id: partnerId,
-                order_id: orderRefId,
-                hall_reservation_id: hallResRefId,
-                table_reservation_id: tableResRefId,
-                ticket_id: ticketRefId,
-                subscription_plan_id: subscriptionRefId,
-                payment_target: input.targetType,
-                amount: payableAmount,
-                currency: 'XOF',
-                is_platform_payment: true,
-                aggregator: 'SAMIRPAY',
-                aggregator_fee: aggregatorFee,
-                service_fee: serviceFee,
-                gross_event_village_revenue: grossRevenue,
-                net_event_village_revenue: netRevenue,
-                partner_payout_amount: partnerPayout,
-                status: 'PENDING',
-                idempotency_key: `IDEMP-${externalOrderId}`,
-                metadata: {
-                    target_type: input.targetType,
-                    target_id: input.targetId,
-                    event_id: eventRefId,
-                    category_id: categoryRefId,
-                    quantity: input.quantity || 1,
-                    held_quantity: input.targetType === 'TICKET' ? (input.quantity || 1) : undefined,
-                    held_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-                    customer_phone: input.customerPhone,
-                    customer_name: input.customerName,
-                    customer_email: input.customerEmail,
-                },
-            })
-            .select('*')
-            .single();
-
-        if (insertError || !paymentRecord) {
-            console.error('[PaymentService] Erreur création enregistrement paiement', insertError);
-            throw new Error('Impossible d\'enregistrer l\'intention de paiement.');
-        }
-
-        // Phase 2 : Hold Cart — Vérification atomique de la capacité restante sous concurrence
-        if (input.targetType === 'TICKET' && categoryRefId && eventRefId) {
-            await EventService.verifyAndEnforceHoldAtomic({
-                paymentId: paymentRecord.id,
-                categoryId: categoryRefId,
-                quantity: input.quantity || 1,
-                eventId: eventRefId,
-            });
-        }
-
-        // 5. Appel à l'API SamirPay côté serveur (Cashin Direct)
-        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://eventvillage.sn').replace(/\/+$/, '');
-        const callbackUrl = `${appUrl}/api/webhooks/samirpay`;
-        const returnUrl = input.returnUrl || `${appUrl}/tickets`;
-        const cancelUrl = input.cancelUrl || `${appUrl}/explore`;
-
-        // Normalisation du numéro en deux formats requis par SamirPay
-        const rawPhone = (input.customerPhone || '').replace(/\s/g, '');
-        const fullIntlPhone = rawPhone.startsWith('+221') ? rawPhone
-            : rawPhone.startsWith('221') ? `+${rawPhone}`
-            : rawPhone.length > 0 ? `+221${rawPhone}` : '';
-        const barePhone = fullIntlPhone.replace(/^\+221/, ''); // ex: 771234567
-
-        const samirPayOperator = input.operator || 'WAVE'; // 'ORANGE_MONEY' / 'WAVE' envoyé tel quel
-
-        let samirPayResponse;
-        try {
-            samirPayResponse = await samirPayClient.initPayment({
-                amount: payableAmount,
-                currency: 'XOF',
-                order_id: externalOrderId,
-                operatorName: samirPayOperator,
-                description,
-                customer: {
-                    phone: fullIntlPhone,
-                    name: input.customerName || 'Client Event Village',
-                    email: input.customerEmail,
-                },
-                barePhone,
-                fullIntlPhone,
-                return_url: returnUrl,
-                cancel_url: cancelUrl,
-                callback_url: callbackUrl,
-            });
-        } catch (apiError: unknown) {
-            if (input.targetType === 'TICKET' && categoryRefId) {
-                await EventService.releaseHoldTicketsAtomic({
-                    categoryId: categoryRefId,
-                    quantity: input.quantity || 1,
-                });
-            }
-
-            await supabase
-                .from('payments')
-                .update({
-                    status: 'FAILED',
-                    provider_status: 'API_ERROR',
-                    provider_response: { error: apiError instanceof Error ? apiError.message : 'Unknown error' },
-                })
-                .eq('id', paymentRecord.id);
-
-            throw apiError;
-        }
-
-        // 6. Analyse complète de la réponse SamirPay
-        const externalTransactionId = samirPayResponse.transaction_id || samirPayResponse.data?.transaction_id;
-        const paymentUrl = samirPayResponse.payment_url || samirPayResponse.data?.payment_url || samirPayResponse.data?.url;
-        const responseBodyStatus = (samirPayResponse.status || '').toLowerCase();
-        const responseBodyMessage = (samirPayResponse.message as string)
-            || (samirPayResponse.data?.message as string)
-            || '';
-        // URLs de secours retournées par SamirPay dans data.urls (deep link OM / Wave)
-        const responseUrls: Record<string, string> =
-            (samirPayResponse.data?.urls as Record<string, string>)
-            || (samirPayResponse.urls as Record<string, string>)
-            || {};
-        const omRedirectUrl: string | null =
-            responseUrls['OM'] || responseUrls['MAXIT'] || responseUrls['OM_URL'] || null;
-
-        // QR Code retourné par SamirPay (base64 ou URL) — utilisé sur Desktop
-        const qrCode: string | null =
-            (samirPayResponse.qr_code as string)
-            || (samirPayResponse.data?.qr_code as string)
-            || (samirPayResponse.qrCode as string)
-            || (samirPayResponse.data?.qrCode as string)
-            || (samirPayResponse.qr as string)
-            || (samirPayResponse.data?.qr as string)
-            || null;
-
-        // Log exhaustif — montre l'intégralité de la réponse SamirPay pour diagnostic OM
-        console.log('[PaymentService] SamirPay response analysis:', {
-            operator: input.operator,
-            samirpay_operator_sent: samirPayOperator,
-            order_id: externalOrderId,
-            body_status: samirPayResponse.status || 'ABSENT',
-            body_message: responseBodyMessage || 'ABSENT',
-            has_payment_url: !!paymentUrl,
-            has_transaction_id: !!externalTransactionId,
-            transaction_id: externalTransactionId || 'ABSENT',
-            response_keys: Object.keys(samirPayResponse).join(','),
-        });
-
-        // PROTECTION FAUX POSITIF CRITIQUE :
-        // SamirPay peut retourner HTTP 200 avec status:'failed' (ex: "Operator not found",
-        // "Invalid phone number", etc.). Sans ce check, le service croirait à tort que
-        // c'est un Push USSD réussi et bloquerait le client indéfiniment sur l'écran d'attente.
-        if (responseBodyStatus === 'failed' || responseBodyStatus === 'error') {
-            await supabase.from('payments').update({
-                status: 'FAILED',
-                provider_status: samirPayResponse.status,
-                provider_response: samirPayResponse,
-            }).eq('id', paymentRecord.id);
-
-            const userMsg = responseBodyMessage
-                || 'Paiement refusé par l\'opérateur. Vérifiez votre numéro et réessayez.';
-            console.error('[PaymentService] SamirPay body-level error (HTTP 200 but failed):', {
-                operator: input.operator,
-                samirpay_operator_sent: samirPayOperator,
-                order_id: externalOrderId,
-                body_status: samirPayResponse.status,
-                message: userMsg,
-            });
-            throw new Error(userMsg);
-        }
-
-        // isPushUssd = true seulement si OM sans aucune URL disponible (ni payment_url ni omRedirectUrl).
-        // Si omRedirectUrl est présent, le frontend redirigera directement → pas d'écran d'attente.
-        const isPushUssd = input.operator === 'ORANGE_MONEY' && !paymentUrl && !omRedirectUrl;
-
-        await supabase
-            .from('payments')
-            .update({
-                external_transaction_id: externalTransactionId,
-                provider_response: samirPayResponse,
-            })
-            .eq('id', paymentRecord.id);
-
-        return {
-            success: true,
-            payment_id: paymentRecord.id,
-            order_id: externalOrderId,
-            transaction_id: internalTransactionId,
-            payment_url: paymentUrl,
-            redirect_url: omRedirectUrl || undefined,
-            qr_code: qrCode || undefined,
-            is_push_ussd: isPushUssd,
+        // 3. Paiement PENDING, opérateur et téléphone payeur persistés, empreinte du jeton de callback
+        const ms = Date.now();
+        const suffix = crypto.randomBytes(4).toString('hex').toUpperCase();
+        const externalOrderId = `ORD-EV-${ms}-${suffix}`;
+        const token = crypto.randomBytes(32).toString('base64url');
+        const { data: payment, error: insErr } = await supabase.from('payments').insert({
+            transaction_id: `TX-EV-${ms}-${suffix}`,
+            external_order_id: externalOrderId,
+            client_id: userId,
+            partner_id: partnerId,
+            order_id: orderRefId,
+            hall_reservation_id: hallResRefId,
+            table_reservation_id: tableResRefId,
+            subscription_plan_id: subscriptionRefId,
+            payment_target: input.targetType,
             amount: payableAmount,
             currency: 'XOF',
+            is_platform_payment: true,
+            aggregator: 'SAMIRPAY',
+            aggregator_fee: fees.aggregatorFee,
+            service_fee: fees.serviceFee,
+            gross_event_village_revenue: fees.grossRevenue,
+            net_event_village_revenue: fees.netRevenue,
+            partner_payout_amount: fees.partnerPayout,
             status: 'PENDING',
-        };
-    }
+            idempotency_key: `IDEMP-${externalOrderId}`,
+            operator: input.operator,
+            payer_phone: payerPhone,
+            callback_token_hash: hashCallbackToken(token),
+            metadata: { target_type: input.targetType, target_id: input.targetId },
+        }).select('*').single();
+        if (insErr || !payment) throw new Error(`Création du paiement impossible : ${insErr?.message}`);
 
-    /**
-     * Traite de façon atomique et idempotente la notification reçue via le Webhook SamirPay.
-     * Le format attendu est application/x-www-form-urlencoded.
-     */
-    public async handleSamirPayWebhook(formData: FormData | Record<string, any>): Promise<{ success: boolean; message: string }> {
-        const supabase = getServiceRoleClient();
-
-        // 1. Extraction et validation des données du formulaire
-        let rawData: Record<string, string> = {};
-        if (formData && typeof (formData as any).forEach === 'function') {
-            (formData as any).forEach((value: any, key: string) => {
-                if (typeof value === 'string') {
-                    rawData[key] = value;
-                }
+        // 4. Cashin direct SamirPay
+        try {
+            const init = await samirPayClient.initDirectPayment({
+                amount: payableAmount,
+                orderId: externalOrderId,
+                callBackUrl: `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/samirpay?t=${token}`,
+                operatorName: input.operator,
+                telephone: payerPhone,
+                description: description.slice(0, 100),
             });
-        } else if (typeof formData === 'object' && formData !== null) {
-            rawData = { ...(formData as unknown as Record<string, string>) };
+            const { data: updated, error: updErr } = await supabase.from('payments')
+                .update({ external_transaction_id: init.transactionId, provider_response: { paymentUrl: init.paymentUrl, deepLinks: init.deepLinks, qrCode: init.qrCode }, provider_status: 'INIT_ACCEPTED' })
+                .eq('id', payment.id).eq('status', 'PENDING').select('*').single();
+            if (updErr || !updated) throw new Error(`Enregistrement de l'identifiant SamirPay impossible : ${updErr?.message ?? 'paiement introuvable'}`);
+            return paymentView(updated);
+        } catch (err) {
+            const kind = isSamirPayError(err) ? err.kind : 'INTERNAL';
+            const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: payment.id, p_status: 'FAILED', p_reason: `INIT_${kind}` });
+            if (relErr) console.error(`[PaymentService] paiement ${payment.id} non marqué FAILED :`, relErr.message);
+            if (kind === 'INTERNAL') throw err;
+            throw new PaymentInputError(kind === 'REJECTED' ? 'Paiement refusé par l’opérateur.' : 'Le service de paiement ne répond pas : réessayez.', `PAYMENT_PROVIDER_${kind}`, 502);
         }
-
-        const validationResult = SamirPayWebhookSchema.safeParse(rawData);
-        if (!validationResult.success) {
-            console.error('[PaymentService.Webhook] Payload webhook invalide', validationResult.error.flatten());
-            return { success: false, message: 'Données webhook non conformes.' };
-        }
-
-        const { transaction_id, order_id, status } = validationResult.data;
-
-        // 2. Recherche du paiement en base par external_order_id ou transaction_id
-        const { data: payment, error: fetchError } = await supabase
-            .from('payments')
-            .select('*')
-            .or(`external_order_id.eq.${order_id},transaction_id.eq.${order_id}`)
-            .single();
-
-        if (fetchError || !payment) {
-            console.error(`[PaymentService.Webhook] Transaction introuvable pour order_id: ${order_id}`);
-            return { success: false, message: 'Transaction introuvable.' };
-        }
-
-        // 3. Protection d'idempotence absolue : si déjà SUCCESS, aucun second traitement ni duplicata
-        if (payment.status === 'SUCCESS') {
-            console.log(`[PaymentService.Webhook] Notification déjà traitée (Idempotence) pour : ${order_id}`);
-            return { success: true, message: 'Transaction déjà confirmée.' };
-        }
-
-        const mappedStatus = mapSamirPayStatus(status);
-
-        // 4. Traitement selon le statut validé
-        if (mappedStatus === 'SUCCESS') {
-            let confirmedTicketId = payment.ticket_id;
-            const generatedTicketIds: string[] = [];
-            const generatedTicketNumbers: string[] = [];
-
-            // 4.1 Génération sécurisée et garantie des billets (1, 2, 3... N)
-            if (payment.payment_target === 'TICKET') {
-                if (payment.ticket_id) {
-                    // Ticket pré-existant -> passer à VALIDE
-                    const { data: updatedTck } = await supabase
-                        .from('tickets')
-                        .update({
-                            status: 'VALIDE',
-                            updated_at: new Date().toISOString(),
-                        })
-                        .eq('id', payment.ticket_id)
-                        .select('id, ticket_number')
-                        .single();
-
-                    if (updatedTck) {
-                        generatedTicketIds.push(updatedTck.id);
-                        generatedTicketNumbers.push(updatedTck.ticket_number);
-                    }
-                } else if (payment.metadata?.event_id && payment.metadata?.category_id) {
-                    const countToGenerate = Number(payment.metadata?.quantity || 1);
-                    try {
-                        const purchaseResult = await EventService.reserveTicketsAtomic({
-                            eventId: payment.metadata.event_id,
-                            categoryId: payment.metadata.category_id,
-                            quantity: countToGenerate,
-                            userId: payment.client_id,
-                            orderId: payment.order_id || undefined,
-                            paymentConfirmed: true,
-                        });
-                        if (purchaseResult?.tickets && purchaseResult.tickets.length > 0) {
-                            confirmedTicketId = purchaseResult.tickets[0].id;
-                            purchaseResult.tickets.forEach((t: any) => {
-                                generatedTicketIds.push(t.id);
-                                generatedTicketNumbers.push(t.ticket_number);
-                            });
-                        }
-                    } catch (ticketError) {
-                        console.error(`[PaymentService.Webhook] Erreur réservation atomique ${countToGenerate} ticket(s):`, ticketError);
-                    } finally {
-                        await EventService.releaseHoldTicketsAtomic({
-                            categoryId: payment.metadata.category_id,
-                            quantity: countToGenerate,
-                        });
-                    }
-                } else if (payment.metadata?.checkout_items) {
-                    const items = payment.metadata.checkout_items as { categoryId: string, quantity: number }[];
-                    const eventId = payment.metadata.event_id;
-                    
-                    for (const item of items) {
-                        try {
-                            const purchaseResult = await EventService.reserveTicketsAtomic({
-                                eventId: eventId,
-                                categoryId: item.categoryId,
-                                quantity: item.quantity,
-                                userId: payment.client_id,
-                                orderId: payment.order_id || undefined,
-                                paymentConfirmed: true,
-                            });
-                            
-                            if (purchaseResult?.tickets && purchaseResult.tickets.length > 0) {
-                                if (!confirmedTicketId) {
-                                    confirmedTicketId = purchaseResult.tickets[0].id;
-                                }
-                                purchaseResult.tickets.forEach((t: any) => {
-                                    generatedTicketIds.push(t.id);
-                                    generatedTicketNumbers.push(t.ticket_number);
-                                });
-                            }
-                        } catch (ticketError) {
-                            console.error(`[PaymentService.Webhook] Erreur réservation atomique ${item.quantity} ticket(s) pour la categorie ${item.categoryId}:`, ticketError);
-                        } finally {
-                            await EventService.releaseHoldTicketsAtomic({
-                                categoryId: item.categoryId,
-                                quantity: item.quantity,
-                            });
-                        }
-                    }
-                }
-
-                // 4.1.1 BLINDAGE VULNÉRABILITÉ #2 : LATE WEBHOOK & OVERBOOKING AUTO-REFUND
-                if (generatedTicketIds.length === 0) {
-                    console.warn(`[PaymentService.Webhook] ALERTE OVERBOOKING / LATE WEBHOOK : Aucun billet émis pour le paiement ${payment.id}. Déclenchement du remboursement automatique.`);
-
-                    let buyerPhone = payment.metadata?.customer_phone || payment.metadata?.phone || payment.customer_phone || '';
-                    let buyerName = payment.metadata?.customer_name || 'Client';
-                    let operator: 'WAVE' | 'ORANGE_MONEY' = 'WAVE';
-
-                    if (payment.payment_method?.toUpperCase().includes('ORANGE') || payment.metadata?.operator === 'ORANGE_MONEY') {
-                        operator = 'ORANGE_MONEY';
-                    }
-
-                    if (payment.client_id && !buyerPhone) {
-                        const { data: clientUser } = await supabase
-                            .from('users')
-                            .select('phone, first_name, last_name')
-                            .eq('id', payment.client_id)
-                            .maybeSingle();
-                        if (clientUser) {
-                            buyerPhone = clientUser.phone || '';
-                            if (clientUser.first_name) buyerName = `${clientUser.first_name} ${clientUser.last_name || ''}`.trim();
-                        }
-                    }
-
-                    const nameParts = buyerName.split(' ');
-                    const firstName = nameParts[0] || 'Client';
-                    const lastName = nameParts.slice(1).join(' ') || 'EV';
-                    const cleanPhone = (buyerPhone || '770000000').replace(/\s+/g, '');
-                    const refundTxId = `AUTO-REFUND-LATE-${payment.id}`;
-
-                    let cashoutSuccess = false;
-                    let externalTxId: string | undefined;
-                    let refundErrorMsg: string | undefined;
-
-                    try {
-                        const cashoutRes = await samirPayClient.sendCashout({
-                            phoneNumber: cleanPhone,
-                            operatorName: operator,
-                            amount: Number(payment.amount),
-                            firstName,
-                            lastName,
-                        });
-
-                        if (cashoutRes.status === 'success' || cashoutRes.status === 'pending' || cashoutRes.transaction_id) {
-                            cashoutSuccess = true;
-                            externalTxId = cashoutRes.transaction_id || (cashoutRes.reference as string) || refundTxId;
-                        } else {
-                            refundErrorMsg = cashoutRes.message || 'Échec du cashout opérateur';
-                        }
-                    } catch (cashoutErr: any) {
-                        refundErrorMsg = cashoutErr.message || 'Erreur passerelle cashout SamirPay';
-                    }
-
-                    // Enregistrement du remboursement dans la table refunds
-                    try {
-                        const refundReason = refundErrorMsg
-                            ? `AUTO_REFUND_OVERBOOKING_LATE_WEBHOOK (Échec: ${refundErrorMsg.slice(0, 100)})`
-                            : 'AUTO_REFUND_OVERBOOKING_LATE_WEBHOOK';
-
-                        await supabase.from('refunds').insert({
-                            payment_id: payment.id,
-                            refund_transaction_id: refundTxId,
-                            external_refund_id: externalTxId || null,
-                            amount: payment.amount,
-                            reason: refundReason,
-                            status: cashoutSuccess ? 'PROCESSED' : 'FAILED',
-                            processed_by: payment.client_id || '00000000-0000-0000-0000-000000000000',
-                            created_at: new Date().toISOString(),
-                            updated_at: new Date().toISOString(),
-                        });
-                    } catch (refErr) {
-                        console.error('[PaymentService.Webhook] Erreur insertion refund overbooking:', refErr);
-                    }
-
-                    // Mise à jour de la transaction de paiement
-                    await supabase.from('payments').update({
-                        status: cashoutSuccess ? 'REFUNDED' : 'FAILED',
-                        provider_status: status,
-                        external_transaction_id: transaction_id,
-                        metadata: {
-                            ...payment.metadata,
-                            overbooked: true,
-                            auto_refund_attempted: true,
-                            auto_refund_success: cashoutSuccess,
-                            failure_reason: 'LATE_WEBHOOK_SOLD_OUT',
-                        },
-                        updated_at: new Date().toISOString(),
-                    }).eq('id', payment.id);
-
-                    // Journalisation dans audit_logs
-                    try {
-                        await supabase.from('audit_logs').insert({
-                            user_id: payment.client_id || '00000000-0000-0000-0000-000000000000',
-                            action: cashoutSuccess ? 'PAYMENT_OVERBOOKED_AUTO_REFUNDED' : 'PAYMENT_OVERBOOKED_REFUND_FAILED',
-                            object_type: 'PAYMENT',
-                            object_id: payment.id,
-                            metadata: {
-                                amount: payment.amount,
-                                operator,
-                                phone: cleanPhone,
-                                cashoutSuccess,
-                                error: refundErrorMsg,
-                            },
-                            created_at: new Date().toISOString(),
-                        });
-                    } catch (audErr) {
-                        console.error('[PaymentService.Webhook] Erreur audit log:', audErr);
-                    }
-
-                    // Notification SMS transparente au client
-                    if (cleanPhone && cleanPhone.length >= 9) {
-                        try {
-                            const smsText = cashoutSuccess
-                                ? `Event Village: Votre paiement de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA a bien ete recu mais les billets etaient deja epuises. Vous avez ete integralement rembourse sur votre compte ${operator}.`
-                                : `Event Village: Votre commande n'a pu aboutir (billets epuises). Notre service client procede a votre remboursement de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA. Contact: +221770000000.`;
-                            await mTargetService.sendSms(cleanPhone, smsText);
-                        } catch (smsErr) {
-                            console.error('[PaymentService.Webhook] Erreur SMS notification overbooking:', smsErr);
-                        }
-                    }
-
-                    // Notification In-App
-                    if (payment.client_id) {
-                        try {
-                            await NotificationService.createNotification({
-                                userId: payment.client_id,
-                                title: 'Remboursement automatique - Billets épuisés',
-                                message: cashoutSuccess
-                                    ? `Votre commande n'a pu aboutir car les billets ont été épuisés avant la validation. Vous avez été intégralement remboursé de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA sur votre compte ${operator}.`
-                                    : `Votre commande n'a pu aboutir (billets épuisés). Votre remboursement de ${Number(payment.amount).toLocaleString('fr-FR')} FCFA est en cours de traitement par notre équipe.`,
-                                type: 'SYSTEM',
-                                data: { paymentId: payment.id, status: cashoutSuccess ? 'REFUNDED' : 'FAILED' },
-                            });
-                        } catch (notifErr) {
-                            console.error('[PaymentService.Webhook] Erreur in-app notif overbooking:', notifErr);
-                        }
-                    }
-
-                    return {
-                        success: true,
-                        message: cashoutSuccess
-                            ? 'Paiement en surréservation remboursé automatiquement avec succès.'
-                            : 'Paiement en surréservation enregistré, remboursement en attente d\'intervention.',
-                    };
-                }
-
-                // Déclencher les notifications orchestrées (In-App + SMS + Email Client & Organisateur)
-                if (payment.metadata?.event_id && generatedTicketIds.length > 0) {
-                    try {
-                        await NotificationService.sendTicketPurchaseNotifications({
-                            userId: payment.client_id,
-                            eventId: payment.metadata.event_id,
-                            categoryId: payment.metadata.category_id,
-                            orderId: payment.order_id || payment.external_order_id,
-                            orderNumber: payment.external_order_id,
-                            ticketCount: generatedTicketIds.length,
-                            ticketNumbers: generatedTicketNumbers,
-                            totalAmount: Number(payment.amount),
-                            clientPhone: payment.metadata?.customer_phone,
-                            clientEmail: payment.metadata?.customer_email,
-                            clientName: payment.metadata?.customer_name,
-                        });
-                    } catch (notifErr) {
-                        console.error('[PaymentService.Webhook] Erreur envoi notifications billetterie:', notifErr);
-                    }
-                }
-            }
-
-            // 4.2 Activation de l'abonnement si payment_target === 'SUBSCRIPTION'
-            if (payment.payment_target === 'SUBSCRIPTION' || payment.subscription_plan_id) {
-                const planId = payment.subscription_plan_id || payment.metadata?.target_id;
-                if (planId) {
-                    const { data: plan } = await supabase
-                        .from('subscription_plans')
-                        .select('*')
-                        .eq('id', planId)
-                        .maybeSingle();
-
-                    let targetPartnerId = payment.partner_id;
-                    if (!targetPartnerId && payment.client_id) {
-                        const { data: partnerRec } = await supabase
-                            .from('partners')
-                            .select('id, trial_ends_at')
-                            .eq('user_id', payment.client_id)
-                            .maybeSingle();
-                        if (partnerRec) targetPartnerId = partnerRec.id;
-                    }
-
-                    if (targetPartnerId && plan) {
-                        const now = new Date();
-                        const durationDays = plan.billing_period === 'YEARLY' ? 365 : 30;
-                        const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
-
-                        await supabase
-                            .from('partners')
-                            .update({
-                                subscription_plan_id: plan.id,
-                                status: 'VALIDE',
-                                trial_ends_at: expiresAt.toISOString(),
-                                updated_at: now.toISOString(),
-                            })
-                            .eq('id', targetPartnerId);
-
-                        await supabase.from('notifications').insert({
-                            user_id: payment.client_id,
-                            type: 'SUBSCRIPTION_ACTIVATED',
-                            title: 'Abonnement activé',
-                            content: `Votre pack ${plan.name} a été activé avec succès pour ${durationDays} jours.`,
-                            channel: 'PUSH',
-                            status: 'PENDING',
-                            metadata: { plan_id: plan.id, payment_id: payment.id },
-                        });
-                    }
-                }
-            }
-
-            // Mise à jour de la transaction de paiement vers SUCCESS
-            const { error: updatePaymentError } = await supabase
-                .from('payments')
-                .update({
-                    status: 'SUCCESS',
-                    external_transaction_id: transaction_id,
-                    ticket_id: confirmedTicketId,
-                    provider_status: status,
-                    paid_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', payment.id);
-
-            if (updatePaymentError) {
-                console.error('[PaymentService.Webhook] Erreur mise à jour payment', updatePaymentError);
-                throw new Error('Erreur mise à jour paiement.');
-            }
-
-            // Mise à jour des commandes associées
-            if (payment.order_id) {
-                await supabase
-                    .from('orders')
-                    .update({
-                        payment_status: 'SUCCESS',
-                        order_status: 'CONFIRMEE',
-                        paid_amount: payment.amount,
-                        balance_amount: 0,
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.order_id);
-            }
-
-            // Mise à jour des réservations de salle
-            if (payment.hall_reservation_id) {
-                await supabase
-                    .from('hall_reservations')
-                    .update({
-                        payment_status: 'SUCCESS',
-                        status: 'CONFIRMEE',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.hall_reservation_id);
-            }
-
-            // Mise à jour des réservations de table
-            if (payment.table_reservation_id) {
-                await supabase
-                    .from('table_reservations')
-                    .update({
-                        payment_status: 'SUCCESS',
-                        status: 'CONFIRMEE',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.table_reservation_id);
-            }
-
-            // Notification client de succès
-            await supabase.from('notifications').insert({
-                user_id: payment.client_id,
-                type: 'PAYMENT_SUCCESS',
-                title: 'Paiement confirmé',
-                content: `Votre paiement de ${payment.amount} ${payment.currency} a été validé avec succès.`,
-                channel: 'PUSH',
-                status: 'PENDING',
-                metadata: { payment_id: payment.id, order_id: payment.external_order_id },
-            });
-
-            console.log(`[PaymentService.Webhook] Paiement validé avec succès : ${order_id}`);
-            return { success: true, message: 'Paiement validé avec succès.' };
-        } else {
-            // Statut FAILED ou CANCELLED
-            if (payment.status === 'FAILED' || payment.status === 'CANCELLED') {
-                return { success: true, message: `Paiement déjà marqué comme ${payment.status}.` };
-            }
-
-            await supabase
-                .from('payments')
-                .update({
-                    status: mappedStatus,
-                    external_transaction_id: transaction_id,
-                    provider_status: status,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', payment.id);
-
-            // Rollback et libération des ressources selon le CDC
-            if (payment.order_id) {
-                await supabase
-                    .from('orders')
-                    .update({
-                        payment_status: 'FAILED',
-                        order_status: 'ANNULEE',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.order_id);
-            }
-
-            if (payment.hall_reservation_id) {
-                await supabase
-                    .from('hall_reservations')
-                    .update({
-                        payment_status: 'FAILED',
-                        status: 'ANNULEE',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.hall_reservation_id);
-            }
-
-            if (payment.table_reservation_id) {
-                await supabase
-                    .from('table_reservations')
-                    .update({
-                        payment_status: 'FAILED',
-                        status: 'ANNULEE',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.table_reservation_id);
-            }
-
-            if (payment.ticket_id) {
-                await supabase
-                    .from('tickets')
-                    .update({
-                        status: 'ANNULE',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.ticket_id);
-            }
-
-            // Libération de la réservation temporaire de stock (Hold Cart) lors d'un échec/annulation
-            if (payment.payment_target === 'TICKET') {
-                if (payment.metadata?.checkout_items && Array.isArray(payment.metadata.checkout_items)) {
-                    for (const item of payment.metadata.checkout_items) {
-                        await EventService.releaseHoldTicketsAtomic({
-                            categoryId: item.categoryId,
-                            quantity: Number(item.quantity || 1),
-                        });
-                    }
-                } else if (payment.metadata?.category_id) {
-                    await EventService.releaseHoldTicketsAtomic({
-                        categoryId: payment.metadata.category_id,
-                        quantity: Number(payment.metadata.quantity || 1),
-                    });
-                }
-            }
-
-            // Notification client d'échec
-            await supabase.from('notifications').insert({
-                user_id: payment.client_id,
-                type: 'PAYMENT_FAILED',
-                title: 'Échec du paiement',
-                content: `Votre tentative de paiement de ${payment.amount} ${payment.currency} n'a pas pu aboutir.`,
-                channel: 'PUSH',
-                status: 'PENDING',
-                metadata: { payment_id: payment.id, order_id: payment.external_order_id },
-            });
-
-            console.warn(`[PaymentService.Webhook] Paiement échoué ou annulé pour : ${order_id} (Statut: ${status})`);
-            return { success: true, message: `Paiement marqué comme ${mappedStatus}.` };
-        }
-    }
-
-    /**
-     * Nettoyage automatique des réservations temporaires de stock expirées (TTL 10 minutes)
-     * Décrémente held_quantity pour tous les paiements PENDING non confirmés dans le délai.
-     */
-    public async cleanupExpiredHolds(): Promise<{ cleanedCount: number; releasedTickets: number }> {
-        const supabase = getServiceRoleClient();
-        const now = new Date();
-        const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
-
-        const { data: pendingPayments } = await supabase
-            .from('payments')
-            .select('*')
-            .eq('payment_target', 'TICKET')
-            .eq('status', 'PENDING');
-
-        let cleanedCount = 0;
-        let releasedTickets = 0;
-
-        for (const payment of pendingPayments || []) {
-            const expiresAt = payment.held_expires_at || payment.metadata?.held_expires_at;
-            const isExpired = expiresAt
-                ? new Date(expiresAt).getTime() <= now.getTime()
-                : new Date(payment.created_at).getTime() <= new Date(tenMinutesAgo).getTime();
-
-            if (isExpired) {
-                await supabase
-                    .from('payments')
-                    .update({
-                        status: 'CANCELLED',
-                        provider_status: 'HOLD_EXPIRED',
-                        updated_at: now.toISOString(),
-                    })
-                    .eq('id', payment.id);
-
-                if (payment.metadata?.checkout_items && Array.isArray(payment.metadata.checkout_items)) {
-                    for (const item of payment.metadata.checkout_items) {
-                        const qty = Number(item.quantity || 1);
-                        await EventService.releaseHoldTicketsAtomic({
-                            categoryId: item.categoryId,
-                            quantity: qty,
-                        });
-                        releasedTickets += qty;
-                    }
-                } else if (payment.metadata?.category_id) {
-                    const qty = Number(payment.metadata.quantity || 1);
-                    await EventService.releaseHoldTicketsAtomic({
-                        categoryId: payment.metadata.category_id,
-                        quantity: qty,
-                    });
-                    releasedTickets += qty;
-                }
-                cleanedCount++;
-            }
-        }
-
-        return { cleanedCount, releasedTickets };
     }
 
     /**
@@ -1064,115 +264,6 @@ export class PaymentService {
             .in('id', ids);
 
         return { expiredCount: ids.length, reservationIds: ids };
-    }
-
-    /**
-     * Traite un remboursement (partiel ou total) et maintient strictement l'invariant Total − Payé = Solde
-     */
-    public async processRefund(params: {
-        paymentId: string;
-        refundAmount: number;
-        reason?: string;
-        processedBy?: string;
-    }): Promise<{ success: boolean; newPaidAmount: number; newBalanceAmount: number }> {
-        const supabase = getServiceRoleClient();
-
-        const { data: payment, error } = await supabase
-            .from('payments')
-            .select('*')
-            .eq('id', params.paymentId)
-            .single();
-
-        if (error || !payment) {
-            throw new Error('Paiement introuvable.');
-        }
-
-        if (payment.status !== 'SUCCESS' && payment.status !== 'PARTIAL') {
-            throw new Error('Seuls les paiements validés (SUCCESS ou PARTIAL) peuvent être remboursés.');
-        }
-
-        const refundAmount = Number(params.refundAmount);
-        const originalAmount = Number(payment.amount);
-
-        // Récupération des remboursements déjà traités pour ce paiement
-        const { data: existingRefunds } = await supabase
-            .from('refunds')
-            .select('amount')
-            .eq('payment_id', payment.id)
-            .eq('status', 'PROCESSED');
-
-        const alreadyRefunded = (existingRefunds || []).reduce((sum: number, r: any) => sum + Number(r.amount), 0);
-        const remainingRefundable = Math.max(0, originalAmount - alreadyRefunded);
-
-        if (refundAmount <= 0 || refundAmount > remainingRefundable) {
-            throw new Error(`Le montant du remboursement (${refundAmount} FCFA) doit être compris entre 1 et ${remainingRefundable} FCFA.`);
-        }
-
-        // 1. Enregistrement conforme dans la table refunds avec l'enum PROCESSED et ID unique
-        const refundTxId = `REFUND-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-        const { error: refundErr } = await supabase.from('refunds').insert({
-            payment_id: payment.id,
-            refund_transaction_id: refundTxId,
-            amount: refundAmount,
-            reason: params.reason || 'Remboursement client',
-            status: 'PROCESSED',
-            processed_by: params.processedBy || null,
-        });
-
-        if (refundErr) {
-            console.error('[PaymentService.processRefund] Erreur insertion refund:', refundErr);
-            throw new Error(`Échec enregistrement du remboursement: ${refundErr.message}`);
-        }
-
-        // Mise à jour du statut du paiement (REFUNDED si intégralité remboursée, PARTIAL sinon)
-        const isFullRefund = (alreadyRefunded + refundAmount) >= originalAmount;
-        await supabase
-            .from('payments')
-            .update({
-                status: isFullRefund ? 'REFUNDED' : 'PARTIAL',
-                updated_at: new Date().toISOString(),
-            })
-            .eq('id', payment.id);
-
-        let newPaid = 0;
-        let newBalance = 0;
-
-        // 2. Mise à jour de la commande (Invariant : Total - Payé = Solde)
-        if (payment.order_id) {
-            const { data: order } = await supabase
-                .from('orders')
-                .select('*')
-                .eq('id', payment.order_id)
-                .single();
-
-            if (order) {
-                const total = Number(order.total_amount);
-                const prevPaid = Number(order.paid_amount !== undefined && order.paid_amount !== null ? order.paid_amount : payment.amount);
-                newPaid = Math.max(0, prevPaid - refundAmount);
-                newBalance = total - newPaid;
-
-                const { error: oUpdateErr } = await supabase
-                    .from('orders')
-                    .update({
-                        paid_amount: newPaid,
-                        balance_amount: newBalance,
-                        payment_status: newPaid === 0 ? 'REFUNDED' : 'PARTIAL',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', payment.order_id);
-
-                if (oUpdateErr) {
-                    console.error('[PaymentService.processRefund] Erreur update order:', oUpdateErr);
-                    throw new Error(`Échec mise à jour commande lors du remboursement: ${oUpdateErr.message}`);
-                }
-            }
-        }
-
-        return {
-            success: true,
-            newPaidAmount: newPaid,
-            newBalanceAmount: newBalance,
-        };
     }
 }
 

@@ -1,0 +1,243 @@
+/**
+ * Lot 2 — démarrage d'un achat de billets (checkout), seul chemin d'initiation d'un paiement de
+ * billetterie (/api/checkout et /api/payments/create pour un billet).
+ *
+ * Ordre, sans débit tant qu'un contrôle échoue :
+ *  1. clé d'idempotence fournie par le client (en-tête Idempotency-Key) obligatoire ; une double
+ *     soumission renvoie le paiement déjà créé ;
+ *  2. quota de checkout par compte (compteurs en base, fail-closed) ;
+ *  3. contrôles partagés ticket_sale_problems (catégorie active et visible, événement PUBLIE et non
+ *     passé, fenêtre de vente, max_per_order, stock moins réservations) → 400 / 409 explicites ;
+ *  4. panier entièrement gratuit : billets émis tout de suite (free_tickets_claim) ;
+ *     sinon opérateur (Wave ou Orange Money) et téléphone payeur (9 chiffres) obligatoires ;
+ *  5. checkout_create_payment : paiement PENDING + réservations de TOUT le panier, tout ou rien ;
+ *  6. cashin direct SamirPay (callBackUrl portant un jeton propre au paiement) ; tout échec libère
+ *     les réservations (payment_release).
+ * Les montants suivent le calcul existant (lib/payments/fees.ts), inchangé au lot 2.
+ */
+import { createHash, randomBytes } from 'node:crypto';
+import { z } from 'zod';
+import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getServerEnv } from '@/lib/env';
+import { samirPayClient } from '@/lib/samirpay/client';
+import { isSamirPayError, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+import { reserveQuota } from '@/lib/security/quota';
+import { computeTicketingFees } from './fees';
+import { normalizePayerPhone } from './payer-phone';
+import { rpcWithRetry } from './rpc';
+import { notifyStockMilestones } from './stock-notifications';
+
+/** Plafond absolu d'une ligne de panier, aligné sur la borne de max_per_order (CHECK 1..50). */
+export const MAX_PER_ORDER_CAP = 50;
+
+const CheckoutBodySchema = z.object({
+    eventId: z.string().uuid(),
+    items: z.array(z.object({
+        categoryId: z.string().uuid(),
+        quantity: z.number().int().min(1).max(MAX_PER_ORDER_CAP),
+    })).min(1).max(20),
+    operator: z.string().optional(),
+    payerPhone: z.string().optional(),
+});
+
+export interface CheckoutOutcome {
+    status: number;
+    body: Record<string, unknown>;
+}
+
+interface SaleProblem { category_id: string | null; code: string; message: string }
+
+const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{8,128}$/;
+
+function problemsOutcome(problems: SaleProblem[]): CheckoutOutcome {
+    const onlyStock = problems.every((p) => p.code === 'INSUFFICIENT_STOCK');
+    return onlyStock
+        ? { status: 409, body: { error: problems[0]?.message ?? 'Stock insuffisant.', code: 'INSUFFICIENT_STOCK', problems } }
+        : { status: 400, body: { error: problems.map((p) => p.message).join(' '), code: 'SALE_CHECK_FAILED', problems } };
+}
+
+function newIdentifiers() {
+    const ms = Date.now();
+    const suffix = randomBytes(4).toString('hex').toUpperCase();
+    return { transactionId: `TX-EV-${ms}-${suffix}`, externalOrderId: `ORD-EV-${ms}-${suffix}` };
+}
+
+export function hashCallbackToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+}
+
+export function statusPageUrl(paymentId: string): string {
+    return `/paiement/${paymentId}`;
+}
+
+/** Réponse renvoyée à l'interface pour un paiement existant (création ou double soumission). */
+export function paymentView(p: Record<string, unknown>, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    const provider = (p.provider_response ?? {}) as { paymentUrl?: string | null; deepLinks?: { wave?: string | null; orange?: string | null }; qrCode?: string | null };
+    const operator = p.operator as SamirPayOperatorName | null;
+    return {
+        payment_id: p.id,
+        status: p.status,
+        amount: Number(p.amount),
+        currency: p.currency ?? 'XOF',
+        operator,
+        expires_at: p.held_expires_at ?? null,
+        payment_url: provider.paymentUrl ?? null,
+        deep_link: operator === 'ORANGE_MONEY' ? provider.deepLinks?.orange ?? null : operator === 'WAVE' ? provider.deepLinks?.wave ?? null : null,
+        qr_code: provider.qrCode ?? null,
+        status_page_url: statusPageUrl(String(p.id)),
+        ...extra,
+    };
+}
+
+async function existingPayment(clientId: string, key: string): Promise<Record<string, unknown> | null> {
+    const { data, error } = await getServiceRoleClient()
+        .from('payments')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('client_idempotency_key', key)
+        .maybeSingle();
+    if (error) throw new Error(`Lecture du paiement existant impossible : ${error.message}`);
+    return data;
+}
+
+export async function startTicketCheckout(params: {
+    userId: string;
+    body: unknown;
+    idempotencyKey: string | null;
+}): Promise<CheckoutOutcome> {
+    const supabase = getServiceRoleClient();
+    const env = getServerEnv();
+
+    // 1. Clé d'idempotence
+    const key = (params.idempotencyKey ?? '').trim();
+    if (!IDEMPOTENCY_KEY.test(key)) {
+        return { status: 400, body: { error: 'En-tête Idempotency-Key requis (8 à 128 caractères).', code: 'IDEMPOTENCY_KEY_REQUIRED' } };
+    }
+    const parsed = CheckoutBodySchema.safeParse(params.body);
+    if (!parsed.success) {
+        return { status: 400, body: { error: 'Panier invalide.', code: 'INVALID_CHECKOUT', details: parsed.error.flatten().fieldErrors } };
+    }
+    const input = parsed.data;
+    const replay = await existingPayment(params.userId, key);
+    if (replay) return { status: 200, body: paymentView(replay, { duplicate: true }) };
+
+    // 2. Quota par compte
+    const quota = await reserveQuota([
+        { scope: 'checkout_user', bucket: params.userId, windowSecs: 15 * 60, max: env.CHECKOUT_PER_USER_15MIN },
+        { scope: 'checkout_user', bucket: params.userId, windowSecs: 24 * 3600, max: env.CHECKOUT_PER_USER_DAY },
+    ], 'checkout');
+    if (!quota.allowed) {
+        return quota.reason === 'EXCEEDED'
+            ? { status: 429, body: { error: 'Trop de tentatives d’achat : réessayez plus tard.', code: 'CHECKOUT_RATE_LIMITED', retryAfterSeconds: quota.retryAfterSeconds } }
+            : { status: 503, body: { error: 'Achat momentanément indisponible.', code: 'CHECKOUT_GUARD_UNAVAILABLE' } };
+    }
+
+    // 3. Contrôles partagés (avant tout débit)
+    const items = input.items.map((i) => ({ category_id: i.categoryId, quantity: i.quantity }));
+    const { data: problems, error: checkErr } = await rpcWithRetry<SaleProblem[]>('ticket_sale_problems', { p_event_id: input.eventId, p_items: items });
+    if (checkErr) throw new Error(`Contrôle de vente impossible : ${checkErr.message}`);
+    if (problems && problems.length > 0) return problemsOutcome(problems);
+
+    const { data: event, error: evErr } = await supabase.from('events').select('id, title, partner_id').eq('id', input.eventId).single();
+    if (evErr || !event) throw new Error(`Lecture de l'événement impossible : ${evErr?.message ?? 'introuvable'}`);
+    const { data: cats, error: catErr } = await supabase.from('ticket_categories').select('id, price').in('id', items.map((i) => i.category_id));
+    if (catErr || !cats) throw new Error(`Lecture des catégories impossible : ${catErr?.message}`);
+    const priceOf = new Map(cats.map((c) => [c.id as string, Number(c.price)]));
+    const priced = items.map((i) => ({ ...i, unit_price: priceOf.get(i.category_id) ?? 0 }));
+    const payable = priced.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+
+    // 4. Panier entièrement gratuit
+    if (payable === 0) {
+        const { data: free, error: freeErr } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; problems?: SaleProblem[]; ticket_ids?: string[] }>('free_tickets_claim', { p_user_id: params.userId, p_event_id: input.eventId, p_items: items });
+        if (freeErr || !free) throw new Error(`Émission des billets gratuits impossible : ${freeErr?.message}`);
+        if (!free.ok) {
+            if (free.problems?.length) return problemsOutcome(free.problems);
+            return { status: 409, body: { error: free.message ?? 'Billets gratuits refusés.', code: free.code } };
+        }
+        await notifyStockMilestones(items.map((i) => i.category_id));
+        return { status: 200, body: { free: true, status: 'SUCCESS', ticket_ids: free.ticket_ids ?? [] } };
+    }
+
+    const operator = input.operator as SamirPayOperatorName | undefined;
+    if (!operator || !SAMIRPAY_OPERATORS.includes(operator)) {
+        return { status: 400, body: { error: 'Choisissez Wave ou Orange Money.', code: 'OPERATOR_REQUIRED' } };
+    }
+    const payerPhone = normalizePayerPhone(input.payerPhone);
+    if (!payerPhone) {
+        return { status: 400, body: { error: 'Numéro du payeur invalide (mobile sénégalais, 9 chiffres).', code: 'INVALID_PAYER_PHONE' } };
+    }
+
+    // 5. Paiement + réservations, tout ou rien
+    const fees = await computeTicketingFees(payable);
+    const ids = newIdentifiers();
+    const token = randomBytes(32).toString('base64url');
+    const { data: created, error: createErr } = await rpcWithRetry<{ ok: boolean; duplicate?: boolean; payment_id?: string; problems?: SaleProblem[]; expires_at?: string }>('checkout_create_payment', {
+        p: {
+            client_id: params.userId,
+            event_id: input.eventId,
+            partner_id: event.partner_id,
+            items: priced,
+            amount: payable,
+            aggregator_fee: fees.aggregatorFee,
+            service_fee: fees.serviceFee,
+            gross_revenue: fees.grossRevenue,
+            net_revenue: fees.netRevenue,
+            partner_payout: fees.partnerPayout,
+            operator,
+            payer_phone: payerPhone,
+            callback_token_hash: hashCallbackToken(token),
+            client_idempotency_key: key,
+            transaction_id: ids.transactionId,
+            external_order_id: ids.externalOrderId,
+            hold_minutes: env.PAYMENT_HOLD_MINUTES,
+            metadata: { target_type: 'TICKET', event_id: input.eventId, checkout_items: priced },
+        },
+    });
+    if (createErr) {
+        // Dernier filet : la contrainte sold + held <= total (concurrence extrême)
+        if (createErr.code === '23514') return { status: 409, body: { error: 'Plus assez de places disponibles.', code: 'INSUFFICIENT_STOCK' } };
+        throw new Error(`Création du paiement impossible : ${createErr.message}`);
+    }
+    if (!created?.ok) {
+        if (created?.duplicate && created.payment_id) {
+            const dup = await existingPayment(params.userId, key);
+            if (dup) return { status: 200, body: paymentView(dup, { duplicate: true }) };
+        }
+        return problemsOutcome(created?.problems ?? []);
+    }
+    const paymentId = created.payment_id!;
+
+    // 6. Cashin direct SamirPay
+    const callBackUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/samirpay?t=${token}`;
+    try {
+        const init = await samirPayClient.initDirectPayment({
+            amount: payable,
+            orderId: ids.externalOrderId,
+            callBackUrl,
+            operatorName: operator,
+            telephone: payerPhone,
+            description: `Billets ${String(event.title ?? '')}`.slice(0, 100),
+        });
+        const providerResponse = { paymentUrl: init.paymentUrl, deepLinks: init.deepLinks, qrCode: init.qrCode };
+        const { data: updated, error: updErr } = await supabase
+            .from('payments')
+            .update({ external_transaction_id: init.transactionId, provider_response: providerResponse, provider_status: 'INIT_ACCEPTED' })
+            .eq('id', paymentId)
+            .eq('status', 'PENDING')
+            .select('*')
+            .single();
+        if (updErr || !updated) throw new Error(`Enregistrement de l'identifiant SamirPay impossible : ${updErr?.message ?? 'paiement introuvable'}`);
+        return { status: 200, body: paymentView(updated) };
+    } catch (err) {
+        const kind = isSamirPayError(err) ? err.kind : 'INTERNAL';
+        const reason = `INIT_${kind}`;
+        const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: paymentId, p_status: 'FAILED', p_reason: reason });
+        if (relErr) console.error(`[checkout] libération des réservations du paiement ${paymentId} impossible :`, relErr.message);
+        console.error(`[checkout] cashin refusé pour le paiement ${paymentId} (${reason}) :`, err instanceof Error ? err.message : String(err));
+        if (kind === 'INTERNAL') throw err;
+        return {
+            status: 502,
+            body: { error: kind === 'REJECTED' ? 'Paiement refusé par l’opérateur.' : 'Le service de paiement ne répond pas : réessayez.', code: `PAYMENT_PROVIDER_${kind}`, payment_id: paymentId },
+        };
+    }
+}
