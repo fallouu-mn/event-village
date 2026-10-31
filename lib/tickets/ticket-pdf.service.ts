@@ -1,4 +1,8 @@
-import { QRCodeWriter, BarcodeFormat, EncodeHintType } from '@zxing/library';
+/**
+ * PDF officiel du billet (lot 4) : aucun QR code. L'entrée se fait avec le QR dynamique de
+ * l'application (renouvelé toutes les 20 s) ou, sans téléphone, avec le numéro du billet et une pièce
+ * d'identité au nom du titulaire (saisie manuelle au contrôle).
+ */
 
 export interface TicketPdfData {
     ticketNumber: string;
@@ -15,7 +19,6 @@ export interface TicketPdfData {
     city: string;
     ownerName: string;
     ownerPhoneOrEmail?: string;
-    qrPayload: string;
     status: string;
     securityVersion?: number;
 }
@@ -66,23 +69,7 @@ export class TicketPdfService {
      * pour le billet officiel Event Village.
      */
     public static async generateTicketPdf(data: TicketPdfData): Promise<Buffer> {
-        // 1. Génération de la matrice QR Code vectorielle
-        const qrWriter = new QRCodeWriter();
-        const hints = new Map();
-        hints.set(EncodeHintType.MARGIN, 1);
-        
-        const bitMatrix = qrWriter.encode(
-            data.qrPayload || data.ticketNumber,
-            BarcodeFormat.QR_CODE,
-            33,
-            33,
-            hints
-        );
-
-        const matrixWidth = bitMatrix.getWidth();
-        const matrixHeight = bitMatrix.getHeight();
-
-        // 2. Dimensions A4 en points (1 pt = 1/72 inch) : 595.28 x 841.89 pt
+        // 1. Dimensions A4 en points (1 pt = 1/72 inch) : 595.28 x 841.89 pt
         const pageWidth = 595.28;
         const pageHeight = 841.89;
 
@@ -216,41 +203,27 @@ export class TicketPdfService {
         stream += 'BT\n/F2 10 Tf\n0.20 0.25 0.35 rg\n';
         stream += `${cardX + 36} ${line4Y - 2} Td\n(NUMERO DE BILLET :  ${escapePdfText(data.ticketNumber)}) Tj\nET\n`;
 
-        // ── SECTION CENTRALE : QR CODE VECTORIEL HAUTE DÉFINITION ───────────────
-        const qrBoxSize = 160;
-        const qrBoxX = cardX + (cardWidth - qrBoxSize) / 2;
-        const qrBoxY = cardY + 75;
-
-        // Cadre blanc protecteur du QR Code
-        stream += '1 1 1 rg\n';
-        stream += '0.85 0.88 0.92 RG\n';
+        // ── SECTION CENTRALE : ACCÈS AU CONTRÔLE (aucun QR imprimé) ─────────────
+        const accessTop = line4Y - 26;
+        const accessBottom = cardY + 56;
+        stream += '0.99 0.96 0.94 rg\n'; // Fond corail très clair
+        stream += '1 0.34 0.13 RG\n';
         stream += '1 w\n';
-        stream += `${qrBoxX - 10} ${qrBoxY - 10} ${qrBoxSize + 20} ${qrBoxSize + 20} re B\n`;
+        stream += `${cardX + 24} ${accessBottom} ${cardWidth - 48} ${accessTop - accessBottom} re B\n`;
 
-        // Rendu pixel par pixel vectoriel du QR code
-        const cellSize = qrBoxSize / matrixWidth;
-        stream += 'q\n';
-        stream += '0.06 0.09 0.16 rg\n'; // Noir charbon #0f172a
-
-        for (let y = 0; y < matrixHeight; y++) {
-            for (let x = 0; x < matrixWidth; x++) {
-                if (bitMatrix.get(x, y)) {
-                    const px = qrBoxX + x * cellSize;
-                    // En PDF, y=0 est en bas, donc inversion de l'axe vertical
-                    const py = qrBoxY + (matrixHeight - 1 - y) * cellSize;
-                    stream += `${px.toFixed(2)} ${py.toFixed(2)} ${cellSize.toFixed(2)} ${cellSize.toFixed(2)} re f\n`;
-                }
-            }
-        }
-        stream += 'Q\n';
-
-        // Légende sous le QR Code
-        stream += 'BT\n';
-        stream += '/F2 9 Tf\n';
-        stream += '0.06 0.09 0.16 rg\n';
-        stream += `${cardX + (cardWidth / 2) - 85} ${qrBoxY - 24} Td\n`;
-        stream += `(SCAN UNIQUE OFFICIEL AUX PORTES) Tj\n`;
-        stream += 'ET\n';
+        const textX = cardX + 40;
+        const line = (font: 'F1' | 'F2', size: number, y: number, text: string, color = '0.06 0.09 0.16') => {
+            stream += `BT\n/${font} ${size} Tf\n${color} rg\n${textX} ${y} Td\n(${escapePdfText(text)}) Tj\nET\n`;
+        };
+        line('F2', 12, accessTop - 24, 'ACCÈS AU CONTRÔLE', '1 0.34 0.13');
+        line('F2', 10, accessTop - 48, 'Avec votre téléphone');
+        line('F1', 9.5, accessTop - 63, 'Ouvrez le billet dans l’application Event Village et présentez le QR dynamique,');
+        line('F1', 9.5, accessTop - 76, 'renouvelé toutes les 20 secondes. Une capture d’écran n’est pas acceptée.');
+        line('F2', 10.5, accessTop - 104, 'Entrée sans téléphone : présentez une pièce d’identité au contrôle');
+        line('F1', 9.5, accessTop - 119, 'Le contrôleur saisit ce numéro et vérifie la pièce au nom du titulaire :');
+        line('F2', 18, accessTop - 150, data.ticketNumber);
+        line('F1', 8.5, accessBottom + 26, 'Aucun QR code sur ce document : imprimé ou photographié, il ne suffit pas pour entrer.', '0.35 0.40 0.50');
+        line('F1', 8.5, accessBottom + 13, `Titulaire : ${data.ownerName}`, '0.35 0.40 0.50');
 
         // ── PIED DE CARTE & SÉCURITÉ ─────────────────────────────────────────────
         const footerY = cardY + 16;
@@ -264,7 +237,7 @@ export class TicketPdfService {
         stream += '/F1 7.5 Tf\n';
         stream += '0.45 0.52 0.60 rg\n';
         stream += `${cardX + 28} ${footerY + 10} Td\n`;
-        stream += `(Ce document officiel certifie votre droit d'acces. Presentez-le imprime ou sur smartphone.) Tj\n`;
+        stream += `(Billet nominatif : QR dynamique de l'application ou pièce d'identité du titulaire au contrôle.) Tj\n`;
         stream += 'ET\n';
 
         stream += 'BT\n';

@@ -1,5 +1,12 @@
 'use client';
 
+/**
+ * Carte billet du client (lot 4). Le QR affiché est le payload du code dynamique servi par
+ * /api/tickets/[id]/live-code (« EVT1:<UUID>:<code> »), renouvelé au changement de pas indiqué par le
+ * serveur (expires_in) : aucun QR statique, jamais. Sans code à jour (réseau coupé), la carte le dit
+ * et rappelle l'entrée sans téléphone (numéro du billet et pièce d'identité au contrôle).
+ * Partage (WhatsApp, lien) : le lien de l'événement uniquement, jamais le numéro du billet.
+ */
 import React, { useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { QRCodeSVG } from 'qrcode.react';
@@ -13,7 +20,9 @@ import {
   HelpCircle,
   Clock,
   MessageCircle,
-  FileText,
+  WifiOff,
+  IdCard,
+  QrCode,
 } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -22,6 +31,8 @@ import { useAuth } from '@/components/providers/AuthProvider';
 
 export interface TicketCardProps {
   id: string;
+  /** Événement du billet : cible du lien partagé (/events/<id>). */
+  eventId: string;
   ticketNumber: string;
   eventTitle: string;
   eventSubtitle?: string;
@@ -30,8 +41,7 @@ export interface TicketCardProps {
   timeFormatted: string;
   venue: string;
   seat?: string;
-  qrCodeValue: string;
-  status: 'VALIDE' | 'UTILISE' | 'ANNULE' | 'REMBOURSE';
+  status: 'VALIDE' | 'UTILISE' | 'ANNULE' | 'REMBOURSE' | 'REMBOURSEMENT_EN_COURS';
   usedAt?: string;
   isTransferLocked?: boolean;
   activeTransfer?: {
@@ -44,8 +54,18 @@ export interface TicketCardProps {
   onOpenExplainer?: () => void;
 }
 
+/** Code dynamique servi par le serveur : payload, fin du pas courant (horloge locale) et durée d'un pas. */
+interface LiveCode {
+  payload: string;
+  expiresAt: number;
+  stepMs: number;
+}
+
+const OFFLINE_RETRY_MS = 5_000;
+
 export const TicketCard: React.FC<TicketCardProps> = ({
   id,
+  eventId,
   ticketNumber,
   eventTitle,
   eventSubtitle = 'Live Performance',
@@ -54,7 +74,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   timeFormatted,
   venue,
   seat = 'Fosse générale (Place libre)',
-  qrCodeValue,
   status,
   usedAt,
   isTransferLocked = false,
@@ -66,77 +85,113 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const toast = useToast();
   const { session } = useAuth();
   const ticketRef = useRef<HTMLDivElement>(null);
+  const accessToken = session?.access_token;
 
-  // QR Code Dynamique Anti-Fraude (TOTP RFC 6238)
-  const [dynamicQr, setDynamicQr] = useState<string>(qrCodeValue || ticketNumber);
-  const [expiresIn, setExpiresIn] = useState<number>(20);
-  const [totalStep, setTotalStep] = useState<number>(20);
+  // QR dynamique : payload du live-code uniquement (aucune valeur statique de repli)
+  const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [isOffline, setIsOffline] = useState<boolean>(false);
+  const [liveCodeUnavailable, setLiveCodeUnavailable] = useState<string | null>(null);
+  const [clock, setClock] = useState<number>(() => Date.now());
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
 
   useEffect(() => {
-    if (status !== 'VALIDE' || isTransferLocked || !id) return;
+    if (status !== 'VALIDE' || isTransferLocked || !id) {
+      setLiveCode(null);
+      return;
+    }
 
-    let isMounted = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleNext = (ms: number) => {
+      refreshTimer = setTimeout(() => { void loadLiveCode(); }, ms);
+    };
 
-    const fetchLiveCode = async () => {
+    const loadLiveCode = async () => {
       try {
-        const res = await fetch(`/api/tickets/${id}/live-code`);
+        const res = await fetch(`/api/tickets/${id}/live-code`, {
+          cache: 'no-store',
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        });
+        if (cancelled) return;
         if (res.ok) {
-          const data = await res.json();
-          if (isMounted && data.success) {
-            setDynamicQr(data.qr_payload);
-            setExpiresIn(data.expires_in || 20);
-            setTotalStep(data.step_seconds || 20);
-            setIsOffline(false);
+          const data = (await res.json()) as { payload?: unknown; expires_in?: unknown; step_seconds?: unknown };
+          if (cancelled) return;
+          if (typeof data.payload !== 'string' || !data.payload.startsWith('EVT1:')) {
+            throw new Error('réponse du live-code sans payload');
           }
-        } else {
-          if (isMounted) setIsOffline(true);
+          const expiresInSeconds = Math.max(1, Number(data.expires_in) || 1);
+          const stepSeconds = Math.max(expiresInSeconds, Number(data.step_seconds) || expiresInSeconds);
+          setLiveCode({ payload: data.payload, expiresAt: Date.now() + expiresInSeconds * 1000, stepMs: stepSeconds * 1000 });
+          setIsOffline(false);
+          setLiveCodeUnavailable(null);
+          // Nouveau code juste après le changement de pas annoncé par le serveur
+          scheduleNext(expiresInSeconds * 1000 + 250);
+          return;
         }
-      } catch {
-        if (isMounted) setIsOffline(true);
+        if (res.status === 404 || res.status === 409) {
+          // Billet transféré, composté ou annulé : plus aucun code d'entrée
+          setLiveCode(null);
+          setLiveCodeUnavailable('Ce billet n’a plus de code d’entrée. Actualisez la page.');
+          return;
+        }
+        if (res.status === 429) {
+          scheduleNext((Number(res.headers.get('Retry-After')) || 5) * 1000);
+          return;
+        }
+        console.warn(`[TicketCard] code dynamique : HTTP ${res.status}`);
+        setIsOffline(true);
+        scheduleNext(OFFLINE_RETRY_MS);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('[TicketCard] code dynamique indisponible :', err instanceof Error ? err.message : String(err));
+        setIsOffline(true);
+        scheduleNext(OFFLINE_RETRY_MS);
       }
     };
 
-    fetchLiveCode();
-
-    // Décompte seconde par seconde pour l'animation fluide
-    timer = setInterval(() => {
-      setExpiresIn((prev) => {
-        if (prev <= 1) {
-          fetchLiveCode();
-          return 20;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
+    void loadLiveCode();
     return () => {
-      isMounted = false;
-      if (timer) clearInterval(timer);
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [id, status, isTransferLocked]);
+  }, [id, status, isTransferLocked, accessToken]);
 
-  const handleShare = () => {
-    const shareText = `Mon billet officiel pour ${eventTitle} (N° ${ticketNumber}) sur Event Village : https://event-village.sn/tickets`;
-    if (navigator.share) {
-      navigator.share({
-        title: `Billet ${eventTitle}`,
-        text: shareText,
-        url: 'https://event-village.sn/tickets',
-      }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(ticketNumber);
-      toast.success('Numéro de billet copié !');
-    }
-  };
+  // Horloge du compte à rebours (affichage seulement : le rafraîchissement suit expires_in)
+  useEffect(() => {
+    if (!liveCode) return;
+    const tick = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [liveCode]);
+
+  const secondsLeft = liveCode ? Math.max(0, Math.ceil((liveCode.expiresAt - clock) / 1000)) : 0;
+  // Le serveur accepte le pas voisin : au-delà, le code est périmé et n'est plus affiché
+  const liveCodeStale = liveCode ? clock > liveCode.expiresAt + liveCode.stepMs : true;
 
   const handleShareWhatsapp = () => {
-    const shareText = `Mon billet officiel pour ${eventTitle} (${seat}) sur Event Village (N° ${ticketNumber})`;
-    const encoded = encodeURIComponent(shareText);
-    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+    const link = `${window.location.origin}/events/${eventId}`;
+    const message = `${eventTitle} sur Event Village : ${link}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleShareLink = async () => {
+    const link = `${window.location.origin}/events/${eventId}`;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: eventTitle, url: link });
+        return;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        console.warn('[TicketCard] partage natif indisponible, copie du lien :', err instanceof Error ? err.message : String(err));
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success('Lien de l’événement copié.');
+    } catch (err) {
+      console.warn('[TicketCard] copie du lien impossible :', err instanceof Error ? err.message : String(err));
+      toast.error('Copie impossible sur cet appareil.');
+    }
   };
 
   const handleDownloadPdf = async () => {
@@ -158,7 +213,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       });
 
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
+        const errJson = await res.json().catch((err: unknown) => {
+          console.warn('[TicketCard] réponse PDF illisible :', err instanceof Error ? err.message : String(err));
+          return {};
+        });
         toast.error(errJson.error || 'Erreur lors de la génération du document PDF.');
         return;
       }
@@ -306,48 +364,70 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 </Button>
               )}
             </div>
-          ) : (
-            /* QR Code dynamique sécurisé (TOTP RFC 6238) */
+          ) : status === 'VALIDE' ? (
+            /* QR dynamique : payload du live-code, renouvelé à chaque pas */
             <div className="flex flex-col items-center justify-center pt-2">
-              <div className="p-3 bg-white rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-inner">
-                <QRCodeSVG
-                  value={dynamicQr || qrCodeValue || ticketNumber}
-                  size={152}
-                  bgColor="#ffffff"
-                  fgColor="#0f172a"
-                  level="M"
-                  includeMargin={false}
-                />
+              <div className="p-3 bg-white rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-inner w-[178px] h-[178px] flex items-center justify-center">
+                {liveCode && !liveCodeStale ? (
+                  <QRCodeSVG
+                    value={liveCode.payload}
+                    size={152}
+                    bgColor="#ffffff"
+                    fgColor="#0f172a"
+                    level="M"
+                    includeMargin={false}
+                    title="QR d’entrée dynamique"
+                  />
+                ) : liveCodeUnavailable ? (
+                  <p role="status" className="text-xs font-semibold text-slate-700 text-center px-2">{liveCodeUnavailable}</p>
+                ) : isOffline ? (
+                  <div role="status" className="flex flex-col items-center gap-2 text-center px-2">
+                    <WifiOff size={28} aria-hidden="true" className="text-amber-600" />
+                    <p className="text-xs font-semibold text-slate-700">Connexion requise pour afficher le code d’entrée.</p>
+                  </div>
+                ) : (
+                  <div role="status" className="flex flex-col items-center gap-2 text-slate-600">
+                    <QrCode size={28} aria-hidden="true" className="motion-safe:animate-pulse text-[#FF5722]" />
+                    <span className="text-xs font-semibold">Code d’entrée…</span>
+                  </div>
+                )}
               </div>
-              <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-zinc-400 mt-2">
+              <span className="text-[11px] font-mono font-bold text-slate-600 dark:text-zinc-300 mt-2">
                 {ticketNumber}
               </span>
 
-              {/* Indicateur visuel de rotation temporelle anti-capture d'écran */}
-              {status === 'VALIDE' && (
-                <div className="w-full max-w-[210px] mt-2.5 p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60 space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 dark:text-zinc-300">
-                    <span className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
-                      {isOffline ? 'Mode hors-ligne' : 'Protection anti-fraude'}
+              <div className="w-full max-w-[230px] mt-2.5 p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-zinc-200">
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden="true" className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500 motion-safe:animate-pulse'}`} />
+                    {isOffline ? 'Hors connexion' : 'Code renouvelé toutes les 20 s'}
+                  </span>
+                  {liveCode && !liveCodeStale && (
+                    <span className="font-mono text-xs font-black text-[#C2410C] dark:text-[#FF8A65]" aria-label={`Nouveau code dans ${secondsLeft} secondes`}>
+                      {secondsLeft}s
                     </span>
-                    <span className="font-mono text-[11px] font-black text-[#FF5722]">{expiresIn}s</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                  )}
+                </div>
+                {liveCode && !liveCodeStale && (
+                  <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-700 rounded-full overflow-hidden" aria-hidden="true">
                     <div
-                      className="h-full bg-gradient-to-r from-emerald-500 via-[#FF5722] to-[#FF3D68] transition-all duration-1000 ease-linear rounded-full"
-                      style={{ width: `${Math.max(5, (expiresIn / totalStep) * 100)}%` }}
+                      className="h-full bg-[#FF5722] transition-[width] duration-1000 ease-linear rounded-full"
+                      style={{ width: `${Math.max(5, Math.min(100, ((secondsLeft * 1000) / liveCode.stepMs) * 100))}%` }}
                     />
                   </div>
-                  <p className="text-[9px] text-slate-400 dark:text-zinc-400 text-center leading-tight">
-                    {isOffline
-                      ? 'Code actif en cache — vérifiez votre réseau'
-                      : 'Le QR Code se renouvelle automatiquement (capture d\'écran invalide)'}
-                  </p>
-                </div>
-              )}
+                )}
+                <p className="text-[11px] text-slate-600 dark:text-zinc-300 text-center leading-snug">
+                  {isOffline
+                    ? 'Le code s’affichera dès le retour du réseau. Une capture d’écran n’est pas acceptée.'
+                    : 'Une capture d’écran n’est pas acceptée au contrôle.'}
+                </p>
+                <p className="text-[11px] text-slate-600 dark:text-zinc-300 text-center leading-snug flex items-start justify-center gap-1">
+                  <IdCard size={13} aria-hidden="true" className="shrink-0 mt-px" />
+                  <span>Sans téléphone : numéro du billet et pièce d’identité au contrôle.</span>
+                </p>
+              </div>
             </div>
-          )}
+          ) : null}
 
           {/* Sceau de validation */}
           {status === 'VALIDE' && !isTransferLocked && (
@@ -360,7 +440,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           {/* Instructions pour le porteur / Info utilisation */}
           {status === 'VALIDE' && !isTransferLocked ? (
             <div className="p-2.5 rounded-xl bg-orange-50 dark:bg-orange-950/20 text-[#FF5722] text-[11px] font-medium text-center border border-orange-100 dark:border-orange-900/30">
-              Présentez ce QR Code au contrôleur à l&apos;entrée de l&apos;événement.
+              Présentez ce QR dynamique au contrôle, billet ouvert dans l&apos;application.
             </div>
           ) : status === 'UTILISE' ? (
             <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 text-slate-700 dark:text-zinc-300 text-[11px] font-bold text-center border border-slate-200 dark:border-zinc-700 space-y-0.5">
@@ -411,10 +491,22 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             variant="secondary"
             size="sm"
             onClick={handleShareWhatsapp}
-            leftIcon={<MessageCircle size={13} className="text-emerald-500" />}
-            title="Partager sur WhatsApp"
+            leftIcon={<MessageCircle size={13} aria-hidden="true" className="text-emerald-600" />}
+            title="Partager l’événement sur WhatsApp"
+            aria-label="Partager le lien de l’événement sur WhatsApp"
           >
             WhatsApp
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => { void handleShareLink(); }}
+            leftIcon={<Share2 size={13} aria-hidden="true" />}
+            title="Partager le lien de l’événement"
+            aria-label="Partager ou copier le lien de l’événement"
+          >
+            Lien
           </Button>
 
           <Button

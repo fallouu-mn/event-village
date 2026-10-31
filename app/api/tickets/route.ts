@@ -30,7 +30,6 @@ export async function GET(req: NextRequest) {
                 id,
                 ticket_number,
                 price,
-                qr_code,
                 status,
                 checked_in_at,
                 transfer_locked,
@@ -92,6 +91,7 @@ export async function GET(req: NextRequest) {
 
             return {
                 id: t.id,
+                eventId: t.event_id,
                 ticketNumber: t.ticket_number,
                 eventTitle: t.events?.title || 'Événement',
                 eventSubtitle: t.events?.partners?.commercial_name || t.events?.partners?.company_name || 'Organisateur',
@@ -101,7 +101,6 @@ export async function GET(req: NextRequest) {
                 rawStartDate: t.events?.start_date || null,
                 venue: t.events?.location || 'Dakar, Sénégal',
                 seat: t.ticket_categories?.name || 'Pass Standard',
-                qrCodeValue: t.qr_code,
                 status: t.status,
                 usedAt: t.checked_in_at,
                 isUpcoming,

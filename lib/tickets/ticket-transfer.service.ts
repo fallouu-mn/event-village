@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { rpcWithRetry } from '@/lib/payments/rpc';
 import { normalizeRecipient } from '@/lib/validations/transfer';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { NotificationService } from '@/lib/notifications/notification.service';
@@ -325,7 +326,8 @@ export class TicketTransferService {
         if (recipientType === 'PHONE') {
             const smsText = `Event Village: Un billet pour "${eventName}" vous a été offert ! Réclamez-le avant 48h ici : ${claimUrl}`;
             try {
-                const smsRes = await mTargetService.sendSms(recipient, smsText);
+                // Lot 4.8 : SMS vers un numéro choisi par l'expéditeur, compté sur son compte (SMS_PER_ACCOUNT_DAY)
+                const smsRes = await mTargetService.sendSms(recipient, smsText, { actorId: userId });
                 console.log(`[TicketTransferService] SMS transfert vers ${recipient}:`, smsRes.success ? 'ENVOYÉ' : smsRes.error);
             } catch (err: any) {
                 console.warn('[TicketTransferService] Échec envoi SMS transfert:', err?.message || err);
@@ -506,263 +508,118 @@ export class TicketTransferService {
     }
 
     /**
-     * Réclame un billet de façon strictement atomique et vérifie l'identité du destinataire.
-     * Effectue la rotation cryptographique du secret TOTP & QR code et incrémente security_version.
+     * Réclame un billet transféré (lot 4.1) : identité du compte connecté vérifiée contre le
+     * destinataire désigné, puis la RPC ticket_transfer_claim fait tout ou rien, sous verrou :
+     * transfert PENDING → CLAIMED, nouveau propriétaire, ticket_number, qr_code et totp_secret
+     * régénérés, transfer_locked levé, security_version + 1. L'ancien numéro et l'ancien code
+     * dynamique ne valent plus rien. Aucune erreur n'est ignorée, aucun repli en mémoire.
      */
     public static async claimTransfer(
         recipientUserId: string,
         rawToken: string
     ): Promise<ClaimTransferResult> {
-        if (!recipientUserId) {
-            const err = new Error('Authentification requise pour réclamer un billet.');
-            (err as any).statusCode = 401;
+        const fail = (message: string, statusCode: number): never => {
+            const err = new Error(message) as Error & { statusCode: number };
+            err.statusCode = statusCode;
             throw err;
-        }
+        };
 
-        if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length === 0) {
-            const err = new Error('Jeton de réclamation requis.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
+        if (!recipientUserId) fail('Authentification requise pour réclamer un billet.', 401);
+        if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length === 0) fail('Jeton de réclamation requis.', 400);
 
-        const cleanToken = rawToken.trim();
-        const claimTokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+        const claimTokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
         const supabase = getServiceRoleClient();
-        const nowIso = new Date().toISOString();
 
-        // 1. Recherche du transfert par hash
-        let transfer: any = null;
-        try {
-            const { data, error } = await supabase
-                .from('ticket_transfers')
-                .select('*')
-                .eq('claim_token_hash', claimTokenHash)
-                .maybeSingle();
+        // 1. Transfert désigné par le jeton (base uniquement)
+        const { data: transfer, error: transferErr } = await supabase
+            .from('ticket_transfers')
+            .select('id, ticket_id, from_user_id, to_phone_or_email, status, expires_at')
+            .eq('claim_token_hash', claimTokenHash)
+            .maybeSingle();
+        if (transferErr) throw new Error(`lecture du transfert : ${transferErr.message}`);
+        if (!transfer) return fail('Lien de réclamation introuvable ou invalide.', 404);
 
-            if (!error && data) {
-                transfer = data;
-            }
-        } catch {
-            // fallback
-        }
+        if (transfer.status !== 'PENDING') fail(`Ce transfert n'est plus en attente (statut actuel: ${transfer.status}).`, 400);
+        if (new Date(transfer.expires_at).getTime() <= Date.now()) fail('Ce lien de transfert a expiré (délai de 48h dépassé).', 410);
 
-        if (!transfer) {
-            for (const tr of Array.from(this.inMemoryTransfers.values())) {
-                if (tr.claim_token_hash === claimTokenHash) {
-                    transfer = tr;
-                    break;
-                }
-            }
-        }
-
-        if (!transfer) {
-            const err = new Error('Lien de réclamation introuvable ou invalide.');
-            (err as any).statusCode = 404;
-            throw err;
-        }
-
-        // 2. Vérification du statut et de la validité temporelle
-        if (transfer.status !== 'PENDING') {
-            const err = new Error(`Ce transfert n'est plus en attente (statut actuel: ${transfer.status}).`);
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        if (new Date(transfer.expires_at).getTime() <= Date.now()) {
-            const err = new Error('Ce lien de transfert a expiré (délai de 48h dépassé).');
-            (err as any).statusCode = 410;
-            throw err;
-        }
-
-        // 3. Vérification de l'identité du compte connecté vs destinataire
+        // 2. Identité du compte connecté contre le destinataire désigné
         const { data: recipientUser, error: userErr } = await supabase
             .from('users')
             .select('id, phone, email, first_name, last_name')
             .eq('id', recipientUserId)
             .maybeSingle();
-
-        if (userErr || !recipientUser) {
-            const err = new Error('Compte utilisateur destinataire introuvable.');
-            (err as any).statusCode = 401;
-            throw err;
-        }
+        if (userErr) throw new Error(`lecture du compte destinataire : ${userErr.message}`);
+        if (!recipientUser) return fail('Compte utilisateur destinataire introuvable.', 401);
 
         const normalizedTarget = normalizeRecipient(transfer.to_phone_or_email);
         const userPhoneNorm = recipientUser.phone ? normalizePhoneNumber(recipientUser.phone) : null;
         const userEmailNorm = recipientUser.email ? recipientUser.email.toLowerCase().trim() : null;
-
-        let identityMatches = false;
-        if (normalizedTarget.type === 'PHONE' && userPhoneNorm && userPhoneNorm === normalizedTarget.normalized) {
-            identityMatches = true;
-        } else if (normalizedTarget.type === 'EMAIL' && userEmailNorm && userEmailNorm === normalizedTarget.normalized) {
-            identityMatches = true;
-        }
-
+        const identityMatches =
+            (normalizedTarget.type === 'PHONE' && userPhoneNorm !== null && userPhoneNorm === normalizedTarget.normalized)
+            || (normalizedTarget.type === 'EMAIL' && userEmailNorm !== null && userEmailNorm === normalizedTarget.normalized);
         if (!identityMatches) {
-            const err = new Error(
-                `Ce billet est réservé pour ${normalizedTarget.normalized}. Votre compte actuel (${userPhoneNorm || userEmailNorm || 'inconnu'}) ne correspond pas au destinataire désigné.`
-            );
-            (err as any).statusCode = 403;
-            throw err;
+            fail(`Ce billet est réservé pour ${normalizedTarget.normalized}. Votre compte actuel (${userPhoneNorm || userEmailNorm || 'inconnu'}) ne correspond pas au destinataire désigné.`, 403);
         }
+        if (transfer.from_user_id === recipientUserId) fail('Vous êtes déjà le propriétaire initial de ce billet.', 400);
 
-        if (transfer.from_user_id === recipientUserId) {
-            const err = new Error('Vous êtes déjà le propriétaire initial de ce billet.');
-            (err as any).statusCode = 400;
-            throw err;
+        // 3. Réclamation atomique (verrous du transfert et du billet, identité du billet régénérée)
+        const { data: claim, error: claimErr } = await rpcWithRetry<{
+            ok: boolean; code?: string; status?: string; ticket_id?: string; ticket_number?: string; previous_owner?: string;
+        }>('ticket_transfer_claim', { p_transfer_id: transfer.id, p_recipient: recipientUserId });
+        if (claimErr) throw new Error(`ticket_transfer_claim : ${claimErr.message}`);
+        if (!claim) throw new Error('ticket_transfer_claim : réponse vide');
+        if (!claim.ok) {
+            switch (claim.code) {
+                case 'TRANSFER_NOT_FOUND':
+                    return fail('Lien de réclamation introuvable ou invalide.', 404);
+                case 'TRANSFER_NOT_PENDING':
+                    return fail('Conflit de réclamation : ce billet a déjà été réclamé ou annulé.', 409);
+                case 'TRANSFER_EXPIRED':
+                    return fail('Ce lien de transfert a expiré (délai de 48h dépassé).', 410);
+                case 'SELF_TRANSFER':
+                    return fail('Vous êtes déjà le propriétaire initial de ce billet.', 400);
+                case 'OWNER_CHANGED':
+                    return fail('L\'expéditeur n\'est plus le propriétaire de ce billet.', 400);
+                case 'TICKET_NOT_TRANSFERABLE':
+                    return fail(`Ce billet n'est plus valide pour le transfert (statut: ${claim.status ?? 'inconnu'}).`, 400);
+                default:
+                    throw new Error(`ticket_transfer_claim : refus inattendu ${JSON.stringify(claim)}`);
+            }
         }
+        if (!claim.ticket_id || !claim.ticket_number) throw new Error(`ticket_transfer_claim : réponse incomplète ${JSON.stringify(claim)}`);
 
-        // 4. Vérification de l'état du billet
+        // Verrous locaux posés par initiateTransfer dans ce processus : levés (la base fait foi)
+        this.activeTransfersLock.delete(transfer.ticket_id);
+        this.inMemoryTransfers.delete(transfer.id);
+
+        // 4. Notifications (non bloquantes, échec journalisé)
         const { data: ticket, error: ticketErr } = await supabase
             .from('tickets')
-            .select(`
-                *,
-                events (
-                    id,
-                    title
-                )
-            `)
-            .eq('id', transfer.ticket_id)
+            .select('id, events(title)')
+            .eq('id', claim.ticket_id)
             .maybeSingle();
-
-        if (ticketErr || !ticket) {
-            const err = new Error('Billet associé introuvable.');
-            (err as any).statusCode = 404;
-            throw err;
-        }
-
-        if (ticket.status !== 'VALIDE') {
-            const err = new Error(`Ce billet n'est plus valide pour le transfert (statut: ${ticket.status}).`);
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        if (ticket.checked_in_at) {
-            const err = new Error('Ce billet a déjà été composté à l\'entrée.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        if (ticket.user_id !== transfer.from_user_id) {
-            const err = new Error('L\'expéditeur n\'est plus le propriétaire de ce billet.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        // 5. TRANSACTION ATOMIQUE DE RÉCLAMATION & ROTATION CRYPTOGRAPHIQUE
-        // Étape A : Verrouillage CAS sur ticket_transfers (Exactement 1 seul succès concurrent)
-        let casTransferSuccess = false;
-        try {
-            const { data: claimedRecord, error: claimErr } = await supabase
-                .from('ticket_transfers')
-                .update({
-                    status: 'CLAIMED',
-                    to_user_id: recipientUserId,
-                    claimed_at: nowIso,
-                })
-                .eq('id', transfer.id)
-                .eq('status', 'PENDING')
-                .select('id')
-                .maybeSingle();
-
-            if (!claimErr && claimedRecord) {
-                casTransferSuccess = true;
-            }
-        } catch {
-            // fallback
-        }
-
-        // Fallback mémoire pour concurrence
-        if (!casTransferSuccess) {
-            const memTr = this.inMemoryTransfers.get(transfer.id);
-            if (memTr && memTr.status === 'PENDING') {
-                memTr.status = 'CLAIMED';
-                memTr.to_user_id = recipientUserId;
-                memTr.claimed_at = nowIso;
-                casTransferSuccess = true;
-            }
-        }
-
-        if (!casTransferSuccess) {
-            const err = new Error('Conflit de réclamation : ce billet a déjà été réclamé ou annulé.');
-            (err as any).statusCode = 409;
-            throw err;
-        }
-
-        // Étape B : Génération des nouveaux secrets cryptographiques
-        const newTotpSecret = crypto.randomBytes(32).toString('hex');
-        const newQrCode = `EV-QR-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
-        const currentSecVersion = typeof ticket.security_version === 'number' ? ticket.security_version : 1;
-        const newSecurityVersion = currentSecVersion + 1;
-
-        // Mise à jour de l'état mémoire
-        this.inMemoryTransfers.set(transfer.id, {
-            ...transfer,
-            status: 'CLAIMED',
-            to_user_id: recipientUserId,
-            claimed_at: nowIso,
-        });
-
-        // Étape C : Mise à jour atomique sur la table tickets
-        try {
-            const updatePayload: Record<string, any> = {
-                user_id: recipientUserId,
-                totp_secret: newTotpSecret,
-                qr_code: newQrCode,
-                updated_at: nowIso,
-            };
-            if (typeof ticket.transfer_locked === 'boolean') {
-                updatePayload.transfer_locked = false;
-            }
-            if (typeof ticket.security_version === 'number') {
-                updatePayload.security_version = ticket.security_version + 1;
-            }
-
-            const { error: updateErr } = await supabase
-                .from('tickets')
-                .update(updatePayload)
-                .eq('id', ticket.id);
-
-            if (updateErr) {
-                await supabase
-                    .from('tickets')
-                    .update({
-                        user_id: recipientUserId,
-                        totp_secret: newTotpSecret,
-                        qr_code: newQrCode,
-                        updated_at: nowIso,
-                    })
-                    .eq('id', ticket.id);
-            }
-        } catch {
-            // ignorer si colonne en transit
-        }
-
-        // Nettoyage des verrous locaux
-        this.activeTransfersLock.delete(ticket.id);
-
-        // 6. Notifications asynchrones non bloquantes
-        const eventTitle = (ticket.events as any)?.title || 'Événement Event Village';
+        if (ticketErr) console.warn('[ClaimTransfer] lecture de l’événement du billet pour la notification :', ticketErr.message);
+        const eventTitle = (ticket?.events as { title?: string } | null | undefined)?.title || 'Événement Event Village';
         const recipientName = [recipientUser.first_name, recipientUser.last_name].filter(Boolean).join(' ') || recipientUser.phone || 'Nouveau Propriétaire';
 
         NotificationService.sendTicketTransferClaimedNotifications({
             senderUserId: transfer.from_user_id,
             recipientUserId,
-            ticketId: ticket.id,
-            ticketNumber: ticket.ticket_number,
+            ticketId: claim.ticket_id,
+            ticketNumber: claim.ticket_number,
             eventTitle,
             recipientName,
-        }).catch(err => console.warn('[ClaimTransfer Notification]:', err));
+        }).catch((err: unknown) => console.warn('[ClaimTransfer Notification]:', err instanceof Error ? err.message : String(err)));
 
         return {
             success: true,
             message: 'Billet réclamé avec succès et ajouté à votre portefeuille.',
             transfer_id: transfer.id,
-            ticket_id: ticket.id,
-            ticket_number: ticket.ticket_number,
+            ticket_id: claim.ticket_id,
+            ticket_number: claim.ticket_number,
             event_title: eventTitle,
             new_user_id: recipientUserId,
-            claimed_at: nowIso,
+            claimed_at: new Date().toISOString(),
         };
     }
 

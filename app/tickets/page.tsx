@@ -39,7 +39,10 @@ export default function TicketsPage() {
         setTickets(data.tickets || []);
         setErrorMsg(null);
       } else {
-        const errData = await res.json().catch(() => ({}));
+        const errData = await res.json().catch((err: unknown) => {
+          console.warn('[TicketsPage] réponse illisible :', err instanceof Error ? err.message : String(err));
+          return {};
+        });
         setErrorMsg(errData.error || 'Erreur lors du chargement de vos billets.');
       }
     } catch (err) {
@@ -84,7 +87,6 @@ export default function TicketsPage() {
                     ...t,
                     status: updated.status,
                     usedAt: updated.checked_in_at,
-                    qrCodeValue: updated.qr_code || t.qrCodeValue,
                     isUpcoming: isNowValid && isFuture,
                     isTransferLocked: Boolean(updated.transfer_locked),
                   };

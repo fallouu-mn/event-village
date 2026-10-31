@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession } from '@/lib/auth/session';
+import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { TicketPdfService } from '@/lib/tickets/ticket-pdf.service';
 
@@ -12,8 +12,9 @@ export const dynamic = 'force-dynamic';
  * Règles de sécurité strictes :
  * 1. Authentification obligatoire (401 si anonyme).
  * 2. Vérification d'appartenance : seul le propriétaire actuel du billet (ou un ADMIN) peut télécharger (403 si tiers).
- * 3. Rejet si le billet est ANNULE, REMBOURSE ou inexistant (404 / 400).
- * 4. Zéro secret TOTP, claim_token ou hash dans le document généré.
+ * 3. Rejet si le billet est ANNULE, REMBOURSE, en cours de remboursement ou inexistant (404 / 400).
+ * 4. Lot 4 : aucun QR code dans le document (ni qr_code statique, ni secret) ; numéro du billet et
+ *    mention « Entrée sans téléphone : présentez une pièce d'identité au contrôle ».
  */
 export async function GET(
     req: NextRequest,
@@ -46,7 +47,7 @@ export async function GET(
         // 2. Récupération directe du billet
         const { data: ticket, error: ticketErr } = await supabase
             .from('tickets')
-            .select('*')
+            .select('id, ticket_number, status, price, service_fee, user_id, event_id, category_id, transfer_locked, security_version')
             .eq('id', ticketId)
             .maybeSingle();
 
@@ -59,7 +60,7 @@ export async function GET(
 
         // 3. Contrôle d'accès & Propriété stricte
         const isOwner = ticket.user_id === user.id;
-        const isAdmin = user.role === 'ADMIN' || user.role === 'SUPERADMIN';
+        const isAdmin = serverIsAdmin(user);
 
         if (!isOwner && !isAdmin) {
             return NextResponse.json(
@@ -69,7 +70,7 @@ export async function GET(
         }
 
         // 4. Contrôle de validité du billet
-        if (ticket.status === 'ANNULE' || ticket.status === 'REMBOURSE') {
+        if (ticket.status === 'ANNULE' || ticket.status === 'REMBOURSE' || ticket.status === 'REMBOURSEMENT_EN_COURS') {
             return NextResponse.json(
                 { error: `Ce billet n'est plus valide (statut: ${ticket.status}) et ne peut pas être téléchargé.` },
                 { status: 400 }
@@ -133,7 +134,6 @@ export async function GET(
             city: eventData?.city || 'Dakar',
             ownerName,
             ownerPhoneOrEmail: userData?.phone || userData?.email || '',
-            qrPayload: ticket.qr_code || ticket.ticket_number,
             status: ticket.status,
             securityVersion: ticket.security_version || 1,
         });
