@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getCategoryLabel } from '@/lib/constants/event-categories';
+import { eventEndAt } from '@/lib/events/event-end';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/events
- * Récupère tous les événements publiés pour le catalogue public B2C
+ * GET /api/events — catalogue public (accueil, explorer). Lot 5 (contrat E) :
+ *  - seulement les événements PUBLIE dont la fin (event_end_at : fin renseignée, sinon début à 23:59
+ *    Africa/Dakar) est à venir ; un événement en cours reste listé ;
+ *  - prix « à partir de » calculé sur les catégories actives ET visibles ; sans catégorie achetable :
+ *    aucun prix (price null) et « Bientôt en vente », jamais « Gratuit » ;
+ *  - aucune donnée de stock ni catégorie masquée exposée.
  */
 export async function GET(req: NextRequest) {
     try {
@@ -35,7 +40,7 @@ export async function GET(req: NextRequest) {
                 created_at,
                 partner_id,
                 partners(company_name, commercial_name),
-                ticket_categories(id, name, price, total_quantity, sold_quantity, is_active)
+                ticket_categories(price, is_active, is_visible)
             `)
             .eq('status', 'PUBLIE')
             .order('start_date', { ascending: true });
@@ -47,7 +52,9 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Impossible de charger les événements.' }, { status: 500 });
         }
 
-        const formatted = (events || []).map((evt: any) => {
+        const now = Date.now();
+        const upcoming = (events || []).filter((evt: any) => eventEndAt(evt).getTime() > now);
+        const formatted = upcoming.map((evt: any) => {
             const startDate = new Date(evt.start_date);
             const months = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];
             const monthShort = months[startDate.getMonth()] || 'SEP';
@@ -55,10 +62,10 @@ export async function GET(req: NextRequest) {
             const timeFormatted = evt.start_time ? evt.start_time.substring(0, 5) : '20:00';
             const dateFormatted = `${dayNumber} ${monthShort} ${startDate.getFullYear()}`;
 
-            const activeCategories = (evt.ticket_categories || []).filter((c: any) => c.is_active);
-            const minPrice = activeCategories.length > 0
-                ? Math.min(...activeCategories.map((c: any) => Number(c.price)))
-                : 0;
+            const buyable = (evt.ticket_categories || []).filter((c: any) => c.is_active === true && c.is_visible === true);
+            const minPrice: number | null = buyable.length > 0
+                ? Math.min(...buyable.map((c: any) => Number(c.price)))
+                : null;
 
             return {
                 id: evt.id,
@@ -75,8 +82,10 @@ export async function GET(req: NextRequest) {
                 categoryLabel: getCategoryLabel(evt.category),
                 city: (evt.city || 'DAKAR').toUpperCase(),
                 price: minPrice,
-                priceFormatted: minPrice === 0 ? 'Gratuit' : `${minPrice.toLocaleString('fr-FR')} FCFA`,
-                ticketCategories: activeCategories,
+                priceFormatted: minPrice === null
+                    ? 'Bientôt en vente'
+                    : minPrice === 0 ? 'Gratuit' : `${minPrice.toLocaleString('fr-FR')} F CFA`,
+                onSaleSoon: minPrice === null,
                 status: evt.status,
             };
         });
