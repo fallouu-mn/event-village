@@ -7,10 +7,13 @@
  *  - PUT : 403 pour l'ADMIN (valeur inchangée, aucun historique) ; 200 pour le SUPERADMIN, valeur
  *    appliquée et historisée (auteur, motif), pour chaque type de réglage (entier, booléen, choix) ;
  *  - PUT : valeur hors bornes ou clé access.* inconnue refusées, sans effet ;
+ *  - /api/admin/pricing (ADMIN avec pricing.manage, écriture en service_role sans validation) ne
+ *    modifie ni ne crée de clé access.* ;
  *  - la page des réglages présente les 4 clés access.* avec un libellé.
  * Rouge avant correctif : la route n'accepte que les clés finance.* (PutSchema, startsWith('finance.'))
  * et ne lit que finance.% (GET) ; la page ne connaît aucune clé access.*. Le SUPERADMIN ne peut donc
- * changer ces réglages que par la base.
+ * changer ces réglages que par la base, alors qu'un ADMIN qui a pricing.manage les écrit sans contrôle
+ * par /api/admin/pricing (seul le préfixe finance.* y est refusé, route L54-58).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -21,7 +24,7 @@ import type { NextRequest } from 'next/server';
 import { assertAccessInvariants } from '../helpers/access-invariants';
 import { signInAs } from '../helpers/fixtures';
 import { jsonRequest } from './finance-helpers';
-import { importModule, service } from './paiement-helpers';
+import { importModule, newBuyer, service } from './paiement-helpers';
 import { getAccessSetting, setAccessSetting, type AccessSettingKey } from './acces-helpers';
 
 type Handler = (req: NextRequest) => Promise<Response>;
@@ -146,6 +149,42 @@ describe('Réglages access.* (contrat A du lot 4)', () => {
         const { data, error } = await service.from('platform_settings').select('key').eq('key', 'access.cle_inconnue_lot4');
         assert.equal(error, null, error?.message);
         assert.deepEqual(data, [], 'aucune clé créée');
+    });
+
+    test('POST /api/admin/pricing : un ADMIN qui a pricing.manage n’écrit ni ne crée de clé access.* (403, sans effet)', async () => {
+        const { POST: pricing } = (await importModule('../../app/api/admin/pricing/route')) as { POST: Handler };
+        const admin = await newBuyer('reglages-admin', { firstName: 'Ndeye', lastName: 'Tarificatrice' });
+        const { error: roleErr } = await service.from('user_roles').upsert([{ user_id: admin.userId, role: 'ADMIN' }], { onConflict: 'user_id,role' });
+        assert.equal(roleErr, null, `rôle ADMIN : ${roleErr?.message}`);
+        const { error: permErr } = await service.from('admin_permissions').upsert(
+            { user_id: admin.userId, permission: 'pricing.manage' }, { onConflict: 'user_id,permission' });
+        assert.equal(permErr, null, `permission pricing.manage : ${permErr?.message}`);
+
+        const witnessKey = `test.lot4_reglages_${admin.userId.slice(0, 8)}`;
+        const created = 'access.cle_creee_par_pricing_lot4';
+        const key: AccessSettingKey = 'access.scan_window_before_hours';
+        const saved = await getAccessSetting(key);
+        const count0 = (await historyOf(key)).length;
+        try {
+            // Témoin : la permission pricing.manage est bien effective pour ce compte.
+            const control = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: witnessKey, value: { value: 1 } }));
+            assert.equal(control.status, 200, `témoin (clé ordinaire par un ADMIN pricing.manage) : HTTP ${control.status} ${JSON.stringify(await control.json())}`);
+
+            const denied = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key, value: { value: 48 } }));
+            assert.equal(denied.status, 403, `${key} par /api/admin/pricing : HTTP ${denied.status} ${JSON.stringify(await denied.json())}`);
+            assert.deepEqual(await getAccessSetting(key), saved, 'valeur inchangée');
+            assert.equal((await historyOf(key)).length, count0, 'aucun historique');
+
+            const create = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: created, value: { value: 1 } }));
+            assert.equal(create.status, 403, `création de ${created} par /api/admin/pricing : HTTP ${create.status}`);
+            const { data, error } = await service.from('platform_settings').select('key').eq('key', created);
+            assert.equal(error, null, error?.message);
+            assert.deepEqual(data, [], 'aucune clé access.* créée');
+        } finally {
+            await restore(key, saved);
+            const { error: cleanErr } = await service.from('platform_settings').delete().in('key', [witnessKey, created]);
+            assert.equal(cleanErr, null, `nettoyage des clés du test : ${cleanErr?.message}`);
+        }
     });
 
     test('page /admin/finance-settings : les 4 clés access.* ont un libellé (contrôle statique)', () => {
