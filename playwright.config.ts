@@ -44,6 +44,9 @@ export default defineConfig({
         video: 'off',
         actionTimeout: 15_000,
         navigationTimeout: 45_000,
+        // L'application écoute sur 127.0.0.1 mais est servie sous « localhost » (voir APP_URL) :
+        // résolution forcée en IPv4, pour ne jamais tenter ::1 où rien n'écoute.
+        launchOptions: { args: ['--host-resolver-rules=MAP localhost 127.0.0.1'] },
     },
     projects: [
         { name: 'setup', testMatch: /auth\.setup\.ts$/, use: DESKTOP },

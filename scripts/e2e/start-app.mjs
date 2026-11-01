@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
  * Lot 5.1 — démarre l'application pour les tests de bout en bout : `next start` sur le build produit
- * par verify (.next), lié à 127.0.0.1, avec l'environnement de `.env.e2e`.
+ * par verify (.next), à l'écoute sur 127.0.0.1, servi sous http://localhost:<port> (NEXT_PUBLIC_APP_URL),
+ * avec l'environnement de `.env.e2e`. Hôte « localhost » : le middleware de Next réécrit tout hôte 127.x
+ * en « localhost » dans req.url (NextURL) ; ses redirections visent donc localhost, et le navigateur
+ * doit naviguer sur ce même hôte pour garder ses cookies de session.
  *
  * Garde-fous :
  *  - URL de la base, de l'application, de SamirPay et de MTarget locales ; aucune clé Resend
@@ -22,8 +25,8 @@ const TAG = 'e2e-app';
 loadE2eEnv(TAG);
 const { app } = assertLocalServices(TAG);
 const port = requirePort(TAG, 'E2E_APP_PORT');
-if (app.hostname !== '127.0.0.1' || Number(app.port) !== port) {
-    fail(TAG, `NEXT_PUBLIC_APP_URL (${app.origin}) doit être http://127.0.0.1:${port} : cookies de session et callBackUrl SamirPay en dépendent.`);
+if (app.hostname !== 'localhost' || Number(app.port) !== port) {
+    fail(TAG, `NEXT_PUBLIC_APP_URL (${app.origin}) doit être http://localhost:${port} : le middleware redirige vers localhost (NextURL), cookies de session et callBackUrl SamirPay en dépendent.`);
 }
 
 const buildId = path.join(ROOT, '.next', 'BUILD_ID');

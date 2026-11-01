@@ -1,6 +1,6 @@
 /**
  * Lot 5.1 — connexion par le formulaire, une fois par rôle, puis état de connexion enregistré dans
- * .auth/<rôle>.json (cookies @supabase/ssr sur 127.0.0.1). Chaque rôle est un test distinct : un
+ * .auth/<rôle>.json (cookies @supabase/ssr sur l'hôte localhost, celui des redirections du middleware). Chaque rôle est un test distinct : un
  * rôle de démonstration qui échoue (seed:demo absent) n'empêche pas ceux du seed de test.
  *
  * Sélecteurs : libellé lié au champ d'abord (getByLabel). Tant que le formulaire de connexion n'a

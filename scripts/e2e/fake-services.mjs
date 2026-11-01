@@ -134,15 +134,29 @@ function webhookTarget(tx) {
     return { ok: true, target };
 }
 
-async function postWebhook(tx, target) {
+/**
+ * Webhook posté à l'application locale : connexion sur 127.0.0.1 (adresse d'écoute de next start),
+ * en-tête Host d'origine (localhost:<port>) conservé, comme le ferait SamirPay sur le vrai domaine.
+ */
+function postWebhook(tx, target) {
     const body = new URLSearchParams({ transaction_id: tx.transactionId, order_id: tx.orderId ?? '', status: 'success' }).toString();
-    try {
-        const res = await fetch(target, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
-        const text = await res.text();
-        return { ok: true, status: res.status, body: text.slice(0, 500) };
-    } catch (err) {
-        return { ok: false, error: `webhook injoignable : ${err instanceof Error ? err.message : String(err)}` };
-    }
+    return new Promise((resolve) => {
+        const req = http.request({
+            host: '127.0.0.1',
+            port: Number(target.port || 80),
+            method: 'POST',
+            path: `${target.pathname}${target.search}`,
+            headers: { host: target.host, 'content-type': 'application/x-www-form-urlencoded', 'content-length': Buffer.byteLength(body) },
+            timeout: 30_000,
+        }, (res) => {
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () => resolve({ ok: true, status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8').slice(0, 500) }));
+        });
+        req.on('timeout', () => req.destroy(new Error('délai de 30 s dépassé')));
+        req.on('error', (err) => resolve({ ok: false, error: `webhook injoignable : ${err.message}` }));
+        req.end(body);
+    });
 }
 
 async function handleSamirPay(req, res, sub) {

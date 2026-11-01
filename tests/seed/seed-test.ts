@@ -33,6 +33,7 @@ import {
     type FixtureUserKey,
 } from '../helpers/fixtures';
 import { advanceEventTo, assertRpcOk, eventStatus, posterUrl, rpcTransition } from '../parcours/cycle-helpers';
+import { fixturePosterPng } from '../helpers/fixture-poster';
 
 if (process.env.EV_TEST_GUARD !== '1') {
     throw new Error('seed-test : garde-fou de test non chargé (tests/helpers/env.ts).');
@@ -207,6 +208,12 @@ async function ensureEvent(key: FixtureEventKey, partnerId: string, actors: Seed
     // Lot 5 (contrats D2 et S) : le statut n'est jamais écrit ici (INSERT forcé à BROUILLON, garde du
     // statut) ; il est atteint ensuite par les RPC de transition (ensureEventStatus). Un événement passé
     // encore à publier est d'abord daté dans le futur, ses vraies dates sont remises après la publication.
+    // Lot 5.1 : l'affiche référencée existe réellement dans le stockage (sinon /_next/image répond 400)
+    const posterFile = `fixture-${spec.slug}.png`;
+    const { error: posterErr } = await supabase.storage.from('public-images')
+        .upload(`events/${partnerId}/${posterFile}`, fixturePosterPng(spec.slug), { contentType: 'image/png', upsert: true });
+    if (posterErr) fail(`affiche ${key} (public-images/events/${partnerId}/${posterFile})`, posterErr);
+
     const { data: before, error: findErr } = await supabase.from('events').select('id, status').eq('slug', spec.slug).maybeSingle();
     if (findErr) fail(`events.find(${key})`, findErr);
     const currentStatus = String(before?.status ?? 'BROUILLON');
@@ -227,7 +234,7 @@ async function ensureEvent(key: FixtureEventKey, partnerId: string, actors: Seed
         latitude: 14.6937,
         longitude: -17.4441,
         capacity,
-        image_url: posterUrl(partnerId, `fixture-${spec.slug}.png`),
+        image_url: posterUrl(partnerId, posterFile),
         category: 'CONCERT',
         // Lot 5 (contrats F1 et F5) : programme typé, infos pratiques et services aux formes du schéma partagé
         program: [

@@ -134,7 +134,8 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON}"
             echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE}"
             echo "SUPABASE_DB_URL=${DB_URL}"
-            echo "NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000"
+            # localhost : le middleware de Next redirige vers localhost (NextURL réécrit 127.x) ; le serveur écoute sur 127.0.0.1
+            echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
             echo "E2E_APP_PORT=3000"
             echo "E2E_FAKE_SERVICES_PORT=4010"
             echo "E2E_FAKE_SERVICES_URL=http://127.0.0.1:4010"
@@ -239,10 +240,20 @@ jobs:
             cp -r "$GITHUB_WORKSPACE/.e2e-captures/captures/." "$RUN_DIR/captures/"
             echo "captures publiées : $(find "$RUN_DIR/captures" -name '*.png' | wc -l) PNG"
           fi
-          # Rétention : captures des 5 derniers runs à la pointe de ci-results ; les journaux restent
-          for d in $(find runs -mindepth 2 -maxdepth 2 -type d -name captures | sed -e 's#^runs/##' -e 's#/captures$##' | sort -t- -k1,1n | head -n -5); do
-            rm -rf "runs/${d}/captures"
-            echo "captures purgées de la pointe : runs/${d}/captures"
+          # Diagnostic des échecs Playwright : error-context.md (< 512 Kio) et captures test-failed-*.png
+          # (< 1,5 Mio, 80 au plus), arborescence de test-results/ conservée, dans runs/<n>-<id>/playwright/
+          if [ -d "$GITHUB_WORKSPACE/test-results" ]; then
+            mkdir -p "$RUN_DIR/playwright"
+            ( cd "$GITHUB_WORKSPACE" && find test-results -type f -name 'error-context.md' -size -512k -print0 ) | while IFS= read -r -d '' f; do mkdir -p "$RUN_DIR/playwright/$(dirname "$f")"; cp "$GITHUB_WORKSPACE/$f" "$RUN_DIR/playwright/$f"; done
+            ( cd "$GITHUB_WORKSPACE" && find test-results -type f -name 'test-failed-*.png' -size -1536k -print0 | sort -z | head -z -n 80 ) | while IFS= read -r -d '' f; do mkdir -p "$RUN_DIR/playwright/$(dirname "$f")"; cp "$GITHUB_WORKSPACE/$f" "$RUN_DIR/playwright/$f"; done
+            echo "diagnostic Playwright publié : $(find "$RUN_DIR/playwright" -name 'error-context.md' | wc -l) contexte(s), $(find "$RUN_DIR/playwright" -name '*.png' | wc -l) capture(s) d'échec"
+          fi
+          # Rétention : captures et diagnostic Playwright des 5 derniers runs à la pointe de ci-results ; les journaux restent
+          for kind in captures playwright; do
+            for d in $(find runs -mindepth 2 -maxdepth 2 -type d -name "$kind" | sed -e 's#^runs/##' -e "s#/${kind}##" | sort -t- -k1,1n | head -n -5); do
+              rm -rf "runs/${d}/${kind}"
+              echo "${kind} purgé(es) de la pointe : runs/${d}/${kind}"
+            done
           done
           {
             echo "run_id=${{ github.run_id }}"

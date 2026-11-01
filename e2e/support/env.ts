@@ -3,7 +3,7 @@
  *
  * Source : `.env.e2e` (généré par la CI, ignoré par git ; EV_E2E_ENV_FILE pour un autre fichier),
  * chargé sans écraser les variables du shell. Tout ce que le navigateur peut joindre est local :
- * l'application (http://127.0.0.1:3000), Supabase local et les faux services. Une URL non locale
+ * l'application (http://localhost:3000), Supabase local et les faux services. Une URL non locale
  * fait échouer le chargement de la configuration, quel que soit le test lancé.
  */
 import fs from 'node:fs';
@@ -11,8 +11,15 @@ import path from 'node:path';
 
 export const LOCAL_HOSTNAMES: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 
-/** URL de l'application imposée par le contrat P (cookies de session et callBackUrl SamirPay en dépendent). */
-export const APP_URL = 'http://127.0.0.1:3000';
+/**
+ * URL de l'application vue par le navigateur, les cookies de session et le callBackUrl SamirPay.
+ * « localhost » et non 127.0.0.1 : dans le middleware, Next réécrit tout hôte 127.x en « localhost »
+ * (NextURL, node_modules/next/dist/server/web/next-url.js:15-17), donc req.url et les redirections
+ * (new URL('/login', req.url)) visent http://localhost:3000. Le navigateur doit être sur le même hôte,
+ * sinon les cookies de session (posés sur l'hôte de la page) sont perdus à la redirection.
+ * Le serveur écoute sur 127.0.0.1 ; Chromium résout localhost vers 127.0.0.1 (playwright.config.ts).
+ */
+export const APP_URL = 'http://localhost:3000';
 export const DEFAULT_SUPABASE_URL = 'http://127.0.0.1:54321';
 export const DEFAULT_FAKE_SERVICES_URL = 'http://127.0.0.1:4010';
 

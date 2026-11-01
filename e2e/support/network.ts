@@ -1,7 +1,7 @@
 /**
  * Lot 5.1 — verrou réseau du navigateur et collecte des erreurs d'une page.
  *
- * Verrou (par contexte) : seuls les hôtes autorisés (application 127.0.0.1:3000, Supabase local,
+ * Verrou (par contexte) : seuls les hôtes autorisés (application localhost:3000, Supabase local,
  * faux services) sont joints. Tout autre hôte est intercepté et journalisé :
  *  - tuiles de carte et images → tuile locale neutre (PNG 1×1 gris clair) ;
  *  - feuilles de style externes (Leaflet sur unpkg) → feuille vide ;

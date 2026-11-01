@@ -33,7 +33,8 @@ async function reachable(url, label) {
 }
 
 console.log(`[${TAG}] faux services : HTTP ${await reachable(`${fake.origin}/__test/health`, 'faux services')}`);
-console.log(`[${TAG}] application   : HTTP ${await reachable(`${app.origin}/login`, 'application')}`);
+// Servie sous localhost (cookies, redirections du middleware), à l'écoute sur 127.0.0.1
+console.log(`[${TAG}] application   : HTTP ${await reachable(`${app.protocol}//127.0.0.1:${app.port}/login`, 'application')}`);
 
 const require = createRequire(import.meta.url);
 const cli = require.resolve('@playwright/test/cli');
