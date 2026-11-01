@@ -85,10 +85,14 @@ function runSuite(file, timeoutMs) {
             child.kill('SIGKILL');
         }, timeoutMs);
 
+        // Sortie TAP gardée en mémoire : un hook after() en échec (ex. invariant violé) produit une ligne
+        // « not ok N - <fichier> » de premier niveau alors que node:test peut sortir en code 0 (lot 5).
+        let tap = '';
         const forward = (stream, target) => {
             stream.on('data', (chunk) => {
                 target.write(chunk);
                 log.write(chunk);
+                if (stream === child.stdout) tap += chunk.toString();
             });
         };
         forward(child.stdout, process.stdout);
@@ -99,7 +103,7 @@ function runSuite(file, timeoutMs) {
             log.end();
             resolve({
                 rel,
-                status: timedOut ? 'TIMEOUT' : code === 0 ? 'PASS' : 'FAIL',
+                status: timedOut ? 'TIMEOUT' : code === 0 && !/^not ok \d+ /m.test(tap) ? 'PASS' : 'FAIL',
                 code,
                 signal,
                 ms: Date.now() - started,

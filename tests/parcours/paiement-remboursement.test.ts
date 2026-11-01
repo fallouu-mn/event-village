@@ -62,6 +62,14 @@ async function insertRefundablePayment(buyer: Buyer, opts: { operator?: string |
         client_id: buyer.userId,
         payment_target: 'TICKET',
         amount: opts.amount ?? 4000,
+        // Lot 5 : répartition explicite d'un paiement plateforme sans frais (invariant (d) du lot 3), qui
+        // n'était vérifié par aucune suite exécutée après celle-ci avant le lot 5.
+        facial_amount: opts.amount ?? 4000,
+        service_fee: 0,
+        aggregator_fee: 0,
+        partner_payout_amount: opts.amount ?? 4000,
+        gross_event_village_revenue: 0,
+        net_event_village_revenue: 0,
         currency: 'XOF',
         is_platform_payment: true,
         status: 'REFUND_PENDING',

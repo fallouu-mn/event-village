@@ -205,6 +205,13 @@ describe('Une vente sous le seuil diffuse LOW à anon, sans aucune ligne de vent
         assert.ok(initial, 'ligne de stock créée à la publication');
         assert.equal(initial.availability, 'AVAILABLE', `14 places, seuil 10 : ${JSON.stringify(initial)}`);
         assert.equal(hint(initial.remaining_hint), null, `restant masqué hors LOW : ${JSON.stringify(initial)}`);
+        // La ligne créée à la publication (INSERT, commité avant les abonnements) peut encore être livrée par
+        // Realtime après leur ouverture : seule cette ligne-là, identifiée par son horodatage, est écartée ;
+        // toute écriture due à une vente (UPDATE, DELETE, ou INSERT postérieur) reste comptée.
+        const publicationRow = (e: ReceivedChange): boolean => e.eventType === 'INSERT'
+            && (String(e.new.updated_at) === String(initial.updated_at)
+                || Date.parse(String(e.new.updated_at)) === Date.parse(String(initial.updated_at)));
+        const saleChange = (e: ReceivedChange): boolean => forCategory(std)(e) && !publicationRow(e);
 
         const anon = anonClient();
         const holder = await signedInClient({ email: buyer.email });
@@ -222,8 +229,8 @@ describe('Une vente sous le seuil diffuse LOW à anon, sans aucune ligne de vent
             const first = await buyConfirmed(buyer, ev, [['Standard', 3]]);
             await waitForEvent(holderTickets, (e) => e.new.payment_id === first.payment.id, RECEIVE_TIMEOUT_MS, 'témoin : l’acheteur reçoit ses billets');
             await sentinel(stockAll);
-            await expectNothing(stockEv, SETTLE_MS, forCategory(std), 'vente qui laisse la catégorie en AVAILABLE : aucune diffusion');
-            await expectNothing(stockAll, 0, forCategory(std), 'vente qui laisse la catégorie en AVAILABLE : aucune diffusion (abonnement sans filtre)');
+            await expectNothing(stockEv, SETTLE_MS, saleChange, 'vente qui laisse la catégorie en AVAILABLE : aucune diffusion');
+            await expectNothing(stockAll, 0, saleChange, 'vente qui laisse la catégorie en AVAILABLE : aucune diffusion (abonnement sans filtre)');
 
             // 2. 11 → 8 : passage en LOW, restant 8
             await buyConfirmed(buyer, ev, [['Standard', 3]]);
