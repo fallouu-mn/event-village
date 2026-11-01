@@ -13,6 +13,8 @@ import { eventImageSrc } from '@/lib/events/event-image';
  *    catégorie achetable : « Bientôt en vente », jamais « Gratuit » par défaut (un vrai 0 F reste
  *    « Gratuit »).
  *  - Affiche du stockage du projet seulement, sinon l'image locale neutre (lib/events/event-image.ts).
+ *  - Rien n'est superposé à l'affiche : le titre et la date sont souvent imprimés dans sa partie haute
+ *    (relecture des captures du run 49). Pastille de date et catégorie vivent dans le corps de la carte.
  */
 export interface EventCardProps {
   id: string;
@@ -73,34 +75,37 @@ export const EventCard: React.FC<EventCardProps> = ({
           className="object-cover motion-safe:transition-transform motion-safe:duration-500 motion-safe:group-hover:scale-[1.03]"
           sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
         />
-        {dayNumber && monthShort && (
-          <div
-            className="absolute left-3 top-3 flex min-w-14 flex-col items-center rounded-2xl border border-border bg-surface px-2.5 py-1.5 text-fg shadow-sm"
-            aria-hidden="true"
-          >
-            <span className="text-xl font-bold leading-none tabular-nums">{dayNumber}</span>
-            <span className="mt-1 text-sm font-semibold leading-none text-brand-fg">{monthShort}</span>
-          </div>
-        )}
-        {categoryLabel && (
-          <div className="absolute right-3 top-3">
-            <Badge variant="default" className="shadow-sm">{categoryLabel}</Badge>
-          </div>
-        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
-        <div className="min-w-0 space-y-1.5">
-          {subtitle && <p className="truncate text-sm font-semibold text-brand-fg">{subtitle}</p>}
-          <h3 className="line-clamp-2 text-lg font-bold leading-snug tracking-tight text-fg">
-            <Link
-              href={`/events/${id}`}
-              className="rounded-sm after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+        <div className="flex min-w-0 items-start gap-3">
+          {dayNumber && monthShort && (
+            <div
+              className="flex min-w-14 flex-shrink-0 flex-col items-center justify-center rounded-2xl border border-brand-fg/20 bg-brand-bg px-2.5 py-2 text-brand-fg"
+              aria-hidden="true"
             >
-              {title}
-            </Link>
-          </h3>
+              <span className="text-xl font-bold leading-none tabular-nums">{dayNumber}</span>
+              <span className="mt-1 text-sm font-semibold leading-none">{monthShort}</span>
+            </div>
+          )}
+          <div className="min-w-0 flex-1 space-y-1">
+            {subtitle && <p className="truncate text-sm font-semibold text-brand-fg">{subtitle}</p>}
+            <h3 className="line-clamp-2 text-lg font-bold leading-snug tracking-tight text-fg">
+              <Link
+                href={`/events/${id}`}
+                className="rounded-sm after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+              >
+                {title}
+              </Link>
+            </h3>
+          </div>
         </div>
+
+        {categoryLabel && (
+          <div>
+            <Badge variant="neutral">{categoryLabel}</Badge>
+          </div>
+        )}
 
         <ul className="space-y-1.5 text-sm text-fg-muted">
           <li className="flex min-w-0 items-center gap-2">

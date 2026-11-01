@@ -1,62 +1,72 @@
 'use client';
 
-import React from 'react';
+import React, { useId } from 'react';
 import Link from 'next/link';
 
 export interface LogoProps {
+  /** full : symbole et nom ; mark : symbole seul ; auto : nom masqué sous 640 px. */
   variant?: 'full' | 'mark' | 'auto';
+  /** Conservé pour compatibilité : les couleurs suivent désormais le thème par les tokens. */
   theme?: 'light' | 'dark' | 'auto';
   className?: string;
   linkToHome?: boolean;
 }
 
+/**
+ * Logo Event Village, en tokens du système de design.
+ *
+ * Correctif lot 5 : l'ancien symbole remplissait son fond par url(#logo-mark-grad), un identifiant fixe
+ * répété à chaque instance. Le logo de la barre latérale, masqué (display: none) sous 1024 px, venait en
+ * premier dans le document : le navigateur résolvait l'url() vers ce dégradé non rendu, et le symbole de
+ * l'en-tête mobile perdait son fond. Il ne restait que trois points (les deux encoches et la balise).
+ * Désormais : identifiant unique par instance (useId) et encoches découpées par un masque, donc
+ * transparentes sur n'importe quel fond, clair ou sombre.
+ */
 export const Logo: React.FC<LogoProps> = ({
   variant = 'full',
-  theme = 'auto',
   className = '',
   linkToHome = true,
 }) => {
-  const content = (
-    <div className={`flex items-center gap-2.5 select-none transition-transform active:scale-[0.98] ${className}`}>
-      {/* Icon Mark */}
-      <div className="relative w-9 h-9 sm:w-10 sm:h-10 flex-shrink-0">
-        <svg viewBox="0 0 100 100" fill="none" className="w-full h-full drop-shadow-md">
-          <defs>
-            <linearGradient id="logo-mark-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#FF6A3D" />
-              <stop offset="100%" stopColor="#FF3D68" />
-            </linearGradient>
-          </defs>
-          <rect x="8" y="8" width="84" height="84" rx="26" fill="url(#logo-mark-grad)" />
-          <path d="M50 24 L72 46 H60 V70 H40 V46 H28 Z" fill="#FFFFFF" fillOpacity="0.98" />
-          <circle cx="8" cy="50" r="7" className="fill-[#F8F9FA] dark:fill-[#0F0F11]" />
-          <circle cx="92" cy="50" r="7" className="fill-[#F8F9FA] dark:fill-[#0F0F11]" />
-          <circle cx="50" cy="52" r="5" fill="#FF5722" />
-        </svg>
-      </div>
+  const maskId = `ev-logo-mask-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const showName = variant === 'full' || variant === 'auto';
 
-      {/* Typography (Hidden if variant is 'mark', responsive if 'auto') */}
-      {(variant === 'full' || variant === 'auto') && (
-        <div className={`flex flex-col leading-none ${variant === 'auto' ? 'hidden sm:flex' : 'flex'}`}>
-          <div className="flex items-center tracking-tight font-black text-lg sm:text-xl">
-            <span className="text-slate-900 dark:text-white">EVENT</span>
-            <span className="text-[#FF5722] ml-1">VILLAGE</span>
-          </div>
-          <span className="text-[9px] font-bold tracking-[0.18em] text-slate-400 dark:text-slate-500 uppercase mt-0.5">
-            Plateforme Événementielle
-          </span>
-        </div>
+  const content = (
+    <span className={`flex select-none items-center gap-2.5 ${className}`}>
+      <svg viewBox="0 0 100 100" className="h-9 w-9 flex-shrink-0 sm:h-10 sm:w-10" aria-hidden="true" focusable="false">
+        <defs>
+          <mask id={maskId}>
+            <rect x="0" y="0" width="100" height="100" fill="white" />
+            <circle cx="8" cy="50" r="7" fill="black" />
+            <circle cx="92" cy="50" r="7" fill="black" />
+          </mask>
+        </defs>
+        <rect x="8" y="8" width="84" height="84" rx="26" mask={`url(#${maskId})`} className="fill-brand-decor" />
+        <path d="M50 24 L72 46 H60 V70 H40 V46 H28 Z" className="fill-on-brand" />
+        <circle cx="50" cy="52" r="5" className="fill-brand-decor" />
+      </svg>
+
+      {showName && (
+        <span
+          className={`${variant === 'auto' ? 'hidden sm:flex' : 'flex'} items-center text-lg font-black leading-none tracking-tight sm:text-xl`}
+        >
+          <span className="text-fg">EVENT</span>
+          <span className="ml-1 text-brand-fg">VILLAGE</span>
+        </span>
       )}
-    </div>
+    </span>
   );
 
   if (linkToHome) {
     return (
-      <Link href="/" className="inline-block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] rounded-xl">
+      <Link
+        href="/"
+        aria-label="Event Village, accueil"
+        className="inline-flex min-h-11 min-w-11 items-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
         {content}
       </Link>
     );
   }
 
-  return content;
+  return <span role="img" aria-label="Event Village">{content}</span>;
 };

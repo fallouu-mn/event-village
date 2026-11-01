@@ -44,6 +44,8 @@ import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 interface NavItem {
   name: string;
+  /** Libellé de la barre du bas (< 1024 px), 60 px au plus en 12 px : tient sans troncature dès 360 px. */
+  short?: string;
   href: string;
   icon: LucideIcon;
 }
@@ -97,9 +99,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const navItems: NavItem[] = [
     { name: 'Accueil', href: '/', icon: Home },
     { name: 'Explorer', href: '/explore', icon: Compass },
-    { name: 'Mes billets', href: '/tickets', icon: Ticket },
-    { name: 'Commandes', href: '/orders', icon: ShoppingBag },
-    { name: 'Portefeuille', href: '/wallet', icon: Wallet },
+    { name: 'Mes billets', short: 'Billets', href: '/tickets', icon: Ticket },
+    { name: 'Commandes', short: 'Achats', href: '/orders', icon: ShoppingBag },
+    { name: 'Portefeuille', short: 'Solde', href: '/wallet', icon: Wallet },
   ];
 
   // Navigation Services
@@ -128,7 +130,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   ];
   const partnerMobileItems: NavItem[] = [
     { name: 'Accueil', href: '/partner/dashboard', icon: LayoutDashboard },
-    { name: 'Événements', href: '/partner/events', icon: Calendar },
+    { name: 'Événements', short: 'Billetterie', href: '/partner/events', icon: Calendar },
     { name: 'Scanner', href: '/partner/scan', icon: QrCode },
     { name: 'Finances', href: '/partner/finance', icon: DollarSign },
     { name: 'Profil', href: '/partner/profile', icon: User },
@@ -137,8 +139,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   // Barre du bas de l'administration : une entrée par écran (lot 5 : plus de doublon /admin/dashboard).
   const adminMobileItems: NavItem[] = [
     { name: 'Accueil', href: '/admin/dashboard', icon: LayoutDashboard },
-    { name: 'Événements', href: '/admin/events', icon: Calendar },
-    { name: 'Utilisateurs', href: '/admin/users', icon: Users },
+    { name: 'Événements', short: 'Validation', href: '/admin/events', icon: Calendar },
+    { name: 'Utilisateurs', short: 'Comptes', href: '/admin/users', icon: Users },
     { name: 'Finance', href: '/admin/finance', icon: DollarSign },
     { name: 'Audit', href: '/admin/audit', icon: Activity },
   ];
@@ -523,8 +525,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                   active ? 'text-brand-fg' : 'text-fg-muted hover:text-fg',
                 )}
               >
-                <Icon size={20} />
-                <small className="text-caption max-w-full truncate font-semibold">{item.name}</small>
+                <Icon size={20} aria-hidden="true" />
+                <small className="text-caption max-w-full truncate font-semibold">{item.short ?? item.name}</small>
               </Link>
             );
           })}
