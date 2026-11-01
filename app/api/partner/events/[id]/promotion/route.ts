@@ -1,108 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { requireActiveSession, serverIsAdmin, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { NotificationService } from '@/lib/notifications/notification.service';
 
 export const dynamic = 'force-dynamic';
 
-/** POST /api/partner/events/[id]/promotion — Soumettre une demande de promotion */
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * POST /api/partner/events/[id]/promotion — lot 5 (contrat F5, tâche 5.9) : la mise en avant sponsorisée
+ * n'est plus proposée (seule la billetterie l'est). Toute demande reçoit 403 SERVICE_UNAVAILABLE, sans
+ * écriture dans sponsored_promotions ni notification. Les colonnes et la table restent en base.
+ */
+export async function POST(req: NextRequest) {
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
-    const user = activeSession.user;
-    if (!user || !serverIsPartner(user)) {
-        return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
-    }
-
-    const { id: eventId } = await params;
-    const supabase = getServiceRoleClient();
-
-    // Vérifier que l'événement appartient au partenaire
-    const { data: partner } = await supabase
-        .from('partners')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-
-    if (!partner) return NextResponse.json({ error: 'Partenaire introuvable.' }, { status: 404 });
-
-    const { data: event } = await supabase
-        .from('events')
-        .select('id, title, partner_id, status')
-        .eq('id', eventId)
-        .eq('partner_id', partner.id)
-        .single();
-
-    if (!event) return NextResponse.json({ error: 'Événement introuvable ou accès refusé.' }, { status: 404 });
-
-    if (!['VALIDE', 'PUBLIE'].includes(event.status)) {
-        return NextResponse.json({ error: 'La promotion ne peut être demandée que pour un événement validé ou publié.' }, { status: 400 });
-    }
-
-    // Vérifier qu'il n'y a pas déjà une demande EN_ATTENTE ou APPROUVEE
-    const { data: existing } = await supabase
-        .from('sponsored_promotions')
-        .select('id, status')
-        .eq('event_id', eventId)
-        .in('status', ['EN_ATTENTE', 'APPROUVEE'])
-        .maybeSingle();
-
-    if (existing) {
-        return NextResponse.json({
-            error: existing.status === 'EN_ATTENTE'
-                ? 'Une demande de promotion est déjà en attente de validation.'
-                : 'Une promotion est déjà active pour cet événement.',
-        }, { status: 409 });
-    }
-
-    // Créer la demande
-    const { data: promo, error: insertErr } = await supabase
-        .from('sponsored_promotions')
-        .insert({ event_id: eventId, partner_id: partner.id, status: 'EN_ATTENTE' })
-        .select()
-        .single();
-
-    if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
-
-    // Notifier les admins
-    await NotificationService.notifySuperadmins({
-        title: 'Demande de promotion sponsorisée',
-        content: `Le partenaire a soumis une demande de promotion pour l'événement "${event.title}".`,
-        type: 'SYSTEM',
-        metadata: { promotionId: promo.id, eventId },
-    });
-
-    // Notifier le partenaire
-    await NotificationService.createNotification({
-        userId: user.id,
-        title: 'Demande de promotion envoyée',
-        message: `Votre demande de promotion pour "${event.title}" est en attente de validation par l'équipe Event Village.`,
-        type: 'SYSTEM',
-        data: { promotionId: promo.id, eventId },
-    });
-
-    return NextResponse.json({ success: true, promotion: promo });
+    return NextResponse.json({
+        error: 'La mise en avant sponsorisée n’est pas proposée pour le moment : seule la billetterie est disponible.',
+        code: 'SERVICE_UNAVAILABLE',
+    }, { status: 403 });
 }
 
-/** GET /api/partner/events/[id]/promotion — Statut de la demande */
+/**
+ * GET /api/partner/events/[id]/promotion — dernière demande de promotion d'un événement (historique, lecture
+ * seule), pour le partenaire propriétaire ou un admin ; sinon 404.
+ */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
     const user = activeSession.user;
-    if (!user || !serverIsPartner(user)) {
-        return NextResponse.json({ error: 'Non autorisé.' }, { status: 401 });
+    if (!serverIsPartner(user)) {
+        return NextResponse.json({ error: 'Accès réservé aux organisateurs.', code: 'FORBIDDEN' }, { status: 403 });
     }
 
     const { id: eventId } = await params;
     const supabase = getServiceRoleClient();
 
-    const { data } = await supabase
+    const { data: event, error: eventErr } = await supabase
+        .from('events')
+        .select('id, partners(user_id)')
+        .eq('id', eventId)
+        .maybeSingle();
+    if (eventErr) {
+        console.error(`[GET promotion] événement ${eventId} illisible : ${eventErr.message}`);
+        return NextResponse.json({ error: 'Lecture impossible pour le moment.', code: 'PROMOTION_READ_FAILED' }, { status: 500 });
+    }
+    const partnerRel = (event as { partners?: { user_id?: string } | Array<{ user_id?: string }> } | null)?.partners;
+    const ownerId = Array.isArray(partnerRel) ? partnerRel[0]?.user_id : partnerRel?.user_id;
+    if (!event || (ownerId !== user.id && !serverIsAdmin(user))) {
+        return NextResponse.json({ error: 'Événement introuvable.', code: 'EVENT_NOT_FOUND' }, { status: 404 });
+    }
+
+    const { data, error } = await supabase
         .from('sponsored_promotions')
         .select('id, status, requested_at, reviewed_at, admin_notes, start_date, end_date')
         .eq('event_id', eventId)
         .order('requested_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+    if (error) {
+        console.error(`[GET promotion] demandes de ${eventId} illisibles : ${error.message}`);
+        return NextResponse.json({ error: 'Lecture impossible pour le moment.', code: 'PROMOTION_READ_FAILED' }, { status: 500 });
+    }
 
     return NextResponse.json({ promotion: data || null });
 }
