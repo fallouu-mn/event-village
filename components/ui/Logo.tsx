@@ -49,7 +49,10 @@ export const Logo: React.FC<LogoProps> = ({
         <span
           className={`${variant === 'auto' ? 'hidden sm:flex' : 'flex'} items-center text-lg font-black leading-none tracking-tight sm:text-xl`}
         >
-          <span className="text-fg">EVENT</span>
+          {/* Espace réelle entre les deux mots (ignorée par la mise en page flex, l'écart vient de ml-1) :
+              sans elle, le texte lu était « EVENTVILLAGE », absent du nom « Event Village, accueil »
+              (axe label-content-name-mismatch, relecture des captures du run 50). */}
+          <span className="text-fg">EVENT</span>{' '}
           <span className="ml-1 text-brand-fg">VILLAGE</span>
         </span>
       )}

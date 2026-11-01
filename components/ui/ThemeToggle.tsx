@@ -3,30 +3,40 @@
 import React, { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 import { useTheme } from '@/components/providers/ThemeProvider';
+import { cn } from './cn';
 
-export const ThemeToggle: React.FC<{ className?: string }> = ({ className = '' }) => {
+/**
+ * Bascule clair / sombre de l'en-tête (relecture des captures du run 50) : cible de 44 × 44 px, tokens du
+ * système de design, focus visible. Le nom accessible reste stable (« Basculer le thème ») ; l'état est
+ * exposé par aria-pressed (enfoncé = thème sombre), lu seulement après le montage pour éviter un écart
+ * d'hydratation.
+ */
+export const ThemeToggle: React.FC<{ className?: string }> = ({ className }) => {
   const { resolvedTheme, toggleTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
+
+  const isDark = mounted && resolvedTheme === 'dark';
 
   return (
     <button
       type="button"
       onClick={toggleTheme}
       aria-label="Basculer le thème"
+      aria-pressed={mounted ? isDark : undefined}
+      title={isDark ? 'Passer au thème clair' : 'Passer au thème sombre'}
       suppressHydrationWarning
-      className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border bg-slate-100 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] dark:hover:text-[#FF5722] active:scale-95 ${className}`}
+      className={cn(
+        'inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-sunken text-fg',
+        'transition-colors duration-200 hover:text-brand-fg motion-safe:active:scale-95',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+        className,
+      )}
     >
-      <span suppressHydrationWarning>
-        {mounted
-          ? resolvedTheme === 'dark'
-            ? <Sun size={18} className="text-amber-400" />
-            : <Moon size={18} className="text-slate-700" />
-          : <Moon size={18} className="text-slate-700" />
-        }
+      <span aria-hidden="true" className="inline-flex" suppressHydrationWarning>
+        {isDark ? <Sun size={18} className="text-warning-fg" /> : <Moon size={18} />}
       </span>
     </button>
   );
 };
-

@@ -70,7 +70,7 @@ for (const theme of THEMES) {
                     const started = Date.now();
                     const record: CaptureRecord = {
                         file, screen: screen.id, titre: screen.titre, vue, theme: theme.key, role,
-                        url: null, status: null, captured: false, blocking: [], warnings: [], notes: [], error: null, durationMs: 0,
+                        url: null, status: null, captured: false, blocking: [], warnings: [], axeDetails: [], notes: [], error: null, durationMs: 0,
                     };
                     try {
                         const demo: DemoIds | null = screen.needsIds ? readDemoIds() : null;
@@ -100,6 +100,7 @@ for (const theme of THEMES) {
                         const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true });
                         record.blocking.push(...checks.blocking);
                         record.warnings.push(...checks.warnings);
+                        record.axeDetails = checks.axeDetails;
                         const shot = await capture(page, screen, file);
                         record.captured = true;
                         await testInfo.attach(file, { path: shot, contentType: 'image/png' });

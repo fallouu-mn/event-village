@@ -20,6 +20,7 @@ function block(r: CaptureRecord): string {
         `  résultat      : ${verdict}`,
         ...r.blocking.map((b) => `  bloquant      : ${b}`),
         ...r.warnings.map((w) => `  avertissement : ${w}`),
+        ...(r.axeDetails ?? []).map((d) => `  axe nœud      : ${d}`),
         ...r.notes.map((n) => `  note          : ${n}`),
     ];
     return lines.join('\n');

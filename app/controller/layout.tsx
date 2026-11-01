@@ -7,8 +7,15 @@ import { User, LogOut, ArrowLeft } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { IconButton } from '@/components/ui/IconButton';
+import { Logo } from '@/components/ui/Logo';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 
+/**
+ * En-tête de l'espace contrôleur (relecture des captures du run 50) : tokens du système de design, cibles
+ * de 44 px, logo partagé (l'ancien texte #FF5722 en 12 px donnait 3,16:1), lien du profil nommé même
+ * sous 640 px (axe link-name : seule l'icône restait visible), tient à 390 px.
+ */
 export default function ControllerLayout({ children }: { children: React.ReactNode }) {
     const { profile } = useAuth();
     const router = useRouter();
@@ -28,53 +35,42 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
         : '';
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
-            <header className="h-14 flex items-center justify-between px-4 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800">
-                <div className="flex items-center gap-3">
+        <div className="min-h-screen bg-surface-sunken text-fg">
+            <header className="flex min-h-14 items-center justify-between gap-2 border-b border-border bg-surface px-4 py-1.5">
+                <div className="flex min-w-0 items-center gap-2">
                     <Link
                         href="/"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors border border-slate-200 dark:border-zinc-800 shadow-2xs min-h-[38px]"
-                        title="Basculer vers l'espace client (billetterie, réservations, commandes)"
-                        aria-label="Mon espace Client"
+                        title="Basculer vers l’espace client (billetterie, réservations, commandes)"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-border px-3 text-sm font-semibold text-fg transition-colors hover:bg-surface-sunken hover:text-brand-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                        <ArrowLeft size={15} />
-                        <span>Mon espace Client</span>
+                        <ArrowLeft size={16} aria-hidden="true" />
+                        <span className="sr-only sm:not-sr-only">Mon espace client</span>
                     </Link>
-                    <div className="h-4 w-[1px] bg-slate-200 dark:bg-zinc-800" />
-                    <Link href="/" className="flex items-center gap-1">
-                        <span className="text-xs font-black tracking-wider text-[#FF5722] uppercase">
-                            Event Village
-                        </span>
-                    </Link>
+                    <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+                    <Logo variant="auto" />
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
                     <NotificationBell />
                     {displayName && (
                         <Link
                             href="/controller/profile"
-                            className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:text-[#FF5722] transition-colors"
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-1.5 text-sm font-semibold text-fg transition-colors hover:text-brand-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                            <div className="w-6 h-6 rounded-lg bg-[#FF5722]/10 border border-[#FF5722]/20 flex items-center justify-center">
-                                <User size={12} className="text-[#FF5722]" />
-                            </div>
-                            <span className="hidden sm:inline truncate max-w-[120px]">{displayName}</span>
+                            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-brand-bg text-brand-fg" aria-hidden="true">
+                                <User size={16} />
+                            </span>
+                            <span className="sr-only sm:not-sr-only sm:max-w-[120px] sm:truncate">{displayName}</span>
                         </Link>
                     )}
 
-                    <button
-                        type="button"
-                        onClick={() => setShowLogout(true)}
-                        className="min-h-[44px] min-w-[44px] rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center justify-center"
-                        title="Se déconnecter"
-                        aria-label="Se déconnecter"
-                    >
-                        <LogOut size={16} />
-                    </button>
+                    <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => setShowLogout(true)}>
+                        <LogOut size={18} />
+                    </IconButton>
                 </div>
             </header>
 
-            <main className="max-w-2xl mx-auto px-4 py-6">
+            <main className="mx-auto max-w-2xl px-4 py-6">
                 {children}
             </main>
 

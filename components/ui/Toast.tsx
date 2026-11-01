@@ -1,7 +1,9 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
-import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle2, XCircle, Info, AlertTriangle, X, type LucideIcon } from 'lucide-react';
+import { IconButton } from './IconButton';
+import { cn } from './cn';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -24,36 +26,65 @@ export interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
-const TOAST_CONFIG = {
+/**
+ * Tons des messages (tokens du système de design, relecture des captures du run 50) : libellé en casse de
+ * phrase, jamais en capitales. Succès et information sont annoncés poliment (role="status"), erreur et
+ * avertissement immédiatement (role="alert").
+ */
+const TOAST_CONFIG: Record<ToastType, {
+  icon: LucideIcon;
+  label: string;
+  role: 'status' | 'alert';
+  iconClass: string;
+  labelClass: string;
+  barClass: string;
+  borderClass: string;
+}> = {
   success: {
-    icon: <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />,
-    badgeText: 'SUCCÈS',
-    badgeBg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300',
-    barColor: 'bg-gradient-to-r from-emerald-500 to-teal-400',
-    cardBorder: 'border-emerald-500/30 dark:border-emerald-500/20',
+    icon: CheckCircle2,
+    label: 'Succès',
+    role: 'status',
+    iconClass: 'bg-success-bg text-success-fg',
+    labelClass: 'text-success-fg',
+    barClass: 'bg-success',
+    borderClass: 'border-success-border',
   },
   error: {
-    icon: <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />,
-    badgeText: 'ERREUR',
-    badgeBg: 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-300',
-    barColor: 'bg-gradient-to-r from-red-500 to-rose-400',
-    cardBorder: 'border-red-500/30 dark:border-red-500/20',
+    icon: XCircle,
+    label: 'Erreur',
+    role: 'alert',
+    iconClass: 'bg-danger-bg text-danger-fg',
+    labelClass: 'text-danger-fg',
+    barClass: 'bg-danger',
+    borderClass: 'border-danger-border',
   },
   info: {
-    icon: <Info className="w-5 h-5 text-cyan-500 flex-shrink-0" />,
-    badgeText: 'INFO',
-    badgeBg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-700 dark:text-cyan-300',
-    barColor: 'bg-gradient-to-r from-cyan-500 to-blue-400',
-    cardBorder: 'border-cyan-500/30 dark:border-cyan-500/20',
+    icon: Info,
+    label: 'Information',
+    role: 'status',
+    iconClass: 'bg-info-bg text-info-fg',
+    labelClass: 'text-info-fg',
+    barClass: 'bg-info',
+    borderClass: 'border-info-border',
   },
   warning: {
-    icon: <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />,
-    badgeText: 'ATTENTION',
-    badgeBg: 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300',
-    barColor: 'bg-gradient-to-r from-amber-500 to-orange-400',
-    cardBorder: 'border-amber-500/30 dark:border-amber-500/20',
+    icon: AlertTriangle,
+    label: 'Attention',
+    role: 'alert',
+    iconClass: 'bg-warning-bg text-warning-fg',
+    labelClass: 'text-warning-fg',
+    barClass: 'bg-warning',
+    borderClass: 'border-warning-border',
   },
 };
+
+/** Durée de la sortie animée ; nulle si l'utilisateur a demandé moins d'animations. */
+const EXIT_MS = 220;
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 const ToastCard: React.FC<{
   toast: ToastItem;
@@ -61,28 +92,33 @@ const ToastCard: React.FC<{
 }> = ({ toast, onDismiss }) => {
   const [progress, setProgress] = useState(100);
   const [isExiting, setIsExiting] = useState(false);
-  const isHoveredRef = useRef(false);
+  // Minuterie suspendue au survol et tant que le focus est dans le message (WCAG 2.2.1)
+  const isPausedRef = useRef({ hover: false, focus: false });
   const elapsedRef = useRef(0);
   const config = TOAST_CONFIG[toast.type];
+  const Icon = config.icon;
 
   const handleDismiss = useCallback(() => {
+    if (prefersReducedMotion()) {
+      onDismiss(toast.id);
+      return;
+    }
     setIsExiting(true);
     setTimeout(() => {
       onDismiss(toast.id);
-    }, 220);
+    }, EXIT_MS);
   }, [onDismiss, toast.id]);
 
   useEffect(() => {
-    const stepMs = 25;
+    const stepMs = 100;
     const interval = setInterval(() => {
-      if (!isHoveredRef.current) {
-        elapsedRef.current += stepMs;
-        const remaining = Math.max(0, 100 - (elapsedRef.current / toast.durationMs) * 100);
-        setProgress(remaining);
-        if (remaining <= 0) {
-          clearInterval(interval);
-          handleDismiss();
-        }
+      if (isPausedRef.current.hover || isPausedRef.current.focus) return;
+      elapsedRef.current += stepMs;
+      const remaining = Math.max(0, 100 - (elapsedRef.current / toast.durationMs) * 100);
+      setProgress(remaining);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        handleDismiss();
       }
     }, stepMs);
 
@@ -91,45 +127,35 @@ const ToastCard: React.FC<{
 
   return (
     <div
-      onMouseEnter={() => {
-        isHoveredRef.current = true;
-      }}
-      onMouseLeave={() => {
-        isHoveredRef.current = false;
-      }}
-      className={`pointer-events-auto relative overflow-hidden rounded-2xl bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-xl border ${config.cardBorder} shadow-2xl p-4 flex items-start gap-3.5 transition-all duration-300 ${
-        isExiting ? 'toast-exit' : 'toast-enter'
-      }`}
-      role="alert"
+      onMouseEnter={() => { isPausedRef.current.hover = true; }}
+      onMouseLeave={() => { isPausedRef.current.hover = false; }}
+      onFocus={() => { isPausedRef.current.focus = true; }}
+      onBlur={() => { isPausedRef.current.focus = false; }}
+      role={config.role}
+      aria-atomic="true"
+      className={cn(
+        'pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-2xl border bg-surface-raised p-3 pr-1.5 text-fg shadow-xl',
+        config.borderClass,
+        isExiting ? 'toast-exit' : 'toast-enter',
+      )}
     >
-      {/* Icône contextuelle */}
-      <span className="mt-0.5">{config.icon}</span>
+      <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', config.iconClass)} aria-hidden="true">
+        <Icon size={18} />
+      </span>
 
-      {/* Contenu principal */}
-      <div className="flex-1 space-y-1 pr-2">
-        <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${config.badgeBg}`}>
-            {config.badgeText}
-          </span>
-        </div>
-        <p className="text-xs font-semibold leading-relaxed tracking-normal text-slate-800 dark:text-zinc-100">
-          {toast.message}
-        </p>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1">
+        <p className={cn('text-sm font-semibold', config.labelClass)}>{config.label}</p>
+        <p className="break-words text-sm leading-relaxed text-fg">{toast.message}</p>
       </div>
 
-      {/* Bouton Fermer */}
-      <button
-        onClick={handleDismiss}
-        className="text-slate-400 hover:text-slate-700 dark:text-zinc-500 dark:hover:text-zinc-200 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors -mr-1 -mt-1"
-        aria-label="Fermer"
-      >
-        <X size={14} />
-      </button>
+      <IconButton aria-label="Fermer le message" onClick={handleDismiss}>
+        <X size={18} />
+      </IconButton>
 
-      {/* Barre de progression fluide en bas */}
-      <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-zinc-800/60 overflow-hidden">
+      {/* Temps restant : décoratif, masqué si l'utilisateur a demandé moins d'animations */}
+      <div className="absolute inset-x-0 bottom-0 h-1 bg-surface-sunken motion-reduce:hidden" aria-hidden="true">
         <div
-          className={`h-full ${config.barColor} transition-all duration-75 ease-linear`}
+          className={cn('h-full motion-safe:transition-[width] motion-safe:duration-100 motion-safe:ease-linear', config.barClass)}
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -144,7 +170,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!message || typeof message !== 'string') return;
 
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    // Durée adaptative : min 3.5s, 40ms par caractère additionnel, max 8s
+    // Durée adaptative : 3,5 s au moins, 40 ms par caractère, 8 s au plus
     const durationMs = Math.max(3500, Math.min(8000, 3000 + message.length * 40));
 
     const newToast: ToastItem = {
@@ -155,7 +181,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       createdAt: Date.now(),
     };
 
-    setToasts((prev) => [...prev.slice(-3), newToast]); // Garde au maximum 4 toasts simultanés
+    setToasts((prev) => [...prev.slice(-3), newToast]); // 4 messages simultanés au plus
   }, []);
 
   const removeToast = useCallback((id: string) => {
@@ -175,7 +201,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-5 right-5 z-[99999] flex flex-col gap-3 pointer-events-none max-w-sm w-full sm:max-w-md">
+      {/* Sous 1024 px, au-dessus de la barre de navigation du bas ; jamais plus large que l'écran */}
+      <div className="pointer-events-none fixed inset-x-4 bottom-24 z-[100] flex flex-col gap-3 sm:inset-x-auto sm:right-5 sm:w-full sm:max-w-md lg:bottom-5">
         {toasts.map((t) => (
           <ToastCard key={t.id} toast={t} onDismiss={removeToast} />
         ))}

@@ -472,10 +472,14 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
             <NotificationBell />
 
+            {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px
+                avec ses trois boutons de 44 px. */}
             {roles.includes('CONTROLEUR') && (
-              <LinkButton href="/controller/scanner" size="sm" leftIcon={<QrCode size={16} />}>
-                Scanner
-              </LinkButton>
+              <div className="hidden sm:block">
+                <LinkButton href="/controller/scanner" size="sm" leftIcon={<QrCode size={16} />}>
+                  Scanner
+                </LinkButton>
+              </div>
             )}
 
             <div className="lg:hidden">
@@ -483,12 +487,14 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
             </div>
 
             {isUserLoggedIn ? (
+              // Nom porté par un texte masqué plutôt que par aria-label : les initiales visibles (« MN »)
+              // ne figuraient pas dans « Mon profil (…) » (axe label-content-name-mismatch). Cible de 44 px.
               <Link
                 href="/profile"
-                aria-label={`Mon profil (${displayName})`}
-                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
               >
                 {avatar}
+                <span className="sr-only">{`Mon profil (${displayName})`}</span>
               </Link>
             ) : (
               <Link

@@ -6,6 +6,8 @@
  * d'écran (aria-label, title, placeholder, alt). Le texte est lu nœud par nœud, avant toute
  * transformation CSS (un badge « Brouillon » en capitales CSS n'est pas un enum brut).
  * Avertissements (index.txt) : cibles interactives < 44 px, textes < 14 px, violations axe-core.
+ * Détail axe (index.txt, relecture du run 50) : pour chaque règle, les AXE_NODES_PER_RULE premiers nœuds
+ * (sélecteur, HTML tronqué, résumé de l'échec : couleurs et ratio pour color-contrast).
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -35,9 +37,16 @@ export const RAW_ENUM_VALUES: readonly string[] = [
     'manual_entry_refused', 'forbidden', 'refunded', 'cancelled', 'rate_limited', 'server_error',
 ];
 
+/** Nœuds détaillés par règle axe dans index.txt, et longueurs maximales des extraits. */
+export const AXE_NODES_PER_RULE = 5;
+const AXE_HTML_MAX = 160;
+const AXE_SUMMARY_MAX = 300;
+
 export interface PageCheckResult {
     blocking: string[];
     warnings: string[];
+    /** Une ligne par nœud fautif : « <règle> [i/n] <cible> | <html> | <résumé> ». */
+    axeDetails: string[];
     metrics: { scrollWidth: number; viewportWidth: number; smallTargets: number; smallTexts: number; axeViolations: number };
 }
 
@@ -111,7 +120,12 @@ function inspectDom(arg: { enums: string[] }): DomReport {
         if (el.tagName === 'A' && style.display === 'inline' && parentText > (el.textContent ?? '').trim().length + 20) continue;
         const r = el.getBoundingClientRect();
         if (r.width < 44 || r.height < 44) {
-            const label = el.getAttribute('aria-label') || (el as HTMLElement).innerText || el.getAttribute('title') || el.getAttribute('name') || '';
+            // Nom accessible approché : aria-label, aria-labelledby, <label> lié (champs), alt, texte, title, name
+            const labelledBy = (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean)
+                .map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
+            const fieldLabels = 'labels' in el ? Array.from((el as HTMLInputElement).labels ?? []).map((l) => l.textContent ?? '').join(' ') : '';
+            const label = el.getAttribute('aria-label') || labelledBy || fieldLabels || el.getAttribute('alt') || (el as HTMLElement).innerText
+                || el.getAttribute('title') || el.getAttribute('name') || '';
             smallTargets.push({ tag: el.tagName.toLowerCase(), name: label.trim().replace(/\s+/g, ' ').slice(0, 40), w: Math.round(r.width), h: Math.round(r.height) });
         }
     }
@@ -123,6 +137,12 @@ function inspectDom(arg: { enums: string[] }): DomReport {
         smallTargets,
         smallTexts,
     };
+}
+
+/** Extrait sur une ligne, tronqué à `max` caractères. */
+function oneLine(text: string, max: number): string {
+    const flat = text.replace(/\s+/g, ' ').trim();
+    return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 function summarize<T>(items: T[], key: (t: T) => string, max = 6): string {
@@ -155,16 +175,23 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
         warnings.push(`${dom.smallTexts.length} texte(s) < 14 px [${bySize}] : ${dom.smallTexts.slice(0, 5).map((t) => `« ${t.sample} »`).join(', ')}`);
     }
     let axeViolations = 0;
+    const axeDetails: string[] = [];
     if (opts.axe) {
         const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
         axeViolations = results.violations.length;
         for (const v of results.violations) {
             warnings.push(`axe-core ${v.id} (${v.impact ?? 'impact inconnu'}, ${v.nodes.length} nœud(s)) : ${v.help}`);
+            v.nodes.slice(0, AXE_NODES_PER_RULE).forEach((node, i) => {
+                const target = node.target.map((t) => (Array.isArray(t) ? t.join(' >>> ') : String(t))).join(' ; ');
+                const summary = node.failureSummary ? oneLine(node.failureSummary, AXE_SUMMARY_MAX) : '(sans résumé)';
+                axeDetails.push(`${v.id} [${i + 1}/${v.nodes.length}] ${target} | ${oneLine(node.html, AXE_HTML_MAX)} | ${summary}`);
+            });
         }
     }
     return {
         blocking,
         warnings,
+        axeDetails,
         metrics: { scrollWidth: dom.scrollWidth, viewportWidth: dom.viewportWidth, smallTargets: dom.smallTargets.length, smallTexts: dom.smallTexts.length, axeViolations },
     };
 }

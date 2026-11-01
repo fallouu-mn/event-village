@@ -74,13 +74,18 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
 
         const initLat = latitude ?? DEFAULT_LAT;
         const initLng = longitude ?? DEFAULT_LNG;
-        const map = L.map(container, { center: [initLat, initLng], zoom: 13, zoomControl: true, keyboard: true });
+        const map = L.map(container, { center: [initLat, initLng], zoom: 13, zoomControl: false, keyboard: true });
+        // Boutons de zoom en français ; 44 px par la règle .leaflet-control-zoom de app/globals.css
+        L.control.zoom({ zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière' }).addTo(map);
         L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
 
+        // Repère déplaçable à la souris ou au doigt, sans action au clavier dans Leaflet : il n'est pas
+        // focalisable (keyboard: false), l'alternative au clavier est la saisie de la latitude et de la
+        // longitude ci-dessous (WCAG 2.5.7). Son image garde un texte de remplacement.
         const marker = L.marker([initLat, initLng], {
             draggable: true,
             icon,
-            keyboard: true,
+            keyboard: false,
             title: 'Position du lieu',
             alt: 'Repère de la position du lieu',
         }).addTo(map);

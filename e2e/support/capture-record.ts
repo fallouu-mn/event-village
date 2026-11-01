@@ -18,6 +18,8 @@ export interface CaptureRecord {
     captured: boolean;
     blocking: string[];
     warnings: string[];
+    /** Nœuds fautifs de chaque règle axe (checks.ts, AXE_NODES_PER_RULE par règle). Absent des anciens résultats. */
+    axeDetails?: string[];
     notes: string[];
     error: string | null;
     durationMs: number;

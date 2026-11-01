@@ -3,8 +3,11 @@
  *  - dates et heures en Africa/Dakar (UTC+0 toute l'année) : « sam. 15 nov. 2026 à 20:00 » ;
  *  - montants en francs CFA entiers : « 5 000 F CFA » ;
  *  - pourcentages : « 42 % ».
- * Espaces : insécable fine (U+202F) entre les milliers et devant « % » (usage de fr-FR), insécable
- * (U+00A0) entre le montant et « F CFA », pour qu'aucune valeur ne soit coupée en fin de ligne.
+ * Espaces : insécable (U+00A0) entre les milliers, devant « % » et entre le montant et « F CFA », pour
+ * qu'aucune valeur ne soit coupée en fin de ligne. Intl (fr-FR) produit une insécable fine (U+202F),
+ * mais Plus Jakarta Sans la dessine à 0,09 em (1,4 px à 16 px) : « 351 000 » se lisait « 351000 »
+ * (relecture des captures du run 50, mesuré dans Chromium). L'insécable U+00A0 y fait 0,175 em,
+ * plus l'espacement des mots de app/globals.css : séparateur visible à toutes les tailles.
  * Valeur absente ou illisible → « — » (jamais « NaN », « Invalid Date » ni la valeur brute).
  */
 
@@ -12,6 +15,12 @@ export const DAKAR_TIME_ZONE = 'Africa/Dakar';
 export const MISSING_VALUE = '—';
 
 const NBSP = ' ';
+const NARROW_NBSP_RE = new RegExp(String.fromCharCode(0x202f), 'g');
+
+/** Remplace l'insécable fine d'Intl (invisible avec Plus Jakarta Sans) par l'insécable U+00A0. */
+function visibleSpaces(formatted: string): string {
+    return formatted.replace(NARROW_NBSP_RE, NBSP);
+}
 
 const DATE_FORMAT = new Intl.DateTimeFormat('fr-FR', {
     timeZone: DAKAR_TIME_ZONE, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
@@ -93,13 +102,13 @@ export function toDakarDateTimeLocal(input: DateInput): string {
 /** Entier formaté en français : « 12 345 ». */
 export function formatInteger(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) return MISSING_VALUE;
-    return INTEGER_FORMAT.format(Math.round(value));
+    return visibleSpaces(INTEGER_FORMAT.format(Math.round(value)));
 }
 
 /** Montant en francs CFA entiers : « 5 000 F CFA ». */
 export function formatFcfa(amount: number | null | undefined): string {
     if (amount === null || amount === undefined || !Number.isFinite(amount)) return MISSING_VALUE;
-    return `${INTEGER_FORMAT.format(Math.round(amount))}${NBSP}F${NBSP}CFA`;
+    return `${formatInteger(amount)}${NBSP}F${NBSP}CFA`;
 }
 
 /**
@@ -108,7 +117,9 @@ export function formatFcfa(amount: number | null | undefined): string {
  */
 export function formatPercent(ratio: number | null | undefined, digits = 0): string {
     if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return MISSING_VALUE;
-    return new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(ratio);
+    return visibleSpaces(
+        new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(ratio),
+    );
 }
 
 /** Ratio part / total protégé contre la division par zéro (null si total ≤ 0). */

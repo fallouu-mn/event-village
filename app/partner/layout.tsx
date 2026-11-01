@@ -14,11 +14,11 @@ export default function PartnerLayout({ children }: { children: React.ReactNode 
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="flex min-h-[60vh] items-center justify-center" role="status">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-3 border-[#FF5722] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs font-bold text-slate-400 dark:text-zinc-500">
-            Chargement de l&apos;espace partenaire...
+          <span className="h-8 w-8 rounded-full border-[3px] border-brand border-t-transparent motion-safe:animate-spin" aria-hidden="true" />
+          <span className="text-sm font-medium text-fg-muted">
+            Chargement de l’espace partenaire…
           </span>
         </div>
       </div>

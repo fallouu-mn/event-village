@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -12,12 +12,15 @@ import {
     Gift,
     Shield,
     FileText,
-    ExternalLink,
-    RefreshCw,
+    ArrowRight,
     X,
+    type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { IconButton } from '@/components/ui/IconButton';
+import { cn } from '@/components/ui/cn';
+import { formatShortDate, toDate } from '@/lib/format';
 
 export interface InAppNotification {
     id: string;
@@ -33,17 +36,59 @@ export interface InAppNotification {
     createdAt: string;
 }
 
+/** Icône et ton de chaque type de notification (tokens du système de design ; type inconnu : cloche neutre). */
+const TYPE_ICONS: Record<string, { icon: LucideIcon; className: string }> = {
+    KYC: { icon: FileText, className: 'bg-warning-bg text-warning-fg' },
+    PAYMENT: { icon: DollarSign, className: 'bg-success-bg text-success-fg' },
+    TICKET: { icon: Ticket, className: 'bg-brand-bg text-brand-fg' },
+    REFERRAL: { icon: Gift, className: 'bg-info-bg text-info-fg' },
+    SECURITY: { icon: Shield, className: 'bg-danger-bg text-danger-fg' },
+};
+const DEFAULT_TYPE_ICON = { icon: Bell, className: 'bg-surface-sunken text-fg-muted' };
+
+/** Compteur affiché sur la pastille (le même texte figure dans le nom accessible du bouton). */
+function badgeText(count: number): string {
+    return count > 99 ? '99+' : String(count);
+}
+
+/** Date relative courte : « À l’instant », « Il y a 5 min », « Hier »… puis la date à Dakar. Date illisible : « — ». */
+function formatRelativeTime(isoDate: string): string {
+    const date = toDate(isoDate);
+    if (!date) return formatShortDate(null);
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffMin < 1) return 'À l’instant';
+    if (diffMin < 60) return `Il y a ${diffMin} min`;
+    if (diffHours < 24) return `Il y a ${diffHours} h`;
+    if (diffDays === 1) return 'Hier';
+    if (diffDays < 7) return `Il y a ${diffDays} j`;
+    return formatShortDate(date);
+}
+
+/**
+ * Cloche des notifications de l'en-tête (relecture des captures du run 50) :
+ *  - bouton de 44 × 44 px ; le compteur visible fait partie du nom accessible (« Notifications, 87 non
+ *    lues » : WCAG 2.5.3, règle axe label-content-name-mismatch) ;
+ *  - pastille sur le ton plein de la marque (texte blanc 5,18:1 ; l'ancien #FF5722 donnait 3,16:1) ;
+ *  - panneau sur les tokens : chaque notification est un vrai bouton, « Marquer comme lue » est un
+ *    bouton icône de 44 px nommé, filtres en boutons à bascule (aria-pressed) ;
+ *  - aucune animation hors prefers-reduced-motion.
+ */
 export function NotificationBell() {
     const router = useRouter();
     const { user, isAuthenticated } = useAuth();
+    const panelId = useId();
+    const titleId = useId();
     const [mounted, setMounted] = useState<boolean>(false);
     const [notifications, setNotifications] = useState<InAppNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState<number>(0);
     const [isOpen, setIsOpen] = useState<boolean>(false);
-    const [isLoading, setIsLoading] = useState<boolean>(false);
     const [isMarkingAll, setIsMarkingAll] = useState<boolean>(false);
     const [filter, setFilter] = useState<'ALL' | 'UNREAD'>('ALL');
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const bellRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
         setMounted(true);
@@ -51,7 +96,10 @@ export function NotificationBell() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) setIsOpen(false);
+            if (e.key === 'Escape' && isOpen) {
+                setIsOpen(false);
+                bellRef.current?.focus();
+            }
         };
         const handleClickOutside = (e: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -107,11 +155,10 @@ export function NotificationBell() {
         enabled: isUserLoggedIn && !!user?.id,
     });
 
-    const handleMarkAsRead = async (notif: InAppNotification, e?: React.MouseEvent) => {
-        if (e) e.stopPropagation();
+    const handleMarkAsRead = async (notif: InAppNotification) => {
         if (notif.isRead) return;
 
-        // Optimistic update
+        // Mise à jour optimiste, relue sur le serveur en cas d'échec
         setNotifications((prev) =>
             prev.map((n) => (n.id === notif.id ? { ...n, isRead: true, status: 'READ' } : n))
         );
@@ -131,7 +178,7 @@ export function NotificationBell() {
 
     const handleMarkAllAsRead = async () => {
         setIsMarkingAll(true);
-        // Optimistic update
+        // Mise à jour optimiste, relue sur le serveur en cas d'échec
         setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, status: 'READ' })));
         setUnreadCount(0);
 
@@ -159,52 +206,23 @@ export function NotificationBell() {
         }
     };
 
-    const formatRelativeTime = (isoDate: string) => {
-        try {
-            const date = new Date(isoDate);
-            const now = new Date();
-            const diffMs = now.getTime() - date.getTime();
-            const diffMin = Math.floor(diffMs / (1000 * 60));
-            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const visibleNotifs = filter === 'UNREAD' ? notifications.filter((n) => !n.isRead) : notifications;
+    const showBadge = mounted && unreadCount > 0;
+    const countText = badgeText(unreadCount);
+    const bellLabel = showBadge
+        ? `Notifications, ${countText} non lue${unreadCount > 1 ? 's' : ''}`
+        : 'Notifications';
 
-            if (diffMin < 1) return 'À l’instant';
-            if (diffMin < 60) return `Il y a ${diffMin} min`;
-            if (diffHours < 24) return `Il y a ${diffHours} h`;
-            if (diffDays === 1) return 'Hier';
-            if (diffDays < 7) return `Il y a ${diffDays} j`;
-            return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-        } catch {
-            return '';
-        }
-    };
-
-    const getIcon = (type: string) => {
-        switch (type) {
-            case 'KYC':
-                return <FileText size={15} className="text-amber-500" />;
-            case 'PAYMENT':
-                return <DollarSign size={15} className="text-emerald-500" />;
-            case 'TICKET':
-                return <Ticket size={15} className="text-[#FF5722]" />;
-            case 'REFERRAL':
-                return <Gift size={15} className="text-purple-500" />;
-            case 'SECURITY':
-                return <Shield size={15} className="text-red-500" />;
-            default:
-                return <Bell size={15} className="text-blue-500" />;
-        }
-    };
-
-    const filteredNotifs = notifications.filter((n) => {
-        if (filter === 'UNREAD') return !n.isRead;
-        return true;
-    });
+    const filterClass = (active: boolean) => cn(
+        'inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-medium transition-colors duration-150',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        active ? 'bg-brand-bg font-semibold text-brand-fg' : 'text-fg-muted hover:bg-surface-sunken hover:text-fg',
+    );
 
     return (
         <div className="relative" ref={dropdownRef}>
-            {/* Bouton Cloche Navbar */}
             <button
+                ref={bellRef}
                 type="button"
                 onClick={() => {
                     if (!isUserLoggedIn) {
@@ -212,159 +230,138 @@ export function NotificationBell() {
                         return;
                     }
                     setIsOpen(!isOpen);
-                    if (!isOpen) fetchNotifications();
+                    if (!isOpen) void fetchNotifications();
                 }}
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] hover:border-[#FF5722]/40 transition-all focus:outline-none"
-                aria-label="Notifications"
-                aria-expanded={isOpen}
+                className={cn(
+                    'relative inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-sunken text-fg',
+                    'transition-colors duration-200 hover:text-brand-fg',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+                )}
+                aria-label={bellLabel}
+                aria-expanded={isUserLoggedIn ? isOpen : undefined}
+                aria-controls={isOpen ? panelId : undefined}
             >
-                <Bell size={18} />
-                {mounted && unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF5722] text-white text-[10px] font-black flex items-center justify-center shadow-md animate-pulse ring-2 ring-white dark:ring-[#161616]">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
+                <Bell size={18} aria-hidden="true" />
+                {showBadge && (
+                    <small className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand px-1 text-caption font-bold tabular-nums leading-none text-on-brand ring-2 ring-surface">
+                        {countText}
+                    </small>
                 )}
             </button>
 
-            {/* Dropdown Flottant */}
             {isOpen && (
-                <div className="fixed inset-x-3 top-14 sm:static sm:absolute sm:right-0 sm:left-auto sm:inset-x-auto sm:top-full mt-2 sm:w-96 max-h-[80vh] flex flex-col rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                    {/* Header */}
-                    <div className="p-3.5 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-900/50">
-                        <div className="flex items-center gap-2">
-                            <h3 className="font-black text-xs text-slate-900 dark:text-white uppercase tracking-wider">
-                                Notifications
-                            </h3>
-                            {unreadCount > 0 && (
-                                <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] text-[10px] font-black">
-                                    {unreadCount} non lue{unreadCount > 1 ? 's' : ''}
-                                </span>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
+                <section
+                    id={panelId}
+                    aria-labelledby={titleId}
+                    className="fixed inset-x-3 top-16 z-50 flex max-h-[80vh] flex-col overflow-hidden rounded-2xl border border-border bg-surface-raised text-fg shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96"
+                >
+                    <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
+                        <h2 id={titleId} className="text-base font-semibold text-fg">Notifications</h2>
+                        <div className="flex items-center gap-1">
                             {unreadCount > 0 && (
                                 <button
                                     type="button"
                                     onClick={handleMarkAllAsRead}
                                     disabled={isMarkingAll}
-                                    className="text-[11px] font-bold text-slate-500 hover:text-[#FF5722] dark:text-zinc-400 dark:hover:text-[#FF5722] flex items-center gap-1 transition-colors"
-                                    title="Tout marquer comme lu"
+                                    aria-busy={isMarkingAll || undefined}
+                                    className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    <CheckCheck size={13} />
-                                    <span>Tout lire</span>
+                                    <CheckCheck size={16} aria-hidden="true" />
+                                    Tout marquer comme lu
                                 </button>
                             )}
-                            <button
-                                type="button"
-                                onClick={() => setIsOpen(false)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                            <IconButton
+                                aria-label="Fermer les notifications"
+                                onClick={() => {
+                                    setIsOpen(false);
+                                    bellRef.current?.focus();
+                                }}
                             >
-                                <X size={14} />
-                            </button>
+                                <X size={18} />
+                            </IconButton>
                         </div>
                     </div>
 
-                    {/* Filtres Onglets */}
-                    <div className="flex border-b border-slate-100 dark:border-zinc-800/80 px-3 py-1.5 gap-2 text-[11px] font-bold bg-white dark:bg-[#1E1E1E]">
-                        <button
-                            type="button"
-                            onClick={() => setFilter('ALL')}
-                            className={`px-2.5 py-1 rounded-lg transition-colors ${
-                                filter === 'ALL'
-                                    ? 'bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white font-black'
-                                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                            }`}
-                        >
-                            Toutes ({notifications.length})
+                    <div className="flex gap-2 border-b border-border px-3 py-1.5" role="group" aria-label="Filtrer les notifications">
+                        <button type="button" aria-pressed={filter === 'ALL'} onClick={() => setFilter('ALL')} className={filterClass(filter === 'ALL')}>
+                            Toutes
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => setFilter('UNREAD')}
-                            className={`px-2.5 py-1 rounded-lg transition-colors ${
-                                filter === 'UNREAD'
-                                    ? 'bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white font-black'
-                                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                            }`}
-                        >
-                            Non lues ({unreadCount})
+                        <button type="button" aria-pressed={filter === 'UNREAD'} onClick={() => setFilter('UNREAD')} className={filterClass(filter === 'UNREAD')}>
+                            {`Non lues (${unreadCount})`}
                         </button>
                     </div>
 
-                    {/* Corps Liste Défilable */}
-                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/60">
-                        {filteredNotifs.length === 0 ? (
-                            <div className="py-10 px-4 text-center text-slate-400 dark:text-zinc-500 space-y-1.5">
-                                <Bell size={24} className="mx-auto text-slate-300 dark:text-zinc-700" />
-                                <p className="text-xs font-semibold">Aucune notification {filter === 'UNREAD' ? 'non lue' : ''}</p>
-                                <p className="text-[11px] text-slate-400 dark:text-zinc-600">
-                                    Vos alertes d’activités, validations et réservations s’afficheront ici.
+                    <div className="max-h-80 overflow-y-auto overscroll-contain">
+                        {visibleNotifs.length === 0 ? (
+                            <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                                <Bell size={24} className="text-fg-muted" aria-hidden="true" />
+                                <p className="text-sm font-semibold text-fg">
+                                    {filter === 'UNREAD' ? 'Aucune notification non lue' : 'Aucune notification'}
+                                </p>
+                                <p className="text-sm text-fg-muted">
+                                    Vos alertes d’activité, validations et réservations s’afficheront ici.
                                 </p>
                             </div>
                         ) : (
-                            filteredNotifs.map((notif) => (
-                                <div
-                                    key={notif.id}
-                                    onClick={() => handleNotificationClick(notif)}
-                                    className={`p-3.5 flex items-start gap-3 cursor-pointer transition-colors ${
-                                        !notif.isRead
-                                            ? 'bg-orange-50/40 dark:bg-orange-950/20 hover:bg-orange-50/70 dark:hover:bg-orange-950/30'
-                                            : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50'
-                                    }`}
-                                >
-                                    {/* Icône Type */}
-                                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        {getIcon(notif.type)}
-                                    </div>
-
-                                    {/* Contenu */}
-                                    <div className="flex-1 min-w-0 space-y-0.5">
-                                        <div className="flex items-center justify-between gap-1">
-                                            <p className={`text-xs truncate ${!notif.isRead ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-700 dark:text-zinc-300'}`}>
-                                                {notif.title}
-                                            </p>
-                                            <span className="text-[10px] text-slate-400 dark:text-zinc-500 whitespace-nowrap flex-shrink-0">
-                                                {formatRelativeTime(notif.createdAt)}
-                                            </span>
-                                        </div>
-
-                                        <p className="text-[11px] text-slate-600 dark:text-zinc-400 line-clamp-2 leading-tight">
-                                            {notif.content}
-                                        </p>
-
-                                        {notif.metadata?.actionUrl && (
-                                            <div className="pt-1 flex items-center gap-1 text-[10px] font-bold text-[#FF5722]">
-                                                <span>Consulter</span>
-                                                <ExternalLink size={10} />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Pastille non lue */}
-                                    {!notif.isRead && (
-                                        <button
-                                            type="button"
-                                            onClick={(e) => handleMarkAsRead(notif, e)}
-                                            title="Marquer comme lu"
-                                            className="w-2 h-2 rounded-full bg-[#FF5722] flex-shrink-0 mt-2 hover:scale-150 transition-transform"
-                                        />
-                                    )}
-                                </div>
-                            ))
+                            <ul className="divide-y divide-border">
+                                {visibleNotifs.map((notif) => {
+                                    const meta = TYPE_ICONS[notif.type] ?? DEFAULT_TYPE_ICON;
+                                    const Icon = meta.icon;
+                                    return (
+                                        <li key={notif.id} className={cn('flex items-start gap-1 pr-2', !notif.isRead && 'bg-brand-bg')}>
+                                            <button
+                                                type="button"
+                                                onClick={() => void handleNotificationClick(notif)}
+                                                className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                            >
+                                                <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', meta.className)} aria-hidden="true">
+                                                    <Icon size={16} />
+                                                </span>
+                                                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                                    <span className="flex items-start justify-between gap-2">
+                                                        <span className={cn('min-w-0 text-sm text-fg', notif.isRead ? 'font-medium' : 'font-semibold')}>
+                                                            {!notif.isRead && <span className="sr-only">Non lue : </span>}
+                                                            {notif.title}
+                                                        </span>
+                                                        <time dateTime={notif.createdAt} className="flex-shrink-0 whitespace-nowrap text-caption text-fg-muted">
+                                                            {formatRelativeTime(notif.createdAt)}
+                                                        </time>
+                                                    </span>
+                                                    <span className="line-clamp-2 text-sm text-fg-muted">{notif.content}</span>
+                                                    {notif.metadata?.actionUrl && (
+                                                        <span className="inline-flex items-center gap-1 pt-1 text-sm font-semibold text-brand-fg">
+                                                            Consulter
+                                                            <ArrowRight size={14} aria-hidden="true" />
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </button>
+                                            {!notif.isRead && (
+                                                <IconButton
+                                                    aria-label={`Marquer comme lue : ${notif.title}`}
+                                                    className="mt-1.5"
+                                                    onClick={() => void handleMarkAsRead(notif)}
+                                                >
+                                                    <Check size={18} />
+                                                </IconButton>
+                                            )}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
                         )}
                     </div>
 
-                    {/* Footer */}
-                    <div className="p-2.5 border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/80 dark:bg-zinc-900/80 text-center">
+                    <div className="border-t border-border p-2 text-center">
                         <Link
                             href="/notifications"
                             onClick={() => setIsOpen(false)}
-                            className="text-xs font-bold text-[#FF5722] hover:underline"
+                            className="inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-sm font-semibold text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                             Voir toutes les notifications
                         </Link>
                     </div>
-                </div>
+                </section>
             )}
         </div>
     );
