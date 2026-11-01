@@ -9,7 +9,7 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
-import { Tabs, TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
 import { KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
@@ -27,6 +27,7 @@ import { EntriesTab } from '@/components/partner/pilotage/EntriesTab';
 import { TeamTab } from '@/components/partner/pilotage/TeamTab';
 import { CashTab } from '@/components/partner/pilotage/CashTab';
 import { ClosingTab } from '@/components/partner/pilotage/ClosingTab';
+import { ScrollableTabs } from '@/components/partner/pilotage/ScrollableTabs';
 import type { EventAction, PilotageOverview } from '@/components/partner/pilotage/types';
 
 /**
@@ -125,7 +126,7 @@ export default function PartnerEventPilotagePage() {
                     <span className="h-8 w-3/4 rounded bg-surface-sunken motion-safe:animate-pulse" />
                     <span className="h-5 w-1/2 rounded bg-surface-sunken motion-safe:animate-pulse" />
                 </div>
-                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                     <KpiCardSkeleton />
                     <KpiCardSkeleton />
                     <KpiCardSkeleton />
@@ -231,7 +232,7 @@ export default function PartnerEventPilotagePage() {
             {ov.status === 'ANNULE' && <RefundProgress eventId={eventId} isAdmin={false} />}
 
             <div className="flex flex-col gap-5">
-                <Tabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as PilotageTabId)} ariaLabel="Rubriques du pilotage" idPrefix={TABS_PREFIX} />
+                <ScrollableTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as PilotageTabId)} ariaLabel="Rubriques du pilotage" idPrefix={TABS_PREFIX} />
                 <TabPanel idPrefix={TABS_PREFIX} tabIdValue={activeTab}>
                     {activeTab === 'apercu' && <OverviewTab data={ov} />}
                     {activeTab === 'ventes' && <SalesTab eventId={eventId} signal={signal} />}

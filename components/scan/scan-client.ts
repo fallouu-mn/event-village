@@ -231,6 +231,5 @@ export function titleFor(outcome: ScanOutcome): string {
     }
 }
 
-export function formatFcfa(amount: number): string {
-    return `${amount.toLocaleString('fr-FR')} FCFA`;
-}
+/** Montants : format partagé de lib/format (« 5 000 F CFA »), réexporté pour les écrans de scan. */
+export { formatFcfa } from '@/lib/format';

@@ -12,7 +12,7 @@ import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
-import { DefinitionRow, PilotageSection } from './PilotageBlocks';
+import { DefinitionRow, KpiAmount, PilotageSection } from './PilotageBlocks';
 import { shiftStatusLabel, type CashShift, type PilotageCash } from './types';
 
 function differenceText(value: number | null): string {
@@ -98,7 +98,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
 
     if (loading) {
         return (
-            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la caisse">
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la caisse">
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
@@ -114,13 +114,13 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
 
     return (
         <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
-                <KpiCard label="Espèces encaissées" value={formatFcfa(totals.cash_collected)} hint="Au scan et au guichet, toutes caisses" tone="warning" icon={<Banknote size={18} />} />
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <KpiCard label="Espèces encaissées" value={<KpiAmount value={formatFcfa(totals.cash_collected)} />} hint="Au scan et au guichet, toutes caisses" tone="warning" icon={<Banknote size={18} />} />
                 <KpiCard label="Caisses ouvertes" value={formatInteger(totals.open)} hint="Contrôleurs en service" tone="info" icon={<Unlock size={18} />} />
                 <KpiCard label="Caisses clôturées" value={formatInteger(totals.closed)} hint="Clôtures co-signées ou en litige" tone="neutral" icon={<Store size={18} />} />
                 <KpiCard
                     label="Écart cumulé"
-                    value={differenceText(totals.closed > 0 ? totals.difference : 0)}
+                    value={<KpiAmount value={differenceText(totals.closed > 0 ? totals.difference : 0)} />}
                     hint="Déclaré moins attendu, caisses clôturées"
                     tone={totals.difference === 0 ? 'success' : 'danger'}
                     icon={<Scale size={18} />}

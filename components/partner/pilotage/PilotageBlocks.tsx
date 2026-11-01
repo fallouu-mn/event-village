@@ -83,3 +83,28 @@ export function DefinitionRow({ label, value }: { label: React.ReactNode; value:
         </div>
     );
 }
+
+/**
+ * Valeur d'un KpiCard dans une grille de deux colonnes sur mobile (390 px) : un cran plus petite sous `sm`
+ * pour tenir dans la demi-largeur de la carte, sans défilement horizontal.
+ */
+export function KpiValue({ children }: { children: React.ReactNode }) {
+    return <span className="text-xl sm:text-2xl">{children}</span>;
+}
+
+/** Nombre puis unité d'un montant formaté par formatFcfa (« 351 000 F CFA » → « 351 000 », « F CFA »). */
+const AMOUNT_PARTS_RE = /^(.*\d)\s+(\D+)$/;
+
+/**
+ * Montant d'un KpiCard, tel que formaté par formatFcfa : le nombre et l'unité restent chacun insécables,
+ * et l'unité passe sous le nombre quand la carte est étroite (jamais de coupure au milieu du nombre).
+ */
+export function KpiAmount({ value }: { value: string }) {
+    const parts = AMOUNT_PARTS_RE.exec(value);
+    if (!parts) return <KpiValue>{value}</KpiValue>;
+    return (
+        <KpiValue>
+            <span className="whitespace-nowrap">{parts[1]}</span> <span className="whitespace-nowrap">{parts[2]}</span>
+        </KpiValue>
+    );
+}

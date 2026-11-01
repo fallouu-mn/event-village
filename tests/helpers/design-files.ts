@@ -37,6 +37,13 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/layout/AppLayout.tsx',
     // Relecture des captures du run 49 : logo de l'en-tête mobile (identifiant SVG unique, tokens)
     'components/ui/Logo.tsx',
+    // Relecture des captures du run 50 : en-têtes (cibles de 44 px, nom accessible), messages, carte publique
+    'components/ui/ThemeToggle.tsx',
+    'components/notifications/NotificationBell.tsx',
+    'components/ui/Toast.tsx',
+    'components/ui/EventMap.tsx',
+    'app/controller/layout.tsx',
+    'app/partner/layout.tsx',
     // Formulaire d'événement (tâches 5.5, 5.6, 5.9 ; contrat F6)
     'components/events/EventForm.tsx',
     'components/events/EventTicketing.tsx',
@@ -69,4 +76,13 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/partner/pilotage/TeamTab.tsx',
     'components/partner/pilotage/CashTab.tsx',
     'components/partner/pilotage/ClosingTab.tsx',
+    // Relecture des captures du run 50 : onglets défilants du pilotage (indice de défilement, onglet actif centré)
+    'components/partner/pilotage/ScrollableTabs.tsx',
+    // Scanner du contrôleur (écran du lot 4 touché par le lot 5 ; run 50). CombatFlashOverlay reste hors liste :
+    // ses couleurs de haute visibilité et son plein écran sont imposés par tests/scanner-combat-ui.test.ts.
+    'app/controller/scanner/page.tsx',
+    'components/scan/ScannerShiftBanner.tsx',
+    'components/scan/ScanResultPanel.tsx',
+    'components/scan/ManualEntryForm.tsx',
+    'components/scan/CameraQrScanner.tsx',
 ];

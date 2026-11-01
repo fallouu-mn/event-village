@@ -11,7 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import { apiErrorOf, errorMessage } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
-import { DefinitionRow, PilotageSection } from './PilotageBlocks';
+import { DefinitionRow, KpiAmount, KpiValue, PilotageSection } from './PilotageBlocks';
 import { shiftStatusLabel, type PilotageClosing, type ZReport } from './types';
 
 type Absent = NonNullable<PilotageClosing['absents']['list']>[number];
@@ -142,7 +142,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
 
     if (loading) {
         return (
-            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la clôture">
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la clôture">
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
@@ -159,11 +159,11 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
 
     return (
         <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
-                <KpiCard label="Montant net organisateur" value={formatFcfa(finance.organizer_net)} hint="Ventes en ligne, commissions et remboursements déduits" tone="success" icon={<Landmark size={18} />} />
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <KpiCard label="Montant net organisateur" value={<KpiAmount value={formatFcfa(finance.organizer_net)} />} hint="Ventes en ligne, commissions et remboursements déduits" tone="success" icon={<Landmark size={18} />} />
                 <KpiCard
                     label="Disponibilité des fonds"
-                    value={fundsFrom ? formatDateTime(fundsFrom) : 'Aucune vente en ligne'}
+                    value={<KpiValue>{fundsFrom ? formatDateTime(fundsFrom) : 'Aucune vente en ligne'}</KpiValue>}
                     hint={fundsFrom && fundsTo && fundsTo !== fundsFrom ? `jusqu’au ${formatDateTime(fundsTo)} pour les dernières ventes` : 'Selon le délai de versement de la plateforme'}
                     tone="info"
                     icon={<CalendarClock size={18} />}

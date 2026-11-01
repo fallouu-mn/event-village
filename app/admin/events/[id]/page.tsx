@@ -278,16 +278,20 @@ function Section({ title, children, id }: { title: string; children: React.React
   );
 }
 
+/**
+ * Ligne « libellé : valeur » d'une liste de définitions, avec pastille d'icône. Le <div> n'enveloppe que
+ * <dt> et <dd> (structure exigée dans un <dl>) : l'icône, décorative, est posée dans le <dt>.
+ */
 function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3">
-      <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-surface-sunken text-fg-muted" aria-hidden="true">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <dt className="text-sm text-fg-muted">{label}</dt>
-        <dd className="break-words text-base font-medium text-fg">{children}</dd>
-      </div>
+    <div className="relative min-h-9 min-w-0 pl-12">
+      <dt className="text-sm text-fg-muted">
+        <span className="absolute left-0 top-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-surface-sunken text-fg-muted" aria-hidden="true">
+          {icon}
+        </span>
+        {label}
+      </dt>
+      <dd className="break-words text-base font-medium text-fg">{children}</dd>
     </div>
   );
 }
@@ -648,7 +652,7 @@ export default function AdminEventSheetPage() {
                 src={event.image_url}
                 alt={`Affiche de « ${event.title} »`}
                 loading="lazy"
-                className="aspect-[3/4] w-full rounded-xl border border-border bg-surface-sunken object-cover"
+                className="mx-auto block h-auto max-h-[36rem] w-auto max-w-full rounded-xl border border-border bg-surface-sunken object-contain"
               />
             ) : (
               <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-sunken text-fg-muted">

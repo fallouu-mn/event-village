@@ -3,7 +3,7 @@ import { Armchair, Banknote, DoorOpen, Gift, Percent, RotateCcw, Smartphone, Tic
 import { KpiCard } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { formatFcfa, formatInteger, formatPercent, formatDateTime } from '@/lib/format';
-import { PilotageSection } from './PilotageBlocks';
+import { KpiAmount, PilotageSection } from './PilotageBlocks';
 import type { PilotageOverview } from './types';
 
 /**
@@ -23,7 +23,7 @@ export function OverviewTab({ data }: { data: PilotageOverview }) {
             )}
 
             <PilotageSection title="Billetterie" description="Billets valides et utilisés, hors invitations.">
-                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                     <KpiCard
                         label="Billets vendus"
                         value={formatInteger(tickets.sold)}
@@ -43,7 +43,7 @@ export function OverviewTab({ data }: { data: PilotageOverview }) {
             </PilotageSection>
 
             <PilotageSection title="Contrôle d’accès" description="Passages validés au scan et au guichet.">
-                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                     <KpiCard
                         label="Entrées"
                         value={formatInteger(entries.total)}
@@ -62,12 +62,12 @@ export function OverviewTab({ data }: { data: PilotageOverview }) {
             </PilotageSection>
 
             <PilotageSection title="Recettes" description="Montants des billets, remboursements déduits pour les ventes en ligne.">
-                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
-                    <KpiCard label="En ligne" value={formatFcfa(revenue.online)} hint="Paiements mobiles confirmés" tone="success" icon={<Smartphone size={18} />} />
-                    <KpiCard label="En espèces" value={formatFcfa(revenue.cash)} hint="Encaissées par vos contrôleurs" tone="warning" icon={<Banknote size={18} />} />
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                    <KpiCard label="En ligne" value={<KpiAmount value={formatFcfa(revenue.online)} />} hint="Paiements mobiles confirmés" tone="success" icon={<Smartphone size={18} />} />
+                    <KpiCard label="En espèces" value={<KpiAmount value={formatFcfa(revenue.cash)} />} hint="Encaissées par vos contrôleurs" tone="warning" icon={<Banknote size={18} />} />
                     <KpiCard
                         label="Remboursé"
-                        value={formatFcfa(revenue.refunded)}
+                        value={<KpiAmount value={formatFcfa(revenue.refunded)} />}
                         hint={refundedCash > 0 ? `dont ${formatFcfa(refundedCash)} en espèces à rembourser par vous` : 'Remboursements en ligne'}
                         tone="danger"
                         icon={<RotateCcw size={18} />}

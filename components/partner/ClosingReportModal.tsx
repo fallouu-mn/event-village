@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import type { ClosingReportData } from '@/lib/partner/partner-dashboard.service';
+import { formatEventDateTime, formatFcfa } from '@/lib/format';
 
 interface ClosingReportModalProps {
   isOpen: boolean;
@@ -194,12 +195,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-zinc-400">
                 <span className="flex items-center gap-1">
                   <Calendar size={13} />
-                  {new Date(data.event.startDate).toLocaleDateString('fr-FR', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}{' '}
-                  à {data.event.startTime}
+                  {formatEventDateTime(data.event.startDate, data.event.startTime)}
                 </span>
                 <span className="flex items-center gap-1">
                   <MapPin size={13} />
@@ -213,7 +209,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                 Net Partenaire à Reverser
               </span>
               <span className="text-xl sm:text-2xl font-black text-[#FF5722]">
-                {data.financialSummary.totalNet.toLocaleString('fr-FR')} FCFA
+                {formatFcfa(data.financialSummary.totalNet)}
               </span>
             </div>
           </div>
@@ -255,7 +251,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                 {data.paymentsSummary.confirmedCount} transactions
               </div>
               <p className="text-[11px] font-bold text-slate-500 dark:text-zinc-400">
-                Ventes en ligne : {data.financialSummary.totalGross.toLocaleString('fr-FR')} F
+                Ventes en ligne : {formatFcfa(data.financialSummary.totalGross)}
               </p>
             </div>
           </div>
@@ -284,7 +280,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                         {cat.name}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-slate-600 dark:text-zinc-400">
-                        {cat.unitPrice.toLocaleString('fr-FR')} FCFA
+                        {formatFcfa(cat.unitPrice)}
                       </td>
                       <td className="py-2.5 px-3 text-center text-slate-600 dark:text-zinc-400">
                         {cat.totalAllocated}
@@ -296,7 +292,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                         {cat.checkedInQuantity}
                       </td>
                       <td className="py-2.5 px-3 text-right font-black text-slate-900 dark:text-white font-mono">
-                        {cat.grossAmount.toLocaleString('fr-FR')} FCFA
+                        {formatFcfa(cat.grossAmount)}
                       </td>
                     </tr>
                   ))}
@@ -316,14 +312,14 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
               <div className="flex justify-between items-center pt-1">
                 <span className="text-slate-300">Ventes en ligne (prix faciaux des billets) :</span>
                 <span className="font-bold text-white font-mono">
-                  {data.financialSummary.totalGross.toLocaleString('fr-FR')} FCFA
+                  {formatFcfa(data.financialSummary.totalGross)}
                 </span>
               </div>
               {data.financialSummary.totalRefunded > 0 && (
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-slate-300">Remboursements aux acheteurs :</span>
                   <span className="font-bold text-red-400 font-mono">
-                    - {data.financialSummary.totalRefunded.toLocaleString('fr-FR')} FCFA
+                    - {formatFcfa(data.financialSummary.totalRefunded)}
                   </span>
                 </div>
               )}
@@ -332,19 +328,19 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                   Montant Net à Reverser au Partenaire :
                 </span>
                 <span className="text-lg font-black text-white font-mono bg-[#FF5722] px-3 py-1 rounded-xl shadow-xs">
-                  {data.financialSummary.totalNet.toLocaleString('fr-FR')} FCFA
+                  {formatFcfa(data.financialSummary.totalNet)}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-2">
                 <span className="text-slate-300">
-                  Dont disponible : {data.financialSummary.availableNet.toLocaleString('fr-FR')} F
-                  {' · '}en attente : {data.financialSummary.pendingNet.toLocaleString('fr-FR')} F
+                  Dont disponible : {formatFcfa(data.financialSummary.availableNet)}
+                  {' · '}en attente : {formatFcfa(data.financialSummary.pendingNet)}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-2">
                 <span className="text-slate-400">Frais de service payés par l&apos;acheteur (non déduits) :</span>
                 <span className="font-bold text-slate-300 font-mono">
-                  {data.financialSummary.buyerServiceFees.toLocaleString('fr-FR')} FCFA
+                  {formatFcfa(data.financialSummary.buyerServiceFees)}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-2">
@@ -352,7 +348,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                   Ventes espèces au guichet ({data.financialSummary.cashTickets} billet{data.financialSummary.cashTickets > 1 ? 's' : ''}, hors plateforme, informatif) :
                 </span>
                 <span className="font-bold text-slate-300 font-mono">
-                  {data.financialSummary.cashSales.toLocaleString('fr-FR')} FCFA
+                  {formatFcfa(data.financialSummary.cashSales)}
                 </span>
               </div>
             </div>

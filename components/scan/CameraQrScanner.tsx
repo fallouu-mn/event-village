@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, SwitchCamera, AlertCircle, RefreshCw, QrCode, ShieldAlert, Sparkles, Flashlight, FlashlightOff, PowerOff } from 'lucide-react';
+import { Camera, SwitchCamera, RefreshCw, QrCode, ShieldAlert, Sparkles, Flashlight, FlashlightOff, PowerOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { cn } from '@/components/ui/cn';
 import { detectScannerSupport, ScannerSupportMode } from '@/lib/scanner/support';
 import { isTorchSupported, setTorchState } from '@/lib/hardware/torch';
 
@@ -380,101 +381,96 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   };
 
   return (
-    <div className={`space-y-4 ${className}`}>
-      {/* Conteneur Vidéo & Viseur */}
-      <div className="relative w-full aspect-square max-w-sm mx-auto rounded-3xl bg-black border-2 border-slate-800 dark:border-zinc-800 overflow-hidden shadow-xl flex items-center justify-center">
-        {/* Flux vidéo */}
+    <div className={cn('flex flex-col gap-4', className)}>
+      {/* Flux vidéo et viseur : surface sombre de la caméra, identique en thème clair et sombre */}
+      <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl border-2 border-border-strong bg-black shadow-xl">
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-cover"
+          className="h-full w-full object-cover"
         />
 
-        {/* État : Chargement initial */}
+        {/* État : chargement initial */}
         {isInitializing && (
-          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center text-white space-y-3 z-20">
-            <RefreshCw className="w-8 h-8 animate-spin text-[#FF5722]" />
-            <p className="text-xs font-bold tracking-wide">Initialisation de la caméra...</p>
+          <div role="status" className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-scrim/80 p-6 text-center text-white backdrop-blur-xs">
+            <RefreshCw size={32} aria-hidden="true" className="text-brand-decor motion-safe:animate-spin" />
+            <p className="text-sm font-semibold">Initialisation de la caméra…</p>
           </div>
         )}
 
-        {/* État : Erreur d'accès / Permission refusée */}
+        {/* État : erreur d'accès ou permission refusée */}
         {cameraError && (
-          <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center text-white space-y-4 z-30">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-400 flex items-center justify-center">
+          <div role="alert" className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-scrim/95 p-6 text-center text-white">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-white" aria-hidden="true">
               <ShieldAlert size={24} />
+            </span>
+            <div className="flex max-w-xs flex-col gap-1">
+              <h4 className="text-base font-semibold">Caméra indisponible</h4>
+              <p className="text-sm leading-relaxed text-white/85">{cameraError}</p>
             </div>
-            <div className="space-y-1 max-w-xs">
-              <h4 className="text-xs font-black uppercase tracking-wider text-red-400">Caméra Indisponible</h4>
-              <p className="text-[11px] text-slate-300 leading-relaxed">{cameraError}</p>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={startCameraStream}>
-                <RefreshCw size={14} className="mr-1.5" />
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="glass" onClick={startCameraStream} leftIcon={<RefreshCw size={16} />}>
                 Réessayer
               </Button>
               {onSwitchToManual && (
-                <Button size="sm" variant="primary" onClick={onSwitchToManual}>
-                  Mode Manuel
+                <Button variant="primary" onClick={onSwitchToManual}>
+                  Saisie manuelle
                 </Button>
               )}
             </div>
           </div>
         )}
 
-        {/* État : Mise en veille automatique après 45s d'inactivité */}
+        {/* État : mise en veille automatique après 45 s d'inactivité */}
         {isAsleep && !cameraError && (
           <div
             data-testid="scanner-sleep-overlay"
             onClick={wakeUpScanner}
-            className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white space-y-3 z-30 cursor-pointer pointer-events-auto"
+            className="pointer-events-auto absolute inset-0 z-30 flex cursor-pointer flex-col items-center justify-center gap-3 bg-scrim/90 p-6 text-center text-white backdrop-blur-sm"
           >
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center animate-pulse">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-white" aria-hidden="true">
               <PowerOff size={24} />
-            </div>
-            <div className="space-y-1 max-w-xs">
-              <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">Scanner en veille</h4>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                Mis en veille après 45s d&apos;inactivité pour économiser la batterie.
+            </span>
+            <div className="flex max-w-xs flex-col gap-1">
+              <h4 className="text-base font-semibold">Scanner en veille</h4>
+              <p className="text-sm leading-relaxed text-white/85">
+                Mis en veille après 45 secondes d’inactivité pour économiser la batterie.
               </p>
             </div>
-            <Button size="sm" variant="primary" onClick={(e) => { e.stopPropagation(); wakeUpScanner(); }}>
-              <Sparkles size={14} className="mr-1.5" />
+            <Button variant="primary" onClick={(e) => { e.stopPropagation(); wakeUpScanner(); }} leftIcon={<Sparkles size={16} />}>
               Réactiver la caméra
             </Button>
           </div>
         )}
 
-        {/* Viseur de Cadrage & Ligne Laser Animée */}
+        {/* Viseur de cadrage et ligne de balayage (décor) */}
         {!cameraError && !isInitializing && !isAsleep && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6 z-10">
-            <div className="relative w-60 h-60 rounded-2xl border-2 border-[#FF5722] shadow-[0_0_20px_rgba(255,87,34,0.35)] flex items-center justify-center overflow-hidden">
-              {/* Coins de cadrage renforcés */}
-              <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-white rounded-tl-sm" />
-              <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-white rounded-tr-sm" />
-              <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-white rounded-bl-sm" />
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-white rounded-br-sm" />
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
+            <div className="relative flex h-60 max-h-full w-60 max-w-full items-center justify-center overflow-hidden rounded-2xl border-2 border-brand-decor">
+              <div className="absolute -left-1 -top-1 h-5 w-5 rounded-tl-sm border-l-4 border-t-4 border-white" aria-hidden="true" />
+              <div className="absolute -right-1 -top-1 h-5 w-5 rounded-tr-sm border-r-4 border-t-4 border-white" aria-hidden="true" />
+              <div className="absolute -bottom-1 -left-1 h-5 w-5 rounded-bl-sm border-b-4 border-l-4 border-white" aria-hidden="true" />
+              <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-br-sm border-b-4 border-r-4 border-white" aria-hidden="true" />
 
-              {/* Ligne Laser de Balayage */}
               {!isPausedAfterScan && !isVerifying && (
-                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#FF5722] to-transparent shadow-[0_0_12px_#FF5722] animate-bounce" />
+                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-brand-decor to-transparent motion-safe:animate-bounce" aria-hidden="true" />
               )}
 
-              {/* État : Pause / En cours de validation */}
+              {/* État : billet lu ou vérification en cours */}
               {(isPausedAfterScan || isVerifying) && (
-                <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center">
-                  <span className="px-3 py-1.5 rounded-xl bg-white/90 dark:bg-zinc-900/90 text-slate-900 dark:text-white text-[11px] font-black uppercase tracking-wider shadow-lg flex items-center gap-1.5">
+                <div className="absolute inset-0 flex items-center justify-center bg-scrim/40 backdrop-blur-xs">
+                  <span role="status" className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-fg shadow-lg">
                     {isVerifying ? (
                       <>
-                        <RefreshCw size={12} className="animate-spin text-[#FF5722]" />
-                        Vérification...
+                        <RefreshCw size={16} aria-hidden="true" className="text-brand-fg motion-safe:animate-spin" />
+                        Vérification…
                       </>
                     ) : (
                       <>
-                        <Sparkles size={12} className="text-emerald-500" />
-                        Scanné !
+                        <Sparkles size={16} aria-hidden="true" className="text-success-fg" />
+                        Billet lu
                       </>
                     )}
                   </span>
@@ -484,67 +480,58 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
           </div>
         )}
 
-        {/* Contrôles intégrés sur le flux vidéo */}
+        {/* Commandes posées sur le flux vidéo */}
         {!cameraError && !isInitializing && !isAsleep && (
           <>
-            {/* Bouton Torche en haut à droite (Accès direct à une main) */}
-            <div className="absolute top-3 right-3 z-30 pointer-events-auto">
+            {/* Torche en haut à droite (accès direct à une main) */}
+            <div className="pointer-events-auto absolute right-3 top-3 z-30">
               {torchSupported ? (
                 <button
                   type="button"
                   data-testid="torch-toggle-btn"
                   onClick={handleToggleTorch}
-                  aria-label={isTorchOn ? 'Éteindre la torche' : 'Allumer la torche'}
-                  className={`min-h-[44px] px-3.5 py-2 rounded-2xl backdrop-blur-md font-bold text-xs flex items-center gap-2 transition-all active:scale-95 shadow-lg border ${
-                    isTorchOn
-                      ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.6)] ring-2 ring-amber-300/50'
-                      : 'bg-black/70 text-white hover:bg-black/90 border-white/20'
-                  }`}
-                >
-                  {isTorchOn ? (
-                    <Flashlight size={18} className="text-black fill-current animate-pulse" />
-                  ) : (
-                    <FlashlightOff size={18} className="text-slate-300" />
+                  aria-pressed={isTorchOn}
+                  className={cn(
+                    'flex min-h-11 items-center gap-2 rounded-2xl border px-3.5 text-sm font-semibold shadow-lg backdrop-blur-md transition-colors duration-200 motion-safe:active:scale-95',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    isTorchOn ? 'border-warning-border bg-warning-bg text-warning-fg' : 'border-white/20 bg-black/70 text-white hover:bg-black/90',
                   )}
-                  <span>{isTorchOn ? 'Torche ON' : 'Torche'}</span>
+                >
+                  {isTorchOn ? <Flashlight size={18} aria-hidden="true" /> : <FlashlightOff size={18} aria-hidden="true" />}
+                  <span>{isTorchOn ? 'Torche allumée' : 'Torche éteinte'}</span>
                 </button>
               ) : (
-                /* Fallback gracieux pour iOS Safari et appareils sans flash : masquage sans crash */
+                /* Repli pour iOS Safari et les appareils sans flash : rien n'est affiché, sans erreur */
                 <span data-testid="torch-unsupported-fallback" className="hidden" />
               )}
             </div>
 
-            {/* Barre de contrôle basse */}
-            <div className="absolute bottom-3 inset-x-3 flex items-center justify-between pointer-events-auto z-20">
-              {/* Badge Mode Actif */}
-              <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-bold text-white/90 border border-white/10 flex items-center gap-1">
-                <Camera size={12} className="text-[#FF5722]" />
-                <span>Scanner actif</span>
+            {/* Barre basse : état du scanner et changement de caméra */}
+            <div className="pointer-events-auto absolute inset-x-3 bottom-3 z-20 flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/60 px-3 py-1 text-sm font-medium text-white backdrop-blur-md">
+                <Camera size={16} aria-hidden="true" className="text-brand-decor" />
+                Scanner actif
               </span>
 
-              <div className="flex items-center gap-2">
-                {/* Bouton Bascule Caméra Avant / Arrière (visible si plusieurs caméras) */}
-                {availableCameras.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={toggleFacingMode}
-                    className="min-h-[44px] min-w-[44px] p-2.5 rounded-full bg-black/60 backdrop-blur-md text-white hover:bg-black/80 transition-all border border-white/10 active:scale-95 flex items-center justify-center"
-                    title="Changer de caméra"
-                  >
-                    <SwitchCamera size={18} />
-                  </button>
-                )}
-              </div>
+              {availableCameras.length > 1 && (
+                <button
+                  type="button"
+                  onClick={toggleFacingMode}
+                  aria-label="Changer de caméra"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white backdrop-blur-md transition-colors duration-200 hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-95"
+                >
+                  <SwitchCamera size={18} aria-hidden="true" />
+                </button>
+              )}
             </div>
           </>
         )}
       </div>
 
-      {/* Bouton de reprise immédiate lors d'un scan en rafale */}
+      {/* Reprise immédiate lors d'un scan en rafale */}
       {isPausedAfterScan && !isVerifying && (
-        <div className="text-center">
-          <Button size="sm" variant="secondary" onClick={handleManualResume}>
-            <QrCode size={14} className="mr-1.5 text-[#FF5722]" />
+        <div className="flex justify-center">
+          <Button variant="secondary" onClick={handleManualResume} leftIcon={<QrCode size={18} />}>
             Scanner le billet suivant
           </Button>
         </div>

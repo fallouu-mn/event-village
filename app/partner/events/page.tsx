@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { Button } from '@/components/ui/Button';
 import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
-import { Tabs, TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { Modal } from '@/components/ui/Modal';
@@ -17,6 +17,8 @@ import { useToast } from '@/components/ui/Toast';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EVENT_STATUSES, EVENT_STATUS_META, type EventStatus } from '@/lib/events/event-status';
 import { formatFcfa, formatInteger } from '@/lib/format';
+import { KpiAmount } from '@/components/partner/pilotage/PilotageBlocks';
+import { ScrollableTabs } from '@/components/partner/pilotage/ScrollableTabs';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
 import { PartnerEventCard, type EventAction, type PartnerEventItem } from '@/components/partner/events-list/PartnerEventCard';
 import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
@@ -203,7 +205,7 @@ export default function PartnerEventsPage() {
                 />
             ) : (
                 <>
-                    <section aria-label="Indicateurs sur tous vos événements" className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
+                    <section aria-label="Indicateurs sur tous vos événements" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         {loading && !totals ? (
                             <>
                                 <KpiCardSkeleton />
@@ -215,14 +217,14 @@ export default function PartnerEventsPage() {
                             <>
                                 <KpiCard label="Événements" value={formatInteger(totals?.events)} hint="Tous statuts confondus" icon={<CalendarRange size={18} />} tone="brand" />
                                 <KpiCard label="Billets vendus" value={formatInteger(totals?.tickets_sold)} hint="Hors invitations" icon={<Ticket size={18} />} tone="info" />
-                                <KpiCard label="Recettes en ligne" value={formatFcfa(totals?.revenue_online)} hint="Billets payés en ligne, remboursements déduits" icon={<Smartphone size={18} />} tone="success" />
-                                <KpiCard label="Recettes en espèces" value={formatFcfa(totals?.revenue_cash)} hint="Encaissées par vos contrôleurs" icon={<Banknote size={18} />} tone="warning" />
+                                <KpiCard label="Recettes en ligne" value={<KpiAmount value={formatFcfa(totals?.revenue_online)} />} hint="Billets payés en ligne, remboursements déduits" icon={<Smartphone size={18} />} tone="success" />
+                                <KpiCard label="Recettes en espèces" value={<KpiAmount value={formatFcfa(totals?.revenue_cash)} />} hint="Encaissées par vos contrôleurs" icon={<Banknote size={18} />} tone="warning" />
                             </>
                         )}
                     </section>
 
                     <div className="flex flex-col gap-4">
-                        <Tabs
+                        <ScrollableTabs
                             tabs={tabs}
                             value={activeTab}
                             onChange={(id) => setActiveTab(id as ListTab)}
