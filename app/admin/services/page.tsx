@@ -1,306 +1,288 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import {
-  ChevronLeft,
-  Calendar,
-  Building2,
-  Utensils,
-  ShoppingBag,
-  Ticket,
-  RefreshCw,
-  AlertCircle,
-  CheckCircle2,
-  Sliders,
-  Eye,
-  XCircle,
-  CheckCircle,
-} from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { useToast } from '@/components/ui/Toast';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowRight, Building2, CalendarDays, ShoppingBag, Ticket, Utensils } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Tabs, TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { DataList, type DataColumn } from '@/components/ui/DataList';
+import { Badge, type BadgeVariant } from '@/components/ui/Badge';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { formatFcfa, formatShortDate, toDakarDateTimeLocal } from '@/lib/format';
 
-interface RejectModalState {
-  open: boolean;
-  table: 'events' | 'halls' | 'products';
+/**
+ * Lot 5 (tâche 5.7) — supervision des catalogues (salles, tables, produits, commandes), en lecture.
+ * La modération des événements n'est plus ici : elle passe par /admin/events et les transitions de la
+ * machine à états (contrat D4). Cet écran n'écrit plus aucun statut.
+ */
+
+const TAB_IDS = ['evenements', 'salles', 'tables', 'produits', 'commandes'] as const;
+type TabId = (typeof TAB_IDS)[number];
+type CatalogTab = Exclude<TabId, 'evenements'>;
+const ID_PREFIX = 'admin-services';
+
+const TABS: TabItem[] = [
+  { id: 'evenements', label: 'Événements' },
+  { id: 'salles', label: 'Salles de fête' },
+  { id: 'tables', label: 'Restaurants et tables' },
+  { id: 'produits', label: 'Produits et traiteurs' },
+  { id: 'commandes', label: 'Commandes' },
+];
+
+/** Type demandé à GET /api/admin/services et clé de la réponse, par onglet. */
+const API_TYPE: Record<CatalogTab, 'halls' | 'tables' | 'products' | 'orders'> = {
+  salles: 'halls',
+  tables: 'tables',
+  produits: 'products',
+  commandes: 'orders',
+};
+
+interface CatalogRow {
   id: string;
-  title: string;
-  targetStatus: string;
+  name: string;
+  owner: string;
+  detail: string;
+  amount: string;
+  state: { label: string; variant: BadgeVariant };
+  createdAt: string | null;
 }
 
-export default function AdminServicesManagementPage() {
-  const toast = useToast();
-  const [currentTab, setCurrentTab] = useState<'events' | 'halls' | 'tables' | 'products' | 'orders'>('events');
-  const [items, setItems] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [rejectModal, setRejectModal] = useState<RejectModalState>({ open: false, table: 'events', id: '', title: '', targetStatus: 'BROUILLON' });
-  const [rejectReason, setRejectReason] = useState('');
+const PRODUCT_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
+  DISPONIBLE: { label: 'Disponible', variant: 'success' },
+  INDISPONIBLE: { label: 'Indisponible', variant: 'neutral' },
+  EPUISE: { label: 'Épuisé', variant: 'warning' },
+  SUSPENDU: { label: 'Suspendu', variant: 'danger' },
+};
 
-  const fetchServices = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const res = await fetch(`/api/admin/services?type=${currentTab}`);
-      const data = await res.json();
-      if (res.ok) {
-        setItems(data[currentTab] || []);
-      }
-    } catch (err) {
-      console.error('[AdminServices] Erreur chargement:', err);
-    } finally {
-      setIsLoading(false);
+const ORDER_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
+  EN_ATTENTE: { label: 'En attente', variant: 'warning' },
+  CONFIRMEE: { label: 'Confirmée', variant: 'info' },
+  EN_PREPARATION: { label: 'En préparation', variant: 'info' },
+  PRETE: { label: 'Prête', variant: 'info' },
+  EN_LIVRAISON: { label: 'En livraison', variant: 'info' },
+  LIVREE: { label: 'Livrée', variant: 'success' },
+  ANNULEE: { label: 'Annulée', variant: 'danger' },
+  REJETEE: { label: 'Rejetée', variant: 'danger' },
+};
+
+const UNKNOWN_STATE = { label: 'Statut inconnu', variant: 'neutral' as BadgeVariant };
+
+type Raw = Record<string, unknown>;
+
+function text(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+function num(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : Number.NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+function companyOf(v: unknown): string | null {
+  const one = Array.isArray(v) ? v[0] : v;
+  return one && typeof one === 'object' ? text((one as Raw).company_name) : null;
+}
+
+function activeState(v: unknown): { label: string; variant: BadgeVariant } {
+  return v === false ? { label: 'Inactif', variant: 'neutral' } : { label: 'Actif', variant: 'success' };
+}
+
+/** Ligne d'affichage d'un élément de catalogue (libellés, montants formatés ; aucun code brut). */
+function toRow(tab: CatalogTab, item: Raw): CatalogRow {
+  const id = String(item.id);
+  const createdAt = text(item.created_at);
+  switch (tab) {
+    case 'salles': {
+      const capacity = num(item.capacity);
+      const perDay = num(item.price_per_day);
+      return {
+        id,
+        name: text(item.name) ?? 'Salle sans nom',
+        owner: companyOf(item.partners) ?? 'Organisateur inconnu',
+        detail: capacity ? `${capacity} personnes` : 'Capacité non renseignée',
+        amount: perDay !== null ? `${formatFcfa(perDay)} par jour` : 'Sur devis',
+        state: activeState(item.is_active),
+        createdAt,
+      };
     }
-  }, [currentTab]);
+    case 'tables': {
+      const zone = item.restaurant_zones && typeof item.restaurant_zones === 'object' ? (item.restaurant_zones as Raw) : null;
+      const capacity = num(item.capacity);
+      return {
+        id,
+        name: `Table ${text(item.table_number) ?? '—'}`,
+        owner: companyOf(zone?.partners) ?? 'Restaurant inconnu',
+        detail: [text(zone?.name), capacity ? `${capacity} places` : null].filter(Boolean).join(' · ') || 'Zone non renseignée',
+        amount: '—',
+        state: activeState(item.is_active),
+        createdAt,
+      };
+    }
+    case 'produits': {
+      const price = num(item.price);
+      const category = item.product_categories && typeof item.product_categories === 'object' ? text((item.product_categories as Raw).name) : null;
+      return {
+        id,
+        name: text(item.name) ?? 'Produit sans nom',
+        owner: companyOf(item.partners) ?? 'Partenaire inconnu',
+        detail: category ?? 'Sans catégorie',
+        amount: price !== null ? formatFcfa(price) : '—',
+        state: PRODUCT_STATUS[String(item.status)] ?? UNKNOWN_STATE,
+        createdAt,
+      };
+    }
+    case 'commandes': {
+      const total = num(item.total_amount);
+      const user = item.users && typeof item.users === 'object' ? (item.users as Raw) : null;
+      const client = [text(user?.first_name), text(user?.last_name)].filter(Boolean).join(' ');
+      return {
+        id,
+        name: `Commande ${text(item.order_number) ?? id.slice(0, 8)}`,
+        owner: companyOf(item.partners) ?? 'Partenaire inconnu',
+        detail: client ? `Client : ${client}` : 'Client non renseigné',
+        amount: total !== null ? formatFcfa(total) : '—',
+        state: ORDER_STATUS[String(item.order_status)] ?? UNKNOWN_STATE,
+        createdAt,
+      };
+    }
+    default:
+      return { id, name: '—', owner: '—', detail: '—', amount: '—', state: UNKNOWN_STATE, createdAt };
+  }
+}
+
+const COLUMNS: DataColumn<CatalogRow>[] = [
+  { key: 'name', header: 'Élément', render: (r) => <span className="font-semibold text-fg">{r.name}</span>, hideOnCard: true },
+  { key: 'owner', header: 'Partenaire', render: (r) => r.owner },
+  { key: 'detail', header: 'Détail', render: (r) => <span className="text-fg-muted">{r.detail}</span> },
+  { key: 'amount', header: 'Montant', align: 'right', render: (r) => <span className="whitespace-nowrap tabular-nums">{r.amount}</span> },
+  { key: 'state', header: 'État', render: (r) => <Badge variant={r.state.variant} size="sm">{r.state.label}</Badge> },
+  {
+    key: 'created',
+    header: 'Créé le',
+    render: (r) => (r.createdAt
+      ? <time dateTime={toDakarDateTimeLocal(r.createdAt)} className="whitespace-nowrap tabular-nums">{formatShortDate(r.createdAt)}</time>
+      : '—'),
+  },
+];
+
+const EMPTY_ICONS: Record<CatalogTab, React.ReactNode> = {
+  salles: <Building2 size={28} />,
+  tables: <Utensils size={28} />,
+  produits: <ShoppingBag size={28} />,
+  commandes: <Ticket size={28} />,
+};
+
+type Phase = 'loading' | 'ready' | 'error';
+
+function CatalogPanel({ tab }: { tab: CatalogTab }) {
+  const [rows, setRows] = useState<CatalogRow[]>([]);
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const mine = ++seq.current;
+    setPhase('loading');
+    setErrorMessage(null);
+    const type = API_TYPE[tab];
+    try {
+      const res = await fetch(`/api/admin/services?type=${type}`, { cache: 'no-store' });
+      const body: unknown = await res.json().catch(() => null);
+      if (mine !== seq.current) return;
+      const list = body && typeof body === 'object' ? (body as Raw)[type] : null;
+      if (!res.ok || !Array.isArray(list)) {
+        if (res.status === 403) throw new Error('Votre compte n’a pas l’autorisation de consulter ce catalogue.');
+        throw new Error('Impossible de charger ce catalogue pour le moment.');
+      }
+      setRows((list as Raw[]).map((item) => toRow(tab, item)));
+      setPhase('ready');
+    } catch (err) {
+      if (mine !== seq.current) return;
+      console.error(`[admin/services] chargement « ${type} » en échec`, err);
+      setErrorMessage(err instanceof Error && !/fetch|network/i.test(err.message) ? err.message : 'Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+      setPhase('error');
+    }
+  }, [tab]);
 
   useEffect(() => {
-    fetchServices();
-  }, [fetchServices]);
+    void load();
+  }, [load]);
 
-  const handleUpdateStatus = async (table: 'events' | 'halls' | 'products', id: string, newStatus: string, reason?: string) => {
-    try {
-      const res = await fetch('/api/admin/services', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table, id, status: newStatus, reason }),
-      });
+  if (phase === 'loading') {
+    return (
+      <div role="status" aria-busy="true" aria-label="Chargement du catalogue" className="flex flex-col gap-3">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+      </div>
+    );
+  }
+  if (phase === 'error') {
+    return (
+      <ErrorState
+        title="Catalogue indisponible"
+        description={errorMessage ?? undefined}
+        onRetry={() => {
+          setIsRetrying(true);
+          void load().finally(() => setIsRetrying(false));
+        }}
+        isRetrying={isRetrying}
+      />
+    );
+  }
+  return (
+    <DataList
+      items={rows}
+      columns={COLUMNS}
+      getKey={(r) => r.id}
+      caption={TABS.find((t) => t.id === tab)?.label ?? 'Catalogue'}
+      cardTitle={(r) => r.name}
+      empty={<EmptyState icon={EMPTY_ICONS[tab]} title="Aucun élément" description="Aucun partenaire n’a encore rien enregistré dans ce catalogue." />}
+    />
+  );
+}
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour.');
-
-      toast.success('Le statut du service a été mis à jour avec succès.');
-      await fetchServices();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la mise à jour.';
-      toast.error(msg);
-    }
-  };
-
-  const openRejectModal = (table: 'events' | 'halls' | 'products', id: string, title: string, targetStatus = 'BROUILLON') => {
-    setRejectReason('');
-    setRejectModal({ open: true, table, id, title, targetStatus });
-  };
-
-  const confirmReject = async () => {
-    if (!rejectReason.trim()) {
-      toast.error('Le motif est obligatoire.');
-      return;
-    }
-    setRejectModal(m => ({ ...m, open: false }));
-    await handleUpdateStatus(rejectModal.table, rejectModal.id, rejectModal.targetStatus, rejectReason.trim());
-  };
-
-  const formatDate = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      });
-    } catch {
-      return iso;
-    }
-  };
+export default function AdminServicesPage() {
+  const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'evenements');
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/dashboard"
-            className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        back={{ href: '/admin/dashboard', label: 'Tableau de bord' }}
+        title="Catalogues et services"
+        description="Vue d’ensemble, en lecture, des salles, tables, produits et commandes des partenaires."
+      />
+
+      <Tabs
+        tabs={TABS}
+        value={tab}
+        onChange={(next) => {
+          if ((TAB_IDS as readonly string[]).includes(next)) setTab(next as TabId);
+        }}
+        ariaLabel="Catalogues"
+        idPrefix={ID_PREFIX}
+      />
+
+      <TabPanel idPrefix={ID_PREFIX} tabIdValue={tab}>
+        {tab === 'evenements' ? (
+          <StatusBanner
+            tone="info"
+            icon={<CalendarDays size={20} />}
+            title="La modération des événements a son propre écran"
+            action={(
+              <LinkButton href="/admin/events" rightIcon={<ArrowRight size={16} />}>
+                Ouvrir les événements
+              </LinkButton>
+            )}
           >
-            <ChevronLeft size={20} />
-          </Link>
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
-              Console Superadmin HQ
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Supervision des Catalogues & Services (§130)
-            </h1>
-          </div>
-        </div>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => fetchServices()}
-          disabled={isLoading}
-          className="flex items-center gap-1.5"
-        >
-          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-          <span>Actualiser</span>
-        </Button>
-      </div>
-
-      {/* Onglets de Services */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
-        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-4 overflow-x-auto">
-          {[
-            { key: 'events', label: 'Événements & Billets', icon: Calendar },
-            { key: 'halls', label: 'Salles de Fête', icon: Building2 },
-            { key: 'tables', label: 'Restaurants & Tables', icon: Utensils },
-            { key: 'products', label: 'Produits & Traiteurs', icon: ShoppingBag },
-            { key: 'orders', label: 'Commandes B2C', icon: Ticket },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const active = currentTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setCurrentTab(tab.key as any)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
-                  active
-                    ? 'bg-[#FF5722] text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <Icon size={16} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Contenu Réel */}
-        {isLoading ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
-            <p className="text-xs">Chargement des données réelles...</p>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <p className="text-xs font-bold">Aucun élément enregistré dans cette catégorie.</p>
-          </div>
+            File de validation, fiche complète, refus et suspension motivés, annulation avec remboursements : tout se fait
+            depuis l’écran Événements.
+          </StatusBanner>
         ) : (
-          <div className="space-y-3">
-            {items.map((item) => {
-              const partnerName = item.partners?.company_name || 'Partenaire direct';
-
-              return (
-                <div
-                  key={item.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200/80 dark:border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                >
-                  <div className="space-y-1 flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="font-black text-slate-900 dark:text-white">
-                        {item.title || item.name || item.company_name || `Commande #${item.id.slice(0, 8)}`}
-                      </h4>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
-                        {item.status || (item.is_active ? 'ACTIF' : 'INACTIF')}
-                      </span>
-                    </div>
-
-                    <div className="text-slate-500 dark:text-zinc-400 flex flex-wrap gap-x-4">
-                      <span>Fournisseur: {partnerName}</span>
-                      {item.location && <span>Lieu: {item.location}</span>}
-                      {item.price !== undefined && <span>Prix: {item.price} FCFA</span>}
-                      {item.total_amount !== undefined && <span>Total: {item.total_amount} FCFA</span>}
-                      <span>Enregistré le {formatDate(item.created_at)}</span>
-                    </div>
-                  </div>
-
-                  {/* Actions de Modération — Règles strictes par statut */}
-                  {currentTab === 'events' && (
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {item.status === 'EN_ATTENTE' && (
-                        <>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleUpdateStatus('events', item.id, 'VALIDE')}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                          >
-                            <CheckCircle size={13} className="mr-1" />
-                            Valider
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => openRejectModal('events', item.id, item.title)}
-                            className="text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-950/30 text-xs"
-                          >
-                            <XCircle size={13} className="mr-1" />
-                            Rejeter
-                          </Button>
-                        </>
-                      )}
-                      {(item.status === 'VALIDE' || item.status === 'PUBLIE') && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => openRejectModal('events', item.id, item.title, 'SUSPENDU')}
-                          className="text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30 text-xs"
-                        >
-                          Suspendre
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <CatalogPanel key={tab} tab={tab} />
         )}
-      </div>
-
-      {/* Modal Rejet */}
-      {rejectModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white dark:bg-[#1E1E1E] rounded-3xl shadow-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-red-100 dark:bg-red-950/40 flex items-center justify-center flex-shrink-0">
-                <XCircle size={20} className="text-red-600" />
-              </div>
-              <div>
-                <h3 className="font-black text-slate-900 dark:text-white text-sm">
-                  {rejectModal.targetStatus === 'SUSPENDU' ? 'Suspendre l’événement' : 'Rejeter l’événement'}
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 truncate max-w-xs">{rejectModal.title}</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
-                {rejectModal.targetStatus === 'SUSPENDU' ? 'Motif de suspension' : 'Motif du rejet'} <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
-                placeholder={rejectModal.targetStatus === 'SUSPENDU'
-                  ? 'Ex: Contenu non conforme, vérification requise, signalement...'
-                  : 'Ex: Images manquantes, informations incomplètes, date incorrecte...'}
-                rows={3}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
-              />
-              <p className="mt-1 text-[10px] text-slate-400 dark:text-zinc-500">
-                Ce motif sera envoyé au partenaire par In-App, SMS et Email.
-              </p>
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setRejectModal(m => ({ ...m, open: false }))}
-                className="flex-1"
-              >
-                Annuler
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={confirmReject}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-              >
-                Confirmer le rejet
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      </TabPanel>
     </div>
   );
 }
