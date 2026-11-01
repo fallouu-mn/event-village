@@ -7,7 +7,9 @@
  *  - autres SMS (notifications, invitations) : le plafond global jusqu'à (100 − part OTP) % seulement
  *    (SMS_GLOBAL_OTP_RESERVED_PERCENT) — le reste du plafond est réservé à l'OTP —, la limite
  *    quotidienne par destinataire (SMS_PER_PHONE_DAY, notifications seulement) et, quand un compte
- *    connecté déclenche l'envoi (`actorId`), la limite quotidienne par compte (SMS_PER_ACCOUNT_DAY).
+ *    connecté déclenche l'envoi (`actorId`), la limite quotidienne par compte (SMS_PER_ACCOUNT_DAY) ;
+ *  - reçus de la vente au guichet (lot 5, COUNTER_RECEIPT) : part non OTP du plafond global, limite par
+ *    destinataire et quota par caisse et par jour (COUNTER_RECEIPT_PER_SHIFT_DAY), sans limite par vendeur.
  * Les compteurs par destinataire de l'OTP et des notifications sont distincts : des notifications
  * vers un numéro n'épuisent pas ses codes de connexion.
  * Le destinataire est compté sous sa forme facturée (formatMTargetPhoneNumber) : « 77… »,
@@ -24,7 +26,7 @@ import { formatMTargetPhoneNumber } from './mtarget-http.adapter';
 
 const DAY = 86400;
 
-export type SmsCategory = 'OTP' | 'CONTROLLER_INVITE' | 'TRANSACTIONAL';
+export type SmsCategory = 'OTP' | 'CONTROLLER_INVITE' | 'TRANSACTIONAL' | 'COUNTER_RECEIPT';
 
 export interface SmsContext {
     category?: SmsCategory;
@@ -35,6 +37,11 @@ export interface SmsContext {
      * limite quotidienne par compte (SMS_PER_ACCOUNT_DAY), hors OTP.
      */
     actorId?: string | null;
+    /**
+     * Lot 5 (C7) : caisse qui émet un reçu de vente au guichet (catégorie COUNTER_RECEIPT, obligatoire) :
+     * quota par caisse et par jour (COUNTER_RECEIPT_PER_SHIFT_DAY) au lieu de la limite par compte du vendeur.
+     */
+    shiftId?: string | null;
     /** Réservation obtenue plus tôt (routes OTP : réserver avant d'enregistrer le code). */
     reservation?: SmsReservation;
 }
@@ -83,6 +90,12 @@ function rulesFor(recipient: string, ctx: SmsContext): QuotaRule[] {
         { scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: nonOtpGlobalCap() },
         { scope: 'sms_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY },
     ];
+    if ((ctx.category ?? 'TRANSACTIONAL') === 'COUNTER_RECEIPT') {
+        // Reçu du guichet : part non OTP du plafond global, limite par destinataire, quota par caisse
+        if (!ctx.shiftId) throw new Error('reçu de guichet sans caisse (shiftId) : quota par caisse impossible');
+        rules.push({ scope: 'sms_counter_receipt', bucket: ctx.shiftId, windowSecs: DAY, max: env.COUNTER_RECEIPT_PER_SHIFT_DAY });
+        return rules;
+    }
     if (ctx.actorId) rules.push({ scope: 'sms_account', bucket: ctx.actorId, windowSecs: DAY, max: env.SMS_PER_ACCOUNT_DAY });
     return rules;
 }

@@ -91,33 +91,32 @@ export interface RoleChange {
     removed: UserRoleType[];
 }
 
+/** Refus de user_roles_set : code stable ; CONTROLLER_HAS_OPEN_SHIFT porte aussi le SQLSTATE EV409. */
+export class RoleChangeError extends Error {
+    constructor(public readonly code: string, message: string) {
+        super(message);
+        this.name = 'RoleChangeError';
+    }
+}
+
 /**
- * Lot 1B.8 — fixe exactement l'ensemble des rôles d'un compte dans user_roles (CLIENT toujours
- * conservé). Ajouts puis retraits ; la moindre erreur est levée (aucune écriture ignorée).
- * Le trigger de synchronisation recalcule users.role à chaque ligne modifiée.
+ * Lot 5 (C4) — fixe exactement l'ensemble des rôles d'un compte (CLIENT toujours conservé) en une seule
+ * transaction, par la RPC user_roles_set (droits de l'acteur vérifiés en base). Si le retrait de
+ * CONTROLEUR est refusé (caisse ouverte, trigger controller_removal_guard), aucun rôle n'est modifié et
+ * l'erreur levée est reconnue par isControllerRemovalBlocked (code EV409). Toute autre erreur est levée.
  */
-export async function setUserRoles(userId: string, roles: UserRoleType[]): Promise<RoleChange> {
-    const supabase = getServiceRoleClient();
-    const target = Array.from(new Set<UserRoleType>(['CLIENT', ...roles]));
-
-    const { data: existing, error: readErr } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId);
-    if (readErr) throw new Error(`Lecture des rôles de ${userId} impossible : ${readErr.message}`);
-
-    const before = (existing || []).map(r => r.role as UserRoleType);
-    const added = target.filter(r => !before.includes(r));
-    const removed = before.filter(r => !target.includes(r));
-
-    if (added.length > 0) {
-        const { error } = await supabase.from('user_roles').insert(added.map(role => ({ user_id: userId, role })));
-        if (error) throw new Error(`Ajout des rôles ${added.join(', ')} impossible : ${error.message}`);
+export async function setUserRoles(userId: string, roles: UserRoleType[], actorId: string): Promise<RoleChange> {
+    const { data, error } = await getServiceRoleClient().rpc('user_roles_set', {
+        p: { user_id: userId, roles: Array.from(new Set<UserRoleType>(['CLIENT', ...roles])), actor_id: actorId },
+    });
+    if (error) throw new Error(`user_roles_set : ${error.code ?? ''} ${error.message}`);
+    const reply = (data ?? null) as { ok?: boolean; code?: string; message?: string; before?: string[]; after?: string[]; added?: string[]; removed?: string[] } | null;
+    if (!reply) throw new Error('user_roles_set : réponse vide');
+    if (reply.ok !== true) {
+        const code = String(reply.code ?? 'ROLE_CHANGE_REFUSED');
+        const err = new RoleChangeError(code === 'CONTROLLER_HAS_OPEN_SHIFT' ? 'EV409' : code, `${code} : ${reply.message ?? 'changement de rôles refusé'}`);
+        throw err;
     }
-    if (removed.length > 0) {
-        const { error } = await supabase.from('user_roles').delete().eq('user_id', userId).in('role', removed);
-        if (error) throw new Error(`Retrait des rôles ${removed.join(', ')} impossible : ${error.message}`);
-    }
-
-    return { before: before.sort(), after: target.sort(), added, removed };
+    const asRoles = (v: string[] | undefined): UserRoleType[] => (v ?? []).map((r) => r as UserRoleType).sort();
+    return { before: asRoles(reply.before), after: asRoles(reply.after), added: asRoles(reply.added), removed: asRoles(reply.removed) };
 }

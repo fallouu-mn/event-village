@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { z } from 'zod';
+import { requireActiveSession, serverIsAdmin, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
@@ -78,109 +79,100 @@ export async function GET(req: NextRequest, { params }: { params: { eventId: str
 
 // ──────────────────────────────────────────────────────────
 // DELETE /api/partner/team/[eventId]?assignmentId=<uuid>
-// Retire un contrôleur d'un événement
+// Retire un contrôleur d'un événement (lot 5, C5) : l'affectation doit appartenir à l'événement de
+// l'URL, sinon 404 ASSIGNMENT_NOT_FOUND (sans dire si elle existe ailleurs) ; une affectation absente
+// donne aussi 404 ; toute panne de lecture ou d'écriture donne 500.
 // ──────────────────────────────────────────────────────────
+const UUID = z.string().uuid();
+
+function assignmentNotFound(): NextResponse {
+    return NextResponse.json({ error: 'Affectation introuvable pour cet événement.', code: 'ASSIGNMENT_NOT_FOUND' }, { status: 404 });
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: { eventId: string } | Promise<{ eventId: string }> }) {
+    const activeSession = await requireActiveSession(req);
+    if (activeSession.response) return activeSession.response;
+    const user = activeSession.user;
+    if (!serverIsPartner(user)) {
+        return NextResponse.json({ error: 'Accès non autorisé.', code: 'FORBIDDEN' }, { status: 403 });
+    }
+
+    const { eventId } = await Promise.resolve(params);
+    const assignmentId = req.nextUrl.searchParams.get('assignmentId');
+    if (!UUID.safeParse(eventId).success || !assignmentId || !UUID.safeParse(assignmentId).success) {
+        return NextResponse.json({ error: 'Événement et affectation (assignmentId) requis.', code: 'INVALID_REQUEST' }, { status: 400 });
+    }
+
     try {
-        const activeSession = await requireActiveSession(req);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        if (!serverIsPartner(user)) {
-            return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
-        }
-
-        const resolvedParams = await Promise.resolve(params);
-        const eventId = resolvedParams.eventId;
-
-        const assignmentId = req.nextUrl.searchParams.get('assignmentId');
-        if (!assignmentId) {
-            return NextResponse.json({ error: 'assignmentId requis.' }, { status: 400 });
-        }
-
         const supabase = getServiceRoleClient();
 
-        // Récupérer l'assignation avec l'event_id pour vérifier l'ownership
-        const { data: assignment } = await supabase
+        // 1. Affectation de CET événement (jamais par son seul identifiant)
+        const { data: assignment, error: readErr } = await supabase
             .from('event_controllers')
             .select('id, event_id, user_id')
             .eq('id', assignmentId)
+            .eq('event_id', eventId)
             .maybeSingle();
+        if (readErr) throw new Error(`lecture de l'affectation : ${readErr.message}`);
+        if (!assignment) return assignmentNotFound();
 
-        if (!assignment) {
-            return NextResponse.json({ success: true, message: 'Assignation déjà retirée.' }, { status: 200 });
-        }
-
-        if (serverHasRole(user, 'PARTENAIRE')) {
-            const { data: partnerRec } = await supabase.from('partners').select('id').eq('user_id', user.id).maybeSingle();
-            const { data: event }     = await supabase.from('events').select('partner_id').eq('id', assignment.event_id).maybeSingle();
-            if (!partnerRec || !event || event.partner_id !== partnerRec.id) {
-                return NextResponse.json({ error: 'Non autorisé à modifier l\'équipe de cet événement.' }, { status: 403 });
+        // 2. Propriété de l'événement de l'URL (un admin gère toutes les équipes)
+        const { data: event, error: eventErr } = await supabase.from('events').select('id, title, partner_id').eq('id', eventId).maybeSingle();
+        if (eventErr) throw new Error(`lecture de l'événement : ${eventErr.message}`);
+        if (!event) return assignmentNotFound();
+        if (!serverIsAdmin(user)) {
+            const { data: partnerRec, error: partnerErr } = await supabase.from('partners').select('id').eq('user_id', user.id).maybeSingle();
+            if (partnerErr) throw new Error(`lecture du profil partenaire : ${partnerErr.message}`);
+            if (!partnerRec || event.partner_id !== partnerRec.id) {
+                return NextResponse.json({ error: 'Non autorisé à modifier l’équipe de cet événement.', code: 'FORBIDDEN' }, { status: 403 });
             }
         }
 
-        const { error: delErr } = await supabase
+        // 3. Retrait (le trigger controller_removal_guard refuse une affectation à caisse ouverte)
+        const { data: deleted, error: delErr } = await supabase
             .from('event_controllers')
             .delete()
-            .eq('id', assignmentId);
-
-        // Lot 4.7 : caisse ouverte → refus du trigger controller_removal_guard (CONTROLLER_HAS_OPEN_SHIFT)
+            .eq('id', assignmentId)
+            .eq('event_id', eventId)
+            .select('id');
         if (isControllerRemovalBlocked(delErr)) {
             return NextResponse.json(controllerRemovalConflict(), { status: 409 });
         }
-        if (delErr) {
-            console.error('[DELETE team/eventId] event_controllers delete:', delErr.message, delErr.details);
-            return NextResponse.json({ error: 'Impossible de retirer le contrôleur.' }, { status: 500 });
+        if (delErr) throw new Error(`retrait de l'affectation : ${delErr.message}`);
+        if ((deleted ?? []).length === 0) return assignmentNotFound(); // retrait concurrent
+
+        // 4. Avis au contrôleur et journal (le retrait est acquis : un échec est journalisé, jamais avalé)
+        const eventTitle = event.title || 'votre événement';
+        let smsSent = false;
+        const { data: ctrlUser, error: ctrlErr } = await supabase.from('users').select('id, phone').eq('id', assignment.user_id).maybeSingle();
+        if (ctrlErr) {
+            console.error('[DELETE team/eventId] lecture du contrôleur pour l’avis :', ctrlErr.message);
+        } else if (ctrlUser?.phone) {
+            const sms = await mTargetService.sendControllerRevocationNotice(ctrlUser.phone, eventTitle, { actorId: user.id });
+            smsSent = sms.success === true;
+            if (!smsSent) console.warn(`[DELETE team/eventId] SMS de retrait non envoyé (${sms.code ?? sms.error ?? 'raison inconnue'}).`);
         }
+        const inApp = await NotificationService.createNotification({
+            userId: assignment.user_id,
+            title: 'Accès contrôleur retiré',
+            message: `Votre affectation de contrôleur pour l’événement « ${eventTitle} » a pris fin.`,
+            type: 'SYSTEM',
+            data: { event_id: eventId, event_title: eventTitle },
+        });
+        if (!inApp) console.warn(`[DELETE team/eventId] notification in-app au contrôleur ${assignment.user_id} non créée.`);
+        await AdminService.logAudit({
+            userId: user.id,
+            userRole: String(user.role),
+            action: 'CONTROLLER_REMOVED',
+            objectType: 'event_controllers',
+            objectId: assignmentId,
+            newValue: { event_id: eventId, controller_user_id: assignment.user_id },
+            metadata: { removed_by: user.id },
+        });
 
-        // Récupérer le profil du contrôleur et les infos de l'événement pour les notifications
-        const [{ data: ctrlUser }, { data: eventData }] = await Promise.all([
-            supabase.from('users').select('id, phone, first_name').eq('id', assignment.user_id).maybeSingle(),
-            supabase.from('events').select('id, title').eq('id', assignment.event_id).maybeSingle(),
-        ]);
-
-        const eventTitle = eventData?.title || 'Événement';
-
-        // Notification SMS au contrôleur
-        if (ctrlUser?.phone) {
-            try {
-                await mTargetService.sendControllerRevocationNotice(ctrlUser.phone, eventTitle, { actorId: user.id });
-            } catch (smsErr) {
-                console.warn('[DELETE team/eventId] SMS retrait non-bloquant:', smsErr instanceof Error ? smsErr.message : smsErr);
-            }
-        }
-
-        // Notification in-app au contrôleur
-        try {
-            await NotificationService.createNotification({
-                userId: assignment.user_id,
-                title: 'Accès Contrôleur Retiré',
-                message: `Votre assignation en tant que contrôleur pour l'événement "${eventTitle}" a pris fin.`,
-                type: 'SYSTEM',
-                data: { event_id: assignment.event_id, event_title: eventTitle },
-            });
-        } catch (notifErr) {
-            console.warn('[DELETE team/eventId] In-app notification non-bloquante:', notifErr instanceof Error ? notifErr.message : notifErr);
-        }
-
-        // Audit non-bloquant : ne pas faire échouer le DELETE si le log plante
-        try {
-            await AdminService.logAudit({
-                userId:     user.id,
-                userRole:   user.role as any,
-                action:     'CONTROLLER_REMOVED',
-                objectType: 'event_controllers',
-                objectId:   assignmentId,
-                newValue:   { event_id: assignment.event_id, controller_user_id: assignment.user_id },
-                metadata:   { removed_by: user.id },
-            });
-        } catch (auditErr) {
-            console.warn('[DELETE team/eventId] audit log non-bloquant:', auditErr instanceof Error ? auditErr.message : auditErr);
-        }
-
-        return NextResponse.json({ success: true, message: 'Contrôleur retiré de l\'événement.' });
+        return NextResponse.json({ success: true, message: 'Contrôleur retiré de l’événement.', notified: { sms: smsSent, in_app: inApp } });
     } catch (err: unknown) {
-        console.error('[DELETE team/eventId] catch:', err instanceof Error ? err.message : err);
-        return NextResponse.json({ error: 'Erreur interne.' }, { status: 500 });
+        console.error('[DELETE team/eventId] erreur :', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Retrait du contrôleur momentanément impossible.', code: 'REMOVAL_FAILED' }, { status: 500 });
     }
 }

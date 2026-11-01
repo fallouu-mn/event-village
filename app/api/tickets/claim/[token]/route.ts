@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession } from '@/lib/auth/session';
-import { TicketTransferService } from '@/lib/tickets/ticket-transfer.service';
+import { TicketTransferService, type TransferRefusal } from '@/lib/tickets/ticket-transfer.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,14 +26,18 @@ export async function GET(
             success: true,
             transfer: info,
         });
-    } catch (err: any) {
-        const status = err?.statusCode || 500;
+    } catch (err: unknown) {
+        const refusal = err as Partial<TransferRefusal>;
+        if (typeof refusal?.statusCode !== 'number') {
+            console.error('[GET /api/tickets/claim/[token]] erreur :', err instanceof Error ? err.message : String(err));
+            return NextResponse.json({ error: 'Consultation du transfert momentanément impossible. Réessayez.', code: 'CLAIM_INFO_FAILED' }, { status: 500 });
+        }
         return NextResponse.json({
-            error: err?.message || 'Erreur lors de la consultation du transfert.',
-            expired: err?.expired || false,
-            already_claimed: err?.already_claimed || false,
-            cancelled: err?.cancelled || false,
-        }, { status });
+            error: refusal.message,
+            expired: refusal.expired === true,
+            already_claimed: refusal.already_claimed === true,
+            cancelled: refusal.cancelled === true,
+        }, { status: refusal.statusCode });
     }
 }
 
@@ -74,11 +78,12 @@ export async function POST(
             message: result.message,
             claim: result,
         });
-    } catch (err: any) {
-        console.error('[POST /api/tickets/claim/[token]] Erreur:', err?.message || err);
-        const status = err?.statusCode || 500;
-        return NextResponse.json({
-            error: err?.message || 'Erreur interne lors de la réclamation du billet.',
-        }, { status });
+    } catch (err: unknown) {
+        const refusal = err as Partial<TransferRefusal>;
+        if (typeof refusal?.statusCode !== 'number') {
+            console.error('[POST /api/tickets/claim/[token]] erreur :', err instanceof Error ? err.message : String(err));
+            return NextResponse.json({ error: 'Réclamation momentanément impossible. Réessayez.', code: 'CLAIM_FAILED' }, { status: 500 });
+        }
+        return NextResponse.json({ error: refusal.message }, { status: refusal.statusCode });
     }
 }

@@ -58,6 +58,17 @@ export class MTargetService {
         return this.sendSms(phone, message, { category: 'CONTROLLER_INVITE', ...ctx });
     }
 
+    /**
+     * Reçu d'une vente au guichet (lot 5, C7) : catégorie COUNTER_RECEIPT, quota par caisse. Texte sans
+     * accents (SMS GSM), sans donnée personnelle.
+     */
+    async sendCounterReceipt(phone: string, receipt: { eventTitle: string; ticketCount: number; amount: number; reference: string }, shiftId: string): Promise<MTargetSendResult> {
+        const amount = String(Math.trunc(receipt.amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        const tickets = receipt.ticketCount > 1 ? `${receipt.ticketCount} billets` : '1 billet';
+        const message = `Event Village : achat au guichet pour "${receipt.eventTitle}" - ${tickets}, ${amount} F CFA. Entree validee. Ref ${receipt.reference}.`;
+        return this.sendSms(phone, message, { category: 'COUNTER_RECEIPT', shiftId });
+    }
+
     async sendControllerActivationConfirmation(phone: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
         const message = `Event Village : Votre compte controleur est active avec succes. Vous pouvez desormais vous connecter et scanner les billets.`;
         return this.sendSms(phone, message, ctx);

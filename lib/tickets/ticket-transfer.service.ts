@@ -1,3 +1,15 @@
+/**
+ * Transferts de billets entre particuliers (lot 4.1, dette reprise au lot 5, contrat C1).
+ *
+ *  - La base est la seule source de vérité : aucun état en mémoire de processus. Initiation,
+ *    annulation et expiration passent par les RPC ticket_transfer_initiate, ticket_transfer_cancel et
+ *    ticket_transfers_expire, qui posent le transfert ET tickets.transfer_locked dans la même
+ *    transaction ; la réclamation par ticket_transfer_claim (lot 4).
+ *  - Toute erreur de lecture ou d'écriture remonte (exception) : la route répond 500 avec un message
+ *    générique, le détail est journalisé. Un refus métier porte un statut HTTP et un message français.
+ *  - Un échec de l'envoi au destinataire (SMS ou email) ne casse pas le transfert : il est journalisé
+ *    et la réponse porte recipient_notified: false.
+ */
 import crypto from 'crypto';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { rpcWithRetry } from '@/lib/payments/rpc';
@@ -18,6 +30,8 @@ export interface InitiateTransferResult {
     claim_token: string;
     claim_url: string;
     event_title?: string;
+    /** Le destinataire a reçu le SMS ou l'email avec le lien de réclamation. */
+    recipient_notified: boolean;
 }
 
 export interface ClaimInfoResult {
@@ -60,12 +74,48 @@ export interface CancelTransferResult {
     message: string;
     transfer_id: string;
     ticket_id: string;
+    /** Le destinataire a été prévenu de l'annulation. */
+    recipient_notified: boolean;
 }
 
 export interface ExpireTransfersResult {
     expiredCount: number;
     transferIds: string[];
 }
+
+/** Ligne de public.ticket_transfers. */
+export interface TicketTransferRecord {
+    id: string;
+    ticket_id: string;
+    from_user_id: string;
+    to_user_id: string | null;
+    to_phone_or_email: string;
+    status: 'PENDING' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED';
+    claim_token_hash: string;
+    created_at: string;
+    expires_at: string;
+    claimed_at: string | null;
+    cancelled_at: string | null;
+    expired_at: string | null;
+}
+
+/** Refus métier : statut HTTP et message destinés à l'utilisateur. */
+export type TransferRefusal = Error & {
+    statusCode: number;
+    code?: string;
+    expired?: boolean;
+    already_claimed?: boolean;
+    cancelled?: boolean;
+};
+
+function refuse(message: string, statusCode: number, extra: Partial<TransferRefusal> = {}): never {
+    const err = new Error(message) as TransferRefusal;
+    err.statusCode = statusCode;
+    Object.assign(err, extra);
+    throw err;
+}
+
+type RpcReply = Record<string, unknown> & { ok?: boolean; code?: string; message?: string };
 
 function maskName(firstName?: string, lastName?: string): string {
     const fn = (firstName || '').trim();
@@ -88,13 +138,63 @@ function maskRecipient(target: string): string {
     return '***';
 }
 
-export class TicketTransferService {
-    private static activeTransfersLock = new Set<string>();
-    private static inMemoryTransfers = new Map<string, any>();
+function errText(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+}
 
+const INITIATE_REFUSALS: Record<string, number> = {
+    INVALID_INPUT: 400,
+    TICKET_NOT_FOUND: 404,
+    NOT_OWNER: 403,
+    TICKET_NOT_TRANSFERABLE: 400,
+    TICKET_USED: 400,
+    EVENT_NOT_ACTIVE: 400,
+    TRANSFER_PENDING: 409,
+};
+
+const CANCEL_REFUSALS: Record<string, number> = {
+    INVALID_INPUT: 400,
+    TRANSFER_NOT_FOUND: 404,
+    NOT_SENDER: 403,
+    TRANSFER_NOT_PENDING: 409,
+};
+
+const TRANSFER_STATUS_MESSAGES: Record<string, string> = {
+    CLAIMED: 'Ce transfert a déjà été réclamé : il ne peut plus être annulé.',
+    CANCELLED: 'Ce transfert est déjà annulé.',
+    EXPIRED: 'Ce transfert a déjà expiré.',
+};
+
+/**
+ * Envoie un message au destinataire désigné (SMS ou email). Renvoie true si l'envoi est accepté ;
+ * un refus ou une panne est journalisé et donne false (le transfert reste valable).
+ */
+async function notifyRecipient(target: string, sms: string, email: { subject: string; html: string }, actorId: string, context: string): Promise<boolean> {
+    try {
+        if (target.includes('@')) {
+            const res = await EmailService.send({ to: target, subject: email.subject, html: email.html });
+            if (!res.sent) console.warn(`[TicketTransferService] ${context} : email au destinataire non envoyé (${res.error ?? 'raison inconnue'}).`);
+            return res.sent === true;
+        }
+        // Lot 4.8 : SMS vers un numéro choisi par l'expéditeur, compté sur son compte (SMS_PER_ACCOUNT_DAY)
+        const res = await mTargetService.sendSms(target, sms, { actorId });
+        if (!res.success) console.warn(`[TicketTransferService] ${context} : SMS au destinataire non envoyé (${res.code ?? res.error ?? 'raison inconnue'}).`);
+        return res.success === true;
+    } catch (err) {
+        console.error(`[TicketTransferService] ${context} : envoi au destinataire en échec :`, errText(err));
+        return false;
+    }
+}
+
+function appUrl(): string {
+    return (process.env.NEXT_PUBLIC_APP_URL || 'https://eventvillage.sn').replace(/\/+$/, '');
+}
+
+export class TicketTransferService {
     /**
-     * Initie un transfert de billet P2P de manière atomique et sécurisée.
-     * Verrouille le billet (transfer_locked = true) et enregistre l'intention PENDING avec le hash du claim token.
+     * Initie un transfert : RPC ticket_transfer_initiate (porteur, billet VALIDE non composté,
+     * événement PUBLIE ou VALIDE, aucun transfert en attente ; transfert PENDING et verrou du billet
+     * posés ensemble), puis envoi du lien de réclamation au destinataire.
      */
     public static async initiateTransfer(
         userId: string,
@@ -102,407 +202,134 @@ export class TicketTransferService {
         rawRecipient: string,
         options?: { injectedClaimToken?: string }
     ): Promise<InitiateTransferResult> {
-        if (!userId) {
-            throw new Error('Authentification requise pour transférer un billet.');
-        }
-
-        if (!ticketId) {
-            throw new Error('Identifiant de billet requis.');
-        }
+        if (!userId) refuse('Authentification requise pour transférer un billet.', 401);
+        if (!ticketId) refuse('Identifiant de billet requis.', 400);
 
         const { normalized: recipient, type: recipientType } = normalizeRecipient(rawRecipient);
-        const supabase = getServiceRoleClient();
 
-        // 1. Récupération et vérification préalable du billet
-        const { data: ticket, error: ticketErr } = await supabase
-            .from('tickets')
-            .select(`
-                id,
-                ticket_number,
-                status,
-                user_id,
-                checked_in_at,
-                events (
-                    id,
-                    title,
-                    status
-                )
-            `)
-            .eq('id', ticketId)
-            .maybeSingle();
-
-        if (ticketErr || !ticket) {
-            const err = new Error('Billet introuvable.');
-            (err as any).statusCode = 404;
-            throw err;
-        }
-
-        // 2. Vérification de la propriété
-        if (ticket.user_id !== userId) {
-            const err = new Error('Vous n\'êtes pas le propriétaire de ce billet.');
-            (err as any).statusCode = 403;
-            throw err;
-        }
-
-        // 3. Vérification du statut du billet
-        if (ticket.status !== 'VALIDE') {
-            const err = new Error(`Seuls les billets au statut VALIDE peuvent être transférés (statut actuel: ${ticket.status}).`);
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        // 4. Vérification du compostage
-        if (ticket.checked_in_at) {
-            const err = new Error('Ce billet a déjà été utilisé / composté à l\'entrée.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        // 5. Vérification du verrou de transfert existant (sur la colonne, DB ou mémoire)
-        const nowIso = new Date().toISOString();
-        let isTransferLocked = false;
-        let hasTransferLockedCol = false;
-
-        try {
-            const { data: lockCheck, error: probeErr } = await supabase
-                .from('tickets')
-                .select('transfer_locked')
-                .eq('id', ticketId)
-                .maybeSingle();
-
-            if (!probeErr && lockCheck && typeof (lockCheck as any).transfer_locked === 'boolean') {
-                hasTransferLockedCol = true;
-                if ((lockCheck as any).transfer_locked === true) {
-                    isTransferLocked = true;
-                }
-            }
-        } catch {
-            hasTransferLockedCol = false;
-        }
-
-        try {
-            const { data: activePending } = await supabase
-                .from('ticket_transfers')
-                .select('id, expires_at')
-                .eq('ticket_id', ticketId)
-                .eq('status', 'PENDING')
-                .gt('expires_at', nowIso)
-                .maybeSingle();
-
-            if (activePending) {
-                isTransferLocked = true;
-            }
-        } catch {
-            // ignore
-        }
-
-        for (const tr of Array.from(this.inMemoryTransfers.values())) {
-            if (tr.ticket_id === ticketId && tr.status === 'PENDING' && new Date(tr.expires_at).getTime() > new Date(nowIso).getTime()) {
-                isTransferLocked = true;
-                break;
-            }
-        }
-
-        if (this.activeTransfersLock.has(ticketId)) {
-            isTransferLocked = true;
-        }
-
-        if (isTransferLocked) {
-            const err = new Error('Ce billet est déjà engagé dans un transfert en attente.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        // 6. Vérification de la compatibilité de l'événement
-        const eventData = ticket.events as any;
-        if (eventData?.status && !['PUBLIE', 'VALIDE'].includes(eventData.status)) {
-            const err = new Error(`L'événement n'est plus actif pour les transferts de billets (statut: ${eventData.status}).`);
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        // 7. Verrouillage atomique Compare-And-Swap sur la table tickets
-        let casSuccess = false;
-
-        if (hasTransferLockedCol) {
-            try {
-                const { data: lockedTicket, error: lockErr } = await supabase
-                    .from('tickets')
-                    .update({
-                        transfer_locked: true,
-                        updated_at: nowIso,
-                    })
-                    .eq('id', ticketId)
-                    .eq('user_id', userId)
-                    .eq('status', 'VALIDE')
-                    .eq('transfer_locked', false)
-                    .select('id, ticket_number')
-                    .maybeSingle();
-
-                if (!lockErr && lockedTicket) {
-                    casSuccess = true;
-                    this.activeTransfersLock.add(ticketId);
-                }
-            } catch {
-                casSuccess = false;
-            }
-        } else {
-            // Verrou atomique mémoire pour la concurrence
-            if (!this.activeTransfersLock.has(ticketId)) {
-                this.activeTransfersLock.add(ticketId);
-                casSuccess = true;
-            } else {
-                casSuccess = false;
-            }
-        }
-
-        if (!casSuccess) {
-            const err = new Error('Conflit de transfert : ce billet est déjà en cours de transfert ou indisponible.');
-            (err as any).statusCode = 409;
-            throw err;
-        }
-
-        // 8. Génération cryptographique du Claim Token
-        // 🛡️ SÉCURITÉ : injectedClaimToken est STRICTEMENT INTERDIT en production (ignoré sans exception)
+        // Jeton de réclamation : seul son haché est stocké. Un jeton imposé n'est jamais accepté en production.
         const isProduction = process.env.NODE_ENV === 'production';
         const rawClaimToken = (!isProduction && options?.injectedClaimToken)
             ? options.injectedClaimToken
             : crypto.randomBytes(32).toString('hex');
         const claimTokenHash = crypto.createHash('sha256').update(rawClaimToken).digest('hex');
-        const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString(); // 48 heures de TTL
+        const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString(); // 48 heures
 
-        // 9. Insertion de l'enregistrement dans ticket_transfers (avec fallback gracieux)
-        let transferId = crypto.randomUUID();
-        const newTransferData = {
-            id: transferId,
-            ticket_id: ticketId,
-            from_user_id: userId,
-            to_phone_or_email: recipient,
-            status: 'PENDING',
-            claim_token_hash: claimTokenHash,
-            created_at: nowIso,
-            expires_at: expiresAt,
-        };
-
-        try {
-            const { data: transferRecord, error: insertErr } = await supabase
-                .from('ticket_transfers')
-                .insert(newTransferData)
-                .select('id')
-                .single();
-
-            if (insertErr) {
-                if (insertErr.message.includes('schema cache') || insertErr.message.includes('does not exist')) {
-                    this.inMemoryTransfers.set(transferId, newTransferData);
-                } else {
-                    // Rollback du verrou sur le billet en cas de vraie erreur de contrainte
-                    this.activeTransfersLock.delete(ticketId);
-                    try {
-                        await supabase
-                            .from('tickets')
-                            .update({ transfer_locked: false, updated_at: new Date().toISOString() })
-                            .eq('id', ticketId);
-                    } catch {
-                        // ignore
-                    }
-                    const err = new Error(`Échec de l'enregistrement du transfert: ${insertErr.message}`);
-                    (err as any).statusCode = 400;
-                    throw err;
-                }
-            } else if (transferRecord?.id) {
-                transferId = transferRecord.id;
-                this.inMemoryTransfers.set(transferId, newTransferData);
-            }
-        } catch (dbErr: any) {
-            if (dbErr?.statusCode) throw dbErr;
-            this.inMemoryTransfers.set(transferId, newTransferData);
+        const { data, error } = await rpcWithRetry<RpcReply>('ticket_transfer_initiate', {
+            p: {
+                ticket_id: ticketId,
+                actor_id: userId,
+                recipient,
+                claim_token_hash: claimTokenHash,
+                expires_at: expiresAt,
+            },
+        });
+        if (error) throw new Error(`ticket_transfer_initiate : ${error.code ?? ''} ${error.message}`);
+        if (!data) throw new Error('ticket_transfer_initiate : réponse vide');
+        if (data.ok !== true) {
+            const code = String(data.code ?? '');
+            const status = INITIATE_REFUSALS[code];
+            if (!status) throw new Error(`ticket_transfer_initiate : refus inattendu ${JSON.stringify(data)}`);
+            refuse(String(data.message ?? 'Transfert refusé.'), status, { code });
         }
+        const transferId = String(data.transfer_id ?? '');
+        const ticketNumber = String(data.ticket_number ?? '');
+        if (!transferId || !ticketNumber) throw new Error(`ticket_transfer_initiate : réponse incomplète ${JSON.stringify(data)}`);
+        const eventTitle = typeof data.event_title === 'string' && data.event_title ? data.event_title : 'votre événement';
 
-        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://eventvillage.sn').replace(/\/+$/, '');
-        const claimUrl = `${appUrl}/tickets/claim/${rawClaimToken}`;
-
-        // 10. Notification automatique SMS / Email au destinataire
-        const eventName = eventData?.title || 'Événement';
-        if (recipientType === 'PHONE') {
-            const smsText = `Event Village: Un billet pour "${eventName}" vous a été offert ! Réclamez-le avant 48h ici : ${claimUrl}`;
-            try {
-                // Lot 4.8 : SMS vers un numéro choisi par l'expéditeur, compté sur son compte (SMS_PER_ACCOUNT_DAY)
-                const smsRes = await mTargetService.sendSms(recipient, smsText, { actorId: userId });
-                console.log(`[TicketTransferService] SMS transfert vers ${recipient}:`, smsRes.success ? 'ENVOYÉ' : smsRes.error);
-            } catch (err: any) {
-                console.warn('[TicketTransferService] Échec envoi SMS transfert:', err?.message || err);
-            }
-        } else if (recipientType === 'EMAIL') {
-            const emailHtml = `<p>Bonjour,</p><p>Un billet officiel pour <strong>${eventName}</strong> vous a été transféré sur Event Village.</p><p><a href="${claimUrl}">Cliquez ici pour réclamer et activer votre billet</a></p><p>Ce lien est valide pendant 48 heures.</p>`;
-            try {
-                await EmailService.send({
-                    to: recipient,
-                    subject: `🎟️ Billet offert pour "${eventName}" — Event Village`,
-                    html: emailHtml,
-                });
-            } catch (err: any) {
-                console.warn('[TicketTransferService] Échec envoi Email transfert:', err?.message || err);
-            }
-        }
+        const claimUrl = `${appUrl()}/tickets/claim/${rawClaimToken}`;
+        const recipientNotified = await notifyRecipient(
+            recipient,
+            `Event Village : un billet pour "${eventTitle}" vous a ete offert. Reclamez-le avant 48 h : ${claimUrl}`,
+            {
+                subject: `Billet offert pour « ${eventTitle} » — Event Village`,
+                html: `<p>Bonjour,</p><p>Un billet pour <strong>${eventTitle}</strong> vous a été transféré sur Event Village.</p><p><a href="${claimUrl}">Réclamer et activer votre billet</a></p><p>Ce lien est valable 48 heures.</p>`,
+            },
+            userId,
+            `transfert ${transferId}`,
+        );
 
         return {
             success: true,
             transfer_id: transferId,
-            ticket_id: ticket.id,
-            ticket_number: ticket.ticket_number,
+            ticket_id: String(data.ticket_id ?? ticketId),
+            ticket_number: ticketNumber,
             recipient,
             recipient_type: recipientType,
-            expires_at: expiresAt,
+            expires_at: String(data.expires_at ?? expiresAt),
             claim_token: rawClaimToken,
             claim_url: claimUrl,
-            event_title: eventData?.title,
+            event_title: typeof data.event_title === 'string' ? data.event_title : undefined,
+            recipient_notified: recipientNotified,
         };
     }
 
     /**
-     * Récupère les détails publics et sécurisés d'un transfert à réclamer (sans exposer de secrets).
+     * Détails publics d'un transfert à réclamer (aucun secret). Lectures strictes : une panne remonte,
+     * un billet ou un événement manquant pour un transfert existant est une incohérence (exception).
      */
     public static async getClaimTransferInfo(rawToken: string): Promise<ClaimInfoResult> {
         if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length === 0) {
-            const err = new Error('Jeton de réclamation invalide.');
-            (err as any).statusCode = 400;
-            throw err;
+            refuse('Jeton de réclamation invalide.', 400);
         }
-
-        const cleanToken = rawToken.trim();
-        const claimTokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+        const claimTokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
         const supabase = getServiceRoleClient();
 
-        // 1. Recherche du transfert par hash
-        let transfer: any = null;
-        try {
-            const { data, error } = await supabase
-                .from('ticket_transfers')
-                .select('*')
-                .eq('claim_token_hash', claimTokenHash)
-                .maybeSingle();
+        const { data: transfer, error: transferErr } = await supabase
+            .from('ticket_transfers')
+            .select('id, ticket_id, from_user_id, to_phone_or_email, status, expires_at')
+            .eq('claim_token_hash', claimTokenHash)
+            .maybeSingle();
+        if (transferErr) throw new Error(`lecture du transfert : ${transferErr.message}`);
+        if (!transfer) refuse('Lien de réclamation introuvable ou invalide.', 404);
 
-            if (!error && data) {
-                transfer = data;
-            }
-        } catch {
-            // fallback
+        if (transfer.status === 'CLAIMED') refuse('Ce billet a déjà été réclamé.', 410, { already_claimed: true });
+        if (transfer.status === 'CANCELLED') refuse('Ce transfert a été annulé par son propriétaire.', 410, { cancelled: true });
+        if (transfer.status === 'EXPIRED' || new Date(String(transfer.expires_at)).getTime() <= Date.now()) {
+            refuse('Ce lien de transfert a expiré (délai de 48 h dépassé).', 410, { expired: true });
         }
 
-        if (!transfer) {
-            for (const tr of Array.from(this.inMemoryTransfers.values())) {
-                if (tr.claim_token_hash === claimTokenHash) {
-                    transfer = tr;
-                    break;
-                }
-            }
-        }
-
-        if (!transfer) {
-            const err = new Error('Lien de réclamation introuvable ou invalide.');
-            (err as any).statusCode = 404;
-            throw err;
-        }
-
-        // 2. Vérification du statut
-        if (transfer.status === 'CLAIMED') {
-            const err = new Error('Ce billet a déjà été réclamé.');
-            (err as any).statusCode = 410;
-            (err as any).already_claimed = true;
-            throw err;
-        }
-
-        if (transfer.status === 'CANCELLED') {
-            const err = new Error('Ce transfert a été annulé par son propriétaire.');
-            (err as any).statusCode = 410;
-            (err as any).cancelled = true;
-            throw err;
-        }
-
-        if (transfer.status === 'EXPIRED') {
-            const err = new Error('Ce lien de transfert a expiré (délai de 48h dépassé).');
-            (err as any).statusCode = 410;
-            (err as any).expired = true;
-            throw err;
-        }
-
-        // 3. Vérification de l'expiration temporelle
-        const now = Date.now();
-        const expiresTimestamp = new Date(transfer.expires_at).getTime();
-        if (expiresTimestamp <= now) {
-            const err = new Error('Ce lien de transfert a expiré (délai de 48h dépassé).');
-            (err as any).statusCode = 410;
-            (err as any).expired = true;
-            throw err;
-        }
-
-        // 4. Récupération des informations sur le billet, l'événement et l'expéditeur
-        const { data: ticket } = await supabase
+        const { data: ticket, error: ticketErr } = await supabase
             .from('tickets')
-            .select(`
-                id,
-                ticket_number,
-                price,
-                status,
-                ticket_categories (
-                    name
-                ),
-                events (
-                    id,
-                    title,
-                    start_date,
-                    start_time,
-                    location,
-                    city,
-                    image_url
-                )
-            `)
+            .select('id, ticket_number, price, ticket_categories(name), events(id, title, start_date, start_time, location, city, image_url)')
             .eq('id', transfer.ticket_id)
             .maybeSingle();
+        if (ticketErr) throw new Error(`lecture du billet ${transfer.ticket_id} : ${ticketErr.message}`);
+        if (!ticket) throw new Error(`incohérence : billet ${transfer.ticket_id} du transfert ${transfer.id} introuvable`);
+        const ev = ticket.events as unknown as { id: string; title: string; start_date: string; start_time: string; location: string; city: string | null; image_url: string | null } | null;
+        const cat = ticket.ticket_categories as unknown as { name: string } | null;
+        if (!ev) throw new Error(`incohérence : événement du billet ${ticket.id} introuvable`);
+        if (!cat) throw new Error(`incohérence : catégorie du billet ${ticket.id} introuvable`);
 
-        const ev = (ticket as any)?.events;
-        const cat = (ticket as any)?.ticket_categories;
+        const { data: sender, error: senderErr } = await supabase
+            .from('users')
+            .select('first_name, last_name')
+            .eq('id', transfer.from_user_id)
+            .maybeSingle();
+        if (senderErr) throw new Error(`lecture de l'expéditeur ${transfer.from_user_id} : ${senderErr.message}`);
 
-        let senderFirstName: string | undefined;
-        let senderLastName: string | undefined;
-        if (transfer.from_user_id) {
-            const { data: sUser } = await supabase
-                .from('users')
-                .select('first_name, last_name')
-                .eq('id', transfer.from_user_id)
-                .maybeSingle();
-            if (sUser) {
-                senderFirstName = sUser.first_name;
-                senderLastName = sUser.last_name;
-            }
-        }
-
-        const ticketNumber = ticket?.ticket_number || 'TCK-UNKNOWN';
-        const maskedTicketNumber = ticketNumber.length > 8
-            ? `TCK-***-${ticketNumber.slice(-4)}`
-            : ticketNumber;
-
+        const ticketNumber = String(ticket.ticket_number);
         return {
             success: true,
-            transfer_id: transfer.id,
-            ticket_id: transfer.ticket_id,
-            expires_at: transfer.expires_at,
-            status: transfer.status,
-            sender_name_masked: maskName(senderFirstName, senderLastName),
-            recipient_target_masked: maskRecipient(transfer.to_phone_or_email),
+            transfer_id: String(transfer.id),
+            ticket_id: String(transfer.ticket_id),
+            expires_at: String(transfer.expires_at),
+            status: String(transfer.status),
+            sender_name_masked: maskName(sender?.first_name ?? undefined, sender?.last_name ?? undefined),
+            recipient_target_masked: maskRecipient(String(transfer.to_phone_or_email)),
             ticket: {
-                ticket_number_masked: maskedTicketNumber,
-                category_name: cat?.name || 'Standard',
-                price: ticket?.price || 0,
+                ticket_number_masked: ticketNumber.length > 8 ? `TCK-***-${ticketNumber.slice(-4)}` : ticketNumber,
+                category_name: cat.name,
+                price: Number(ticket.price),
             },
             event: {
-                id: ev?.id || '',
-                title: ev?.title || 'Événement Event Village',
-                start_date: ev?.start_date || '',
-                start_time: ev?.start_time || '',
-                location: ev?.location || '',
-                city: ev?.city || 'Dakar',
-                image_url: ev?.image_url || null,
+                id: ev.id,
+                title: ev.title,
+                start_date: ev.start_date,
+                start_time: ev.start_time,
+                location: ev.location,
+                city: ev.city ?? '',
+                image_url: ev.image_url ?? null,
             },
         };
     }
@@ -512,20 +339,14 @@ export class TicketTransferService {
      * destinataire désigné, puis la RPC ticket_transfer_claim fait tout ou rien, sous verrou :
      * transfert PENDING → CLAIMED, nouveau propriétaire, ticket_number, qr_code et totp_secret
      * régénérés, transfer_locked levé, security_version + 1. L'ancien numéro et l'ancien code
-     * dynamique ne valent plus rien. Aucune erreur n'est ignorée, aucun repli en mémoire.
+     * dynamique ne valent plus rien. Aucune erreur n'est ignorée.
      */
     public static async claimTransfer(
         recipientUserId: string,
         rawToken: string
     ): Promise<ClaimTransferResult> {
-        const fail = (message: string, statusCode: number): never => {
-            const err = new Error(message) as Error & { statusCode: number };
-            err.statusCode = statusCode;
-            throw err;
-        };
-
-        if (!recipientUserId) fail('Authentification requise pour réclamer un billet.', 401);
-        if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length === 0) fail('Jeton de réclamation requis.', 400);
+        if (!recipientUserId) refuse('Authentification requise pour réclamer un billet.', 401);
+        if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length === 0) refuse('Jeton de réclamation requis.', 400);
 
         const claimTokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
         const supabase = getServiceRoleClient();
@@ -537,10 +358,10 @@ export class TicketTransferService {
             .eq('claim_token_hash', claimTokenHash)
             .maybeSingle();
         if (transferErr) throw new Error(`lecture du transfert : ${transferErr.message}`);
-        if (!transfer) return fail('Lien de réclamation introuvable ou invalide.', 404);
+        if (!transfer) return refuse('Lien de réclamation introuvable ou invalide.', 404);
 
-        if (transfer.status !== 'PENDING') fail(`Ce transfert n'est plus en attente (statut actuel: ${transfer.status}).`, 400);
-        if (new Date(transfer.expires_at).getTime() <= Date.now()) fail('Ce lien de transfert a expiré (délai de 48h dépassé).', 410);
+        if (transfer.status !== 'PENDING') refuse('Ce transfert n’est plus en attente.', 400);
+        if (new Date(transfer.expires_at).getTime() <= Date.now()) refuse('Ce lien de transfert a expiré (délai de 48 h dépassé).', 410);
 
         // 2. Identité du compte connecté contre le destinataire désigné
         const { data: recipientUser, error: userErr } = await supabase
@@ -549,7 +370,7 @@ export class TicketTransferService {
             .eq('id', recipientUserId)
             .maybeSingle();
         if (userErr) throw new Error(`lecture du compte destinataire : ${userErr.message}`);
-        if (!recipientUser) return fail('Compte utilisateur destinataire introuvable.', 401);
+        if (!recipientUser) return refuse('Compte utilisateur destinataire introuvable.', 401);
 
         const normalizedTarget = normalizeRecipient(transfer.to_phone_or_email);
         const userPhoneNorm = recipientUser.phone ? normalizePhoneNumber(recipientUser.phone) : null;
@@ -558,9 +379,9 @@ export class TicketTransferService {
             (normalizedTarget.type === 'PHONE' && userPhoneNorm !== null && userPhoneNorm === normalizedTarget.normalized)
             || (normalizedTarget.type === 'EMAIL' && userEmailNorm !== null && userEmailNorm === normalizedTarget.normalized);
         if (!identityMatches) {
-            fail(`Ce billet est réservé pour ${normalizedTarget.normalized}. Votre compte actuel (${userPhoneNorm || userEmailNorm || 'inconnu'}) ne correspond pas au destinataire désigné.`, 403);
+            refuse(`Ce billet est réservé pour ${normalizedTarget.normalized}. Votre compte actuel (${userPhoneNorm || userEmailNorm || 'inconnu'}) ne correspond pas au destinataire désigné.`, 403);
         }
-        if (transfer.from_user_id === recipientUserId) fail('Vous êtes déjà le propriétaire initial de ce billet.', 400);
+        if (transfer.from_user_id === recipientUserId) refuse('Vous êtes déjà le propriétaire initial de ce billet.', 400);
 
         // 3. Réclamation atomique (verrous du transfert et du billet, identité du billet régénérée)
         const { data: claim, error: claimErr } = await rpcWithRetry<{
@@ -571,26 +392,22 @@ export class TicketTransferService {
         if (!claim.ok) {
             switch (claim.code) {
                 case 'TRANSFER_NOT_FOUND':
-                    return fail('Lien de réclamation introuvable ou invalide.', 404);
+                    return refuse('Lien de réclamation introuvable ou invalide.', 404);
                 case 'TRANSFER_NOT_PENDING':
-                    return fail('Conflit de réclamation : ce billet a déjà été réclamé ou annulé.', 409);
+                    return refuse('Conflit de réclamation : ce billet a déjà été réclamé ou annulé.', 409);
                 case 'TRANSFER_EXPIRED':
-                    return fail('Ce lien de transfert a expiré (délai de 48h dépassé).', 410);
+                    return refuse('Ce lien de transfert a expiré (délai de 48 h dépassé).', 410);
                 case 'SELF_TRANSFER':
-                    return fail('Vous êtes déjà le propriétaire initial de ce billet.', 400);
+                    return refuse('Vous êtes déjà le propriétaire initial de ce billet.', 400);
                 case 'OWNER_CHANGED':
-                    return fail('L\'expéditeur n\'est plus le propriétaire de ce billet.', 400);
+                    return refuse('L’expéditeur n’est plus le propriétaire de ce billet.', 400);
                 case 'TICKET_NOT_TRANSFERABLE':
-                    return fail(`Ce billet n'est plus valide pour le transfert (statut: ${claim.status ?? 'inconnu'}).`, 400);
+                    return refuse('Ce billet n’est plus transférable.', 400);
                 default:
                     throw new Error(`ticket_transfer_claim : refus inattendu ${JSON.stringify(claim)}`);
             }
         }
         if (!claim.ticket_id || !claim.ticket_number) throw new Error(`ticket_transfer_claim : réponse incomplète ${JSON.stringify(claim)}`);
-
-        // Verrous locaux posés par initiateTransfer dans ce processus : levés (la base fait foi)
-        this.activeTransfersLock.delete(transfer.ticket_id);
-        this.inMemoryTransfers.delete(transfer.id);
 
         // 4. Notifications (non bloquantes, échec journalisé)
         const { data: ticket, error: ticketErr } = await supabase
@@ -609,7 +426,7 @@ export class TicketTransferService {
             ticketNumber: claim.ticket_number,
             eventTitle,
             recipientName,
-        }).catch((err: unknown) => console.warn('[ClaimTransfer Notification]:', err instanceof Error ? err.message : String(err)));
+        }).catch((err: unknown) => console.warn('[ClaimTransfer Notification]:', errText(err)));
 
         return {
             success: true,
@@ -624,269 +441,96 @@ export class TicketTransferService {
     }
 
     /**
-     * Annule un transfert PENDING par le propriétaire initial.
-     * Déverrouille le billet de façon atomique sans modifier ses secrets QR.
+     * Annule un transfert PENDING par son émetteur : RPC ticket_transfer_cancel (CANCELLED et billet
+     * déverrouillé dans la même transaction, secrets du billet inchangés), puis avis au destinataire.
      */
     public static async cancelTransfer(
         senderUserId: string,
         transferId: string
     ): Promise<CancelTransferResult> {
-        if (!senderUserId) {
-            const err = new Error('Authentification requise pour annuler un transfert.');
-            (err as any).statusCode = 401;
-            throw err;
-        }
+        if (!senderUserId) refuse('Authentification requise pour annuler un transfert.', 401);
+        if (!transferId) refuse('Identifiant de transfert requis.', 400);
 
-        if (!transferId) {
-            const err = new Error('Identifiant de transfert requis.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        const supabase = getServiceRoleClient();
-        const nowIso = new Date().toISOString();
-
-        // 1. Récupération du transfert
-        let transfer: any = null;
-        try {
-            const { data, error } = await supabase
-                .from('ticket_transfers')
-                .select('*')
-                .eq('id', transferId)
-                .maybeSingle();
-
-            if (!error && data) {
-                transfer = data;
-            }
-        } catch {
-            // fallback
-        }
-
-        if (!transfer) {
-            transfer = this.inMemoryTransfers.get(transferId);
-        }
-
-        if (!transfer) {
-            const err = new Error('Transfert introuvable.');
-            (err as any).statusCode = 404;
-            throw err;
-        }
-
-        // 2. Vérification de propriété
-        if (transfer.from_user_id !== senderUserId) {
-            const err = new Error('Vous n\'êtes pas l\'émetteur de ce transfert.');
-            (err as any).statusCode = 403;
-            throw err;
-        }
-
-        // 3. Vérification du statut
-        if (transfer.status === 'CLAIMED') {
-            const err = new Error('Impossible d\'annuler un transfert déjà réclamé.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        if (transfer.status === 'CANCELLED') {
-            const err = new Error('Ce transfert est déjà annulé.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        if (transfer.status === 'EXPIRED') {
-            const err = new Error('Ce transfert a déjà expiré.');
-            (err as any).statusCode = 400;
-            throw err;
-        }
-
-        // 4. Annulation atomique CAS
-        let casSuccess = false;
-        try {
-            const { data: cancelledRecord, error: cancelErr } = await supabase
-                .from('ticket_transfers')
-                .update({
-                    status: 'CANCELLED',
-                    cancelled_at: nowIso,
-                })
-                .eq('id', transferId)
-                .eq('status', 'PENDING')
-                .select('id')
-                .maybeSingle();
-
-            if (!cancelErr && cancelledRecord) {
-                casSuccess = true;
-            }
-        } catch {
-            // fallback
-        }
-
-        if (!casSuccess) {
-            const memTr = this.inMemoryTransfers.get(transferId);
-            if (memTr && memTr.status === 'PENDING') {
-                memTr.status = 'CANCELLED';
-                memTr.cancelled_at = nowIso;
-                casSuccess = true;
-            }
-        }
-
-        if (!casSuccess) {
-            const err = new Error('Conflit lors de l\'annulation : le statut a été modifié simultanément.');
-            (err as any).statusCode = 409;
-            throw err;
-        }
-
-        // Synchronisation de l'état mémoire
-        this.inMemoryTransfers.set(transferId, {
-            ...transfer,
-            status: 'CANCELLED',
-            cancelled_at: nowIso,
+        const { data, error } = await rpcWithRetry<RpcReply>('ticket_transfer_cancel', {
+            p: { transfer_id: transferId, actor_id: senderUserId },
         });
-
-        // 5. Déverrouillage du billet (le ticket conserve son propriétaire et ses secrets)
-        try {
-            await supabase
-                .from('tickets')
-                .update({
-                    transfer_locked: false,
-                    updated_at: nowIso,
-                })
-                .eq('id', transfer.ticket_id);
-        } catch {
-            // ignore
+        if (error) throw new Error(`ticket_transfer_cancel : ${error.code ?? ''} ${error.message}`);
+        if (!data) throw new Error('ticket_transfer_cancel : réponse vide');
+        if (data.ok !== true) {
+            const code = String(data.code ?? '');
+            const status = CANCEL_REFUSALS[code];
+            if (!status) throw new Error(`ticket_transfer_cancel : refus inattendu ${JSON.stringify(data)}`);
+            const message = code === 'TRANSFER_NOT_PENDING'
+                ? TRANSFER_STATUS_MESSAGES[String(data.status)] ?? String(data.message ?? 'Ce transfert n’est plus en attente.')
+                : String(data.message ?? 'Annulation refusée.');
+            refuse(message, status, { code });
         }
+        const ticketId = String(data.ticket_id ?? '');
+        const target = String(data.to_phone_or_email ?? '');
+        if (!ticketId || !target) throw new Error(`ticket_transfer_cancel : réponse incomplète ${JSON.stringify(data)}`);
 
-        this.activeTransfersLock.delete(transfer.ticket_id);
-
-        // 6. Notification non-bloquante au destinataire
-        const { data: ticket } = await supabase
+        // Avis au destinataire : l'annulation est acquise, un échec est journalisé et signalé dans la réponse
+        let recipientNotified = false;
+        const { data: ticket, error: ticketErr } = await getServiceRoleClient()
             .from('tickets')
-            .select('ticket_number, events (title)')
-            .eq('id', transfer.ticket_id)
+            .select('ticket_number, events(title)')
+            .eq('id', ticketId)
             .maybeSingle();
-
-        const ticketNum = ticket?.ticket_number || '';
-        const evTitle = (ticket?.events as any)?.title || 'Événement Event Village';
-
-        NotificationService.sendTicketTransferCancelledNotification({
-            recipientPhoneOrEmail: transfer.to_phone_or_email,
-            ticketNumber: ticketNum,
-            eventTitle: evTitle,
-        }).catch(err => console.warn('[CancelTransfer Notification]:', err));
+        if (ticketErr || !ticket) {
+            console.error(`[TicketTransferService] annulation ${transferId} : lecture du billet pour l’avis au destinataire impossible :`, ticketErr?.message ?? 'billet introuvable');
+        } else {
+            const eventTitle = (ticket.events as { title?: string } | null)?.title || 'votre événement';
+            const msg = `Event Village : le transfert du billet ${ticket.ticket_number} pour "${eventTitle}" a ete annule par son proprietaire.`;
+            recipientNotified = await notifyRecipient(target, msg, {
+                subject: 'Transfert de billet annulé — Event Village',
+                html: `<p>Le transfert du billet ${ticket.ticket_number} pour <strong>${eventTitle}</strong> a été annulé par son propriétaire.</p>`,
+            }, senderUserId, `annulation ${transferId}`);
+        }
 
         return {
             success: true,
             message: 'Transfert annulé avec succès.',
             transfer_id: transferId,
-            ticket_id: transfer.ticket_id,
+            ticket_id: ticketId,
+            recipient_notified: recipientNotified,
         };
     }
 
-    /**
-     * Nettoyage automatique et idempotent des transferts expirés (TTL 48h).
-     */
+    /** Expiration des transferts PENDING échus (cron) : RPC ticket_transfers_expire, billets déverrouillés. */
     public static async expireOverdueTransfers(): Promise<ExpireTransfersResult> {
-        const supabase = getServiceRoleClient();
-        const nowIso = new Date().toISOString();
-        const expiredIds: string[] = [];
-
-        try {
-            const { data: overdueList, error } = await supabase
-                .from('ticket_transfers')
-                .select('id, ticket_id, to_phone_or_email')
-                .eq('status', 'PENDING')
-                .lte('expires_at', nowIso);
-
-            if (!error && overdueList && overdueList.length > 0) {
-                for (const tr of overdueList) {
-                    const { data: updated } = await supabase
-                        .from('ticket_transfers')
-                        .update({
-                            status: 'EXPIRED',
-                            expired_at: nowIso,
-                        })
-                        .eq('id', tr.id)
-                        .eq('status', 'PENDING')
-                        .select('id')
-                        .maybeSingle();
-
-                    if (updated) {
-                        expiredIds.push(tr.id);
-                        await supabase
-                            .from('tickets')
-                            .update({
-                                transfer_locked: false,
-                                updated_at: nowIso,
-                            })
-                            .eq('id', tr.ticket_id)
-                            .eq('transfer_locked', true);
-
-                        this.activeTransfersLock.delete(tr.ticket_id);
-                    }
-                }
-            }
-        } catch {
-            // fallback mémoire
+        const { data, error } = await rpcWithRetry<RpcReply & { expired?: Array<{ id: string }> }>('ticket_transfers_expire', { p: {} });
+        if (error) throw new Error(`ticket_transfers_expire : ${error.code ?? ''} ${error.message}`);
+        if (!data || data.ok !== true || !Array.isArray(data.expired)) {
+            throw new Error(`ticket_transfers_expire : réponse inattendue ${JSON.stringify(data)}`);
         }
-
-        // Traitement fallback mémoire
-        for (const [id, tr] of Array.from(this.inMemoryTransfers.entries())) {
-            if (tr.status === 'PENDING' && new Date(tr.expires_at).getTime() <= Date.now()) {
-                tr.status = 'EXPIRED';
-                tr.expired_at = nowIso;
-                this.activeTransfersLock.delete(tr.ticket_id);
-                if (!expiredIds.includes(id)) {
-                    expiredIds.push(id);
-                }
-            }
-        }
-
-        return {
-            expiredCount: expiredIds.length,
-            transferIds: expiredIds,
-        };
+        const transferIds = data.expired.map((t) => String(t.id));
+        return { expiredCount: transferIds.length, transferIds };
     }
 
-    /**
-     * Récupère un enregistrement de transfert (DB ou mémoire).
-     */
-    public static async getTransferRecord(transferId: string): Promise<any> {
-        const supabase = getServiceRoleClient();
-        try {
-            const { data } = await supabase.from('ticket_transfers').select('*').eq('id', transferId).maybeSingle();
-            if (data) return data;
-        } catch {
-            // fallback
-        }
-        return this.inMemoryTransfers.get(transferId) || null;
+    /** Transfert par identifiant (base), null s'il n'existe pas ; une erreur de lecture lève. */
+    public static async getTransferRecord(transferId: string): Promise<TicketTransferRecord | null> {
+        const { data, error } = await getServiceRoleClient().from('ticket_transfers').select('*').eq('id', transferId).maybeSingle();
+        if (error) throw new Error(`lecture du transfert ${transferId} : ${error.message}`);
+        return (data ?? null) as TicketTransferRecord | null;
     }
 
-    /**
-     * Récupère le dernier transfert d'un billet (DB ou mémoire).
-     */
-    public static async getTransferByTicketId(ticketId: string): Promise<any> {
-        const supabase = getServiceRoleClient();
-        try {
-            const { data } = await supabase.from('ticket_transfers').select('*').eq('ticket_id', ticketId).order('created_at', { ascending: false }).limit(1).maybeSingle();
-            if (data) return data;
-        } catch {
-            // fallback
-        }
-        const matches = Array.from(this.inMemoryTransfers.values()).filter(t => t.ticket_id === ticketId);
-        return matches.length > 0 ? matches[matches.length - 1] : null;
+    /** Dernier transfert d'un billet (base), null s'il n'y en a aucun ; une erreur de lecture lève. */
+    public static async getTransferByTicketId(ticketId: string): Promise<TicketTransferRecord | null> {
+        const { data, error } = await getServiceRoleClient()
+            .from('ticket_transfers')
+            .select('*')
+            .eq('ticket_id', ticketId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (error) throw new Error(`lecture des transferts du billet ${ticketId} : ${error.message}`);
+        return (data ?? null) as TicketTransferRecord | null;
     }
 
-    /**
-     * Vérifie si un billet est actuellement verrouillé pour transfert.
-     */
+    /** Verrou de transfert du billet (tickets.transfer_locked) ; une erreur de lecture lève. */
     public static async isTicketLocked(ticketId: string): Promise<boolean> {
-        const supabase = getServiceRoleClient();
-        try {
-            const { data } = await supabase.from('tickets').select('transfer_locked').eq('id', ticketId).maybeSingle();
-            if (data && typeof data.transfer_locked === 'boolean') {
-                return data.transfer_locked;
-            }
-        } catch {
-            // fallback
-        }
-        return this.activeTransfersLock.has(ticketId);
+        const { data, error } = await getServiceRoleClient().from('tickets').select('transfer_locked').eq('id', ticketId).maybeSingle();
+        if (error) throw new Error(`lecture du verrou du billet ${ticketId} : ${error.message}`);
+        return data?.transfer_locked === true;
     }
 }

@@ -5,7 +5,8 @@
  *    counter_sale(p jsonb) : réglage access.counter_sale_enabled, contrôleur AFFECTÉ avec can_accept_cash,
  *    caisse OUVERT, contrôles ticket_sale_problems, stock sous verrou ;
  *  - paiement hors plateforme au prix facial rattaché à la caisse (fin_offline, ESPECES, shift_id), billets
- *    VALIDE avec payment_id, propriétaire = compte du buyerPhone s'il existe, sinon le vendeur ; total
+ *    avec payment_id ; lot 5 (contrat C7, décision de l'utilisateur) : billets UTILISE sans compte (canal
+ *    COUNTER), jamais au vendeur ni au compte du buyerPhone, Idempotency-Key obligatoire ; total
  *    attendu de la caisse incrémenté ; aucune écriture au grand livre ;
  *  - /api/events/[id]/tickets/purchase supprimée (410 depuis le lot 2).
  * Interprétations (contrat muet) : refus = HTTP 4xx (ou ok: false), jamais 5xx ni effet de bord ;
@@ -16,6 +17,7 @@
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NextRequest } from 'next/server';
@@ -69,7 +71,8 @@ async function counterSale(user: Buyer, body: Record<string, unknown>): Promise<
         assert.fail(`POST /api/controller/counter-sale absente (contrat E du lot 4) : ${err instanceof Error ? err.message : String(err)}`);
     }
     assert.equal(typeof mod.POST, 'function', 'POST /api/controller/counter-sale : gestionnaire POST exporté');
-    return invoke(mod.POST!, authed('/api/controller/counter-sale', 'POST', user, body));
+    // Lot 5 (C7) : Idempotency-Key obligatoire, une clé neuve par vente
+    return invoke(mod.POST!, authed('/api/controller/counter-sale', 'POST', user, body, { 'idempotency-key': randomUUID() }));
 }
 
 function items(...list: Array<[string, number]>): Array<{ categoryId: string; quantity: number }> {
@@ -192,7 +195,7 @@ describe('Vente au guichet en espèces', () => {
         await assertNothingSold(ev, shiftId, before, 'guichet désactivé');
     });
 
-    test('vente réussie : billets VALIDE payés hors plateforme au prix facial, caisse créditée, revenu EV nul, aucune écriture au grand livre, stock décrémenté', async () => {
+    test('vente réussie : billets payés hors plateforme au prix facial, compostés (UTILISE) sans compte, caisse créditée, revenu EV nul, aucune écriture au grand livre, stock décrémenté', async () => {
         const shiftId = await openCashShift(seller, ev.eventId);
         const before = await snapshot(ev, shiftId);
         const res = await counterSale(seller, { eventId: ev.eventId, items: items(['Standard', 2]) });
@@ -203,12 +206,13 @@ describe('Vente au guichet en espèces', () => {
         assertOfflineCash(payment, 2 * STANDARD, shiftId, 'vente au guichet');
         assert.equal(tickets.length, 2, 'deux billets émis');
         for (const t of tickets) {
-            assert.equal(t.status, 'VALIDE', 'billet VALIDE');
+            assert.equal(t.status, 'UTILISE', 'lot 5 (C7) : billet composté dès la vente (UTILISE)');
             assert.equal(t.event_id, ev.eventId, 'billet de l’événement');
             assert.equal(t.category_id, ev.categories.Standard.id, 'billet de la catégorie vendue');
             assert.equal(Number(t.price), STANDARD, 'prix facial');
             assert.equal(Number(t.service_fee ?? 0), 0, 'aucun frais de service');
-            assert.equal(t.user_id, seller.userId, 'sans buyerPhone : billet au compte du vendeur');
+            assert.equal(t.user_id ?? null, null, 'lot 5 (C7) : billet sans compte, jamais au vendeur');
+            assert.equal(t.sale_channel, 'COUNTER', 'lot 5 (C7) : canal COUNTER');
         }
         const afterSnap = await snapshot(ev, shiftId);
         assert.equal(afterSnap.shiftTotal, (before.shiftTotal ?? 0) + 2 * STANDARD, 'total attendu de la caisse += 2 × prix');
@@ -233,7 +237,7 @@ describe('Vente au guichet en espèces', () => {
         }
     });
 
-    test('propriétaire des billets : compte du buyerPhone s’il existe, sinon le vendeur', async () => {
+    test('lot 5 (C7) : aucun porteur, que le buyerPhone soit celui d’un compte ou inconnu (ni l’acheteur, ni le vendeur)', async () => {
         const shiftId = await openCashShift(seller, ev.eventId);
         const client = await newBuyer('guichet-client');
 
@@ -242,14 +246,14 @@ describe('Vente au guichet en espèces', () => {
         assert.equal(res.status, 200, `vente avec buyerPhone connu : HTTP ${res.status} ${JSON.stringify(res.body)}`);
         let out = await saleOutcome(shiftId, before);
         assert.equal(out.tickets.length, 1, 'un billet émis');
-        assert.equal(out.tickets[0].user_id, client.userId, 'buyerPhone d’un compte existant : billet au compte de l’acheteur');
+        assert.equal(out.tickets[0].user_id ?? null, null, 'buyerPhone d’un compte existant : billet sans compte (aucun rattachement)');
 
         before = await snapshot(ev, shiftId);
         res = await counterSale(seller, { eventId: ev.eventId, items: items(['Standard', 1]), buyerPhone: randomSenegalPhone('76') });
         assert.equal(res.status, 200, `vente avec buyerPhone inconnu : HTTP ${res.status} ${JSON.stringify(res.body)}`);
         out = await saleOutcome(shiftId, before);
         assert.equal(out.tickets.length, 1, 'un billet émis');
-        assert.equal(out.tickets[0].user_id, seller.userId, 'buyerPhone sans compte : billet au compte du vendeur');
+        assert.equal(out.tickets[0].user_id ?? null, null, 'buyerPhone sans compte : billet sans compte (jamais au vendeur)');
     });
 });
 

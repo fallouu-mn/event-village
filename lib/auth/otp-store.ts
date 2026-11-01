@@ -13,8 +13,12 @@
  * Lot 3 : chaque code porte un objet (otp_codes.purpose). Un code émis pour un objet (connexion,
  * inscription, retrait…) n'est jamais accepté pour un autre : la recherche se fait par numéro ET
  * objet, et un essai pour un autre objet ne touche pas au code (point 9 du lot 1C).
+ *
+ * Lot 5 (C6) : chaque essai passe par la RPC otp_check, qui verrouille la ligne du code, compare
+ * l'empreinte, incrémente attempts de façon atomique (5 essais au plus, quel que soit le parallélisme)
+ * et consomme le code en cas de succès, dans la même transaction.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { getServerEnv } from '@/lib/env';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -36,12 +40,6 @@ export function hashOtpCode(phone: string, code: string): string {
         .digest('hex');
 }
 
-function otpHashMatches(storedHex: string, phone: string, code: string): boolean {
-    const stored = Buffer.from(storedHex, 'hex');
-    const candidate = Buffer.from(hashOtpCode(phone, code), 'hex');
-    return stored.length === 32 && candidate.length === 32 && timingSafeEqual(stored, candidate);
-}
-
 /** Enregistre un code OTP pour un numéro normalisé et un objet. Lève une erreur si l'écriture échoue. */
 export async function storeOtp(phone: string, code: string, expiresAt: Date, purpose: OtpPurpose): Promise<string> {
     if (!OTP_PURPOSES.includes(purpose)) throw new Error(`Objet de code OTP inconnu : ${purpose}`);
@@ -56,34 +54,35 @@ export async function storeOtp(phone: string, code: string, expiresAt: Date, pur
     return data.id as string;
 }
 
+type OtpCheckReply = { ok?: boolean; id?: string; code?: string };
+
+/** Un essai, sérialisé en base (otp_check) ; `consume` : le code est consommé s'il est bon. */
+async function otpCheck(phone: string, code: string, purpose: OtpPurpose | readonly OtpPurpose[], consume: boolean): Promise<OtpCheck> {
+    const purposes = (Array.isArray(purpose) ? purpose : [purpose]) as OtpPurpose[];
+    if (purposes.length === 0 || purposes.some((p) => !OTP_PURPOSES.includes(p))) throw new Error(`Objet de code OTP inconnu : ${purposes.join(', ')}`);
+    const { data, error } = await getServiceRoleClient().rpc('otp_check', {
+        p: { phone, purposes, code_hash: hashOtpCode(phone, code), consume },
+    });
+    if (error) throw new Error(`Vérification du code OTP impossible : ${error.message}`);
+    const reply = (data ?? null) as OtpCheckReply | null;
+    if (!reply) throw new Error('Vérification du code OTP impossible : réponse vide');
+    if (reply.ok === true && reply.id) return { ok: true, id: String(reply.id) };
+    switch (reply.code) {
+        case 'INVALID':
+        case 'EXPIRED':
+        case 'TOO_MANY_ATTEMPTS':
+            return { ok: false, reason: reply.code };
+        default:
+            throw new Error(`Vérification du code OTP : réponse inattendue ${JSON.stringify(reply)}`);
+    }
+}
+
 /**
  * Contrôle le code sans le consommer, pour l'objet (ou les objets) attendu(s). Un essai faux
  * incrémente le compteur du code courant de cet objet ; un code d'un autre objet n'est pas lu.
  */
 export async function checkStoredOtp(phone: string, code: string, purpose: OtpPurpose | readonly OtpPurpose[]): Promise<OtpCheck> {
-    const purposes = (Array.isArray(purpose) ? purpose : [purpose]) as OtpPurpose[];
-    if (purposes.length === 0 || purposes.some((p) => !OTP_PURPOSES.includes(p))) throw new Error(`Objet de code OTP inconnu : ${purposes.join(', ')}`);
-    const supabase = getServiceRoleClient();
-    const { data: record, error } = await supabase
-        .from('otp_codes')
-        .select('id, code_hash, expires_at, attempts')
-        .eq('phone', phone)
-        .in('purpose', purposes)
-        .eq('verified', false)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    if (error) throw new Error(`Lecture du code OTP impossible : ${error.message}`);
-    if (!record) return { ok: false, reason: 'INVALID' };
-    if (new Date(record.expires_at as string).getTime() <= Date.now()) return { ok: false, reason: 'EXPIRED' };
-    const attempts = Number(record.attempts ?? 0);
-    if (attempts >= OTP_MAX_ATTEMPTS) return { ok: false, reason: 'TOO_MANY_ATTEMPTS' };
-    if (!otpHashMatches(String(record.code_hash), phone, code)) {
-        const { error: incErr } = await supabase.from('otp_codes').update({ attempts: attempts + 1 }).eq('id', record.id);
-        if (incErr) throw new Error(`Comptage de l'essai OTP impossible : ${incErr.message}`);
-        return { ok: false, reason: attempts + 1 >= OTP_MAX_ATTEMPTS ? 'TOO_MANY_ATTEMPTS' : 'INVALID' };
-    }
-    return { ok: true, id: record.id as string };
+    return otpCheck(phone, code, purpose, false);
 }
 
 /** Consomme un code contrôlé. Renvoie false s'il a déjà été consommé (requête concurrente). */
@@ -98,11 +97,9 @@ export async function consumeStoredOtp(id: string): Promise<boolean> {
     return (data ?? []).length === 1;
 }
 
-/** Contrôle puis consomme. */
+/** Contrôle et consomme dans la même transaction (otp_check). */
 export async function verifyStoredOtp(phone: string, code: string, purpose: OtpPurpose | readonly OtpPurpose[]): Promise<OtpCheck> {
-    const check = await checkStoredOtp(phone, code, purpose);
-    if (!check.ok) return check;
-    return (await consumeStoredOtp(check.id)) ? check : { ok: false, reason: 'INVALID' };
+    return otpCheck(phone, code, purpose, true);
 }
 
 export function otpFailureMessage(reason: OtpFailureReason): { message: string; status: number } {

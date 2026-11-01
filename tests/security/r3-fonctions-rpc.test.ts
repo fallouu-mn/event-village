@@ -48,6 +48,27 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['ticket_transfer_claim', { p_transfer_id: ZERO_UUID, p_recipient: ZERO_UUID }],
     ['scan_scanner_authorized', { p_scanner: ZERO_UUID, p_event: ZERO_UUID }],
     ['scan_event_problem', { p_event: ZERO_UUID }],
+    // Lot 5 (5.0) : dette du lot 4, service_role uniquement
+    ['try_uuid', { p_value: ZERO_UUID }],
+    ['ticket_transfer_initiate', { p: {} }],
+    ['ticket_transfer_cancel', { p: {} }],
+    ['ticket_transfers_expire', { p: {} }],
+    ['shift_close', { p: {} }],
+    ['user_roles_set', { p: {} }],
+    ['otp_check', { p: {} }],
+    ['scan_incident_log', { p: {} }],
+    // Lot 5 (5.2, 5.4, 5.8) : cycle de vie de l'événement, service_role uniquement
+    ['event_transition', { p: {} }],
+    ['event_actions', { p: {} }],
+    ['event_cancel', { p: {} }],
+    ['event_cancellation_impact', { p: {} }],
+    ['event_cancellation_progress', { p: {} }],
+    ['events_finish_overdue', { p: {} }],
+    ['event_end_at', { p_event_id: ZERO_UUID }],
+    ['event_status_label', { p_status: 'PUBLIE' }],
+    ['event_actor_profile', { p_event: ZERO_UUID, p_actor: ZERO_UUID }],
+    ['event_status_apply', { p_event: ZERO_UUID, p_from: 'PUBLIE', p_to: 'TERMINE', p_actor: null, p_role: 'SYSTEM', p_reason: null, p_channel: 'CRON' }],
+    ['event_notify', { p_users: [], p_title: 'TEST', p_content: 'TEST', p_metadata: {} }],
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */

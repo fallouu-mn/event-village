@@ -53,12 +53,17 @@ export async function GET(req: NextRequest) {
 
         if (ticketIds.length > 0) {
             const nowIso = new Date().toISOString();
-            const { data: pendingTransfers } = await supabase
+            const { data: pendingTransfers, error: transfersErr } = await supabase
                 .from('ticket_transfers')
                 .select('id, ticket_id, to_phone_or_email, expires_at, status')
                 .in('ticket_id', ticketIds)
                 .eq('status', 'PENDING')
                 .gt('expires_at', nowIso);
+            // Lot 5 (C1) : une panne ne fait plus passer un billet engagé pour un billet libre
+            if (transfersErr) {
+                console.error('[API /api/tickets] lecture des transferts en attente :', transfersErr.message);
+                return NextResponse.json({ error: 'Impossible de charger vos billets.' }, { status: 500 });
+            }
 
             (pendingTransfers || []).forEach((tr: any) => {
                 const target = tr.to_phone_or_email || '';

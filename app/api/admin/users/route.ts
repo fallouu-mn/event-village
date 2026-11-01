@@ -3,11 +3,19 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
-import { grantUserRoles, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
+import { grantUserRoles, RoleChangeError, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
+
+/** Refus de user_roles_set (lot 5, C4) traduits pour l'écran ; un autre refus est une erreur technique. */
+const ROLE_CHANGE_REFUSALS: Record<string, [number, string]> = {
+    FORBIDDEN: [403, 'Changement de rôles réservé à un administrateur actif.'],
+    SUPERADMIN_REQUIRED: [403, 'Seul un superadmin peut attribuer ou retirer le rôle de superadmin.'],
+    INVALID_ROLE: [400, 'Rôle inconnu.'],
+    USER_NOT_FOUND: [404, 'Utilisateur cible introuvable.'],
+};
 
 const ASSIGNABLE_ROLES: readonly UserRoleType[] = ['CLIENT', 'PARTENAIRE', 'CONTROLEUR', 'ADMIN', 'SUPERADMIN'];
 
@@ -285,10 +293,15 @@ export async function PATCH(req: NextRequest) {
         let roleChange: Awaited<ReturnType<typeof setUserRoles>> | null = null;
         if (targetRoles) {
             try {
-                roleChange = await setUserRoles(userId, targetRoles);
+                roleChange = await setUserRoles(userId, targetRoles, auth.user!.id);
             } catch (roleErr) {
                 if (isControllerRemovalBlocked(roleErr)) {
                     return NextResponse.json(controllerRemovalConflict(), { status: 409 });
+                }
+                // Lot 5 (C4) : refus de user_roles_set, vérifiés en base (rien n'a été modifié)
+                if (roleErr instanceof RoleChangeError) {
+                    const refusal = ROLE_CHANGE_REFUSALS[roleErr.code];
+                    if (refusal) return NextResponse.json({ error: refusal[1], code: roleErr.code }, { status: refusal[0] });
                 }
                 throw roleErr;
             }

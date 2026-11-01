@@ -78,7 +78,9 @@ export async function middleware(req: NextRequest) {
     const isControllerArea = pathname.startsWith('/controller') || pathname.startsWith('/api/controller');
     // Lot 4.3 : voie de scan unique et caisse partagées par le contrôleur, le partenaire propriétaire
     // et l'admin ; chaque route vérifie elle-même le droit sur l'événement (affectation ou propriété).
-    const isSharedControlApi = pathname === '/api/controller/scan' || pathname.startsWith('/api/controller/shifts');
+    // Lot 5 (C8) : y compris la déclaration des incidents de scan (/api/controller/scan/incidents)
+    const isSharedControlApi = pathname === '/api/controller/scan' || pathname.startsWith('/api/controller/scan/')
+        || pathname.startsWith('/api/controller/shifts');
     const isPartnerArea = pathname.startsWith('/partner') && pathname !== '/partner/register';
 
     let supabaseResponse = NextResponse.next({ request: req });

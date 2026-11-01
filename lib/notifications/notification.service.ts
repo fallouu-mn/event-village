@@ -561,7 +561,7 @@ export class NotificationService {
     }): Promise<boolean> {
         try {
             const supabase = getServiceRoleClient();
-            await supabase.from('notifications').insert({
+            const { error } = await supabase.from('notifications').insert({
                 user_id: params.userId,
                 type: params.type || 'SYSTEM',
                 title: params.title,
@@ -570,6 +570,10 @@ export class NotificationService {
                 status: 'PENDING',
                 metadata: params.data || {},
             });
+            if (error) {
+                console.warn('[NotificationService.createNotification] insertion refusée :', error.message);
+                return false;
+            }
             return true;
         } catch (err) {
             console.warn('[NotificationService.createNotification]:', err instanceof Error ? err.message : err);
@@ -578,60 +582,28 @@ export class NotificationService {
     }
 
     // =========================================================================
-    // NOTIFICATION — Écart de Caisse (Pre-mortem §2.1)
+    // NOTIFICATION — Écart de caisse (lot 5, C2)
     // =========================================================================
-    static async sendShiftDiscrepancyNotification(params: {
+    /**
+     * SMS d'alerte au partenaire après une clôture de caisse avec écart. L'alerte in-app est écrite par
+     * la RPC shift_close, dans la transaction de la clôture ; ce SMS part après le commit, au mieux :
+     * son issue est renvoyée (jamais d'erreur avalée), la clôture reste acquise.
+     */
+    static async sendShiftDiscrepancySms(params: {
         partnerId: string;
         eventTitle: string;
         controllerName: string;
         discrepancyAmount: number;
-        justification: string;
-    }): Promise<NotificationResult> {
-        let smsSent = false;
-        let emailSent = false;
-        let inAppCreated = false;
-
-        try {
-            const supabase = getServiceRoleClient();
-            const { data: partner } = await supabase
-                .from('partners')
-                .select('id, user_id, phone, company_name')
-                .eq('id', params.partnerId)
-                .maybeSingle();
-
-            const partnerUserId = partner?.user_id;
-            const partnerPhone = partner?.phone;
-
-            const formattedDiscrepancy = params.discrepancyAmount > 0 
-                ? `+${params.discrepancyAmount.toLocaleString('fr-FR')} FCFA`
-                : `${params.discrepancyAmount.toLocaleString('fr-FR')} FCFA`;
-
-            const smsMessage = `EV ALERTE CAISSE: Écart de ${formattedDiscrepancy} constaté lors de la clôture de caisse (${params.controllerName}) sur "${params.eventTitle}". Justification: "${params.justification}".`;
-
-            if (partnerUserId) {
-                inAppCreated = await this.createNotification({
-                    userId: partnerUserId,
-                    type: 'ALERT',
-                    title: `⚠️ Écart de caisse détecté (${formattedDiscrepancy})`,
-                    message: `Le contrôleur ${params.controllerName} a clôturé sa session avec un écart de ${formattedDiscrepancy} sur "${params.eventTitle}". Justification : ${params.justification}`,
-                    data: {
-                        event_title: params.eventTitle,
-                        controller_name: params.controllerName,
-                        discrepancy_amount: params.discrepancyAmount,
-                        justification: params.justification,
-                    },
-                });
-            }
-
-            if (partnerPhone) {
-                const res = await mTargetService.sendSms(partnerPhone, smsMessage);
-                smsSent = res.success;
-            }
-        } catch (err) {
-            console.warn('[NotificationService] sendShiftDiscrepancyNotification failed:', err);
-        }
-
-        return { smsSent, emailSent, inAppCreated };
+    }): Promise<{ sent: boolean; code?: string }> {
+        const supabase = getServiceRoleClient();
+        const { data: partner, error } = await supabase.from('partners').select('phone').eq('id', params.partnerId).maybeSingle();
+        if (error) throw new Error(`lecture du téléphone du partenaire ${params.partnerId} : ${error.message}`);
+        if (!partner?.phone) return { sent: false, code: 'NO_PHONE' };
+        const digits = String(Math.abs(Math.trunc(params.discrepancyAmount))).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        const amount = `${params.discrepancyAmount > 0 ? '+' : '-'}${digits} F CFA`;
+        const message = `Event Village : ecart de caisse de ${amount} a la cloture de la caisse de ${params.controllerName} sur "${params.eventTitle}". Detail dans votre espace organisateur.`;
+        const res = await mTargetService.sendSms(partner.phone, message);
+        return res.success ? { sent: true } : { sent: false, code: res.code ?? 'SMS_FAILED' };
     }
 
     // =========================================================================

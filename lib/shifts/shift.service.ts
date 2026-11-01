@@ -38,6 +38,7 @@ export interface Shift {
     discrepancy_justification: string | null;
     closed_at: string | null;
     closing_confirmed_by_pin: boolean;
+    closed_by?: string | null;
     created_at: string;
     updated_at: string;
     events?: { id: string; title: string; partner_id?: string; date?: string; start_date?: string };
@@ -95,7 +96,7 @@ export interface PinCheck {
 
 // Colonnes exposées : jamais regisseur_pin_used (ancienne copie du haché, vidée par la migration du lot 4)
 const SHIFT_COLUMNS = 'id, controller_id, event_id, partner_id, opening_float_amount, opened_at, opening_confirmed_by_pin, status, '
-    + 'expected_cash_total, declared_cash_total, discrepancy_amount, discrepancy_justification, closed_at, closing_confirmed_by_pin, '
+    + 'expected_cash_total, declared_cash_total, discrepancy_amount, discrepancy_justification, closed_at, closed_by, closing_confirmed_by_pin, '
     + 'created_at, updated_at';
 const SHIFT_WITH_PEOPLE = `${SHIFT_COLUMNS}, events(id, title, partner_id), users:controller_id(id, first_name, last_name, phone)`;
 
@@ -145,10 +146,6 @@ export function hashRegisseurPin(eventId: string, salt: string, pin: string): st
     return crypto.createHmac('sha256', pinKey()).update(`regisseur-pin:v2:${eventId}:${salt}:${pin.trim()}`).digest('hex');
 }
 
-function round2(x: number): number {
-    return Math.round(x * 100) / 100;
-}
-
 function ctrlName(users: Shift['users'] | null | undefined): string {
     const name = users ? `${users.first_name ?? ''} ${users.last_name ?? ''}`.trim() : '';
     return name || 'Contrôleur';
@@ -185,6 +182,28 @@ const SHIFT_OPEN_REFUSALS: Record<string, [number, string]> = {
     INVALID_FLOAT: [400, 'Le fond de caisse doit être positif ou nul.'],
     SHIFT_ALREADY_OPEN: [409, 'Une session de caisse est déjà ouverte pour cet événement. Clôturez-la avant d’en ouvrir une nouvelle.'],
 };
+
+const SHIFT_CLOSE_REFUSALS: Record<string, [number, string]> = {
+    INVALID_INPUT: [400, 'Demande de clôture incomplète.'],
+    SHIFT_NOT_FOUND: [404, 'Session de caisse introuvable.'],
+    SHIFT_NOT_OPEN: [409, 'Cette session de caisse est déjà clôturée.'],
+    INVALID_DECLARED: [400, 'Le montant déclaré doit être un nombre entier de francs, positif ou nul.'],
+    JUSTIFICATION_REQUIRED: [400, 'Un écart de caisse doit être justifié (10 caractères au moins).'],
+    INVALID_JUSTIFICATION: [400, 'La justification est limitée à 1 000 caractères.'],
+    PIN_REQUIRED: [400, 'Le code PIN régisseur est obligatoire pour co-signer une clôture avec écart.'],
+    PIN_NOT_SET: [409, 'Aucun code PIN régisseur n’a été généré par l’organisateur pour cet événement.'],
+    PIN_INVALID: [401, 'Code PIN régisseur incorrect.'],
+};
+
+/** Résultat d'une clôture de caisse : caisse relue, chiffres de la RPC et issue de l'alerte. */
+export interface ShiftCloseResult {
+    shift: Shift;
+    expected: number;
+    declared: number;
+    discrepancy: number;
+    pinCosigned: boolean;
+    alert: { inApp: boolean; smsSent: boolean; smsCode?: string } | null;
+}
 
 const EVENT_PROBLEM_MESSAGES: Record<string, string> = {
     event_cancelled: 'Cet événement est annulé.',
@@ -342,71 +361,111 @@ export class ShiftService {
 
     // ── 4. Clôture (Z de caisse) ───────────────────────────────────────────
 
+    /**
+     * Clôture d'une caisse (lot 5, C2) par son contrôleur, le partenaire propriétaire ou un admin.
+     * Ordre : caisse et droit de l'appelant (404 sinon), statut OUVERT, montant entier ≥ 0, puis, si le
+     * montant déclaré diffère du total attendu, justification (10 caractères au moins) et PIN régisseur :
+     * ces pré-contrôles sur une lecture sans verrou évitent de consommer un essai de PIN pour une demande
+     * incomplète. Le PIN est haché ici (clé REGISSEUR_PIN_KEY, hors base) avec le sel courant ; la RPC
+     * shift_close refait tous les contrôles sous verrou de la caisse (écart relu sur le total attendu
+     * final), compare le haché, clôture, journalise et écrit l'alerte in-app dans la même transaction.
+     * Le SMS d'alerte part après le commit ; son issue est dans le résultat.
+     */
     static async closeShift(
         userId: string,
-        input: { shiftId: string; declaredCashTotal: number; discrepancyJustification?: string; regisseurPin: string },
-    ): Promise<Shift> {
+        input: {
+            shiftId: string;
+            declaredCashTotal: number;
+            justification?: string | null;
+            discrepancyJustification?: string | null;
+            regisseurPin?: string | null;
+        },
+        viewer: { isAdmin?: boolean } = {},
+    ): Promise<ShiftCloseResult> {
         const shift = await readShift(input.shiftId);
-        if (!shift || shift.controller_id !== userId) throw new ShiftError(404, 'SHIFT_NOT_FOUND', 'Session de caisse introuvable.');
-        if (shift.status !== 'OUVERT') {
-            throw new ShiftError(409, 'SHIFT_NOT_OPEN', `Cette session de caisse est déjà clôturée (statut : ${shift.status}).`);
-        }
+        const allowed = !!shift && (shift.controller_id === userId || viewer.isAdmin === true || (await isPartnerOwner(userId, shift.partner_id)));
+        if (!shift || !allowed) throw new ShiftError(404, 'SHIFT_NOT_FOUND', SHIFT_CLOSE_REFUSALS.SHIFT_NOT_FOUND[1]);
+        if (shift.status !== 'OUVERT') throw new ShiftError(409, 'SHIFT_NOT_OPEN', SHIFT_CLOSE_REFUSALS.SHIFT_NOT_OPEN[1]);
+
         const declared = Number(input.declaredCashTotal);
-        if (!Number.isFinite(declared) || declared < 0) throw new ShiftError(400, 'INVALID_DECLARED', 'Le montant déclaré doit être positif ou nul.');
-        if (!input.regisseurPin || !input.regisseurPin.trim()) {
-            throw new ShiftError(400, 'PIN_REQUIRED', 'Le code PIN régisseur est obligatoire pour co-signer la clôture.');
-        }
-        const check = await this.verifyRegisseurPin(shift.event_id, input.regisseurPin, `shift:${shift.id}`);
-        if (!check.valid) throw new ShiftError(check.status ?? 401, check.code ?? 'PIN_INVALID', check.message ?? 'Code PIN régisseur invalide pour la clôture.');
+        if (!Number.isInteger(declared) || declared < 0) throw new ShiftError(400, 'INVALID_DECLARED', SHIFT_CLOSE_REFUSALS.INVALID_DECLARED[1]);
+        const justification = (input.justification ?? input.discrepancyJustification ?? '').trim();
+        const pin = (input.regisseurPin ?? '').trim();
 
-        const discrepancy = round2(declared - Number(shift.expected_cash_total));
-        const justification = input.discrepancyJustification?.trim() || '';
-        if (discrepancy !== 0 && !justification) {
-            throw new ShiftError(400, 'JUSTIFICATION_REQUIRED', 'Une justification est obligatoire en cas d’écart de caisse (montant déclaré différent du montant attendu).');
+        let pinProof: { pin_salt: string; pin_hash: string } | null = null;
+        if (declared !== Number(shift.expected_cash_total)) {
+            if (justification.length < 10) throw new ShiftError(400, 'JUSTIFICATION_REQUIRED', SHIFT_CLOSE_REFUSALS.JUSTIFICATION_REQUIRED[1]);
+            if (!pin) throw new ShiftError(400, 'PIN_REQUIRED', SHIFT_CLOSE_REFUSALS.PIN_REQUIRED[1]);
+            pinProof = await this.regisseurPinProof(shift.event_id, pin, `shift:${shift.id}`);
         }
 
-        const now = new Date().toISOString();
-        const { data, error } = await getServiceRoleClient().from('controller_shifts')
-            .update({
-                status: 'CLOTURE',
+        const { data, error } = await rpcWithRetry<Record<string, unknown> & { ok?: boolean; code?: string }>('shift_close', {
+            p: {
+                shift_id: shift.id,
+                actor_id: userId,
                 declared_cash_total: declared,
-                discrepancy_amount: discrepancy,
-                discrepancy_justification: discrepancy !== 0 ? justification : null,
-                closed_at: now,
-                closing_confirmed_by_pin: true,
-                updated_at: now,
-            })
-            .eq('id', shift.id).eq('status', 'OUVERT')
-            .select(SHIFT_WITH_PEOPLE)
-            .maybeSingle();
-        if (error) throw new Error(`Clôture de la session de caisse impossible : ${error.message}`);
-        if (!data) throw new ShiftError(409, 'SHIFT_NOT_OPEN', 'Cette session de caisse vient d’être clôturée.');
-        const closed = data as unknown as Shift;
-
-        await writeAudit({
-            userId,
-            userRole: 'CAISSE',
-            action: 'SHIFT_CLOSED',
-            objectType: 'controller_shifts',
-            objectId: closed.id,
-            metadata: { event_id: closed.event_id, expected: Number(closed.expected_cash_total), declared, discrepancy },
+                justification: justification || null,
+                ...(pinProof ?? {}),
+            },
         });
+        if (error || !data) throw new Error(`shift_close : ${error?.message ?? 'réponse vide'}`);
+        if (data.ok !== true) {
+            const code = String(data.code ?? 'SHIFT_CLOSE_REFUSED');
+            const refusal = SHIFT_CLOSE_REFUSALS[code];
+            if (!refusal) throw new Error(`shift_close : refus inattendu ${JSON.stringify(data)}`);
+            const details: Record<string, unknown> = {};
+            for (const k of ['expected', 'declared', 'discrepancy'] as const) if (data[k] !== undefined) details[k] = Number(data[k]);
+            throw new ShiftError(refusal[0], code, refusal[1], details);
+        }
 
+        const discrepancy = Number(data.discrepancy ?? 0);
+        let sms: { sent: boolean; code?: string } = { sent: false };
         if (discrepancy !== 0) {
-            // Alerte au partenaire : la clôture est acquise, un échec d'envoi est journalisé sans l'annuler
             try {
-                await NotificationService.sendShiftDiscrepancyNotification({
-                    partnerId: closed.partner_id,
-                    eventTitle: closed.events?.title || 'Événement',
-                    controllerName: ctrlName(closed.users),
+                sms = await NotificationService.sendShiftDiscrepancySms({
+                    partnerId: shift.partner_id,
+                    eventTitle: String(data.event_title ?? shift.events?.title ?? 'votre événement'),
+                    controllerName: String(data.controller_name ?? ctrlName(shift.users)),
                     discrepancyAmount: discrepancy,
-                    justification,
                 });
-            } catch (notifyErr) {
-                console.error(`[ShiftService] alerte d'écart de la caisse ${closed.id} non envoyée :`, notifyErr instanceof Error ? notifyErr.message : String(notifyErr));
+            } catch (smsErr) {
+                console.error(`[ShiftService] SMS d'alerte de la caisse ${shift.id} non envoyé :`, smsErr instanceof Error ? smsErr.message : String(smsErr));
+                sms = { sent: false, code: 'SMS_FAILED' };
             }
         }
-        return closed;
+
+        const closed = await readShift(shift.id);
+        if (!closed) throw new Error(`Caisse ${shift.id} introuvable après sa clôture.`);
+        return {
+            shift: closed,
+            expected: Number(data.expected ?? 0),
+            declared: Number(data.declared ?? declared),
+            discrepancy,
+            pinCosigned: data.pin_cosigned === true,
+            alert: discrepancy === 0 ? null : { inApp: !!data.alert_id, smsSent: sms.sent, smsCode: sms.sent ? undefined : sms.code },
+        };
+    }
+
+    /**
+     * Preuve de PIN régisseur pour shift_close : format, quota par caisse (REGISSEUR_PIN_PER_SHIFT_15MIN),
+     * sel courant de l'événement, haché HMAC du candidat. La comparaison se fait en base, sous verrou.
+     */
+    private static async regisseurPinProof(eventId: string, candidatePin: string, quotaBucket: string): Promise<{ pin_salt: string; pin_hash: string }> {
+        if (!PIN_FORMAT.test(candidatePin)) throw new ShiftError(400, 'PIN_FORMAT', 'Code PIN régisseur incomplet (4 à 8 chiffres).');
+        const quota = await reserveQuota(
+            [{ scope: 'regisseur_pin', bucket: quotaBucket, windowSecs: PIN_WINDOW_SECONDS, max: pinMaxAttempts() }],
+            'PIN régisseur');
+        if (!quota.allowed) {
+            if (quota.reason === 'EXCEEDED') {
+                throw new ShiftError(429, 'PIN_RATE_LIMITED', `Trop de tentatives de code PIN. Réessayez dans ${quota.retryAfterSeconds} s.`);
+            }
+            throw new ShiftError(503, 'PIN_GUARD_UNAVAILABLE', 'Vérification du code PIN momentanément indisponible.');
+        }
+        const { data, error } = await getServiceRoleClient().from('event_regisseur_pins').select('pin_salt').eq('event_id', eventId).maybeSingle();
+        if (error) throw new Error(`Lecture du PIN régisseur impossible : ${error.message}`);
+        if (!data) throw new ShiftError(409, 'PIN_NOT_SET', SHIFT_CLOSE_REFUSALS.PIN_NOT_SET[1]);
+        const salt = String(data.pin_salt);
+        return { pin_salt: salt, pin_hash: hashRegisseurPin(eventId, salt, candidatePin) };
     }
 
     // ── 5. Résumé (ticket Z) ───────────────────────────────────────────────

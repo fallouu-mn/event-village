@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
 import { normalizePayerPhone } from '@/lib/payments/payer-phone';
 import { WithdrawalService } from '@/lib/payments/withdrawal.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
@@ -31,6 +33,8 @@ const REFUSAL_STATUS: Record<string, number> = {
  * Seuil, frais et solde sont décidés en base (withdrawal_request) ; l'envoi passe par le module de
  * cashout. Wave ou Orange Money vers le numéro déclaré ; virement bancaire refusé tant que le réglage
  * finance.withdrawal_bank_enabled est désactivé. Même clé → même retrait, jamais un second envoi.
+ * Lot 5 (C6) : quota par compte (WITHDRAWAL_REQUEST_PER_USER_HOUR) réservé avant la vérification du
+ * code : chaque demande compte, même refusée, ce qui borne les essais de code par compte.
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -38,6 +42,15 @@ export async function POST(req: NextRequest) {
     const key = req.headers.get('idempotency-key')?.trim() ?? '';
     if (!IDEMPOTENCY_KEY.test(key)) {
         return NextResponse.json({ error: 'En-tête Idempotency-Key obligatoire.', code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });
+    }
+    const quota = await reserveQuota(
+        [{ scope: 'withdrawal_request_user', bucket: session.user.id, windowSecs: 3600, max: getServerEnv().WITHDRAWAL_REQUEST_PER_USER_HOUR }],
+        'demande de retrait');
+    if (!quota.allowed) {
+        return quota.reason === 'EXCEEDED'
+            ? NextResponse.json({ error: `Trop de demandes de retrait. Réessayez dans ${Math.max(1, Math.ceil(quota.retryAfterSeconds / 60))} min.`, code: 'RATE_LIMITED' },
+                { status: 429, headers: { 'Retry-After': String(quota.retryAfterSeconds) } })
+            : NextResponse.json({ error: 'Retrait momentanément indisponible.', code: 'GUARD_UNAVAILABLE' }, { status: 503 });
     }
     let body: unknown;
     try {

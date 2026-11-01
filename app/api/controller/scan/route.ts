@@ -7,6 +7,7 @@ import { NotificationService } from '@/lib/notifications/notification.service';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { isScanResult, SCAN_RESULT_LABELS, type ScanResult } from '@/lib/scan/scan-result';
 import { reserveQuota } from '@/lib/security/quota';
+import { logServerScanIncident, type ServerIncidentKind } from '@/lib/scan/scan-incidents';
 import { parseTicketPayload, verifyTicketCode } from '@/lib/security/totp';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -32,13 +33,41 @@ function scanResponse(data: Rpc): NextResponse {
     return NextResponse.json({ ...data, result, message: SCAN_RESULT_LABELS[result as ScanResult] }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
-async function scanQuota(userId: string, label: string, scope: string, windowSecs: number, max: number): Promise<NextResponse | null> {
+/**
+ * Quota par scanneur. Un refus (429) ou une garde indisponible (503) est compté dans scan_incidents
+ * (source SERVER, événement lu dans le corps s'il est lisible), sans toucher ticket_scans.
+ */
+async function scanQuota(userId: string, eventId: string | null, label: string, scope: string, windowSecs: number, max: number): Promise<NextResponse | null> {
     const q = await reserveQuota([{ scope, bucket: userId, windowSecs, max }], label);
     if (q.allowed) return null;
-    if (q.reason === 'UNAVAILABLE') return NextResponse.json({ error: 'Contrôle momentanément indisponible.', result: 'server_error' }, { status: 503 });
+    if (q.reason === 'UNAVAILABLE') {
+        const logged = await logServerScanIncident(userId, eventId, 'GUARD_UNAVAILABLE');
+        return NextResponse.json({ error: 'Contrôle momentanément indisponible.', result: 'server_error', incident_logged: logged }, { status: 503 });
+    }
+    const logged = await logServerScanIncident(userId, eventId, 'RATE_LIMITED');
     return NextResponse.json(
-        { error: SCAN_RESULT_LABELS.rate_limited, result: 'rate_limited', retry_after_seconds: q.retryAfterSeconds },
+        { error: SCAN_RESULT_LABELS.rate_limited, result: 'rate_limited', retry_after_seconds: q.retryAfterSeconds, incident_logged: logged },
         { status: 429, headers: { 'Retry-After': String(q.retryAfterSeconds) } });
+}
+
+/** Corps JSON lu avant le quota (pour connaître l'événement d'un incident) ; null s'il est illisible. */
+async function readBody(req: NextRequest): Promise<{ body: unknown; eventId: string | null } | null> {
+    const raw = await req.text();
+    let body: unknown;
+    try {
+        body = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+    const candidate = body && typeof body === 'object' ? (body as Record<string, unknown>).eventId : undefined;
+    const eventId = typeof candidate === 'string' && z.string().uuid().safeParse(candidate).success ? candidate : null;
+    return { body, eventId };
+}
+
+/** Erreur serveur (500) : comptée dans scan_incidents (SERVER_ERROR), réponse générique. */
+async function serverError(userId: string, eventId: string | null, message: string, kind: ServerIncidentKind = 'SERVER_ERROR'): Promise<NextResponse> {
+    const logged = await logServerScanIncident(userId, eventId, kind);
+    return NextResponse.json({ error: message, result: 'server_error', incident_logged: logged }, { status: 500 });
 }
 
 /**
@@ -55,15 +84,12 @@ export async function POST(req: NextRequest) {
     if (session.response) return session.response;
     const user = session.user;
     const env = getServerEnv();
-    const limited = await scanQuota(user.id, 'scan', 'scan_scanner', 10, env.SCAN_PER_SCANNER_10S);
+    // Lot 5 (C8) : corps lu AVANT le quota, pour rattacher un incident à son événement
+    const read = await readBody(req);
+    const limited = await scanQuota(user.id, read?.eventId ?? null, 'scan', 'scan_scanner', 10, env.SCAN_PER_SCANNER_10S);
     if (limited) return limited;
-
-    let body: unknown;
-    try {
-        body = await req.json();
-    } catch {
-        return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
-    }
+    if (!read) return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    const body = read.body;
     const camera = CameraSchema.safeParse(body);
     const manual = camera.success ? null : ManualSchema.safeParse(body);
     if (!camera.success && !manual?.success) {
@@ -105,7 +131,7 @@ export async function POST(req: NextRequest) {
         return scanResponse(data);
     } catch (err) {
         console.error('[API /api/controller/scan] erreur :', err instanceof Error ? err.message : String(err));
-        return NextResponse.json({ error: 'Erreur serveur pendant le contrôle.', result: 'server_error' }, { status: 500 });
+        return serverError(user.id, typeof p.event_id === 'string' ? p.event_id : null, 'Erreur serveur pendant le contrôle.');
     }
 }
 
@@ -118,15 +144,11 @@ export async function PUT(req: NextRequest) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const user = session.user;
-    const limited = await scanQuota(user.id, 'encaissement', 'cash_collect', 60, getServerEnv().CASH_COLLECT_PER_SCANNER_MIN);
+    const read = await readBody(req);
+    const limited = await scanQuota(user.id, read?.eventId ?? null, 'encaissement', 'cash_collect', 60, getServerEnv().CASH_COLLECT_PER_SCANNER_MIN);
     if (limited) return limited;
-    let body: unknown;
-    try {
-        body = await req.json();
-    } catch {
-        return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
-    }
-    const parsed = CashSchema.safeParse(body);
+    if (!read) return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    const parsed = CashSchema.safeParse(read.body);
     if (!parsed.success) return NextResponse.json({ error: 'scanId et eventId requis.' }, { status: 400 });
     try {
         const { data, error } = await rpcWithRetry<Rpc>('ticket_cash_checkin', {
@@ -140,7 +162,7 @@ export async function PUT(req: NextRequest) {
         return scanResponse(data);
     } catch (err) {
         console.error('[API /api/controller/scan PUT] erreur :', err instanceof Error ? err.message : String(err));
-        return NextResponse.json({ error: 'Erreur serveur pendant l’encaissement.', result: 'server_error' }, { status: 500 });
+        return serverError(user.id, parsed.data.eventId, 'Erreur serveur pendant l’encaissement.');
     }
 }
 

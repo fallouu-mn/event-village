@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { refuseUnlessCron } from '@/lib/security/cron-auth';
 import { paymentService } from '@/lib/payments/payment.service';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET or POST /api/cron/moratoriums
- * Déclenchement automatique / périodique de l'expiration des moratoires de 48h dépassés
- * Sécurisé par token CRON_SECRET dans le header Authorization
+ * Expiration des moratoires de 48 h dépassés. Protégé par CRON_SECRET (refuseUnlessCron), sans repli
+ * sur une autre clé.
  */
 export async function GET(req: NextRequest) {
     return handleCron(req);
@@ -17,17 +18,11 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleCron(req: NextRequest) {
+    const refused = refuseUnlessCron(req);
+    if (refused) return refused;
     try {
-        const authHeader = req.headers.get('authorization');
-        const expectedSecret = process.env.CRON_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-        if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
-        }
-
         const result = await paymentService.expireOverdueMoratoriums();
-        console.log(`[Cron Moratoriums] Traité avec succès : ${result.expiredCount} réservations expirées.`);
-
+        console.log(`[Cron Moratoriums] ${result.expiredCount} réservation(s) expirée(s).`);
         return NextResponse.json({
             success: true,
             message: `Traitement terminé. ${result.expiredCount} réservation(s) expirée(s).`,
@@ -35,7 +30,7 @@ async function handleCron(req: NextRequest) {
             reservationIds: result.reservationIds,
         });
     } catch (err: unknown) {
-        console.error('[Cron Moratoriums] Erreur:', err);
-        return NextResponse.json({ error: 'Erreur exécution cron moratoires' }, { status: 500 });
+        console.error('[Cron Moratoriums] erreur :', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Erreur lors de l’expiration des moratoires.' }, { status: 500 });
     }
 }

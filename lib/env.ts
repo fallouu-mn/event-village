@@ -10,9 +10,8 @@
  * OTP_HASH_SECRET (lot 1C.4), TICKET_TOTP_MASTER_KEY (code dynamique des billets, lot 4) et
  * REGISSEUR_PIN_KEY (PIN régisseur, lot 4).
  *
- * Repli restant : app/api/cron/moratoriums/route.ts et app/api/cron/ticket-transfers/route.ts
- * acceptent CRON_SECRET || SUPABASE_SERVICE_ROLE_KEY ; les crons du lot 2 (lib/security/cron-auth.ts)
- * exigent CRON_SECRET, sans repli.
+ * Toutes les routes cron exigent CRON_SECRET, sans repli (lib/security/cron-auth.ts, refuseUnlessCron) ;
+ * depuis le lot 5, moratoriums et ticket-transfers n'acceptent plus la clé service_role.
  *
  * Le cache est invalidé par resetServerEnvCache() : les tests qui changent une limite dans leur
  * processus l'appellent après avoir modifié process.env.
@@ -86,6 +85,12 @@ const serverEnvSchema = z.object({
     INVITE_PER_PARTNER_HOUR: limit(20), // invitations de contrôleurs, par partenaire
     INVITE_PER_PHONE_DAY: limit(3), // invitations reçues par un numéro, tous partenaires confondus
     REGISSEUR_PIN_PER_SHIFT_15MIN: limit(5), // vérifications du PIN régisseur
+    // Lot 5 (5.0) : demandes de retrait par compte et par heure, reçus SMS du guichet par caisse et par jour,
+    // incidents de scan déclarés par l'appareil (appels) et écrits par le serveur (lignes), par scanneur et par minute
+    WITHDRAWAL_REQUEST_PER_USER_HOUR: limit(10),
+    COUNTER_RECEIPT_PER_SHIFT_DAY: limit(500),
+    SCAN_INCIDENT_REPORT_PER_SCANNER_MIN: limit(10),
+    SCAN_INCIDENT_LOG_PER_SCANNER_MIN: limit(60),
     // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
     // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
     CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),
