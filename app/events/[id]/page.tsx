@@ -1,42 +1,39 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import React, { useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
-  ChevronLeft,
-  Share2,
-  Heart,
-  Ticket,
-  Calendar,
-  Clock,
-  MapPin,
-  Sparkles,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
-  Navigation,
+  ArrowLeft,
   Bus,
+  CalendarDays,
   Car,
-  Phone,
   ClipboardList,
+  Compass,
   ExternalLink,
-  Plus,
+  MapPin,
   Minus,
+  Navigation,
+  Phone,
+  Plus,
   RefreshCw,
+  SearchX,
+  Share2,
+  ShieldCheck,
+  Ticket,
+  Undo2,
 } from 'lucide-react';
-
-const EventMap = dynamic(
-  () => import('@/components/ui/EventMap').then(m => ({ default: m.EventMap })),
-  { ssr: false, loading: () => <div className="w-full h-48 rounded-xl bg-slate-100 dark:bg-zinc-800 animate-pulse" /> }
-);
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/Skeleton';
+import { ErrorState } from '@/components/ui/EmptyState';
+import { IconButton } from '@/components/ui/IconButton';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { LiveIndicator } from '@/components/ui/LiveIndicator';
+import { StatusBanner, type StatusBannerTone } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
 import {
   PaymentModal,
-  formatFcfa,
   isUncertainOutcome,
   readCheckoutQuote,
   readJsonBody,
@@ -45,6 +42,85 @@ import {
   useIdempotencyKey,
   type CheckoutQuote,
 } from '@/components/payment/PaymentModal';
+import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { eventImageSrc, isProjectStorageImage } from '@/lib/events/event-image';
+import { formatDate, formatDateTime, formatFcfa } from '@/lib/format';
+
+const EventMap = dynamic(
+  () => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })),
+  { ssr: false, loading: () => <div className="h-48 w-full rounded-2xl bg-surface-sunken motion-safe:animate-pulse" aria-hidden="true" /> },
+);
+
+/**
+ * Page publique d'un événement (lot 5, tâches 5.3 et 5.13 ; contrats E, O1, O3, O5, Q).
+ *  - Source unique : GET /api/events/[id]. 404 (brouillon, en attente, validé, inconnu) → page
+ *    « Événement introuvable » ; autre échec → état d'erreur avec « Réessayer ».
+ *  - Bandeau StatusBanner alimenté par `banner` (suspendu, annulé, terminé) ; pour un événement annulé,
+ *    l'avis public et l'information de remboursement (`cancellation`), jamais le motif interne.
+ *  - Module d'achat rendu seulement si `purchasable` ; sinon, les formules restent lisibles sans achat.
+ *  - Stock en tranches du serveur : « Disponible », « Plus que N places », « Complet ».
+ *  - Temps réel : public_event_state et public_category_stock de cet événement (filtre event_id) ;
+ *    chaque signal recharge la fiche par le serveur, sans recharger la page.
+ *  - Montants du panier : devis serveur (/api/checkout/quote), jamais calculés ici.
+ */
+
+type Availability = 'AVAILABLE' | 'LOW' | 'SOLD_OUT';
+type BannerKind = 'SUSPENDU' | 'ANNULE' | 'TERMINE';
+
+interface PublicCategory {
+  id: string;
+  name: string;
+  price: number;
+  description?: string;
+  availability: Availability;
+  remainingHint: number | null;
+  isAvailable: boolean;
+  saleStarted: boolean;
+  saleEnded: boolean;
+  saleStart: string | null;
+  saleEnd: string | null;
+  maxPerOrder: number;
+}
+
+interface ProgramItem {
+  id?: string;
+  time?: string | null;
+  kind?: string | null;
+  title?: string | null;
+  participant?: string | null;
+  description?: string | null;
+  day?: string | null;
+}
+
+interface PublicEvent {
+  id: string;
+  title: string;
+  categoryLabel?: string | null;
+  description: string;
+  organizer?: { id?: string; name: string; avatar?: string | null } | null;
+  posterUrl: string | null;
+  dateFormatted: string;
+  time: string;
+  venue: string;
+  city?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  purchasable: boolean;
+  banner: { kind: BannerKind; title: string; message: string } | null;
+  cancellation?: { publicNotice: string; cancelledAt: string; refundInfo: string };
+  isFullySoldOut: boolean;
+  program: ProgramItem[];
+  practicalInfo?: {
+    address?: string | null;
+    accessNotes?: string | null;
+    parking?: string | null;
+    contactPhone?: string | null;
+    rules?: string | null;
+  } | null;
+  categories: PublicCategory[];
+}
 
 /** Devis serveur du panier courant (clé = panier et prix affichés au moment de la demande). */
 type QuoteState =
@@ -52,33 +128,274 @@ type QuoteState =
   | { kind: 'loading'; key: string }
   | { kind: 'ready'; key: string; quote: CheckoutQuote }
   | { kind: 'error'; key: string; message: string };
-import { useToast } from '@/components/ui/Toast';
-import { useAuth } from '@/components/providers/AuthProvider';
-import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+
+type Phase = 'loading' | 'ready' | 'not-found' | 'error';
+
+const BANNER_TONE: Record<BannerKind, StatusBannerTone> = {
+  SUSPENDU: 'suspended',
+  ANNULE: 'danger',
+  TERMINE: 'neutral',
+};
+
+const PROGRAM_KIND_LABEL: Record<string, string> = {
+  ARTISTE: 'Artiste',
+  INTERVENANT: 'Intervenant',
+  ACTIVITE: 'Activité',
+};
+
+const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
+
+/** Tranche de stock et état de la vente d'une formule, en mots (la couleur ne porte jamais seule le sens). */
+function availabilityOf(cat: PublicCategory): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } {
+  if (cat.availability === 'SOLD_OUT') return { label: 'Complet', tone: 'danger' };
+  if (!cat.saleStarted) {
+    return { label: cat.saleStart ? `Vente à partir du ${formatDateTime(cat.saleStart)}` : 'Bientôt en vente', tone: 'neutral' };
+  }
+  if (cat.saleEnded) return { label: 'Vente terminée', tone: 'neutral' };
+  if (cat.availability === 'LOW' && cat.remainingHint !== null) {
+    return { label: cat.remainingHint > 1 ? `Plus que ${cat.remainingHint} places` : 'Plus qu’une place', tone: 'warning' };
+  }
+  return { label: 'Disponible', tone: 'success' };
+}
+
+function capitalize(text: string): string {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+function priceLabel(price: number): string {
+  return price === 0 ? 'Gratuit' : formatFcfa(price);
+}
+
+function initialsOf(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join('') || 'EV';
+}
+
+function readPublicEvent(body: unknown): PublicEvent | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const event = (body as { event?: unknown }).event;
+  if (typeof event !== 'object' || event === null) return null;
+  const e = event as Partial<PublicEvent>;
+  if (typeof e.id !== 'string' || typeof e.title !== 'string' || typeof e.purchasable !== 'boolean') return null;
+  return {
+    ...(e as PublicEvent),
+    categories: Array.isArray(e.categories) ? e.categories : [],
+    program: Array.isArray(e.program) ? e.program : [],
+    banner: e.banner ?? null,
+  };
+}
+
+function PageSkeleton() {
+  return (
+    <div className="space-y-6 pb-24 lg:pb-12" aria-busy="true" aria-label="Chargement de l’événement">
+      <div className="h-11 w-48 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <div className="aspect-[16/9] w-full rounded-3xl bg-surface-sunken motion-safe:animate-pulse" />
+          <div className="h-9 w-3/4 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
+            <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
+          </div>
+          <div className="h-40 rounded-3xl bg-surface-sunken motion-safe:animate-pulse" />
+        </div>
+        <div className="h-96 rounded-3xl bg-surface-sunken motion-safe:animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+/** URL d'un événement inexistant ou non public (brouillon, en attente, validé) : page 404 propre. */
+function EventNotFound() {
+  return (
+    <div className="mx-auto flex min-h-[55vh] max-w-lg flex-col items-center justify-center gap-4 px-2 pb-24 text-center lg:pb-12">
+      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+        <SearchX size={32} />
+      </span>
+      <p className="text-sm font-semibold text-fg-muted">Erreur 404</p>
+      <h1 className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">Événement introuvable</h1>
+      <p className="text-base leading-relaxed text-fg-muted">
+        Cet événement n’existe pas ou n’est pas ouvert au public. Vérifiez le lien reçu, ou parcourez les événements à venir.
+      </p>
+      <div className="flex flex-wrap justify-center gap-3 pt-2">
+        <LinkButton href="/explore" leftIcon={<Compass size={18} />}>
+          Voir les événements
+        </LinkButton>
+        <LinkButton href="/" variant="secondary">
+          Retour à l’accueil
+        </LinkButton>
+      </div>
+    </div>
+  );
+}
+
+function InfoTile({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-border bg-surface p-4">
+      <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm text-fg-muted">{label}</p>
+        <div className="break-words text-base font-semibold text-fg">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4 rounded-3xl border border-border bg-surface p-5 sm:p-6">
+      <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-fg">
+        {icon && <span className="text-brand-fg" aria-hidden="true">{icon}</span>}
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function PracticalRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-fg-muted" aria-hidden="true">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-fg">{label}</p>
+        <div className="whitespace-pre-line break-words text-sm leading-relaxed text-fg-muted">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+const AVAILABILITY_TEXT: Record<'success' | 'warning' | 'danger' | 'neutral', string> = {
+  success: 'text-success-fg',
+  warning: 'text-warning-fg',
+  danger: 'text-danger-fg',
+  neutral: 'text-fg-muted',
+};
 
 export default function EventDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const toast = useToast();
   const { isAuthenticated, session } = useAuth();
-  const [isLiked, setIsLiked] = useState(false);
+  const eventId = params.id;
+
+  const [event, setEvent] = useState<PublicEvent | null>(null);
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isClaimingFree, setIsClaimingFree] = useState(false);
-  const [event, setEvent] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<Record<string, number>>({});
   // Clé d'idempotence du panier gratuit : conservée tant que le panier et l'issue incertaine ne changent pas.
   const freeCheckoutAttempt = useIdempotencyKey();
 
+  // ── Chargement de la fiche publique ──────────────────────────────────────
+
+  /**
+   * « initial » (premier affichage, « Réessayer ») : un échec affiche l'état d'erreur. « silent » (signal
+   * temps réel, reconnexion, stock changé) : la fiche reste affichée, l'échec est signalé par un bandeau.
+   * 404 : page introuvable dans les deux cas.
+   */
+  const loadEvent = useCallback(async (mode: 'initial' | 'silent') => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/events/${encodeURIComponent(eventId)}`, { cache: 'no-store' });
+    } catch (err) {
+      console.error('[événement] fiche injoignable :', err instanceof Error ? err.message : String(err));
+      if (mode === 'initial') {
+        setLoadError(NETWORK_MESSAGE);
+        setPhase('error');
+      } else {
+        setRefreshError(NETWORK_MESSAGE);
+      }
+      return;
+    }
+    if (res.status === 404) {
+      setEvent(null);
+      setPhase('not-found');
+      return;
+    }
+    const body = await readJsonBody(res, 'événement/fiche');
+    const parsed = res.ok ? readPublicEvent(body) : null;
+    if (!parsed) {
+      const message = serverErrorMessage(body) ?? (res.ok ? 'Réponse inattendue du serveur.' : `L’événement n’a pas pu être chargé (erreur ${res.status}).`);
+      if (mode === 'initial') {
+        setLoadError(message);
+        setPhase('error');
+      } else {
+        setRefreshError(message);
+      }
+      return;
+    }
+    setEvent(parsed);
+    setLoadError(null);
+    setRefreshError(null);
+    setPhase('ready');
+  }, [eventId]);
+
+  const refreshEvent = useCallback(() => loadEvent('silent'), [loadEvent]);
+
+  useEffect(() => {
+    void loadEvent('initial');
+  }, [loadEvent]);
+
+  // Temps réel (contrats O1 et O3) : résumé public de l'événement (statut, dates, lieu, prix) et stock en
+  // tranches de ses catégories ; chaque signal recharge la fiche publique. Aucun abonnement aux lignes de
+  // vente (ticket_categories, billets, paiements).
+  const { status: liveStatus } = useRealtimeRefresh({
+    channelKey: `evenement-public-${eventId}`,
+    subscriptions: [
+      { table: 'public_event_state', filter: `event_id=eq.${eventId}` },
+      { table: 'public_category_stock', filter: `event_id=eq.${eventId}` },
+    ],
+    onSignal: refreshEvent,
+    enabled: Boolean(eventId) && phase !== 'not-found',
+  });
+
+  // La fiche a changé (stock, statut) : le panier ne garde que les formules encore achetables, dans la limite.
+  useEffect(() => {
+    if (!event) return;
+    setCart((prev) => {
+      if (!event.purchasable) return Object.keys(prev).length === 0 ? prev : {};
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [categoryId, qty] of Object.entries(prev)) {
+        const cat = event.categories.find((c) => c.id === categoryId);
+        const limit = cat && cat.isAvailable ? Math.min(cat.maxPerOrder || 10, cat.remainingHint ?? Number.POSITIVE_INFINITY) : 0;
+        const kept = Math.min(qty, limit);
+        if (kept !== qty) changed = true;
+        if (kept > 0) next[categoryId] = kept;
+      }
+      return changed ? next : prev;
+    });
+  }, [event]);
+
+  const retry = async () => {
+    setIsRetrying(true);
+    try {
+      await loadEvent('initial');
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  // ── Panier et devis serveur ──────────────────────────────────────────────
+
+  const categories = event?.categories ?? [];
+
+  const limitFor = (cat: PublicCategory): number => Math.max(0, Math.min(cat.maxPerOrder || 10, cat.remainingHint ?? Number.POSITIVE_INFINITY));
+
   const updateCartQty = (categoryId: string, delta: number) => {
-    setCart(prev => {
-      const cat = (event?.categories || []).find((c: any) => c.id === categoryId);
-      if (!cat) return prev;
+    setCart((prev) => {
+      const cat = categories.find((c) => c.id === categoryId);
+      if (!cat || !cat.isAvailable) return prev;
       const current = prev[categoryId] || 0;
-      const maxAllowed = Math.min(cat.maxPerOrder || 10, cat.availableQuantity ?? 10);
-      const next = Math.max(0, Math.min(maxAllowed, current + delta));
+      const next = Math.max(0, Math.min(limitFor(cat), current + delta));
       if (next === 0) {
-        const { [categoryId]: _, ...rest } = prev;
+        const { [categoryId]: _removed, ...rest } = prev;
         return rest;
       }
       return { ...prev, [categoryId]: next };
@@ -87,21 +404,19 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
 
   const cartItems = Object.entries(cart)
     .map(([catId, qty]) => {
-      const cat = (event?.categories || []).find((c: any) => c.id === catId);
+      const cat = categories.find((c) => c.id === catId);
       return cat ? { ...cat, qty } : null;
     })
-    .filter(Boolean) as any[];
+    .filter((item): item is PublicCategory & { qty: number } => item !== null);
 
-  // Nombre de billets (quantités) ; les montants viennent du devis serveur, jamais d'un calcul local.
+  // Nombre de billets du panier (quantités choisies) ; les montants viennent du devis serveur.
   const cartTotalQty = cartItems.reduce((sum, item) => sum + item.qty, 0);
-  const hasPaidItems = cartItems.some(item => (item.price || 0) > 0);
+  const hasPaidItems = cartItems.some((item) => (item.price || 0) > 0);
   const hasFreeOnly = cartTotalQty > 0 && !hasPaidItems;
-
-  const eventId = params.id;
 
   // Empreinte du panier (catégories, quantités et prix affichés) : un devis ne vaut que pour elle.
   const cartKey = cartItems
-    .map((item: any) => `${item.id}:${item.qty}:${item.price ?? 0}`)
+    .map((item) => `${item.id}:${item.qty}:${item.price ?? 0}`)
     .sort()
     .join('|');
   const [quoteState, setQuoteState] = useState<QuoteState>({ kind: 'idle' });
@@ -114,7 +429,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     }
     const key = cartKey;
     // Corps de la demande reconstruit depuis l'empreinte (identifiant:quantité:prix affiché).
-    const items = key.split('|').map(part => {
+    const items = key.split('|').map((part) => {
       const [categoryId, quantity] = part.split(':');
       return { categoryId, quantity: Number(quantity) };
     });
@@ -162,86 +477,37 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const quote = quoteState.kind === 'ready' && quoteState.key === cartKey ? quoteState.quote : null;
   const quoteLoading = hasPaidItems && !quote && (quoteState.kind === 'loading' || quoteState.kind === 'idle');
   const quoteError = hasPaidItems && quoteState.kind === 'error' && quoteState.key === cartKey ? quoteState.message : null;
-  const quoteLineFor = (categoryId: string) => quote?.lines.find(line => line.categoryId === categoryId) ?? null;
+  const quoteLineFor = (categoryId: string) => quote?.lines.find((line) => line.categoryId === categoryId) ?? null;
 
-  const loadEvent = React.useCallback(async (showLoading = true) => {
-    if (!eventId) return;
-    try {
-      if (showLoading) {
-        setIsLoading(true);
-        setError(null);
-      }
-      const res = await fetch(`/api/events/${eventId}`);
-      if (!res.ok) {
-        throw new Error('Événement introuvable.');
-      }
-      const data = await res.json();
-      setEvent(data.event);
+  // ── États de la page ─────────────────────────────────────────────────────
 
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erreur chargement événement');
-    } finally {
-      if (showLoading) setIsLoading(false);
-    }
-  }, [eventId]);
-
-  useEffect(() => {
-    loadEvent(true);
-  }, [loadEvent]);
-
-  // Temps réel (lot 5, contrat O1 et O3) : le résumé public de l'événement (statut, dates, lieu, prix) et le
-  // stock en tranches de ses catégories ; chaque signal recharge la fiche publique (GET /api/events/[id]).
-  // Plus aucun abonnement à ticket_categories : les volumes de vente ne sont plus diffusés (arbitrage A3/O).
-  useRealtimeRefresh({
-    channelKey: `event-public-${eventId ?? 'inconnu'}`,
-    subscriptions: [
-      { table: 'public_event_state', filter: `event_id=eq.${eventId ?? ''}` },
-      { table: 'public_category_stock', filter: `event_id=eq.${eventId ?? ''}` },
-    ],
-    onSignal: () => loadEvent(false),
-    enabled: Boolean(eventId),
-  });
-
-  if (isLoading) {
+  if (phase === 'loading') return <PageSkeleton />;
+  if (phase === 'not-found') return <EventNotFound />;
+  if (phase === 'error' || !event) {
     return (
-      <div className="space-y-6 pb-20">
-        <Skeleton className="h-9 w-40 rounded-xl" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
-            <Skeleton className="w-full aspect-[16/9] rounded-3xl" />
-            <div className="grid grid-cols-3 gap-3">
-              <Skeleton className="h-20 rounded-2xl" />
-              <Skeleton className="h-20 rounded-2xl" />
-              <Skeleton className="h-20 rounded-2xl" />
-            </div>
-            <Skeleton className="h-40 rounded-3xl" />
-          </div>
-          <Skeleton className="h-96 rounded-3xl" />
+      <div className="mx-auto max-w-lg pb-24 pt-6 lg:pb-12">
+        <ErrorState
+          title="Impossible d’afficher l’événement"
+          description={loadError ?? NETWORK_MESSAGE}
+          onRetry={() => void retry()}
+          isRetrying={isRetrying}
+        />
+        <div className="flex justify-center">
+          <LinkButton href="/explore" variant="ghost" leftIcon={<ArrowLeft size={18} />}>
+            Retour aux événements
+          </LinkButton>
         </div>
       </div>
     );
   }
 
-  if (error || !event) {
-    return (
-      <div className="max-w-md mx-auto min-h-[50vh] flex flex-col items-center justify-center text-center p-6 space-y-4">
-        <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/40 text-red-500 flex items-center justify-center">
-          <AlertCircle size={32} />
-        </div>
-        <h2 className="text-xl font-black text-slate-900 dark:text-white">Événement introuvable</h2>
-        <p className="text-xs text-slate-500">{error || 'Cet événement n’existe pas ou a été archivé.'}</p>
-        <Link href="/explore">
-          <Button variant="primary" size="md">Retour aux événements</Button>
-        </Link>
-      </div>
-    );
-  }
+  // ── Achat ────────────────────────────────────────────────────────────────
 
   const handleBuyClick = async () => {
+    if (!event.purchasable) return;
     if (!isAuthenticated) {
-      const returnUrl = `/events/${eventId}`;
       toast.error('Connectez-vous pour acheter un billet.');
-      router.push(`/login?redirect=${encodeURIComponent(returnUrl)}`);
+      router.push(`/login?redirect=${encodeURIComponent(`/events/${eventId}`)}`);
       return;
     }
     if (cartTotalQty === 0) return;
@@ -251,7 +517,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       if (isClaimingFree) return;
       const payload = {
         eventId,
-        items: cartItems.map(item => ({ categoryId: item.id, quantity: item.qty })),
+        items: cartItems.map((item) => ({ categoryId: item.id, quantity: item.qty })),
       };
       const idempotencyKey = freeCheckoutAttempt.keyFor(JSON.stringify(payload));
       setIsClaimingFree(true);
@@ -268,8 +534,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         const body = await readJsonBody(res, 'événement/checkout');
 
         if (res.ok) {
-          const isFreeConfirmation =
-            typeof body === 'object' && body !== null && (body as { free?: unknown }).free === true;
+          const isFreeConfirmation = typeof body === 'object' && body !== null && (body as { free?: unknown }).free === true;
           if (!isFreeConfirmation) {
             // Issue incertaine : la clé est conservée, un nouvel essai ne dupliquera pas les billets.
             console.error('[événement] réponse inattendue du checkout gratuit :', body);
@@ -277,11 +542,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
             return;
           }
           freeCheckoutAttempt.reset();
-          toast.success(
-            cartTotalQty > 1
-              ? `${cartTotalQty} billets gratuits réservés avec succès !`
-              : 'Billet gratuit réservé avec succès !'
-          );
+          toast.success(cartTotalQty > 1 ? `${cartTotalQty} billets gratuits réservés.` : 'Billet gratuit réservé.');
           router.push('/tickets');
           return;
         }
@@ -296,26 +557,26 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         if (failure.code === 'OPERATOR_REQUIRED') {
           // Le serveur a calculé un montant à payer : les prix affichés n'étaient plus à jour.
           toast.error('Le prix de ce panier a changé : vérifiez le récapitulatif puis relancez.');
-          void loadEvent(false);
+          void refreshEvent();
           return;
         }
         toast.error(
           failure.problems.length > 0
             ? failure.problems
-                .map(problem => {
-                  const name = cartItems.find(item => item.id === problem.categoryId)?.name;
+                .map((problem) => {
+                  const name = cartItems.find((item) => item.id === problem.categoryId)?.name;
                   return name ? `${name} : ${problem.message}` : problem.message;
                 })
                 .join(' ')
-            : failure.message
+            : failure.message,
         );
         if (failure.code === 'INSUFFICIENT_STOCK' || failure.code === 'SALE_CHECK_FAILED') {
-          void loadEvent(false);
+          void refreshEvent();
         }
       } catch (err) {
         // Issue incertaine : la clé est conservée pour le prochain essai.
         console.error('[événement] réservation gratuite impossible :', err);
-        toast.error('Connexion impossible. Vérifiez votre réseau puis réessayez.');
+        toast.error(NETWORK_MESSAGE);
       } finally {
         setIsClaimingFree(false);
       }
@@ -332,493 +593,420 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   };
 
   const buyLabel = (compact: boolean): string => {
-    if (isClaimingFree) return compact ? 'Réservation...' : 'Réservation en cours...';
+    if (isClaimingFree) return 'Réservation en cours…';
     const plural = cartTotalQty > 1 ? 's' : '';
-    if (hasFreeOnly) {
-      return compact ? `Réserver ${cartTotalQty} gratuit${plural}` : `Réserver ${cartTotalQty} billet${plural} gratuit${plural}`;
-    }
-    if (quote) {
-      return compact ? `Acheter (${formatFcfa(quote.totalAmount)})` : `Acheter ${cartTotalQty} billet${plural} (${formatFcfa(quote.totalAmount)})`;
-    }
+    if (hasFreeOnly) return compact ? `Réserver (${cartTotalQty})` : `Réserver ${cartTotalQty} billet${plural} gratuit${plural}`;
+    if (quote) return compact ? `Acheter (${formatFcfa(quote.totalAmount)})` : `Acheter ${cartTotalQty} billet${plural} (${formatFcfa(quote.totalAmount)})`;
     if (quoteError) return 'Total indisponible';
     return 'Calcul du total…';
   };
   const buyBlocked = hasPaidItems && !quote;
 
-  return (
-    <div className="space-y-6 pb-20">
-      {/* 1. Header Navigation */}
-      <div className="flex items-center justify-between">
-        <Link
-          href="/explore"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
-        >
-          <ChevronLeft size={16} />
-          <span>Retour aux événements</span>
-        </Link>
+  const share = async () => {
+    const url = window.location.href;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: event.title, url });
+      } catch (err) {
+        // Partage annulé par l'utilisateur : rien à signaler ; toute autre erreur est affichée.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        console.error('[événement] partage impossible :', err);
+        toast.error('Le partage n’a pas abouti. Copiez l’adresse de la page.');
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Lien de l’événement copié.');
+    } catch (err) {
+      console.error('[événement] copie du lien impossible :', err);
+      toast.error('Le lien n’a pas pu être copié. Copiez l’adresse de la page.');
+    }
+  };
 
+  const showMobileBar = event.purchasable && cartTotalQty > 0;
+  const place = [event.venue, event.city].filter(Boolean).join(', ');
+  const info = event.practicalInfo ?? null;
+  const program = event.program.filter((item) => item && item.title);
+  const hasCoordinates = typeof event.latitude === 'number' && typeof event.longitude === 'number';
+
+  // ── Rendu ────────────────────────────────────────────────────────────────
+
+  return (
+    <div className={cn('space-y-6', showMobileBar ? 'pb-48 lg:pb-12' : 'pb-24 lg:pb-12')}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <LinkButton href="/explore" variant="ghost" size="sm" leftIcon={<ArrowLeft size={18} />} className="-ml-3">
+          Retour aux événements
+        </LinkButton>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsLiked(!isLiked)}
-            className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-200 hover:text-red-500 transition-all shadow-xs"
-            aria-label="Ajouter aux favoris"
-          >
-            <Heart size={18} className={isLiked ? 'fill-red-500 text-red-500' : ''} />
-          </button>
-          <button
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({ title: event.title, url: window.location.href });
-              } else {
-                navigator.clipboard.writeText(window.location.href);
-                toast.success('Lien copié dans le presse-papier !');
-              }
-            }}
-            className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-700 dark:text-zinc-200 hover:text-[#FF5722] transition-all shadow-xs"
-            aria-label="Partager"
-          >
+          <LiveIndicator status={liveStatus} />
+          <IconButton aria-label="Partager l’événement" variant="secondary" onClick={() => void share()}>
             <Share2 size={18} />
-          </button>
+          </IconButton>
         </div>
       </div>
 
-      {/* 2. Layout Responsive (2 Colonnes sur Desktop / 1 Colonne sur Mobile) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        {/* Colonne Gauche : Hero Image, Détails, Organisateur */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Hero Poster Immersif */}
-          <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] rounded-3xl overflow-hidden shadow-xl border border-slate-200 dark:border-zinc-800 bg-slate-950">
-            <Image
-              src={event.posterUrl || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1200&auto=format&fit=crop&q=80'}
-              alt={event.title}
-              fill
-              className="object-cover"
-              sizes="(max-width: 1024px) 100vw, 66vw"
-              priority
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-
-            {/* Badge Événement Complet si toutes les catégories sont épuisées/fermées */}
-            {event.isFullySoldOut && (
-              <div className="absolute top-4 right-4 z-10">
-                <span className="px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider bg-red-600/90 backdrop-blur-md text-white border border-red-400 shadow-lg inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                  Complet
-                </span>
-              </div>
-            )}
-
-            <div className="absolute bottom-4 left-4 right-4 sm:bottom-6 sm:left-6 sm:right-6 text-white space-y-1">
-              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#FF5722] text-white shadow-md inline-block">
-                {event.categoryLabel || event.category || 'Événement'}
-              </span>
-              <h1 className="text-xl sm:text-3xl font-black tracking-tight drop-shadow-md">
-                {event.title}
-              </h1>
-              <p className="text-xs sm:text-sm text-zinc-300 font-medium drop-shadow">
-                {event.subtitle}
+      {event.banner && (
+        <StatusBanner tone={BANNER_TONE[event.banner.kind]} title={event.banner.title}>
+          <p>{event.banner.message}</p>
+          {event.cancellation && (
+            <div className="mt-3 space-y-1 rounded-xl border border-danger-border bg-surface p-3 text-fg">
+              <p className="font-semibold">Message de l’organisateur</p>
+              <p className="whitespace-pre-line">{event.cancellation.publicNotice}</p>
+              <p className="text-fg-muted">
+                Annulé le <time dateTime={event.cancellation.cancelledAt}>{formatDateTime(event.cancellation.cancelledAt)}</time>
               </p>
             </div>
+          )}
+        </StatusBanner>
+      )}
+
+      {refreshError && (
+        <StatusBanner
+          tone="warning"
+          announce="alert"
+          title="La page n’a pas pu être mise à jour"
+          action={(
+            <Button variant="secondary" size="sm" onClick={() => void refreshEvent()} leftIcon={<RefreshCw size={16} />}>
+              Réessayer
+            </Button>
+          )}
+        >
+          {refreshError} Les informations affichées sont celles du dernier chargement.
+        </StatusBanner>
+      )}
+
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
+        {/* Colonne principale */}
+        <div className="min-w-0 space-y-6 lg:col-span-2">
+          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-3xl border border-border bg-surface-sunken shadow-sm">
+            <Image
+              src={eventImageSrc(event.posterUrl)}
+              alt={`Affiche de l’événement ${event.title}`}
+              fill
+              priority
+              className="object-cover"
+              sizes="(max-width: 1024px) 100vw, 66vw"
+            />
           </div>
 
-          {/* Cartes d'Informations Rapides */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="p-3.5 rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0">
-                <Calendar size={18} />
+          <header className="space-y-3">
+            {event.categoryLabel && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="brand">{event.categoryLabel}</Badge>
               </div>
-              <div className="min-w-0">
-                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Date</span>
-                <p className="text-xs font-black text-slate-900 dark:text-white truncate">{event.dateFormatted}</p>
-              </div>
-            </div>
+            )}
+            <h1 className="break-words text-3xl font-bold leading-tight tracking-tight text-fg sm:text-4xl">{event.title}</h1>
+            {event.organizer?.name && (
+              <p className="text-base text-fg-muted">
+                Organisé par <span className="font-semibold text-fg">{event.organizer.name}</span>
+              </p>
+            )}
+          </header>
 
-            <div className="p-3.5 rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0">
-                <Clock size={18} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Heure</span>
-                <p className="text-xs font-black text-slate-900 dark:text-white truncate">{event.time}</p>
-              </div>
-            </div>
-
-            <div className="col-span-2 sm:col-span-1 p-3.5 rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0">
-                <MapPin size={18} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Lieu</span>
-                <p className="text-xs font-black text-slate-900 dark:text-white truncate">{event.venue}</p>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <InfoTile icon={<CalendarDays size={20} />} label="Date et heure">
+              {capitalize(event.dateFormatted)} à {event.time}
+            </InfoTile>
+            <InfoTile icon={<MapPin size={20} />} label="Lieu">
+              {place}
+            </InfoTile>
           </div>
 
-          {/* À propos de l’événement */}
-          <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 space-y-3">
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-              À propos de l&apos;événement
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-300 leading-relaxed whitespace-pre-line">
-              {event.description}
-            </p>
-          </div>
+          <Section title="À propos de l’événement">
+            <p className="whitespace-pre-line break-words text-base leading-relaxed text-fg-muted">{event.description}</p>
+          </Section>
 
-          {/* Programme & Déroulé (§32) */}
-          {event.program && event.program.length > 0 && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 space-y-4">
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
-                <Calendar size={16} className="text-[#FF5722]" />
-                Programme & Déroulé
-              </h2>
-              <div className="relative pl-4 border-l-2 border-[#FF5722]/30 space-y-4">
-                {event.program.map((item: any, idx: number) => (
-                  <div key={item.id || idx} className="relative">
-                    <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-[#FF5722] border-2 border-white dark:border-[#1E1E1E]" />
-                    <div className="flex items-start gap-3">
-                      {item.time && (
-                        <span className="text-[11px] font-black text-[#FF5722] mt-0.5 w-12 flex-shrink-0">
-                          {item.time}
-                        </span>
+          {program.length > 0 && (
+            <Section title="Programme" icon={<CalendarDays size={20} />}>
+              <ol className="space-y-4 border-l-2 border-border pl-5">
+                {program.map((item, idx) => (
+                  <li key={item.id || `${item.time ?? ''}-${idx}`} className="relative">
+                    <span className="absolute -left-[27px] top-1.5 h-3 w-3 rounded-full border-2 border-surface bg-brand" aria-hidden="true" />
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      {(item.day || item.time) && (
+                        <p className="text-sm font-semibold tabular-nums text-brand-fg">
+                          {[item.day ? formatDate(item.day) : null, item.time].filter(Boolean).join(' à ')}
+                        </p>
                       )}
-                      <div>
-                        <p className="text-xs font-black text-slate-900 dark:text-white">{item.title}</p>
-                        {item.participant && (
-                          <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">{item.participant}</p>
-                        )}
-                        {item.description && (
-                          <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">{item.description}</p>
-                        )}
-                      </div>
+                      {item.kind && PROGRAM_KIND_LABEL[item.kind] && (
+                        <Badge variant="neutral" size="sm">{PROGRAM_KIND_LABEL[item.kind]}</Badge>
+                      )}
                     </div>
-                  </div>
+                    <p className="mt-1 text-base font-semibold text-fg">{item.title}</p>
+                    {item.participant && <p className="text-sm text-fg">{item.participant}</p>}
+                    {item.description && <p className="mt-0.5 text-sm leading-relaxed text-fg-muted">{item.description}</p>}
+                  </li>
                 ))}
-              </div>
-            </div>
+              </ol>
+            </Section>
           )}
 
-          {/* Lieu & Carte (§33) */}
-          {(event.latitude || event.practicalInfo?.address) && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 space-y-4">
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
-                <MapPin size={16} className="text-[#FF5722]" />
-                Lieu & Accès
-              </h2>
+          {(hasCoordinates || info?.address || info?.accessNotes || info?.parking || info?.contactPhone || info?.rules) && (
+            <Section title="Lieu et accès" icon={<MapPin size={20} />}>
+              <div>
+                <p className="text-base font-semibold text-fg">{event.venue}</p>
+                {info?.address && <p className="text-sm text-fg-muted">{info.address}</p>}
+              </div>
 
-              {event.practicalInfo?.address && (
-                <div>
-                  <p className="text-xs font-black text-slate-900 dark:text-white">{event.venue}</p>
-                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">{event.practicalInfo.address}</p>
-                </div>
-              )}
-
-              {event.latitude && event.longitude && (
+              {hasCoordinates && (
                 <>
-                  <EventMap
-                    latitude={event.latitude}
-                    longitude={event.longitude}
-                    venueName={event.venue}
-                  />
-                  <a
+                  <EventMap latitude={event.latitude as number} longitude={event.longitude as number} venueName={event.venue} />
+                  <LinkButton
                     href={`https://www.google.com/maps/dir/?api=1&destination=${event.latitude},${event.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FF5722] text-white text-xs font-bold hover:bg-[#e64a19] transition-all shadow-sm"
+                    external
+                    variant="secondary"
+                    leftIcon={<Navigation size={18} />}
+                    rightIcon={<ExternalLink size={16} />}
                   >
-                    <Navigation size={14} />
-                    Voir l&apos;itinéraire
-                    <ExternalLink size={12} />
-                  </a>
+                    Voir l’itinéraire
+                  </LinkButton>
                 </>
               )}
 
-              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-zinc-800">
-                {event.practicalInfo?.accessNotes && (
-                  <div className="flex gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Bus size={13} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Accès & Transports</p>
-                      <p className="text-xs text-slate-700 dark:text-zinc-300 whitespace-pre-line">{event.practicalInfo.accessNotes}</p>
-                    </div>
-                  </div>
-                )}
-
-                {event.practicalInfo?.parking && (
-                  <div className="flex gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Car size={13} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Parking</p>
-                      <p className="text-xs text-slate-700 dark:text-zinc-300 whitespace-pre-line">{event.practicalInfo.parking}</p>
-                    </div>
-                  </div>
-                )}
-
-                {event.practicalInfo?.contactPhone && (
-                  <div className="flex gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Phone size={13} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Contact Organisateur</p>
-                      <a href={`tel:${event.practicalInfo.contactPhone}`} className="text-xs font-bold text-[#FF5722] hover:underline">
-                        {event.practicalInfo.contactPhone}
+              {(info?.accessNotes || info?.parking || info?.contactPhone || info?.rules) && (
+                <div className="space-y-4 border-t border-border pt-4">
+                  {info?.accessNotes && (
+                    <PracticalRow icon={<Bus size={18} />} label="Accès et transports">{info.accessNotes}</PracticalRow>
+                  )}
+                  {info?.parking && (
+                    <PracticalRow icon={<Car size={18} />} label="Stationnement">{info.parking}</PracticalRow>
+                  )}
+                  {info?.contactPhone && (
+                    <PracticalRow icon={<Phone size={18} />} label="Contact de l’organisateur">
+                      <a
+                        href={`tel:${info.contactPhone.replace(/\s+/g, '')}`}
+                        className="inline-flex min-h-11 items-center font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {info.contactPhone}
                       </a>
-                    </div>
-                  </div>
-                )}
-
-                {event.practicalInfo?.rules && (
-                  <div className="flex gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <ClipboardList size={13} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Règlement & Consignes</p>
-                      <p className="text-xs text-slate-700 dark:text-zinc-300 whitespace-pre-line">{event.practicalInfo.rules}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+                    </PracticalRow>
+                  )}
+                  {info?.rules && (
+                    <PracticalRow icon={<ClipboardList size={18} />} label="Règlement et consignes">{info.rules}</PracticalRow>
+                  )}
+                </div>
+              )}
+            </Section>
           )}
 
-          {/* Fiche Organisateur */}
-          {event.organizer && (
-            <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-700 shadow-sm relative">
-                  <Image src={event.organizer.avatar || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80'} alt={event.organizer.name} fill className="object-cover" sizes="48px" />
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Organisateur</span>
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white">{event.organizer.name}</h3>
-                </div>
+          {event.organizer?.name && (
+            <section className="flex items-center gap-4 rounded-3xl border border-border bg-surface p-5">
+              <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-brand-bg text-base font-bold text-brand-fg">
+                {isProjectStorageImage(event.organizer.avatar) ? (
+                  <Image src={event.organizer.avatar} alt="" fill className="object-cover" sizes="48px" />
+                ) : (
+                  <span aria-hidden="true">{initialsOf(event.organizer.name)}</span>
+                )}
               </div>
-
-              <span className="px-3 py-1 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-300">
-                Partenaire Certifié
-              </span>
-            </div>
+              <div className="min-w-0">
+                <p className="text-sm text-fg-muted">Organisateur</p>
+                <h2 className="truncate text-base font-bold text-fg">{event.organizer.name}</h2>
+              </div>
+            </section>
           )}
         </div>
 
-        {/* Colonne Droite : Formules & Module d'Achat Sticky */}
-        <div className="bg-white dark:bg-[#1E1E1E] p-6 rounded-3xl border border-slate-200/80 dark:border-zinc-800 space-y-6 sticky top-20 shadow-md">
-          {event.isFullySoldOut && (
-            <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-center space-y-1">
-              <p className="text-xs font-black text-red-600 dark:text-red-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                🔴 ÉVÉNEMENT COMPLET
-              </p>
-              <p className="text-[11px] text-red-700 dark:text-red-300 font-medium">
-                Tous les billets disponibles pour cet événement ont été vendus.
-              </p>
-            </div>
-          )}
+        {/* Billetterie */}
+        <aside aria-labelledby="billetterie-titre" className="min-w-0 space-y-5 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-6 lg:sticky lg:top-20">
+          {event.purchasable ? (
+            <>
+              <div>
+                <h2 id="billetterie-titre" className="text-lg font-bold tracking-tight text-fg">Choisissez vos billets</h2>
+                <p className="mt-1 text-sm text-fg-muted">Places et disponibilités mises à jour en direct.</p>
+              </div>
 
-          <div>
-            <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
-              Choisissez votre formule
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-              {event.isFullySoldOut
-                ? 'Les réservations sont closes pour cet événement.'
-                : 'Sélectionnez vos billets et validez votre commande.'}
-            </p>
-          </div>
-
-          {/* Choix Formules réelles */}
-          {event.categories && event.categories.length > 0 ? (
-            <div className="space-y-3">
-              {event.categories.map((cat: any) => {
-                const isUnavailable = cat.isSoldOut || cat.isClosed || (cat.availableQuantity !== undefined && cat.availableQuantity <= 0);
-                const qty = cart[cat.id] || 0;
-                const maxAllowed = Math.max(1, Math.min(cat.maxPerOrder || 10, cat.availableQuantity ?? 10));
-                return (
-                  <div
-                    key={cat.id}
-                    className={`p-4 rounded-2xl border-2 transition-all ${
-                      isUnavailable
-                        ? 'opacity-60 cursor-not-allowed border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900'
-                        : qty > 0
-                        ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs'
-                        : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="text-xs font-black text-slate-900 dark:text-white">{cat.name}</h3>
-                          {cat.name.toUpperCase().includes('VIP') && <Sparkles size={12} className="text-amber-500" />}
-                        </div>
-                        <span className="text-xs font-black text-[#FF5722] mt-0.5 block">{cat.priceFormatted}</span>
-                        {cat.isClosed ? (
-                          <span className="text-[10px] font-bold text-slate-500 block">🔒 Ventes Clôturées</span>
-                        ) : cat.isSoldOut ? (
-                          <span className="text-[10px] font-bold text-red-500 block">Épuisé</span>
-                        ) : cat.isHeld || (cat.availableQuantity === 0 && !cat.isSoldOut) ? (
-                          <span className="text-[10px] font-bold text-amber-500 dark:text-amber-400 block">
-                            ⏳ En cours de réservation (réessayez dans quelques minutes)
-                          </span>
-                        ) : cat.availableQuantity !== undefined && cat.availableQuantity <= 5 ? (
-                          <span className="text-[10px] font-bold text-amber-500 block">
-                            Plus que {cat.availableQuantity} place{cat.availableQuantity > 1 ? 's' : ''} !
-                          </span>
-                        ) : null}
-                      </div>
-                      {!isUnavailable && (
-                        <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 rounded-xl p-1 border border-slate-200 dark:border-zinc-700 shadow-xs">
-                          <button
-                            type="button"
-                            onClick={() => updateCartQty(cat.id, -1)}
-                            disabled={qty <= 0}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                            aria-label={`Retirer un billet ${cat.name}`}
-                          >
-                            <Minus size={14} />
-                          </button>
-                          <span className="w-7 text-center text-xs font-black text-slate-900 dark:text-white font-mono">
-                            {qty}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => updateCartQty(cat.id, 1)}
-                            disabled={qty >= maxAllowed}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                            aria-label={`Ajouter un billet ${cat.name}`}
-                          >
-                            <Plus size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-slate-400 text-xs font-medium">
-              Aucune catégorie de billet configurée pour cet événement.
-            </div>
-          )}
-
-          {/* Récapitulatif Panier & CTA */}
-          {cartTotalQty > 0 && (
-            <div className="pt-2 space-y-3">
-              {/* Détail du panier : montants du devis serveur */}
-              <dl className="space-y-1.5" aria-busy={quoteLoading || undefined}>
-                {cartItems.map((item: any) => {
-                  const line = quoteLineFor(item.id);
+              <ul className="space-y-3">
+                {categories.map((cat) => {
+                  const qty = cart[cat.id] || 0;
+                  const limit = limitFor(cat);
+                  const avail = availabilityOf(cat);
+                  const line = quoteLineFor(cat.id);
                   return (
-                    <div key={item.id} className="flex justify-between items-baseline gap-3 text-xs">
-                      <dt className="text-slate-600 dark:text-zinc-400">
-                        {item.qty}x {item.name}
-                      </dt>
-                      <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">
-                        {(item.price || 0) === 0 ? (
-                          'Gratuit'
-                        ) : line ? (
-                          formatFcfa(line.lineFacial)
-                        ) : (
-                          <span className="inline-block h-3 w-16 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none align-middle" aria-hidden="true" />
+                    <li
+                      key={cat.id}
+                      className={cn(
+                        'rounded-2xl border-2 p-4 transition-colors duration-200',
+                        !cat.isAvailable ? 'border-border bg-surface-sunken' : qty > 0 ? 'border-brand-fg bg-brand-bg' : 'border-border',
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="break-words text-base font-semibold text-fg">{cat.name}</h3>
+                          <p className="text-base font-bold tabular-nums text-fg">{priceLabel(cat.price)}</p>
+                          <p className={cn('mt-0.5 text-sm font-medium', AVAILABILITY_TEXT[avail.tone])}>{avail.label}</p>
+                          {cat.description && <p className="mt-1 text-sm leading-relaxed text-fg-muted">{cat.description}</p>}
+                        </div>
+                        {cat.isAvailable && (
+                          <div className="flex flex-shrink-0 items-center gap-2" role="group" aria-label={`Quantité ${cat.name}`}>
+                            <IconButton
+                              aria-label={`Retirer un billet ${cat.name}`}
+                              variant="secondary"
+                              onClick={() => updateCartQty(cat.id, -1)}
+                              disabled={qty <= 0}
+                            >
+                              <Minus size={18} />
+                            </IconButton>
+                            <output className="w-7 text-center text-base font-bold tabular-nums text-fg" aria-live="polite">
+                              {qty}
+                            </output>
+                            <IconButton
+                              aria-label={`Ajouter un billet ${cat.name}`}
+                              variant="secondary"
+                              onClick={() => updateCartQty(cat.id, 1)}
+                              disabled={qty >= limit}
+                            >
+                              <Plus size={18} />
+                            </IconButton>
+                          </div>
                         )}
-                      </dd>
-                    </div>
+                      </div>
+                      {qty > 0 && cat.price > 0 && (
+                        <p className="mt-2 text-sm text-fg-muted">
+                          {qty} × {priceLabel(cat.price)}
+                          {line ? ` : ${formatFcfa(line.lineFacial)}` : ''}
+                        </p>
+                      )}
+                    </li>
                   );
                 })}
-                {hasPaidItems && (
-                  <div className="flex justify-between items-baseline gap-3 text-xs">
-                    <dt className="text-slate-600 dark:text-zinc-400">Frais de service</dt>
-                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">
-                      {quote ? (
-                        formatFcfa(quote.serviceFee)
-                      ) : (
-                        <span className="inline-block h-3 w-12 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none align-middle" aria-hidden="true" />
-                      )}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-              <div className="h-px bg-slate-200 dark:bg-zinc-800" />
-              <div className="flex justify-between items-baseline gap-3" aria-live="polite">
-                <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">
-                  Total ({cartTotalQty} billet{cartTotalQty > 1 ? 's' : ''})
-                </span>
-                <span className={`text-xl font-black tabular-nums ${hasFreeOnly ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                  {hasFreeOnly ? (
-                    'Gratuit'
-                  ) : quote ? (
-                    formatFcfa(quote.totalAmount)
-                  ) : quoteError ? (
-                    '—'
-                  ) : (
-                    <>
-                      <span className="sr-only">Calcul du total en cours…</span>
-                      <span className="inline-block h-6 w-24 rounded-lg bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none align-middle" aria-hidden="true" />
-                    </>
+              </ul>
+
+              {cartTotalQty > 0 ? (
+                <div className="space-y-3 border-t border-border pt-4">
+                  {hasPaidItems && (
+                    <dl className="space-y-1.5 text-sm" aria-busy={quoteLoading || undefined}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <dt className="text-fg-muted">Billets</dt>
+                        <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">
+                          {quote ? formatFcfa(quote.facialAmount) : <span className="inline-block h-4 w-16 rounded bg-surface-sunken align-middle motion-safe:animate-pulse" aria-hidden="true" />}
+                        </dd>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <dt className="text-fg-muted">Frais de service</dt>
+                        <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">
+                          {quote ? formatFcfa(quote.serviceFee) : <span className="inline-block h-4 w-12 rounded bg-surface-sunken align-middle motion-safe:animate-pulse" aria-hidden="true" />}
+                        </dd>
+                      </div>
+                    </dl>
                   )}
-                </span>
+                  <div className="flex items-baseline justify-between gap-3" aria-live="polite">
+                    <span className="text-sm font-semibold text-fg-muted">
+                      Total ({cartTotalQty} billet{cartTotalQty > 1 ? 's' : ''})
+                    </span>
+                    <span className={cn('text-xl font-bold tabular-nums', hasFreeOnly ? 'text-success-fg' : 'text-fg')}>
+                      {hasFreeOnly ? 'Gratuit' : quote ? formatFcfa(quote.totalAmount) : quoteError ? '—' : (
+                        <>
+                          <span className="sr-only">Calcul du total en cours…</span>
+                          <span className="inline-block h-6 w-24 rounded-lg bg-surface-sunken align-middle motion-safe:animate-pulse" aria-hidden="true" />
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {quoteError && (
+                    <StatusBanner
+                      tone="danger"
+                      announce="alert"
+                      title="Total indisponible"
+                      action={(
+                        <Button variant="secondary" size="sm" onClick={() => setQuoteRetry((n) => n + 1)} leftIcon={<RefreshCw size={16} />}>
+                          Réessayer
+                        </Button>
+                      )}
+                    >
+                      {quoteError}
+                    </StatusBanner>
+                  )}
+
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    disabled={isClaimingFree || buyBlocked}
+                    isLoading={isClaimingFree}
+                    onClick={() => void handleBuyClick()}
+                    leftIcon={<Ticket size={18} />}
+                  >
+                    {buyLabel(false)}
+                  </Button>
+                  {hasPaidItems && (
+                    <p className="text-center text-sm leading-relaxed text-fg-muted">
+                      Paiement Wave ou Orange Money. Frais de service calculés par Event Village sur chaque billet.
+                    </p>
+                  )}
+                  <p className="flex items-center justify-center gap-2 text-sm text-fg-muted">
+                    <ShieldCheck size={16} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+                    Billet avec QR code émis dès le paiement
+                  </p>
+                </div>
+              ) : (
+                <p className="border-t border-border pt-4 text-sm text-fg-muted">
+                  Choisissez au moins un billet avec le bouton « + ».
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <div>
+                <h2 id="billetterie-titre" className="text-lg font-bold tracking-tight text-fg">Billetterie</h2>
+                <p className="mt-1 text-sm text-fg-muted">
+                  {event.banner
+                    ? 'La vente de billets est fermée pour cet événement.'
+                    : event.isFullySoldOut
+                      ? 'Toutes les places ont été vendues.'
+                      : 'Aucune formule n’est en vente pour le moment. Revenez bientôt : cette page se met à jour d’elle-même.'}
+                </p>
               </div>
 
-              {quoteError && (
-                <div
-                  role="alert"
-                  className="flex items-start gap-2.5 p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40"
-                >
-                  <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">{quoteError}</p>
-                    <button
-                      type="button"
-                      onClick={() => setQuoteRetry(n => n + 1)}
-                      className="inline-flex items-center gap-1.5 min-h-[44px] text-xs font-bold text-red-700 dark:text-red-300 underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded-md"
-                    >
-                      <RefreshCw size={13} aria-hidden="true" /> Recalculer le total
-                    </button>
-                  </div>
+              {event.cancellation && (
+                <div className="space-y-3 rounded-2xl border border-info-border bg-info-bg p-4 text-info-fg">
+                  <p className="flex items-center gap-2 text-base font-semibold">
+                    <Undo2 size={18} aria-hidden="true" />
+                    Remboursement
+                  </p>
+                  <p className="text-sm leading-relaxed">{event.cancellation.refundInfo}</p>
+                  <LinkButton href="/tickets" variant="secondary" size="sm">
+                    Voir mes billets
+                  </LinkButton>
                 </div>
               )}
 
-              <Button
-                variant="primary"
-                size="lg"
-                fullWidth
-                disabled={event.isFullySoldOut || isClaimingFree || buyBlocked}
-                isLoading={isClaimingFree}
-                onClick={handleBuyClick}
-                leftIcon={<Ticket size={18} />}
-              >
-                {buyLabel(false)}
-              </Button>
-              {hasPaidItems && (
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400 text-center leading-relaxed">
-                  Frais de service payés par l’acheteur, calculés par Event Village sur chaque billet.
-                </p>
+              {categories.length > 0 && (
+                <ul className="space-y-2" aria-label="Formules">
+                  {categories.map((cat) => {
+                    const avail = availabilityOf(cat);
+                    return (
+                      <li key={cat.id} className="flex items-start justify-between gap-3 rounded-2xl border border-border bg-surface-sunken p-4">
+                        <div className="min-w-0">
+                          <p className="break-words text-base font-semibold text-fg">{cat.name}</p>
+                          {!event.banner && <p className={cn('text-sm font-medium', AVAILABILITY_TEXT[avail.tone])}>{avail.label}</p>}
+                        </div>
+                        <p className="whitespace-nowrap text-base font-bold tabular-nums text-fg">{priceLabel(cat.price)}</p>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
 
-              <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500">
-                <ShieldCheck size={13} className="text-emerald-500" />
-                <span>Garantie officielle Event Village • Émission QR immédiate</span>
-              </div>
-            </div>
+              <LinkButton href="/explore" variant="secondary" fullWidth leftIcon={<Compass size={18} />}>
+                Voir d’autres événements
+              </LinkButton>
+            </>
           )}
-        </div>
+        </aside>
       </div>
 
-      {/* CTA Mobile — visible uniquement sur mobile */}
-      {cartTotalQty > 0 && !event.isFullySoldOut && (
-        <div className="fixed bottom-0 left-0 w-full z-50 p-4 bg-white dark:bg-[#1E1E1E] border-t border-slate-200 dark:border-zinc-800 lg:hidden shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+      {/* Barre d'achat mobile, au-dessus de la barre de navigation du bas */}
+      {showMobileBar && (
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-surface px-4 py-3 shadow-lg lg:hidden">
           <Button
             variant="primary"
             size="lg"
             fullWidth
             disabled={isClaimingFree || buyBlocked}
             isLoading={isClaimingFree}
-            onClick={handleBuyClick}
+            onClick={() => void handleBuyClick()}
             leftIcon={<Ticket size={18} />}
           >
             {buyLabel(true)}
@@ -826,14 +1014,14 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         </div>
       )}
 
-      {/* Modale de Paiement SamirPay — panier complet (payants et gratuits) via /api/checkout */}
+      {/* Paiement Mobile Money — panier complet (payants et gratuits) via /api/checkout */}
       <PaymentModal
-        isOpen={isPaymentOpen}
+        isOpen={isPaymentOpen && event.purchasable}
         onClose={() => setIsPaymentOpen(false)}
         eventId={eventId}
-        checkoutItems={cartItems.map((item: any) => ({ categoryId: item.id, quantity: item.qty, label: item.name }))}
+        checkoutItems={cartItems.map((item) => ({ categoryId: item.id, quantity: item.qty, label: item.name }))}
         quote={quote}
-        title={`${event.title} (${cartItems.map((item: any) => `${item.qty}x ${item.name}`).join(' + ')})`}
+        title={`${event.title} (${cartItems.map((item) => `${item.qty} × ${item.name}`).join(' + ')})`}
         onPaymentSuccess={() => {
           setIsPaymentOpen(false);
           router.push('/tickets');

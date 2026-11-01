@@ -1,3 +1,33 @@
+/**
+ * Lot 5 (tâches 5.3 et 5.6) — hôte des images optimisées par next/image : le stockage public du projet
+ * Supabase, dérivé de NEXT_PUBLIC_SUPABASE_URL (protocole, hôte et port exacts : instance hébergée en
+ * production, instance locale en CI), limité à /storage/v1/object/public/**. Aucun hôte n'est écrit en
+ * dur ; les écrans publics n'affichent une affiche que si elle vient de ce stockage
+ * (lib/events/event-image.ts), sinon l'image locale neutre de public/images.
+ */
+function supabaseStoragePatterns() {
+  const raw = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
+  if (!raw) {
+    console.warn('[next.config] NEXT_PUBLIC_SUPABASE_URL absente : aucune image distante ne sera optimisée par next/image.');
+    return [];
+  }
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (err) {
+    throw new Error(`[next.config] NEXT_PUBLIC_SUPABASE_URL illisible (${err instanceof Error ? err.message : String(err)}).`);
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(`[next.config] NEXT_PUBLIC_SUPABASE_URL : protocole ${url.protocol} non pris en charge.`);
+  }
+  return [{
+    protocol: url.protocol.slice(0, -1),
+    hostname: url.hostname,
+    port: url.port,
+    pathname: '/storage/v1/object/public/**',
+  }];
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -7,8 +37,9 @@ const nextConfig = {
   compress: true,
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: '*.supabase.co' },
-      { protocol: 'https', hostname: '*.supabase.in' },
+      ...supabaseStoragePatterns(),
+      // Pages hors du lot 5 (salles, restaurants, réclamation d'un billet transféré) et image de repli de
+      // GET /api/tickets : encore des photos de démonstration Unsplash. Point ouvert : à retirer avec elles.
       { protocol: 'https', hostname: 'images.unsplash.com' },
       { protocol: 'https', hostname: 'plus.unsplash.com' },
     ],

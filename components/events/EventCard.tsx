@@ -1,26 +1,46 @@
-'use client';
-
-import React, { useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Calendar, MapPin, Heart, ArrowRight } from 'lucide-react';
-import { StatusBadge } from '@/components/ui/Badge';
+import { ArrowRight, CalendarDays, MapPin } from 'lucide-react';
+import { Badge } from '@/components/ui/Badge';
+import { formatFcfa } from '@/lib/format';
+import { eventImageSrc } from '@/lib/events/event-image';
 
+/**
+ * Carte d'un événement du catalogue et de l'accueil (lot 5, tâche 5.3 ; contrat E et Q).
+ *  - Toute la carte est un seul lien, porté par le titre (nom accessible = titre de l'événement).
+ *  - Prix « à partir de » calculé par le serveur sur les catégories actives et visibles ; sans
+ *    catégorie achetable : « Bientôt en vente », jamais « Gratuit » par défaut (un vrai 0 F reste
+ *    « Gratuit »).
+ *  - Affiche du stockage du projet seulement, sinon l'image locale neutre (lib/events/event-image.ts).
+ */
 export interface EventCardProps {
   id: string;
   title: string;
-  subtitle?: string;
-  imageUrl: string;
+  /** Organisateur (nom commercial). */
+  subtitle?: string | null;
+  imageUrl?: string | null;
   dateFormatted: string;
-  dayNumber?: string;
-  monthShort?: string;
-  timeFormatted: string;
+  dayNumber?: string | null;
+  monthShort?: string | null;
+  timeFormatted?: string | null;
   venue: string;
-  category?: string | null;
-  categoryLabel?: string;
-  priceFormatted: string;
-  status?: string;
-  attendeesCount?: number;
+  city?: string | null;
+  categoryLabel?: string | null;
+  /** Prix minimum des catégories achetables, null sans catégorie achetable. */
+  price: number | null;
+  /** Rang dans la grille : seules les premières affiches sont chargées en priorité. */
+  priority?: boolean;
+}
+
+/** « SAINT-LOUIS » → « Saint-Louis » (le catalogue renvoie la ville en capitales). */
+export function cityLabel(city: string | null | undefined): string | null {
+  if (!city) return null;
+  return city
+    .toLowerCase()
+    .split(/([\s-])/)
+    .map((part) => (part.length > 0 && !/[\s-]/.test(part) ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join('');
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
@@ -29,108 +49,90 @@ export const EventCard: React.FC<EventCardProps> = ({
   subtitle,
   imageUrl,
   dateFormatted,
-  dayNumber = '19',
-  monthShort = 'DÉC',
+  dayNumber,
+  monthShort,
   timeFormatted,
   venue,
-  category,
+  city,
   categoryLabel,
-  priceFormatted,
-  status = 'PUBLIE',
+  price,
+  priority = false,
 }) => {
-  const displayCategory = categoryLabel || category || 'Événement';
-  const [isLiked, setIsLiked] = useState(false);
+  const onSaleSoon = price === null || !Number.isFinite(price);
+  const place = [venue, cityLabel(city)].filter(Boolean).join(', ');
+  const when = timeFormatted ? `${dateFormatted} à ${timeFormatted}` : dateFormatted;
 
   return (
-    <div className="group relative bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800/80 rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:border-[#FF5722]/40 transition-all duration-300 flex flex-col">
-      {/* 1. Zone Image Hero */}
-      <div className="relative w-full aspect-[16/10] overflow-hidden bg-slate-950">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-surface shadow-sm transition-shadow duration-200 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-surface hover:shadow-lg">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-surface-sunken">
         <Image
-          src={imageUrl || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&auto=format&fit=crop&q=80'}
-          alt={title}
+          src={eventImageSrc(imageUrl)}
+          alt=""
           fill
-          className="object-cover group-hover:scale-105 transition-transform duration-500"
+          priority={priority}
+          className="object-cover motion-safe:transition-transform motion-safe:duration-500 motion-safe:group-hover:scale-[1.03]"
           sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
+        {dayNumber && monthShort && (
+          <div
+            className="absolute left-3 top-3 flex min-w-14 flex-col items-center rounded-2xl border border-border bg-surface px-2.5 py-1.5 text-fg shadow-sm"
+            aria-hidden="true"
+          >
+            <span className="text-xl font-bold leading-none tabular-nums">{dayNumber}</span>
+            <span className="mt-1 text-sm font-semibold leading-none text-brand-fg">{monthShort}</span>
+          </div>
+        )}
+        {categoryLabel && (
+          <div className="absolute right-3 top-3">
+            <Badge variant="default" className="shadow-sm">{categoryLabel}</Badge>
+          </div>
+        )}
+      </div>
 
-        {/* Badge Catégorie Haut Gauche */}
-        <div className="absolute top-3 left-3">
-          <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/90 dark:bg-zinc-900/90 text-slate-900 dark:text-white backdrop-blur-md shadow-sm">
-            {displayCategory}
+      <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
+        <div className="min-w-0 space-y-1.5">
+          {subtitle && <p className="truncate text-sm font-semibold text-brand-fg">{subtitle}</p>}
+          <h3 className="line-clamp-2 text-lg font-bold leading-snug tracking-tight text-fg">
+            <Link
+              href={`/events/${id}`}
+              className="rounded-sm after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+            >
+              {title}
+            </Link>
+          </h3>
+        </div>
+
+        <ul className="space-y-1.5 text-sm text-fg-muted">
+          <li className="flex min-w-0 items-center gap-2">
+            <CalendarDays size={16} className="flex-shrink-0 text-fg-muted" aria-hidden="true" />
+            <span className="truncate">{when}</span>
+          </li>
+          <li className="flex min-w-0 items-center gap-2">
+            <MapPin size={16} className="flex-shrink-0 text-fg-muted" aria-hidden="true" />
+            <span className="truncate">{place}</span>
+          </li>
+        </ul>
+
+        <div className="mt-auto flex items-end justify-between gap-3 border-t border-border pt-3">
+          {onSaleSoon ? (
+            <div className="min-w-0">
+              <p className="text-sm text-fg-muted">Billetterie</p>
+              <p className="text-base font-bold text-fg">Bientôt en vente</p>
+            </div>
+          ) : (
+            <div className="min-w-0">
+              <p className="text-sm text-fg-muted">À partir de</p>
+              <p className="text-base font-bold tabular-nums text-fg">{price === 0 ? 'Gratuit' : formatFcfa(price)}</p>
+            </div>
+          )}
+          <span
+            className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg transition-colors duration-200 group-hover:bg-brand group-hover:text-on-brand"
+            aria-hidden="true"
+          >
+            <ArrowRight size={18} />
           </span>
         </div>
-
-        {/* Bouton Favori Haut Droite */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsLiked(!isLiked);
-          }}
-          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center text-white hover:bg-black/60 transition-all active:scale-90"
-          aria-label="Ajouter aux favoris"
-        >
-          <Heart
-            size={16}
-            className={isLiked ? 'fill-red-500 text-red-500' : 'text-white'}
-          />
-        </button>
-
-        {/* Badge Date Circulaire Incrusté Bas Gauche */}
-        <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/50 backdrop-blur-md text-white border border-white/20">
-          <span className="text-sm font-black text-[#FF5722] leading-none">{dayNumber}</span>
-          <span className="text-[10px] font-bold tracking-wider uppercase leading-none">{monthShort}</span>
-        </div>
       </div>
-
-      {/* 2. Corps de la Carte */}
-      <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">
-        <div>
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="text-[11px] font-bold text-[#FF5722] uppercase tracking-wider">
-              {subtitle || displayCategory}
-            </span>
-            {status !== 'PUBLIE' && <StatusBadge status={status} />}
-          </div>
-
-          <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight leading-snug line-clamp-1 group-hover:text-[#FF5722] transition-colors">
-            {title}
-          </h3>
-
-          <div className="mt-2 space-y-1 text-xs text-slate-500 dark:text-zinc-400">
-            <div className="flex items-center gap-1.5 truncate">
-              <MapPin size={13} className="text-[#FF5722] flex-shrink-0" />
-              <span className="truncate">{venue}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Calendar size={13} className="text-slate-400 dark:text-zinc-500 flex-shrink-0" />
-              <span>{dateFormatted} à {timeFormatted}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Pied de Carte : Prix & Bouton Réserver */}
-        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">
-              À partir de
-            </span>
-            <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-              {priceFormatted}
-            </span>
-          </div>
-
-          <Link
-            href={`/events/${id}`}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] hover:from-[#FF5722] hover:to-[#F02D58] text-white text-xs font-bold shadow-sm shadow-[#FF5722]/30 active:scale-95 transition-all"
-          >
-            <span>Réserver</span>
-            <ArrowRight size={13} />
-          </Link>
-        </div>
-      </div>
-    </div>
+    </article>
   );
 };

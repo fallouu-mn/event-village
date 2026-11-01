@@ -1,541 +1,351 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  Sparkles, Compass, Building2, Utensils, ArrowRight,
-  Music, Flame, Calendar, Search, Ticket, Users,
-  MapPin, ChevronRight, Phone, Mail, Heart,
-  Handshake, TrendingUp, CheckCircle2,
+  ArrowRight,
+  BadgeCheck,
+  Building2,
+  Compass,
+  QrCode,
+  RefreshCw,
+  Search,
+  Smartphone,
+  Ticket,
+  Undo2,
 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { TextInput } from '@/components/ui/Field';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { LiveIndicator } from '@/components/ui/LiveIndicator';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
+import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
 
-const CATEGORIES = [
-  { id: 'ALL',     label: 'Tous',              icon: Sparkles,  color: 'from-[#FF6A3D] to-[#FF3D68]' },
-  { id: 'CONCERT', label: 'Concerts & Live',   icon: Music,     color: 'from-violet-500 to-purple-700' },
-  { id: 'FESTIVAL',label: 'Festivals',          icon: Flame,     color: 'from-amber-500 to-orange-600' },
-  { id: 'FOOD',    label: 'Gastronomie',        icon: Utensils,  color: 'from-emerald-500 to-teal-600' },
-  { id: 'SALLE',   label: 'Salles & Fêtes',    icon: Building2, color: 'from-sky-500 to-blue-600' },
-];
+/**
+ * Accueil public (lot 5, tâches 5.3 et 5.13 ; contrats E, O3, O5, Q).
+ *  - « À l'affiche » : GET /api/events (PUBLIE à venir, prix du serveur, « Bientôt en vente » sans
+ *    catégorie achetable), mis à jour en direct sur le résumé public public_event_state.
+ *  - Aucune photo d'une banque d'images : décor sur les tokens du thème, affiches du stockage du projet.
+ *  - Seuls des liens vers des pages existantes ; aucune donnée de contact factice.
+ */
+
+const ALL = 'tous';
+const HOME_LIMIT = 8;
+
+const PROMISES = [
+  { icon: Smartphone, title: 'Wave et Orange Money', text: 'Payez depuis votre téléphone, le billet arrive aussitôt.' },
+  { icon: QrCode, title: 'QR code dynamique', text: 'Un code renouvelé en continu : une capture d’écran ne passe pas l’entrée.' },
+  { icon: Undo2, title: 'Remboursement automatique', text: 'Événement annulé : les billets payés en ligne sont remboursés.' },
+] as const;
+
+const ORGANIZER_POINTS = [
+  'Création et publication de vos événements, validées par notre équipe',
+  'Ventes et entrées suivies en direct, contrôleurs et caisses sur place',
+  'Fonds versés sur votre compte après l’événement',
+] as const;
+
+function CardSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-border bg-surface" aria-hidden="true">
+      <div className="aspect-[16/10] w-full bg-surface-sunken motion-safe:animate-pulse" />
+      <div className="space-y-3 p-4 sm:p-5">
+        <div className="h-4 w-1/3 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
+        <div className="h-5 w-3/4 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
+        <div className="h-11 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+      </div>
+    </div>
+  );
+}
 
 export default function HomePage() {
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [searchQuery, setSearchQuery]           = useState('');
-  const [events, setEvents]                     = useState<any[]>([]);
-  const [isLoading, setIsLoading]               = useState(true);
-  const [fetchError, setFetchError]             = useState<string | null>(null);
+  const router = useRouter();
+  const [events, setEvents] = useState<CatalogEvent[]>([]);
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [category, setCategory] = useState<string>(ALL);
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    async function loadEvents() {
-      try {
-        setIsLoading(true);
-        setFetchError(null);
-        const res = await fetch('/api/events', { cache: 'no-store' });
-        const data = await res.json();
-        if (res.ok) {
-          setEvents(data.events || []);
-        } else {
-          console.error('[HomePage] API error:', data.error);
-          setFetchError(data.error || 'Impossible de charger les événements.');
-        }
-      } catch (err) {
-        console.error('[HomePage]', err);
-        setFetchError('Erreur réseau, veuillez réessayer.');
-      } finally {
-        setIsLoading(false);
-      }
+  const load = useCallback(async (mode: 'initial' | 'silent') => {
+    const result = await readCatalog('accueil');
+    if (result.ok) {
+      setEvents(result.events);
+      setLoadError(null);
+      setRefreshError(null);
+      setPhase('ready');
+      return;
     }
-    loadEvents();
+    if (mode === 'initial') {
+      setLoadError(result.message);
+      setPhase('error');
+    } else {
+      setRefreshError(result.message);
+    }
   }, []);
 
-  const filteredEvents = events.filter((evt) => {
-    const matchCategory = selectedCategory === 'ALL' || evt.category === selectedCategory;
-    const matchSearch   =
-      searchQuery === '' ||
-      evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      evt.venue.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (evt.subtitle && evt.subtitle.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchCategory && matchSearch;
+  const refreshEvents = useCallback(() => load('silent'), [load]);
+
+  useEffect(() => {
+    void load('initial');
+  }, [load]);
+
+  // Temps réel (contrat O5) : publication, suspension, annulation ou fin d'un événement → la liste est
+  // rechargée par le serveur, sans recharger la page.
+  const { status: liveStatus } = useRealtimeRefresh({
+    channelKey: 'accueil-public',
+    subscriptions: [{ table: 'public_event_state' }],
+    onSignal: refreshEvents,
   });
 
+  const retry = async () => {
+    setIsRetrying(true);
+    try {
+      await load('initial');
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const shown = useMemo(
+    () => events.filter((evt) => category === ALL || evt.category === category).slice(0, HOME_LIMIT),
+    [events, category],
+  );
+
+  const onSearch = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const q = search.trim();
+    router.push(q ? `/explore?q=${encodeURIComponent(q)}` : '/explore');
+  };
+
   return (
-    <div className="space-y-16 sm:space-y-20 pb-24">
+    <div className="space-y-14 pb-24 sm:space-y-20 lg:pb-12">
+      {/* 1. Accroche */}
+      <section className="relative isolate overflow-hidden rounded-3xl border border-border bg-surface px-5 py-10 shadow-sm sm:px-10 sm:py-14 lg:px-14">
+        <div className="pointer-events-none absolute -right-24 -top-24 -z-10 h-80 w-80 rounded-full bg-brand-decor/15 blur-3xl" aria-hidden="true" />
+        <div className="pointer-events-none absolute -bottom-32 left-1/3 -z-10 h-72 w-72 rounded-full bg-brand-decor/10 blur-3xl" aria-hidden="true" />
 
-      {/* ================================================================
-          1. HERO CINÉMATIQUE
-          ================================================================ */}
-      <section className="relative rounded-3xl overflow-hidden text-white" style={{ minHeight: 480 }}>
-
-        <div
-          className="absolute inset-0 bg-cover bg-center ev-hero-zoom"
-          style={{ backgroundImage: "url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1600&auto=format&fit=crop&q=80')" }}
-        />
-
-        <div className="absolute inset-0 bg-gradient-to-br from-black/95 via-black/70 to-[#FF5722]/15" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-
-        <div className="absolute top-1/4 right-[15%] w-80 h-80 rounded-full bg-[#FF5722]/10 blur-3xl ev-float pointer-events-none" />
-        <div className="absolute bottom-1/4 right-[35%] w-52 h-52 rounded-full bg-[#FF3D68]/08 blur-2xl ev-float-alt pointer-events-none" />
-
-        <div
-          className="relative z-10 flex flex-col justify-between p-5 sm:p-10 lg:p-14"
-          style={{ minHeight: 480 }}
-        >
-          <div className="max-w-2xl space-y-5">
-
-            <div
-              className="ev-fade-up inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#FF5722]/40 bg-[#FF5722]/12 text-[#FF8A65] text-xs font-bold backdrop-blur-sm"
-              style={{ animationDelay: '0ms' }}
-            >
-              <span className="ev-pulse-dot w-2 h-2 rounded-full bg-[#FF5722] inline-block" />
-              La Référence Événementielle au Sénégal
-            </div>
-
-            <div>
-              <h1
-                className="ev-fade-up text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.08]"
-                style={{ animationDelay: '100ms' }}
-              >
-                Découvrez, réservez
-              </h1>
-              <h1
-                className="ev-fade-up text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.08] mt-1"
-                style={{ animationDelay: '200ms' }}
-              >
-                et vivez des{' '}
-                <span className="ev-gradient-text">expériences uniques</span>.
-              </h1>
-            </div>
-
-            <p
-              className="ev-fade-up text-sm sm:text-base text-zinc-300 max-w-lg leading-relaxed"
-              style={{ animationDelay: '300ms' }}
-            >
-              Billetterie officielle de concerts, réservation de tables de prestige,
-              location de salles et commandes traiteur.
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+          <div className="space-y-6">
+            <p className="inline-flex items-center gap-2 rounded-full border border-brand-fg/30 bg-brand-bg px-3.5 py-1.5 text-sm font-semibold text-brand-fg">
+              <BadgeCheck size={16} aria-hidden="true" />
+              Billetterie officielle au Sénégal
+            </p>
+            <h1 className="max-w-2xl text-balance text-3xl font-bold leading-tight tracking-tight text-fg sm:text-5xl">
+              Découvrez, réservez et vivez les événements qui comptent.
+            </h1>
+            <p className="max-w-xl text-base leading-relaxed text-fg-muted sm:text-lg">
+              Concerts, festivals, soirées et rencontres : choisissez votre place, payez en quelques secondes et
+              présentez votre billet à l’entrée.
             </p>
 
-            <div
-              className="ev-fade-up flex flex-col sm:flex-row gap-3"
-              style={{ animationDelay: '420ms' }}
-            >
-              <div className="relative flex-1 group">
-                <Search
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-[#FF5722] transition-colors duration-200"
-                  size={18}
+            <form role="search" onSubmit={onSearch} className="flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="relative flex-1">
+                <TextInput
+                  label="Rechercher un événement"
+                  hideLabel
+                  type="search"
+                  inputMode="search"
+                  enterKeyHint="search"
+                  autoComplete="off"
+                  placeholder="Artiste, lieu, organisateur…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="min-h-12 pl-11"
                 />
-                <input
-                  type="text"
-                  placeholder="Artiste, salle, quartier..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-[52px] pl-11 pr-4 rounded-2xl bg-white/8 border border-white/12 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[#FF5722]/60 focus:bg-white/12 backdrop-blur-md transition-all duration-300"
-                />
+                <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
               </div>
-              <Link href="/explore">
-                <Button
-                  variant="primary"
-                  size="md"
-                  className="h-[52px] w-full sm:w-auto px-8 font-black rounded-2xl shadow-xl shadow-[#FF5722]/40 hover:shadow-[#FF5722]/60 transition-shadow"
-                  leftIcon={<Compass size={18} />}
-                >
-                  Explorer
-                </Button>
-              </Link>
-            </div>
+              <Button type="submit" size="lg" leftIcon={<Compass size={18} />}>
+                Explorer
+              </Button>
+            </form>
           </div>
 
-          <div
-            className="ev-fade-up flex flex-wrap items-center gap-4 sm:gap-8 pt-8 mt-auto"
-            style={{ animationDelay: '580ms' }}
-          >
-            {[
-              { icon: Ticket,     label: 'Billetterie',     sub: '100% sécurisée',    color: 'text-[#FF8A65]' },
-              { icon: MapPin,     label: 'Dakar & Régions', sub: 'Présence nationale', color: 'text-[#FF8A65]' },
-              { icon: Users,      label: 'Wave & Orange',   sub: 'Paiement mobile',   color: 'text-[#FF8A65]' },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-2.5">
-                {i > 0 && <div className="hidden sm:block h-8 w-px bg-white/10 -ml-3 mr-3" />}
-                <div className="w-8 h-8 rounded-xl bg-white/8 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
-                  <item.icon size={15} className={item.color} />
+          <ul className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {PROMISES.map((item) => (
+              <li key={item.title} className="flex items-start gap-3 rounded-2xl border border-border bg-surface-sunken p-4">
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                  <item.icon size={20} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-base font-semibold text-fg">{item.title}</p>
+                  <p className="mt-0.5 text-sm leading-relaxed text-fg-muted">{item.text}</p>
                 </div>
-                <div>
-                  <p className="text-sm font-black text-white leading-none">{item.label}</p>
-                  <p className="text-[10px] text-zinc-400 mt-0.5">{item.sub}</p>
-                </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
-      {/* ================================================================
-          2. CATÉGORIES
-          ================================================================ */}
-      <section className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              Catégories
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-zinc-500 mt-0.5">
-              Filtrez par type d&apos;expérience
-            </p>
+      {/* 2. À l'affiche (temps réel) */}
+      <section aria-labelledby="affiche-titre" className="space-y-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="space-y-1">
+            <h2 id="affiche-titre" className="text-2xl font-bold tracking-tight text-fg">À l’affiche</h2>
+            <LiveIndicator status={liveStatus} />
           </div>
-          <Link
-            href="/explore"
-            className="flex items-center gap-1 text-xs font-bold text-[#FF5722] hover:opacity-75 transition-opacity"
-          >
-            Tout voir <ArrowRight size={13} />
-          </Link>
+          <LinkButton href="/explore" variant="ghost" size="sm" rightIcon={<ArrowRight size={16} />}>
+            Tous les événements
+          </LinkButton>
         </div>
 
-        <div className="relative">
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-            {CATEGORIES.map((cat, i) => {
-              const active = selectedCategory === cat.id;
-              const Icon   = cat.icon;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  style={{ animationDelay: `${i * 55}ms` }}
-                  className={`ev-fade-up flex-shrink-0 flex flex-col items-center gap-2.5 p-4 rounded-3xl border transition-all duration-300 w-[104px] sm:w-[116px] ${
-                    active
-                      ? 'bg-gradient-to-br from-[#FF6A3D] to-[#FF3D68] border-transparent text-white shadow-xl shadow-[#FF5722]/35 scale-[1.04]'
-                      : 'bg-white dark:bg-[#1E1E1E] border-slate-200/80 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-[#FF5722]/30 hover:shadow-md hover:-translate-y-1'
-                  }`}
-                >
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-                    active
-                      ? 'bg-white/20'
-                      : `bg-gradient-to-br ${cat.color}`
-                  }`}>
-                    <Icon size={19} className="text-white" />
-                  </div>
-                  <span className="text-[11px] font-bold text-center leading-tight">
-                    {cat.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="absolute right-0 top-0 bottom-1 w-8 bg-gradient-to-l from-[#F8F9FA] dark:from-[#0F0F11] to-transparent pointer-events-none sm:hidden" />
-        </div>
-      </section>
-
-      {/* ================================================================
-          3. ÉVÉNEMENTS À L'AFFICHE
-          ================================================================ */}
-      <section className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              À l&apos;affiche
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-zinc-500 mt-0.5">
-              {filteredEvents.length} événement{filteredEvents.length !== 1 ? 's' : ''} disponible{filteredEvents.length !== 1 ? 's' : ''}
-            </p>
-          </div>
-          <Link href="/explore" className="flex items-center gap-1 text-xs font-bold text-[#FF5722] hover:opacity-75 transition-opacity">
-            Calendrier <ChevronRight size={13} />
-          </Link>
-        </div>
-
-        {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="space-y-3 p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800">
-                <Skeleton className="w-full aspect-[16/10] rounded-2xl" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-              </div>
-            ))}
-          </div>
-        ) : fetchError ? (
-          <div className="py-10 text-center text-red-500 text-sm font-medium">
-            {fetchError}
-          </div>
-        ) : filteredEvents.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filteredEvents.map((evt, i) => (
-              <div
-                key={evt.id}
-                className="ev-fade-up"
-                style={{ animationDelay: `${i * 50}ms` }}
+        <div role="group" aria-label="Catégorie" className="flex flex-wrap gap-2">
+          {[{ id: ALL, label: 'Tous' }, ...EVENT_CATEGORIES].map((c) => {
+            const active = category === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setCategory(c.id)}
+                className={cn(
+                  'inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 text-sm font-semibold transition-colors duration-200',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+                  active
+                    ? 'border-brand bg-brand text-on-brand'
+                    : 'border-border bg-surface text-fg hover:border-border-strong hover:bg-surface-sunken',
+                )}
               >
-                <EventCard {...evt} />
-              </div>
-            ))}
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {refreshError && phase === 'ready' && (
+          <StatusBanner
+            tone="warning"
+            announce="alert"
+            title="La liste n’a pas pu être mise à jour"
+            action={(
+              <Button variant="secondary" size="sm" onClick={() => void refreshEvents()} leftIcon={<RefreshCw size={16} />}>
+                Réessayer
+              </Button>
+            )}
+          >
+            {refreshError} Les événements affichés sont ceux du dernier chargement.
+          </StatusBanner>
+        )}
+
+        {phase === 'error' ? (
+          <ErrorState
+            title="Impossible d’afficher les événements"
+            description={loadError ?? 'La liste n’a pas pu être chargée. Vérifiez votre connexion, puis réessayez.'}
+            onRetry={() => void retry()}
+            isRetrying={isRetrying}
+          />
+        ) : phase === 'loading' ? (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy="true">
+            {[1, 2, 3, 4].map((i) => <CardSkeleton key={i} />)}
           </div>
+        ) : shown.length > 0 ? (
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {shown.map((evt, i) => (
+              <li key={evt.id}>
+                <EventCard
+                  id={evt.id}
+                  title={evt.title}
+                  subtitle={evt.subtitle}
+                  imageUrl={evt.imageUrl}
+                  dateFormatted={evt.dateFormatted}
+                  dayNumber={evt.dayNumber}
+                  monthShort={evt.monthShort}
+                  timeFormatted={evt.timeFormatted}
+                  venue={evt.venue}
+                  city={evt.city}
+                  categoryLabel={evt.categoryLabel}
+                  price={evt.price}
+                  priority={i < 2}
+                />
+              </li>
+            ))}
+          </ul>
         ) : (
-          <div className="py-16 bg-white dark:bg-[#1A1A1A] rounded-3xl border border-dashed border-slate-200 dark:border-zinc-800 flex flex-col items-center justify-center gap-5">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#FF6A3D]/10 to-[#FF3D68]/10 flex items-center justify-center">
-              <Calendar size={28} className="text-[#FF5722]" />
-            </div>
-            <div className="text-center px-6">
-              <p className="text-base font-black text-slate-900 dark:text-white">
-                Bientôt disponible
-              </p>
-              <p className="text-sm text-slate-500 dark:text-zinc-400 mt-2 leading-relaxed max-w-sm">
-                De nouveaux événements arrivent très prochainement. Explorez nos salles et restaurants en attendant.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Link href="/explore">
-                <Button variant="primary" size="sm" leftIcon={<Compass size={14} />}>
-                  Explorer
-                </Button>
-              </Link>
-              <Link href="/halls">
-                <Button variant="outline" size="sm" leftIcon={<Building2 size={14} />}>
-                  Voir les salles
-                </Button>
-              </Link>
-            </div>
-          </div>
+          <EmptyState
+            icon={<Ticket size={28} />}
+            title={category === ALL ? 'Aucun événement à l’affiche pour le moment' : 'Aucun événement dans cette catégorie'}
+            description={category === ALL
+              ? 'Les prochains événements apparaîtront ici dès leur publication, sans recharger la page.'
+              : 'Choisissez une autre catégorie ou parcourez tout le catalogue.'}
+            actionLabel={category === ALL ? undefined : 'Voir toutes les catégories'}
+            onAction={category === ALL ? undefined : () => setCategory(ALL)}
+          />
         )}
       </section>
 
-      {/* ================================================================
-          4. ESPACES : SALLES & GASTRONOMIE
-          ================================================================ */}
-      <section className="space-y-5">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            Nos Espaces
+      {/* 3. Organisateurs et salles */}
+      <section aria-labelledby="organisateurs-titre" className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-surface p-6 shadow-sm sm:p-10">
+          <div className="pointer-events-none absolute -right-20 -top-20 -z-10 h-64 w-64 rounded-full bg-brand-decor/10 blur-3xl" aria-hidden="true" />
+          <p className="text-sm font-semibold text-brand-fg">Espace organisateur</p>
+          <h2 id="organisateurs-titre" className="mt-2 text-2xl font-bold leading-tight tracking-tight text-fg sm:text-3xl">
+            Vous organisez des événements ? Vendez vos billets avec Event Village.
           </h2>
-          <p className="text-xs text-slate-500 dark:text-zinc-500 mt-0.5">
-            Salles de fête, restaurants & gastronomie
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-          <Link href="/halls" className="group block">
-            <div
-              className="relative rounded-3xl overflow-hidden text-white shadow-2xl"
-              style={{ minHeight: 280 }}
-            >
-              <div
-                className="absolute inset-0 bg-cover bg-center transition-transform duration-700 ease-out group-hover:scale-105"
-                style={{ backgroundImage: "url('https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=900&auto=format&fit=crop&q=80')" }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/96 via-black/50 to-black/10" />
-
-              <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-8">
-                <span className="inline-flex items-center self-start px-2.5 py-1 rounded-lg bg-white/12 backdrop-blur-md text-[10px] font-bold uppercase tracking-wider">
-                  <Building2 size={10} className="mr-1.5 text-[#FF8A65]" />
-                  Espaces & Réceptions
-                </span>
-
-                <div className="space-y-3">
-                  <h3 className="text-2xl sm:text-3xl font-black leading-tight">
-                    Location de Salles<br />de Fête
-                  </h3>
-                  <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
-                    Mariages, séminaires, galas — réservez avec acompte de 30% et moratoire de 48h.
-                  </p>
-                  <div className="ev-service-card-cta inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#FF5722] text-white text-xs font-bold group-hover:bg-[#FF6A3D] transition-colors">
-                    Voir le catalogue des salles
-                    <ArrowRight size={13} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Link>
-
-          <Link href="/explore" className="group block">
-            <div
-              className="relative rounded-3xl overflow-hidden text-white shadow-2xl"
-              style={{ minHeight: 280 }}
-            >
-              <div
-                className="absolute inset-0 bg-cover bg-center transition-transform duration-700 ease-out group-hover:scale-105"
-                style={{ backgroundImage: "url('https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=900&auto=format&fit=crop&q=80')" }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/96 via-black/50 to-black/10" />
-
-              <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-8">
-                <span className="inline-flex items-center self-start px-2.5 py-1 rounded-lg bg-white/12 backdrop-blur-md text-[10px] font-bold uppercase tracking-wider">
-                  <Utensils size={10} className="mr-1.5 text-emerald-400" />
-                  Gastronomie & Tables
-                </span>
-
-                <div className="space-y-3">
-                  <h3 className="text-2xl sm:text-3xl font-black leading-tight">
-                    Réservation de<br />Tables & Menus
-                  </h3>
-                  <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
-                    Terrasse, VIP, Salle — choisissez votre zone et commandez en direct.
-                  </p>
-                  <div className="ev-service-card-cta inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold group-hover:bg-emerald-500 transition-colors">
-                    Découvrir les offres
-                    <ArrowRight size={13} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Link>
-
-        </div>
-      </section>
-
-      {/* ================================================================
-          5. CTA PARTENAIRE
-          ================================================================ */}
-      <section className="relative rounded-3xl overflow-hidden bg-white dark:bg-[#1A1A1A] border border-slate-200/80 dark:border-zinc-800">
-        <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-[#FF5722]/5 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 rounded-full bg-[#FF3D68]/5 blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col lg:flex-row items-center gap-8 p-6 sm:p-10 lg:p-12">
-          <div className="flex-1 space-y-4">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FF5722]/10 text-[#FF5722] text-xs font-bold">
-              <Handshake size={14} />
-              Espace Partenaire
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-              Vous organisez des événements ?<br />
-              <span className="ev-gradient-text">Rejoignez Event Village.</span>
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-zinc-400 leading-relaxed max-w-lg">
-              Vendez vos billets, gérez vos réservations de tables et louez vos salles
-              depuis un tableau de bord professionnel. Commission transparente, paiements
-              Wave & Orange Money, analytics en temps réel.
-            </p>
-            <ul className="space-y-2.5 pt-2">
-              {[
-                'Tableau de bord complet avec statistiques',
-                'Billetterie avec QR code intégré',
-                'Gestion des réservations de tables',
-                'Paiements sécurisés Wave & Orange Money',
-              ].map((feature, i) => (
-                <li key={i} className="flex items-center gap-2.5 text-sm text-slate-700 dark:text-zinc-300">
-                  <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="flex flex-col gap-3 w-full lg:w-auto">
-            <Link href="/register?role=partner">
-              <Button
-                variant="primary"
-                size="md"
-                className="w-full lg:w-auto h-[52px] px-10 font-black rounded-2xl shadow-xl shadow-[#FF5722]/30"
-                leftIcon={<TrendingUp size={18} />}
-              >
-                Devenir Partenaire
-              </Button>
-            </Link>
-            <p className="text-[10px] text-slate-400 dark:text-zinc-600 text-center lg:text-left">
-              Inscription gratuite — aucun frais fixe
-            </p>
+          <ul className="mt-5 space-y-3">
+            {ORGANIZER_POINTS.map((point) => (
+              <li key={point} className="flex items-start gap-3 text-base text-fg">
+                <BadgeCheck size={20} className="mt-0.5 flex-shrink-0 text-success-fg" aria-hidden="true" />
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <LinkButton href="/partner/register" size="lg" rightIcon={<ArrowRight size={18} />}>
+              Devenir organisateur
+            </LinkButton>
           </div>
         </div>
-      </section>
 
-      {/* ================================================================
-          7. FOOTER
-          ================================================================ */}
-      <footer className="border-t border-slate-200 dark:border-zinc-800 pt-10">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 sm:gap-6">
-
-          <div className="col-span-2 sm:col-span-1">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF6A3D] to-[#FF3D68] flex items-center justify-center">
-                <Heart size={14} className="text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-black text-slate-900 dark:text-white leading-none">EVENT VILLAGE</p>
-                <p className="text-[8px] font-bold text-slate-400 dark:text-zinc-500 tracking-wider uppercase mt-0.5">Plateforme Événementielle</p>
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-zinc-500 leading-relaxed">
-              La référence événementielle au Sénégal. Billetterie, salles, restaurants.
-            </p>
-          </div>
-
+        <div className="flex flex-col justify-between gap-6 rounded-3xl border border-border bg-surface-sunken p-6 sm:p-8">
           <div>
-            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3">
-              Plateforme
-            </h4>
-            <ul className="space-y-2">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+              <Building2 size={20} />
+            </span>
+            <h2 className="mt-4 text-xl font-bold tracking-tight text-fg">Une salle pour votre réception ?</h2>
+            <p className="mt-2 text-base leading-relaxed text-fg-muted">
+              Mariages, séminaires, galas : consultez les salles disponibles et réservez en ligne.
+            </p>
+          </div>
+          <LinkButton href="/halls" variant="secondary" rightIcon={<ArrowRight size={16} />}>
+            Voir les salles
+          </LinkButton>
+        </div>
+      </section>
+
+      {/* 4. Pied de page */}
+      <footer className="border-t border-border pt-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="max-w-sm">
+            <p className="text-base font-bold text-fg">Event Village</p>
+            <p className="mt-1 text-sm leading-relaxed text-fg-muted">
+              Billetterie, salles et événements au Sénégal.
+            </p>
+          </div>
+          <nav aria-label="Liens du pied de page">
+            <ul className="flex flex-wrap gap-x-2 gap-y-1">
               {[
                 { label: 'Explorer', href: '/explore' },
-                { label: 'Salles de fête', href: '/halls' },
-                { label: 'Restaurants', href: '/restaurants' },
                 { label: 'Mes billets', href: '/tickets' },
+                { label: 'Salles', href: '/halls' },
+                { label: 'Devenir organisateur', href: '/partner/register' },
               ].map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className="text-xs text-slate-500 dark:text-zinc-500 hover:text-[#FF5722] transition-colors">
+                  <LinkButton href={link.href} variant="ghost" size="sm">
                     {link.label}
-                  </Link>
+                  </LinkButton>
                 </li>
               ))}
             </ul>
-          </div>
-
-          <div>
-            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3">
-              Partenaires
-            </h4>
-            <ul className="space-y-2">
-              {[
-                { label: 'Devenir partenaire', href: '/register?role=partner' },
-                { label: 'Espace partenaire', href: '/partner/dashboard' },
-                { label: 'Tarifs & commission', href: '/partner/dashboard' },
-              ].map((link) => (
-                <li key={link.label}>
-                  <Link href={link.href} className="text-xs text-slate-500 dark:text-zinc-500 hover:text-[#FF5722] transition-colors">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3">
-              Contact
-            </h4>
-            <ul className="space-y-2.5">
-              <li className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-500">
-                <Phone size={12} className="text-[#FF5722] flex-shrink-0" />
-                +221 78 XXX XX XX
-              </li>
-              <li className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-500">
-                <Mail size={12} className="text-[#FF5722] flex-shrink-0" />
-                contact@eventvillage.sn
-              </li>
-              <li className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-500">
-                <MapPin size={12} className="text-[#FF5722] flex-shrink-0" />
-                Dakar, Sénégal
-              </li>
-            </ul>
-          </div>
-
+          </nav>
         </div>
-
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-10 pt-6 border-t border-slate-200/60 dark:border-zinc-800/60 pb-20 sm:pb-4">
-          <p className="text-[11px] text-slate-400 dark:text-zinc-600">
-            &copy; {new Date().getFullYear()} Event Village. Tous droits réservés.
-          </p>
-          <div className="flex items-center gap-4">
-            <Link href="/legal" className="text-[11px] text-slate-400 dark:text-zinc-600 hover:text-[#FF5722] transition-colors">
-              Mentions légales
-            </Link>
-            <Link href="/privacy" className="text-[11px] text-slate-400 dark:text-zinc-600 hover:text-[#FF5722] transition-colors">
-              Confidentialité
-            </Link>
-            <Link href="/cgv" className="text-[11px] text-slate-400 dark:text-zinc-600 hover:text-[#FF5722] transition-colors">
-              CGV
-            </Link>
-          </div>
-        </div>
+        <p className="mt-6 text-sm text-fg-muted">
+          Event Village, {new Date().getFullYear()}. Tous droits réservés.
+        </p>
       </footer>
     </div>
   );

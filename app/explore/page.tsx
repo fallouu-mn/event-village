@@ -1,319 +1,299 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, SlidersHorizontal, Calendar, MapPin, X, Sparkles } from 'lucide-react';
-import { EventCard } from '@/components/events/EventCard';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshCw, RotateCcw, Search } from 'lucide-react';
+import { EventCard, cityLabel } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
-import { Skeleton } from '@/components/ui/Skeleton';
+import { Select, TextInput } from '@/components/ui/Field';
+import { LiveIndicator } from '@/components/ui/LiveIndicator';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
+import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
+
+/**
+ * Catalogue public (lot 5, tâches 5.3 et 5.13 ; contrats E, O3, O5).
+ *  - Source unique : GET /api/events (PUBLIE dont la fin est à venir, prix « à partir de » calculé par le
+ *    serveur ; sans catégorie achetable : « Bientôt en vente »).
+ *  - Temps réel : le résumé public public_event_state (publication, suspension, annulation, fin) ;
+ *    chaque signal recharge la liste par le serveur, sans recharger la page. Indicateur « En direct » /
+ *    « Hors ligne ».
+ *  - Recherche, catégorie, ville et tri ne font que filtrer et ordonner la liste reçue (aucun agrégat).
+ */
+
+type SortKey = 'date' | 'price-asc' | 'price-desc';
+
+const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: 'date', label: 'Date la plus proche' },
+  { value: 'price-asc', label: 'Prix croissant' },
+  { value: 'price-desc', label: 'Prix décroissant' },
+];
+
+const ALL = 'tous';
+
+function matches(evt: CatalogEvent, query: string): boolean {
+  if (!query) return true;
+  const q = query.toLocaleLowerCase('fr-FR');
+  return [evt.title, evt.venue, evt.subtitle ?? '', evt.city ?? '']
+    .some((field) => field.toLocaleLowerCase('fr-FR').includes(q));
+}
+
+/** Prix croissant ou décroissant ; « Bientôt en vente » (sans prix) toujours en fin de liste. */
+function byPrice(direction: 1 | -1) {
+  return (a: CatalogEvent, b: CatalogEvent): number => {
+    if (a.price === null && b.price === null) return 0;
+    if (a.price === null) return 1;
+    if (b.price === null) return -1;
+    return (a.price - b.price) * direction;
+  };
+}
+
+function CardSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-border bg-surface" aria-hidden="true">
+      <div className="aspect-[16/10] w-full bg-surface-sunken motion-safe:animate-pulse" />
+      <div className="space-y-3 p-4 sm:p-5">
+        <div className="h-4 w-1/3 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
+        <div className="h-5 w-3/4 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
+        <div className="h-4 w-1/2 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
+        <div className="h-11 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+      </div>
+    </div>
+  );
+}
 
 export default function ExplorePage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
-  const [selectedCity, setSelectedCity] = useState<string>('ALL');
-  const [priceMax, setPriceMax] = useState<number>(100000);
-  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<'RECENT' | 'PRICE_ASC' | 'PRICE_DESC'>('RECENT');
-  const [events, setEvents] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<CatalogEvent[]>([]);
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
 
-  const loadEvents = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const res = await fetch('/api/events', { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Impossible de charger les événements.');
-      setEvents(data.events || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Impossible de charger les événements.');
-    } finally {
-      setIsLoading(false);
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<string>(ALL);
+  const [city, setCity] = useState<string>(ALL);
+  const [sortBy, setSortBy] = useState<SortKey>('date');
+
+  /**
+   * Chargement de la liste. « initial » (premier affichage, « Réessayer ») : un échec affiche l'écran
+   * d'erreur. « silent » (signal temps réel, reconnexion) : la liste reste affichée, l'échec est signalé
+   * par un bandeau avec « Réessayer ».
+   */
+  const load = useCallback(async (mode: 'initial' | 'silent') => {
+    const result = await readCatalog('catalogue');
+    if (result.ok) {
+      setEvents(result.events);
+      setLoadError(null);
+      setRefreshError(null);
+      setPhase('ready');
+      return;
+    }
+    if (mode === 'initial') {
+      setLoadError(result.message);
+      setPhase('error');
+    } else {
+      setRefreshError(result.message);
     }
   }, []);
 
-  useEffect(() => { loadEvents(); }, [loadEvents]);
+  const refreshEvents = useCallback(() => load('silent'), [load]);
 
-  // Filtrage
-  let filtered = events.filter((evt) => {
-    const matchCategory = selectedCategory === 'ALL' || evt.category === selectedCategory;
-    const matchCity = selectedCity === 'ALL' || evt.city === selectedCity;
-    const matchPrice = evt.price <= priceMax;
-    const matchSearch =
-      searchQuery === '' ||
-      evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      evt.venue.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (evt.subtitle && evt.subtitle.toLowerCase().includes(searchQuery.toLowerCase()));
+  useEffect(() => {
+    void load('initial');
+  }, [load]);
 
-    return matchCategory && matchCity && matchPrice && matchSearch;
+  // Recherche lancée depuis l'accueil (/explore?q=…) : lue une fois, sans Suspense (page statique).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q) setQuery(q.slice(0, 120));
+  }, []);
+
+  const { status: liveStatus } = useRealtimeRefresh({
+    channelKey: 'catalogue-public',
+    subscriptions: [{ table: 'public_event_state' }],
+    onSignal: refreshEvents,
   });
 
-  // Tri
-  if (sortBy === 'PRICE_ASC') {
-    filtered.sort((a, b) => a.price - b.price);
-  } else if (sortBy === 'PRICE_DESC') {
-    filtered.sort((a, b) => b.price - a.price);
-  }
-
-  const resetFilters = () => {
-    setSearchQuery('');
-    setSelectedCategory('ALL');
-    setSelectedCity('ALL');
-    setPriceMax(100000);
-    setSortBy('RECENT');
+  const retry = async () => {
+    setIsRetrying(true);
+    try {
+      await load('initial');
+    } finally {
+      setIsRetrying(false);
+    }
   };
 
+  const cities = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const evt of events) {
+      if (evt.city && !seen.has(evt.city)) seen.set(evt.city, cityLabel(evt.city) ?? evt.city);
+    }
+    return Array.from(seen.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'fr-FR'));
+  }, [events]);
+
+  const visible = useMemo(() => {
+    const list = events.filter((evt) => (category === ALL || evt.category === category)
+      && (city === ALL || evt.city === city)
+      && matches(evt, query.trim()));
+    if (sortBy === 'price-asc') return [...list].sort(byPrice(1));
+    if (sortBy === 'price-desc') return [...list].sort(byPrice(-1));
+    return list;
+  }, [events, category, city, query, sortBy]);
+
+  const filtersActive = query.trim() !== '' || category !== ALL || city !== ALL || sortBy !== 'date';
+
+  const resetFilters = () => {
+    setQuery('');
+    setCategory(ALL);
+    setCity(ALL);
+    setSortBy('date');
+  };
+
+  const resultLabel = visible.length === 0
+    ? 'Aucun événement'
+    : visible.length === 1 ? '1 événement' : `${visible.length} événements`;
+
   return (
-    <div className="space-y-6 pb-12">
-      {/* 1. Header de la Page */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Explorer les Événements & Lieux
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
-            Trouvez les meilleures activités, concerts, festivals, restaurants et salles.
-          </p>
+    <div className="space-y-6 pb-24 lg:pb-12">
+      <PageHeader
+        title="Explorer les événements"
+        description="Concerts, festivals, soirées et rencontres à venir au Sénégal. La liste se met à jour d’elle-même."
+        actions={<LiveIndicator status={liveStatus} />}
+      />
+
+      <section aria-label="Recherche et filtres" className="space-y-4 rounded-3xl border border-border bg-surface p-4 shadow-sm sm:p-5">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="relative">
+            <TextInput
+              label="Rechercher un événement"
+              type="search"
+              inputMode="search"
+              enterKeyHint="search"
+              autoComplete="off"
+              placeholder="Titre, lieu, organisateur…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-11"
+            />
+            <Search size={18} className="pointer-events-none absolute bottom-3 left-3.5 text-fg-muted" aria-hidden="true" />
+          </div>
+          <Select
+            label="Ville"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            options={[{ value: ALL, label: 'Toutes les villes' }, ...cities]}
+          />
+          <Select
+            label="Trier par"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortKey)}
+            options={SORT_OPTIONS}
+          />
         </div>
 
-        {/* Barre de Recherche Rapide */}
-        <div className="flex items-center gap-2 max-w-md w-full">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              placeholder="Rechercher par titre, artiste, lieu..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-11 pl-9 pr-4 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800 text-xs sm:text-sm focus:outline-none focus:border-[#FF5722] transition-colors"
-            />
-          </div>
-
-          <Button
-            variant="secondary"
-            size="md"
-            className="lg:hidden"
-            onClick={() => setIsMobileFilterOpen(true)}
-            leftIcon={<SlidersHorizontal size={16} />}
-          >
-            Filtres
-          </Button>
+        <div role="group" aria-label="Catégorie" className="flex flex-wrap gap-2">
+          {[{ id: ALL, label: 'Toutes les catégories' }, ...EVENT_CATEGORIES].map((c) => {
+            const active = category === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setCategory(c.id)}
+                className={cn(
+                  'inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 text-sm font-semibold transition-colors duration-200',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+                  active
+                    ? 'border-brand bg-brand text-on-brand'
+                    : 'border-border bg-surface text-fg hover:border-border-strong hover:bg-surface-sunken',
+                )}
+              >
+                {c.label}
+              </button>
+            );
+          })}
         </div>
-      </div>
+      </section>
 
-      {/* 2. Layout Desktop avec Sidebar Filtres + Grille */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        {/* Sidebar Filtres Desktop */}
-        <aside className="hidden lg:block bg-white dark:bg-[#1E1E1E] p-5 rounded-3xl border border-slate-200/80 dark:border-zinc-800 space-y-6 sticky top-20 shadow-xs">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
-              <Filter size={16} className="text-[#FF5722]" />
-              <span>Filtres</span>
-            </h2>
-            <button
-              onClick={resetFilters}
-              className="text-[11px] font-bold text-[#FF5722] hover:underline"
-            >
-              Réinitialiser
-            </button>
-          </div>
+      {refreshError && phase === 'ready' && (
+        <StatusBanner
+          tone="warning"
+          announce="alert"
+          title="La liste n’a pas pu être mise à jour"
+          action={(
+            <Button variant="secondary" size="sm" onClick={() => void refreshEvents()} leftIcon={<RefreshCw size={16} />}>
+              Réessayer
+            </Button>
+          )}
+        >
+          {refreshError} Les événements affichés sont ceux du dernier chargement.
+        </StatusBanner>
+      )}
 
-          {/* Catégories */}
-          <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-zinc-300 block mb-2">
-              Catégorie
-            </label>
-            <div className="space-y-1">
-              {[
-                { id: 'ALL', label: 'Toutes les catégories' },
-                { id: 'CONCERT', label: 'Concerts & Musique' },
-                { id: 'FESTIVAL', label: 'Festivals' },
-                { id: 'FOOD', label: 'Gastronomie & Tables' },
-                { id: 'SALLE', label: 'Salles & Réceptions' },
-              ].map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setSelectedCategory(c.id)}
-                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                    selectedCategory === c.id
-                      ? 'bg-[#FF5722]/15 text-[#FF5722] font-black'
-                      : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-50 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Ville / Région */}
-          <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-zinc-300 block mb-2">
-              Lieu / Ville
-            </label>
-            <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-medium focus:outline-none focus:border-[#FF5722]"
-            >
-              <option value="ALL">Tout le Sénégal</option>
-              <option value="DAKAR">Dakar & Diamniadio</option>
-              <option value="SAINT_LOUIS">Saint-Louis</option>
-              <option value="SALY">Saly / Mbour</option>
-            </select>
-          </div>
-
-          {/* Prix Maximum */}
-          <div>
-            <div className="flex justify-between items-center text-xs font-bold mb-2">
-              <span className="text-slate-700 dark:text-zinc-300">Prix maximum</span>
-              <span className="text-[#FF5722]">{priceMax.toLocaleString('fr-FR')} FCFA</span>
-            </div>
-            <input
-              type="range"
-              min={5000}
-              max={100000}
-              step={5000}
-              value={priceMax}
-              onChange={(e) => setPriceMax(Number(e.target.value))}
-              className="w-full accent-[#FF5722]"
-            />
-          </div>
-
-          {/* Tri */}
-          <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-zinc-300 block mb-2">
-              Trier par
-            </label>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-medium focus:outline-none focus:border-[#FF5722]"
-            >
-              <option value="RECENT">Plus récents</option>
-              <option value="PRICE_ASC">Prix croissant</option>
-              <option value="PRICE_DESC">Prix décroissant</option>
-            </select>
-          </div>
-        </aside>
-
-        {/* Grille Principale des Résultats */}
-        <div className="lg:col-span-3 space-y-4">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400">
-            <span>
-              Affichage de <strong className="text-slate-900 dark:text-white">{filtered.length}</strong> résultat(s)
-            </span>
-          </div>
-
-          {error ? (
-            <ErrorState description={error} onRetry={loadEvents} />
-          ) : isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="space-y-3 p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-zinc-800">
-                  <Skeleton className="w-full aspect-[16/10] rounded-2xl" />
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              ))}
-            </div>
-          ) : filtered.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-              {filtered.map((evt) => (
-                <EventCard key={evt.id} {...evt} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              title="Aucun événement correspondant"
-              description="Aucun événement ne correspond à vos critères de recherche actuels."
-              actionLabel="Réinitialiser les filtres"
-              onAction={resetFilters}
-            />
+      <section aria-labelledby="resultats-titre" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="resultats-titre" className="text-base font-semibold text-fg" aria-live="polite">
+            {phase === 'loading' ? 'Chargement des événements…' : resultLabel}
+          </h2>
+          {filtersActive && (
+            <Button variant="ghost" size="sm" onClick={resetFilters} leftIcon={<RotateCcw size={16} />}>
+              Effacer les filtres
+            </Button>
           )}
         </div>
-      </div>
 
-      {/* 3. Modal / Drawer Filtres Mobile */}
-      {isMobileFilterOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center lg:hidden">
-          <div className="bg-white dark:bg-[#1E1E1E] w-full max-h-[85vh] rounded-t-3xl p-6 overflow-y-auto space-y-5 animate-in slide-in-from-bottom duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-zinc-800">
-              <h3 className="text-base font-black text-slate-900 dark:text-white">Filtres de recherche</h3>
-              <button
-                onClick={() => setIsMobileFilterOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-500"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Catégories Mobile */}
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-zinc-300 block mb-2">Catégorie</label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: 'ALL', label: 'Toutes' },
-                  { id: 'CONCERT', label: 'Concerts' },
-                  { id: 'FESTIVAL', label: 'Festivals' },
-                  { id: 'FOOD', label: 'Gastronomie' },
-                  { id: 'SALLE', label: 'Salles' },
-                ].map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedCategory(c.id)}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-[0.98] ${
-                      selectedCategory === c.id
-                        ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white border-transparent shadow-md shadow-[#FF5722]/30 font-bold'
-                        : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:border-[#FF5722]/50'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Prix Max */}
-            <div>
-              <div className="flex justify-between items-center text-xs font-bold mb-2">
-                <span className="text-slate-700 dark:text-zinc-300">Prix maximum</span>
-                <span className="text-[#FF5722]">{priceMax.toLocaleString('fr-FR')} FCFA</span>
-              </div>
-              <input
-                type="range"
-                min={5000}
-                max={100000}
-                step={5000}
-                value={priceMax}
-                onChange={(e) => setPriceMax(Number(e.target.value))}
-                className="w-full accent-[#FF5722]"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-3">
-              <Button
-                variant="secondary"
-                fullWidth
-                onClick={() => {
-                  resetFilters();
-                  setIsMobileFilterOpen(false);
-                }}
-              >
-                Effacer
-              </Button>
-              <Button
-                variant="primary"
-                fullWidth
-                onClick={() => setIsMobileFilterOpen(false)}
-              >
-                Appliquer ({filtered.length})
-              </Button>
-            </div>
+        {phase === 'error' ? (
+          <ErrorState
+            title="Impossible d’afficher les événements"
+            description={loadError ?? 'Le catalogue n’a pas pu être chargé. Vérifiez votre connexion, puis réessayez.'}
+            onRetry={() => void retry()}
+            isRetrying={isRetrying}
+          />
+        ) : phase === 'loading' ? (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3" aria-busy="true">
+            {[1, 2, 3, 4, 5, 6].map((i) => <CardSkeleton key={i} />)}
           </div>
-        </div>
-      )}
+        ) : visible.length > 0 ? (
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {visible.map((evt, i) => (
+              <li key={evt.id}>
+                <EventCard
+                  id={evt.id}
+                  title={evt.title}
+                  subtitle={evt.subtitle}
+                  imageUrl={evt.imageUrl}
+                  dateFormatted={evt.dateFormatted}
+                  dayNumber={evt.dayNumber}
+                  monthShort={evt.monthShort}
+                  timeFormatted={evt.timeFormatted}
+                  venue={evt.venue}
+                  city={evt.city}
+                  categoryLabel={evt.categoryLabel}
+                  price={evt.price}
+                  priority={i < 3}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : events.length === 0 ? (
+          <EmptyState
+            title="Aucun événement à venir pour le moment"
+            description="Les prochains événements apparaîtront ici dès leur publication, sans recharger la page."
+          />
+        ) : (
+          <EmptyState
+            title="Aucun événement ne correspond à votre recherche"
+            description="Modifiez la recherche ou les filtres pour voir plus d’événements."
+            actionLabel="Effacer les filtres"
+            onAction={resetFilters}
+          />
+        )}
+      </section>
     </div>
   );
 }
