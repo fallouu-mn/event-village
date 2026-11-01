@@ -35,6 +35,8 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/admin/dashboard/page.tsx',
     'app/admin/services/page.tsx',
     'components/layout/AppLayout.tsx',
+    // Relecture des captures du run 49 : logo de l'en-tête mobile (identifiant SVG unique, tokens)
+    'components/ui/Logo.tsx',
     // Formulaire d'événement (tâches 5.5, 5.6, 5.9 ; contrat F6)
     'components/events/EventForm.tsx',
     'components/events/EventTicketing.tsx',
@@ -49,6 +51,9 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/tickets/page.tsx',
     'components/events/EventCard.tsx',
     'components/events/FeaturedEventCard.tsx',
+    // Client : carte billet et notifications (libellés humains, contrat Q ; run 49)
+    'components/tickets/TicketCard.tsx',
+    'app/notifications/page.tsx',
     // Partenaire : liste, pilotage, annulation (tâches 5.8, 5.10, 5.11 ; contrats H, I, J)
     'app/partner/events/page.tsx',
     'app/partner/events/[id]/page.tsx',

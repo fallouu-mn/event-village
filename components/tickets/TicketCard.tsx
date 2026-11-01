@@ -1,13 +1,16 @@
 'use client';
 
 /**
- * Carte billet du client (lot 4). Le QR affiché est le payload du code dynamique servi par
- * /api/tickets/[id]/live-code (« EVT1:<UUID>:<code> »), renouvelé au changement de pas indiqué par le
- * serveur (expires_in) : aucun QR statique, jamais. Sans code à jour (réseau coupé), la carte le dit
- * et rappelle l'entrée sans téléphone (numéro du billet et pièce d'identité au contrôle).
- * Partage (WhatsApp, lien) : le lien de l'événement uniquement, jamais le numéro du billet.
+ * Carte billet du client (lot 4 ; système de design du lot 5, contrat Q). Le QR affiché est le payload du
+ * code dynamique servi par /api/tickets/[id]/live-code (« EVT1:<UUID>:<code> »), renouvelé au changement
+ * de pas indiqué par le serveur (expires_in) : aucun QR statique, jamais. Sans code à jour (réseau
+ * coupé), la carte le dit et rappelle l'entrée sans téléphone (numéro du billet et pièce d'identité au
+ * contrôle). Partage (WhatsApp, lien) : le lien de l'événement uniquement, jamais le numéro du billet.
+ *
+ * Statut du billet : pastille et message lus dans TICKET_STATUS_META (lib/tickets/ticket-status.ts),
+ * jamais la valeur brute de l'enum.
  */
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -24,10 +27,16 @@ import {
   IdCard,
   QrCode,
 } from 'lucide-react';
-import { StatusBadge } from '@/components/ui/Badge';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/components/ui/cn';
+import { TONE_SOFT } from '@/components/ui/tones';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { formatDateTime } from '@/lib/format';
+import { TICKET_STATUS_META, type TicketStatus } from '@/lib/tickets/ticket-status';
 
 export interface TicketCardProps {
   id: string;
@@ -41,7 +50,7 @@ export interface TicketCardProps {
   timeFormatted: string;
   venue: string;
   seat?: string;
-  status: 'VALIDE' | 'UTILISE' | 'ANNULE' | 'REMBOURSE' | 'REMBOURSEMENT_EN_COURS';
+  status: TicketStatus;
   usedAt?: string;
   isTransferLocked?: boolean;
   activeTransfer?: {
@@ -63,17 +72,28 @@ interface LiveCode {
 
 const OFFLINE_RETRY_MS = 5_000;
 
+/** Lecture tolérante d'un corps JSON d'erreur : le message du serveur, ou null (jamais d'exception). */
+async function readErrorMessage(res: Response, context: string): Promise<string | null> {
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    return typeof body.error === 'string' && body.error ? body.error : null;
+  } catch (err) {
+    console.warn(`[TicketCard] ${context} : réponse illisible (HTTP ${res.status})`, err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
 export const TicketCard: React.FC<TicketCardProps> = ({
   id,
   eventId,
   ticketNumber,
   eventTitle,
-  eventSubtitle = 'Live Performance',
+  eventSubtitle,
   eventImageUrl,
   dateFormatted,
   timeFormatted,
   venue,
-  seat = 'Fosse générale (Place libre)',
+  seat = 'Fosse générale (placement libre)',
   status,
   usedAt,
   isTransferLocked = false,
@@ -84,8 +104,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 }) => {
   const toast = useToast();
   const { session } = useAuth();
-  const ticketRef = useRef<HTMLDivElement>(null);
   const accessToken = session?.access_token;
+  const isActive = status === 'VALIDE';
+  const meta = TICKET_STATUS_META[status];
 
   // QR dynamique : payload du live-code uniquement (aucune valeur statique de repli)
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
@@ -93,10 +114,11 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const [liveCodeUnavailable, setLiveCodeUnavailable] = useState<string | null>(null);
   const [clock, setClock] = useState<number>(() => Date.now());
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
+  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState<boolean>(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
 
   useEffect(() => {
-    if (status !== 'VALIDE' || isTransferLocked || !id) {
+    if (!isActive || isTransferLocked || !id) {
       setLiveCode(null);
       return;
     }
@@ -155,7 +177,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [id, status, isTransferLocked, accessToken]);
+  }, [id, isActive, isTransferLocked, accessToken]);
 
   // Horloge du compte à rebours (affichage seulement : le rafraîchissement suit expires_in)
   useEffect(() => {
@@ -167,6 +189,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const secondsLeft = liveCode ? Math.max(0, Math.ceil((liveCode.expiresAt - clock) / 1000)) : 0;
   // Le serveur accepte le pas voisin : au-delà, le code est périmé et n'est plus affiché
   const liveCodeStale = liveCode ? clock > liveCode.expiresAt + liveCode.stepMs : true;
+  const showQr = Boolean(liveCode) && !liveCodeStale;
 
   const handleShareWhatsapp = () => {
     const link = `${window.location.origin}/events/${eventId}`;
@@ -195,29 +218,24 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   };
 
   const handleDownloadPdf = async () => {
-    if (status !== 'VALIDE') {
-      toast.error('Ce billet n\'est pas au statut valide pour le téléchargement.');
+    if (!isActive) {
+      toast.error(meta.description);
       return;
     }
     if (isTransferLocked) {
-      toast.error('Ce billet est actuellement en cours de transfert.');
+      toast.error('Ce billet est en cours de transfert : le PDF sera disponible si le transfert est annulé.');
       return;
     }
 
     setIsDownloadingPdf(true);
     try {
       const res = await fetch(`/api/tickets/${id}/pdf`, {
-        headers: {
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
       });
 
       if (!res.ok) {
-        const errJson = await res.json().catch((err: unknown) => {
-          console.warn('[TicketCard] réponse PDF illisible :', err instanceof Error ? err.message : String(err));
-          return {};
-        });
-        toast.error(errJson.error || 'Erreur lors de la génération du document PDF.');
+        const message = await readErrorMessage(res, 'PDF');
+        toast.error(message ?? 'Le billet PDF n’a pas pu être généré. Réessayez dans un instant.');
         return;
       }
 
@@ -230,10 +248,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      toast.success('Billet officiel PDF téléchargé avec succès !');
+      toast.success('Billet PDF téléchargé.');
     } catch (err) {
-      console.error('[TicketCard] Erreur téléchargement PDF:', err);
-      toast.error('Erreur réseau lors du téléchargement du PDF.');
+      console.error('[TicketCard] téléchargement du PDF impossible :', err instanceof Error ? err.message : String(err));
+      toast.error('Connexion impossible : le PDF n’a pas été téléchargé. Vérifiez votre réseau, puis réessayez.');
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -241,11 +259,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
   const handleCancelTransfer = async () => {
     if (!activeTransfer?.id) {
-      toast.error('Identifiant de transfert introuvable.');
-      return;
-    }
-
-    if (!window.confirm('Voulez-vous vraiment annuler ce transfert et récupérer votre billet ?')) {
+      toast.error('Ce transfert est introuvable. Actualisez la page.');
+      setIsCancelConfirmOpen(false);
       return;
     }
 
@@ -255,98 +270,96 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        toast.success('Transfert annulé. Billet déverrouillé avec succès !');
-        if (onCancelTransferSuccess) onCancelTransferSuccess();
-      } else {
-        toast.error(data.error || 'Erreur lors de l\'annulation du transfert.');
+      if (res.ok) {
+        toast.success('Transfert annulé : votre billet est de nouveau disponible.');
+        setIsCancelConfirmOpen(false);
+        onCancelTransferSuccess?.();
+        return;
       }
-    } catch {
-      toast.error('Erreur réseau. Veuillez réessayer.');
+      const message = await readErrorMessage(res, 'annulation du transfert');
+      toast.error(message ?? `Le transfert n’a pas pu être annulé (erreur ${res.status}).`);
+    } catch (err) {
+      console.error('[TicketCard] annulation du transfert impossible :', err instanceof Error ? err.message : String(err));
+      toast.error('Connexion impossible : le transfert n’a pas été annulé. Vérifiez votre réseau, puis réessayez.');
     } finally {
       setIsCancelling(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col items-center">
-      {/* 1. Carte Billet Perforée */}
-      <div ref={ticketRef} className="w-full ev-ticket-card">
-        {/* Notches concaves latérales de découpe */}
-        <div className="ticket-notch-left top-44" />
-        <div className="ticket-notch-right top-44" />
+    <article className="mx-auto flex w-full max-w-md flex-col" aria-label={`Billet pour ${eventTitle}`}>
+      {/* 1. Carte billet */}
+      <div className="relative w-full overflow-hidden rounded-3xl border border-border bg-surface shadow-md">
+        {/* Encoches de découpe, alignées sur la ligne pointillée (décor) */}
+        <span aria-hidden="true" className="absolute -left-3 top-44 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
+        <span aria-hidden="true" className="absolute -right-3 top-44 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
 
-        {/* Partie Haute : Visuel Événement */}
-        <div className="relative w-full h-44 bg-slate-950 overflow-hidden">
+        {/* Visuel de l'événement */}
+        <div className="relative h-44 w-full overflow-hidden bg-scrim">
           <Image
             src={eventImageUrl}
-            alt={eventTitle}
+            alt=""
             fill
             className="object-cover"
             sizes="(max-width: 28rem) 100vw, 28rem"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-scrim/90 via-scrim/40 to-transparent" />
 
-          <div className="absolute top-3 right-3 flex items-center gap-2">
+          <div className="absolute right-3 top-3 flex max-w-[70%] items-center gap-2">
             {isTransferLocked ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500 text-white shadow-md animate-pulse">
-                <Lock size={10} /> Transfert en attente
-              </span>
+              <Badge variant="warning" icon={<Lock size={12} aria-hidden="true" />}>
+                Transfert en attente
+              </Badge>
             ) : (
-              <StatusBadge status={status} />
+              <StatusBadge domain="ticket" status={status} size="sm" />
             )}
           </div>
 
-          <div className="absolute bottom-3 left-4 right-4 text-white">
-            <h2 className="text-lg font-black tracking-tight leading-tight">{eventTitle}</h2>
-            <p className="text-xs text-zinc-300 font-medium">{eventSubtitle}</p>
+          <div className="absolute bottom-3 left-4 right-4 text-on-tone">
+            <h2 className="text-lg font-bold leading-tight tracking-tight">{eventTitle}</h2>
+            {eventSubtitle && <p className="truncate text-sm font-medium text-on-tone/85">{eventSubtitle}</p>}
           </div>
         </div>
 
-        {/* Ligne de Perforation en Pointillés */}
-        <div className="ticket-divider-dashed my-3" />
+        <div aria-hidden="true" className="mx-5 mt-4 border-t-2 border-dashed border-border" />
 
-        {/* Partie Médiane : Grille 2x2 des informations d'accès */}
-        <div className="p-5 pt-1 space-y-4">
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Date</span>
-              <p className="font-black text-slate-900 dark:text-white mt-0.5">{dateFormatted}</p>
+        <div className="space-y-4 p-5">
+          {/* Informations d'accès */}
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
+            <div className="min-w-0">
+              <dt className="text-sm font-medium text-fg-muted">Date</dt>
+              <dd className="mt-0.5 text-base font-semibold text-fg">{dateFormatted}</dd>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Heure d&apos;accès</span>
-              <p className="font-black text-slate-900 dark:text-white mt-0.5">{timeFormatted}</p>
+            <div className="min-w-0 text-right">
+              <dt className="text-sm font-medium text-fg-muted">Heure d’accès</dt>
+              <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg">{timeFormatted}</dd>
             </div>
-            <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Lieu & Salle</span>
-              <p className="font-black text-slate-900 dark:text-white mt-0.5 truncate">{venue}</p>
+            <div className="min-w-0">
+              <dt className="text-sm font-medium text-fg-muted">Lieu</dt>
+              <dd className="mt-0.5 truncate text-base font-semibold text-fg">{venue}</dd>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Emplacement</span>
-              <p className="font-black text-slate-900 dark:text-white mt-0.5 truncate">{seat}</p>
+            <div className="min-w-0 text-right">
+              <dt className="text-sm font-medium text-fg-muted">Emplacement</dt>
+              <dd className="mt-0.5 truncate text-base font-semibold text-fg">{seat}</dd>
             </div>
-          </div>
+          </dl>
 
-          {/* Ligne de Séparation */}
-          <div className="ticket-divider-dashed my-2" />
+          <div aria-hidden="true" className="border-t-2 border-dashed border-border" />
 
-          {/* CAS : Billet verrouillé en transfert */}
           {isTransferLocked ? (
-            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-center space-y-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
-                <Clock size={20} className="animate-spin" style={{ animationDuration: '4s' }} />
-              </div>
+            /* Billet verrouillé pendant un transfert */
+            <div className="space-y-3 rounded-2xl border border-warning-border bg-warning-bg p-4 text-center text-warning-fg">
+              <Clock size={24} aria-hidden="true" className="mx-auto motion-safe:animate-spin" style={{ animationDuration: '4s' }} />
               <div className="space-y-1">
-                <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                <h3 className="text-base font-semibold">
                   Transfert en cours vers {activeTransfer?.recipient || 'un proche'}
-                </h4>
-                <p className="text-[10px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                  Le QR code est temporairement sécurisé. Dès que le destinataire réclame le billet, la propriété lui sera transmise.
+                </h3>
+                <p className="text-sm leading-relaxed">
+                  Le code d’entrée est suspendu. Dès que le destinataire accepte le billet, il lui appartient.
                 </p>
               </div>
 
@@ -355,172 +368,176 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={handleCancelTransfer}
-                  isLoading={isCancelling}
-                  leftIcon={<RotateCcw size={12} />}
-                  className="text-xs font-bold text-red-600 hover:text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  onClick={() => setIsCancelConfirmOpen(true)}
+                  leftIcon={<RotateCcw size={16} aria-hidden="true" />}
                 >
                   Annuler le transfert
                 </Button>
               )}
             </div>
-          ) : status === 'VALIDE' ? (
+          ) : isActive ? (
             /* QR dynamique : payload du live-code, renouvelé à chaque pas */
-            <div className="flex flex-col items-center justify-center pt-2">
-              <div className="p-3 bg-white rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-inner w-[178px] h-[178px] flex items-center justify-center">
-                {liveCode && !liveCodeStale ? (
-                  <QRCodeSVG
-                    value={liveCode.payload}
-                    size={152}
-                    bgColor="#ffffff"
-                    fgColor="#0f172a"
-                    level="M"
-                    includeMargin={false}
-                    title="QR d’entrée dynamique"
-                  />
+            <div className="flex flex-col items-center pt-1">
+              {/* Fond blanc fixe sous le QR, même en thème sombre : contraste exigé par les lecteurs de QR */}
+              <div
+                className={cn(
+                  'flex h-[178px] w-[178px] items-center justify-center rounded-2xl border border-border p-3',
+                  showQr ? 'bg-white' : 'bg-surface-sunken',
+                )}
+              >
+                {liveCode && showQr ? (
+                  <QRCodeSVG value={liveCode.payload} size={152} level="M" includeMargin={false} title="QR d’entrée dynamique" />
                 ) : liveCodeUnavailable ? (
-                  <p role="status" className="text-xs font-semibold text-slate-700 text-center px-2">{liveCodeUnavailable}</p>
+                  <p role="status" className="px-2 text-center text-sm font-medium text-fg">{liveCodeUnavailable}</p>
                 ) : isOffline ? (
-                  <div role="status" className="flex flex-col items-center gap-2 text-center px-2">
-                    <WifiOff size={28} aria-hidden="true" className="text-amber-600" />
-                    <p className="text-xs font-semibold text-slate-700">Connexion requise pour afficher le code d’entrée.</p>
+                  <div role="status" className="flex flex-col items-center gap-2 px-2 text-center">
+                    <WifiOff size={28} aria-hidden="true" className="text-warning-fg" />
+                    <p className="text-sm font-medium text-fg">Connexion requise pour afficher le code d’entrée.</p>
                   </div>
                 ) : (
-                  <div role="status" className="flex flex-col items-center gap-2 text-slate-600">
-                    <QrCode size={28} aria-hidden="true" className="motion-safe:animate-pulse text-[#FF5722]" />
-                    <span className="text-xs font-semibold">Code d’entrée…</span>
+                  <div role="status" className="flex flex-col items-center gap-2 text-fg-muted">
+                    <QrCode size={28} aria-hidden="true" className="text-brand-fg motion-safe:animate-pulse" />
+                    <span className="text-sm font-medium">Code d’entrée…</span>
                   </div>
                 )}
               </div>
-              <span className="text-[11px] font-mono font-bold text-slate-600 dark:text-zinc-300 mt-2">
-                {ticketNumber}
-              </span>
+              <p className="mt-2 text-sm text-fg-muted">
+                <span className="sr-only">Numéro du billet : </span>
+                <span className="font-mono font-semibold tabular-nums">{ticketNumber}</span>
+              </p>
 
-              <div className="w-full max-w-[230px] mt-2.5 p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60 space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-zinc-200">
-                  <span className="flex items-center gap-1.5">
-                    <span aria-hidden="true" className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500 motion-safe:animate-pulse'}`} />
+              <div className="mt-3 w-full space-y-2 rounded-xl border border-border bg-surface-sunken p-3">
+                <div className="flex items-center justify-between gap-2 text-sm font-semibold text-fg">
+                  <span className="flex items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={cn('h-2 w-2 flex-shrink-0 rounded-full', isOffline ? 'bg-warning' : 'bg-success motion-safe:animate-pulse')}
+                    />
                     {isOffline ? 'Hors connexion' : 'Code renouvelé toutes les 20 s'}
                   </span>
-                  {liveCode && !liveCodeStale && (
-                    <span className="font-mono text-xs font-black text-[#C2410C] dark:text-[#FF8A65]" aria-label={`Nouveau code dans ${secondsLeft} secondes`}>
-                      {secondsLeft}s
+                  {showQr && (
+                    <span className="font-mono text-sm font-bold tabular-nums text-brand-fg">
+                      <span aria-hidden="true">{secondsLeft} s</span>
+                      <span className="sr-only">Nouveau code dans {secondsLeft} secondes</span>
                     </span>
                   )}
                 </div>
-                {liveCode && !liveCodeStale && (
-                  <div className="w-full h-1.5 bg-slate-200 dark:bg-zinc-700 rounded-full overflow-hidden" aria-hidden="true">
+                {liveCode && showQr && (
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-border" aria-hidden="true">
                     <div
-                      className="h-full bg-[#FF5722] transition-[width] duration-1000 ease-linear rounded-full"
+                      className="h-full rounded-full bg-brand-decor transition-[width] duration-1000 ease-linear"
                       style={{ width: `${Math.max(5, Math.min(100, ((secondsLeft * 1000) / liveCode.stepMs) * 100))}%` }}
                     />
                   </div>
                 )}
-                <p className="text-[11px] text-slate-600 dark:text-zinc-300 text-center leading-snug">
+                <p className="text-center text-sm leading-snug text-fg-muted">
                   {isOffline
                     ? 'Le code s’affichera dès le retour du réseau. Une capture d’écran n’est pas acceptée.'
                     : 'Une capture d’écran n’est pas acceptée au contrôle.'}
                 </p>
-                <p className="text-[11px] text-slate-600 dark:text-zinc-300 text-center leading-snug flex items-start justify-center gap-1">
-                  <IdCard size={13} aria-hidden="true" className="shrink-0 mt-px" />
+                <p className="flex items-start justify-center gap-1.5 text-center text-sm leading-snug text-fg-muted">
+                  <IdCard size={16} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
                   <span>Sans téléphone : numéro du billet et pièce d’identité au contrôle.</span>
                 </p>
               </div>
-            </div>
-          ) : null}
 
-          {/* Sceau de validation */}
-          {status === 'VALIDE' && !isTransferLocked && (
-            <div className="flex items-center justify-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
-              <CheckCircle2 size={14} />
-              <span>Billet authentique — Validé par Event Village</span>
-            </div>
-          )}
-
-          {/* Instructions pour le porteur / Info utilisation */}
-          {status === 'VALIDE' && !isTransferLocked ? (
-            <div className="p-2.5 rounded-xl bg-orange-50 dark:bg-orange-950/20 text-[#FF5722] text-[11px] font-medium text-center border border-orange-100 dark:border-orange-900/30">
-              Présentez ce QR dynamique au contrôle, billet ouvert dans l&apos;application.
+              <p className="mt-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-success-fg">
+                <CheckCircle2 size={16} aria-hidden="true" />
+                <span>Billet authentique, émis par Event Village</span>
+              </p>
+              <p className="mt-3 w-full rounded-xl border border-brand-fg/20 bg-brand-bg p-3 text-center text-sm font-medium text-brand-fg">
+                Présentez ce code au contrôle, billet ouvert dans l’application.
+              </p>
             </div>
           ) : status === 'UTILISE' ? (
-            <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800/80 text-slate-700 dark:text-zinc-300 text-[11px] font-bold text-center border border-slate-200 dark:border-zinc-700 space-y-0.5">
-              <div className="flex items-center justify-center gap-1.5 text-slate-600 dark:text-zinc-300">
-                <CheckCircle2 size={14} className="text-slate-500" />
-                <span>Billet déjà utilisé & composté à l&apos;entrée</span>
-              </div>
+            <div className="space-y-1 rounded-xl border border-border bg-surface-sunken p-3 text-center">
+              <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-fg">
+                <CheckCircle2 size={16} aria-hidden="true" className="text-fg-muted" />
+                <span>{meta.description}</span>
+              </p>
               {usedAt && (
-                <p className="text-[10px] font-medium text-slate-500 dark:text-zinc-400">
-                  Composté le {new Date(usedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                <p className="text-sm text-fg-muted">
+                  Contrôlé le <time dateTime={usedAt}>{formatDateTime(usedAt)}</time>
                 </p>
               )}
             </div>
-          ) : !isTransferLocked ? (
-            <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/20 text-red-600 text-[11px] font-medium text-center border border-red-100 dark:border-red-900/30">
-              Ce billet n&apos;est plus valide ({status.toLowerCase()}).
-            </div>
-          ) : null}
+          ) : (
+            <p className={cn('rounded-xl border p-3 text-center text-sm font-medium', TONE_SOFT[meta.tone])}>
+              {meta.description}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* 2. Actions (Transférer / WhatsApp / Téléchargement PDF officiel) */}
-      <div className="mt-4 flex flex-wrap items-center gap-2 w-full max-w-md justify-between">
-        {onOpenExplainer && (
-          <button
-            type="button"
-            onClick={onOpenExplainer}
-            className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 hover:text-[#FF5722] dark:hover:text-[#FF5722] flex items-center gap-1 transition-colors"
+      {/* 2. Actions : transférer, partager l'événement, billet PDF, aide */}
+      <div className="mt-4 grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+        {isActive && !isTransferLocked && onTransferClick && (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onTransferClick}
+            leftIcon={<Send size={16} aria-hidden="true" />}
+            className="col-span-2"
           >
-            <HelpCircle size={13} />
-            <span className="hidden sm:inline">Info transfert</span>
-          </button>
+            Transférer
+          </Button>
         )}
 
-        <div className="flex items-center gap-2 ml-auto">
-          {status === 'VALIDE' && !isTransferLocked && onTransferClick && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onTransferClick}
-              leftIcon={<Send size={13} />}
-            >
-              Transférer
-            </Button>
-          )}
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleShareWhatsapp}
+          leftIcon={<MessageCircle size={16} aria-hidden="true" className="text-success-fg" />}
+          aria-label="Partager le lien de l’événement sur WhatsApp"
+        >
+          WhatsApp
+        </Button>
 
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleShareWhatsapp}
-            leftIcon={<MessageCircle size={13} aria-hidden="true" className="text-emerald-600" />}
-            title="Partager l’événement sur WhatsApp"
-            aria-label="Partager le lien de l’événement sur WhatsApp"
-          >
-            WhatsApp
-          </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => { void handleShareLink(); }}
+          leftIcon={<Share2 size={16} aria-hidden="true" />}
+          aria-label="Partager ou copier le lien de l’événement"
+        >
+          Lien
+        </Button>
 
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => { void handleShareLink(); }}
-            leftIcon={<Share2 size={13} aria-hidden="true" />}
-            title="Partager le lien de l’événement"
-            aria-label="Partager ou copier le lien de l’événement"
-          >
-            Lien
-          </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => { void handleDownloadPdf(); }}
+          isLoading={isDownloadingPdf}
+          disabled={!isActive || isTransferLocked}
+          leftIcon={<Download size={16} aria-hidden="true" />}
+          aria-label="Télécharger le billet en PDF"
+        >
+          {isDownloadingPdf ? 'Génération…' : 'PDF'}
+        </Button>
 
+        {onOpenExplainer && (
           <Button
-            variant="secondary"
+            variant="ghost"
             size="sm"
-            onClick={handleDownloadPdf}
-            isLoading={isDownloadingPdf}
-            disabled={status !== 'VALIDE' || isTransferLocked}
-            leftIcon={<Download size={13} />}
+            onClick={onOpenExplainer}
+            leftIcon={<HelpCircle size={16} aria-hidden="true" />}
           >
-            {isDownloadingPdf ? 'Génération...' : 'PDF'}
+            Aide au transfert
           </Button>
-        </div>
+        )}
       </div>
-    </div>
+
+      <ConfirmDialog
+        isOpen={isCancelConfirmOpen}
+        onClose={() => setIsCancelConfirmOpen(false)}
+        onConfirm={() => { void handleCancelTransfer(); }}
+        title="Annuler ce transfert ?"
+        message={`Le billet reste à vous et son code d’entrée revient sur cette page. ${activeTransfer?.recipient || 'Le destinataire'} ne pourra plus l’accepter.`}
+        confirmLabel="Annuler le transfert"
+        cancelLabel="Garder le transfert"
+        variant="warning"
+        isLoading={isCancelling}
+      />
+    </article>
   );
 };
