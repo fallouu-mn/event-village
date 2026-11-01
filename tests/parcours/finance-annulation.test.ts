@@ -45,8 +45,15 @@ function unitServiceFee(unitPrice: number, ratePercent: number): number {
 }
 
 async function cancel(owner: TestPartner, eventId: string): Promise<void> {
+    // Lot 5 (contrat D6) : titre retapé et avis public d'au moins 10 caractères obligatoires
+    const { data: ev, error } = await service.from('events').select('title').eq('id', eventId).single();
+    assert.equal(error, null, `titre de l’événement : ${error?.message}`);
     const res = await cancelRoute(
-        jsonRequest(`/api/partner/events/${eventId}/cancel`, 'POST', owner.accessToken, { internalReason: 'Test lot 3 : annulation', publicNotice: '' }),
+        jsonRequest(`/api/partner/events/${eventId}/cancel`, 'POST', owner.accessToken, {
+            internalReason: 'Test lot 3 : annulation',
+            publicNotice: 'Événement annulé : les acheteurs sont remboursés.',
+            confirmTitle: String(ev.title),
+        }),
         routeCtx({ id: eventId }),
     );
     assert.equal(res.status, 200, `annulation : HTTP ${res.status} ${JSON.stringify(await res.clone().json().catch(() => ({})))}`);

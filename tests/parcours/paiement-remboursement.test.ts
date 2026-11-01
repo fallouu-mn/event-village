@@ -165,7 +165,14 @@ describe('Remboursement automatique et module de cashout', () => {
         }).select('id').single();
         assert.equal(cashErr, null, `paiement espèces : ${cashErr?.message}`);
         const before0 = callsOf('sendCashout').length;
-        await EventCancellationService.cancelEvent(ev.eventId, fx.users.SUPERADMIN.id, 'SUPERADMIN', 'Test lot 2 : annulation');
+        // Lot 5 (contrat D6) : annulation transactionnelle, titre retapé et avis public obligatoires
+        const { data: evRow, error: evErr } = await service.from('events').select('title').eq('id', ev.eventId).single();
+        assert.equal(evErr, null, `titre de l’événement : ${evErr?.message}`);
+        await EventCancellationService.cancelEvent(ev.eventId, fx.users.SUPERADMIN.id, {
+            internalReason: 'Test lot 2 : annulation',
+            publicNotice: 'Événement annulé : les acheteurs sont remboursés.',
+            confirmTitle: String(evRow.title),
+        });
         const { data: cashouts } = await service.from('cashouts').select('*').in('payment_id', [r.payment!.id, cash!.id]);
         assert.equal(cashouts?.length, 1, `un remboursement (paiement plateforme seulement) : ${JSON.stringify(cashouts)}`);
         assert.equal(cashouts![0].idempotency_key, `REFUND-${r.payment!.id}`);

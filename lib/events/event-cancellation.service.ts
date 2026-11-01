@@ -1,11 +1,15 @@
 /**
- * EVENT VILLAGE — SERVICE D'ANNULATION D'ÉVÉNEMENT & REMBOURSEMENT MOBILE MONEY
- * Standard de qualité Ingénieur Senior (20 ans d'expérience) :
- * - Verrouillage & atomicité des opérations en base Supabase
- * - Remboursements par le module commun de cashout (lot 2.7) : clé REFUND-<paymentId>, solde vérifié
- *   pour le lot, opérateur et numéro du payeur, INCERTAIN jamais renvoyé automatiquement
- * - Notifications omnicanales (SMS MTarget, Email transactionnel HTML, In-App)
- * - Traçabilité financière intégrale dans les tables events, tickets, payments, refunds
+ * EVENT VILLAGE — ANNULATION D'UN ÉVÉNEMENT ET REMBOURSEMENTS (lot 3.7, refondu au lot 5, contrat D6)
+ *  - L'annulation est une seule transaction en base (RPC event_cancel) : verrou de l'événement et de
+ *    ses catégories, titre retapé, avis public et motif interne, event_cancellations (UNIQUE), historique
+ *    (canal CANCELLATION), statut ANNULE, transferts en attente révoqués, refund_request par paiement en
+ *    ligne et ticket_refund_request pour les autres billets. Elle accepte VALIDE, PUBLIE et SUSPENDU.
+ *  - Les remboursements créés (A_ENVOYER) sont envoyés après le commit, en un lot (solde vérifié une fois),
+ *    par le module commun de cashout ; INCERTAIN n'est jamais renvoyé automatiquement.
+ *  - Le motif interne reste dans event_cancellations (propriétaire et admins) : il n'est écrit nulle part
+ *    ailleurs et n'est jamais renvoyé au public.
+ *  - Impact avant annulation et avancement des remboursements : RPC event_cancellation_impact et
+ *    event_cancellation_progress, réservées au propriétaire et aux admins (« à reprendre » : admin seul).
  */
 
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -14,14 +18,25 @@ import { OPERATOR_LABELS, type SamirPayOperatorName } from '@/lib/samirpay/types
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { EmailService, EmailTemplates } from '@/lib/email/email.service';
 import { NotificationService } from '@/lib/notifications/notification.service';
+import { EventLifecycleError, refusalToError, type LifecycleRefusal } from '@/lib/events/event-lifecycle.service';
+
+export interface EventCancellationInput {
+    publicNotice: string;
+    internalReason: string;
+    confirmTitle: string;
+}
 
 export interface EventCancellationResult {
-    success: boolean;
+    success: true;
     eventId: string;
     cancellationId: string;
-    refundsProcessed: number;
-    refundsFailed: number;
-    totalAmountRefunded: number;
+    /** Remboursements créés par l'annulation (paiements en ligne). */
+    refundsCreated: number;
+    /** Envoyés ou confirmés par SamirPay après le commit. */
+    refundsSent: number;
+    /** Bloqués, différés ou à vérifier (suivis dans l'avancement). */
+    refundsPending: number;
+    totalAmountSent: number;
     message: string;
 }
 
@@ -33,284 +48,144 @@ export interface RefundRetryResult {
     message: string;
 }
 
-export interface EventCancellationSummary {
-    eventId: string;
-    eventTitle: string;
-    status: string;
-    cancelledAt: string;
-    cancelledBy: {
-        id: string;
-        name: string;
-        role: string;
-    };
-    internalReason: string;
-    publicNotice?: string;
-    ticketsSummary: {
-        totalTickets: number;
-        cancelledTickets: number;
-        refundedTickets: number;
-    };
-    refundsSummary: {
-        totalPayments: number;
-        processedCount: number;
-        failedCount: number;
-        totalAmountRefunded: number;
-        failedRefunds: Array<{
-            id: string;
-            paymentId: string;
-            amount: number;
-            buyerPhone: string;
-            failureReason?: string;
-            createdAt: string;
-        }>;
-    };
+export interface CountAndTotal {
+    count: number;
+    total: number;
+}
+
+export interface CancellationImpact {
+    tickets: { online: number; cash: number; free: number; invitations: number };
+    buyers: number;
+    online_refund_total: number;
+    cash_refund_total: number;
+    pending_payments: number;
+}
+
+export interface CancellationProgress {
+    paid: CountAndTotal;
+    in_progress: CountAndTotal;
+    verifying: CountAndTotal;
+    /** Échoués ou bloqués : visible des seuls admins. */
+    to_retry?: CountAndTotal;
+    organizer_cash: CountAndTotal;
+}
+
+export type CancellationReadout = { impact: CancellationImpact } | { progress: CancellationProgress };
+
+interface CancelRpcResult {
+    ok: true;
+    event_id: string;
+    cancellation_id: string;
+    cashout_ids: string[];
+    title: string;
+}
+
+async function callLifecycleRpc<T>(fn: string, p: Record<string, unknown>, what: string): Promise<T> {
+    const { data, error } = await getServiceRoleClient().rpc(fn, { p });
+    if (error) {
+        console.error(`[EventCancellationService] ${fn} : ${error.code} ${error.message}`);
+        throw new Error(`${what} impossible pour le moment.`);
+    }
+    const body = (data ?? null) as ({ ok?: boolean } & Record<string, unknown>) | null;
+    if (!body || typeof body !== 'object') {
+        console.error(`[EventCancellationService] ${fn} : réponse vide`);
+        throw new Error(`${what} impossible pour le moment.`);
+    }
+    if (body.ok !== true) throw refusalToError(body as unknown as LifecycleRefusal);
+    return body as unknown as T;
+}
+
+function stripOk<T extends { ok?: unknown }>(body: T): Omit<T, 'ok'> {
+    const { ok: _ok, ...rest } = body;
+    void _ok;
+    return rest;
 }
 
 export class EventCancellationService {
 
     /**
-     * Annule un événement de manière atomique et déclenche les remboursements Mobile Money.
+     * Annule l'événement (RPC event_cancel, une transaction), puis envoie les remboursements créés.
+     * Lève EventLifecycleError pour un refus métier (TITLE_MISMATCH, TRANSITION_NOT_ALLOWED…).
      */
-    public static async cancelEvent(
-        eventId: string,
-        userId: string,
-        userRole: string,
-        internalReason: string,
-        publicNotice: string = ''
-    ): Promise<EventCancellationResult> {
-        const supabase = getServiceRoleClient();
+    public static async cancelEvent(eventId: string, actorId: string, input: EventCancellationInput): Promise<EventCancellationResult> {
+        const result = await callLifecycleRpc<CancelRpcResult>('event_cancel', {
+            event_id: eventId,
+            actor_id: actorId,
+            public_notice: input.publicNotice,
+            internal_reason: input.internalReason,
+            confirm_title: input.confirmTitle,
+        }, 'Annulation de l’événement');
 
-        // 1. Vérification des habilitations RBAC
-        const isAdmin = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
-        const isPartner = userRole === 'PARTENAIRE';
-
-        if (!isAdmin && !isPartner) {
-            throw new Error('Non autorisé : Seul un partenaire organisateur ou un administrateur peut annuler un événement.');
-        }
-
-        // 2. Récupération de l'événement avec vérification d'appartenance
-        const { data: event, error: eventErr } = await supabase
-            .from('events')
-            .select(`
-                id,
-                title,
-                status,
-                partner_id,
-                practical_info,
-                partners (
-                    id,
-                    user_id,
-                    company_name
-                )
-            `)
-            .eq('id', eventId)
-            .single();
-
-        if (eventErr || !event) {
-            throw new Error(`Événement introuvable (ID: ${eventId}).`);
-        }
-
-        // Vérification de propriété stricte pour le partenaire
-        if (isPartner && !isAdmin) {
-            const partnerUserId = (event.partners as any)?.user_id;
-            if (partnerUserId !== userId) {
-                const { data: userPartner } = await supabase
-                    .from('partners')
-                    .select('id')
-                    .eq('user_id', userId)
-                    .maybeSingle();
-
-                if (!userPartner || userPartner.id !== event.partner_id) {
-                    throw new Error("Non autorisé : Vous n'êtes pas l'organisateur propriétaire de cet événement.");
-                }
-            }
-        }
-
-        // 3. Vérification de l'état du cycle de vie
-        const isAlreadyCancelled = event.status === 'ANNULE' || (event.status === 'SUSPENDU' && (event.practical_info as any)?.cancellation);
-        if (isAlreadyCancelled) {
-            throw new Error("Cet événement a déjà été annulé.");
-        }
-
-        if (event.status === 'TERMINE') {
-            throw new Error("Impossible d'annuler un événement déjà terminé et clôturé.");
-        }
-
-        if (!['PUBLIE', 'VALIDE'].includes(event.status)) {
-            throw new Error(`Impossible d'annuler un événement au statut "${event.status}". Seuls les événements publiés ou validés peuvent être annulés.`);
-        }
-
-        // 4. Enregistrement de l'annulation
-        let cancellationId = eventId;
-        const notice = publicNotice || `L'événement "${event.title}" a été annulé par l'organisateur.`;
+        const cashoutIds = Array.isArray(result.cashout_ids) ? result.cashout_ids.map(String) : [];
+        // L'annulation est acquise : un échec d'envoi laisse les remboursements A_ENVOYER, repris par l'admin.
+        let outcomes: Awaited<ReturnType<typeof CashoutService.sendBatch>> = {};
         try {
-            const { data: cancellationRecord } = await supabase
-                .from('event_cancellations')
-                .insert({
-                    event_id: eventId,
-                    cancelled_by: userId,
-                    internal_reason: internalReason,
-                    public_notice: notice,
-                    cancelled_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                })
-                .select('id')
-                .maybeSingle();
-
-            if (cancellationRecord?.id) {
-                cancellationId = cancellationRecord.id;
-            }
-        } catch {
-            // Ignorer si table absente
+            outcomes = await CashoutService.sendBatch(cashoutIds);
+        } catch (err) {
+            console.error(`[EventCancellationService] envoi des remboursements de l'événement ${eventId} en échec :`, err instanceof Error ? err.message : String(err));
         }
 
-        // 5. Mise à jour atomique du statut de l'événement en 'ANNULE' (ou 'SUSPENDU' si enum distant non migré)
-        const updatedPracticalInfo = {
-            ...((event.practical_info as Record<string, any>) || {}),
-            cancellation: {
-                id: cancellationId,
-                cancelled_by: userId,
-                internal_reason: internalReason,
-                public_notice: notice,
-                cancelled_at: new Date().toISOString(),
-            },
-        };
-
-        let { data: updatedEvent, error: updateEventErr } = await supabase
-            .from('events')
-            .update({
-                status: 'ANNULE',
-                practical_info: updatedPracticalInfo,
-                updated_at: new Date().toISOString(),
-            })
-            .eq('id', eventId)
-            .in('status', ['PUBLIE', 'VALIDE'])
-            .select('id')
-            .maybeSingle();
-
-        if (updateEventErr && (updateEventErr.code === '22P02' || updateEventErr.message?.includes('invalid input value for enum'))) {
-            const { data: fallbackEvent, error: fallbackErr } = await supabase
-                .from('events')
-                .update({
-                    status: 'SUSPENDU',
-                    practical_info: updatedPracticalInfo,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', eventId)
-                .in('status', ['PUBLIE', 'VALIDE'])
-                .select('id')
-                .maybeSingle();
-
-            if (fallbackErr) {
-                throw new Error(`Échec de mise à jour du statut de l'événement: ${fallbackErr.message}`);
-            }
-            if (!fallbackEvent) {
-                throw new Error("Cet événement a déjà été annulé ou n'est plus au statut publié/validé.");
-            }
-        } else if (updateEventErr) {
-            throw new Error(`Échec de mise à jour du statut de l'événement: ${updateEventErr.message}`);
-        } else if (!updatedEvent) {
-            throw new Error("Cet événement a déjà été annulé ou n'est plus au statut publié/validé.");
-        }
-
-        // 6. Révocation des transferts P2P en attente
-        const { error: transferErr } = await supabase
-            .from('ticket_transfers')
-            .update({
-                status: 'CANCELLED',
-                updated_at: new Date().toISOString(),
-            })
-            .eq('event_id', eventId)
-            .eq('status', 'PENDING');
-        if (transferErr) console.error('[EventCancellationService] révocation des transferts en attente impossible :', transferErr.message);
-
-        // 7. Paiements en ligne à rembourser (lot 3.7) : paiements plateforme SUCCESS ou PARTIAL
-        //    rattachés aux billets de l'événement (tickets.payment_id). refund_request rembourse le
-        //    RESTE dû au client (total payé, frais de service compris, moins les remboursements déjà
-        //    demandés), passe les billets REMBOURSEMENT_EN_COURS et débite l'organisateur ; si ses
-        //    fonds ont déjà été retirés, le reste devient une créance avec alerte (grand livre).
-        const { data: ticketPayRows, error: tpErr } = await supabase
-            .from('tickets')
-            .select('payment_id')
-            .eq('event_id', eventId)
-            .not('payment_id', 'is', null);
-        if (tpErr) throw new Error(`Lecture des paiements de l'événement impossible : ${tpErr.message}`);
-        const paymentIds = Array.from(new Set((ticketPayRows ?? []).map((r) => r.payment_id as string)));
-        let payments: Array<{ id: string; client_id: string }> = [];
-        if (paymentIds.length > 0) {
-            const { data, error } = await supabase
-                .from('payments')
-                .select('id, client_id')
-                .in('id', paymentIds)
-                .in('status', ['SUCCESS', 'PARTIAL'])
-                .eq('is_platform_payment', true)
-                .gt('amount', 0);
-            if (error) throw new Error(`Lecture des paiements à rembourser impossible : ${error.message}`);
-            payments = data ?? [];
-        }
-        const entries = new Map<string, { id: string; client_id: string }>();
-        for (const p of payments) {
-            const cashout = await CashoutService.requestRefund({ paymentId: p.id, reason: `Annulation de l'événement « ${event.title} »`, kind: 'EVENT_CANCELLATION_REFUND' });
-            if (cashout) entries.set(cashout.id, p);
-        }
-
-        // 8. Billets encore valables : espèces → « à rembourser par l'organisateur » (aucun cashout,
-        //    l'argent n'est pas passé par SamirPay) ; gratuits et invitations → annulés.
-        const { data: remaining, error: remErr } = await supabase
-            .from('tickets')
-            .select('id')
-            .eq('event_id', eventId)
-            .eq('status', 'VALIDE');
-        if (remErr) throw new Error(`Lecture des billets restants impossible : ${remErr.message}`);
-        for (const t of remaining ?? []) {
-            const r = await CashoutService.requestTicketRefund({ ticketId: t.id as string, actorId: userId, reason: `Annulation de l'événement « ${event.title} »` });
-            if (!r.ok) console.error(`[EventCancellationService] billet ${t.id} non annulé : ${r.code} ${r.message}`);
-        }
-        const { error: invalidErr } = await supabase
-            .from('tickets')
-            .update({ status: 'ANNULE', updated_at: new Date().toISOString() })
-            .eq('event_id', eventId)
-            .eq('status', 'VALIDE');
-        if (invalidErr) throw new Error(`Invalidation des billets restants impossible : ${invalidErr.message}`);
-
-        // 9. Envoi des remboursements (solde SamirPay vérifié une fois pour le lot). Les billets ne
-        //    passent REMBOURSE et le client n'est prévenu du versement qu'à la confirmation.
-        const outcomes = await CashoutService.sendBatch(Array.from(entries.keys()));
-        let refundsProcessed = 0;
-        let refundsFailed = 0;
-        let totalAmountRefunded = 0;
-        for (const [cashoutId, outcome] of Object.entries(outcomes)) {
-            const payment = entries.get(cashoutId)!;
-            if (outcome.status !== 'CONFIRME' && outcome.status !== 'ENVOYE') {
-                refundsFailed++;
+        const supabase = getServiceRoleClient();
+        let refundsSent = 0;
+        let totalAmountSent = 0;
+        for (const cashoutId of cashoutIds) {
+            const outcome = outcomes[cashoutId];
+            if (!outcome || (outcome.status !== 'CONFIRME' && outcome.status !== 'ENVOYE')) continue;
+            refundsSent++;
+            const { data: c, error: cErr } = await supabase
+                .from('cashouts')
+                .select('amount, operator, phone_number, first_name, last_name, idempotency_key, beneficiary_user_id')
+                .eq('id', cashoutId)
+                .single();
+            if (cErr || !c) {
+                console.error(`[EventCancellationService] remboursement ${cashoutId} illisible : ${cErr?.message ?? 'absent'}`);
                 continue;
             }
-            refundsProcessed++;
-            const { data: c, error: cErr } = await supabase.from('cashouts').select('amount, operator, phone_number, first_name, last_name, idempotency_key').eq('id', cashoutId).single();
-            if (cErr || !c) throw new Error(`Lecture du remboursement ${cashoutId} impossible : ${cErr?.message}`);
-            totalAmountRefunded += Number(c.amount);
+            totalAmountSent += Number(c.amount);
             if (outcome.status !== 'CONFIRME') continue;
             await this.dispatchRefundNotifications({
-                userId: payment.client_id,
+                userId: c.beneficiary_user_id ?? undefined,
                 buyerName: [c.first_name, c.last_name].filter(Boolean).join(' '),
                 buyerPhone: c.phone_number ? `+221${c.phone_number}` : '',
-                eventTitle: event.title,
+                eventTitle: result.title,
                 ticketNumber: '',
                 refundAmount: Number(c.amount),
                 refundTransactionId: c.idempotency_key ?? cashoutId,
                 operator: c.operator ? OPERATOR_LABELS[c.operator as SamirPayOperatorName] : 'Mobile Money',
             });
         }
+        const refundsPending = cashoutIds.length - refundsSent;
 
         return {
             success: true,
             eventId,
-            cancellationId,
-            refundsProcessed,
-            refundsFailed,
-            totalAmountRefunded,
-            message: `Événement annulé. ${refundsProcessed} remboursement(s) envoyé(s)${refundsFailed > 0 ? `, ${refundsFailed} en attente ou à vérifier (alerte envoyée aux superadmins)` : ''}.`,
+            cancellationId: String(result.cancellation_id),
+            refundsCreated: cashoutIds.length,
+            refundsSent,
+            refundsPending,
+            totalAmountSent,
+            message: `Événement annulé. ${refundsSent} remboursement(s) envoyé(s)${refundsPending > 0 ? `, ${refundsPending} en attente ou à vérifier` : ''}.`,
         };
+    }
+
+    /**
+     * Lecture de l'annulation pour le propriétaire et les admins : impact avant l'annulation, avancement
+     * des remboursements après. Tout autre compte reçoit EVENT_NOT_FOUND (404), sans aucun chiffre.
+     */
+    public static async getCancellationReadout(eventId: string, actorId: string): Promise<CancellationReadout> {
+        const supabase = getServiceRoleClient();
+        const { data: ev, error } = await supabase.from('events').select('status').eq('id', eventId).maybeSingle();
+        if (error) {
+            console.error(`[EventCancellationService] statut de l'événement ${eventId} illisible : ${error.message}`);
+            throw new Error('Lecture de l’annulation impossible pour le moment.');
+        }
+        if (!ev) throw new EventLifecycleError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
+        if (ev.status === 'ANNULE') {
+            const body = await callLifecycleRpc<CancellationProgress & { ok: true }>('event_cancellation_progress', { event_id: eventId, actor_id: actorId }, 'Lecture de l’avancement des remboursements');
+            return { progress: stripOk(body) as CancellationProgress };
+        }
+        const body = await callLifecycleRpc<CancellationImpact & { ok: true }>('event_cancellation_impact', { event_id: eventId, actor_id: actorId }, 'Lecture de l’impact de l’annulation');
+        return { impact: stripOk(body) as CancellationImpact };
     }
 
     /**
@@ -355,145 +230,6 @@ export class EventCancellationService {
             refundId,
             status: sent ? 'PROCESSED' : 'FAILED',
             message: sent ? 'Remboursement envoyé.' : `Remboursement non envoyé (${outcome.skipped ?? outcome.status}).`,
-        };
-    }
-
-    public static async getEventCancellationSummary(
-        eventId: string,
-        userId: string,
-        userRole: string
-    ): Promise<EventCancellationSummary> {
-        const supabase = getServiceRoleClient();
-
-        const { data: event, error: evErr } = await supabase
-            .from('events')
-            .select(`
-                id,
-                title,
-                status,
-                partner_id,
-                partners (
-                    user_id,
-                    company_name
-                )
-            `)
-            .eq('id', eventId)
-            .single();
-
-        if (evErr || !event) {
-            throw new Error('Événement introuvable.');
-        }
-
-        const isAdmin = userRole === 'ADMIN' || userRole === 'SUPERADMIN';
-        if (!isAdmin && userRole === 'PARTENAIRE') {
-            const partnerUserId = (event.partners as any)?.user_id;
-            if (partnerUserId !== userId) {
-                throw new Error("Non autorisé : Vous n'êtes pas le propriétaire de cet événement.");
-            }
-        }
-
-        const { data: cancellation } = await supabase
-            .from('event_cancellations')
-            .select(`
-                id,
-                cancelled_at,
-                internal_reason,
-                public_notice,
-                cancelled_by,
-                users:users!event_cancellations_cancelled_by_fkey (
-                    id,
-                    first_name,
-                    last_name,
-                    role
-                )
-            `)
-            .eq('event_id', eventId)
-            .maybeSingle();
-
-        const { data: tickets } = await supabase
-            .from('tickets')
-            .select('id, status')
-            .eq('event_id', eventId);
-
-        const totalTickets = tickets?.length || 0;
-        const cancelledTickets = tickets?.filter(t => t.status === 'ANNULE').length || 0;
-        const refundedTickets = tickets?.filter(t => t.status === 'REMBOURSE').length || 0;
-
-        const ticketIds = (tickets || []).map(t => t.id);
-        let payments: any[] = [];
-        if (ticketIds.length > 0) {
-            const { data: p } = await supabase
-                .from('payments')
-                .select(`
-                    id,
-                    amount,
-                    status,
-                    refunds (
-                        id,
-                        status,
-                        amount,
-                        reason,
-                        created_at
-                    )
-                `)
-                .in('ticket_id', ticketIds);
-            payments = p || [];
-        }
-
-        let processedCount = 0;
-        let failedCount = 0;
-        let totalAmountRefunded = 0;
-        const failedRefunds: any[] = [];
-
-        payments.forEach(p => {
-            const refundList = p.refunds || [];
-            refundList.forEach((r: any) => {
-                if (r.status === 'PROCESSED') {
-                    processedCount++;
-                    totalAmountRefunded += Number(r.amount);
-                } else if (r.status === 'FAILED') {
-                    failedCount++;
-                    failedRefunds.push({
-                        id: r.id,
-                        paymentId: p.id,
-                        amount: Number(r.amount),
-                        buyerPhone: '',
-                        failureReason: r.reason,
-                        createdAt: r.created_at,
-                    });
-                }
-            });
-        });
-
-        const canceller = cancellation?.users as any;
-        const cancellerName = canceller
-            ? `${canceller.first_name || ''} ${canceller.last_name || ''}`.trim() || 'Organisateur'
-            : 'Organisateur / Admin';
-
-        return {
-            eventId,
-            eventTitle: event.title,
-            status: event.status,
-            cancelledAt: cancellation?.cancelled_at || new Date().toISOString(),
-            cancelledBy: {
-                id: cancellation?.cancelled_by || userId,
-                name: cancellerName,
-                role: canceller?.role || userRole,
-            },
-            internalReason: cancellation?.internal_reason || 'Annulation officielle',
-            publicNotice: cancellation?.public_notice || undefined,
-            ticketsSummary: {
-                totalTickets,
-                cancelledTickets,
-                refundedTickets,
-            },
-            refundsSummary: {
-                totalPayments: payments.length,
-                processedCount,
-                failedCount,
-                totalAmountRefunded,
-                failedRefunds,
-            },
         };
     }
 
