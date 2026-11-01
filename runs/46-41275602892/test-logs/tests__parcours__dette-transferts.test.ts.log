@@ -1,0 +1,153 @@
+TAP version 13
+# Subtest: C1 — service sans mémoire (contrôle statique)
+    # Subtest: lib/tickets/ticket-transfer.service.ts : plus aucun inMemoryTransfers ni activeTransfersLock
+    ok 1 - lib/tickets/ticket-transfer.service.ts : plus aucun inMemoryTransfers ni activeTransfersLock
+      ---
+      duration_ms: 1.779514
+      type: 'test'
+      ...
+    # Subtest: aucun catch vide ou réduit à un commentaire : toute erreur remonte
+    ok 2 - aucun catch vide ou réduit à un commentaire : toute erreur remonte
+      ---
+      duration_ms: 0.40965
+      type: 'test'
+      ...
+    # Subtest: initiation, annulation et expiration passent par les RPC du contrat
+    ok 3 - initiation, annulation et expiration passent par les RPC du contrat
+      ---
+      duration_ms: 0.40748
+      type: 'test'
+      ...
+    # Subtest: crons ticket-transfers et moratoriums : refuseUnlessCron, aucun repli sur la clé service_role
+    ok 4 - crons ticket-transfers et moratoriums : refuseUnlessCron, aucun repli sur la clé service_role
+      ---
+      duration_ms: 0.221683
+      type: 'test'
+      ...
+    1..4
+ok 1 - C1 — service sans mémoire (contrôle statique)
+  ---
+  duration_ms: 722.794947
+  type: 'suite'
+  ...
+# Subtest: C1 — RPC du contrat dans le catalogue
+    # Subtest: ticket_transfer_initiate, ticket_transfer_cancel, ticket_transfers_expire : SECURITY DEFINER, search_path = public, service_role seul
+    ok 1 - ticket_transfer_initiate, ticket_transfer_cancel, ticket_transfers_expire : SECURITY DEFINER, search_path = public, service_role seul
+      ---
+      duration_ms: 23.372249
+      type: 'test'
+      ...
+    1..1
+ok 2 - C1 — RPC du contrat dans le catalogue
+  ---
+  duration_ms: 23.575559
+  type: 'suite'
+  ...
+# Subtest: C1 — initiation par la route
+    # Subtest: initiation vers un téléphone : transfert PENDING et transfer_locked posés ensemble ; SMS remis → recipient_notified true
+    ok 1 - initiation vers un téléphone : transfert PENDING et transfer_locked posés ensemble ; SMS remis → recipient_notified true
+      ---
+      duration_ms: 31.137049
+      type: 'test'
+      ...
+[TicketTransferService] transfert 7158b6c7-3b57-4c42-aa9b-dea3f80d4585 : SMS au destinataire non envoyé (panne MTarget simulée (lot 5, C1)).
+    # Subtest: échec du SMS au destinataire : transfert conservé (PENDING, billet verrouillé), recipient_notified false
+    ok 2 - échec du SMS au destinataire : transfert conservé (PENDING, billet verrouillé), recipient_notified false
+      ---
+      duration_ms: 20.065977
+      type: 'test'
+      ...
+    # Subtest: garde-fou : deux initiations simultanées du même billet → une seule réussit, un seul transfert PENDING
+    ok 3 - garde-fou : deux initiations simultanées du même billet → une seule réussit, un seul transfert PENDING
+      ---
+      duration_ms: 25.132052
+      type: 'test'
+      ...
+    1..3
+ok 3 - C1 — initiation par la route
+  ---
+  duration_ms: 77.082013
+  type: 'suite'
+  ...
+# Subtest: C1 — RPC transactionnelles
+    # Subtest: ticket_transfer_initiate : transfert PENDING et verrou ensemble ; second transfert refusé ; tiers refusé sans effet
+    ok 1 - ticket_transfer_initiate : transfert PENDING et verrou ensemble ; second transfert refusé ; tiers refusé sans effet
+      ---
+      duration_ms: 25.190235
+      type: 'test'
+      ...
+    # Subtest: ticket_transfer_initiate : entrée invalide → rien d’écrit, pas de verrou ; deux appels simultanés → un seul transfert
+    ok 2 - ticket_transfer_initiate : entrée invalide → rien d’écrit, pas de verrou ; deux appels simultanés → un seul transfert
+      ---
+      duration_ms: 30.660129
+      type: 'test'
+      ...
+    # Subtest: ticket_transfer_cancel : CANCELLED et billet déverrouillé ensemble ; annulation par un tiers refusée sans effet
+    ok 3 - ticket_transfer_cancel : CANCELLED et billet déverrouillé ensemble ; annulation par un tiers refusée sans effet
+      ---
+      duration_ms: 34.234679
+      type: 'test'
+      ...
+    # Subtest: ticket_transfers_expire : transfert échu → EXPIRED et billet déverrouillé ; transfert en cours intact
+    ok 4 - ticket_transfers_expire : transfert échu → EXPIRED et billet déverrouillé ; transfert en cours intact
+      ---
+      duration_ms: 52.213764
+      type: 'test'
+      ...
+    1..4
+ok 4 - C1 — RPC transactionnelles
+  ---
+  duration_ms: 142.642625
+  type: 'suite'
+  ...
+# Subtest: C1 — lectures strictes du service
+    # Subtest: getTransferRecord, getTransferByTicketId, isTicketLocked lisent la base et lèvent sur erreur (identifiant mal formé)
+    ok 1 - getTransferRecord, getTransferByTicketId, isTicketLocked lisent la base et lèvent sur erreur (identifiant mal formé)
+      ---
+      duration_ms: 36.936756
+      type: 'test'
+      ...
+    1..1
+ok 5 - C1 — lectures strictes du service
+  ---
+  duration_ms: 37.096248
+  type: 'suite'
+  ...
+[cron] CRON_SECRET absent : appel refusé.
+[cron] CRON_SECRET absent : appel refusé.
+# Subtest: C1 — cron ticket-transfers protégé par CRON_SECRET seul
+    # Subtest: sans CRON_SECRET : la clé service_role ne déclenche pas le cron (refus), le transfert échu reste PENDING
+    ok 1 - sans CRON_SECRET : la clé service_role ne déclenche pas le cron (refus), le transfert échu reste PENDING
+      ---
+      duration_ms: 43.162407
+      type: 'test'
+      ...
+[Cron Ticket Transfers] 2 transfert(s) expiré(s).
+    # Subtest: garde-fou : CRON_SECRET présent → clé service_role refusée (401) ; bon secret → transfert échu EXPIRED, billet déverrouillé
+    ok 2 - garde-fou : CRON_SECRET présent → clé service_role refusée (401) ; bon secret → transfert échu EXPIRED, billet déverrouillé
+      ---
+      duration_ms: 32.004672
+      type: 'test'
+      ...
+    1..2
+ok 6 - C1 — cron ticket-transfers protégé par CRON_SECRET seul
+  ---
+  duration_ms: 75.369044
+  type: 'suite'
+  ...
+[INVARIANT] dette-transferts — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] dette-transferts — purge des réservations échues : {"expired":0}
+[INVARIANT] dette-transferts — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] dette-transferts — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] dette-transferts — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] dette-transferts — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] dette-transferts — (j)(k)(l) : 0 violation(s)
+1..6
+# tests 15
+# suites 6
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1230.782164

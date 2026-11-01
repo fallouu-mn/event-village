@@ -1,0 +1,500 @@
+TAP version 13
+# Subtest: 5.7 — GET /api/admin/events : filtres, recherche, pagination, compteurs
+    # Subtest: filtre par statut (les 7, ANNULE compris) avec q : exactement les événements de ce statut, total = vérité en base
+    ok 1 - filtre par statut (les 7, ANNULE compris) avec q : exactement les événements de ce statut, total = vérité en base
+      ---
+      duration_ms: 217.033352
+      type: 'test'
+      ...
+    # Subtest: sans statut : tous les statuts ; counts par statut = vérité en base, indépendants du filtre de statut
+    ok 2 - sans statut : tous les statuts ; counts par statut = vérité en base, indépendants du filtre de statut
+      ---
+      duration_ms: 63.870519
+      type: 'test'
+      ...
+    # Subtest: pagination : 20 par défaut, page 2 disjointe, réunion = vérité ; pageSize plafonné à 50
+    ok 3 - pagination : 20 par défaut, page 2 disjointe, réunion = vérité ; pageSize plafonné à 50
+      ---
+      duration_ms: 85.68889
+      type: 'test'
+      ...
+    # Subtest: recherche q : insensible à la casse ; % et _ pris à la lettre
+    ok 4 - recherche q : insensible à la casse ; % et _ pris à la lettre
+      ---
+      duration_ms: 67.6238
+      type: 'test'
+      ...
+    # Subtest: statut inconnu → 400 UNKNOWN_STATUS, message en français, aucune erreur Postgres
+    ok 5 - statut inconnu → 400 UNKNOWN_STATUS, message en français, aucune erreur Postgres
+      ---
+      duration_ms: 42.337833
+      type: 'test'
+      ...
+    # Subtest: droits : sans session 401 ; CLIENT, partenaire et ADMIN sans events.read 403 ; ADMIN events.read et SUPERADMIN 200
+    ok 6 - droits : sans session 401 ; CLIENT, partenaire et ADMIN sans events.read 403 ; ADMIN events.read et SUPERADMIN 200
+      ---
+      duration_ms: 84.243509
+      type: 'test'
+      ...
+    # Subtest: élément de liste : id, titre, statut, date, lieu et organisateur
+    ok 7 - élément de liste : id, titre, statut, date, lieu et organisateur
+      ---
+      duration_ms: 21.311558
+      type: 'test'
+      ...
+    1..7
+ok 1 - 5.7 — GET /api/admin/events : filtres, recherche, pagination, compteurs
+  ---
+  duration_ms: 2057.672818
+  type: 'suite'
+  ...
+# Subtest: 5.7 — GET /api/admin/events/[id] : fiche complète avant validation
+    # Subtest: affiche, dates, lieu, programme, catégories et prix (masquées et inactives comprises), organisateur et contact, historique, actions
+    ok 1 - affiche, dates, lieu, programme, catégories et prix (masquées et inactives comprises), organisateur et contact, historique, actions
+      ---
+      duration_ms: 47.404505
+      type: 'test'
+      ...
+    # Subtest: événement inconnu → 404 ; droits : 401 sans session, 403 CLIENT, partenaire propriétaire et ADMIN sans events.read
+    ok 2 - événement inconnu → 404 ; droits : 401 sans session, 403 CLIENT, partenaire propriétaire et ADMIN sans events.read
+      ---
+      duration_ms: 64.23778
+      type: 'test'
+      ...
+    1..2
+ok 2 - 5.7 — GET /api/admin/events/[id] : fiche complète avant validation
+  ---
+  duration_ms: 143.60494
+  type: 'suite'
+  ...
+# Subtest: 5.7 — actions admin par statut (transition D4, annulation D6)
+    # Subtest: valider : EN_ATTENTE → VALIDE, journalisé (ADMIN, acteur, canal TRANSITION)
+    ok 1 - valider : EN_ATTENTE → VALIDE, journalisé (ADMIN, acteur, canal TRANSITION)
+      ---
+      duration_ms: 56.54467
+      type: 'test'
+      ...
+    # Subtest: refuser : motif obligatoire (absent, vide ou < 3 caractères → REASON_REQUIRED, statut inchangé), puis refus motivé → BROUILLON
+    ok 2 - refuser : motif obligatoire (absent, vide ou < 3 caractères → REASON_REQUIRED, statut inchangé), puis refus motivé → BROUILLON
+      ---
+      duration_ms: 124.924018
+      type: 'test'
+      ...
+    # Subtest: suspendre (PUBLIE → SUSPENDU, motif obligatoire) puis réactiver (SUSPENDU → PUBLIE)
+    ok 3 - suspendre (PUBLIE → SUSPENDU, motif obligatoire) puis réactiver (SUSPENDU → PUBLIE)
+      ---
+      duration_ms: 97.289023
+      type: 'test'
+      ...
+    # Subtest: terminer : PUBLIE commencé → TERMINE (fin manuelle, canal TRANSITION)
+    ok 4 - terminer : PUBLIE commencé → TERMINE (fin manuelle, canal TRANSITION)
+      ---
+      duration_ms: 51.467068
+      type: 'test'
+      ...
+    # Subtest: annuler : POST /api/admin/events/[id]/cancel exige le titre retapé (TITLE_MISMATCH), puis ANNULE journalisé (canal CANCELLATION)
+    ok 5 - annuler : POST /api/admin/events/[id]/cancel exige le titre retapé (TITLE_MISMATCH), puis ANNULE journalisé (canal CANCELLATION)
+      ---
+      duration_ms: 85.595663
+      type: 'test'
+      ...
+    # Subtest: ADMIN avec events.read seul : 403 sur /transition, statut inchangé, aucune ligne d’historique
+    ok 6 - ADMIN avec events.read seul : 403 sur /transition, statut inchangé, aucune ligne d’historique
+      ---
+      duration_ms: 49.311783
+      type: 'test'
+      ...
+    # Subtest: refus explicites : statut inconnu 400 UNKNOWN_STATUS ; ANNULE par /transition CANCELLATION_REQUIRED ; hors table 409 TRANSITION_NOT_ALLOWED ; événement inconnu 404
+    ok 7 - refus explicites : statut inconnu 400 UNKNOWN_STATUS ; ANNULE par /transition CANCELLATION_REQUIRED ; hors table 409 TRANSITION_NOT_ALLOWED ; événement inconnu 404
+      ---
+      duration_ms: 71.392364
+      type: 'test'
+      ...
+    1..7
+ok 3 - 5.7 — actions admin par statut (transition D4, annulation D6)
+  ---
+  duration_ms: 536.993117
+  type: 'suite'
+  ...
+# Subtest: D5 — event_actions : actions exactes par statut et par rôle
+    # Subtest: partenaire propriétaire : soumettre, retirer, publier selon le statut ; can_edit et can_cancel
+    ok 1 - partenaire propriétaire : soumettre, retirer, publier selon le statut ; can_edit et can_cancel
+      ---
+      duration_ms: 26.138515
+      type: 'test'
+      ...
+    # Subtest: admin (SUPERADMIN et ADMIN) : valider, refuser, publier, suspendre, terminer, réactiver ; jamais can_edit
+    ok 2 - admin (SUPERADMIN et ADMIN) : valider, refuser, publier, suspendre, terminer, réactiver ; jamais can_edit
+      ---
+      duration_ms: 32.802077
+      type: 'test'
+      ...
+    # Subtest: partenaire tiers et client : aucune action, aucun droit, aucun motif
+    ok 3 - partenaire tiers et client : aucune action, aucun droit, aucun motif
+      ---
+      duration_ms: 36.426043
+      type: 'test'
+      ...
+    1..3
+ok 4 - D5 — event_actions : actions exactes par statut et par rôle
+  ---
+  duration_ms: 256.875669
+  type: 'suite'
+  ...
+# Subtest: 5.7 — motifs de refus et de suspension : persistés, rendus au partenaire, effacés quand le statut n’en découle plus
+    # Subtest: refus : motif dans l’historique et la fiche admin, rendu au propriétaire (pas au tiers), plus rendu après resoumission ou retrait ; le dernier refus fait foi
+    ok 1 - refus : motif dans l’historique et la fiche admin, rendu au propriétaire (pas au tiers), plus rendu après resoumission ou retrait ; le dernier refus fait foi
+      ---
+      duration_ms: 123.45797
+      type: 'test'
+      ...
+    # Subtest: suspension : motif rendu au propriétaire, effacé à la réactivation, le dernier motif fait foi
+    ok 2 - suspension : motif rendu au propriétaire, effacé à la réactivation, le dernier motif fait foi
+      ---
+      duration_ms: 107.361583
+      type: 'test'
+      ...
+    1..2
+ok 5 - 5.7 — motifs de refus et de suspension : persistés, rendus au partenaire, effacés quand le statut n’en découle plus
+  ---
+  duration_ms: 231.008168
+  type: 'suite'
+  ...
+# Subtest: 5.7 — écrans admin (contrôles statiques)
+    # Subtest: app/admin/events/page.tsx : StatusBadge, Tabs (par statut), Pagination ; lit /api/admin/events ; états chargement, vide, erreur avec « Réessayer »
+    not ok 1 - app/admin/events/page.tsx : StatusBadge, Tabs (par statut), Pagination ; lit /api/admin/events ; états chargement, vide, erreur avec « Réessayer »
+      ---
+      duration_ms: 5.754936
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:2:42859'
+      failureType: 'testCodeFailure'
+      error: 'app/admin/events/page.tsx absent'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:859:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: app/admin/events/[id]/page.tsx : StatusBadge, ReasonDialog (refuser, suspendre), POST …/transition, historique, lien depuis la liste
+    not ok 2 - app/admin/events/[id]/page.tsx : StatusBadge, ReasonDialog (refuser, suspendre), POST …/transition, historique, lien depuis la liste
+      ---
+      duration_ms: 0.307349
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:2:44060'
+      failureType: 'testCodeFailure'
+      error: 'app/admin/events/[id]/page.tsx absent'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:874:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: navigation admin : « Événements » → /admin/events dans le menu et dans la barre du bas ; aucune entrée en double
+    not ok 3 - navigation admin : « Événements » → /admin/events dans le menu et dans la barre du bas ; aucune entrée en double
+      ---
+      duration_ms: 378.427743
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:2:45562'
+      failureType: 'testCodeFailure'
+      error: 'barre du bas admin sans « Événements » → /admin/events (entrées trouvées : [])'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:920:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: app/admin/services/page.tsx n’écrit plus le statut d’un événement (PATCH table events retiré)
+    not ok 4 - app/admin/services/page.tsx n’écrit plus le statut d’un événement (PATCH table events retiré)
+      ---
+      duration_ms: 23.139448
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:2:47858'
+      failureType: 'testCodeFailure'
+      error: "app/admin/services/page.tsx : changement de statut d'événement depuis l'onglet services"
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        import React, { useState, useEffect, useCallback } from 'react';
+        import Link from 'next/link';
+        import { ChevronLeft, Calendar, Building2, Utensils, ShoppingBag, Ticket, RefreshCw, AlertCircle, CheckCircle2, Sliders, Eye, XCircle, CheckCircle, } from 'lucide-react';
+        import { Button } from '@/components/ui/Button';
+        import { useToast } from '@/components/ui/Toast';
+        interface RejectModalState {
+            open: boolean;
+            table: 'events' | 'halls' | 'products';
+            id: string;
+            title: string;
+            targetStatus: string;
+        }
+        export default function AdminServicesManagementPage() {
+            const toast = useToast();
+            const [currentTab, setCurrentTab] = useState<'events' | 'halls' | 'tables' | 'products' | 'orders'>('events');
+            const [items, setItems] = useState<any[]>([]);
+            const [isLoading, setIsLoading] = useState(true);
+            const [rejectModal, setRejectModal] = useState<RejectModalState>({ open: false, table: 'events', id: '', title: '', targetStatus: 'BROUILLON' });
+            const [rejectReason, setRejectReason] = useState('');
+            const fetchServices = useCallback(async () => {
+                setIsLoading(true);
+                try {
+                    const res = await fetch(`/api/admin/services?type=${currentTab}`);
+                    const data = await res.json();
+                    if (res.ok) {
+                        setItems(data[currentTab] || []);
+                    }
+                }
+                catch (err) {
+                    console.error('[AdminServices] Erreur chargement:', err);
+                }
+                finally {
+                    setIsLoading(false);
+                }
+            }, [currentTab]);
+            useEffect(() => {
+                fetchServices();
+            }, [fetchServices]);
+            const handleUpdateStatus = async (table: 'events' | 'halls' | 'products', id: string, newStatus: string, reason?: string) => {
+                try {
+                    const res = await fetch('/api/admin/services', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ table, id, status: newStatus, reason }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok)
+                        throw new Error(data.error || 'Erreur lors de la mise à jour.');
+                    toast.success('Le statut du service a été mis à jour avec succès.');
+                    await fetchServices();
+                }
+                catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Échec de la mise à jour.';
+                    toast.error(msg);
+                }
+            };
+            const openRejectModal = (table: 'events' | 'halls' | 'products', id: string, title: string, targetStatus = 'BROUILLON') => {
+                setRejectReason('');
+                setRejectModal({ open: true, table, id, title, targetStatus });
+            };
+            const confirmReject = async () => {
+                if (!rejectReason.trim()) {
+                    toast.error('Le motif est obligatoire.');
+                    return;
+                }
+                setRejectModal(m => ({ ...m, open: false }));
+                await handleUpdateStatus(rejectModal.table, rejectModal.id, rejectModal.targetStatus, rejectReason.trim());
+            };
+            const formatDate = (iso: string) => {
+                try {
+                    return new Date(iso).toLocaleDateString('fr-FR', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                    });
+                }
+                catch {
+                    return iso;
+                }
+            };
+            return (<div className="space-y-8 pb-16">
+              
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
+                <div className="flex items-center gap-3">
+                  <Link href="/admin/dashboard" className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                    <ChevronLeft size={20}/>
+                  </Link>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
+                      Console Superadmin HQ
+                    </span>
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                      Supervision des Catalogues & Services (§130)
+                    </h1>
+                  </div>
+                </div>
+        
+                <Button variant="secondary" size="sm" onClick={() => fetchServices()} disabled={isLoading} className="flex items-center gap-1.5">
+                  <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''}/>
+                  <span>Actualiser</span>
+                </Button>
+              </div>
+        
+              
+              <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
+                <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-4 overflow-x-auto">
+                  {[
+                    { key: 'events', label: 'Événements & Billets', icon: Calendar },
+                    { key: 'halls', label: 'Salles de Fête', icon: Building2 },
+                    { key: 'tables', label: 'Restaurants & Tables', icon: Utensils },
+                    { key: 'products', label: 'Produits & Traiteurs', icon: ShoppingBag },
+                    { key: 'orders', label: 'Commandes B2C', icon: Ticket },
+                ].map((tab) => {
+                    const Icon = tab.icon;
+                    const active = currentTab === tab.key;
+                    return (<button key={tab.key} type="button" onClick={() => setCurrentTab(tab.key as any)} className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${active
+                            ? 'bg-[#FF5722] text-white shadow-xs'
+                            : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}>
+                        <Icon size={16}/>
+                        <span>{tab.label}</span>
+                      </button>);
+                })}
+                </div>
+        
+                
+                {isLoading ? (<div className="py-12 text-center text-slate-400 dark:text-zinc-500">
+                    <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2"/>
+                    <p className="text-xs">Chargement des données réelles...</p>
+                  </div>) : items.length === 0 ? (<div className="py-12 text-center text-slate-400 dark:text-zinc-500">
+                    <p className="text-xs font-bold">Aucun élément enregistré dans cette catégorie.</p>
+                  </div>) : (<div className="space-y-3">
+                    {items.map((item) => {
+                        const partnerName = item.partners?.company_name || 'Partenaire direct';
+                        return (<div key={item.id} className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200/80 dark:border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-black text-slate-900 dark:text-white">
+                                {item.title || item.name || item.company_name || `Commande #${item.id.slice(0, 8)}`}
+                              </h4>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
+                                {item.status || (item.is_active ? 'ACTIF' : 'INACTIF')}
+                              </span>
+                            </div>
+        
+                            <div className="text-slate-500 dark:text-zinc-400 flex flex-wrap gap-x-4">
+                              <span>Fournisseur: {partnerName}</span>
+                              {item.location && <span>Lieu: {item.location}</span>}
+                              {item.price !== undefined && <span>Prix: {item.price} FCFA</span>}
+                              {item.total_amount !== undefined && <span>Total: {item.total_amount} FCFA</span>}
+                              <span>Enregistré le {formatDate(item.created_at)}</span>
+                            </div>
+                          </div>
+        
+                          
+                          {currentTab === 'events' && (<div className="flex items-center gap-2 flex-shrink-0">
+                              {item.status === 'EN_ATTENTE' && (<>
+                                  <Button variant="primary" size="sm" onClick={() => handleUpdateStatus('events', item.id, 'VALIDE')} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
+                                    <CheckCircle size={13} className="mr-1"/>
+                                    Valider
+                                  </Button>
+                                  <Button variant="secondary" size="sm" onClick={() => openRejectModal('events', item.id, item.title)} className="text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-950/30 text-xs">
+                                    <XCircle size={13} className="mr-1"/>
+                                    Rejeter
+                                  </Button>
+                                </>)}
+                              {(item.status === 'VALIDE' || item.status === 'PUBLIE') && (<Button variant="secondary" size="sm" onClick={() => openRejectModal('events', item.id, item.title, 'SUSPENDU')} className="text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30 text-xs">
+                                  Suspendre
+                                </Button>)}
+                            </div>)}
+                        </div>);
+                    })}
+                  </div>)}
+              </div>
+        
+              
+              {rejectModal.open && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                  <div className="w-full max-w-md bg-white dark:bg-[#1E1E1E] rounded-3xl shadow-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-red-100 dark:bg-red-950/40 flex items-center justify-center flex-shrink-0">
+                        <XCircle size={20} className="text-red-600"/>
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900 dark:text-white text-sm">
+                          {rejectModal.targetStatus === 'SUSPENDU' ? 'Suspendre l’événement' : 'Rejeter l’événement'}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-zinc-400 truncate max-w-xs">{rejectModal.title}</p>
+                      </div>
+                    </div>
+        
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
+                        {rejectModal.targetStatus === 'SUSPENDU' ? 'Motif de suspension' : 'Motif du rejet'} <span className="text-red-500">*</span>
+                      </label>
+                      <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder={rejectModal.targetStatus === 'SUSPENDU'
+                        ? 'Ex: Contenu non conforme, vérification requise, signalement...'
+                        : 'Ex: Images manquantes, informations incomplètes, date incorrecte...'} rows={3} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"/>
+                      <p className="mt-1 text-[10px] text-slate-400 dark:text-zinc-500">
+                        Ce motif sera envoyé au partenaire par In-App, SMS et Email.
+                      </p>
+                    </div>
+        
+                    <div className="flex gap-2 pt-1">
+                      <Button variant="secondary" size="sm" onClick={() => setRejectModal(m => ({ ...m, open: false }))} className="flex-1">
+                        Annuler
+                      </Button>
+                      <Button variant="primary" size="sm" onClick={confirmReject} className="flex-1 bg-red-600 hover:bg-red-700 text-white">
+                        Confirmer le rejet
+                      </Button>
+                    </div>
+                  </div>
+                </div>)}
+            </div>);
+        }
+        
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:928:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..4
+not ok 6 - 5.7 — écrans admin (contrôles statiques)
+  ---
+  duration_ms: 407.945717
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/admin-evenements.test.ts:2:42774'
+  failureType: 'subtestsFailed'
+  error: '4 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] admin-evenements — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] admin-evenements — purge des réservations échues : {"expired":0}
+[INVARIANT] admin-evenements — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] admin-evenements — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] admin-evenements — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] admin-evenements — cron events_finish_overdue : 3 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] admin-evenements — (j)(k)(l) : 0 violation(s)
+1..6
+# tests 25
+# suites 6
+# pass 21
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3804.455327
