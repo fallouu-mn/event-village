@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { EventService, EventServiceError } from '@/lib/events/event.service';
 import { isEventStatus } from '@/lib/events/event-lifecycle.service';
+import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,8 @@ export const dynamic = 'force-dynamic';
  * Liste des événements du partenaire connecté (lot 5, contrat H) : `status` vaut TOUS (défaut) ou l'un
  * des 7 statuts, ANNULE compris ; un statut inconnu donne 400 UNKNOWN_STATUS sans jamais atteindre la
  * base. Les indicateurs (sur tous les événements) sont servis par GET /api/partner/events/overview.
+ * Chaque événement porte ses actions possibles (`actions`, `can_edit`, `can_cancel`, `last_reason`) lues
+ * par la RPC event_actions (contrat D5) : la liste n'en code aucune en dur.
  */
 export async function GET(request: NextRequest) {
     const activeSession = await requireActiveSession(request);
@@ -27,7 +30,23 @@ export async function GET(request: NextRequest) {
     const search = (searchParams.get('search') || '').slice(0, 100);
 
     try {
-        const events = await EventService.getPartnerEvents(user.id, { status, search });
+        const rows = await EventService.getPartnerEvents(user.id, { status, search });
+        // Actions possibles de chaque carte (soumettre, retirer, publier, modifier, annuler) et motif de
+        // refus ou de suspension : RPC event_actions (contrat D5, source unique des boutons de la liste).
+        const supabase = getServiceRoleClient();
+        const events = await Promise.all(rows.map(async (ev: { id: string } & Record<string, unknown>) => {
+            const { data, error } = await supabase.rpc('event_actions', { p: { event_id: ev.id, actor_id: user.id } });
+            if (error) throw new Error(`event_actions ${ev.id} : ${error.message}`);
+            const body = (data ?? {}) as Record<string, unknown>;
+            if (body.ok !== true) throw new Error(`event_actions ${ev.id} : refus ${String(body.code)}`);
+            return {
+                ...ev,
+                actions: Array.isArray(body.actions) ? body.actions : [],
+                can_edit: body.can_edit === true,
+                can_cancel: body.can_cancel === true,
+                last_reason: body.last_reason ?? null,
+            };
+        }));
         return NextResponse.json({ success: true, events });
     } catch (error: unknown) {
         console.error('[API partner/events GET] Error:', error instanceof Error ? error.message : 'unknown');

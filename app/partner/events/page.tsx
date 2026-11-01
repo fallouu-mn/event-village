@@ -1,511 +1,360 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
-import {
-    Calendar,
-    Plus,
-    Search,
-    Ticket,
-    DollarSign,
-    CheckCircle2,
-    Clock,
-    MapPin,
-    Send,
-    Trash2,
-    Eye,
-    Pencil,
-    RefreshCw,
-    Radio,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Banknote, CalendarRange, CalendarPlus, Search, Smartphone, Ticket } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { Button } from '@/components/ui/Button';
-import { StatusBadge } from '@/components/ui/Badge';
-import { useToast } from '@/components/ui/Toast';
+import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
+import { Tabs, TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { LiveIndicator } from '@/components/ui/LiveIndicator';
+import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { toastMessages } from '@/lib/messages/toast-messages';
-import { AdjustTicketQuotaModal } from '@/components/events/AdjustTicketQuotaModal';
+import { ReasonDialog } from '@/components/ui/ReasonDialog';
+import { TextInput } from '@/components/ui/Field';
+import { useToast } from '@/components/ui/Toast';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { EVENT_STATUSES, EVENT_STATUS_META, type EventStatus } from '@/lib/events/event-status';
+import { formatFcfa, formatInteger } from '@/lib/format';
+import { EventCancelDialog } from '@/components/events/EventCancelDialog';
+import { PartnerEventCard, type EventAction, type PartnerEventItem } from '@/components/partner/events-list/PartnerEventCard';
+import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
 
-interface EventItem {
-    id: string;
-    title: string;
-    description: string | null;
-    start_date: string;
-    start_time: string;
-    location: string;
-    city: string | null;
-    status: 'BROUILLON' | 'EN_ATTENTE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'TERMINE';
-    image_url: string | null;
-    capacity: number | null;
-    created_at: string;
-    ticket_categories?: Array<{
-        id: string;
-        name: string;
-        price: number;
-        total_quantity: number;
-        sold_quantity: number;
-        is_active?: boolean;
-        is_visible?: boolean;
-    }>;
+/**
+ * Lot 5, tâche 5.11 (contrat H) — liste des événements de l'organisateur.
+ *  - Indicateurs et compteurs des onglets : GET /api/partner/events/overview, calculés par la base sur TOUS
+ *    les événements (jamais sur la liste filtrée, jamais dans le navigateur).
+ *  - Onglets par statut (Annulé compris), libellés de EVENT_STATUS_META ; onglet courant dans `?statut=`.
+ *  - Actions de chaque carte : event_actions (servies par GET /api/partner/events) ; transitions par
+ *    POST …/transition, annulation par EventCancelDialog (tâche 5.8).
+ *  - Temps réel : event_status_history (statuts de ses événements, RLS propriétaire), puis rechargement.
+ */
+
+type ListTab = 'TOUS' | EventStatus;
+
+const TAB_IDS: readonly ListTab[] = ['TOUS', ...EVENT_STATUSES];
+const TABS_PREFIX = 'evenements-statut';
+
+interface Overview {
+    counts: Partial<Record<EventStatus, number>>;
+    totals: { events: number; tickets_sold: number; revenue_online: number; revenue_cash: number };
+}
+
+interface PendingTransition {
+    event: PartnerEventItem;
+    action: EventAction;
+}
+
+const EMPTY_MESSAGES: Record<ListTab, string> = {
+    TOUS: 'Créez votre premier événement : il restera en brouillon jusqu’à ce que vous le soumettiez à la validation.',
+    BROUILLON: 'Aucun brouillon. Les événements créés restent ici jusqu’à leur soumission.',
+    EN_ATTENTE: 'Aucun événement en attente : l’équipe Event Village a traité toutes vos demandes.',
+    VALIDE: 'Aucun événement validé à publier pour le moment.',
+    PUBLIE: 'Aucun événement en ligne pour le moment.',
+    SUSPENDU: 'Aucun événement suspendu.',
+    TERMINE: 'Aucun événement terminé pour le moment.',
+    ANNULE: 'Aucun événement annulé.',
+};
+
+function successMessage(action: EventAction): string {
+    if (action.to === 'EN_ATTENTE') return 'Événement soumis : l’équipe Event Village va vérifier la fiche.';
+    if (action.to === 'PUBLIE') return 'Événement publié : la page publique est en ligne et la billetterie est ouverte.';
+    if (action.to === 'BROUILLON') return 'Événement retiré de la validation : vous pouvez de nouveau le modifier.';
+    return 'Statut de l’événement mis à jour.';
 }
 
 export default function PartnerEventsPage() {
-    const [events, setEvents] = useState<EventItem[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [selectedStatus, setSelectedStatus] = useState<string>('TOUS');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [actionLoading, setActionLoading] = useState<string | null>(null);
     const toast = useToast();
-    const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; eventId: string | null }>({ isOpen: false, eventId: null });
-    const [quotaModalEvent, setQuotaModalEvent] = useState<EventItem | null>(null);
+    const [activeTab, setActiveTab] = useTabParam<ListTab>(TAB_IDS, 'TOUS', 'statut');
+    const [searchInput, setSearchInput] = useState('');
+    const [search, setSearch] = useState('');
 
-    const fetchEvents = async () => {
-        setIsLoading(true);
+    const [events, setEvents] = useState<PartnerEventItem[] | null>(null);
+    const [overview, setOverview] = useState<Overview | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [retrying, setRetrying] = useState(false);
+    const seq = useRef(0);
+
+    const [pending, setPending] = useState<{ eventId: string; to: string } | null>(null);
+    const [confirmTransition, setConfirmTransition] = useState<PendingTransition | null>(null);
+    const [reasonTransition, setReasonTransition] = useState<PendingTransition | null>(null);
+    const [reasonError, setReasonError] = useState<string | undefined>(undefined);
+    const [cancelTarget, setCancelTarget] = useState<PartnerEventItem | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<PartnerEventItem | null>(null);
+    const [deleting, setDeleting] = useState(false);
+
+    /** Liste (filtrée) et indicateurs (sur tous les événements), lus ensemble : une seule erreur affichée. */
+    const load = useCallback(async (mode: 'initial' | 'silent' | 'retry') => {
+        const mine = ++seq.current;
+        if (mode === 'initial') setLoading(true);
+        if (mode === 'retry') setRetrying(true);
+        const params = new URLSearchParams();
+        if (activeTab !== 'TOUS') params.set('status', activeTab);
+        if (search) params.set('search', search);
+        const query = params.toString();
         try {
-            const url = new URL('/api/partner/events', window.location.origin);
-            if (selectedStatus !== 'TOUS') url.searchParams.set('status', selectedStatus);
-            if (searchQuery.trim()) url.searchParams.set('search', searchQuery.trim());
-
-            const res = await fetch(url.toString(), { cache: 'no-store' });
-            const data = await res.json();
-            if (data.success) {
-                setEvents(data.events || []);
-            }
+            const [list, ov] = await Promise.all([
+                fetchJson<{ events?: PartnerEventItem[] }>(query ? `/api/partner/events?${query}` : '/api/partner/events'),
+                fetchJson<Overview>('/api/partner/events/overview'),
+            ]);
+            if (mine !== seq.current) return;
+            setEvents(Array.isArray(list.events) ? list.events : []);
+            setOverview(ov);
+            setError(null);
         } catch (err) {
-            console.error('Erreur chargement événements:', err);
+            if (mine !== seq.current) return;
+            console.error('[partner/events] chargement', err);
+            setError(errorMessage(err, 'Lecture de vos événements impossible pour le moment.'));
         } finally {
-            setIsLoading(false);
+            if (mine === seq.current) {
+                setLoading(false);
+                setRetrying(false);
+            }
         }
-    };
+    }, [activeTab, search]);
 
     useEffect(() => {
-        fetchEvents();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedStatus]);
+        void load('initial');
+    }, [load]);
 
-    const handleSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-        fetchEvents();
-    };
+    const refresh = useCallback(() => load('silent'), [load]);
 
-    const handlePublish = async (eventId: string) => {
-        setActionLoading(eventId);
+    const { status: liveStatus } = useRealtimeRefresh({
+        channelKey: 'partner-events-list',
+        subscriptions: [{ table: 'event_status_history', event: 'INSERT' }],
+        onSignal: refresh,
+    });
+
+    const tabs: TabItem[] = useMemo(() => [
+        { id: 'TOUS', label: 'Tous', count: overview?.totals.events },
+        ...EVENT_STATUSES.map((s) => ({ id: s, label: EVENT_STATUS_META[s].label, count: overview ? overview.counts[s] ?? 0 : undefined })),
+    ], [overview]);
+
+    const runTransition = async (event: PartnerEventItem, action: EventAction, reason?: string): Promise<boolean> => {
+        setPending({ eventId: event.id, to: action.to });
         try {
-            const res = await fetch(`/api/partner/events/${eventId}/transition`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to: 'PUBLIE' }),
-            });
-            const data = await res.json();
-            if (data.success) {
-                toast.success('Événement mis en ligne ! La billetterie est maintenant ouverte.');
-                fetchEvents();
-            } else {
-                toast.error(data.error || 'Erreur lors de la publication.');
-            }
-        } catch {
-            toast.error('Erreur réseau, réessayez.');
+            await sendJson(`/api/partner/events/${event.id}/transition`, 'POST', reason ? { to: action.to, reason } : { to: action.to });
+            toast.success(successMessage(action));
+            await refresh();
+            return true;
+        } catch (err) {
+            const message = errorMessage(err, 'Changement de statut impossible pour le moment.');
+            toast.error(message);
+            if (reason !== undefined) setReasonError(message);
+            return false;
         } finally {
-            setActionLoading(null);
+            setPending(null);
         }
     };
 
-    const handleSubmitForValidation = async (eventId: string) => {
-        setActionLoading(eventId);
+    const onTransition = (event: PartnerEventItem, action: EventAction): void => {
+        if (action.reason_required) {
+            setReasonError(undefined);
+            setReasonTransition({ event, action });
+            return;
+        }
+        // La publication ouvre la billetterie au public : confirmation explicite
+        if (action.to === 'PUBLIE') {
+            setConfirmTransition({ event, action });
+            return;
+        }
+        void runTransition(event, action);
+    };
+
+    const confirmDelete = async (): Promise<void> => {
+        if (!deleteTarget) return;
+        setDeleting(true);
         try {
-            const res = await fetch(`/api/partner/events/${eventId}/transition`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to: 'EN_ATTENTE' }),
-            });
-            const data = await res.json();
-            if (data.success) {
-                toast.success(toastMessages.events.submitted());
-                fetchEvents();
-            } else {
-                toast.error(data.error || toastMessages.events.submitError);
-            }
-        } catch {
-            toast.error(toastMessages.common.networkError);
+            await sendJson(`/api/partner/events/${deleteTarget.id}`, 'DELETE');
+            toast.success('Brouillon supprimé.');
+            setDeleteTarget(null);
+            await refresh();
+        } catch (err) {
+            toast.error(errorMessage(err, 'Suppression impossible pour le moment.'));
         } finally {
-            setActionLoading(null);
+            setDeleting(false);
         }
     };
 
-    const openDeleteConfirm = (eventId: string) => {
-        setDeleteConfirm({ isOpen: true, eventId });
-    };
-
-    const confirmDelete = async () => {
-        const eventId = deleteConfirm.eventId;
-        if (!eventId) return;
-        setActionLoading(eventId);
-        try {
-            const res = await fetch(`/api/partner/events/${eventId}`, {
-                method: 'DELETE',
-            });
-            const data = await res.json();
-            if (data.success) {
-                toast.success(toastMessages.events.deleted);
-                fetchEvents();
-            } else {
-                toast.error(data.error || toastMessages.events.deleteError);
-            }
-        } catch {
-            toast.error(toastMessages.common.networkError);
-        } finally {
-            setActionLoading(null);
-            setDeleteConfirm({ isOpen: false, eventId: null });
-        }
-    };
-
-    // Calcul des statistiques
-    const totalEvents = events.length;
-    const publishedEvents = events.filter((e) => e.status === 'PUBLIE').length;
-    const totalTicketsSold = events.reduce((acc, ev) => {
-        const catSold = ev.ticket_categories?.reduce((s, c) => s + (c.sold_quantity || 0), 0) || 0;
-        return acc + catSold;
-    }, 0);
-    const totalRevenue = events.reduce((acc, ev) => {
-        const catRev = ev.ticket_categories?.reduce((s, c) => s + (c.sold_quantity || 0) * Number(c.price || 0), 0) || 0;
-        return acc + catRev;
-    }, 0);
+    const totals = overview?.totals;
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-8">
-            {/* Entête */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                        <Calendar className="w-8 h-8 text-[#FF5722]" />
-                        Événements & Billetterie
-                    </h1>
-                    <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
-                        Créez, gérez et suivez les ventes de vos billets en temps réel (§30-§41 CDC V3.0)
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={fetchEvents}
-                        disabled={isLoading}
-                        className="flex items-center gap-2"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                        Actualiser
-                    </Button>
-                    <Link href="/partner/events/new">
-                        <Button variant="primary" className="flex items-center gap-2">
-                            <Plus className="w-4 h-4" />
-                            Créer un événement
-                        </Button>
-                    </Link>
-                </div>
-            </div>
-
-            {/* Statistiques Rapides */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-950/50 text-[#FF5722] flex items-center justify-center font-bold">
-                        <Calendar className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Total Événements</p>
-                        <p className="text-2xl font-black text-slate-900 dark:text-white">{totalEvents}</p>
-                    </div>
-                </div>
-
-                <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center font-bold">
-                        <CheckCircle2 className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">En Ligne (Publiés)</p>
-                        <p className="text-2xl font-black text-slate-900 dark:text-white">{publishedEvents}</p>
-                    </div>
-                </div>
-
-                <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950/50 text-blue-600 flex items-center justify-center font-bold">
-                        <Ticket className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Billets Vendus</p>
-                        <p className="text-2xl font-black text-slate-900 dark:text-white">{totalTicketsSold}</p>
-                    </div>
-                </div>
-
-                <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-950/50 text-purple-600 flex items-center justify-center font-bold">
-                        <DollarSign className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Chiffre d&apos;Affaires</p>
-                        <p className="text-2xl font-black text-slate-900 dark:text-white">{totalRevenue.toLocaleString('fr-FR')} F</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Barre de Recherche et Filtres */}
-            <div className="space-y-4">
-                <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
-                    {/* Onglets Filtres */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
-                        {['TOUS', 'BROUILLON', 'EN_ATTENTE', 'VALIDE', 'PUBLIE', 'SUSPENDU', 'TERMINE'].map((tab) => (
-                            <button
-                                key={tab}
-                                onClick={() => setSelectedStatus(tab)}
-                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 whitespace-nowrap active:scale-[0.98] ${
-                                    selectedStatus === tab
-                                        ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold scale-[1.02]'
-                                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
-                                }`}
-                            >
-                                {tab === 'TOUS' ? 'Tous les événements' : tab}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Recherche */}
-                    <form onSubmit={handleSearch} className="flex items-center gap-2 max-w-sm w-full">
-                        <div className="relative flex-1">
-                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Rechercher par titre..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF5722]"
-                            />
-                        </div>
-                        <Button type="submit" size="sm" variant="outline">
-                            Filtrer
-                        </Button>
-                    </form>
-                </div>
-            </div>
-
-            {/* Liste des Événements */}
-            {isLoading ? (
-                <div className="p-12 text-center text-slate-500 dark:text-zinc-400 flex flex-col items-center gap-3">
-                    <RefreshCw className="w-8 h-8 animate-spin text-[#FF5722]" />
-                    <p className="text-sm font-medium">Chargement de vos événements...</p>
-                </div>
-            ) : events.length === 0 ? (
-                <div className="p-12 rounded-2xl bg-white dark:bg-zinc-900 border border-dashed border-slate-300 dark:border-zinc-800 text-center space-y-4">
-                    <div className="w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto">
-                        <Calendar className="w-8 h-8" />
-                    </div>
-                    <div>
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Aucun événement trouvé</h3>
-                        <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
-                            {selectedStatus !== 'TOUS'
-                                ? `Aucun événement avec le statut "${selectedStatus}".`
-                                : 'Vous n\'avez pas encore créé d\'événement. Lancez votre première billetterie en ligne !'}
-                        </p>
-                    </div>
-                    <Link href="/partner/events/new">
-                        <Button variant="primary" size="sm">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Créer un événement maintenant
-                        </Button>
-                    </Link>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {events.map((ev) => {
-                        const totalSold = ev.ticket_categories?.reduce((s, c) => s + (c.sold_quantity || 0), 0) || 0;
-                        const totalCap = ev.ticket_categories?.reduce((s, c) => s + (c.total_quantity || 0), 0) || ev.capacity || 0;
-                        const fillPercent = totalCap > 0 ? Math.min(100, Math.round((totalSold / totalCap) * 100)) : 0;
-
-                        return (
-                            <div
-                                key={ev.id}
-                                className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:border-[#FF5722]/40 transition-all flex flex-col justify-between"
-                            >
-                                <div>
-                                    {/* Image Header */}
-                                    <div className="relative h-44 bg-slate-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
-                                        {ev.image_url ? (
-                                            <Image
-                                                src={ev.image_url}
-                                                alt={ev.title}
-                                                fill
-                                                className="object-cover"
-                                                sizes="(max-width: 768px) 100vw, 50vw"
-                                            />
-                                        ) : (
-                                            <div className="text-center p-4">
-                                                <Calendar className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-                                                <span className="text-xs text-slate-400 font-medium">Image non définie</span>
-                                            </div>
-                                        )}
-                                        <div className="absolute top-3 right-3">
-                                            <StatusBadge status={ev.status} size="sm" />
-                                        </div>
-                                    </div>
-
-                                    {/* Contenu */}
-                                    <div className="p-5 space-y-3">
-                                        <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-1">
-                                            {ev.title}
-                                        </h3>
-
-                                        <div className="space-y-1.5 text-xs text-slate-600 dark:text-zinc-400 font-medium">
-                                            <div className="flex items-center gap-2">
-                                                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                                <span>
-                                                    {ev.start_date} à {ev.start_time.slice(0, 5)}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                                                <span className="truncate">{ev.location} ({ev.city || 'Dakar'})</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Jauge de vente billetterie */}
-                                        <div className="pt-2 border-t border-slate-100 dark:border-zinc-800 space-y-1.5">
-                                            <div className="flex justify-between text-xs font-semibold">
-                                                <span className="text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
-                                                    <Ticket className="w-3.5 h-3.5 text-[#FF5722]" />
-                                                    Billets vendus
-                                                </span>
-                                                <span className="text-slate-900 dark:text-white">
-                                                    {totalSold} / {totalCap > 0 ? totalCap : '∞'}
-                                                </span>
-                                            </div>
-                                            <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-                                                <div
-                                                    className="h-full rounded-full bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] transition-all"
-                                                    style={{ width: `${fillPercent}%` }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Actions Contextuelles */}
-                                <div className="p-4 bg-slate-50 dark:bg-zinc-800/40 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-2">
-                                    {ev.status === 'BROUILLON' && (
-                                        <>
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => openDeleteConfirm(ev.id)}
-                                                disabled={actionLoading === ev.id}
-                                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 text-xs"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5 mr-1" />
-                                                Supprimer
-                                            </Button>
-                                            <Link href={`/partner/events/${ev.id}/edit`}>
-                                                <Button size="sm" variant="outline" className="text-xs">
-                                                    <Pencil className="w-3.5 h-3.5 mr-1" />
-                                                    Modifier
-                                                </Button>
-                                            </Link>
-                                            <Button
-                                                size="sm"
-                                                variant="primary"
-                                                onClick={() => handleSubmitForValidation(ev.id)}
-                                                disabled={actionLoading === ev.id}
-                                            >
-                                                <Send className="w-3.5 h-3.5 mr-1" />
-                                                Soumettre (§31)
-                                            </Button>
-                                        </>
-                                    )}
-
-                                    {ev.status === 'EN_ATTENTE' && (
-                                        <div className="flex items-center justify-between w-full">
-                                            <div className="text-xs text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
-                                                <Clock className="w-4 h-4" />
-                                                En examen
-                                            </div>
-                                            <Link href={`/partner/events/${ev.id}/edit`}>
-                                                <Button size="sm" variant="outline" className="text-xs">
-                                                    <Pencil className="w-3.5 h-3.5 mr-1" />
-                                                    Modifier
-                                                </Button>
-                                            </Link>
-                                        </div>
-                                    )}
-
-                                    {ev.status === 'PUBLIE' && (
-                                        <div className="flex items-center gap-2 w-full">
-                                            <Button
-                                                size="sm"
-                                                variant="primary"
-                                                onClick={() => setQuotaModalEvent(ev)}
-                                                className="text-xs flex-1 flex items-center justify-center gap-1.5 shadow-xs"
-                                            >
-                                                <Ticket className="w-3.5 h-3.5" />
-                                                Quotas & Stock
-                                            </Button>
-                                            <Link href={`/partner/events/${ev.id}/edit`}>
-                                                <Button size="sm" variant="outline" className="text-xs px-2.5" title="Modifier les informations">
-                                                    <Pencil className="w-3.5 h-3.5" />
-                                                </Button>
-                                            </Link>
-                                            <Link href={`/events/${ev.id}`} target="_blank">
-                                                <Button size="sm" variant="outline" className="text-xs px-2.5" title="Voir la page publique">
-                                                    <Eye className="w-3.5 h-3.5" />
-                                                </Button>
-                                            </Link>
-                                        </div>
-                                    )}
-
-                                    {ev.status === 'VALIDE' && (
-                                        <div className="flex items-center justify-between w-full gap-2">
-                                            <div className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5">
-                                                <CheckCircle2 className="w-4 h-4" />
-                                                Validé
-                                            </div>
-                                            <Button
-                                                size="sm"
-                                                variant="primary"
-                                                onClick={() => handlePublish(ev.id)}
-                                                disabled={actionLoading === ev.id}
-                                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs flex items-center gap-1.5"
-                                            >
-                                                {actionLoading === ev.id ? (
-                                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                                ) : (
-                                                    <Radio className="w-3.5 h-3.5" />
-                                                )}
-                                                Publier
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            <ConfirmDialog
-                isOpen={deleteConfirm.isOpen}
-                onClose={() => setDeleteConfirm({ isOpen: false, eventId: null })}
-                onConfirm={confirmDelete}
-                title="Supprimer ce brouillon ?"
-                message="Cette action est irreversible. Le brouillon et ses categories de billets seront definitivement supprimes."
-                confirmLabel="Supprimer"
-                variant="danger"
-                isLoading={actionLoading === deleteConfirm.eventId}
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:py-8">
+            <PageHeader
+                title="Mes événements"
+                description="Soumettez, publiez et pilotez vos événements. Les indicateurs portent sur tous vos événements."
+                eyebrow={<LiveIndicator status={liveStatus} />}
+                actions={
+                    <LinkButton href="/partner/events/new" variant="primary" leftIcon={<CalendarPlus size={18} />}>
+                        Créer un événement
+                    </LinkButton>
+                }
+                className="pb-0 sm:pb-0"
             />
 
-            {quotaModalEvent && (
-                <AdjustTicketQuotaModal
-                    isOpen={Boolean(quotaModalEvent)}
-                    onClose={() => setQuotaModalEvent(null)}
-                    eventId={quotaModalEvent.id}
-                    eventTitle={quotaModalEvent.title}
-                    eventCapacity={quotaModalEvent.capacity}
-                    categories={quotaModalEvent.ticket_categories || []}
-                    onSuccess={fetchEvents}
+            {error ? (
+                <ErrorState
+                    title="Vos événements n’ont pas pu être chargés"
+                    description={error}
+                    onRetry={() => void load('retry')}
+                    isRetrying={retrying}
+                />
+            ) : (
+                <>
+                    <section aria-label="Indicateurs sur tous vos événements" className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
+                        {loading && !totals ? (
+                            <>
+                                <KpiCardSkeleton />
+                                <KpiCardSkeleton />
+                                <KpiCardSkeleton />
+                                <KpiCardSkeleton />
+                            </>
+                        ) : (
+                            <>
+                                <KpiCard label="Événements" value={formatInteger(totals?.events)} hint="Tous statuts confondus" icon={<CalendarRange size={18} />} tone="brand" />
+                                <KpiCard label="Billets vendus" value={formatInteger(totals?.tickets_sold)} hint="Hors invitations" icon={<Ticket size={18} />} tone="info" />
+                                <KpiCard label="Recettes en ligne" value={formatFcfa(totals?.revenue_online)} hint="Billets payés en ligne, remboursements déduits" icon={<Smartphone size={18} />} tone="success" />
+                                <KpiCard label="Recettes en espèces" value={formatFcfa(totals?.revenue_cash)} hint="Encaissées par vos contrôleurs" icon={<Banknote size={18} />} tone="warning" />
+                            </>
+                        )}
+                    </section>
+
+                    <div className="flex flex-col gap-4">
+                        <Tabs
+                            tabs={tabs}
+                            value={activeTab}
+                            onChange={(id) => setActiveTab(id as ListTab)}
+                            ariaLabel="Statut des événements"
+                            idPrefix={TABS_PREFIX}
+                        />
+
+                        <form
+                            role="search"
+                            className="flex flex-col gap-2 sm:flex-row sm:items-end"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                setSearch(searchInput.trim().slice(0, 100));
+                            }}
+                        >
+                            <TextInput
+                                label="Rechercher un événement"
+                                type="search"
+                                placeholder="Titre de l’événement"
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                fieldClassName="flex-1"
+                                maxLength={100}
+                            />
+                            <Button type="submit" variant="secondary" leftIcon={<Search size={18} />}>
+                                Rechercher
+                            </Button>
+                        </form>
+
+                        <TabPanel idPrefix={TABS_PREFIX} tabIdValue={activeTab}>
+                            {loading || events === null ? (
+                                <div className="flex flex-col gap-3" role="status" aria-busy="true" aria-label="Chargement des événements">
+                                    <KpiCardSkeleton className="min-h-40" />
+                                    <KpiCardSkeleton className="min-h-40" />
+                                </div>
+                            ) : events.length === 0 ? (
+                                <EmptyState
+                                    title={search ? 'Aucun événement ne correspond à la recherche' : 'Aucun événement'}
+                                    description={search ? 'Essayez un autre titre, ou effacez la recherche.' : EMPTY_MESSAGES[activeTab]}
+                                    actionLabel={search ? 'Effacer la recherche' : activeTab === 'TOUS' ? 'Créer un événement' : undefined}
+                                    actionHref={!search && activeTab === 'TOUS' ? '/partner/events/new' : undefined}
+                                    onAction={search ? () => { setSearch(''); setSearchInput(''); } : undefined}
+                                />
+                            ) : (
+                                <ul className="flex flex-col gap-4" aria-label="Événements">
+                                    {events.map((ev) => (
+                                        <li key={ev.id}>
+                                            <PartnerEventCard
+                                                event={ev}
+                                                pendingTo={pending?.eventId === ev.id ? pending.to : null}
+                                                onTransition={onTransition}
+                                                onCancel={setCancelTarget}
+                                                onDelete={setDeleteTarget}
+                                            />
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </TabPanel>
+                    </div>
+                </>
+            )}
+
+            <Modal
+                isOpen={confirmTransition !== null}
+                onClose={() => {
+                    if (!pending) setConfirmTransition(null);
+                }}
+                title="Publier l’événement ?"
+                subtitle={confirmTransition?.event.title}
+                maxWidth="md"
+                busy={pending !== null}
+                footer={
+                    <>
+                        <Button variant="secondary" onClick={() => setConfirmTransition(null)} disabled={pending !== null} className="flex-1 sm:flex-none">
+                            Pas maintenant
+                        </Button>
+                        <Button
+                            variant="primary"
+                            isLoading={pending !== null}
+                            className="flex-1 sm:flex-none"
+                            onClick={async () => {
+                                if (!confirmTransition) return;
+                                const ok = await runTransition(confirmTransition.event, confirmTransition.action);
+                                if (ok) setConfirmTransition(null);
+                            }}
+                        >
+                            {confirmTransition?.action.label ?? 'Publier'}
+                        </Button>
+                    </>
+                }
+            >
+                <p className="text-sm leading-relaxed text-fg-muted">
+                    La page publique sera visible de tous et la billetterie ouverte selon les dates de vente de chaque catégorie.
+                    Après la publication, les changements de date, de lieu ou de titre seront notifiés aux acheteurs.
+                </p>
+            </Modal>
+
+            <ReasonDialog
+                isOpen={reasonTransition !== null}
+                onClose={() => setReasonTransition(null)}
+                onConfirm={async (reason) => {
+                    if (!reasonTransition) return;
+                    const ok = await runTransition(reasonTransition.event, reasonTransition.action, reason);
+                    if (ok) setReasonTransition(null);
+                }}
+                title={reasonTransition?.action.label ?? 'Motif'}
+                description="Indiquez le motif de ce changement : il est conservé dans l’historique de l’événement."
+                confirmLabel={reasonTransition?.action.label ?? 'Confirmer'}
+                isLoading={pending !== null}
+                error={reasonError}
+            />
+
+            <ConfirmDialog
+                isOpen={deleteTarget !== null}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={() => void confirmDelete()}
+                title="Supprimer ce brouillon ?"
+                message={deleteTarget ? `« ${deleteTarget.title} » et ses catégories de billets seront supprimés définitivement.` : undefined}
+                confirmLabel="Supprimer le brouillon"
+                variant="danger"
+                isLoading={deleting}
+            />
+
+            {cancelTarget && (
+                <EventCancelDialog
+                    eventId={cancelTarget.id}
+                    eventTitle={cancelTarget.title}
+                    scope="partner"
+                    open={cancelTarget !== null}
+                    onClose={() => setCancelTarget(null)}
+                    onCancelled={() => void refresh()}
                 />
             )}
         </div>
