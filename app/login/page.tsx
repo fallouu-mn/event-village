@@ -541,11 +541,12 @@ function LoginPageContent() {
                     {!isOtpMode && (
                         <form onSubmit={handlePasswordLogin} className="space-y-4">
                             <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
+                                <label htmlFor="login-identifiant" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
                                     Email ou Téléphone
                                 </label>
                                 <div className="relative">
                                     <input
+                                        id="login-identifiant"
                                         type="text"
                                         disabled={isLockedOut || isLoading}
                                         value={identifier}
@@ -563,7 +564,7 @@ function LoginPageContent() {
 
                             <div>
                                 <div className="flex items-center justify-between mb-1.5">
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                                    <label htmlFor="login-mot-de-passe" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
                                         Mot de passe
                                     </label>
                                     <Link
@@ -578,6 +579,7 @@ function LoginPageContent() {
                                 </div>
                                 <div className="relative">
                                     <input
+                                        id="login-mot-de-passe"
                                         type={showPassword ? 'text' : 'password'}
                                         disabled={isLockedOut || isLoading}
                                         value={password}
@@ -623,11 +625,12 @@ function LoginPageContent() {
                             {!otpSent ? (
                                 <form onSubmit={handleSendOtp} className="space-y-4">
                                     <div>
-                                        <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
+                                        <label htmlFor="login-telephone-otp" className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
                                             Numéro de Téléphone (Sénégal)
                                         </label>
                                         <div className="relative">
                                             <input
+                                                id="login-telephone-otp"
                                                 type="tel"
                                                 disabled={isLockedOut || isLoading}
                                                 value={identifier}

@@ -1,71 +1,104 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
-import { MapPin, Navigation } from 'lucide-react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { LocateFixed, MapPin } from 'lucide-react';
+import 'leaflet/dist/leaflet.css';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import { Button } from './Button';
+import { TextInput } from './Field';
 
 interface MapPickerProps {
     latitude: number | null;
     longitude: number | null;
     onChange: (lat: number, lng: number) => void;
+    /** Erreur de coordonnées venue du formulaire ou du serveur. */
+    error?: string;
+    /** Préfixe des identifiants des champs Latitude et Longitude (lien depuis un récapitulatif d'erreurs). */
+    idPrefix?: string;
 }
 
 const DEFAULT_LAT = 14.6937;
 const DEFAULT_LNG = -17.4441;
 
-export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onChange }) => {
+/**
+ * Tuiles de la carte : configurables (NEXT_PUBLIC_MAP_TILE_URL, NEXT_PUBLIC_MAP_TILE_ATTRIBUTION), par défaut
+ * OpenStreetMap. La feuille de style et les icônes de Leaflet sont servies par l'application (plus d'unpkg).
+ */
+const TILE_URL = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTRIBUTION = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy; contributeurs OpenStreetMap';
+
+const round6 = (n: number): number => Math.round(n * 1e6) / 1e6;
+
+function parseCoordinate(raw: string, limit: number): number | null {
+    const normalized = raw.trim().replace(',', '.');
+    if (normalized === '') return null;
+    const n = Number(normalized);
+    return Number.isFinite(n) && n >= -limit && n <= limit ? round6(n) : null;
+}
+
+/**
+ * Choix de la position d'un lieu (lot 5, contrat F6) : clic sur la carte, repère déplaçable, position de
+ * l'appareil, ou saisie au clavier de la latitude et de la longitude (alternative au glisser, WCAG 2.5.7).
+ */
+export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onChange, error, idPrefix }) => {
+    const generated = useId();
+    const prefix = idPrefix ?? `carte-${generated}`;
+    const helpId = `${prefix}-aide`;
     const mapRef = useRef<HTMLDivElement>(null);
-    const mapInstanceRef = useRef<any>(null);
-    const markerRef = useRef<any>(null);
+    const mapInstanceRef = useRef<import('leaflet').Map | null>(null);
+    const markerRef = useRef<import('leaflet').Marker | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
+
+    const [latText, setLatText] = useState(latitude === null ? '' : String(latitude));
+    const [lngText, setLngText] = useState(longitude === null ? '' : String(longitude));
+    const [inputError, setInputError] = useState<string | null>(null);
+    const [geoMessage, setGeoMessage] = useState<string | null>(null);
+    const [locating, setLocating] = useState(false);
 
     useEffect(() => {
         const container = mapRef.current;
         if (!container) return;
 
-        // eslint-disable-next-line
+        // Leaflet lit window : chargé dans le navigateur seulement, après le montage.
         const L = require('leaflet') as typeof import('leaflet');
 
-        // @ts-ignore
-        delete L.Icon.Default.prototype._getIconUrl;
-        L.Icon.Default.mergeOptions({
-            iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-            iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-            shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        const icon = L.icon({
+            iconUrl: markerIcon.src,
+            iconRetinaUrl: markerIcon2x.src,
+            shadowUrl: markerShadow.src,
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41],
         });
 
         const initLat = latitude ?? DEFAULT_LAT;
         const initLng = longitude ?? DEFAULT_LNG;
+        const map = L.map(container, { center: [initLat, initLng], zoom: 13, zoomControl: true, keyboard: true });
+        L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
 
-        const map = L.map(container, {
-            center: [initLat, initLng],
-            zoom: 13,
-            zoomControl: true,
-        });
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 19,
+        const marker = L.marker([initLat, initLng], {
+            draggable: true,
+            icon,
+            keyboard: true,
+            title: 'Position du lieu',
+            alt: 'Repère de la position du lieu',
         }).addTo(map);
-
-        const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);
-
-        const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
         marker.on('dragend', () => {
             const pos = marker.getLatLng();
             onChangeRef.current(round6(pos.lat), round6(pos.lng));
         });
-
-        map.on('click', (e: any) => {
-            const { lat, lng } = e.latlng;
-            marker.setLatLng([lat, lng]);
-            onChangeRef.current(round6(lat), round6(lng));
+        map.on('click', (e: import('leaflet').LeafletMouseEvent) => {
+            marker.setLatLng(e.latlng);
+            onChangeRef.current(round6(e.latlng.lat), round6(e.latlng.lng));
         });
 
         mapInstanceRef.current = map;
         markerRef.current = marker;
-
         return () => {
             map.remove();
             mapInstanceRef.current = null;
@@ -74,66 +107,105 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
+        setLatText(latitude === null ? '' : String(latitude));
+        setLngText(longitude === null ? '' : String(longitude));
         if (!markerRef.current || latitude === null || longitude === null) return;
         markerRef.current.setLatLng([latitude, longitude]);
         mapInstanceRef.current?.setView([latitude, longitude], mapInstanceRef.current.getZoom());
     }, [latitude, longitude]);
 
+    const applyTyped = (nextLat: string, nextLng: string) => {
+        if (nextLat.trim() === '' || nextLng.trim() === '') {
+            setInputError(null);
+            return;
+        }
+        const lat = parseCoordinate(nextLat, 90);
+        const lng = parseCoordinate(nextLng, 180);
+        if (lat === null || lng === null) {
+            setInputError('Coordonnées invalides : latitude entre -90 et 90, longitude entre -180 et 180.');
+            return;
+        }
+        setInputError(null);
+        onChange(lat, lng);
+    };
+
     const handleUseMyLocation = () => {
-        if (!navigator.geolocation) return;
+        setGeoMessage(null);
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+            setGeoMessage('La localisation n’est pas disponible sur cet appareil : placez le repère sur la carte.');
+            return;
+        }
+        setLocating(true);
         navigator.geolocation.getCurrentPosition(
             (pos) => {
-                const { latitude: lat, longitude: lng } = pos.coords;
-                const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
-                onChange(round6(lat), round6(lng));
-                if (markerRef.current && mapInstanceRef.current) {
-                    markerRef.current.setLatLng([lat, lng]);
-                    mapInstanceRef.current.setView([lat, lng], 15);
-                }
+                setLocating(false);
+                const lat = round6(pos.coords.latitude);
+                const lng = round6(pos.coords.longitude);
+                onChange(lat, lng);
+                mapInstanceRef.current?.setView([lat, lng], 15);
             },
-            () => {},
-            { enableHighAccuracy: true, timeout: 8000 }
+            (err) => {
+                setLocating(false);
+                setGeoMessage(err.code === err.PERMISSION_DENIED
+                    ? 'Localisation refusée : autorisez-la dans le navigateur ou placez le repère sur la carte.'
+                    : 'Position introuvable pour le moment : placez le repère sur la carte.');
+            },
+            { enableHighAccuracy: true, timeout: 8000 },
         );
     };
 
-    return (
-        <div className="space-y-2">
-            <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">
-                    Cliquez sur la carte ou déplacez le marqueur pour définir la position exacte
-                </span>
-                <button
-                    type="button"
-                    onClick={handleUseMyLocation}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:bg-orange-50 hover:text-[#FF5722] transition-all"
-                >
-                    <Navigation size={12} />
-                    Ma position
-                </button>
-            </div>
+    const shownError = inputError ?? error ?? null;
 
-            <link
-                rel="stylesheet"
-                href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-                crossOrigin=""
-            />
+    return (
+        <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p id={helpId} className="min-w-0 flex-1 basis-56 text-sm leading-snug text-fg-muted">
+                    Touchez la carte ou déplacez le repère pour indiquer l’entrée du lieu. Vous pouvez aussi saisir les coordonnées.
+                </p>
+                <Button type="button" variant="secondary" size="sm" onClick={handleUseMyLocation} isLoading={locating} leftIcon={<LocateFixed size={16} />}>
+                    Ma position
+                </Button>
+            </div>
 
             <div
                 ref={mapRef}
-                className="w-full h-56 rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden bg-slate-100 dark:bg-zinc-800"
-                style={{ zIndex: 0 }}
+                role="region"
+                aria-label="Carte du lieu"
+                aria-describedby={helpId}
+                className="isolate h-64 w-full overflow-hidden rounded-2xl border border-border bg-surface-sunken"
             />
 
-            {latitude !== null && longitude !== null && (
-                <div className="flex items-center gap-3 mt-1">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40">
-                        <MapPin size={12} className="text-emerald-600" />
-                        <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-                            {latitude.toFixed(6)}, {longitude.toFixed(6)}
-                        </span>
-                    </div>
-                    <span className="text-[11px] text-slate-400 dark:text-zinc-500">Position enregistrée</span>
-                </div>
+            {geoMessage && (
+                <p role="status" className="text-sm leading-snug text-warning-fg">{geoMessage}</p>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <TextInput
+                    id={`${prefix}-latitude`}
+                    label="Latitude"
+                    inputMode="decimal"
+                    value={latText}
+                    onChange={(e) => setLatText(e.target.value)}
+                    onBlur={() => applyTyped(latText, lngText)}
+                    placeholder="14.6937"
+                />
+                <TextInput
+                    id={`${prefix}-longitude`}
+                    label="Longitude"
+                    inputMode="decimal"
+                    value={lngText}
+                    onChange={(e) => setLngText(e.target.value)}
+                    onBlur={() => applyTyped(latText, lngText)}
+                    placeholder="-17.4441"
+                    error={shownError ?? undefined}
+                />
+            </div>
+
+            {latitude !== null && longitude !== null && !shownError && (
+                <p className="inline-flex items-center gap-2 self-start rounded-xl border border-success-border bg-success-bg px-3 py-2 text-sm font-medium text-success-fg">
+                    <MapPin size={16} aria-hidden="true" />
+                    Position enregistrée
+                </p>
             )}
         </div>
     );
