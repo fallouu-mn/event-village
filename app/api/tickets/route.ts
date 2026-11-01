@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { eventEndAt } from '@/lib/events/event-end';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
 
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
                 transfer_locked,
                 created_at,
                 event_id,
-                events(id, title, location, city, start_date, start_time, image_url, partners(company_name, commercial_name)),
+                events(id, title, location, city, start_date, start_time, end_date, end_time, image_url, partners(company_name, commercial_name)),
                 category_id,
                 ticket_categories(id, name, price)
             `)
@@ -90,7 +91,9 @@ export async function GET(req: NextRequest) {
             const dayNumber = String(startDate.getDate()).padStart(2, '0');
             const timeFormatted = t.events?.start_time ? t.events.start_time.substring(0, 5) : '20:00';
             const dateFormatted = `${dayNumber} ${monthShort} ${startDate.getFullYear()}`;
-            const isUpcoming = t.status === 'VALIDE' && startDate.getTime() >= Date.now();
+            // Lot 5 : à venir tant que l'événement n'est pas fini (fin, ou début à 23:59 Dakar : event_end_at) ; un
+            // billet pour ce soir n'est plus classé dans l'historique dès minuit UTC du jour.
+            const isUpcoming = t.status === 'VALIDE' && Boolean(t.events?.start_date) && eventEndAt(t.events).getTime() >= Date.now();
             const activeTransfer = pendingTransfersMap[t.id] || null;
             const isTransferLocked = Boolean(t.transfer_locked) || Boolean(activeTransfer);
 
