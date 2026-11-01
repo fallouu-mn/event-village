@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Modal } from '@/components/ui/Modal';
-import { getBrowserClient } from '@/lib/supabase/client';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { isEventEligibleForController } from '@/lib/events/event-status';
 
 interface ExistingAccountConfirmState {
@@ -162,45 +162,17 @@ export default function PartnerTeamPage() {
         fetchControllers();
     }, [fetchEvents, fetchControllers]);
 
-    // ── Abonnement Supabase Realtime (Synchronisation en direct équipe + événements) ──
-    useEffect(() => {
-        const supabase = getBrowserClient();
-        const teamChannel = supabase
-            .channel('partner-team-live-sync')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'event_controllers',
-                },
-                () => {
-                    fetchControllers(true);
-                }
-            )
-            .subscribe();
+    // ── Temps réel (lot 5, contrat O3) : statuts des événements du partenaire, par leur historique (publié, RLS
+    // propriétaire). event_controllers et events ne sont pas dans la publication : leurs abonnements sont retirés.
+    const refreshOnStatusChange = useCallback(async () => {
+        await Promise.all([fetchEvents(), fetchControllers(true)]);
+    }, [fetchEvents, fetchControllers]);
 
-        const eventsChannel = supabase
-            .channel('partner-events-live-sync')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'events',
-                },
-                () => {
-                    fetchEvents();
-                    fetchControllers(true);
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(teamChannel);
-            supabase.removeChannel(eventsChannel);
-        };
-    }, [fetchControllers, fetchEvents]);
+    useRealtimeRefresh({
+        channelKey: 'partner-team-statuts',
+        subscriptions: [{ table: 'event_status_history', event: 'INSERT' }],
+        onSignal: refreshOnStatusChange,
+    });
 
     const refreshControllers = useCallback(() => { fetchControllers(false); }, [fetchControllers]);
 

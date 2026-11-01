@@ -50,6 +50,7 @@ const META: Record<string, SettingMeta> = {
   'access.scan_window_after_hours': { label: 'Fermeture du contrôle après la fin', help: 'Heures après la fin de l’événement pendant lesquelles les billets peuvent encore être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },
   'access.manual_entry_scope': { label: 'Saisie manuelle d’un numéro de billet', help: 'Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.', kind: 'choice', options: MANUAL_ENTRY_SCOPE_LABELS },
   'access.counter_sale_enabled': { label: 'Vente au guichet en espèces', help: 'Un contrôleur autorisé à encaisser, avec une caisse ouverte, vend des billets au prix facial, sans frais.', kind: 'boolean' },
+  'access.low_stock_threshold': { label: 'Seuil « bientôt complet »', help: 'Quand il reste ce nombre de places ou moins dans une catégorie, la page publique affiche le restant ; au-delà, seulement « disponible ». Entier de 1 à 1000.', kind: 'integer', unit: 'places' },
 };
 
 /** Ordre d'affichage des réglages dans leur section (celui de META ; clé inconnue en dernier). */
@@ -59,7 +60,7 @@ const rank = (key: string) => (META_ORDER.includes(key) ? META_ORDER.indexOf(key
 /** Sections de la page, dans l'ordre d'affichage, par préfixe de clé. */
 const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: LucideIcon }> = [
   { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
-  { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet et vente au guichet.', icon: ScanLine },
+  { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet et seuil de stock affiché au public.', icon: ScanLine },
 ];
 
 interface Setting {

@@ -75,7 +75,6 @@ export default function ControllerScannerPage() {
     const [error, setError]                   = useState('');
     const [selected, setSelected]             = useState<Assignment | null>(null);
     const [controllerName, setControllerName] = useState('');
-    const [controllerId, setControllerId]     = useState<string | null>(null);
     const [refusedCountMap, setRefusedCountMap] = useState<Record<string, number>>({});
 
     // Scanner
@@ -159,7 +158,6 @@ export default function ControllerScannerPage() {
             if (data.success) {
                 const list: Assignment[] = data.assignments ?? [];
                 setAssignments(list);
-                if (data.controller?.id) setControllerId(data.controller.id);
                 if (data.controller) {
                     const name = [data.controller.first_name, data.controller.last_name].filter(Boolean).join(' ');
                     setControllerName(name || 'Contrôleur');
@@ -191,10 +189,6 @@ export default function ControllerScannerPage() {
 
     useEffect(() => {
         void fetchAssignments();
-        const supabase = getBrowserClient();
-        supabase.auth.getUser().then((res: { data?: { user?: { id?: string } | null } }) => {
-            if (res.data?.user?.id) setControllerId(res.data.user.id);
-        });
     }, [fetchAssignments]);
 
     useEffect(() => {
@@ -202,53 +196,10 @@ export default function ControllerScannerPage() {
         else setActiveShift(null);
     }, [selected?.events?.id, selected?.can_accept_cash, fetchActiveShift]);
 
-    // ── Realtime : affectations du contrôleur ──
-    useEffect(() => {
-        if (!controllerId) return;
-        const supabase = getBrowserClient();
-        const channel = supabase
-            .channel(`scanner-assignments-${controllerId}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'event_controllers', filter: `user_id=eq.${controllerId}` },
-                () => { void fetchAssignments(); })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, [controllerId, fetchAssignments]);
-
-    // ── Realtime : statut des événements ──
-    useEffect(() => {
-        const supabase = getBrowserClient();
-        const channel = supabase
-            .channel('scanner-events-live')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'events' }, (payload: { new: Record<string, unknown> }) => {
-                const updated = payload.new as { id?: string; status?: string; title?: string; start_date?: string };
-                if (!updated?.id) return;
-                const patch = (a: Assignment): Assignment => a.events?.id === updated.id
-                    ? { ...a, events: { ...a.events, status: updated.status ?? a.events.status, title: updated.title ?? a.events.title, date: updated.start_date ?? a.events.date } }
-                    : a;
-                setAssignments(prev => prev.map(patch));
-                setSelected(prev => (prev ? patch(prev) : prev));
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, []);
-
-    // ── Realtime : désactivation du compte (le rôle est suivi par le middleware et les affectations) ──
-    useEffect(() => {
-        if (!controllerId) return;
-        const supabase = getBrowserClient();
-        const channel = supabase
-            .channel(`scanner-user-live-${controllerId}`)
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${controllerId}` },
-                async (payload: { new: Record<string, unknown> }) => {
-                    const status = (payload.new as { status?: string })?.status;
-                    if (status === 'SUSPENDU' || status === 'INACTIF' || status === 'SUPPRIME') {
-                        await supabase.auth.signOut({ scope: 'global' });
-                        router.push('/login?error=account_deactivated');
-                    }
-                })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, [controllerId, router]);
+    // Lot 5 (contrat O3) : plus d'abonnement à event_controllers, events ni users, absents de la publication
+    // supabase_realtime (aucun message n'arrivait). Le serveur reste la source de vérité : chaque scan vérifie
+    // l'affectation, le statut de l'événement et celui du compte, et les affectations sont relues à chaque
+    // billet composté (compteurs ci-dessous).
 
     // ── Realtime : billets compostés de l'événement (toutes portes) → compteurs serveur ──
     useEffect(() => {

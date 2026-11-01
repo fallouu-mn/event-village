@@ -54,7 +54,7 @@ type QuoteState =
   | { kind: 'error'; key: string; message: string };
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { getBrowserClient } from '@/lib/supabase/client';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
 export default function EventDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -189,73 +189,18 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     loadEvent(true);
   }, [loadEvent]);
 
-  // Abonnement Realtime Supabase sur les catégories de billets de l'événement (sans F5)
-  useEffect(() => {
-    if (!eventId) return;
-
-    const supabase = getBrowserClient();
-    const channel = supabase
-      .channel(`realtime-event-categories-${eventId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'ticket_categories',
-          filter: `event_id=eq.${eventId}`,
-        },
-        (payload: any) => {
-          if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as any;
-            setEvent((prevEvent: any) => {
-              if (!prevEvent || !prevEvent.categories) return prevEvent;
-              const updatedCats = prevEvent.categories.map((cat: any) => {
-                if (cat.id === updated.id) {
-                  const totalQuantity = Number(updated.total_quantity || 0);
-                  const soldQuantity = Number(updated.sold_quantity || 0);
-                  const heldQuantity = Number(updated.held_quantity || 0);
-                  const availableQuantity = Math.max(0, totalQuantity - soldQuantity - heldQuantity);
-                  const isSoldOut = soldQuantity >= totalQuantity;
-                  const isHeld = !isSoldOut && (soldQuantity + heldQuantity) >= totalQuantity;
-                  const isClosed = updated.is_active === false;
-                  const isAvailable = !isClosed && !isSoldOut && !isHeld && availableQuantity > 0;
-
-                  return {
-                    ...cat,
-                    name: updated.name || cat.name,
-                    price: Number(updated.price ?? cat.price),
-                    totalQuantity,
-                    soldQuantity,
-                    heldQuantity,
-                    availableQuantity,
-                    isSoldOut,
-                    isHeld,
-                    isClosed,
-                    isAvailable,
-                    status: isClosed ? 'CLOSED' : isSoldOut ? 'SOLD_OUT' : isHeld ? 'HELD' : 'ACTIVE',
-                  };
-                }
-                return cat;
-              });
-
-              const isFullySoldOut = updatedCats.length > 0 && updatedCats.every((c: any) => c.isSoldOut || c.isClosed);
-              return {
-                ...prevEvent,
-                categories: updatedCats,
-                isFullySoldOut,
-              };
-            });
-          } else if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
-            loadEvent(false);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [eventId, loadEvent]);
+  // Temps réel (lot 5, contrat O1 et O3) : le résumé public de l'événement (statut, dates, lieu, prix) et le
+  // stock en tranches de ses catégories ; chaque signal recharge la fiche publique (GET /api/events/[id]).
+  // Plus aucun abonnement à ticket_categories : les volumes de vente ne sont plus diffusés (arbitrage A3/O).
+  useRealtimeRefresh({
+    channelKey: `event-public-${eventId ?? 'inconnu'}`,
+    subscriptions: [
+      { table: 'public_event_state', filter: `event_id=eq.${eventId ?? ''}` },
+      { table: 'public_category_stock', filter: `event_id=eq.${eventId ?? ''}` },
+    ],
+    onSignal: () => loadEvent(false),
+    enabled: Boolean(eventId),
+  });
 
   if (isLoading) {
     return (
@@ -538,8 +483,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                       )}
                       <div>
                         <p className="text-xs font-black text-slate-900 dark:text-white">{item.title}</p>
-                        {item.artistOrSpeaker && (
-                          <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">{item.artistOrSpeaker}</p>
+                        {item.participant && (
+                          <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">{item.participant}</p>
                         )}
                         {item.description && (
                           <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">{item.description}</p>

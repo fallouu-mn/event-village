@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Modal } from '@/components/ui/Modal';
-import { getBrowserClient } from '@/lib/supabase/client';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { isEventEligibleForController } from '@/lib/events/event-status';
 
 interface ExistingAccountConfirmState {
@@ -81,58 +81,38 @@ export default function PartnerEventTeamPage() {
         }
     }, [eventId, toast]);
 
+    /** Titre et statut de l'événement, relus par le serveur (au chargement et à chaque changement de statut). */
+    const fetchEventMeta = useCallback(async () => {
+        if (!eventId) return;
+        try {
+            const res = await fetch(`/api/partner/events/${eventId}`);
+            if (!res.ok) {
+                console.warn(`[équipe] lecture de l’événement refusée (HTTP ${res.status})`);
+                return;
+            }
+            const d = await res.json();
+            if (d.event?.title) setEventTitle(d.event.title);
+            if (d.event?.status) setEventStatus(d.event.status);
+        } catch (err) {
+            console.warn('[équipe] lecture de l’événement impossible :', err);
+        }
+    }, [eventId]);
+
     useEffect(() => {
         if (!eventId) return;
         fetchControllers();
-        // Fetch event metadata
-        fetch(`/api/partner/events/${eventId}`)
-            .then(r => r.json())
-            .then(d => {
-                if (d.event?.title) setEventTitle(d.event.title);
-                if (d.event?.status) setEventStatus(d.event.status);
-            })
-            .catch(() => {});
+        void fetchEventMeta();
+    }, [eventId, fetchControllers, fetchEventMeta]);
 
-        // Abonnement Supabase Realtime pour synchronisation instantanée
-        const supabase = getBrowserClient();
-        const channel = supabase
-            .channel(`partner-event-team-${eventId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'event_controllers',
-                    filter: `event_id=eq.${eventId}`,
-                },
-                () => {
-                    fetchControllers();
-                }
-            )
-            .subscribe();
-
-        const eventMetaChannel = supabase
-            .channel(`partner-event-meta-${eventId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'events',
-                    filter: `id=eq.${eventId}`,
-                },
-                (payload: any) => {
-                    if (payload.new?.title) setEventTitle(payload.new.title);
-                    if (payload.new?.status) setEventStatus(payload.new.status);
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-            supabase.removeChannel(eventMetaChannel);
-        };
-    }, [eventId, fetchControllers]);
+    // Temps réel (lot 5, contrat O3) : statut de l'événement par son historique (publié, lisible par le
+    // propriétaire). event_controllers et events ne sont pas dans la publication : leurs abonnements sont retirés ;
+    // l'équipe est relue après chaque action de la page.
+    useRealtimeRefresh({
+        channelKey: `partner-event-team-${eventId ?? 'inconnu'}`,
+        subscriptions: [{ table: 'event_status_history', event: 'INSERT', filter: `event_id=eq.${eventId ?? ''}` }],
+        onSignal: fetchEventMeta,
+        enabled: Boolean(eventId),
+    });
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();

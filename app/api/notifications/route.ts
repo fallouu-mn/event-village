@@ -5,7 +5,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/notifications
- * Récupère les notifications réelles de l'utilisateur connecté
+ * Récupère les notifications réelles de l'utilisateur connecté.
+ * unreadCount (cloche) : notifications de l'application seulement (canal PUSH) dont le statut n'est pas READ
+ * (lot 5, contrat O2 ; les lignes SMS, WHATSAPP et EMAIL sont des traces d'envoi, jamais « lues »).
  */
 export async function GET(req: NextRequest) {
     try {
@@ -37,11 +39,17 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Erreur lors de la récupération des notifications.' }, { status: 500 });
         }
 
-        const { count: unreadCount } = await supabase
+        const { count: unreadCount, error: countError } = await supabase
             .from('notifications')
-            .select('*', { count: 'exact', head: true })
+            .select('id', { count: 'exact', head: true })
             .eq('user_id', authUser.id)
+            .eq('channel', 'PUSH')
             .neq('status', 'READ');
+
+        if (countError) {
+            console.error('[API /api/notifications] Erreur compteur:', countError);
+            return NextResponse.json({ error: 'Erreur lors du calcul des notifications non lues.' }, { status: 500 });
+        }
 
         return NextResponse.json({
             notifications: (notifications || []).map(n => ({
@@ -60,9 +68,8 @@ export async function GET(req: NextRequest) {
             unreadCount: unreadCount || 0,
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/notifications] Exception:', msg);
-        return NextResponse.json({ error: msg }, { status: 500 });
+        console.error('[API /api/notifications] Exception:', err instanceof Error ? err.message : err);
+        return NextResponse.json({ error: 'Erreur interne du serveur.' }, { status: 500 });
     }
 }
 
@@ -93,7 +100,7 @@ export async function PATCH(req: NextRequest) {
 
         return NextResponse.json({ success: true, message: 'Toutes les notifications ont été marquées comme lues.' });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        console.error('[API /api/notifications PATCH] Exception:', err instanceof Error ? err.message : err);
+        return NextResponse.json({ error: 'Erreur interne du serveur.' }, { status: 500 });
     }
 }

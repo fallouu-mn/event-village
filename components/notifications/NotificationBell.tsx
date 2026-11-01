@@ -17,7 +17,7 @@ import {
     X,
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { getBrowserClient } from '@/lib/supabase/client';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
 export interface InAppNotification {
     id: string;
@@ -70,75 +70,42 @@ export function NotificationBell() {
 
     const isUserLoggedIn = mounted && (isAuthenticated || !!user);
 
+    /**
+     * Liste et compteur relus par le serveur (GET /api/notifications : compteur = notifications PUSH non lues,
+     * statut READ et read_at). Une réponse en échec est journalisée et l'affichage précédent est conservé.
+     */
     const fetchNotifications = useCallback(async () => {
         if (!isUserLoggedIn) return;
         try {
             const res = await fetch('/api/notifications?limit=20');
-            if (!res.ok) return;
+            if (!res.ok) {
+                console.warn(`[NotificationBell] chargement des notifications refusé (HTTP ${res.status})`);
+                return;
+            }
             const data = await res.json();
-            if (data.notifications) {
+            if (Array.isArray(data.notifications)) {
                 setNotifications(data.notifications);
-                setUnreadCount(data.unreadCount ?? data.notifications.filter((n: InAppNotification) => !n.isRead).length);
+                setUnreadCount(typeof data.unreadCount === 'number' ? data.unreadCount : 0);
             }
         } catch (err) {
             console.warn('[NotificationBell] Erreur chargement:', err);
         }
     }, [isUserLoggedIn]);
 
-    // Chargement initial + abonnement Supabase Realtime sur INSERT notifications
+    // Chargement initial, indépendant de l'état de la connexion temps réel
     useEffect(() => {
         if (!isUserLoggedIn || !user?.id) return;
-        fetchNotifications();
-
-        const supabase = getBrowserClient();
-        const channel = supabase
-            .channel(`notifications-bell-${user.id}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'notifications',
-                    filter: `user_id=eq.${user.id}`,
-                },
-                (payload: any) => {
-                    const n = payload.new as Record<string, unknown>;
-                    const newNotif: InAppNotification = {
-                        id: n.id as string,
-                        userId: n.user_id as string,
-                        type: n.type as string,
-                        title: n.title as string,
-                        content: n.content as string,
-                        channel: n.channel as string | undefined,
-                        status: n.status as string,
-                        isRead: (n.is_read as boolean) || false,
-                        readAt: n.read_at as string | undefined,
-                        metadata: n.metadata as Record<string, unknown> | undefined,
-                        createdAt: n.created_at as string,
-                    };
-                    setNotifications((prev) => [newNotif, ...prev.slice(0, 19)]);
-                    setUnreadCount((prev) => prev + 1);
-                }
-            )
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
+        void fetchNotifications();
     }, [isUserLoggedIn, user?.id, fetchNotifications]);
 
-    // Fermeture du dropdown au clic en dehors
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        }
-        if (isOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [isOpen]);
+    // Temps réel (lot 5, contrat O3) : une notification reçue ou lue ailleurs (INSERT, UPDATE) recharge la
+    // liste et le compteur ; rechargement aussi à la connexion et à chaque reconnexion.
+    useRealtimeRefresh({
+        channelKey: `notifications-bell-${user?.id ?? 'anonyme'}`,
+        subscriptions: [{ table: 'notifications', filter: `user_id=eq.${user?.id ?? ''}` }],
+        onSignal: fetchNotifications,
+        enabled: isUserLoggedIn && !!user?.id,
+    });
 
     const handleMarkAsRead = async (notif: InAppNotification, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
@@ -151,9 +118,14 @@ export function NotificationBell() {
         setUnreadCount((prev) => Math.max(0, prev - 1));
 
         try {
-            await fetch(`/api/notifications/${notif.id}/read`, { method: 'PATCH' });
+            const res = await fetch(`/api/notifications/${notif.id}/read`, { method: 'PATCH' });
+            if (!res.ok) {
+                console.error(`[NotificationBell] marquage comme lue refusé (HTTP ${res.status})`);
+                await fetchNotifications();
+            }
         } catch (err) {
             console.error('[NotificationBell] Erreur markAsRead:', err);
+            await fetchNotifications();
         }
     };
 
@@ -164,9 +136,14 @@ export function NotificationBell() {
         setUnreadCount(0);
 
         try {
-            await fetch('/api/notifications', { method: 'PATCH' });
+            const res = await fetch('/api/notifications', { method: 'PATCH' });
+            if (!res.ok) {
+                console.error(`[NotificationBell] marquage de toutes les notifications refusé (HTTP ${res.status})`);
+                await fetchNotifications();
+            }
         } catch (err) {
             console.error('[NotificationBell] Erreur markAllAsRead:', err);
+            await fetchNotifications();
         } finally {
             setIsMarkingAll(false);
         }
