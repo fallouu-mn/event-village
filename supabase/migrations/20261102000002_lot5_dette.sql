@@ -745,7 +745,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $
+AS $$
 DECLARE
     v_scanner uuid := (p->>'scanner_id')::uuid;
     v_event uuid := (p->>'event_id')::uuid;
@@ -859,7 +859,7 @@ BEGIN
     v_scan := public.scan_log(t.id, v_event, v_scanner, 'valid', TRUE, v_method, v_identity, v_hash);
     RETURN jsonb_build_object('result', 'valid', 'scan_id', v_scan, 'ticket', v_info);
 END;
-$;
+$$;
 
 -- ============================================================================
 -- C8 — incidents techniques du scan
