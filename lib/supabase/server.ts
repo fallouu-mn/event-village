@@ -2,6 +2,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest } from 'next/server';
 import { getServerEnv } from '@/lib/env';
+import { noStoreFetch } from './no-store-fetch';
 
 /**
  * Client Supabase avec clé Service Role pour les opérations backend sécurisées
@@ -12,6 +13,7 @@ export function getServiceRoleClient() {
     const env = getServerEnv();
 
     return createSupabaseClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+        global: { fetch: noStoreFetch },
         auth: {
             persistSession: false,
             autoRefreshToken: false,
@@ -42,6 +44,7 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<{ id: stri
                 getAll() { return req.cookies.getAll(); },
                 setAll() {},
             },
+            global: { fetch: noStoreFetch },
         }
     );
     const { data: { user } } = await ssrClient.auth.getUser();
@@ -57,6 +60,7 @@ export function getServerClient(authToken?: string) {
     return createSupabaseClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
         global: {
             headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+            fetch: noStoreFetch,
         },
         auth: {
             persistSession: false,

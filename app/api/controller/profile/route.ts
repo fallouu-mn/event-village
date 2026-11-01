@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { z } from 'zod';
 import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -116,7 +117,8 @@ export async function PATCH(req: NextRequest) {
         const { createClient } = await import('@supabase/supabase-js');
         const anonClient = createClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { fetch: noStoreFetch }, auth: { persistSession: false, autoRefreshToken: false } }
         );
         const { error: signInErr } = await anonClient.auth.signInWithPassword({
             email: loginEmail,

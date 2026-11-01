@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { type UserRoleType } from '@/lib/auth/roles';
 
 export interface AdminAuthResult {
@@ -72,6 +73,7 @@ export async function verifyAdminAuth(
                         },
                         setAll() {},
                     },
+                    global: { fetch: noStoreFetch },
                 }
             );
             const { data: { user } } = await ssrClient.auth.getUser();
