@@ -150,6 +150,15 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
 
         await test.step('2. le SUPERADMIN valide l’événement', async () => {
             const admin = await pageAs('fumee-superadmin');
+            // Diagnostic (run 50 : fiche restée en « En attente » après une validation réussie) : chaque
+            // réponse de la fiche et de la transition est écrite dans e2e.log.
+            admin.on('response', async (res) => {
+                const url = new URL(res.url());
+                if (!/^\/api\/admin\/events\/[0-9a-f-]{36}(\/transition)?$/.test(url.pathname)) return;
+                const body = (await res.json().catch(() => null)) as { actions?: { status?: string }; to?: string; code?: string } | null;
+                console.log(`[e2e][fiche admin] ${res.request().method()} ${url.pathname} → ${res.status()} statut=${body?.actions?.status ?? body?.to ?? '—'} code=${body?.code ?? '—'}`);
+            });
+            admin.on('console', (msg) => { if (msg.type() === 'error') console.log(`[e2e][fiche admin][console] ${msg.text()}`); });
             await admin.goto('/admin/events?status=EN_ATTENTE');
             await admin.getByRole('link', { name: new RegExp(escapeRe(title)) }).click();
             await admin.waitForURL(/\/admin\/events\/[0-9a-f-]{36}/);
