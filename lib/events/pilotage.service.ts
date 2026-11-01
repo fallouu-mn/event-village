@@ -125,25 +125,22 @@ export async function readPilotageTab(tab: PilotageTab, eventId: string, actorId
 }
 
 /**
- * Gestionnaire GET d'un onglet : session ACTIVE (401 ou 403), identifiant d'événement valide (404),
- * puis la RPC, qui refuse en 404 le partenaire B, un client ou un événement inconnu.
+ * Réponse GET d'un onglet, après la session ACTIVE vérifiée par la route (requireActiveSession) :
+ * identifiant d'événement valide (404), puis la RPC, qui refuse en 404 le partenaire B, un client ou un
+ * événement inconnu.
  */
-export function pilotageGetHandler(tab: PilotageTab) {
-    return async function GET(request: NextRequest, ctx: RouteParams<{ id: string }>): Promise<NextResponse> {
-        const session = await requireActiveSession(request);
-        if (session.response) return session.response;
-        const eventId = await routeParam(ctx, 'id');
-        if (!UUID_RE.test(eventId)) {
-            return NextResponse.json({ error: 'Événement introuvable.', code: 'EVENT_NOT_FOUND' }, { status: 404 });
-        }
-        try {
-            const body = await readPilotageTab(tab, eventId, session.user.id);
-            return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
-        } catch (err) {
-            return errorResponse(err, `GET /api/partner/events/[id]/pilotage/${tab}`,
-                `Lecture de ${TAB_LABEL[tab]} impossible pour le moment.`, 'PILOTAGE_READ_FAILED');
-        }
-    };
+export async function pilotageTabResponse(tab: PilotageTab, ctx: RouteParams<{ id: string }>, actorId: string): Promise<NextResponse> {
+    const eventId = await routeParam(ctx, 'id');
+    if (!UUID_RE.test(eventId)) {
+        return NextResponse.json({ error: 'Événement introuvable.', code: 'EVENT_NOT_FOUND' }, { status: 404 });
+    }
+    try {
+        const body = await readPilotageTab(tab, eventId, actorId);
+        return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+    } catch (err) {
+        return errorResponse(err, `GET /api/partner/events/[id]/pilotage/${tab}`,
+            `Lecture de ${TAB_LABEL[tab]} impossible pour le moment.`, 'PILOTAGE_READ_FAILED');
+    }
 }
 
 // ── Export des participants ────────────────────────────────────────────────
