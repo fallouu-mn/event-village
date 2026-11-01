@@ -1,45 +1,66 @@
 'use client';
 
 /**
- * Réglages financiers (lot 3, contrat A) : clés finance.* lues et modifiées par
- * GET / PUT /api/admin/finance-settings. Lecture : ADMIN et SUPERADMIN ; modification : SUPERADMIN
- * seul, avec un motif obligatoire. Chaque modification est historisée et ne s'applique qu'aux
+ * Réglages de la plateforme : finance (lot 3, clés finance.*) et contrôle d'accès (lot 4, clés
+ * access.*), lus et modifiés par GET / PUT /api/admin/finance-settings, présentés par section.
+ * Lecture : ADMIN et SUPERADMIN ; modification : SUPERADMIN seul, avec un motif obligatoire. Chaque modification est historisée et ne s'applique qu'aux
  * opérations futures (jamais rétroactive). La validation des valeurs est faite par le serveur.
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, ChevronLeft, History, Pencil, RefreshCw, Save, SlidersHorizontal, X } from 'lucide-react';
+import { AlertCircle, ChevronLeft, History, Pencil, RefreshCw, Save, ScanLine, SlidersHorizontal, Wallet, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
 
-type Kind = 'percent' | 'integer' | 'boolean' | 'bearer';
+type Kind = 'percent' | 'integer' | 'boolean' | 'choice';
 
 interface SettingMeta {
   label: string;
   help: string;
   kind: Kind;
   unit?: string;
+  /** Valeurs admises d'un réglage « choice » et leur libellé. */
+  options?: Record<string, string>;
 }
+
+const BEARER_LABELS: Record<string, string> = { EVENT_VILLAGE: 'Event Village', ORGANISATEUR: 'Organisateur' };
+const MANUAL_ENTRY_SCOPE_LABELS: Record<string, string> = {
+  ASSIGNED_CONTROLLER: 'Contrôleur affecté seul',
+  STAFF: 'Contrôleur affecté, partenaire et admin',
+};
 
 /** Libellés et aides d'affichage ; les bornes sont contrôlées par le serveur (finance_setting_set). */
 const META: Record<string, SettingMeta> = {
   'finance.service_fee_rate': { label: 'Frais de service', help: 'Payés par l’acheteur, arrondis au FCFA supérieur par billet. De 0 à 50 %.', kind: 'percent', unit: '%' },
   'finance.aggregator_fee_rate.WAVE': { label: 'Frais agrégateur Wave', help: 'Coût SamirPay d’un paiement Wave. De 0 à 10 %.', kind: 'percent', unit: '%' },
   'finance.aggregator_fee_rate.ORANGE_MONEY': { label: 'Frais agrégateur Orange Money', help: 'Coût SamirPay d’un paiement Orange Money. De 0 à 10 %.', kind: 'percent', unit: '%' },
-  'finance.cancellation_aggregator_fee_bearer': { label: 'Frais agrégateur d’une annulation', help: 'Qui supporte les frais agrégateur quand un billet est remboursé.', kind: 'bearer' },
+  'finance.cancellation_aggregator_fee_bearer': { label: 'Frais agrégateur d’une annulation', help: 'Qui supporte les frais agrégateur quand un billet est remboursé.', kind: 'choice', options: BEARER_LABELS },
   'finance.payout_hold_enabled': { label: 'Délai de garde des ventes', help: 'Désactivé : les ventes sont disponibles dès la confirmation du paiement.', kind: 'boolean' },
   'finance.payout_delay_hours': { label: 'Délai après la fin de l’événement', help: 'Nombre d’heures avant que les ventes deviennent disponibles. De 0 à 720.', kind: 'integer', unit: 'h' },
   'finance.withdrawal_fee_rate': { label: 'Frais de retrait', help: 'Arrondis au FCFA supérieur, déduits du montant versé. De 0 à 10 %.', kind: 'percent', unit: '%' },
   'finance.withdrawal_min_amount': { label: 'Montant minimum de retrait', help: 'Montant entier en FCFA.', kind: 'integer', unit: 'FCFA' },
   'finance.withdrawal_bank_enabled': { label: 'Retraits par virement bancaire', help: 'Tant qu’il est désactivé, seuls Wave et Orange Money sont proposés.', kind: 'boolean' },
   'finance.referral_availability_days': { label: 'Délai de validation des commissions', help: 'Jours avant qu’une commission de parrainage devienne disponible. De 7 à 14.', kind: 'integer', unit: 'jours' },
+  'access.scan_window_before_hours': { label: 'Ouverture du contrôle avant le début', help: 'Heures avant le début de l’événement à partir desquelles les billets peuvent être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },
+  'access.scan_window_after_hours': { label: 'Fermeture du contrôle après la fin', help: 'Heures après la fin de l’événement pendant lesquelles les billets peuvent encore être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },
+  'access.manual_entry_scope': { label: 'Saisie manuelle d’un numéro de billet', help: 'Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.', kind: 'choice', options: MANUAL_ENTRY_SCOPE_LABELS },
+  'access.counter_sale_enabled': { label: 'Vente au guichet en espèces', help: 'Un contrôleur autorisé à encaisser, avec une caisse ouverte, vend des billets au prix facial, sans frais.', kind: 'boolean' },
 };
 
-const BEARER_LABELS: Record<string, string> = { EVENT_VILLAGE: 'Event Village', ORGANISATEUR: 'Organisateur' };
+/** Ordre d'affichage des réglages dans leur section (celui de META ; clé inconnue en dernier). */
+const META_ORDER = Object.keys(META);
+const rank = (key: string) => (META_ORDER.includes(key) ? META_ORDER.indexOf(key) : META_ORDER.length);
+
+/** Sections de la page, dans l'ordre d'affichage, par préfixe de clé. */
+const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: LucideIcon }> = [
+  { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
+  { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet et vente au guichet.', icon: ScanLine },
+];
 
 interface Setting {
   key: string;
@@ -69,7 +90,7 @@ function displayValue(key: string, value: unknown): string {
   const v = unwrap(value);
   if (v === null || v === undefined) return '—';
   if (meta?.kind === 'boolean') return v === true ? 'Activé' : 'Désactivé';
-  if (meta?.kind === 'bearer') return BEARER_LABELS[String(v)] ?? String(v);
+  if (meta?.kind === 'choice') return meta.options?.[String(v)] ?? String(v);
   if (typeof v === 'number') return `${v.toLocaleString('fr-FR')}${meta?.unit ? ` ${meta.unit}` : ''}`;
   return String(v);
 }
@@ -150,7 +171,7 @@ export default function AdminFinanceSettingsPage() {
     const meta = META[key];
     let value: number | boolean | string;
     if (meta?.kind === 'boolean') value = draft === 'true';
-    else if (meta?.kind === 'bearer') value = draft;
+    else if (meta?.kind === 'choice') value = draft;
     else {
       const parsed = Number(draft.replace(',', '.'));
       if (draft.trim() === '' || !Number.isFinite(parsed)) {
@@ -202,7 +223,7 @@ export default function AdminFinanceSettingsPage() {
           </Link>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
             <SlidersHorizontal className="text-[#FF5722]" size={24} aria-hidden="true" />
-            Réglages financiers
+            Réglages de la plateforme
           </h1>
           <p className="text-xs text-slate-500 dark:text-zinc-400">
             Chaque modification est historisée et ne s’applique qu’aux opérations futures. Modification réservée aux superadministrateurs.
@@ -228,101 +249,117 @@ export default function AdminFinanceSettingsPage() {
               {loadError}
             </div>
           )}
-          <ul className="rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800">
-            {data.settings.map((s) => {
-              const meta = META[s.key];
-              const isEditing = editing === s.key;
-              const valueId = `${fieldId}-${s.key}-value`;
-              const reasonId = `${fieldId}-${s.key}-reason`;
-              const errorId = `${fieldId}-${s.key}-error`;
-              return (
-                <li key={s.key} className="p-4 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-black text-slate-900 dark:text-white">{meta?.label ?? s.key}</div>
-                      <div className="text-[11px] text-slate-500 dark:text-zinc-400">{meta?.help ?? s.key}</div>
-                      <div className="text-[11px] text-slate-400 dark:text-zinc-500 font-mono">{s.key} · modifié le {formatDateTime(s.updatedAt)}</div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-sm font-black text-[#FF5722] tabular-nums">{displayValue(s.key, s.value)}</span>
-                      {!isEditing && (
-                        <Button variant="ghost" size="sm" leftIcon={<Pencil size={14} aria-hidden="true" />} onClick={() => startEdit(s)} aria-label={`Modifier ${meta?.label ?? s.key}`}>
-                          Modifier
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+          {SECTIONS.map((section) => {
+            const items = data.settings.filter((s) => s.key.startsWith(section.prefix)).sort((a, b) => rank(a.key) - rank(b.key));
+            if (items.length === 0) return null;
+            const headingId = `${fieldId}-section-${section.prefix.replace('.', '')}`;
+            const SectionIcon = section.icon;
+            return (
+              <section key={section.prefix} aria-labelledby={headingId} className="space-y-3">
+                <div className="space-y-0.5">
+                  <h2 id={headingId} className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <SectionIcon size={16} className="text-[#FF5722]" aria-hidden="true" /> {section.title}
+                  </h2>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400">{section.help}</p>
+                </div>
+                <ul className="rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800">
+                  {items.map((s) => {
+                    const meta = META[s.key];
+                    const isEditing = editing === s.key;
+                    const valueId = `${fieldId}-${s.key}-value`;
+                    const reasonId = `${fieldId}-${s.key}-reason`;
+                    const errorId = `${fieldId}-${s.key}-error`;
+                    return (
+                      <li key={s.key} className="p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-black text-slate-900 dark:text-white">{meta?.label ?? s.key}</div>
+                            <div className="text-[11px] text-slate-500 dark:text-zinc-400">{meta?.help ?? s.key}</div>
+                            <div className="text-[11px] text-slate-400 dark:text-zinc-500 font-mono">{s.key} · modifié le {formatDateTime(s.updatedAt)}</div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-sm font-black text-[#FF5722] tabular-nums">{displayValue(s.key, s.value)}</span>
+                            {!isEditing && (
+                              <Button variant="ghost" size="sm" leftIcon={<Pencil size={14} aria-hidden="true" />} onClick={() => startEdit(s)} aria-label={`Modifier ${meta?.label ?? s.key}`}>
+                                Modifier
+                              </Button>
+                            )}
+                          </div>
+                        </div>
 
-                  {isEditing && (
-                    <form
-                      noValidate
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void save(s.key);
-                      }}
-                      className="grid grid-cols-1 sm:grid-cols-[minmax(0,12rem)_1fr_auto] gap-3 items-start p-3 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800"
-                    >
-                      <div>
-                        <label htmlFor={valueId} className="block text-[11px] font-bold text-slate-600 dark:text-zinc-300 mb-1">
-                          Nouvelle valeur{meta?.unit ? ` (${meta.unit})` : ''}
-                        </label>
-                        {meta?.kind === 'boolean' ? (
-                          <select id={valueId} value={draft} onChange={(e) => setDraft(e.target.value)} className={inputClass}>
-                            <option value="true">Activé</option>
-                            <option value="false">Désactivé</option>
-                          </select>
-                        ) : meta?.kind === 'bearer' ? (
-                          <select id={valueId} value={draft} onChange={(e) => setDraft(e.target.value)} className={inputClass}>
-                            {Object.entries(BEARER_LABELS).map(([k, label]) => (
-                              <option key={k} value={k}>{label}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            id={valueId}
-                            type="text"
-                            inputMode="decimal"
-                            value={draft}
-                            onChange={(e) => setDraft(e.target.value)}
-                            aria-describedby={saveError ? errorId : undefined}
-                            className={`${inputClass} tabular-nums`}
-                          />
+                        {isEditing && (
+                          <form
+                            noValidate
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void save(s.key);
+                            }}
+                            className="grid grid-cols-1 sm:grid-cols-[minmax(0,12rem)_1fr_auto] gap-3 items-start p-3 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800"
+                          >
+                            <div>
+                              <label htmlFor={valueId} className="block text-[11px] font-bold text-slate-600 dark:text-zinc-300 mb-1">
+                                Nouvelle valeur{meta?.unit ? ` (${meta.unit})` : ''}
+                              </label>
+                              {meta?.kind === 'boolean' ? (
+                                <select id={valueId} value={draft} onChange={(e) => setDraft(e.target.value)} className={inputClass}>
+                                  <option value="true">Activé</option>
+                                  <option value="false">Désactivé</option>
+                                </select>
+                              ) : meta?.kind === 'choice' ? (
+                                <select id={valueId} value={draft} onChange={(e) => setDraft(e.target.value)} className={inputClass}>
+                                  {Object.entries(meta.options ?? {}).map(([k, label]) => (
+                                    <option key={k} value={k}>{label}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  id={valueId}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={draft}
+                                  onChange={(e) => setDraft(e.target.value)}
+                                  aria-describedby={saveError ? errorId : undefined}
+                                  className={`${inputClass} tabular-nums`}
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <label htmlFor={reasonId} className="block text-[11px] font-bold text-slate-600 dark:text-zinc-300 mb-1">
+                                Motif <span className="text-[#FF5722]" aria-hidden="true">*</span>
+                              </label>
+                              <input
+                                id={reasonId}
+                                type="text"
+                                value={reason}
+                                maxLength={300}
+                                placeholder="Ex : décision du comité du 15 novembre"
+                                onChange={(e) => setReason(e.target.value)}
+                                aria-describedby={saveError ? errorId : undefined}
+                                className={inputClass}
+                              />
+                            </div>
+                            <div className="flex gap-2 sm:pt-5">
+                              <Button type="submit" variant="primary" size="sm" isLoading={isSaving} leftIcon={<Save size={14} aria-hidden="true" />}>
+                                Enregistrer
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" disabled={isSaving} onClick={() => setEditing(null)} leftIcon={<X size={14} aria-hidden="true" />}>
+                                Annuler
+                              </Button>
+                            </div>
+                            {saveError && (
+                              <p id={errorId} role="alert" className="sm:col-span-3 text-[11px] font-medium text-red-600 dark:text-red-400">
+                                {saveError}
+                              </p>
+                            )}
+                          </form>
                         )}
-                      </div>
-                      <div>
-                        <label htmlFor={reasonId} className="block text-[11px] font-bold text-slate-600 dark:text-zinc-300 mb-1">
-                          Motif <span className="text-[#FF5722]" aria-hidden="true">*</span>
-                        </label>
-                        <input
-                          id={reasonId}
-                          type="text"
-                          value={reason}
-                          maxLength={300}
-                          placeholder="Ex : décision du comité du 15 novembre"
-                          onChange={(e) => setReason(e.target.value)}
-                          aria-describedby={saveError ? errorId : undefined}
-                          className={inputClass}
-                        />
-                      </div>
-                      <div className="flex gap-2 sm:pt-5">
-                        <Button type="submit" variant="primary" size="sm" isLoading={isSaving} leftIcon={<Save size={14} aria-hidden="true" />}>
-                          Enregistrer
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" disabled={isSaving} onClick={() => setEditing(null)} leftIcon={<X size={14} aria-hidden="true" />}>
-                          Annuler
-                        </Button>
-                      </div>
-                      {saveError && (
-                        <p id={errorId} role="alert" className="sm:col-span-3 text-[11px] font-medium text-red-600 dark:text-red-400">
-                          {saveError}
-                        </p>
-                      )}
-                    </form>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
 
           <section aria-labelledby={`${fieldId}-historique`} className="space-y-3">
             <h2 id={`${fieldId}-historique`} className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">

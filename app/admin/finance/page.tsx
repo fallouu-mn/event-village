@@ -152,7 +152,7 @@ export default function AdminFinanceReconciliationPage() {
             href="/admin/finance-settings"
             className="inline-flex items-center min-h-[44px] px-3 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-300 hover:text-[#FF5722] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722]"
           >
-            Réglages financiers
+            Réglages de la plateforme
           </Link>
           <Button
             variant="secondary"

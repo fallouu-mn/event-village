@@ -6,8 +6,12 @@ import { rpcWithRetry } from '@/lib/payments/rpc';
 
 export const dynamic = 'force-dynamic';
 
+/** Préfixes des réglages exposés par cette route (validation des valeurs : finance_setting_set). */
+const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%';
+
 /**
- * Lot 3 — réglages financiers (clés finance.*, historisés, jamais rétroactifs).
+ * Lot 3 — réglages financiers (clés finance.*), lot 4 — réglages du contrôle d'accès (clés access.*) :
+ * historisés, jamais rétroactifs.
  * GET : valeurs courantes et 100 dernières modifications (ADMIN ou SUPERADMIN).
  * PUT : modification d'une clé, SUPERADMIN uniquement ; validation et historique en base
  *       (finance_setting_set) : la route ne fait aucun calcul et n'a aucune valeur par défaut.
@@ -17,9 +21,9 @@ export async function GET(req: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
     const supabase = getServiceRoleClient();
     const [{ data: settings, error }, { data: history, error: histErr }] = await Promise.all([
-        supabase.from('platform_settings').select('key, value, description, updated_by, updated_at').like('key', 'finance.%').order('key'),
+        supabase.from('platform_settings').select('key, value, description, updated_by, updated_at').or(SETTING_KEYS_FILTER).order('key'),
         supabase.from('platform_settings_history').select('key, old_value, new_value, changed_by, reason, changed_at')
-            .like('key', 'finance.%').order('changed_at', { ascending: false }).limit(100),
+            .or(SETTING_KEYS_FILTER).order('changed_at', { ascending: false }).limit(100),
     ]);
     if (error || histErr) {
         console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message);
@@ -32,7 +36,7 @@ export async function GET(req: NextRequest) {
 }
 
 const PutSchema = z.object({
-    key: z.string().startsWith('finance.'),
+    key: z.string().regex(/^(finance|access)\.[A-Za-z0-9_.]+$/),
     value: z.union([z.number(), z.boolean(), z.string()]),
     reason: z.string().trim().min(3).max(300),
 });
@@ -48,7 +52,7 @@ export async function PUT(req: NextRequest) {
     }
     const parsed = PutSchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: 'Réglage invalide (clé finance.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
+        return NextResponse.json({ error: 'Réglage invalide (clé finance.* ou access.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
     }
     const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>('finance_setting_set', {
         p_key: parsed.data.key,
