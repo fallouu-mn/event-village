@@ -129,7 +129,7 @@ export const SCREENS: readonly Screen[] = [
         id: 'pilotage-annulation', titre: 'Modale « Annuler l’événement » (impact, titre à retaper)', role: 'organisateur', needsIds: true, path: pilotage('publie'),
         actions: async ({ page }) => {
             await page.getByRole('button', { name: /annuler l[’']événement/i }).click();
-            await expect(page.getByRole('dialog')).toBeVisible();
+            await expect(page.getByRole('dialog').or(page.getByRole('alertdialog'))).toBeVisible();
         },
     },
     {

@@ -45,7 +45,7 @@ function cardOf(page: Page, title: string, action: RegExp): Locator {
 /** Clic sur une action ; si une modale de confirmation s'ouvre, elle est confirmée (même libellé ou « Confirmer »). */
 async function actionWithConfirm(page: Page, scope: Locator, action: RegExp): Promise<void> {
     await scope.getByRole('button', { name: action }).click();
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('dialog').or(page.getByRole('alertdialog'));
     if (await dialog.isVisible()) {
         await dialog.getByRole('button', { name: new RegExp(`${action.source}|confirmer`, 'i') }).last().click();
         await expect(dialog).toBeHidden();
@@ -173,7 +173,7 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             eventId = new URL(client.url()).pathname.split('/').pop() ?? '';
             await client.getByRole('button', { name: new RegExp(`ajouter un billet ${escapeRe(category)}`, 'i') }).click();
             await client.getByRole('button', { name: /^acheter/i }).click();
-            const dialog = client.getByRole('dialog');
+            const dialog = client.getByRole('dialog').or(client.getByRole('alertdialog'));
             await expect(dialog).toBeVisible();
             await dialog.getByRole('radio', { name: /^wave/i }).check();
             await dialog.getByLabel(/numéro/i).fill(fumeePayerPhone());
