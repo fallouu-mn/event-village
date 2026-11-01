@@ -1144,14 +1144,17 @@ BEGIN
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
     END LOOP;
-    -- Fonctions de triggers : aucun EXECUTE pour les rôles API
+    -- Fonctions de triggers : aucun EXECUTE pour anon et authenticated ; le service_role garde EXECUTE
+    -- comme pour toute fonction métier (contrôle 1A.3 de 03-verification.sql). Une fonction RETURNS trigger
+    -- ne peut de toute façon pas être appelée hors d'un trigger.
     FOREACH f IN ARRAY ARRAY[
         'public.events_force_draft()',
         'public.events_log_creation()',
         'public.events_status_guard()',
         'public.event_status_history_append_only()'
     ] LOOP
-        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated, service_role', f);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
     END LOOP;
 END;
 $$;
