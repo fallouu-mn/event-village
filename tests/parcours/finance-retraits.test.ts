@@ -231,6 +231,12 @@ describe('Lot 3.6 — soldes et retraits', () => {
         const { data: offline, error } = await service.from('finance_ledger').select('id, entry_type, payment_id').in('payment_id', [cash.paymentId, invitation.paymentId]);
         assert.equal(error, null, `grand livre hors plateforme : ${error?.message}`);
         assert.deepEqual(offline ?? [], [], 'aucune écriture pour une vente espèces ou une invitation');
+
+        // Lot 5 : le paiement « ancien guichet » fabriqué ci-dessus (reversement = facial hors plateforme) viole
+        // l'invariant (i) du lot 4, vérifié par les suites exécutées après celle-ci ; la preuve étant faite, la
+        // donnée forgée reprend la répartition hors plateforme (fin_offline : reversement 0).
+        const { error: resetErr } = await service.from('payments').update({ partner_payout_amount: 0 }).eq('id', cash.paymentId);
+        assert.equal(resetErr, null, `remise en état du paiement hors plateforme fabriqué : ${resetErr?.message}`);
     });
 
     test('fonds en attente jusqu’à la fin de l’événement + 48 h ; disponibles dès la confirmation si payout_hold_enabled = false (non rétroactif)', async () => {
