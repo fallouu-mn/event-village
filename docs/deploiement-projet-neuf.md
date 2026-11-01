@@ -117,6 +117,7 @@ Toutes les routes `/api/cron/*` s'appellent avec l'en-tête `Authorization: Bear
 | `/api/cron/referral-commissions` | horaire | commissions de parrainage arrivées à échéance : EN ATTENTE → DISPONIBLE (le solde les rend déjà disponibles à leur date ; le cron met le statut affiché à jour) |
 | `/api/cron/moratoriums` | quotidienne | moratoires des réservations de salle |
 | `/api/cron/ticket-transfers` | horaire | expiration des transferts de billets |
+| `/api/cron/events-finish` | toutes les 15 minutes (**obligatoire**) | passage à TERMINÉ des événements publiés dont la fin est passée (fin renseignée, sinon jour du début à 23:59, heure de Dakar), journalisé par le système ; le scan et l'ouverture de caisse restent possibles jusqu'à la fermeture de la fenêtre de scan (`access.scan_window_after_hours`) |
 
 Planification, selon l'hébergement retenu :
 - **Vercel (offre Pro)** : fichier `vercel.json` avec `{"crons":[{"path":"/api/cron/payments-reconcile","schedule":"*/5 * * * *"},{"path":"/api/cron/stock-reservations","schedule":"*/5 * * * *"}]}` et la variable `CRON_SECRET` (Vercel l'envoie dans l'en-tête Authorization). L'offre Hobby limite les crons à un par jour : insuffisant, et un `vercel.json` plus fréquent y fait échouer le déploiement — c'est pourquoi le fichier n'est pas versionné ;

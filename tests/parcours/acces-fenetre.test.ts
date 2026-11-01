@@ -26,6 +26,7 @@ import {
     assignController, cashCheckin, createCashOrderTickets, createTimedEvent, newController, openShift, scan, scansOf,
     shiftRow, ticketPayload, ticketRow, withAccessSettings, type RouteResult,
 } from './acces-helpers';
+import { advanceEventTo } from './cycle-helpers';
 
 type Row = Record<string, unknown>;
 
@@ -115,7 +116,9 @@ describe('4.4 Statut de l’événement', () => {
     test('ANNULE → event_cancelled ; SUSPENDU → event_suspended ; TERMINE → event_ended', async () => {
         await expectRefused(await freeEvent('annule', { startsInHours: 1, status: 'ANNULE' }), 'event_cancelled', 'événement ANNULE');
         await expectRefused(await freeEvent('suspendu', { startsInHours: 1, status: 'SUSPENDU' }), 'event_suspended', 'événement SUSPENDU');
-        await expectRefused(await freeEvent('termine', { startsInHours: 1, status: 'TERMINE' }), 'event_ended', 'événement TERMINE');
+        // Lot 5 (contrat D7) : TERMINE reste scannable jusqu'à la fermeture de la fenêtre ; la fin manuelle
+        // exige un début passé (D4). Événement TERMINE fini il y a 7 h (fenêtre de 6 h fermée).
+        await expectRefused(await freeEvent('termine', { startsInHours: -11, durationHours: 4, status: 'TERMINE' }), 'event_ended', 'événement TERMINE, fenêtre fermée');
     });
 });
 
@@ -153,16 +156,17 @@ describe('4.4 Encaissement sur un événement annulé', () => {
         assert.equal(Number(scanned.body.amount_due ?? (scanned.body.ticket as Row | undefined)?.amount_due), 3000, `montant dû = prix du billet : ${show(scanned)}`);
         assert.equal(typeof scanned.body.scan_id, 'string', 'scan_id du scan cash_required');
 
-        const { error: cancelErr } = await service.from('events').update({ status: 'ANNULE' }).eq('id', ev.eventId);
-        assert.equal(cancelErr, null, cancelErr?.message);
+        // Lot 5 (contrats D3 et D6) : le statut ne change plus par UPDATE ; l'annulation réelle (event_cancel)
+        // annule aussi, dans la même transaction, le billet « à régler sur place » jamais payé.
+        await advanceEventTo(ev.eventId, 'ANNULE');
 
         const r = await cashCheckin(cashier, { scanId: scanned.body.scan_id, eventId: ev.eventId });
         assert.ok(r.status < 500, `refus métier, pas une erreur serveur : ${show(r)}`);
         assert.notEqual(r.body.result, 'valid', `encaissement sur un événement annulé : ${show(r)}`);
-        assert.ok(r.body.result === 'event_cancelled' || /CANCEL/.test(String(r.body.code ?? '')), `refus motivé par l’annulation : ${show(r)}`);
+        assert.ok(['event_cancelled', 'cancelled'].includes(String(r.body.result)) || /CANCEL/.test(String(r.body.code ?? '')), `refus motivé par l’annulation : ${show(r)}`);
 
         const t = await ticketRow(ticketId);
-        assert.equal(t.status, 'VALIDE', 'billet non composté');
+        assert.equal(t.status, 'ANNULE', 'billet annulé par l’annulation, jamais composté');
         assert.equal(t.payment_id, null, 'aucun paiement rattaché au billet');
         const { data: orderRow } = await service.from('orders').select('payment_status, paid_amount').eq('id', order.orderId).single();
         assert.notEqual(orderRow?.payment_status, 'SUCCESS', 'commande toujours impayée');
