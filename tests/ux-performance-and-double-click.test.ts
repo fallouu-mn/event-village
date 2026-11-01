@@ -42,11 +42,16 @@ test('1. UX / MUTATION UNIQUE : 1 clic valide déclenche exactement 1 création 
     let eventId: string | null = null;
 
     try {
+        // Lot 5 (contrat F1) : createEvent valide le corps par le schéma partagé (catégorie, ville et début
+        // dans le futur obligatoires) et crée par la RPC event_create.
+        const startDate = new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10);
         const event = await EventService.createEvent(partnerUserId, {
             title: 'SaaS Showcase Night',
-            start_date: '2026-11-20',
+            category: 'CONCERT',
+            start_date: startDate,
             start_time: '19:00',
             location: 'Dakar',
+            city: 'Dakar',
         });
         eventId = event.id;
 

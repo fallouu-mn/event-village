@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsPartner, serverIsAdmin, serverHasRole } from '@/lib/auth/session';
-import { EventService } from '@/lib/events/event.service';
+import { requireActiveSession, serverIsPartner, serverIsAdmin } from '@/lib/auth/session';
+import { EventService, EventServiceError } from '@/lib/events/event.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,42 +35,39 @@ export async function GET(
 }
 
 /**
- * PUT /api/partner/events/[id]
+ * PUT /api/partner/events/[id] — lot 5 (contrats F1, F3, U)
+ * Corps `{ patch, expected_updated_at }` : patch validé par le schéma partagé, puis RPC event_update
+ * (propriétaire seul, version attendue, règles par statut, verrous après ventes, porteurs prévenus).
+ * Réponses : 200 `{ success, event, notified_holders, sms_queued }` ; 400 (champ interdit FIELD_NOT_EDITABLE,
+ * validation avec `fields`) ; 403 ADMIN_CANNOT_EDIT ; 404 ; 409 (EDIT_CONFLICT, WITHDRAW_TO_EDIT,
+ * EVENT_LOCKED, LOCKED_AFTER_SALES, SALE_END_AFTER_EVENT avec `categories`).
  */
 export async function PUT(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const activeSession = await requireActiveSession(request);
+    if (activeSession.response) return activeSession.response;
+    const user = activeSession.user;
+    if (!serverIsPartner(user)) {
+        return NextResponse.json({ error: 'Accès réservé aux organisateurs.', code: 'FORBIDDEN' }, { status: 403 });
+    }
+
+    const { id } = await params;
+    let body: unknown;
     try {
-        const activeSession = await requireActiveSession(request);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user || !serverIsPartner(user)) {
-            return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
-        }
+        body = await request.json();
+    } catch {
+        return NextResponse.json({ error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400 });
+    }
 
-        const { id } = await params;
-        const body = await request.json();
-
-        // Validation croisée jauge serveur (§35)
-        if (body.ticket_categories?.length > 0 && body.capacity && body.capacity > 0) {
-            const totalQuota = body.ticket_categories.reduce((sum: number, cat: any) => sum + Number(cat.total_quantity), 0);
-            if (totalQuota > Number(body.capacity)) {
-                return NextResponse.json(
-                    { error: `La somme des quotas de billets (${totalQuota}) dépasse la capacité maximale (${body.capacity}).` },
-                    { status: 400 }
-                );
-            }
-        }
-
-        const updated = await EventService.updateEvent(id, user.id, body);
-
-        return NextResponse.json({ success: true, event: updated });
+    try {
+        const result = await EventService.updateEvent(id, user.id, body);
+        return NextResponse.json({ success: true, ...result });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Échec de la modification.' },
-            { status: 400 }
-        );
+        if (error instanceof EventServiceError) return NextResponse.json(error.toBody(), { status: error.status });
+        console.error('[API partner/events/[id] PUT]', error instanceof Error ? error.message : String(error));
+        return NextResponse.json({ error: 'Modification de l’événement impossible pour le moment.', code: 'EVENT_UPDATE_FAILED' }, { status: 500 });
     }
 }
 

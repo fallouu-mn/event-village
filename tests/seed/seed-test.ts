@@ -229,12 +229,13 @@ async function ensureEvent(key: FixtureEventKey, partnerId: string, actors: Seed
         capacity,
         image_url: posterUrl(partnerId, `fixture-${spec.slug}.png`),
         category: 'CONCERT',
+        // Lot 5 (contrats F1 et F5) : programme typé, infos pratiques et services aux formes du schéma partagé
         program: [
-            { time: '20:00', title: 'Ouverture des portes' },
-            { time: '21:00', title: 'Artiste de test' },
+            { id: '00000000-0000-4000-8000-000000000001', time: '20:00', kind: 'ACTIVITE', title: 'Ouverture des portes' },
+            { id: '00000000-0000-4000-8000-000000000002', time: '21:00', kind: 'ARTISTE', title: 'Concert', participant: 'Artiste de test' },
         ],
-        practical_info: { address: 'Salle de test, Dakar', access: 'Bus ligne test', parking: 'Parking de test', contact: '+221700000000', rules: 'Pièce d\'identité requise' },
-        services: { ticketing: true, tables: false, communication: false, promotion: false },
+        practical_info: { address: 'Salle de test, Dakar', accessNotes: 'Bus ligne test', parking: 'Parking de test', contactPhone: '+221700000000', rules: 'Pièce d\'identité requise' },
+        services: { ticketing: true, tableBooking: false, communication: false },
         updated_at: new Date().toISOString(),
     };
 

@@ -107,7 +107,7 @@ test('1. AUGMENTATION DE STOCK & RÉOUVERTURE CATÉGORIE SOLD OUT : Réassort en
     assert.equal(vipCat.sold_quantity, 50);
 
     // Le partenaire augmente le quota à 80 places (+30 places)
-    const updatedCat = await EventService.updateCategoryStockAndStatus(
+    const updatedCat = await EventService.updateTicketCategory(
         partnerAUserId,
         event.id,
         vipCat.id,
@@ -143,7 +143,7 @@ test('2. DIMINUTION DE STOCK AUTORISÉE : Réduction sécurisée (total >= sold)
     const standardCat = categories[0];
 
     // Réduction du quota à 25 (reste 15 places)
-    const updated = await EventService.updateCategoryStockAndStatus(
+    const updated = await EventService.updateTicketCategory(
         partnerAUserId,
         event.id,
         standardCat.id,
@@ -179,7 +179,7 @@ test('3. DIMINUTION DE STOCK INTERDITE : Rejet strict si total < sold_quantity (
     // Tentative de réduction à 40 (< 42 vendus) -> Doit échouer
     await assert.rejects(
         async () => {
-            await EventService.updateCategoryStockAndStatus(
+            await EventService.updateTicketCategory(
                 partnerAUserId,
                 event.id,
                 confCat.id,
@@ -219,7 +219,7 @@ test('4. CAPACITÉ GLOBALE & AUGMENTATION DE CAPACITÉ : Somme des quotas <= Cap
     // 1. Tentative d'augmenter Cat B à 50 (somme = 60 + 50 = 110 > 100) -> Doit être rejeté
     await assert.rejects(
         async () => {
-            await EventService.updateCategoryStockAndStatus(
+            await EventService.updateTicketCategory(
                 partnerAUserId,
                 event.id,
                 catB.id,
@@ -231,13 +231,13 @@ test('4. CAPACITÉ GLOBALE & AUGMENTATION DE CAPACITÉ : Somme des quotas <= Cap
     );
 
     // 2. Le partenaire augmente d'abord la capacité de la salle de 100 à 150
-    const updatedEvent = await EventService.updateEvent(event.id, partnerAUserId, {
+    const { event: updatedEvent } = await EventService.updateEvent(event.id, partnerAUserId, {
         capacity: 150,
     });
     assert.equal(updatedEvent.capacity, 150);
 
     // 3. Maintenant, l'augmentation de Cat B à 50 passe sans problème (110 <= 150)
-    const updatedCatB = await EventService.updateCategoryStockAndStatus(
+    const updatedCatB = await EventService.updateTicketCategory(
         partnerAUserId,
         event.id,
         catB.id,
@@ -256,7 +256,7 @@ test('5. MODIFICATION DU LIEU, VILLE ET INFOS PRATIQUES SUR ÉVÉNEMENT PUBLIÉ'
     });
 
     // Modification du lieu et des infos pratiques
-    const updated = await EventService.updateEvent(event.id, partnerAUserId, {
+    const { event: updated } = await EventService.updateEvent(event.id, partnerAUserId, {
         location: 'King Fahd Palace',
         city: 'Dakar',
         description: 'Nouvelle description mise à jour en direct',
@@ -317,7 +317,7 @@ test('6. MODIFICATION DE DATE/HEURE AVEC BILLETS VENDUS : Détection & Envoi des
     assert.ok(ticket, 'Billet de test créé');
 
     // Modification de la date et heure de début
-    const updated = await EventService.updateEvent(event.id, partnerAUserId, {
+    const { event: updated } = await EventService.updateEvent(event.id, partnerAUserId, {
         start_date: '2026-11-20',
         start_time: '21:30',
     });
@@ -360,7 +360,7 @@ test('7. ISOLATION MULTI-TENANT & RBAC : Partenaire B ne peut pas modifier Parte
     // 2. Partenaire B tente de modifier le quota d'une catégorie de Partenaire A
     await assert.rejects(
         async () => {
-            await EventService.updateCategoryStockAndStatus(
+            await EventService.updateTicketCategory(
                 partnerBUserId,
                 event.id,
                 categories[0].id,
@@ -385,8 +385,8 @@ test('8. CONCURRENCE SUR LES QUOTAS (Promise.allSettled) : Atomicité et intégr
 
     // 2 mises à jour simultanées : une à 80 et une à 90
     const results = await Promise.allSettled([
-        EventService.updateCategoryStockAndStatus(partnerAUserId, event.id, catId, { total_quantity: 80 }),
-        EventService.updateCategoryStockAndStatus(partnerAUserId, event.id, catId, { total_quantity: 90 }),
+        EventService.updateTicketCategory(partnerAUserId, event.id, catId, { total_quantity: 80 }),
+        EventService.updateTicketCategory(partnerAUserId, event.id, catId, { total_quantity: 90 }),
     ]);
 
     // Les deux requêtes doivent être valides et ne causer aucun crash
@@ -433,7 +433,7 @@ test('9. INALTÉRABILITÉ DES ÉVÉNEMENTS ANNULÉS OU TERMINÉS', async () => {
     // Tentative de modification des quotas d'un événement terminé
     await assert.rejects(
         async () => {
-            await EventService.updateCategoryStockAndStatus(
+            await EventService.updateTicketCategory(
                 partnerAUserId,
                 event.id,
                 categories[0].id,

@@ -1,21 +1,24 @@
+import { z } from 'zod';
 import { getServiceRoleClient } from '../supabase/server';
-import { FinancialCalculatorService } from '../payments/financial-calculator.service';
-import { NotificationService } from '../notifications/notification.service';
-import { mTargetService } from '../sms/mtarget.service';
-import { EmailService } from '../email/email.service';
 import { EventLifecycleService } from './event-lifecycle.service';
-import { randomUUID } from 'crypto';
+import { eventEndAt } from './event-end';
 import { pgEscapeLike } from '@/lib/security/postgrest-filter';
+import { rpcWithRetry } from '@/lib/payments/rpc';
+import {
+    NON_EDITABLE_EVENT_FIELDS,
+    createEventSchema,
+    createTicketCategorySchema,
+    parseWithFrenchErrors,
+    updateEventSchema,
+    updateTicketCategorySchema,
+    validationFailure,
+    type ProgramLine,
+} from '@/lib/validations/event';
 
 export type EventStatus = 'BROUILLON' | 'EN_ATTENTE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'TERMINE' | 'ANNULE';
 
-export interface ProgramItem {
-    id: string;
-    time: string;
-    title: string;
-    artistOrSpeaker?: string;
-    description?: string;
-}
+/** Ligne de programme typée (contrat F1). */
+export type ProgramItem = ProgramLine;
 
 export interface PracticalInfo {
     address?: string;
@@ -25,48 +28,133 @@ export interface PracticalInfo {
     rules?: string;
 }
 
-export interface EventServicesConfig {
-    ticketing: boolean;
-    tableBooking: boolean;
-    communication: boolean;
-    promotion?: boolean;
+/** Ligne `events` ou `ticket_categories` relue en base (colonnes Postgres, forme libre, comme les lectures supabase-js). */
+export type DbRecord = Record<string, any>;
+
+export interface EventUpdateResult {
+    event: DbRecord;
+    notified_holders: number;
+    sms_queued: number;
 }
 
-export interface TicketCategoryInput {
-    name: string;
-    description?: string;
-    price: number;
-    total_quantity: number;
-    sale_start?: string | null;
-    sale_end?: string | null;
-    max_per_order?: number;
-    is_visible?: boolean;
+/**
+ * Refus d'une opération d'édition : statut HTTP, code stable, message français ; `details` est recopié dans
+ * le corps de la réponse (field, fields, categories…).
+ */
+export class EventServiceError extends Error {
+    constructor(
+        readonly status: number,
+        readonly code: string,
+        message: string,
+        readonly details: Record<string, unknown> = {},
+    ) {
+        super(message);
+        this.name = 'EventServiceError';
+    }
+
+    toBody(): Record<string, unknown> {
+        return { error: this.message, code: this.code, ...this.details };
+    }
 }
 
-export interface CreateEventInput {
-    title: string;
-    category?: string | null;
-    description?: string;
+/** Statut HTTP des refus des RPC d'édition (migration 20261102000004_lot5_edition.sql). */
+const REFUSAL_HTTP: Record<string, number> = {
+    INVALID_INPUT: 400,
+    FIELD_NOT_EDITABLE: 400,
+    EXPECTED_VERSION_REQUIRED: 400,
+    END_DATE_REQUIRED: 400,
+    EVENT_START_PAST: 400,
+    EVENT_END_BEFORE_START: 400,
+    IMAGE_ORIGIN_INVALID: 400,
+    SALE_DATES_INVALID: 400,
+    PARTNER_NOT_FOUND: 403,
+    PARTNER_NOT_VALIDATED: 403,
+    ACCOUNT_NOT_ACTIVE: 403,
+    ADMIN_CANNOT_EDIT: 403,
+    EVENT_NOT_FOUND: 404,
+    CATEGORY_NOT_FOUND: 404,
+    EDIT_CONFLICT: 409,
+    WITHDRAW_TO_EDIT: 409,
+    EVENT_LOCKED: 409,
+    LOCKED_AFTER_SALES: 409,
+    CAPACITY_BELOW_QUOTAS: 409,
+    SALE_END_AFTER_EVENT: 409,
+    CATEGORY_NAME_TAKEN: 409,
+    QUOTA_ABOVE_CAPACITY: 409,
+    QUOTA_BELOW_SOLD: 409,
+    QUOTA_BELOW_HELD: 409,
+    PRICE_LOCKED_AFTER_SALES: 409,
+    CATEGORY_HAS_SALES: 409,
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const NOT_FOUND_MESSAGE = 'Événement introuvable.';
+const UNAVAILABLE_MESSAGE = 'Enregistrement impossible pour le moment. Réessayez dans quelques instants.';
+
+interface RpcRefusal {
+    ok: false;
+    code?: string;
+    message?: string;
+    field?: string;
+    categories?: unknown;
+    suggestion?: string;
+}
+
+/** Refus d'une RPC → EventServiceError (champ en cause recopié dans field et fields). */
+function refusalToError(body: RpcRefusal): EventServiceError {
+    const code = body.code ?? 'INVALID_INPUT';
+    const message = body.message || 'Opération refusée.';
+    const details: Record<string, unknown> = {};
+    if (body.field) {
+        details.field = body.field;
+        details.fields = [{ path: body.field, code, message }];
+    }
+    if (body.categories !== undefined) details.categories = body.categories;
+    if (body.suggestion !== undefined) details.suggestion = body.suggestion;
+    return new EventServiceError(REFUSAL_HTTP[code] ?? 409, code, message, details);
+}
+
+type RpcCall = { data: unknown; error: { code: string; message: string } | null };
+
+/**
+ * Résultat d'une RPC d'édition (appel déjà lancé par l'appelant) : `{ ok:true, … }` renvoyé, refus métier →
+ * EventServiceError, panne → 500 sans détail Postgres (journalisée).
+ */
+async function editionResult<T extends Record<string, unknown>>(fn: string, call: Promise<RpcCall>): Promise<T> {
+    const { data, error } = await call;
+    if (error) {
+        console.error(`[EventService] ${fn} : ${error.code} ${error.message}`);
+        throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
+    }
+    if (!data || typeof data !== 'object') {
+        console.error(`[EventService] ${fn} : réponse vide`);
+        throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
+    }
+    if ((data as { ok?: unknown }).ok !== true) throw refusalToError(data as RpcRefusal);
+    return data as T;
+}
+
+function invalid(error: z.ZodError): EventServiceError {
+    const body = validationFailure(error);
+    return new EventServiceError(400, body.code, body.error, { ...(body.field ? { field: body.field } : {}), fields: body.fields });
+}
+
+interface EditableEvent {
+    id: string;
+    partner_id: string;
+    status: EventStatus;
     start_date: string;
     start_time: string;
-    end_date?: string | null;
-    end_time?: string | null;
-    location: string;
-    city?: string;
-    latitude?: number | null;
-    longitude?: number | null;
-    image_url?: string;
-    gallery_urls?: string[];
-    capacity?: number | null;
-    program?: ProgramItem[];
-    practical_info?: PracticalInfo;
-    services?: EventServicesConfig;
-    ticket_categories?: TicketCategoryInput[];
+    end_date: string | null;
+    end_time: string | null;
+    image_url: string | null;
 }
 
-export interface UpdateEventInput extends Partial<CreateEventInput> {
-    status?: EventStatus;
-}
+const updateBodySchema = z.object({
+    patch: z.record(z.unknown()),
+    expected_updated_at: z.string().min(1),
+}).strict();
 
 export class EventService {
     /**
@@ -87,99 +175,84 @@ export class EventService {
         return partner.id;
     }
 
+    /** Partenaire du compte, ou null s'il n'en a pas (erreur de lecture → 500). */
+    private static async partnerOf(userId: string): Promise<{ id: string } | null> {
+        const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', userId).maybeSingle();
+        if (error) {
+            console.error(`[EventService] partenaire du compte ${userId} illisible : ${error.message}`);
+            throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
+        }
+        return data ? { id: String(data.id) } : null;
+    }
+
+    private static async isStaff(userId: string): Promise<boolean> {
+        const { data, error } = await getServiceRoleClient().from('user_roles').select('role').eq('user_id', userId).in('role', ['ADMIN', 'SUPERADMIN']);
+        if (error) {
+            console.error(`[EventService] rôles du compte ${userId} illisibles : ${error.message}`);
+            throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
+        }
+        return (data ?? []).length > 0;
+    }
+
     /**
-     * Création d'un événement par le partenaire (Statut initial : BROUILLON)
-     * §30 CDC : partner_id est strictement dérivé de la session
+     * Événement modifiable par l'acteur (lecture préalable au schéma, la RPC refait chaque contrôle sous verrou) :
+     * propriétaire seul (admin : 403 ADMIN_CANNOT_EDIT ; autre compte : 404) ; EN_ATTENTE → 409 WITHDRAW_TO_EDIT ;
+     * TERMINE et ANNULE → 409 EVENT_LOCKED.
      */
-    public static async createEvent(partnerUserId: string, input: CreateEventInput) {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        // Validation des champs obligatoires (§30)
-        if (!input.title || !input.title.trim()) {
-            throw new Error('Le titre de l\'événement est obligatoire.');
-        }
-        if (!input.start_date || !input.start_time) {
-            throw new Error('La date et l\'heure de début sont obligatoires.');
-        }
-        if (!input.location || !input.location.trim()) {
-            throw new Error('Le lieu de l\'événement est obligatoire.');
-        }
-
-        // Validation croisée jauge serveur : somme quotas <= capacité (§35)
-        if (input.ticket_categories && input.ticket_categories.length > 0 && input.capacity && input.capacity > 0) {
-            const totalQuota = input.ticket_categories.reduce((sum, cat) => sum + Number(cat.total_quantity), 0);
-            if (totalQuota > input.capacity) {
-                throw new Error(`La somme des quotas de billets (${totalQuota}) dépasse la capacité maximale (${input.capacity}).`);
-            }
-        }
-
-        const slug = `${input.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString().slice(-6)}`;
-
-        // 1. Insertion de l'événement
-        const { data: event, error: eventErr } = await supabase
+    private static async loadEditableEvent(eventId: string, actorId: string, what: 'event' | 'categories'): Promise<EditableEvent> {
+        if (!UUID_RE.test(eventId)) throw new EventServiceError(404, 'EVENT_NOT_FOUND', NOT_FOUND_MESSAGE);
+        const { data, error } = await getServiceRoleClient()
             .from('events')
-            .insert({
-                partner_id: partnerId,
-                title: input.title.trim(),
-                slug,
-                category: input.category || null,
-                description: input.description || null,
-                start_date: input.start_date,
-                start_time: input.start_time,
-                end_date: input.end_date || null,
-                end_time: input.end_time || null,
-                location: input.location.trim(),
-                city: input.city || 'Dakar',
-                latitude: input.latitude ?? null,
-                longitude: input.longitude ?? null,
-                image_url: input.image_url || null,
-                gallery_urls: input.gallery_urls || [],
-                capacity: input.capacity && input.capacity > 0 ? input.capacity : null,
-                program: input.program || [],
-                practical_info: input.practical_info || {},
-                services: input.services ? {
-                    ticketing: !!input.services.ticketing,
-                    tableBooking: !!input.services.tableBooking,
-                    communication: !!input.services.communication,
-                } : {},
-                status: 'BROUILLON', // Statut initial strict (§31)
-            })
-            .select('*')
-            .single();
-
-        if (eventErr || !event) {
-            throw new Error(`Échec création événement: ${eventErr?.message}`);
+            .select('id, partner_id, status, start_date, start_time, end_date, end_time, image_url')
+            .eq('id', eventId)
+            .maybeSingle();
+        if (error) {
+            console.error(`[EventService] événement ${eventId} illisible : ${error.message}`);
+            throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
         }
-
-        // 2. Insertion des catégories de billets si fournies (§35)
-        if (input.ticket_categories && input.ticket_categories.length > 0) {
-            const categoriesToInsert = input.ticket_categories.map(cat => ({
-                event_id: event.id,
-                name: cat.name.trim(),
-                description: cat.description || null,
-                price: Number(cat.price),
-                total_quantity: Number(cat.total_quantity),
-                sold_quantity: 0,
-                sale_start: cat.sale_start || null,
-                sale_end: cat.sale_end || null,
-                max_per_order: cat.max_per_order ?? 10,
-                is_visible: cat.is_visible !== false,
-                is_active: true,
-            }));
-
-            const { error: catErr } = await supabase
-                .from('ticket_categories')
-                .insert(categoriesToInsert);
-
-            if (catErr) {
-                // Rollback the event creation if ticket categories fail to insert
-                await supabase.from('events').delete().eq('id', event.id);
-                throw new Error(`Échec création catégories billets: ${catErr?.message}`);
+        if (!data) throw new EventServiceError(404, 'EVENT_NOT_FOUND', NOT_FOUND_MESSAGE);
+        const event = data as EditableEvent;
+        const partner = await this.partnerOf(actorId);
+        if (!partner || partner.id !== event.partner_id) {
+            if (await this.isStaff(actorId)) {
+                throw new EventServiceError(403, 'ADMIN_CANNOT_EDIT', what === 'event'
+                    ? 'Seul l’organisateur modifie son événement ; l’administration agit par les changements de statut.'
+                    : 'Seul l’organisateur modifie la billetterie de son événement.');
             }
+            throw new EventServiceError(404, 'EVENT_NOT_FOUND', NOT_FOUND_MESSAGE);
         }
-
+        if (event.status === 'EN_ATTENTE') {
+            throw new EventServiceError(409, 'WITHDRAW_TO_EDIT', what === 'event'
+                ? 'L’événement est en cours de validation : retirez-le de la validation pour le modifier.'
+                : 'L’événement est en cours de validation : retirez-le de la validation pour modifier sa billetterie.');
+        }
+        if (event.status === 'TERMINE' || event.status === 'ANNULE') {
+            throw new EventServiceError(409, 'EVENT_LOCKED', what === 'event'
+                ? 'Un événement terminé ou annulé ne peut plus être modifié.'
+                : 'La billetterie d’un événement terminé ou annulé ne peut plus être modifiée.');
+        }
         return event;
+    }
+
+    /**
+     * Création d'un événement BROUILLON et de ses catégories (contrat F2) : corps validé par le schéma partagé
+     * (400 avec la liste des champs), puis RPC event_create (une seule transaction). Le partenaire est dérivé du
+     * compte ; services forcés à la seule billetterie (F5).
+     */
+    public static async createEvent(partnerUserId: string, input: unknown): Promise<DbRecord> {
+        const partner = await this.partnerOf(partnerUserId);
+        if (!partner) {
+            throw new EventServiceError(403, 'PARTNER_NOT_FOUND', 'Seul un organisateur disposant d’un profil partenaire peut créer un événement.');
+        }
+        const parsed = parseWithFrenchErrors(createEventSchema({ partnerId: partner.id }), input);
+        if (!parsed.success) throw invalid(parsed.error);
+        const { ticket_categories: categories, ...event } = parsed.data;
+        const result = await editionResult<{ ok: true; event: DbRecord }>('event_create', rpcWithRetry('event_create', { p: {
+            actor_id: partnerUserId,
+            event,
+            ticket_categories: categories,
+        } }));
+        return result.event;
     }
 
     /**
@@ -235,439 +308,115 @@ export class EventService {
     }
 
     /**
-     * Mise à jour d'un événement existant
+     * Édition d'un événement (contrat F3) : corps `{ patch, expected_updated_at }`. Champs interdits → 400
+     * FIELD_NOT_EDITABLE ; patch validé par le schéma partagé ; RPC event_update (verrou, version, règles
+     * par statut, verrous après ventes, file des notifications, fonds). Les SMS partent par le cron
+     * event-change-notifications.
      */
-    public static async updateEvent(eventId: string, partnerUserId: string, input: UpdateEventInput) {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        // Vérification que l'événement appartient au partenaire
-        const { data: existing, error: findErr } = await supabase
-            .from('events')
-            .select('*, ticket_categories(*)')
-            .eq('id', eventId)
-            .eq('partner_id', partnerId)
-            .single();
-
-        if (findErr || !existing) {
-            throw new Error('Événement introuvable ou non autorisé pour modification.');
+    public static async updateEvent(eventId: string, actorId: string, body: unknown): Promise<EventUpdateResult> {
+        const shape = updateBodySchema.safeParse(body);
+        if (!shape.success) {
+            throw new EventServiceError(400, 'INVALID_BODY',
+                'Corps de requête invalide : envoyez les modifications (patch) et la version lue de l’événement (expected_updated_at).');
         }
+        const { patch, expected_updated_at } = shape.data;
+        const event = await this.loadEditableEvent(eventId, actorId, 'event');
 
-        // On ne peut modifier les événements en BROUILLON, EN_ATTENTE, VALIDE, SUSPENDU, et PUBLIE (champs contrôlés)
-        // TERMINE et ANNULE ne peuvent plus être modifiés
-        if (existing.status === 'TERMINE' || existing.status === 'ANNULE') {
-            throw new Error(`Un événement en statut ${existing.status} ne peut plus être modifié.`);
-        }
-
-        // Définir les champs autorisés pour les événements PUBLIE
-        const allowedFieldsForPublished = new Set([
-            'title', 'description', 'location', 'city', 'address', 'accessNotes', 'parking', 'contactPhone',
-            'program', 'image_url', 'gallery_urls', 'start_date', 'start_time', 'end_date', 'end_time',
-            'capacity', 'services', 'practical_info', 'latitude', 'longitude', 'category'
-        ]);
-
-        // Pour les événements PUBLIE, valider que seuls les champs autorisés sont modifiés
-        if (existing.status === 'PUBLIE') {
-            const updateKeys = Object.keys(input);
-            for (const key of updateKeys) {
-                if (input[key as keyof UpdateEventInput] === undefined || key === 'status') continue;
-                if (!allowedFieldsForPublished.has(key)) {
-                    throw new Error(`Le champ '${key}' ne peut pas être modifié pour un événement publié.`);
-                }
-            }
-        }
-
-        // Préparer les données de mise à jour
-        const updateData: Record<string, any> = {
-            updated_at: new Date().toISOString(),
-        };
-
-        if (input.title !== undefined) updateData.title = input.title?.trim() ?? null;
-        if (input.description !== undefined) updateData.description = input.description;
-        if (input.start_date !== undefined) updateData.start_date = input.start_date;
-        if (input.start_time !== undefined) updateData.start_time = input.start_time;
-        if (input.end_date !== undefined) updateData.end_date = input.end_date;
-        if (input.end_time !== undefined) updateData.end_time = input.end_time;
-        if (input.location !== undefined) updateData.location = input.location?.trim() ?? null;
-        if (input.city !== undefined) updateData.city = input.city;
-        if (input.image_url !== undefined) updateData.image_url = input.image_url;
-        if (input.gallery_urls !== undefined) updateData.gallery_urls = input.gallery_urls;
-        if (input.capacity !== undefined) updateData.capacity = input.capacity;
-        if (input.latitude !== undefined) updateData.latitude = input.latitude;
-        if (input.longitude !== undefined) updateData.longitude = input.longitude;
-        if (input.category !== undefined) updateData.category = input.category;
-        if (input.program !== undefined) updateData.program = input.program;
-        if (input.services !== undefined) updateData.services = input.services;
-
-        // Practical info
-        if (input.practical_info !== undefined) {
-            updateData.practical_info = input.practical_info;
-        } else if (
-            (input as any).address !== undefined ||
-            (input as any).accessNotes !== undefined ||
-            (input as any).parking !== undefined ||
-            (input as any).contactPhone !== undefined
-        ) {
-            const practicalInfo = { ...(existing.practical_info || {}) };
-            if ((input as any).address !== undefined) practicalInfo.address = (input as any).address;
-            if ((input as any).accessNotes !== undefined) practicalInfo.accessNotes = (input as any).accessNotes;
-            if ((input as any).parking !== undefined) practicalInfo.parking = (input as any).parking;
-            if ((input as any).contactPhone !== undefined) practicalInfo.contactPhone = (input as any).contactPhone;
-            updateData.practical_info = practicalInfo;
-        }
-
-        // Pour les événements PUBLIE, validation de la capacité
-        const soldTotal = (existing.ticket_categories || []).reduce((sum: number, cat: any) => sum + (cat.sold_quantity || 0), 0);
-        const sumQuotas = (existing.ticket_categories || []).reduce((sum: number, cat: any) => sum + (cat.total_quantity || 0), 0);
-
-        if (input.capacity !== undefined && input.capacity !== null) {
-            const newCapacity = Number(input.capacity);
-            if (newCapacity < soldTotal) {
-                throw new Error(`La nouvelle capacité (${newCapacity}) ne peut pas être inférieure au nombre de billets déjà vendus (${soldTotal}).`);
-            }
-            if (newCapacity < sumQuotas) {
-                throw new Error(`La nouvelle capacité (${newCapacity}) ne peut pas être inférieure à la somme des quotas de billets (${sumQuotas}).`);
-            }
-        }
-
-        // Détection des changements critiques (Date/Heure ou Lieu)
-        const dateTimeChanged = (input.start_date !== undefined && input.start_date !== existing.start_date) ||
-                                (input.start_time !== undefined && input.start_time !== existing.start_time);
-        const locationChanged = (input.location !== undefined && input.location?.trim() !== existing.location) ||
-                                (input.city !== undefined && input.city !== existing.city);
-
-        // Effectuer la mise à jour
-        const { data: updated, error: updateErr } = await supabase
-            .from('events')
-            .update(updateData)
-            .eq('id', eventId)
-            .select('*')
-            .single();
-
-        if (updateErr || !updated) {
-            throw new Error(`Échec de la mise à jour: ${updateErr?.message}`);
-        }
-
-        // Journalisation dans audit_logs
-        try {
-            await supabase.from('audit_logs').insert({
-                user_id: partnerUserId,
-                action: existing.status === 'PUBLIE' ? 'EVENT_LIVE_UPDATED' : 'EVENT_UPDATED',
-                object_type: 'EVENT',
-                object_id: eventId,
-                metadata: {
-                    status: existing.status,
-                    updates: updateData,
-                    dateTimeChanged,
-                    locationChanged,
-                },
-                created_at: new Date().toISOString(),
+        const forbidden = Object.keys(patch).filter((k) => (NON_EDITABLE_EVENT_FIELDS as readonly string[]).includes(k));
+        if (forbidden.length > 0) {
+            const message = forbidden.includes('ticket_categories')
+                ? 'Les catégories de billets se modifient une par une depuis la billetterie, pas avec l’événement.'
+                : 'Ce champ ne se modifie pas depuis le formulaire de l’événement.';
+            throw new EventServiceError(400, 'FIELD_NOT_EDITABLE', message, {
+                field: forbidden[0],
+                fields: forbidden.map((path) => ({ path, code: 'FIELD_NOT_EDITABLE', message })),
             });
-        } catch (auditErr) {
-            console.error('[EventService.updateEvent] Erreur audit_logs:', auditErr);
         }
 
-        // Si événement PUBLIE avec des billets déjà vendus et changement critique de Date/Lieu : Notifier les acheteurs
-        if (existing.status === 'PUBLIE' && soldTotal > 0 && (dateTimeChanged || locationChanged)) {
-            try {
-                // Récupérer les acheteurs uniques
-                const { data: tickets } = await supabase
-                    .from('tickets')
-                    .select('user_id')
-                    .eq('event_id', eventId)
-                    .in('status', ['VALIDE', 'UTILISE']);
+        const parsed = parseWithFrenchErrors(updateEventSchema({
+            partnerId: event.partner_id,
+            current: {
+                start_date: event.start_date,
+                start_time: event.start_time,
+                end_date: event.end_date,
+                end_time: event.end_time,
+                image_url: event.image_url,
+            },
+        }), patch);
+        if (!parsed.success) throw invalid(parsed.error);
 
-                if (tickets && tickets.length > 0) {
-                    const uniqueUserIds = Array.from(new Set(tickets.map((t: any) => t.user_id).filter(Boolean)));
-                    const { data: userProfiles } = await supabase
-                        .from('users')
-                        .select('id, email, phone, full_name')
-                        .in('id', uniqueUserIds);
+        const result = await editionResult<{ ok: true; event: DbRecord; notified_holders: number; sms_queued: number }>('event_update', rpcWithRetry('event_update', { p: {
+            event_id: eventId,
+            actor_id: actorId,
+            patch: parsed.data,
+            expected_updated_at,
+        } }));
+        return { event: result.event, notified_holders: Number(result.notified_holders ?? 0), sms_queued: Number(result.sms_queued ?? 0) };
+    }
 
-                    const userMap = new Map<string, any>();
-                    (userProfiles || []).forEach((u: any) => userMap.set(u.id, u));
-
-                    const changeReason = dateTimeChanged && locationChanged
-                        ? 'La date, l\'heure et le lieu ont été modifiés'
-                        : dateTimeChanged
-                        ? 'La date ou l\'heure de l\'événement a été modifiée'
-                        : 'Le lieu de l\'événement a été modifié';
-
-                    const newInfoText = `Date: ${updated.start_date} à ${updated.start_time} | Lieu: ${updated.location} (${updated.city || 'Dakar'})`;
-
-                    const notificationPromises: Promise<any>[] = [];
-                    uniqueUserIds.forEach((userId) => {
-                        const clientUser = userMap.get(userId);
-
-                        // In-App
-                        notificationPromises.push(
-                            NotificationService.createNotification({
-                                userId,
-                                title: `Mise à jour : ${existing.title}`,
-                                message: `${changeReason}. Nouvelles informations : ${newInfoText}`,
-                                type: 'SYSTEM',
-                                data: { eventId, action: 'event_update' },
-                            }).catch((e) => {
-                                console.error('[EventService.updateEvent] Erreur in-app notification:', e);
-                            })
-                        );
-
-                        // SMS
-                        if (clientUser?.phone) {
-                            notificationPromises.push(
-                                mTargetService.sendSms(
-                                    clientUser.phone,
-                                    `Event Village: Mise a jour importante pour "${existing.title}". ${changeReason}. ${newInfoText}`
-                                ).catch(() => {})
-                            );
-                        }
-
-                        // Email
-                        if (clientUser?.email) {
-                            notificationPromises.push(
-                                EmailService.send({
-                                    to: clientUser.email,
-                                    subject: `Mise à jour importante : ${existing.title}`,
-                                    html: `
-                                        <div style="font-family:sans-serif;max-width:600px;margin:auto;padding:20px;border:1px solid #eee;border-radius:8px;">
-                                            <h2 style="color:#FF5722;">Mise à jour de votre événement</h2>
-                                            <p>Bonjour <strong>${clientUser.full_name || 'Cher client'}</strong>,</p>
-                                            <p>L'organisateur de l'événement <strong>${existing.title}</strong> a mis à jour certaines informations importantes :</p>
-                                            <div style="background:#f8f9fa;padding:15px;border-radius:6px;margin:20px 0;">
-                                                <p style="margin:5px 0;"><strong>Motif :</strong> ${changeReason}</p>
-                                                <p style="margin:5px 0;"><strong>Nouvelle date :</strong> ${updated.start_date} à ${updated.start_time}</p>
-                                                <p style="margin:5px 0;"><strong>Nouveau lieu :</strong> ${updated.location} (${updated.city || 'Dakar'})</p>
-                                            </div>
-                                            <p>Vos billets restent valides avec leur QR Code d'origine.</p>
-                                            <p style="color:#888;font-size:12px;margin-top:30px;">Event Village — Billetterie Officielle</p>
-                                        </div>
-                                    `,
-                                }).catch(() => {})
-                            );
-                        }
-                    });
-
-                    await Promise.allSettled(notificationPromises);
-                }
-            } catch (notifyErr) {
-                console.error('[EventService.updateEvent] Erreur notification acheteurs:', notifyErr);
-            }
-        }
-
-        return updated;
+    /** Ajout d'une catégorie de billets (F4) : schéma partagé, puis RPC ticket_category_create. */
+    public static async createTicketCategory(actorId: string, eventId: string, input: unknown): Promise<DbRecord> {
+        const event = await this.loadEditableEvent(eventId, actorId, 'categories');
+        const parsed = parseWithFrenchErrors(createTicketCategorySchema({ eventEnd: eventEndAt(event) }), input);
+        if (!parsed.success) throw invalid(parsed.error);
+        const result = await editionResult<{ ok: true; category: DbRecord }>('ticket_category_create', rpcWithRetry('ticket_category_create', { p: {
+            event_id: eventId,
+            actor_id: actorId,
+            category: parsed.data,
+        } }));
+        return result.category;
     }
 
     /**
-     * Mise à jour dynamique du stock et statut d'une catégorie de billets
-     * Gère les augmentations (réouverture automatique si Sold Out)
-     * et les diminutions (rejet strict si total < sold_quantity)
+     * Modification d'une catégorie (F4) : tous les champs envoyés sont appliqués ou refusés en clair (prix verrouillé
+     * après ventes, quota ≥ vendus + réservés, Σ quotas ≤ jauge, nom unique, dates de vente) ; aucune réactivation implicite.
      */
-    public static async updateCategoryStockAndStatus(
-        partnerUserId: string,
-        eventId: string,
-        categoryId: string,
-        updates: {
-            total_quantity?: number;
-            is_active?: boolean;
-            is_visible?: boolean;
-            price?: number;
-            description?: string;
-            name?: string;
-        }
-    ) {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        // 1. Vérifier l'événement et son propriétaire
-        const { data: event, error: eventErr } = await supabase
-            .from('events')
-            .select('id, title, status, capacity, partner_id, ticket_categories(*)')
-            .eq('id', eventId)
-            .eq('partner_id', partnerId)
-            .single();
-
-        if (eventErr || !event) {
-            throw new Error('Événement introuvable ou non autorisé.');
-        }
-
-        if (['ANNULE', 'TERMINE'].includes(event.status)) {
-            throw new Error(`Impossible de modifier une catégorie pour un événement en statut ${event.status}.`);
-        }
-
-        const existingCategory = (event.ticket_categories || []).find((c: any) => c.id === categoryId);
-        if (!existingCategory) {
-            throw new Error('Catégorie de billets introuvable pour cet événement.');
-        }
-
-        const updateData: Record<string, any> = {
-            updated_at: new Date().toISOString(),
-        };
-
-        if (updates.name !== undefined) updateData.name = updates.name.trim();
-        if (updates.description !== undefined) updateData.description = updates.description;
-        if (updates.price !== undefined) {
-            const newPrice = Number(updates.price);
-            if (newPrice < 0) throw new Error('Le prix doit être positif ou nul.');
-            updateData.price = newPrice;
-        }
-        if (updates.is_visible !== undefined) updateData.is_visible = updates.is_visible;
-        if (updates.is_active !== undefined) updateData.is_active = updates.is_active;
-
-        // 2. Gestion du Quota (total_quantity)
-        if (updates.total_quantity !== undefined) {
-            const newTotal = Number(updates.total_quantity);
-            const sold = Number(existingCategory.sold_quantity || 0);
-
-            if (newTotal < 0) {
-                throw new Error('Le quota de billets doit être supérieur ou égal à 0.');
-            }
-
-            // RÈGLE CRITIQUE DIMINUTION : total ne peut jamais être inférieur au nombre de billets déjà vendus
-            if (newTotal < sold) {
-                throw new Error(`Impossible de réduire le quota à ${newTotal} : ${sold} billets ont déjà été vendus.`);
-            }
-
-            // RÈGLE CRITIQUE CAPACITÉ GLOBALE : somme des quotas <= event.capacity
-            if (event.capacity && event.capacity > 0) {
-                const otherCategoriesTotal = (event.ticket_categories || [])
-                    .filter((c: any) => c.id !== categoryId)
-                    .reduce((sum: number, c: any) => sum + Number(c.total_quantity || 0), 0);
-
-                const newSumQuotas = otherCategoriesTotal + newTotal;
-                if (newSumQuotas > Number(event.capacity)) {
-                    throw new Error(`La somme des quotas de billets (${newSumQuotas}) dépasse la capacité maximale de l'événement (${event.capacity}).`);
-                }
-            }
-
-            updateData.total_quantity = newTotal;
-
-            // RÈGLE AUGMENTATION : Si augmentation et le nouveau total > sold, réactiver automatiquement la vente
-            if (newTotal > sold && updates.is_active === undefined) {
-                updateData.is_active = true;
-            }
-        }
-
-        // 3. Exécution de la mise à jour
-        const { data: updatedCat, error: updateErr } = await supabase
+    public static async updateTicketCategory(actorId: string, eventId: string, categoryId: string, input: unknown): Promise<DbRecord> {
+        const event = await this.loadEditableEvent(eventId, actorId, 'categories');
+        if (!UUID_RE.test(categoryId)) throw new EventServiceError(404, 'CATEGORY_NOT_FOUND', 'Catégorie de billets introuvable pour cet événement.');
+        const { data: current, error } = await getServiceRoleClient()
             .from('ticket_categories')
-            .update(updateData)
+            .select('id, sale_start, sale_end')
             .eq('id', categoryId)
             .eq('event_id', eventId)
-            .select('*')
-            .single();
-
-        if (updateErr || !updatedCat) {
-            throw new Error(`Échec de la mise à jour de la catégorie: ${updateErr?.message}`);
+            .maybeSingle();
+        if (error) {
+            console.error(`[EventService] catégorie ${categoryId} illisible : ${error.message}`);
+            throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
         }
-
-        // 4. Audit Trail
-        try {
-            await supabase.from('audit_logs').insert({
-                user_id: partnerUserId,
-                action: 'CATEGORY_STOCK_UPDATED',
-                object_type: 'TICKET_CATEGORY',
-                object_id: categoryId,
-                metadata: {
-                    event_id: eventId,
-                    old_total: existingCategory.total_quantity,
-                    new_total: updateData.total_quantity ?? existingCategory.total_quantity,
-                    sold_quantity: existingCategory.sold_quantity,
-                    is_active: updateData.is_active ?? existingCategory.is_active,
-                    price: updateData.price ?? existingCategory.price,
-                },
-                created_at: new Date().toISOString(),
-            });
-        } catch (auditErr) {
-            console.error('[EventService.updateCategoryStockAndStatus] Erreur audit_logs:', auditErr);
-        }
-
+        if (!current) throw new EventServiceError(404, 'CATEGORY_NOT_FOUND', 'Catégorie de billets introuvable pour cet événement.');
+        const parsed = parseWithFrenchErrors(updateTicketCategorySchema({
+            eventEnd: eventEndAt(event),
+            current: { sale_start: current.sale_start ?? null, sale_end: current.sale_end ?? null },
+        }), input);
+        if (!parsed.success) throw invalid(parsed.error);
+        const result = await editionResult<{ ok: true; category: DbRecord }>('ticket_category_update', rpcWithRetry('ticket_category_update', { p: {
+            event_id: eventId,
+            category_id: categoryId,
+            actor_id: actorId,
+            patch: parsed.data,
+        } }));
         return {
-            ...updatedCat,
-            available_quantity: Math.max(0, Number(updatedCat.total_quantity) - Number(updatedCat.sold_quantity || 0)),
+            ...result.category,
+            available_quantity: Math.max(0, Number(result.category.total_quantity) - Number(result.category.sold_quantity ?? 0) - Number(result.category.held_quantity ?? 0)),
         };
     }
 
-    /**
-     * Ajout d'une nouvelle catégorie de billets sur un événement existant
-     */
-    public static async addTicketCategory(
-        partnerUserId: string,
-        eventId: string,
-        categoryInput: TicketCategoryInput
-    ) {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data: event, error: eventErr } = await supabase
-            .from('events')
-            .select('id, status, capacity, partner_id, ticket_categories(*)')
-            .eq('id', eventId)
-            .eq('partner_id', partnerId)
-            .single();
-
-        if (eventErr || !event) {
-            throw new Error('Événement introuvable ou non autorisé.');
-        }
-
-        if (['ANNULE', 'TERMINE'].includes(event.status)) {
-            throw new Error(`Impossible d'ajouter une catégorie pour un événement en statut ${event.status}.`);
-        }
-
-        const newQuota = Number(categoryInput.total_quantity);
-        if (newQuota <= 0) {
-            throw new Error('Le quota de billets doit être supérieur à 0.');
-        }
-
-        if (event.capacity && event.capacity > 0) {
-            const currentTotalQuotas = (event.ticket_categories || []).reduce(
-                (sum: number, c: any) => sum + Number(c.total_quantity || 0),
-                0
-            );
-            if (currentTotalQuotas + newQuota > Number(event.capacity)) {
-                throw new Error(`La somme des quotas de billets (${currentTotalQuotas + newQuota}) dépasse la capacité maximale de l'événement (${event.capacity}).`);
-            }
-        }
-
-        const { data: newCat, error: insertErr } = await supabase
-            .from('ticket_categories')
-            .insert({
-                event_id: eventId,
-                name: categoryInput.name.trim(),
-                description: categoryInput.description || null,
-                price: Number(categoryInput.price),
-                total_quantity: newQuota,
-                sold_quantity: 0,
-                sale_start: categoryInput.sale_start || null,
-                sale_end: categoryInput.sale_end || null,
-                max_per_order: categoryInput.max_per_order ?? 10,
-                is_visible: categoryInput.is_visible !== false,
-                is_active: true,
-            })
-            .select('*')
-            .single();
-
-        if (insertErr || !newCat) {
-            throw new Error(`Échec de la création de la catégorie: ${insertErr?.message}`);
-        }
-
-        try {
-            await supabase.from('audit_logs').insert({
-                user_id: partnerUserId,
-                action: 'CATEGORY_CREATED',
-                object_type: 'TICKET_CATEGORY',
-                object_id: newCat.id,
-                metadata: { event_id: eventId, name: newCat.name, total_quantity: newQuota, price: newCat.price },
-                created_at: new Date().toISOString(),
-            });
-        } catch (err) {
-            console.error('[EventService.addTicketCategory] Erreur audit_logs:', err);
-        }
-
-        return newCat;
+    /** Suppression d'une catégorie sans billet ni réservation (F4), sinon 409 CATEGORY_HAS_SALES (désactivation proposée). */
+    public static async deleteTicketCategory(actorId: string, eventId: string, categoryId: string): Promise<{ category_id: string }> {
+        await this.loadEditableEvent(eventId, actorId, 'categories');
+        if (!UUID_RE.test(categoryId)) throw new EventServiceError(404, 'CATEGORY_NOT_FOUND', 'Catégorie de billets introuvable pour cet événement.');
+        const result = await editionResult<{ ok: true; category_id: string }>('ticket_category_delete', rpcWithRetry('ticket_category_delete', { p: {
+            event_id: eventId,
+            category_id: categoryId,
+            actor_id: actorId,
+        } }));
+        return { category_id: String(result.category_id) };
     }
 
     /**
-     * Suppression d'un événement (autorisé uniquement si statut BROUILLON)
+     * Suppression d'un événement (autorisé uniquement si statut BROUILLON). Les catégories, l'historique et la
+     * file des notifications suivent par cascade, dans la même instruction.
      */
     public static async deleteEvent(eventId: string, partnerUserId: string) {
         const supabase = getServiceRoleClient();
@@ -688,17 +437,19 @@ export class EventService {
             throw new Error('Seuls les événements en statut BROUILLON peuvent être supprimés.');
         }
 
-        const { error: catDelErr } = await supabase.from('ticket_categories').delete().eq('event_id', eventId);
-        const { error: delErr } = await supabase.from('events').delete().eq('id', eventId);
+        const { data: deleted, error: delErr } = await supabase
+            .from('events')
+            .delete()
+            .eq('id', eventId)
+            .eq('status', 'BROUILLON')
+            .select('id');
 
         if (delErr) {
-            // If event deletion fails but ticket categories deletion succeeded, we need to rollback
-            // by re-creating a minimal event record to maintain referential integrity
-            // Note: This is a simplified rollback - in a real system you might want to restore the full event
-            if (!catDelErr) {
-                console.error('[EventService.deleteEvent] Event deletion failed after ticket categories deletion. Manual cleanup may be required.');
-            }
-            throw new Error(`Échec de la suppression: ${delErr.message}`);
+            console.error(`[EventService.deleteEvent] suppression de ${eventId} impossible : ${delErr.code} ${delErr.message}`);
+            throw new Error('Suppression de l’événement impossible pour le moment.');
+        }
+        if (!deleted || deleted.length === 0) {
+            throw new Error('Seuls les événements en statut BROUILLON peuvent être supprimés.');
         }
 
         return { success: true };
@@ -727,4 +478,3 @@ export class EventService {
     }
 
 }
-

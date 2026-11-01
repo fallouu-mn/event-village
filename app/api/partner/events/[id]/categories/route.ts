@@ -1,51 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
-import { EventService } from '@/lib/events/event.service';
+import { EventService, EventServiceError } from '@/lib/events/event.service';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * POST /api/partner/events/[id]/categories — lot 5 (contrat F4)
+ * Ajout d'une catégorie de billets : corps validé par le schéma partagé (lib/validations/event.ts,
+ * createTicketCategorySchema : nom, prix et quotas entiers, max_per_order de 1 à 50, dates de vente en
+ * heure de Dakar, clés inconnues refusées), puis RPC ticket_category_create (nom unique, Σ quotas ≤ jauge,
+ * statut de l'événement). Tous les champs envoyés sont appliqués, is_active compris.
+ * Réponses : 201 `{ success, category }` ; 400 `{ error, code, field?, fields }` ; 403 ; 404 ; 409.
+ */
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const activeSession = await requireActiveSession(request);
+    if (activeSession.response) return activeSession.response;
+    const user = activeSession.user;
+    if (!serverIsPartner(user)) {
+        return NextResponse.json({ success: false, error: 'Accès réservé aux organisateurs.', code: 'FORBIDDEN' }, { status: 403 });
+    }
+
+    const { id: eventId } = await params;
+    let body: unknown;
     try {
-        const activeSession = await requireActiveSession(request);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user || !serverIsPartner(user)) {
-            return NextResponse.json({ success: false, error: 'Accès non autorisé.' }, { status: 403 });
-        }
+        body = await request.json();
+    } catch {
+        return NextResponse.json({ success: false, error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400 });
+    }
 
-        const { id: eventId } = await params;
-        const body = await request.json();
-
-        if (!body.name || !body.name.trim()) {
-            return NextResponse.json({ success: false, error: 'Le nom du pass ou billet est obligatoire.' }, { status: 400 });
-        }
-        if (body.price === undefined || Number(body.price) < 0) {
-            return NextResponse.json({ success: false, error: 'Le prix doit être positif ou nul.' }, { status: 400 });
-        }
-        if (!body.total_quantity || Number(body.total_quantity) <= 0) {
-            return NextResponse.json({ success: false, error: 'La quantité totale doit être supérieure à 0.' }, { status: 400 });
-        }
-
-        const newCategory = await EventService.addTicketCategory(user.id, eventId, {
-            name: String(body.name),
-            description: body.description ? String(body.description) : undefined,
-            price: Number(body.price),
-            total_quantity: Number(body.total_quantity),
-            sale_start: body.sale_start || null,
-            sale_end: body.sale_end || null,
-            max_per_order: body.max_per_order ? Number(body.max_per_order) : 10,
-            is_visible: body.is_visible !== false,
-        });
-
-        return NextResponse.json({ success: true, category: newCategory }, { status: 201 });
+    try {
+        const category = await EventService.createTicketCategory(user.id, eventId, body);
+        return NextResponse.json({ success: true, category }, { status: 201 });
     } catch (error: unknown) {
-        console.error('[API partner categories POST] Erreur:', error);
-        return NextResponse.json(
-            { success: false, error: error instanceof Error ? error.message : 'Erreur lors de l\'ajout de la catégorie.' },
-            { status: 400 }
-        );
+        if (error instanceof EventServiceError) return NextResponse.json({ success: false, ...error.toBody() }, { status: error.status });
+        console.error('[API partner categories POST]', error instanceof Error ? error.message : String(error));
+        return NextResponse.json({ success: false, error: 'Ajout de la catégorie impossible pour le moment.', code: 'CATEGORY_CREATE_FAILED' }, { status: 500 });
     }
 }
