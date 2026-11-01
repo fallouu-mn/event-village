@@ -227,7 +227,7 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
                 cam.setPayload(p);
                 await cam.show(dataUrl);
             }, { dataUrl: `data:image/png;base64,${png.toString('base64')}`, p: payload });
-            await expect(partner.getByText('Entrée validée')).toBeVisible({ timeout: 40_000 });
+            await expect(partner.getByText('Entrée validée').first()).toBeVisible({ timeout: 40_000 });
         });
 
         await test.step('6. la page de pilotage montre 1 vendu et 1 entrée', async () => {
