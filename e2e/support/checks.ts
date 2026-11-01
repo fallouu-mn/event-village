@@ -118,7 +118,19 @@ function inspectDom(arg: { enums: string[] }): DomReport {
         // Lien dans une phrase : exception admise par WCAG 2.5.8
         const parentText = (el.parentElement?.textContent ?? '').trim().length;
         if (el.tagName === 'A' && style.display === 'inline' && parentText > (el.textContent ?? '').trim().length + 20) continue;
-        const r = el.getBoundingClientRect();
+        // Zone réellement cliquable : un lien étiré (::after en position absolue) couvre son premier ancêtre
+        // positionné ; un champ enveloppé par son <label> se clique sur tout le label (lot 5, run 52).
+        let hit: Element = el;
+        if (el.tagName === 'A' && getComputedStyle(el, '::after').position === 'absolute') {
+            let p = el.parentElement;
+            while (p && getComputedStyle(p).position === 'static') p = p.parentElement;
+            if (p) hit = p;
+        } else if ('labels' in el) {
+            const wrapping = Array.from((el as HTMLInputElement).labels ?? []).find((l) => l.contains(el));
+            const target = wrapping ?? Array.from((el as HTMLInputElement).labels ?? []).find((l) => isVisible(l));
+            if (target && (wrapping || el.getBoundingClientRect().width <= 1)) hit = target;
+        }
+        const r = hit.getBoundingClientRect();
         if (r.width < 44 || r.height < 44) {
             // Nom accessible approché : aria-label, aria-labelledby, <label> lié (champs), alt, texte, title, name
             const labelledBy = (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean)
