@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
-import { EventService } from '@/lib/events/event.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,70 +78,92 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * PATCH /api/admin/services
- * Modification du statut d'un service (Publication, Suspension, Validation)
+ * Lot 5 (A1) — tables que la modération admin peut changer par cette route, et transitions admises.
+ * Les statuts des événements n'y passent plus (machine à états, transitions par RPC) ; aucune autre
+ * table (paiements, comptes…) n'est jamais écrite ici. Seule l'annulation ou le refus d'une demande
+ * encore en attente et non payée est admis : aucun mouvement d'argent n'en dépend.
+ */
+const MODERATION_TABLES: Record<string, { column: 'status' | 'order_status'; from: string[]; to: string[] }> = {
+    hall_reservations: { column: 'status', from: ['EN_ATTENTE'], to: ['ANNULEE', 'REJETEE'] },
+    table_reservations: { column: 'status', from: ['EN_ATTENTE'], to: ['ANNULEE', 'REJETEE'] },
+    orders: { column: 'order_status', from: ['EN_ATTENTE'], to: ['ANNULEE', 'REJETEE'] },
+};
+
+const PatchSchema = z.object({
+    table: z.string().trim().min(1).max(64),
+    id: z.string().uuid('Identifiant invalide.'),
+    status: z.string().trim().min(1).max(32),
+    reason: z.string().trim().max(500).optional().nullable(),
+});
+
+/**
+ * PATCH /api/admin/services { table, id, status, reason? }
+ * Modération d'une réservation de salle, de table ou d'une commande (liste blanche ci-dessus). Toute
+ * autre table → 400 INVALID_SERVICE_TABLE, sans aucune écriture.
  */
 export async function PATCH(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'events.write' });
     if (!auth.authorized) return auth.errorResponse!;
 
+    let raw: unknown;
     try {
-        let body: { table: 'events' | 'halls' | 'products'; id: string; status: string; isActive?: boolean; reason?: string };
-        try {
-            body = await req.json();
-        } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+        raw = await req.json();
+    } catch {
+        return NextResponse.json({ error: 'Corps JSON invalide.', code: 'INVALID_BODY' }, { status: 400 });
+    }
+    const table = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).table : undefined;
+    const rule = typeof table === 'string' && Object.prototype.hasOwnProperty.call(MODERATION_TABLES, table) ? MODERATION_TABLES[table] : null;
+    if (!rule) {
+        return NextResponse.json({
+            error: 'Cette donnée ne peut pas être modifiée par la modération des services.',
+            code: 'INVALID_SERVICE_TABLE',
+        }, { status: 400 });
+    }
+    const parsed = PatchSchema.safeParse(raw);
+    if (!parsed.success) {
+        return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Demande invalide.', code: 'INVALID_BODY' }, { status: 400 });
+    }
+    const { id, status, reason } = parsed.data;
+    if (!rule.to.includes(status)) {
+        return NextResponse.json({ error: 'Statut non admis pour cette donnée.', code: 'INVALID_SERVICE_STATUS' }, { status: 400 });
+    }
+
+    try {
+        const supabase = getServiceRoleClient();
+        const { data: current, error: readErr } = await supabase.from(table as string).select(`id, ${rule.column}, payment_status`).eq('id', id).maybeSingle();
+        if (readErr) throw new Error(`lecture de ${table} ${id} : ${readErr.message}`);
+        if (!current) return NextResponse.json({ error: 'Élément introuvable.', code: 'NOT_FOUND' }, { status: 404 });
+        const row = current as unknown as Record<string, unknown>;
+        const from = String(row[rule.column]);
+        if (!rule.from.includes(from) || row.payment_status !== 'PENDING') {
+            return NextResponse.json({ error: 'Seule une demande en attente et non payée peut être annulée ou refusée ici.', code: 'INVALID_SERVICE_TRANSITION' }, { status: 409 });
         }
 
-        const { table, id, status, isActive, reason } = body;
-        if (!table || !id) {
-            return NextResponse.json({ error: 'Table et id requis.' }, { status: 400 });
+        // Écriture conditionnelle : aucun changement si le statut a bougé entre-temps
+        const { data: updated, error } = await supabase.from(table as string)
+            .update({ [rule.column]: status, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .eq(rule.column, from)
+            .eq('payment_status', 'PENDING')
+            .select(`id, ${rule.column}`);
+        if (error) throw new Error(`mise à jour de ${table} ${id} : ${error.message}`);
+        if (!updated || updated.length !== 1) {
+            return NextResponse.json({ error: 'Cette demande vient de changer : rechargez la page.', code: 'INVALID_SERVICE_TRANSITION' }, { status: 409 });
         }
 
-        let updated: any;
-
-        // Pour les événements : passer par EventService pour déclencher les notifications
-        if (table === 'events' && status) {
-            updated = await EventService.changeEventStatus(
-                id,
-                auth.user!.id,
-                status as any,
-                auth.user!.role,
-                reason
-            );
-        } else {
-            const supabase = getServiceRoleClient();
-            const updatePayload: any = { updated_at: new Date().toISOString() };
-            if (status) updatePayload.status = status;
-            if (isActive !== undefined) updatePayload.is_active = isActive;
-
-            const { data, error } = await (supabase.from(table) as any)
-                .update(updatePayload)
-                .eq('id', id)
-                .select()
-                .single();
-
-            if (error) throw error;
-            updated = data;
-        }
-
-        // Journalisation d'audit
         await AdminService.logAudit({
             userId: auth.user!.id,
             userRole: auth.user!.role,
             action: 'UPDATE_SERVICE_STATUS',
-            objectType: table,
+            objectType: table as string,
             objectId: id,
-            newValue: { status, reason },
+            oldValue: { [rule.column]: from },
+            newValue: { [rule.column]: status, reason: reason ?? null },
         });
 
-        return NextResponse.json({
-            success: true,
-            updated,
-            message: `Service ${id} mis à jour dans ${table}.`,
-        });
+        return NextResponse.json({ success: true, updated: updated[0], message: 'Statut mis à jour.' });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        console.error('[API /api/admin/services PATCH] erreur :', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Mise à jour momentanément impossible.', code: 'SERVICE_UPDATE_FAILED' }, { status: 500 });
     }
 }

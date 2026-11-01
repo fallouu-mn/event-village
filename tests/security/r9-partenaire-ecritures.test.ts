@@ -49,10 +49,11 @@ describe('R9 — écritures partenaire par REST', () => {
         const a = await partnerA();
         const ev = await publicEvent('A_PUBLIE');
         const categoryId = ev.categories.Standard.id;
-        const { data: before, error } = await a.client.from('ticket_categories').select('sold_quantity, held_quantity').eq('id', categoryId).single();
+        // Lot 5 (arbitrage A3/O) : sold_quantity et held_quantity ne sont plus lisibles par REST pour
+        // authenticated (le propriétaire lit les volumes par les routes serveur) ; la catégorie reste lisible.
+        const { error } = await a.client.from('ticket_categories').select('id').eq('id', categoryId).single();
         assert.equal(error, null, `lecture de sa catégorie : ${error?.message}`);
         const res = await a.client.from('ticket_categories').update({ sold_quantity: 0, held_quantity: 0 }).eq('id', categoryId).select('id');
-        if (wasWritten(res)) await a.client.from('ticket_categories').update(before).eq('id', categoryId);
         assert.ok(!wasWritten(res), 'modification directe des compteurs de stock acceptée');
     });
 
