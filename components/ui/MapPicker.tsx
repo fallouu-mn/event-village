@@ -3,9 +3,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { LocateFixed, MapPin } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { Button } from './Button';
 import { TextInput } from './Field';
 
@@ -66,9 +63,9 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
         const L = require('leaflet') as typeof import('leaflet');
 
         const icon = L.icon({
-            iconUrl: markerIcon.src,
-            iconRetinaUrl: markerIcon2x.src,
-            shadowUrl: markerShadow.src,
+            iconUrl: '/leaflet/marker-icon.png',
+            iconRetinaUrl: '/leaflet/marker-icon-2x.png',
+            shadowUrl: '/leaflet/marker-shadow.png',
             iconSize: [25, 41],
             iconAnchor: [12, 41],
             popupAnchor: [1, -34],
