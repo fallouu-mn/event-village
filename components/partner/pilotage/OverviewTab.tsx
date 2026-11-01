@@ -1,0 +1,83 @@
+import React from 'react';
+import { Armchair, Banknote, DoorOpen, Gift, Percent, RotateCcw, Smartphone, Ticket } from 'lucide-react';
+import { KpiCard } from '@/components/ui/KpiCard';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { formatFcfa, formatInteger, formatPercent, formatDateTime } from '@/lib/format';
+import { PilotageSection } from './PilotageBlocks';
+import type { PilotageOverview } from './types';
+
+/**
+ * Onglet Aperçu (contrat I) : billets vendus / capacité, recettes (en ligne, espèces, remboursé), entrées
+ * et taux de présence, tels que calculés par pilotage_overview.
+ */
+export function OverviewTab({ data }: { data: PilotageOverview }) {
+    const { tickets, entries, revenue } = data;
+    const refundedCash = revenue.refunded_cash_organizer ?? 0;
+    return (
+        <div className="flex flex-col gap-6">
+            {tickets.capacity_exceeded && (
+                <StatusBanner tone="warning" title="Les quotas dépassent la jauge déclarée">
+                    La somme des quotas des catégories actives ({formatInteger(tickets.capacity)} places) dépasse la jauge
+                    déclarée de l’événement ({formatInteger(tickets.declared_capacity)} places). Vérifiez vos catégories.
+                </StatusBanner>
+            )}
+
+            <PilotageSection title="Billetterie" description="Billets valides et utilisés, hors invitations.">
+                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
+                    <KpiCard
+                        label="Billets vendus"
+                        value={formatInteger(tickets.sold)}
+                        hint={`sur ${formatInteger(tickets.capacity)} places mises en vente`}
+                        tone="brand"
+                        icon={<Ticket size={18} />}
+                    />
+                    <KpiCard
+                        label="Places restantes"
+                        value={formatInteger(tickets.remaining)}
+                        hint={`${formatInteger(tickets.in_payment)} en cours de paiement`}
+                        tone="neutral"
+                        icon={<Armchair size={18} />}
+                    />
+                    <KpiCard label="Invitations" value={formatInteger(tickets.invitations)} hint="Places offertes, comptées à part" tone="neutral" icon={<Gift size={18} />} />
+                </div>
+            </PilotageSection>
+
+            <PilotageSection title="Contrôle d’accès" description="Passages validés au scan et au guichet.">
+                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
+                    <KpiCard
+                        label="Entrées"
+                        value={formatInteger(entries.total)}
+                        hint={`dont ${formatInteger(entries.counter)} au guichet`}
+                        tone="success"
+                        icon={<DoorOpen size={18} />}
+                    />
+                    <KpiCard
+                        label="Taux de présence"
+                        value={formatPercent(entries.attendance_rate)}
+                        hint="Part des participants attendus (ventes et invitations) déjà passés"
+                        tone="info"
+                        icon={<Percent size={18} />}
+                    />
+                </div>
+            </PilotageSection>
+
+            <PilotageSection title="Recettes" description="Montants des billets, remboursements déduits pour les ventes en ligne.">
+                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
+                    <KpiCard label="En ligne" value={formatFcfa(revenue.online)} hint="Paiements mobiles confirmés" tone="success" icon={<Smartphone size={18} />} />
+                    <KpiCard label="En espèces" value={formatFcfa(revenue.cash)} hint="Encaissées par vos contrôleurs" tone="warning" icon={<Banknote size={18} />} />
+                    <KpiCard
+                        label="Remboursé"
+                        value={formatFcfa(revenue.refunded)}
+                        hint={refundedCash > 0 ? `dont ${formatFcfa(refundedCash)} en espèces à rembourser par vous` : 'Remboursements en ligne'}
+                        tone="danger"
+                        icon={<RotateCcw size={18} />}
+                    />
+                </div>
+            </PilotageSection>
+
+            <p className="text-sm text-fg-muted">
+                Chiffres calculés le <time dateTime={data.computed_at}>{formatDateTime(data.computed_at)}</time>.
+            </p>
+        </div>
+    );
+}
