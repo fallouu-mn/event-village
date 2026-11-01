@@ -74,9 +74,123 @@ jobs:
           npm run seed:test 2>&1 | tee /tmp/seed.log
 
       - name: Vérification complète (typecheck → lint → tests → build)
+        id: verify
         run: |
           set -o pipefail
           npm run verify 2>&1 | tee /tmp/verify.log
+
+      # ── Lot 5.1 : Playwright sur le build de verify (captures d'écran et test de fumée) ─────────
+      # Étapes exécutées seulement si verify a réussi ; chacune garde son propre résultat : un seed de
+      # démonstration en échec (attendu tant que le lot 5 n'est pas livré) n'empêche ni les captures
+      # possibles ni la fumée, et le job reste en échec.
+      - name: "E2E : version de Playwright"
+        id: pw
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: "E2E : cache du navigateur Chromium"
+        id: pw-cache
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: "E2E : installer Chromium"
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium 2>&1 | tee /tmp/e2e-install.log
+          else
+            npx playwright install --with-deps chromium 2>&1 | tee /tmp/e2e-install.log
+          fi
+
+      - name: "E2E : générer .env.e2e (instance locale, faux services, secrets aléatoires du run)"
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          supabase status -o env > /tmp/supabase-e2e.env
+          set -a
+          # shellcheck disable=SC1091
+          . /tmp/supabase-e2e.env
+          set +a
+          ANON="${ANON_KEY:-${PUBLISHABLE_KEY:-}}"
+          SERVICE="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+          if [ -z "${API_URL:-}" ] || [ -z "$ANON" ] || [ -z "$SERVICE" ] || [ -z "${DB_URL:-}" ]; then
+            echo "Impossible de lire API_URL / ANON_KEY / SERVICE_ROLE_KEY / DB_URL depuis supabase status"; exit 1
+          fi
+          # Secrets propres à ce run (jamais en dur, jamais affichés) : masqués dans les journaux
+          gen() { openssl rand -hex 32; }
+          SP_KEY="$(gen)"; SP_SECRET="$(gen)"; MT_USER="e2e-$(openssl rand -hex 6)"; MT_PASS="$(gen)"
+          HOOK_SECRET="$(gen)"; CRON_SECRET_E2E="$(gen)"; OTP_SECRET="$(gen)"; TOTP_KEY="$(gen)"; PIN_KEY="$(gen)"
+          for v in "$SP_KEY" "$SP_SECRET" "$MT_PASS" "$HOOK_SECRET" "$CRON_SECRET_E2E" "$OTP_SECRET" "$TOTP_KEY" "$PIN_KEY"; do
+            echo "::add-mask::${v}"
+          done
+          umask 077
+          {
+            echo "# Généré par la CI (verify.yml, lot 5.1) : instance Supabase locale, faux services, secrets aléatoires du run"
+            echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE}"
+            echo "SUPABASE_DB_URL=${DB_URL}"
+            echo "NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000"
+            echo "E2E_APP_PORT=3000"
+            echo "E2E_FAKE_SERVICES_PORT=4010"
+            echo "E2E_FAKE_SERVICES_URL=http://127.0.0.1:4010"
+            echo "SAMIRPAY_API_URL=http://127.0.0.1:4010/samirpay"
+            echo "SAMIRPAY_API_KEY=${SP_KEY}"
+            echo "SAMIRPAY_SECRET_KEY=${SP_SECRET}"
+            echo "SAMIRPAY_TIMEOUT_MS=5000"
+            echo "MTARGET_API_URL=http://127.0.0.1:4010/mtarget/messages"
+            echo "MTARGET_USERNAME=${MT_USER}"
+            echo "MTARGET_PASSWORD=${MT_PASS}"
+            echo "MTARGET_SENDER=EVE2E"
+            echo "RESEND_API_KEY="
+            echo "NOTIFICATION_FROM_EMAIL=notifications@e2e.eventvillage.local"
+            echo "SUPPORT_EMAIL=support@e2e.eventvillage.local"
+            echo "SUPABASE_AUTH_HOOK_SECRET=${HOOK_SECRET}"
+            echo "CRON_SECRET=${CRON_SECRET_E2E}"
+            echo "OTP_HASH_SECRET=${OTP_SECRET}"
+            echo "TICKET_TOTP_MASTER_KEY=${TOTP_KEY}"
+            echo "REGISSEUR_PIN_KEY=${PIN_KEY}"
+          } > .env.e2e
+          echo ".env.e2e généré : $(grep -c '=' .env.e2e) variables (URL=${API_URL}, valeurs secrètes masquées)"
+
+      - name: "E2E : base propre (db reset), seed de test puis seed de démonstration"
+        id: e2e-seed
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          {
+            set -e
+            supabase db reset
+            npm run seed:test
+            EV_ENV_FILE=.env.e2e npm run seed:demo
+          } 2>&1 | tee /tmp/e2e-seed.log
+
+      - name: "E2E : démarrer les faux services et l'application (next start, arrière-plan)"
+        id: e2e-start
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        run: |
+          nohup node scripts/e2e/fake-services.mjs > /tmp/fake-services.log 2>&1 &
+          nohup node scripts/e2e/start-app.mjs > /tmp/next-start.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:4010/__test/health && curl -fsS -o /dev/null http://127.0.0.1:3000/login; then
+              echo "faux services et application prêts après $((i * 2)) s"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error title=e2e::application ou faux services non prêts après 120 s"
+          tail -n 60 /tmp/fake-services.log /tmp/next-start.log
+          exit 1
+
+      - name: "E2E : captures d'écran et test de fumée (npm run e2e)"
+        id: e2e
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          npm run e2e 2>&1 | tee /tmp/e2e.log
 
       - name: Journal du conteneur Supabase Auth (diagnostic en cas d'échec)
         if: failure()
@@ -90,7 +204,7 @@ jobs:
       - name: Annotations d'erreur (extraits bruts des journaux)
         if: failure()
         run: |
-          for f in /tmp/db-reset.log /tmp/seed.log /tmp/verify.log; do
+          for f in /tmp/db-reset.log /tmp/seed.log /tmp/verify.log /tmp/e2e-seed.log /tmp/e2e.log; do
             [ -f "$f" ] || continue
             msg=$(tail -c 1800 "$f" | tr '\r\n' '  ' | sed 's/%/%25/g')
             echo "::error title=$(basename "$f")::${msg}"
@@ -108,22 +222,36 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          if git fetch -q origin ci-results 2>/dev/null; then
+          # Pointe seule (--depth=1) : l'historique contient les captures des anciens runs
+          if git fetch -q --depth=1 origin ci-results 2>/dev/null; then
             git checkout -q -b ci-results FETCH_HEAD
           else
             git checkout -q --orphan ci-results
           fi
           mkdir -p "$RUN_DIR"
-          for f in supabase-start db-reset seed verify containers; do
+          for f in supabase-start db-reset seed verify containers e2e-install e2e-seed fake-services next-start e2e; do
             [ -f "/tmp/$f.log" ] && cp "/tmp/$f.log" "$RUN_DIR/$f.log"
           done
           if [ -d "$GITHUB_WORKSPACE/.test-logs" ]; then cp -r "$GITHUB_WORKSPACE/.test-logs" "$RUN_DIR/test-logs"; fi
+          # Lot 5.1 : captures (PNG + index.txt) dans runs/<n>-<id>/captures/
+          if [ -d "$GITHUB_WORKSPACE/.e2e-captures/captures" ]; then
+            mkdir -p "$RUN_DIR/captures"
+            cp -r "$GITHUB_WORKSPACE/.e2e-captures/captures/." "$RUN_DIR/captures/"
+            echo "captures publiées : $(find "$RUN_DIR/captures" -name '*.png' | wc -l) PNG"
+          fi
+          # Rétention : captures des 5 derniers runs à la pointe de ci-results ; les journaux restent
+          for d in $(find runs -mindepth 2 -maxdepth 2 -type d -name captures | sed -e 's#^runs/##' -e 's#/captures$##' | sort -t- -k1,1n | head -n -5); do
+            rm -rf "runs/${d}/captures"
+            echo "captures purgées de la pointe : runs/${d}/captures"
+          done
           {
             echo "run_id=${{ github.run_id }}"
             echo "run_number=${{ github.run_number }}"
             echo "sha=${{ github.sha }}"
             echo "ref=${{ github.ref }}"
             echo "job_status=${JOB_STATUS}"
+            echo "e2e_seed=${{ steps.e2e-seed.outcome }}"
+            echo "e2e=${{ steps.e2e.outcome }}"
             echo "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           } > "$RUN_DIR/run.txt"
           git add -A
@@ -138,3 +266,14 @@ jobs:
           name: test-logs
           path: .test-logs/
           if-no-files-found: ignore
+
+      - name: "E2E : rapport Playwright et traces (artefact)"
+        if: ${{ always() && steps.verify.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14

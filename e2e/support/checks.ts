@@ -1,0 +1,170 @@
+/**
+ * Lot 5.1 — contrôles automatiques de chaque capture (définition de « terminé », points 3, 5 et 7).
+ *
+ * Bloquants : défilement horizontal à 390 px, « § », valeur d'enum brute (liste ci-dessous) ou code
+ * technique en MAJUSCULES_SOULIGNÉES dans le texte visible ou les attributs lus par les lecteurs
+ * d'écran (aria-label, title, placeholder, alt). Le texte est lu nœud par nœud, avant toute
+ * transformation CSS (un badge « Brouillon » en capitales CSS n'est pas un enum brut).
+ * Avertissements (index.txt) : cibles interactives < 44 px, textes < 14 px, violations axe-core.
+ */
+import AxeBuilder from '@axe-core/playwright';
+import type { Page } from '@playwright/test';
+
+/** Valeurs techniques qui ne doivent jamais être affichées telles quelles. */
+export const RAW_ENUM_VALUES: readonly string[] = [
+    // statuts d'événement (event_status)
+    'BROUILLON', 'EN_ATTENTE', 'VALIDE', 'PUBLIE', 'SUSPENDU', 'TERMINE', 'ANNULE',
+    // catégories d'événement (event_category)
+    'CONCERT', 'FESTIVAL', 'FOOD', 'SALLE',
+    // billets (ticket_status) et canaux de vente (lot 5, C7)
+    'UTILISE', 'REMBOURSE', 'REMBOURSEMENT_EN_COURS', 'ONLINE', 'FREE', 'INVITATION', 'COUNTER',
+    // paiements (payment_status_enum), opérateurs, espèces
+    'PENDING', 'PARTIAL', 'SUCCESS', 'FAILED', 'REFUNDED', 'CANCELLED', 'EXPIRED', 'REFUND_PENDING',
+    'WAVE', 'ORANGE_MONEY', 'ESPECES',
+    // envois d'argent (cashouts) et remboursements
+    'A_ENVOYER', 'ENVOYE', 'CONFIRME', 'ECHOUE', 'INCERTAIN', 'PROCESSED', 'PLATEFORME', 'ORGANISATEUR',
+    // caisses, saisie, incidents de scan (lot 5, C8)
+    'OUVERT', 'CLOTURE', 'LITIGE', 'MANUAL', 'RATE_LIMITED', 'SERVER_ERROR', 'GUARD_UNAVAILABLE', 'NETWORK', 'TIMEOUT',
+    // rôles, statuts de compte et de partenaire
+    'PARTENAIRE', 'CONTROLEUR', 'SUPERADMIN', 'ACTIF', 'REJETE', 'SUPPRIME',
+    // cycle de vie (lot 5, D) et stock public (O1)
+    'SYSTEM', 'CREATION', 'TRANSITION', 'CANCELLATION', 'CRON', 'AVAILABLE', 'LOW', 'SOLD_OUT',
+    // résultats de scan (lib/scan/scan-result.ts)
+    'valid', 'invalid', 'already_used', 'wrong_event', 'event_cancelled', 'event_ended', 'event_suspended',
+    'event_not_open', 'payment_required', 'cash_required', 'qr_expired', 'dynamic_qr_required',
+    'manual_entry_refused', 'forbidden', 'refunded', 'cancelled', 'rate_limited', 'server_error',
+];
+
+export interface PageCheckResult {
+    blocking: string[];
+    warnings: string[];
+    metrics: { scrollWidth: number; viewportWidth: number; smallTargets: number; smallTexts: number; axeViolations: number };
+}
+
+interface DomReport {
+    scrollWidth: number;
+    viewportWidth: number;
+    sectionSigns: string[];
+    enumHits: Array<{ value: string; sample: string }>;
+    smallTargets: Array<{ tag: string; name: string; w: number; h: number }>;
+    smallTexts: Array<{ size: number; sample: string }>;
+}
+
+/** Exécuté dans la page : aucune référence extérieure, tout passe par l'argument. */
+function inspectDom(arg: { enums: string[] }): DomReport {
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const enumRe = new RegExp(`(?<![\\p{L}\\p{N}_])(${arg.enums.map(escape).join('|')})(?![\\p{L}\\p{N}_])`, 'gu');
+    // Constructeur plutôt que littéral : le tsconfig du projet ne cible pas ES6 (drapeau « u »)
+    const codeRe = new RegExp('(?<![\\p{L}\\p{N}_])[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+(?![\\p{L}\\p{N}_])', 'gu');
+    const skipTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+    const isVisible = (el: Element): boolean => {
+        const withApi = el as Element & { checkVisibility?: (o?: Record<string, boolean>) => boolean };
+        if (typeof withApi.checkVisibility === 'function') return withApi.checkVisibility({ visibilityProperty: true });
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    };
+    const sectionSigns: string[] = [];
+    const enumHits: Array<{ value: string; sample: string }> = [];
+    const smallTexts: Array<{ size: number; sample: string }> = [];
+    const seenCodes = new Set<string>();
+    const scan = (text: string, where: string) => {
+        if (text.includes('§')) sectionSigns.push(`${where} : « ${text.trim().slice(0, 80)} »`);
+        for (const re of [enumRe, codeRe]) {
+            re.lastIndex = 0;
+            let m: RegExpExecArray | null = re.exec(text);
+            while (m !== null) {
+                const key = `${m.index}:${m[0]}:${text}`;
+                if (!seenCodes.has(key)) {
+                    seenCodes.add(key);
+                    enumHits.push({ value: m[0], sample: `${where} : « ${text.trim().slice(0, 80)} »` });
+                }
+                m = re.exec(text);
+            }
+        }
+    };
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const parent = node.parentElement;
+        const text = node.nodeValue ?? '';
+        if (!parent || !text.trim() || skipTags.has(parent.tagName) || !isVisible(parent)) continue;
+        scan(text, 'texte');
+        const size = parseFloat(getComputedStyle(parent).fontSize);
+        if (size < 14) smallTexts.push({ size, sample: text.trim().slice(0, 50) });
+    }
+    for (const el of Array.from(document.querySelectorAll('[aria-label], [title], [placeholder], img[alt]'))) {
+        if (!isVisible(el)) continue;
+        for (const attr of ['aria-label', 'title', 'placeholder', 'alt']) {
+            const v = el.getAttribute(attr);
+            if (v) scan(v, `attribut ${attr}`);
+        }
+    }
+    const smallTargets: Array<{ tag: string; name: string; w: number; h: number }> = [];
+    const interactive = [
+        'a[href]', 'button', 'input:not([type="hidden"])', 'select', 'textarea', 'summary', '[role="button"]', '[role="link"]',
+        '[role="tab"]', '[role="checkbox"]', '[role="radio"]', '[role="switch"]', '[role="menuitem"]', '[tabindex]:not([tabindex="-1"])',
+    ].join(', ');
+    for (const el of Array.from(document.querySelectorAll(interactive))) {
+        if (!isVisible(el)) continue;
+        const style = getComputedStyle(el);
+        // Lien dans une phrase : exception admise par WCAG 2.5.8
+        const parentText = (el.parentElement?.textContent ?? '').trim().length;
+        if (el.tagName === 'A' && style.display === 'inline' && parentText > (el.textContent ?? '').trim().length + 20) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 44 || r.height < 44) {
+            const label = el.getAttribute('aria-label') || (el as HTMLElement).innerText || el.getAttribute('title') || el.getAttribute('name') || '';
+            smallTargets.push({ tag: el.tagName.toLowerCase(), name: label.trim().replace(/\s+/g, ' ').slice(0, 40), w: Math.round(r.width), h: Math.round(r.height) });
+        }
+    }
+    return {
+        scrollWidth: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0),
+        viewportWidth: window.innerWidth,
+        sectionSigns,
+        enumHits,
+        smallTargets,
+        smallTexts,
+    };
+}
+
+function summarize<T>(items: T[], key: (t: T) => string, max = 6): string {
+    const counts = new Map<string, number>();
+    for (const it of items) counts.set(key(it), (counts.get(key(it)) ?? 0) + 1);
+    return Array.from(counts.entries()).slice(0, max).map(([k, n]) => (n > 1 ? `${k} (×${n})` : k)).join(' ; ');
+}
+
+export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: boolean }): Promise<PageCheckResult> {
+    // Les transpileurs qui conservent les noms de fonctions (esbuild/tsx) insèrent un appel à
+    // __name dans le code sérialisé : l'aide est définie dans la page avant l'évaluation.
+    await page.evaluate('window.__name = window.__name || function (f) { return f; };');
+    const dom = await page.evaluate(inspectDom, { enums: [...RAW_ENUM_VALUES] });
+    const blocking: string[] = [];
+    const warnings: string[] = [];
+    if (opts.mobile && dom.scrollWidth > 391) {
+        blocking.push(`défilement horizontal à 390 px : largeur du document ${dom.scrollWidth} px (fenêtre ${dom.viewportWidth} px)`);
+    }
+    if (dom.sectionSigns.length > 0) {
+        blocking.push(`« § » affiché ${dom.sectionSigns.length} fois : ${dom.sectionSigns.slice(0, 4).join(' ; ')}`);
+    }
+    if (dom.enumHits.length > 0) {
+        blocking.push(`valeur technique affichée : ${summarize(dom.enumHits, (h) => h.value, 10)} — ex. ${dom.enumHits.slice(0, 3).map((h) => h.sample).join(' ; ')}`);
+    }
+    if (dom.smallTargets.length > 0) {
+        warnings.push(`${dom.smallTargets.length} cible(s) < 44 px : ${summarize(dom.smallTargets, (t) => `${t.tag} « ${t.name || 'sans nom'} » ${t.w}×${t.h}`, 8)}`);
+    }
+    if (dom.smallTexts.length > 0) {
+        const bySize = summarize(dom.smallTexts, (t) => `${t.size} px`, 6);
+        warnings.push(`${dom.smallTexts.length} texte(s) < 14 px [${bySize}] : ${dom.smallTexts.slice(0, 5).map((t) => `« ${t.sample} »`).join(', ')}`);
+    }
+    let axeViolations = 0;
+    if (opts.axe) {
+        const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+        axeViolations = results.violations.length;
+        for (const v of results.violations) {
+            warnings.push(`axe-core ${v.id} (${v.impact ?? 'impact inconnu'}, ${v.nodes.length} nœud(s)) : ${v.help}`);
+        }
+    }
+    return {
+        blocking,
+        warnings,
+        metrics: { scrollWidth: dom.scrollWidth, viewportWidth: dom.viewportWidth, smallTargets: dom.smallTargets.length, smallTexts: dom.smallTexts.length, axeViolations },
+    };
+}
