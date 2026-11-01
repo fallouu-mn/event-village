@@ -19,7 +19,9 @@ const TILE_ATTRIBUTION = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy;
  *  - boutons de zoom en français, 44 px (règle .leaflet-control-zoom de app/globals.css) ;
  *  - repère non focalisable (il n'a aucune action au clavier) avec un texte de remplacement : le lieu est
  *    aussi écrit en clair sur la page et l'itinéraire est proposé par un lien ;
- *  - nom du lieu inséré comme texte (plus de HTML construit à partir d'une saisie de l'organisateur).
+ *  - nom du lieu inséré comme texte (plus de HTML construit à partir d'une saisie de l'organisateur) ;
+ *  - bulle du lieu (run 52) : bouton de fermeture « Fermer la bulle », 44 × 44 px, texte à 14 px et
+ *    couleurs des tokens dans les deux thèmes (règles .leaflet-popup-* de app/globals.css).
  */
 export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueName }) => {
     const mapRef = useRef<HTMLDivElement>(null);
@@ -59,6 +61,11 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
         if (venueName) {
             const label = document.createElement('strong');
             label.textContent = venueName;
+            // Leaflet écrit « Close popup » en dur sur le bouton de fermeture : libellé français posé à
+            // chaque ouverture (la bulle peut être reconstruite) ; cible de 44 px par app/globals.css.
+            marker.on('popupopen', (e: import('leaflet').PopupEvent) => {
+                e.popup.getElement()?.querySelector('.leaflet-popup-close-button')?.setAttribute('aria-label', 'Fermer la bulle');
+            });
             marker.bindPopup(label).openPopup();
         }
 

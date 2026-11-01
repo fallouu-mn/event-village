@@ -204,7 +204,7 @@ export default function AdminEventsPage() {
         <div className="flex min-w-0 flex-col gap-1">
           <Link
             href={`/admin/events/${ev.id}`}
-            className="font-semibold text-fg underline-offset-4 hover:text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+            className="flex min-h-11 items-center rounded font-semibold text-fg underline-offset-4 hover:text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {ev.title}
           </Link>
@@ -250,10 +250,10 @@ export default function AdminEventsPage() {
 
   const renderCard = (ev: AdminEventItem) => (
     <div className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <Link
           href={`/admin/events/${ev.id}`}
-          className="min-w-0 break-words text-base font-semibold text-fg underline-offset-4 hover:text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+          className="flex min-h-11 min-w-0 items-center break-words rounded text-base font-semibold text-fg underline-offset-4 hover:text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {ev.title}
         </Link>
