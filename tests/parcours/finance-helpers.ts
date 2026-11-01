@@ -12,8 +12,8 @@ import { BASE_URL } from './helpers';
 import { CashoutService } from '../../lib/payments/cashout.service';
 import { loadFixtures } from '../helpers/fixtures';
 import {
-    service, newBuyer, checkout, cart, providerSays, deliverWebhook, paymentById,
-    type Buyer, type CategorySpec, type PaymentRow, type SaleEvent,
+    service, newBuyer, checkout, cart, providerSays, deliverWebhook, paymentById, advanceHelperEvent, helperInsertionDates, helperPosterUrl,
+    type Buyer, type CategorySpec, type HelperEventDates, type PaymentRow, type SaleEvent,
 } from './paiement-helpers';
 
 export type FinanceSettingKey =
@@ -93,18 +93,18 @@ export async function newPartner(label: string): Promise<TestPartner> {
 export async function createPartnerEvent(partnerId: string, label: string, categories: CategorySpec[], opts: { daysFromNow?: number } = {}): Promise<SaleEvent> {
     const days = opts.daysFromNow ?? 30;
     const date = new Date(Date.now() + days * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    // Lot 5 : brouillon (avec affiche) puis publication par les RPC de transition (advanceHelperEvent)
+    const dates: HelperEventDates = { start_date: date, start_time: '20:00:00', end_date: date, end_time: '23:00:00' };
+    const insertDates = helperInsertionDates('PUBLIE', dates);
     const { data: event, error } = await service.from('events').insert({
         partner_id: partnerId,
         title: `TEST Finance ${label} ${Date.now()}`,
         description: 'Événement dédié aux tests financiers (lot 3).',
-        start_date: date,
-        start_time: '20:00:00',
-        end_date: date,
-        end_time: '23:00:00',
+        ...insertDates,
         location: 'Salle de test, Dakar',
         city: 'Dakar',
         capacity: categories.reduce((s, c) => s + c.total, 0) + 10,
-        status: 'PUBLIE',
+        image_url: await helperPosterUrl(partnerId),
     }).select('id').single();
     assert.equal(error, null, `événement ${label} : ${error?.message}`);
     const out: SaleEvent = { eventId: event.id, categories: {} };
@@ -116,6 +116,7 @@ export async function createPartnerEvent(partnerId: string, label: string, categ
         assert.equal(inserted.error, null, `catégorie ${c.name} : ${inserted.error?.message}`);
         out.categories[c.name] = { id: inserted.data!.id, price: c.price, total: c.total };
     }
+    await advanceHelperEvent(event.id, 'PUBLIE', dates, insertDates);
     return out;
 }
 

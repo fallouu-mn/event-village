@@ -9,7 +9,10 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { BASE_URL, routeContext } from './helpers';
-import { service, newBuyer, importModule, type Buyer, type CategorySpec, type SaleEvent } from './paiement-helpers';
+import {
+    service, newBuyer, importModule, advanceHelperEvent, helperInsertionDates, helperPosterUrl,
+    type Buyer, type CategorySpec, type HelperEventDates, type SaleEvent,
+} from './paiement-helpers';
 import { superadminId, type TestPartner } from './finance-helpers';
 
 export type AccessSettingKey =
@@ -52,20 +55,27 @@ function dakar(d: Date): { date: string; time: string } {
     return { date: iso.slice(0, 10), time: iso.slice(11, 19) };
 }
 
-/** Événement du partenaire, début dans `startsInHours` heures (négatif : déjà commencé), durée `durationHours`. */
+/**
+ * Événement du partenaire, début dans `startsInHours` heures (négatif : déjà commencé), durée `durationHours`.
+ * Lot 5 : inséré en BROUILLON puis avancé jusqu'à `status` par les RPC de transition (advanceHelperEvent) ;
+ * TERMINE exige un début passé (fin manuelle par l'admin, contrat D4).
+ */
 export async function createTimedEvent(partnerId: string, label: string, categories: CategorySpec[], opts: { startsInHours?: number; durationHours?: number; status?: string } = {}): Promise<SaleEvent> {
     const start = new Date(Date.now() + (opts.startsInHours ?? 1) * 3600_000);
     const end = new Date(start.getTime() + (opts.durationHours ?? 4) * 3600_000);
     const s = dakar(start);
     const e = dakar(end);
+    const status = opts.status ?? 'PUBLIE';
+    const dates: HelperEventDates = { start_date: s.date, start_time: s.time, end_date: e.date, end_time: e.time };
+    const insertDates = helperInsertionDates(status, dates);
     const { data: event, error } = await service.from('events').insert({
         partner_id: partnerId,
         title: `TEST Accès ${label} ${Date.now()}`,
         description: 'Événement dédié aux tests du contrôle d’accès (lot 4).',
-        start_date: s.date, start_time: s.time, end_date: e.date, end_time: e.time,
+        ...insertDates,
         location: 'Salle de test, Dakar', city: 'Dakar',
         capacity: categories.reduce((sum, c) => sum + c.total, 0) + 10,
-        status: opts.status ?? 'PUBLIE',
+        image_url: await helperPosterUrl(partnerId),
     }).select('id').single();
     assert.equal(error, null, `événement ${label} : ${error?.message}`);
     const out: SaleEvent = { eventId: event.id, categories: {} };
@@ -77,6 +87,7 @@ export async function createTimedEvent(partnerId: string, label: string, categor
         assert.equal(inserted.error, null, `catégorie ${c.name} : ${inserted.error?.message}`);
         out.categories[c.name] = { id: inserted.data!.id, price: c.price, total: c.total };
     }
+    await advanceHelperEvent(event.id, status, dates, insertDates);
     return out;
 }
 

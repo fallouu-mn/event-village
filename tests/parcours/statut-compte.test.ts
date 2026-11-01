@@ -27,6 +27,7 @@ import { GET as listTickets } from '../../app/api/tickets/route';
 import { POST as scanTicket } from '../../app/api/controller/scan/route';
 import { BASE_URL, jsonRequest, randomEmail, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
 import { NextRequest } from 'next/server';
+import { advanceEventTo, posterUrl } from './cycle-helpers';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -215,7 +216,9 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
             partner_id: fx.partners.A.id, title: `TEST Vérification ${suffix}`, description: 'Événement dédié au contrôle des droits de vérification.',
             start_date: start.toISOString().slice(0, 10), start_time: start.toISOString().slice(11, 19),
             end_date: end.toISOString().slice(0, 10), end_time: end.toISOString().slice(11, 19),
-            location: 'Salle de test, Dakar', city: 'Dakar', capacity: 20, status: 'PUBLIE',
+            location: 'Salle de test, Dakar', city: 'Dakar', capacity: 20,
+            // Lot 5 : inséré en BROUILLON (forcé par la base), publié par les RPC de transition
+            image_url: posterUrl(fx.partners.A.id),
         }).select('id').single();
         assert.equal(evErr, null, `événement dédié : ${evErr?.message}`);
         const price = fx.events.A_PUBLIE.categories.Standard.price;
@@ -223,6 +226,7 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
             event_id: ev!.id, name: 'Standard', price, total_quantity: 10, sold_quantity: 1, is_active: true, is_visible: true,
         }).select('id').single();
         assert.equal(catErr, null, `catégorie dédiée : ${catErr?.message}`);
+        await advanceEventTo(ev!.id, 'PUBLIE');
         const { error: assignErr } = await service.from('event_controllers').insert({
             event_id: ev!.id, user_id: fx.users.CONTROLLER_A.id, can_accept_cash: false, created_by: fx.partners.A.userId,
         });

@@ -19,6 +19,7 @@ import { getFakes } from '../fakes';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { jsonRequest, randomSenegalPhone } from './helpers';
+import { advanceEventTo, posterUrl } from './cycle-helpers';
 
 const service = getServiceRoleClient();
 let eventId = '';
@@ -38,7 +39,8 @@ before(async () => {
             location: 'Salle de test, Dakar',
             city: 'Dakar',
             capacity: 50,
-            status: 'PUBLIE',
+            // Lot 5 : inséré en BROUILLON (forcé par la base), publié par les RPC de transition
+            image_url: posterUrl(fx.partners.A.id),
         })
         .select('id')
         .single();
@@ -51,6 +53,7 @@ before(async () => {
         .single();
     assert.equal(catErr, null, `création de la catégorie : ${catErr?.message}`);
     categoryId = cat.id;
+    await advanceEventTo(eventId, 'PUBLIE');
 });
 
 test('checkout → paiement PENDING → notification SUCCESS → billet VALIDE émis par le serveur', async () => {

@@ -91,10 +91,10 @@ export default function PartnerEventsPage() {
     const handlePublish = async (eventId: string) => {
         setActionLoading(eventId);
         try {
-            const res = await fetch(`/api/partner/events/${eventId}/status`, {
+            const res = await fetch(`/api/partner/events/${eventId}/transition`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'PUBLIE' }),
+                body: JSON.stringify({ to: 'PUBLIE' }),
             });
             const data = await res.json();
             if (data.success) {
@@ -113,10 +113,10 @@ export default function PartnerEventsPage() {
     const handleSubmitForValidation = async (eventId: string) => {
         setActionLoading(eventId);
         try {
-            const res = await fetch(`/api/partner/events/${eventId}/status`, {
+            const res = await fetch(`/api/partner/events/${eventId}/transition`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'EN_ATTENTE' }),
+                body: JSON.stringify({ to: 'EN_ATTENTE' }),
             });
             const data = await res.json();
             if (data.success) {

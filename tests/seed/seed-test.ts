@@ -8,8 +8,10 @@
  *    à l'événement publié de A, ADMIN, SUPERADMIN), mot de passe commun TEST_PASSWORD ;
  *  - platform_settings complets (dont ticketing_fee_config) ;
  *  - partenaire A : un événement PUBLIE (Standard 5 000 F × 10, VIP 15 000 F × 3),
- *    un BROUILLON, un événement passé ; partenaire B : un événement PUBLIE et un second
- *    événement PUBLIE avec une fiche d'annulation enregistrée ;
+ *    un BROUILLON, un événement passé TERMINE ; partenaire B : un événement PUBLIE et un second
+ *    événement ANNULE par l'annulation réelle (fiche d'annulation écrite par event_cancel) ;
+ *  - lot 5 : les statuts sont atteints par les RPC de transition (tests/parcours/cycle-helpers.ts),
+ *    jamais écrits directement (INSERT forcé à BROUILLON, garde du statut) ;
  *  - un compte client SUSPENDU ; un billet de référence sur l'événement de A et un sur celui de B.
  *
  * Les tests résolvent les UUID via tests/helpers/fixtures.ts, jamais en dur.
@@ -30,6 +32,7 @@ import {
     type FixturePartnerKey,
     type FixtureUserKey,
 } from '../helpers/fixtures';
+import { advanceEventTo, assertRpcOk, eventStatus, posterUrl, rpcTransition } from '../parcours/cycle-helpers';
 
 if (process.env.EV_TEST_GUARD !== '1') {
     throw new Error('seed-test : garde-fou de test non chargé (tests/helpers/env.ts).');
@@ -196,26 +199,35 @@ async function ensurePartner(key: FixturePartnerKey, userId: string): Promise<st
 }
 
 // ── 4. Événements et catégories ──────────────────────────────────────────────
-async function ensureEvent(key: FixtureEventKey, partnerId: string): Promise<{ id: string; categories: Record<string, string> }> {
+async function ensureEvent(key: FixtureEventKey, partnerId: string, actors: SeedActors): Promise<{ id: string; categories: Record<string, string> }> {
     const spec = FIXTURE_EVENTS[key];
     const date = isoDate(spec.daysFromNow);
     const capacity = spec.categories.reduce((s, c) => s + c.total, 0) + 10;
+
+    // Lot 5 (contrats D2 et S) : le statut n'est jamais écrit ici (INSERT forcé à BROUILLON, garde du
+    // statut) ; il est atteint ensuite par les RPC de transition (ensureEventStatus). Un événement passé
+    // encore à publier est d'abord daté dans le futur, ses vraies dates sont remises après la publication.
+    const { data: before, error: findErr } = await supabase.from('events').select('id, status').eq('slug', spec.slug).maybeSingle();
+    if (findErr) fail(`events.find(${key})`, findErr);
+    const currentStatus = String(before?.status ?? 'BROUILLON');
+    const publicationPending = !PUBLISHED_STATUSES.has(currentStatus) && spec.status !== 'BROUILLON';
+    const rowDate = publicationPending && spec.daysFromNow < 1 ? isoDate(1) : date;
 
     const row = {
         partner_id: partnerId,
         title: spec.title,
         slug: spec.slug,
         description: `Événement de test ${key} — données fictives, aucune vente réelle.`,
-        start_date: date,
+        start_date: rowDate,
         start_time: '20:00:00',
-        end_date: date,
+        end_date: rowDate,
         end_time: '23:30:00',
         location: 'Salle de test, Dakar',
         city: 'Dakar',
         latitude: 14.6937,
         longitude: -17.4441,
         capacity,
-        status: spec.status,
+        image_url: posterUrl(partnerId, `fixture-${spec.slug}.png`),
         category: 'CONCERT',
         program: [
             { time: '20:00', title: 'Ouverture des portes' },
@@ -263,7 +275,64 @@ async function ensureEvent(key: FixtureEventKey, partnerId: string): Promise<{ i
         }
     }
 
+    await ensureEventStatus(key, event.id, actors, rowDate !== date ? date : null);
     return { id: event.id, categories };
+}
+
+const PUBLISHED_STATUSES = new Set(['PUBLIE', 'SUSPENDU', 'TERMINE', 'ANNULE']);
+
+interface SeedActors {
+    /** Compte du partenaire propriétaire (soumission, publication, annulation). */
+    partnerUserId: string;
+    /** SUPERADMIN du seed (validation, fin manuelle). */
+    adminId: string;
+}
+
+async function setEventDate(key: FixtureEventKey, eventId: string, date: string): Promise<void> {
+    const { error } = await supabase.from('events').update({ start_date: date, end_date: date }).eq('id', eventId);
+    if (error) fail(`events.dates(${key})`, error);
+}
+
+/**
+ * Lot 5 : amène l'événement au statut de la fixture par les seules RPC du contrat (advanceEventTo :
+ * event_transition et event_cancel). A_PASSE : publié dans le futur, redaté à J-30, puis terminé par
+ * l'admin ; B_ANNULATION : annulé par son partenaire (event_cancellations écrite par event_cancel).
+ * `realDate` : vraie date à remettre après la publication quand l'insertion l'a déplacée.
+ */
+async function ensureEventStatus(key: FixtureEventKey, eventId: string, actors: SeedActors, realDate: string | null): Promise<void> {
+    const spec = FIXTURE_EVENTS[key];
+    const current = await eventStatus(eventId);
+    if (current === spec.status) return;
+    if (current === 'TERMINE' || current === 'ANNULE') {
+        throw new Error(`[seed-test] événement ${key} au statut terminal ${current}, attendu ${spec.status} : réinitialisez la base (supabase db reset)`);
+    }
+    const opts = { partnerUserId: actors.partnerUserId, adminId: actors.adminId };
+    if (spec.status === 'BROUILLON') {
+        if (current !== 'EN_ATTENTE') {
+            throw new Error(`[seed-test] événement ${key} au statut ${current} : aucun retour possible vers BROUILLON (réinitialisez la base)`);
+        }
+        assertRpcOk(await rpcTransition(eventId, actors.partnerUserId, 'BROUILLON'), `seed ${key} : retrait de la validation`);
+        return;
+    }
+    if (spec.status === 'TERMINE') {
+        await advanceEventTo(eventId, 'PUBLIE', opts);
+        if (realDate) await setEventDate(key, eventId, realDate);
+        await advanceEventTo(eventId, 'TERMINE', opts);
+        return;
+    }
+    if (spec.status === 'ANNULE') {
+        const cancellation = Object.values(FIXTURE_CANCELLATIONS).find((c) => c.event === key);
+        await advanceEventTo(eventId, 'ANNULE', {
+            ...opts,
+            cancelFrom: 'PUBLIE',
+            cancelledBy: 'PARTENAIRE',
+            publicNotice: cancellation?.publicNotice,
+            internalReason: cancellation?.internalReason,
+        });
+    } else {
+        await advanceEventTo(eventId, spec.status, opts);
+    }
+    if (realDate) await setEventDate(key, eventId, realDate);
 }
 
 // ── 5. Affectation contrôleur ────────────────────────────────────────────────
@@ -368,25 +437,18 @@ async function syncCategoryCounters(categoryId: string): Promise<void> {
     if (upErr) fail('ticket_categories.counters', upErr);
 }
 
+/**
+ * Lot 5 : l'annulation est écrite par event_cancel (ensureEventStatus, annulation réelle par le
+ * partenaire) ; ici, seule la vérification que la ligne existe, au nom attendu.
+ */
 async function ensureCancellation(key: keyof typeof FIXTURE_CANCELLATIONS, eventId: string, cancelledBy: string): Promise<string> {
-    const spec = FIXTURE_CANCELLATIONS[key];
-    const { data: existing, error: findErr } = await supabase.from('event_cancellations').select('id').eq('event_id', eventId).maybeSingle();
+    const { data: existing, error: findErr } = await supabase.from('event_cancellations').select('id, cancelled_by').eq('event_id', eventId).maybeSingle();
     if (findErr) fail(`event_cancellations.find(${key})`, findErr);
-    const row = {
-        event_id: eventId,
-        cancelled_by: cancelledBy,
-        internal_reason: spec.internalReason,
-        public_notice: spec.publicNotice,
-        updated_at: new Date().toISOString(),
-    };
-    if (existing) {
-        const { error } = await supabase.from('event_cancellations').update(row).eq('id', existing.id);
-        if (error) fail(`event_cancellations.update(${key})`, error);
-        return existing.id;
+    if (!existing) throw new Error(`[seed-test] annulation ${key} absente après event_cancel`);
+    if (existing.cancelled_by !== cancelledBy) {
+        throw new Error(`[seed-test] annulation ${key} enregistrée au nom de ${existing.cancelled_by}, attendu ${cancelledBy}`);
     }
-    const { data: created, error } = await supabase.from('event_cancellations').insert(row).select('id').single();
-    if (error || !created) fail(`event_cancellations.insert(${key})`, error);
-    return created.id;
+    return existing.id;
 }
 
 async function ensureControllerAssignment(eventId: string, controllerUserId: string, createdBy: string): Promise<void> {
@@ -421,7 +483,11 @@ async function main(): Promise<void> {
     const eventIds: Record<string, { id: string; categories: Record<string, string> }> = {};
     for (const key of Object.keys(FIXTURE_EVENTS) as FixtureEventKey[]) {
         logStep(`événement ${key}…`);
-        eventIds[key] = await ensureEvent(key, partnerIds[FIXTURE_EVENTS[key].partner]);
+        const partnerKey = FIXTURE_EVENTS[key].partner;
+        eventIds[key] = await ensureEvent(key, partnerIds[partnerKey], {
+            partnerUserId: userIds[FIXTURE_PARTNERS[partnerKey].userKey],
+            adminId: userIds.SUPERADMIN,
+        });
     }
     summary.events = eventIds;
 

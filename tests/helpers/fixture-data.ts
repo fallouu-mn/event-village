@@ -45,7 +45,8 @@ export interface FixtureEventSpec {
     partner: FixturePartnerKey;
     slug: string;
     title: string;
-    status: 'PUBLIE' | 'BROUILLON' | 'ANNULE';
+    /** Lot 5 : statut atteint par les RPC de transition (tests/seed/seed-test.ts), jamais écrit directement. */
+    status: 'PUBLIE' | 'BROUILLON' | 'ANNULE' | 'TERMINE';
     daysFromNow: number;
     categories: readonly FixtureCategorySpec[];
 }
@@ -70,11 +71,12 @@ export const FIXTURE_EVENTS: Record<string, FixtureEventSpec> = {
         daysFromNow: 45,
         categories: [{ name: 'Standard', price: 2000, total: 5 }],
     },
+    /** Lot 5 (contrat U) : passé, TERMINE (publié puis terminé par les RPC ; le cron terminerait un PUBLIE passé). */
     A_PASSE: {
         partner: 'A',
         slug: 'test-fixture-a-passe',
-        title: 'TEST Festival A (passé, encore PUBLIE)',
-        status: 'PUBLIE',
+        title: 'TEST Festival A (passé, terminé)',
+        status: 'TERMINE',
         daysFromNow: -30,
         categories: [{ name: 'Standard', price: 3000, total: 5 }],
     },
@@ -86,13 +88,14 @@ export const FIXTURE_EVENTS: Record<string, FixtureEventSpec> = {
         daysFromNow: 20,
         categories: [{ name: 'Standard', price: 4000, total: 8 }],
     },
-    /** Annulation enregistrée, événement encore PUBLIE (visible de tous) : cas où la politique
-     *  de event_cancellations était seule à protéger les annulations des autres partenaires. */
+    /** Annulation enregistrée (visible de tous, statut public ANNULE) : cas où la politique de
+     *  event_cancellations était seule à protéger les annulations des autres partenaires.
+     *  Lot 5 (contrat S) : annulé par l'annulation réelle (event_cancel) du partenaire B. */
     B_ANNULATION: {
         partner: 'B',
         slug: 'test-fixture-b-annulation',
-        title: 'TEST Gala B (annulation enregistrée, encore publié)',
-        status: 'PUBLIE',
+        title: 'TEST Gala B (annulé)',
+        status: 'ANNULE',
         daysFromNow: 25,
         categories: [{ name: 'Standard', price: 4000, total: 5 }],
     },

@@ -2,7 +2,8 @@ import { getServiceRoleClient } from '../supabase/server';
 import { FinancialCalculatorService } from '../payments/financial-calculator.service';
 import { NotificationService } from '../notifications/notification.service';
 import { mTargetService } from '../sms/mtarget.service';
-import { EmailService, EmailTemplates } from '../email/email.service';
+import { EmailService } from '../email/email.service';
+import { EventLifecycleService } from './event-lifecycle.service';
 import { randomUUID } from 'crypto';
 import { pgEscapeLike } from '@/lib/security/postgrest-filter';
 
@@ -704,225 +705,24 @@ export class EventService {
     }
 
     /**
-     * Machine à états finis du Cycle de Publication (§31 CDC V3.0)
-     * BROUILLON → EN_ATTENTE → VALIDÉ → PUBLIÉ → SUSPENDU → TERMINÉ
-     *
-     * Règles de transition strictes :
-     * - PARTENAIRE : peut faire BROUILLON → EN_ATTENTE, et PUBLIE → TERMINE.
-     * - ADMIN / SUPERADMIN : peut faire EN_ATTENTE → VALIDE, VALIDE → PUBLIE, PUBLIE → SUSPENDU, SUSPENDU → PUBLIE, * → TERMINE.
-     * - Auto-approbation PARTENAIRE (EN_ATTENTE → VALIDE) : STRICTEMENT INTERDITE.
+     * Lot 5 (5.2) : changement de statut par la RPC event_transition (table event_status_transitions en
+     * base, motifs obligatoires, historique, garde du statut). Le rôle de l'acteur est dérivé en base
+     * (user_roles, propriété du partenaire) : le paramètre userRole n'est plus lu. Un refus lève
+     * EventLifecycleError (statut HTTP, code, message en français).
      */
     public static async changeEventStatus(
         eventId: string,
         userId: string,
         newStatus: EventStatus,
-        userRole: string = 'PARTENAIRE',
-        rejectionReason?: string
+        _userRole: string = 'PARTENAIRE',
+        reason?: string
     ) {
-        const supabase = getServiceRoleClient();
-
-        const { data: event, error: findErr } = await supabase
-            .from('events')
-            .select('*, partners(user_id, company_name)')
-            .eq('id', eventId)
-            .single();
-
-        if (findErr || !event) {
-            throw new Error('Événement introuvable.');
+        void _userRole;
+        await EventLifecycleService.transition({ eventId, actorId: userId, to: newStatus, reason: reason ?? null });
+        const { data: updatedEvent, error } = await getServiceRoleClient().from('events').select('*').eq('id', eventId).single();
+        if (error || !updatedEvent) {
+            throw new Error(`Relecture de l'événement après le changement de statut impossible : ${error?.message ?? 'absent'}`);
         }
-
-        const currentStatus: EventStatus = event.status;
-        const isAdmin = userRole === 'SUPERADMIN' || userRole === 'ADMIN';
-        const isOwner = event.partners?.user_id === userId;
-
-        if (!isAdmin && !isOwner) {
-            throw new Error('Accès non autorisé : Vous n\'êtes pas propriétaire de cet événement.');
-        }
-
-        // Matrice de transition d'état conformément au CDC V3.0 §31
-        if (newStatus === currentStatus) {
-            return event;
-        }
-
-        if (currentStatus === 'BROUILLON') {
-            // PARTENAIRE : BROUILLON → EN_ATTENTE
-            // ADMIN/SUPERADMIN : BROUILLON → EN_ATTENTE (seul chemin autorisé depuis BROUILLON, sauf TERMINE via * → TERMINE)
-            if (newStatus === 'EN_ATTENTE') {
-                // Autorisé pour partenaire et admin
-            } else if (newStatus === 'TERMINE' && isAdmin) {
-                // Autorisé uniquement pour admin (* → TERMINE)
-            } else {
-                throw new Error('Un événement en BROUILLON ne peut être soumis qu\'à validation (EN_ATTENTE) ou terminé par un administrateur.');
-            }
-        } else if (currentStatus === 'EN_ATTENTE') {
-            // ADMIN/SUPERADMIN : EN_ATTENTE → VALIDE
-            // PARTENAIRE : EN_ATTENTE → BROUILLON (retrait)
-            if (newStatus === 'VALIDE' && isAdmin) {
-                // Autorisé uniquement pour admin
-            } else if (newStatus === 'BROUILLON') {
-                // Rejet par l'admin ou retrait par le partenaire
-            } else if (newStatus === 'TERMINE' && isAdmin) {
-                // Autorisé uniquement pour admin (* → TERMINE)
-            } else {
-                throw new Error('Seul un administrateur peut valider un événement en attente ou le terminer.');
-            }
-        } else if (currentStatus === 'VALIDE') {
-            // ADMIN/SUPERADMIN : VALIDE → PUBLIE, VALIDE → SUSPENDU
-            // PARTENAIRE : VALIDE → PUBLIE
-            if (newStatus === 'PUBLIE') {
-                // Autorisé pour partenaire et admin
-            } else if (newStatus === 'SUSPENDU' && isAdmin) {
-                // Autorisé uniquement pour admin
-            } else if (newStatus === 'TERMINE' && isAdmin) {
-                // Autorisé uniquement pour admin (* → TERMINE)
-            } else {
-                throw new Error(`Transition invalide de ${currentStatus} vers ${newStatus}.`);
-            }
-        } else if (currentStatus === 'PUBLIE') {
-            // ADMIN/SUPERADMIN : PUBLIE → SUSPENDU, PUBLIE → TERMINE
-            // PARTENAIRE : PUBLIE → TERMINE
-            if (newStatus === 'SUSPENDU' && isAdmin) {
-                // Autorisé uniquement pour admin
-            } else if (newStatus === 'TERMINE') {
-                // Autorisé pour partenaire et admin
-            } else {
-                throw new Error(`Transition invalide de ${currentStatus} vers ${newStatus}.`);
-            }
-        } else if (currentStatus === 'SUSPENDU') {
-            // ADMIN/SUPERADMIN : SUSPENDU → PUBLIE, SUSPENDU → TERMINE
-            if (newStatus === 'PUBLIE' && isAdmin) {
-                // Autorisé uniquement pour admin
-            } else if (newStatus === 'TERMINE') {
-                // Autorisé pour partenaire et admin
-            } else {
-                throw new Error(`Transition invalide de ${currentStatus} vers ${newStatus}.`);
-            }
-        } else if (currentStatus === 'TERMINE') {
-            throw new Error('Un événement terminé ne peut plus changer de statut.');
-        }
-
-        // Mise à jour en base
-        const { data: updatedEvent, error: updateErr } = await supabase
-            .from('events')
-            .update({
-                status: newStatus,
-                updated_at: new Date().toISOString(),
-            })
-            .eq('id', eventId)
-            .select('*')
-            .single();
-
-        if (updateErr || !updatedEvent) {
-            throw new Error(`Échec du changement de statut: ${updateErr?.message}`);
-        }
-
-        // ── Triple Notification Partenaire (In-App + SMS + Email) ──────────
-        if (event.partners?.user_id) {
-            const { data: partnerUser } = await supabase
-                .from('users')
-                .select('id, email, phone, first_name, last_name')
-                .eq('id', event.partners.user_id)
-                .single();
-
-            const partnerName = partnerUser
-                ? `${partnerUser.first_name || ''} ${partnerUser.last_name || ''}`.trim() || 'Partenaire'
-                : 'Partenaire';
-
-            if (newStatus === 'VALIDE') {
-                await NotificationService.createNotification({
-                    userId: event.partners.user_id,
-                    title: 'Événement validé !',
-                    message: `Votre événement "${event.title}" a été validé. Vous pouvez le publier.`,
-                    type: 'SYSTEM',
-                    data: { eventId, status: newStatus, actionUrl: '/partner/events' },
-                });
-                if (partnerUser?.phone) {
-                    mTargetService.sendSms(
-                        partnerUser.phone,
-                        `Event Village : Votre événement "${event.title}" est validé ! Connectez-vous pour ouvrir la billetterie.`
-                    ).catch(err => console.error('[EventService] SMS partenaire (VALIDE) échoué:', err instanceof Error ? err.message : err));
-                }
-                if (partnerUser?.email) {
-                    EmailService.send({
-                        to: partnerUser.email,
-                        ...EmailTemplates.eventValidated({ partnerName, eventTitle: event.title }),
-                    }).catch(err => console.error('[EventService] Email partenaire (VALIDE) échoué:', err instanceof Error ? err.message : err));
-                }
-            } else if (newStatus === 'BROUILLON' && currentStatus === 'EN_ATTENTE' && isAdmin) {
-                const reasonText = rejectionReason || 'Non spécifié';
-                await NotificationService.createNotification({
-                    userId: event.partners.user_id,
-                    title: 'Événement non validé',
-                    message: `Votre événement "${event.title}" n'a pas été validé. Motif : ${reasonText}`,
-                    type: 'SYSTEM',
-                    data: { eventId, status: newStatus, reason: reasonText, actionUrl: '/partner/events' },
-                });
-                if (partnerUser?.phone) {
-                    mTargetService.sendSms(
-                        partnerUser.phone,
-                        `Event Village : Votre événement "${event.title}" n'a pas été validé. Motif : ${reasonText}. Modifiez-le et resoumettez.`
-                    ).catch(err => console.error('[EventService] SMS partenaire (REJET) échoué:', err instanceof Error ? err.message : err));
-                }
-                if (partnerUser?.email) {
-                    EmailService.send({
-                        to: partnerUser.email,
-                        ...EmailTemplates.eventRejected({ partnerName, eventTitle: event.title, reason: reasonText }),
-                    }).catch(err => console.error('[EventService] Email partenaire (REJET) échoué:', err instanceof Error ? err.message : err));
-                }
-            } else if (newStatus === 'SUSPENDU') {
-                const reasonText = rejectionReason || 'Vérification requise';
-                await NotificationService.createNotification({
-                    userId: event.partners.user_id,
-                    title: 'Événement suspendu',
-                    message: `Votre événement "${event.title}" a été suspendu. Motif : ${reasonText}.`,
-                    type: 'SYSTEM',
-                    data: { eventId, status: newStatus, reason: reasonText },
-                });
-                if (partnerUser?.phone) {
-                    mTargetService.sendSms(
-                        partnerUser.phone,
-                        `Event Village : Votre événement "${event.title}" a été suspendu. Motif : ${reasonText}. Contactez le support.`
-                    ).catch(err => console.error('[EventService] SMS partenaire (SUSPENDU) échoué:', err instanceof Error ? err.message : err));
-                }
-                if (partnerUser?.email) {
-                    EmailService.send({
-                        to: partnerUser.email,
-                        ...EmailTemplates.eventSuspended({ partnerName, eventTitle: event.title, reason: reasonText }),
-                    }).catch(err => console.error('[EventService] Email partenaire (SUSPENDU) échoué:', err instanceof Error ? err.message : err));
-                }
-            } else if (newStatus === 'PUBLIE') {
-                await NotificationService.createNotification({
-                    userId: event.partners.user_id,
-                    title: 'Événement en ligne !',
-                    message: `Votre événement "${event.title}" est désormais visible sur la billetterie publique Event Village.`,
-                    type: 'SYSTEM',
-                    data: { eventId, status: newStatus },
-                });
-            }
-        }
-
-        // ── Notification SuperAdmins lors de la soumission (BROUILLON → EN_ATTENTE)
-        if (newStatus === 'EN_ATTENTE' && currentStatus === 'BROUILLON') {
-            const companyName = event.partners?.company_name || 'Partenaire';
-            try {
-                const notifResult = await NotificationService.notifySuperadmins({
-                    title: 'Nouvel Événement Soumis',
-                    content: `Le partenaire "${companyName}" a soumis l'événement "${event.title}" pour validation.`,
-                    type: 'SYSTEM',
-                    metadata: { eventId, eventTitle: event.title, actionUrl: '/admin/services' },
-                    smsMessage: `EV ADMIN: Nouvel événement "${event.title}" de "${companyName}" en attente de validation.`,
-                    emailTemplate: EmailTemplates.superadminEventSubmitted({
-                        partnerName: companyName,
-                        companyName,
-                        eventTitle: event.title,
-                    }),
-                });
-                console.log('[EventService.changeEventStatus] Notification SuperAdmins résultat:', JSON.stringify(notifResult));
-            } catch (notifErr) {
-                console.error('[EventService.changeEventStatus] ERREUR notification SuperAdmins (status update OK, notification KO):', notifErr instanceof Error ? notifErr.message : notifErr);
-            }
-        }
-
         return updatedEvent;
     }
 

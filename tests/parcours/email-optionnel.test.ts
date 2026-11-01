@@ -20,6 +20,7 @@ import { getFakes, resetFakes } from '../fakes';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { advanceEventTo, posterUrl } from './cycle-helpers';
 
 const warnings: string[] = [];
 const originalWarn = console.warn;
@@ -39,7 +40,9 @@ before(async () => {
     const date = new Date(Date.now() + 41 * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const { data: event, error } = await service.from('events').insert({
         partner_id: fx.partners.A.id, title: `TEST Email optionnel ${Date.now()}`, description: 'Achat sans canal email.',
-        start_date: date, start_time: '19:00:00', location: 'Salle de test, Dakar', city: 'Dakar', capacity: 20, status: 'PUBLIE',
+        start_date: date, start_time: '19:00:00', location: 'Salle de test, Dakar', city: 'Dakar', capacity: 20,
+        // Lot 5 : inséré en BROUILLON (forcé par la base), publié par les RPC de transition
+        image_url: posterUrl(fx.partners.A.id),
     }).select('id').single();
     assert.equal(error, null, `événement : ${error?.message}`);
     eventId = event.id;
@@ -48,6 +51,7 @@ before(async () => {
         .select('id').single();
     assert.equal(catErr, null, `catégorie : ${catErr?.message}`);
     categoryId = cat.id;
+    await advanceEventTo(eventId, 'PUBLIE');
 });
 
 after(() => {

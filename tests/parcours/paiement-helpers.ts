@@ -83,20 +83,88 @@ export interface SaleEvent {
     categories: Record<string, { id: string; price: number; total: number }>;
 }
 
+// ── Lot 5 : statut atteint par les RPC de transition (contrat D2 et S) ─────
+// Tout INSERT dans events est forcé à BROUILLON : les helpers insèrent le brouillon (avec une affiche du
+// bucket du projet, exigée à la soumission), ses catégories, puis l'avancent par advanceEventTo
+// (tests/parcours/cycle-helpers.ts, importé dynamiquement : cycle-helpers importe ce module). Un événement
+// « dans le passé » est créé dans le futur, publié, puis ses dates sont déplacées (la garde ne porte que
+// sur le statut) ; TERMINE : dates demandées remises avant la fin manuelle par l'admin (début passé exigé).
+
+export interface HelperEventDates {
+    start_date: string;
+    start_time: string;
+    end_date: string | null;
+    end_time: string | null;
+}
+
+const THROUGH_PUBLICATION = new Set(['PUBLIE', 'SUSPENDU', 'TERMINE', 'ANNULE']);
+
+function helperEndMs(d: HelperEventDates): number {
+    const day = d.end_date ?? d.start_date;
+    const time = d.end_date && d.end_time ? d.end_time : '23:59:00';
+    return Date.parse(`${day}T${time.length === 5 ? `${time}:00` : time}Z`);
+}
+
+function addDays(date: string, days: number): string {
+    const d = new Date(`${date}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+}
+
+/** Dates d'insertion : celles demandées, sauf fin passée d'un événement qui doit être publié (J+30, même durée). */
+export function helperInsertionDates(status: string, dates: HelperEventDates): HelperEventDates {
+    if (!THROUGH_PUBLICATION.has(status) || helperEndMs(dates) > Date.now() + 60_000) return dates;
+    const start = addDays(new Date().toISOString().slice(0, 10), 30);
+    const span = dates.end_date ? Math.round((Date.parse(`${dates.end_date}T00:00:00Z`) - Date.parse(`${dates.start_date}T00:00:00Z`)) / 86_400_000) : 0;
+    return { ...dates, start_date: start, end_date: dates.end_date ? addDays(start, span) : null };
+}
+
+async function setHelperEventDates(eventId: string, dates: HelperEventDates): Promise<void> {
+    const { data, error } = await service.from('events').update(dates).eq('id', eventId).select('id');
+    assert.equal(error, null, `dates de l'événement ${eventId} : ${error?.message}`);
+    assert.equal((data ?? []).length, 1, `dates de l'événement ${eventId} : événement introuvable`);
+}
+
+/** Affiche factice acceptée par la soumission (préfixe public-images du projet, contrat F1). */
+export async function helperPosterUrl(partnerId: string): Promise<string> {
+    return (await import('./cycle-helpers')).posterUrl(partnerId);
+}
+
+/**
+ * Avance un brouillon (catégories déjà créées) jusqu'à `status` par les RPC event_transition et
+ * event_cancel, puis remet les dates demandées si l'insertion les avait déplacées.
+ */
+export async function advanceHelperEvent(eventId: string, status: string, dates: HelperEventDates, inserted: HelperEventDates): Promise<void> {
+    const cycle = await import('./cycle-helpers');
+    assert.ok((cycle.EVENT_STATUSES as readonly string[]).includes(status), `statut d'événement inconnu : ${status}`);
+    const target = status as import('./cycle-helpers').EventStatus;
+    const moved = JSON.stringify(dates) !== JSON.stringify(inserted);
+    if (target === 'TERMINE') {
+        await cycle.advanceEventTo(eventId, 'PUBLIE');
+        if (moved) await setHelperEventDates(eventId, dates);
+        await cycle.advanceEventTo(eventId, 'TERMINE');
+        return;
+    }
+    if (target !== 'BROUILLON') await cycle.advanceEventTo(eventId, target);
+    if (moved) await setHelperEventDates(eventId, dates);
+}
+
 export async function createSaleEvent(label: string, categories: CategorySpec[], opts: { daysFromNow?: number; status?: string } = {}): Promise<SaleEvent> {
     const fx = await loadFixtures();
     const days = opts.daysFromNow ?? 35;
     const date = new Date(Date.now() + days * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const status = opts.status ?? 'PUBLIE';
+    const dates: HelperEventDates = { start_date: date, start_time: '20:00:00', end_date: null, end_time: null };
+    const insertDates = helperInsertionDates(status, dates);
     const { data: event, error } = await service.from('events').insert({
         partner_id: fx.partners.A.id,
         title: `TEST Paiement ${label} ${Date.now()}`,
         description: 'Événement dédié aux tests de la chaîne paiement → billet (lot 2).',
-        start_date: date,
-        start_time: '20:00:00',
+        ...insertDates,
         location: 'Salle de test, Dakar',
         city: 'Dakar',
         capacity: categories.reduce((s, c) => s + c.total, 0) + 10,
-        status: opts.status ?? 'PUBLIE',
+        image_url: await helperPosterUrl(fx.partners.A.id),
     }).select('id').single();
     assert.equal(error, null, `création de l'événement ${label} : ${error?.message}`);
     const out: SaleEvent = { eventId: event.id, categories: {} };
@@ -116,6 +184,7 @@ export async function createSaleEvent(label: string, categories: CategorySpec[],
         assert.equal(inserted.error, null, `création de la catégorie ${c.name} : ${inserted.error?.message}`);
         out.categories[c.name] = { id: inserted.data!.id, price: c.price, total: c.total };
     }
+    await advanceHelperEvent(event.id, status, dates, insertDates);
     return out;
 }
 
