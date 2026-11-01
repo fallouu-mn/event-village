@@ -1,14 +1,51 @@
 import React from 'react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { cn } from './cn';
+
+export type ButtonVariant = 'primary' | 'secondary' | 'glass' | 'dark' | 'outline' | 'ghost' | 'danger';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'glass' | 'dark' | 'outline' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg' | 'icon';
+  variant?: ButtonVariant;
+  size?: ButtonSize;
   fullWidth?: boolean;
   isLoading?: boolean;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+}
+
+/**
+ * Lot 5 (contrat Q) : cible d'au moins 44 px à toutes les tailles (min-h-11, icône 44 × 44), primaire
+ * en fond plein `brand` (#C2410C, texte blanc 5,18:1), focus visible sur l'anneau `ring`.
+ */
+const baseStyles =
+  'inline-flex min-h-11 items-center justify-center gap-2 font-semibold tracking-tight cursor-pointer select-none transition-colors duration-200 motion-safe:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
+
+const variants: Record<ButtonVariant, string> = {
+  primary: 'bg-brand text-on-brand hover:bg-brand-hover border border-transparent shadow-sm',
+  secondary: 'bg-surface-sunken text-fg hover:bg-border border border-border',
+  glass: 'bg-surface/85 text-fg backdrop-blur-md hover:bg-surface border border-border',
+  dark: 'bg-fg text-surface hover:bg-fg/90 border border-transparent',
+  outline: 'bg-transparent text-brand-fg hover:bg-brand-bg border-2 border-brand-fg',
+  ghost: 'bg-transparent text-fg hover:bg-surface-sunken border border-transparent',
+  danger: 'bg-danger text-on-tone hover:bg-danger/90 border border-transparent shadow-sm',
+};
+
+const sizes: Record<ButtonSize, string> = {
+  sm: 'min-h-11 px-3.5 text-sm rounded-lg gap-1.5',
+  md: 'min-h-11 px-4 text-sm rounded-xl',
+  lg: 'min-h-12 px-6 text-base rounded-2xl gap-2.5',
+  icon: 'min-h-11 min-w-11 h-11 w-11 p-0 rounded-xl',
+};
+
+/** Classes d'un bouton, partagées avec LinkButton (lien stylé en bouton, sans <button> imbriqué). */
+export function buttonClasses(options: {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  fullWidth?: boolean;
+  className?: string;
+} = {}): string {
+  const { variant = 'primary', size = 'md', fullWidth = false, className } = options;
+  return cn(baseStyles, variants[variant], sizes[size], fullWidth && 'w-full', className);
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -23,56 +60,21 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   ...props
 }) => {
-  const baseStyles =
-    'inline-flex items-center justify-center font-bold tracking-tight transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] focus-visible:ring-offset-2';
-
-  const variants = {
-    primary:
-      'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] hover:from-[#FF5722] hover:to-[#F02D58] text-white shadow-md hover:shadow-lg shadow-[#FF5722]/25 hover:shadow-[#FF5722]/40 border-0',
-    secondary:
-      'bg-slate-100 dark:bg-zinc-800/90 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-zinc-700/90 border border-slate-200/80 dark:border-zinc-700/80 shadow-sm',
-    glass:
-      'bg-white/85 dark:bg-zinc-900/85 backdrop-blur-md text-slate-900 dark:text-white border border-slate-200/60 dark:border-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm',
-    dark:
-      'bg-zinc-900 text-white hover:bg-zinc-800 border border-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 shadow-sm',
-    outline:
-      'border-2 border-[#FF5722] text-[#FF5722] bg-transparent hover:bg-[#FF5722]/10 dark:hover:bg-[#FF5722]/20',
-    ghost:
-      'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-slate-900 dark:hover:text-white',
-    danger:
-      'bg-red-600 text-white hover:bg-red-700 shadow-md shadow-red-600/20 font-bold',
-  };
-
-  const sizes = {
-    sm: 'text-xs px-3.5 py-1.5 h-8 gap-1.5 rounded-lg',
-    md: 'text-sm px-4 py-2.5 h-10 sm:h-11 gap-2 rounded-xl',
-    lg: 'text-base px-6 py-3.5 h-12 sm:h-13 gap-2.5 font-bold rounded-2xl',
-    icon: 'h-10 w-10 p-0 rounded-xl',
-  };
-
   return (
     <button
-      className={twMerge(
-        clsx(
-          baseStyles,
-          variants[variant],
-          sizes[size],
-          fullWidth && 'w-full',
-          className
-        )
-      )}
+      className={buttonClasses({ variant, size, fullWidth, className })}
       disabled={disabled || isLoading}
-      aria-busy={isLoading}
+      aria-busy={isLoading || undefined}
       {...props}
     >
       {isLoading ? (
-        <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+        <span className="inline-block h-4 w-4 flex-shrink-0 rounded-full border-2 border-current border-t-transparent motion-safe:animate-spin" aria-hidden="true" />
       ) : (
-        leftIcon && <span className="inline-flex items-center flex-shrink-0">{leftIcon}</span>
+        leftIcon && <span className="inline-flex flex-shrink-0 items-center" aria-hidden="true">{leftIcon}</span>
       )}
-      <span>{children}</span>
+      {children !== undefined && children !== null && children !== false && <span className="min-w-0">{children}</span>}
       {!isLoading && rightIcon && (
-        <span className="inline-flex items-center ml-1 flex-shrink-0">{rightIcon}</span>
+        <span className="inline-flex flex-shrink-0 items-center" aria-hidden="true">{rightIcon}</span>
       )}
     </button>
   );

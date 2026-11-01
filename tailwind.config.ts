@@ -1,5 +1,20 @@
 import type { Config } from 'tailwindcss';
 
+/** Couleur Tailwind lue dans une variable CSS de app/globals.css (canaux « r g b », opacité gérée : bg-brand/10). */
+function tone(name: string): string {
+  return `rgb(var(--${name}) / <alpha-value>)`;
+}
+
+/** Ton d'état : plein (DEFAULT, texte on-tone), fond doux (-bg), texte (-fg), bordure (-border). */
+function statusTone(name: string): Record<string, string> {
+  return {
+    DEFAULT: tone(name),
+    bg: tone(`${name}-bg`),
+    fg: tone(`${name}-fg`),
+    border: tone(`${name}-border`),
+  };
+}
+
 const config: Config = {
   darkMode: 'class',
   content: [
@@ -13,24 +28,53 @@ const config: Config = {
         sans: ['var(--font-sans)', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         heading: ['var(--font-sans)', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
       },
+      fontSize: {
+        // Seule petite taille admise (12 px) : badges, <time>, <small>, légendes (contrat Q)
+        caption: ['0.75rem', { lineHeight: '1rem' }],
+      },
       colors: {
-        // Palette Référence Faciloop Sunset Coral / Event Village V3.0
+        // Lot 5 (contrat Q) — orange brûlé accessible. Rampe orange (teintes 15° à 34°, luminosité
+        // décroissante) ; brand-700 = #C2410C = brand. #FF5722 n'est plus qu'un décor (brand-decor).
         brand: {
-          50: '#FFF5F2',
-          100: '#FFEAE4',
-          200: '#FFD4C9',
-          300: '#FFB3A1',
-          400: '#FF8266',
-          500: '#FF5722', // Primaire Sunset Coral
-          600: '#F44336', // Hover vibrant
-          700: '#E6392F',
-          800: '#C62828',
-          900: '#8E1C1C',
-          DEFAULT: '#FF5722',
-          coral: '#FF6A3D',
-          rose: '#FF3D68',
+          50: '#FFF7ED',
+          100: '#FFEDD5',
+          200: '#FED7AA',
+          300: '#FDBA74',
+          400: '#FB923C',
+          500: '#F97316',
+          600: '#EA580C',
+          700: '#C2410C',
+          800: '#9A3412',
+          900: '#7C2D12',
+          DEFAULT: tone('brand'),
+          hover: tone('brand-hover'),
+          fg: tone('brand-fg'),
+          bg: tone('brand-bg'),
+          decor: tone('brand-decor'),
         },
-        // Surfaces Dark Mode & SaaS Enterprise
+        // Tokens sémantiques : variables CSS de app/globals.css, basculées par .dark
+        surface: {
+          DEFAULT: tone('surface'),
+          raised: tone('surface-raised'),
+          sunken: tone('surface-sunken'),
+        },
+        fg: {
+          DEFAULT: tone('fg'),
+          muted: tone('fg-muted'),
+        },
+        border: {
+          DEFAULT: tone('border'),
+          strong: tone('border-strong'),
+        },
+        ring: tone('ring'),
+        scrim: tone('scrim'),
+        'on-brand': tone('on-brand'),
+        'on-tone': tone('on-tone'),
+        success: statusTone('success'),
+        warning: statusTone('warning'),
+        danger: statusTone('danger'),
+        info: statusTone('info'),
+        // Surfaces Dark Mode & SaaS Enterprise (historique, écrans non migrés)
         dark: {
           bg: '#0F0F11',
           surface: '#16161A',

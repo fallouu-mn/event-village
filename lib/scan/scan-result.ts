@@ -60,3 +60,48 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     network_error: 'Erreur réseau : réessayez',
     server_error: 'Erreur serveur : réessayez',
 };
+
+// ── Lot 5 (contrat B) — refus « forbidden » et méthodes de scan ────────────
+
+/**
+ * Motif d'une tentative refusée parce que le scanneur n'est pas autorisé sur l'événement (403 du lot 4).
+ * Ce n'est pas un résultat renvoyé au scanneur (ScanResult reste l'union du contrat du lot 4) : il
+ * n'apparaît que dans le journal et le pilotage (refus par motif).
+ */
+export const FORBIDDEN_SCAN_REASON = 'forbidden' as const;
+export type ScanRefusalReason = ScanResult | typeof FORBIDDEN_SCAN_REASON;
+
+/**
+ * Libellés des motifs du journal des scans (pilotage, onglet Entrées), forbidden compris. Miroir de la
+ * fonction SQL public.pilotage_scan_result_label (supabase/migrations/20261102000005_lot5_pilotage.sql).
+ */
+export const SCAN_REFUSAL_LABELS: Record<ScanRefusalReason, string> = {
+    ...SCAN_RESULT_LABELS,
+    forbidden: 'Scanneur non autorisé sur cet événement',
+};
+
+/** Libellé d'un résultat ou d'un motif du journal ; valeur inconnue → « Autre refus », jamais l'enum brut. */
+export function scanReasonLabel(reason: unknown): string {
+    return typeof reason === 'string' && Object.prototype.hasOwnProperty.call(SCAN_REFUSAL_LABELS, reason)
+        ? SCAN_REFUSAL_LABELS[reason as ScanRefusalReason]
+        : 'Autre refus';
+}
+
+/** Méthodes de `ticket_scans.method` : caméra, numéro saisi, vente au guichet (contrat C7). */
+export const SCAN_METHODS = ['QR', 'MANUAL', 'COUNTER'] as const;
+export type ScanMethod = (typeof SCAN_METHODS)[number];
+
+export const SCAN_METHOD_LABELS: Record<ScanMethod, string> = {
+    QR: 'QR',
+    MANUAL: 'Saisie manuelle',
+    COUNTER: 'Guichet',
+};
+
+export function isScanMethod(value: unknown): value is ScanMethod {
+    return typeof value === 'string' && (SCAN_METHODS as readonly string[]).includes(value);
+}
+
+/** Libellé d'une méthode de scan ; valeur inconnue → « Autre méthode ». */
+export function scanMethodLabel(method: unknown): string {
+    return isScanMethod(method) ? SCAN_METHOD_LABELS[method] : 'Autre méthode';
+}

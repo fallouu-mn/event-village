@@ -10,4 +10,23 @@
  * qu'il crée ou qu'il touche. Chemins relatifs à la racine du dépôt, séparateur « / »
  * (par exemple 'components/ui/Modal.tsx').
  */
-export const MIGRATED_DESIGN_FILES: string[] = [];
+export const MIGRATED_DESIGN_FILES: string[] = [
+    // Composants partagés (fondations du système de design, contrat Q)
+    'components/ui/Badge.tsx',
+    'components/ui/Button.tsx',
+    'components/ui/ConfirmDialog.tsx',
+    'components/ui/DataList.tsx',
+    'components/ui/EmptyState.tsx',
+    'components/ui/Field.tsx',
+    'components/ui/IconButton.tsx',
+    'components/ui/KpiCard.tsx',
+    'components/ui/LinkButton.tsx',
+    'components/ui/LiveIndicator.tsx',
+    'components/ui/Modal.tsx',
+    'components/ui/PageHeader.tsx',
+    'components/ui/Pagination.tsx',
+    'components/ui/ReasonDialog.tsx',
+    'components/ui/StatusBadge.tsx',
+    'components/ui/StatusBanner.tsx',
+    'components/ui/Tabs.tsx',
+];

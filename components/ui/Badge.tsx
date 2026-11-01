@@ -1,5 +1,6 @@
 import React from 'react';
 import { clsx } from 'clsx';
+import { TONE_SOFT } from './tones';
 
 export type BadgeVariant = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
@@ -18,25 +19,26 @@ export const Badge: React.FC<BadgeProps> = ({
   className = '',
   icon,
 }) => {
-  const variants = {
-    default: 'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 border-slate-200 dark:border-zinc-700',
-    brand: 'bg-[#FF5722]/15 text-[#FF5722] dark:text-[#FF5722] border-[#FF5722]/30 font-black',
-    success: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
-    warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30',
-    danger: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30',
-    info: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-400 border-cyan-500/30',
-    neutral: 'bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700',
+  // Lot 5 (contrat Q) : tons sur les tokens sémantiques (components/ui/tones.ts), 12 px au moins.
+  const variants: Record<BadgeVariant, string> = {
+    default: TONE_SOFT.neutral,
+    brand: TONE_SOFT.brand,
+    success: TONE_SOFT.success,
+    warning: TONE_SOFT.warning,
+    danger: TONE_SOFT.danger,
+    info: TONE_SOFT.info,
+    neutral: 'bg-surface-sunken text-fg-muted border-border',
   };
 
   const sizes = {
-    sm: 'text-[10px] px-2 py-0.5 font-bold rounded-md gap-1',
-    md: 'text-xs px-2.5 py-1 font-bold rounded-lg gap-1.5',
+    sm: 'text-caption px-2 py-0.5 font-semibold rounded-md gap-1',
+    md: 'text-caption px-2.5 py-1 font-semibold rounded-lg gap-1.5',
   };
 
   return (
     <span
       className={clsx(
-        'inline-flex items-center border uppercase tracking-wider select-none leading-none',
+        'inline-flex items-center border select-none leading-tight',
         variants[variant],
         sizes[size],
         className
@@ -129,7 +131,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, className = ''
     // ⭐ IDENTITÉ / AMBASSADEUR / PREMIUM
     case 'AMBASSADEUR':
       variant = 'brand';
-      label = '⭐ AMBASSADEUR';
+      label = 'AMBASSADEUR';
       break;
     case 'PREMIUM':
     case 'FOUNDER':
