@@ -77,7 +77,6 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/partner/pilotage/CashTab.tsx',
     'components/partner/pilotage/ClosingTab.tsx',
     // Relecture des captures du run 50 : onglets défilants du pilotage (indice de défilement, onglet actif centré)
-    'components/partner/pilotage/ScrollableTabs.tsx',
     // Scanner du contrôleur (écran du lot 4 touché par le lot 5 ; run 50). CombatFlashOverlay reste hors liste :
     // ses couleurs de haute visibilité et son plein écran sont imposés par tests/scanner-combat-ui.test.ts.
     'app/controller/scanner/page.tsx',
@@ -85,4 +84,41 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/scan/ScanResultPanel.tsx',
     'components/scan/ManualEntryForm.tsx',
     'components/scan/CameraQrScanner.tsx',
+    // ── Lot 6 (contrat Q) ──
+    // 6.0 e : connexion (composant serveur + formulaire client), inscription, mot de passe oublié,
+    // réinitialisation, et leurs composants partagés (contrat A5)
+    'app/login/page.tsx',
+    'components/auth/LoginForm.tsx',
+    'app/register/page.tsx',
+    'app/forgot-password/page.tsx',
+    'app/reset-password/page.tsx',
+    'components/auth/OtpInput.tsx',
+    'components/auth/PasswordStrengthChecklist.tsx',
+    // 6.0 g : onglets défilants partagés, squelettes de chargement sur les tokens (contrat A7)
+    'components/ui/ScrollableTabs.tsx',
+    'components/ui/Skeleton.tsx',
+    'app/events/[id]/loading.tsx',
+    'app/orders/loading.tsx',
+    'app/partner/dashboard/loading.tsx',
+    'app/profile/loading.tsx',
+    'app/wallet/loading.tsx',
+    'app/explore/loading.tsx',
+    'app/tickets/loading.tsx',
+    // 6.2 : enregistrement du service worker (contrat F5)
+    'components/pwa/ServiceWorkerRegister.tsx',
+    // 6.4 : préférences de notification, bascule partagée, état du push sur cet appareil, profil (contrat H4)
+    'components/ui/Switch.tsx',
+    'components/notifications/PushDeviceCard.tsx',
+    'app/profile/notifications/page.tsx',
+    'app/profile/page.tsx',
+    // 6.5 : réglages notif.* (contrat I1.6 ; Q le croyait déjà listé)
+    'app/admin/finance-settings/page.tsx',
+    // 6.7 : transferts reçus, vérification du numéro, transfert vers un numéro, ancienne page de réclamation (B5, amendement 2)
+    'components/tickets/IncomingTransfers.tsx',
+    'components/tickets/PhoneVerifyDialog.tsx',
+    'components/tickets/TransferModal.tsx',
+    'app/tickets/claim/[token]/page.tsx',
+    // 6.8 : supervision admin (contrat L4)
+    'app/admin/notifications/page.tsx',
+    'app/admin/notifications/[id]/page.tsx',
 ];
