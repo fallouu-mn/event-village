@@ -19,7 +19,7 @@
 2. Dans **Authentication > Providers** :
    - email : activé ; « Confirm email » : **activé** ;
    - inscription publique : activée (le trigger `handle_new_user` ne crée plus que des comptes CLIENT) ;
-   - téléphone : selon le choix produit ; l'envoi passe par le hook SMS (étape 5).
+   - téléphone : **désactivé**, comme en local et en CI (`[auth.sms] enable_signup = false`). Les comptes sont créés par les routes serveur (`auth.admin.createUser`, téléphone et email déjà confirmés) et les codes SMS partent par MTarget depuis l'application ; Supabase n'envoie aucun SMS, le hook SMS (6 bis) n'est donc à configurer que si le fournisseur téléphone est un jour activé.
 3. Dans **Authentication > Rate limits** : conserver les valeurs par défaut de Supabase (la valeur relevée de `supabase/config.toml` ne concerne que l'instance locale de test).
 4. Ne créer **aucune** fonction, table ni politique à la main dans l'éditeur SQL. Tout passe par les migrations (étape 3). Une fonction créée à la main échappe aux tests de privilèges (c'est ainsi qu'`exec_sql` est apparue sur le projet de test).
 
@@ -37,7 +37,8 @@ Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éd
 
 ## 4. Données de référence (sans données de test)
 
-- `supabase/seed.sql` n'est **pas** joué par `db push`. Les données de référence nécessaires au fonctionnement sont créées par les migrations : `platform_settings` (dont `ticketing_fee_config`, migration `0012`) et `subscription_plans`.
+- `supabase/seed.sql` n'est **pas** joué par `db push`. Les données de référence nécessaires au fonctionnement sont créées par les migrations : `platform_settings` (24 clés, dont `ticketing_fee_config`, migration `0012`, et les réglages `finance.*` et `access.*`) et `referral_config` (4 barèmes). Relevé sur le projet de production le 02/11/2026 après `db push` : 24 et 4 lignes, aucune donnée de compte, d'événement, de billet ni de paiement.
+- `subscription_plans` n'est **pas** rempli par les migrations : ses lignes ne figurent que dans `supabase/seed.sql`, qui ne doit pas être joué en production. La table reste vide tant que le client n'a pas validé les formules et leurs tarifs (point de l'audit) ; elles seront alors créées par une migration dédiée.
 - **Ne jamais exécuter** `npm run seed:test` ni `tests/seed/seed-test.ts` contre ce projet : ce seed crée des comptes de test avec un mot de passe connu. Le garde-fou `tests/helpers/env.ts` refuse de toute façon une URL non locale.
 - Avant l'ouverture, vérifier et corriger les valeurs métier contradictoires relevées par l'audit (taux de parrainage `referral_config` de la migration `0011` contre CDC §95-§97, tarifs des packs) : traité dans un lot ultérieur, à valider avec le client.
 
