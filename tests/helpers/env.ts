@@ -88,6 +88,27 @@ if (!fs.existsSync(envPath)) {
     );
 }
 const fileEnv = parseEnvFile(envPath);
+
+// Lot 6 (contrat S1) : aucune clé privée VAPID dans le fichier d'environnement de test ni dans le shell
+// des tests. Les suites génèrent leurs propres clés (tests/parcours/notif-helpers.ts : withVapid) ; une
+// clé présente ici pourrait être celle d'un projet réel. Exception : `.env.e2e`, écrit par le workflow à
+// chaque run avec une paire générée pour le run (contrat P4), que seed:demo charge par EV_ENV_FILE.
+const E2E_ENV_FILE = '.env.e2e';
+if (path.basename(envPath) !== E2E_ENV_FILE) {
+    if (fileEnv.VAPID_PRIVATE_KEY) {
+        fail(
+            `VAPID_PRIVATE_KEY est renseignée dans ${ENV_FILE}.\n` +
+            `  Les tests génèrent leurs clés VAPID (withVapid, tests/parcours/notif-helpers.ts) : retirez cette ligne ou laissez-la vide.`
+        );
+    }
+    if (process.env.VAPID_PRIVATE_KEY) {
+        fail(
+            'VAPID_PRIVATE_KEY est définie dans le shell qui lance les tests.\n' +
+            '  Les tests génèrent leurs clés VAPID (withVapid, tests/parcours/notif-helpers.ts) : désactivez cette variable avant de lancer les suites.'
+        );
+    }
+}
+
 for (const [key, value] of Object.entries(fileEnv)) {
     if (process.env[key] === undefined) {
         process.env[key] = value;

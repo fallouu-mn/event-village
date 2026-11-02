@@ -7,6 +7,40 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { anonClient, assertDenied, signInFixture, ZERO_UUID } from './helpers';
 
+/**
+ * Lot 6 (contrat S1) : RPC et fonctions internes du lot, signature `(p jsonb)` (Conventions), sauf
+ * event_start_at(p_event uuid) (contrat D).
+ */
+function lot6Rpcs(): Array<[string, Record<string, unknown>]> {
+    return [...LOT6_JSONB_RPCS.map((fn): [string, Record<string, unknown>] => [fn, { p: {} }]), ['event_start_at', { p_event: ZERO_UUID }]];
+}
+
+/** Lot 6 : fonctions `(p jsonb)` créées par le lot ; chacune doit EXISTER et être refusée (42501). */
+const LOT6_JSONB_RPCS = [
+    'notification_outbox_claim',
+    'notification_outbox_mark',
+    'notification_daily_checks',
+    'notification_reminders_schedule',
+    'notification_sync_log',
+    'notification_admin_alert',
+    'notification_preferences_get',
+    'notification_preference_set',
+    'notification_test_push_enqueue',
+    'notification_controller_activated',
+    'notification_retry',
+    'notifications_page',
+    'notifications_mark_read',
+    'admin_notifications_list',
+    'admin_notification_detail',
+    'admin_notifications_stats',
+    'ticket_transfers_incoming',
+    'ticket_transfer_accept',
+    'partner_status_set',
+    'notif_enqueue',
+    'notif_enqueue_admins',
+    'notif_upsert_aggregated_sms',
+] as const;
+
 /** RPC métier (groupe b) avec des arguments factices valides en type. */
 const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['validate_and_check_in_ticket', { p_qr_code: 'EV-QR-INEXISTANT', p_controller_id: ZERO_UUID }],
@@ -68,15 +102,14 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['event_status_label', { p_status: 'PUBLIE' }],
     ['event_actor_profile', { p_event: ZERO_UUID, p_actor: ZERO_UUID }],
     ['event_status_apply', { p_event: ZERO_UUID, p_from: 'PUBLIE', p_to: 'TERMINE', p_actor: null, p_role: 'SYSTEM', p_reason: null, p_channel: 'CRON' }],
-    ['event_notify', { p_users: [], p_title: 'TEST', p_content: 'TEST', p_metadata: {} }],
+    // Lot 6 : event_notify supprimée (notifications par la boîte d'envoi, contrat J1)
     // Lot 5 (5.5, 5.6, 5.9) : édition, catégories de billets, file des notifications de changement, service_role uniquement
     ['event_create', { p: {} }],
     ['event_update', { p: {} }],
     ['ticket_category_create', { p: {} }],
     ['ticket_category_update', { p: {} }],
     ['ticket_category_delete', { p: {} }],
-    ['event_change_notifications_claim', { p: {} }],
-    ['event_change_notifications_mark', { p: {} }],
+    // Lot 6 : event_change_notifications_claim et _mark supprimées (file absorbée par la boîte d'envoi, contrat J1.9)
     ['event_edit_refusal', { p_code: 'TEST', p_message: 'TEST', p_field: null, p_extra: {} }],
     ['event_end_from', { p_start_date: '2030-01-01', p_end_date: null, p_end_time: null }],
     ['event_poster_path_ok', { p_url: 'https://exemple.invalid/a.png', p_partner: ZERO_UUID }],
@@ -107,6 +140,9 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['event_controller_set_cash', { p: {} }],
     ['partner_events_overview', { p: {} }],
     ['admin_events_list', { p: {} }],
+    // Lot 6 : notifications (boîte d'envoi, envoyeur, rappels, préférences, cloche, supervision,
+    // transferts sans jeton, statut des partenaires), service_role uniquement
+    ...lot6Rpcs(),
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */
@@ -129,6 +165,28 @@ describe('R3 — RPC métier non appelables par anon / authenticated', () => {
             const { client } = await signInFixture('CLIENT_BIS');
             const { error } = await client.rpc(fn, args);
             assertDenied(error, `authenticated rpc(${fn})`);
+        });
+    }
+});
+
+/**
+ * Lot 6, plus strict que la boucle ci-dessus : une fonction absente (PGRST202) y passerait pour refusée.
+ * Ici, chaque RPC `(p jsonb)` du lot doit exister ET être refusée par le privilège EXECUTE (42501).
+ */
+describe('R3 — lot 6 : chaque RPC du lot existe et reste réservée au rôle de service (42501)', () => {
+    function assertPrivilegeDenied(error: { code?: string; message?: string } | null, what: string): void {
+        assert.ok(error, `${what} : appel accepté, la fonction doit être réservée au rôle de service`);
+        assert.ok(error.code === '42501' || /permission denied/i.test(error.message ?? ''),
+            `${what} : refus attendu par le privilège EXECUTE (42501), obtenu ${error.code} ${error.message} — ` +
+            'PGRST202 : fonction absente ou signature différente de `(p jsonb)`');
+    }
+    for (const fn of LOT6_JSONB_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, { p: {} });
+            assertPrivilegeDenied(anon.error, `anon rpc(${fn})`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, { p: {} });
+            assertPrivilegeDenied(auth.error, `authenticated rpc(${fn})`);
         });
     }
 });
