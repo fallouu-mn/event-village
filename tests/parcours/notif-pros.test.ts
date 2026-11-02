@@ -45,7 +45,7 @@ import {
     buyConfirmed, cashoutsByKey, createPartnerEvent, jsonRequest, newPartner, superadminId, withSettings,
     type FinanceSettingKey, type TestPartner,
 } from './finance-helpers';
-import { authed, newController, openShift, type RouteResult } from './acces-helpers';
+import { authed, newController, openShift, scan, ticketPayload, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, eventHistory, rpcTransition, type DraftEvent, type EventStatus } from './cycle-helpers';
 import {
     assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, noonDakarTomorrow, outboxRows, smsMark, smsTo,
@@ -312,14 +312,18 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
 
     test('suspension avec motif et réactivation : avis au partenaire et un seul avis par porteur distinct (billets VALIDE et UTILISE)', async () => {
         const p = await newProPartner('suspension');
-        const ev = await proEvent(p, 'Suspendu', 'PUBLIE');
+        // Début dans 3 h : la fenêtre de scan (access.scan_window_before_hours = 6) est ouverte, le billet
+        // UTILISE l'est par un vrai scan accepté (invariant (g) du lot 4 : jamais d'UTILISE sans scan).
+        const ev = await proEvent(p, 'Suspendu', 'PUBLIE', undefined, { startsInHours: 3 });
         const holder = await newBuyer('pros-porteur');
         const used = await newBuyer('pros-porteur-entre');
         const bought = await buyConfirmed(holder, ev, [['Standard', 2]]);
         assert.equal(bought.tickets.length, 2, 'deux billets au même porteur');
         const usedBuy = await buyConfirmed(used, ev, [['Standard', 1]]);
-        const { error: useErr } = await service.from('tickets').update({ status: 'UTILISE', checked_in_at: new Date().toISOString() }).eq('id', usedBuy.tickets[0].id);
-        assert.equal(useErr, null, `billet UTILISE : ${useErr?.message}`);
+        const scanner = await newController(p, ev.eventId, { label: 'pros-scan' });
+        const usedId = String(usedBuy.tickets[0].id);
+        const scanned = await scan(scanner, { eventId: ev.eventId, payload: await ticketPayload(usedId) });
+        assert.equal(scanned.status, 200, `scan du billet ${usedId} : HTTP ${scanned.status} ${JSON.stringify(scanned.body).slice(0, 300)}`);
 
         const reason = 'Salle fermée par la mairie';
         await advanceEventTo(ev.eventId, 'SUSPENDU', { partnerUserId: p.userId, suspendReason: reason });
