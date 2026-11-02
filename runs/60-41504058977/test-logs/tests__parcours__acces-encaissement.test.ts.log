@@ -1,0 +1,101 @@
+TAP version 13
+# Subtest: Encaissement espèces au scan
+    # Subtest: commande de 3 billets à régler sur place : cash_required au prix du billet, encaissement billet par billet, commande SUCCESS au dernier
+    ok 1 - commande de 3 billets à régler sur place : cash_required au prix du billet, encaissement billet par billet, commande SUCCESS au dernier
+      ---
+      duration_ms: 275.803029
+      type: 'test'
+      ...
+    # Subtest: commande de 2 billets VIP : un seul réglé → paid_amount = prix d’un billet, commande toujours impayée
+    ok 2 - commande de 2 billets VIP : un seul réglé → paid_amount = prix d’un billet, commande toujours impayée
+      ---
+      duration_ms: 91.600057
+      type: 'test'
+      ...
+    # Subtest: commande payée entre le scan et l’encaissement : refus CASH_ALREADY_PAID, rien n’est composté ni encaissé
+    ok 3 - commande payée entre le scan et l’encaissement : refus CASH_ALREADY_PAID, rien n’est composté ni encaissé
+      ---
+      duration_ms: 62.18072
+      type: 'test'
+      ...
+    # Subtest: sans caisse ouverte : refus CASH_NO_OPEN_SHIFT pour le contrôleur, le partenaire propriétaire et l’admin, billet non composté
+    ok 4 - sans caisse ouverte : refus CASH_NO_OPEN_SHIFT pour le contrôleur, le partenaire propriétaire et l’admin, billet non composté
+      ---
+      duration_ms: 308.910944
+      type: 'test'
+      ...
+    # Subtest: ouverture de caisse : partenaire propriétaire et admin ouvrent et encaissent ; contrôleur sans permission espèces refusé
+    ok 5 - ouverture de caisse : partenaire propriétaire et admin ouvrent et encaissent ; contrôleur sans permission espèces refusé
+      ---
+      duration_ms: 618.350644
+      type: 'test'
+      ...
+    # Subtest: scan d’un autre scanneur ou de plus de 5 minutes : refusé, billet non composté ; un scan frais du même scanneur passe
+    ok 6 - scan d’un autre scanneur ou de plus de 5 minutes : refusé, billet non composté ; un scan frais du même scanneur passe
+      ---
+      duration_ms: 263.203205
+      type: 'test'
+      ...
+    # Subtest: échec de l’encaissement (caisse fermée ou billet devenu non valable après le scan) : rien n’est composté, aucun paiement
+    ok 7 - échec de l’encaissement (caisse fermée ou billet devenu non valable après le scan) : rien n’est composté, aucun paiement
+      ---
+      duration_ms: 258.218511
+      type: 'test'
+      ...
+    # Subtest: ouvertures simultanées pour le même contrôleur et le même événement : une seule caisse OUVERT
+    ok 8 - ouvertures simultanées pour le même contrôleur et le même événement : une seule caisse OUVERT
+      ---
+      duration_ms: 170.390799
+      type: 'test'
+      ...
+    1..8
+ok 1 - Encaissement espèces au scan
+  ---
+  duration_ms: 2683.474804
+  type: 'suite'
+  ...
+# Subtest: Contrôles statiques et schéma de la caisse
+    # Subtest: ShiftService sans repli en mémoire ni erreur avalée
+    ok 1 - ShiftService sans repli en mémoire ni erreur avalée
+      ---
+      duration_ms: 1.127566
+      type: 'test'
+      ...
+    # Subtest: route de scan : encaissement délégué à ticket_cash_checkin (plus de compostage puis mise à jour de commande en TypeScript)
+    ok 2 - route de scan : encaissement délégué à ticket_cash_checkin (plus de compostage puis mise à jour de commande en TypeScript)
+      ---
+      duration_ms: 0.515065
+      type: 'test'
+      ...
+    # Subtest: schéma : index unique partiel des caisses OUVERT, ON DELETE RESTRICT sur controller_shifts.event_id, tickets.order_id et payments.shift_id
+    ok 3 - schéma : index unique partiel des caisses OUVERT, ON DELETE RESTRICT sur controller_shifts.event_id, tickets.order_id et payments.shift_id
+      ---
+      duration_ms: 17.606085
+      type: 'test'
+      ...
+    # Subtest: RPC shift_open et ticket_cash_checkin : SECURITY DEFINER, search_path = public, réservées au service_role
+    ok 4 - RPC shift_open et ticket_cash_checkin : SECURITY DEFINER, search_path = public, réservées au service_role
+      ---
+      duration_ms: 9.833878
+      type: 'test'
+      ...
+    1..4
+ok 2 - Contrôles statiques et schéma de la caisse
+  ---
+  duration_ms: 29.309476
+  type: 'suite'
+  ...
+[INVARIANT] acces-encaissement — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] acces-encaissement — purge des réservations échues : {"expired":0}
+[INVARIANT] acces-encaissement — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] acces-encaissement — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] acces-encaissement — (g)(h)(i) : 0 violation(s)
+1..2
+# tests 12
+# suites 2
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2777.217819
