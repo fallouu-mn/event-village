@@ -808,7 +808,7 @@ describe('6.4 — page « Préférences de notification » (H4)', () => {
         for (const fn of ['currentPushState', 'enablePush', 'disablePush']) {
             if (!importsName(PUSH_CARD, fn, /^@\/lib\/push\/client$/)) missing.push(`${fn} importée de @/lib/push/client`);
         }
-        if (!/\/api\/notifications\/test-push/.test(code) || !/method:\s*["']POST["']/.test(code)) missing.push('POST /api/notifications/essai-push');
+        if (!/\/api\/notifications\/essai-push/.test(code) || !/method:\s*["']POST["']/.test(code)) missing.push('POST /api/notifications/essai-push');
         if (/requestPermission/.test(code)) missing.push('aucun requestPermission (présent)');
         assert.deepEqual(missing, [], `${PUSH_CARD} :\n  ${missing.join('\n  ')}`);
     });
