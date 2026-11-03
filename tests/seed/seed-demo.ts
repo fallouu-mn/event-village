@@ -23,6 +23,16 @@
  * objets manquants : c'est attendu. Il écrit .e2e-captures/demo-ids.json (ignoré par git), puis
  * vérifie les invariants (a) à (l) (tests/helpers/lifecycle-invariants.ts).
  *
+ * Lot 6 (contrat P2, tâche 6.12), toujours par les RPC et l'envoyeur réel (adaptateurs faux en mémoire) :
+ * préférence du client (rappels par SMS coupés : SKIPPED PREFERENCE_DISABLED), numéro du client vérifié et
+ * transfert PENDING vers lui (onglet « Reçus »), rappels J-1 planifiés par horloge simulée (à venir pour un
+ * événement publié : PENDING futur ; pour l'événement ensuite suspendu : CANCELLED dans la transaction de
+ * la suspension), journal d'un code à usage unique (sans le code), une ligne FAILED après 5 tentatives
+ * (failNext) et une UNCERTAIN (uncertainNext), puis passage de l'envoyeur qui remplit les cloches (SENT,
+ * SKIPPED avec motif) ; deux notifications du client marquées lues ; notifications.read et
+ * notifications.write à l'ADMIN de démonstration. Fin par assertNotificationInvariants('seed-demo')
+ * ((a) à (o)) ; demo-ids.json en version 2.
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -39,6 +49,8 @@ import { loadPayment, reconcilePayment } from '../../lib/payments/confirmation.s
 import { CashoutService } from '../../lib/payments/cashout.service';
 import { ShiftService } from '../../lib/shifts/shift.service';
 import { buildTicketPayload, generateTicketCode, parseTicketPayload, verifyTicketCode } from '../../lib/security/totp';
+import { dispatchNotifications } from '../../lib/notifications/dispatcher';
+import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
 import { inspect } from '../helpers/db';
 import { TEST_PASSWORD } from '../helpers/fixture-data';
@@ -842,6 +854,82 @@ async function spreadScans(eventId: string, from: Date, to: Date): Promise<void>
     }
 }
 
+// ── Notifications (lot 6, contrat P2) ────────────────────────────────────────
+
+async function rpcOk(fn: string, p: Record<string, unknown>, step: string): Promise<Record<string, unknown>> {
+    const { data, error } = await service.rpc(fn, { p });
+    if (error) fail(step, error);
+    const out = (data ?? null) as Record<string, unknown> | null;
+    if (!out || out.ok !== true) fail(step, `refusée : ${JSON.stringify(data)}`);
+    return out;
+}
+
+async function settingInt(key: string): Promise<number> {
+    const { data, error } = await service.from('platform_settings').select('value').eq('key', key).maybeSingle();
+    if (error) fail(`réglage ${key}`, error);
+    const value = Number((data?.value as { value?: unknown } | null | undefined)?.value);
+    if (!Number.isInteger(value)) fail(`réglage ${key}`, `valeur illisible ${JSON.stringify(data)}`);
+    return value;
+}
+
+/** Planifie le J-1 d'un événement à venir par horloge simulée (veille, heure réglée + 1 min) : lignes à échéance future. */
+async function scheduleJ1(ev: CreatedEvent): Promise<number> {
+    const hour = await settingInt('notif.reminder_j1_hour');
+    const veille = new Date(`${dakarParts(ev.seed.start).date}T00:00:00.000Z`);
+    veille.setUTCDate(veille.getUTCDate() - 1);
+    veille.setUTCHours(hour, 1, 0, 0);
+    if (veille.getTime() <= Date.now() + 60_000) fail(`rappel J-1 de « ${ev.seed.title} »`, `veille ${veille.toISOString()} passée ou imminente`);
+    const report = await scheduleReminders({ now: veille, onlyEventIds: [ev.id] });
+    if (report.created.REMINDER_J1 === 0) fail(`rappel J-1 de « ${ev.seed.title} »`, `aucune ligne créée (${JSON.stringify(report)})`);
+    return report.created.REMINDER_J1;
+}
+
+interface OutboxPick { id: string; status: string; reason: string | null; attempts: number }
+
+async function outboxRow(id: string): Promise<OutboxPick> {
+    const { data, error } = await service.from('notification_outbox').select('id, status, reason, attempts').eq('id', id).single();
+    if (error || !data) fail(`ligne de boîte d'envoi ${id}`, error);
+    return data as OutboxPick;
+}
+
+/** Lignes SMS de confirmation d'achat en attente et dues, d'acheteurs autres que le client de démonstration. */
+async function duePurchaseSms(exclude: Account, count: number): Promise<string[]> {
+    const { data, error } = await service.from('notification_outbox').select('id, recipient_user_id, recipient_phone')
+        .eq('type', 'PURCHASE_CONFIRMED').eq('channel', 'SMS').eq('status', 'PENDING')
+        .lte('next_attempt_at', new Date().toISOString())
+        .order('created_at').order('id').limit(50);
+    if (error) fail('lignes SMS de confirmation d’achat', error);
+    const ids = (data ?? []).filter((r) => r.recipient_user_id !== exclude.userId && r.recipient_phone !== exclude.phone).map((r) => String(r.id)).slice(0, count);
+    if (ids.length < count) fail('lignes SMS de confirmation d’achat', `${ids.length} ligne(s) en attente au lieu de ${count}`);
+    return ids;
+}
+
+/** SMS refusé à réessayer 5 fois (failNext), relances à 1, 5, 15 et 60 min par horloge simulée : FAILED, relançable. */
+async function failFiveTimes(id: string): Promise<void> {
+    const sms = getFakes().sms;
+    const waits = [1, 5, 15, 60];
+    let t = new Date();
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        sms.failNext(`refus temporaire ${attempt} (démonstration)`);
+        await dispatchNotifications({ now: t, onlyIds: [id] });
+        if (sms.pendingScenarios() !== 0) fail('ligne FAILED de démonstration', `tentative ${attempt} : refus simulé non consommé (ligne ${JSON.stringify(await outboxRow(id))})`);
+        if (attempt < 5) t = new Date(t.getTime() + waits[attempt - 1] * 60_000 + 1000);
+    }
+    const row = await outboxRow(id);
+    if (row.status !== 'FAILED' || row.attempts !== 5) fail('ligne FAILED de démonstration', `état ${JSON.stringify(row)} au lieu de FAILED après 5 tentatives`);
+}
+
+/** Passages de l'envoyeur à l'heure réelle jusqu'à ce qu'aucune ligne due ne reste (30 au plus). */
+async function drainOutbox(): Promise<number> {
+    let total = 0;
+    for (let i = 0; i < 30; i++) {
+        const report = await dispatchNotifications();
+        total += report.claimed;
+        if (report.claimed === 0) return total;
+    }
+    fail('passage de l’envoyeur', `lignes encore dues après 30 passages (${total} réservées)`);
+}
+
 // ── Exécution ────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -856,7 +944,7 @@ async function main(): Promise<void> {
         accounts[key] = await createAccount(p, p.roles, p.primaryRole, key.startsWith('controleur'));
     }
     const { error: permErr } = await service.from('admin_permissions').upsert(
-        ['events.read', 'events.write'].map((permission) => ({ user_id: accounts.admin.userId, permission })), { onConflict: 'user_id,permission' });
+        ['events.read', 'events.write', 'notifications.read', 'notifications.write'].map((permission) => ({ user_id: accounts.admin.userId, permission })), { onConflict: 'user_id,permission' });
     if (permErr) fail('permissions de l’administrateur de démonstration', permErr);
     const buyers: Account[] = [];
     for (const p of buyerPeople()) buyers.push(await createAccount(p, ['CLIENT'], 'CLIENT', false));
@@ -1030,6 +1118,22 @@ async function main(): Promise<void> {
     const finishedIds = new Set(((finished as { ids?: string[] } | null)?.ids ?? []).map(String));
     for (const ev of ended) if (!finishedIds.has(ev.id)) fail('events_finish_overdue', `« ${ev.seed.title} » non terminé (réponse ${JSON.stringify(finished)})`);
 
+    log('notifications : préférence du client, transfert entrant, rappels J-1 planifiés (horloge simulée)…');
+    await rpcOk('notification_preference_set', { user_id: client.userId, topic: 'REMINDERS', channel: 'SMS', enabled: false }, 'préférence du client (rappels par SMS coupés)');
+    const { error: verifiedErr } = await service.from('users').update({ phone_verified_at: new Date().toISOString() }).eq('id', client.userId);
+    if (verifiedErr) fail('numéro vérifié du client de démonstration', verifiedErr);
+    const publie = byKey('publie');
+    const gift = (purchases.get(publie.id) ?? []).find((p) => p.buyerId !== client.userId && p.ticketIds.length > 0);
+    if (!gift) fail('transfert entrant', `aucun billet d’un autre acheteur pour « ${publie.seed.title} »`);
+    const transfer = await rpcOk('ticket_transfer_initiate', {
+        ticket_id: gift.ticketIds[0], actor_id: gift.buyerId, recipient: client.phone,
+        expires_at: new Date(Date.now() + 48 * 3600_000).toISOString(),
+    }, 'transfert vers le client de démonstration');
+    const incomingTransferId = String(transfer.transfer_id ?? '');
+    const futureJ1 = await scheduleJ1(publie);
+    const suspendedJ1 = await scheduleJ1(byKey('suspendu'));
+    log(`rappels J-1 planifiés : ${futureJ1} ligne(s) à venir (« ${publie.seed.title} »), ${suspendedJ1} annulées par la suspension qui suit`);
+
     log('suspension et annulation avec remboursements…');
     const suspendu = byKey('suspendu');
     await transition(suspendu, admin, 'SUSPENDU', suspendu.seed.reason);
@@ -1052,6 +1156,41 @@ async function main(): Promise<void> {
         if (!outcomes[status]) fail('remboursements de l’annulation', `aucun remboursement au statut ${status} (${JSON.stringify(outcomes)})`);
     }
     log(`remboursements : ${JSON.stringify(outcomes)}`);
+
+    log('notifications : journal OTP, ligne FAILED après 5 tentatives, ligne UNCERTAIN, passage de l’envoyeur…');
+    const { data: cancelledJ1, error: cjErr } = await service.from('notification_outbox').select('id', { count: 'exact' })
+        .eq('event_id', suspendu.id).eq('type', 'REMINDER_J1').eq('status', 'CANCELLED');
+    if (cjErr) fail('rappels annulés par la suspension', cjErr);
+    if ((cancelledJ1 ?? []).length === 0) fail('rappels annulés par la suspension', 'aucune ligne REMINDER_J1 CANCELLED');
+    const otp = await rpcOk('notification_sync_log', {
+        type: 'OTP_LOGIN', ref: randomUUID(), phone: client.phone, user_id: client.userId, outcome: 'SENT', provider_message_id: `demo-${randomUUID()}`,
+    }, 'journal d’un code de connexion (sans le code)');
+    const otpLogId = String(otp.id ?? '');
+    const [failedId, uncertainId] = await duePurchaseSms(client, 2);
+    await failFiveTimes(failedId);
+    getFakes().sms.uncertainNext(1);
+    await dispatchNotifications({ onlyIds: [uncertainId] });
+    const uncertain = await outboxRow(uncertainId);
+    if (uncertain.status !== 'UNCERTAIN') fail('ligne UNCERTAIN de démonstration', `état ${JSON.stringify(uncertain)}`);
+    const drained = await drainOutbox();
+    log(`envoyeur : ${drained} ligne(s) traitées`);
+    const { data: clientNotifs, error: cnErr } = await service.from('notifications').select('id').eq('user_id', client.userId)
+        .order('created_at', { ascending: true }).order('id', { ascending: true });
+    if (cnErr) fail('notifications du client', cnErr);
+    if ((clientNotifs ?? []).length < 3) fail('notifications du client', `${(clientNotifs ?? []).length} notification(s) au lieu d’au moins 3`);
+    for (const n of (clientNotifs ?? []).slice(0, 2)) {
+        await rpcOk('notifications_mark_read', { user_id: client.userId, id: n.id }, 'notification du client marquée lue');
+    }
+    let sentId = '';
+    for (const [column, value] of [['recipient_user_id', client.userId], ['recipient_phone', client.phone]] as const) {
+        const { data: sentRows, error: sentErr } = await service.from('notification_outbox').select('id')
+            .eq(column, value).eq('channel', 'SMS').eq('status', 'SENT').order('created_at').limit(1);
+        if (sentErr) fail('SMS envoyé au client', sentErr);
+        sentId = String(sentRows?.[0]?.id ?? '');
+        if (sentId) break;
+    }
+    if (!sentId) fail('SMS envoyé au client', 'aucune ligne SMS SENT pour le client de démonstration');
+    log(`notifications : FAILED ${failedId}, UNCERTAIN ${uncertainId}, SENT ${sentId}, journal OTP ${otpLogId}, ${(clientNotifs ?? []).length} dans la cloche du client (2 lues)`);
 
     log('horodatages : ventes sur 10 jours, entrées réparties…');
     for (const ev of created.filter((c) => c.seed.lifecycle !== 'TERMINE')) {
@@ -1077,15 +1216,17 @@ async function main(): Promise<void> {
         events: Object.fromEntries(created.filter((c) => c.seed.key !== null).map((c) => [String(c.seed.key), demoEvent(c, finalStatus[c.seed.lifecycle])])) as Record<DemoEventKey, DemoEvent>,
         allEvents: created.map((c) => demoEvent(c, finalStatus[c.seed.lifecycle])),
         tickets: { clientValide: clientCeSoir.ticketIds[1], clientUtilise: clientCeSoir.ticketIds[0] },
+        notifications: { failedId, sentId, otpLogId },
+        transfers: { incomingId: incomingTransferId },
     };
     writeDemoIds(ids);
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);
 
-    log('invariants (a) à (l)…');
-    const invariants = await importModule('../helpers/lifecycle-invariants');
-    const assertLifecycleInvariants = invariants.assertLifecycleInvariants as ((label: string) => Promise<void>) | undefined;
-    if (typeof assertLifecycleInvariants !== 'function') fail('invariants', 'tests/helpers/lifecycle-invariants.ts n’exporte pas assertLifecycleInvariants');
-    await assertLifecycleInvariants('seed-demo');
+    log('invariants (a) à (o)…');
+    const invariants = await importModule('../helpers/notification-invariants');
+    const assertNotificationInvariants = invariants.assertNotificationInvariants as ((label: string) => Promise<void>) | undefined;
+    if (typeof assertNotificationInvariants !== 'function') fail('invariants', 'tests/helpers/notification-invariants.ts n’exporte pas assertNotificationInvariants');
+    await assertNotificationInvariants('seed-demo');
 
     log(`OK en ${((Date.now() - started) / 1000).toFixed(1)}s`);
 }
