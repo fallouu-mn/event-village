@@ -97,6 +97,9 @@ async function registerOnServer(sub: PushSubscription): Promise<void> {
         body: JSON.stringify(subscriptionBody(sub)),
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Impossible d’enregistrer cet appareil. Réessayez.'));
+    // Corps toujours consommé : une réponse jamais lue reste ouverte dans le navigateur (run 65 : requête
+    // inachevée, réseau jamais au repos).
+    await res.text();
 }
 
 async function removeOnServer(endpoint: string): Promise<void> {
@@ -107,6 +110,7 @@ async function removeOnServer(endpoint: string): Promise<void> {
         body: JSON.stringify({ endpoint }),
     });
     if (!res.ok) throw new Error(await errorMessage(res, 'Impossible de retirer cet appareil. Réessayez.'));
+    await res.text();
 }
 
 /**

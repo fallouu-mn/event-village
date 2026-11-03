@@ -172,7 +172,10 @@ export const SCREENS: readonly Screen[] = [
             const registered = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/push/subscriptions' && r.request().method() === 'POST');
             await page.getByRole('button', { name: /^activer les notifications$/i }).click();
             const res = await registered;
-            expect(res.status(), `inscription de l’appareil par POST /api/push/subscriptions : ${await res.text()}`).toBe(200);
+            // Corps lu seulement en cas d'échec, pour l'afficher (run 65 : lecture bloquée sur une réponse 200).
+            if (res.status() !== 200) {
+                throw new Error(`inscription de l’appareil par POST /api/push/subscriptions : HTTP ${res.status()} ${await res.text()}`);
+            }
             await expect(page.getByText(/^activées sur cet appareil$/i)).toBeVisible();
             await expect(page.getByRole('button', { name: /^envoyer une notification d.essai$/i })).toBeVisible();
             const counters = await fakePushCounters(page);
