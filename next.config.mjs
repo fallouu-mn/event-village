@@ -32,7 +32,8 @@ function supabaseStoragePatterns() {
 const nextConfig = {
   reactStrictMode: true,
   // instrumentation.ts : avertissement unique au démarrage si le canal email est désactivé (lot 1C.8)
-  experimental: { instrumentationHook: true },
+  // web-push (lot 6, chiffrement du push) est chargé par Node tel quel, sans passer par webpack.
+  experimental: { instrumentationHook: true, serverComponentsExternalPackages: ['web-push'] },
   poweredByHeader: false,
   compress: true,
   images: {
@@ -59,6 +60,14 @@ const nextConfig = {
         source: '/(.*\\.(?:ico|png|jpg|jpeg|gif|svg|webp|avif|woff|woff2|ttf|otf))',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' },
+        ],
+      },
+      {
+        // Lot 6 (contrat F5) : le service worker est revalidé à chaque chargement, pour qu'une nouvelle
+        // version (push, clics) remplace l'ancienne sans attendre l'expiration d'un cache HTTP.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache' },
         ],
       },
       {

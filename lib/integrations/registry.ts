@@ -1,5 +1,5 @@
 /**
- * Registre des intégrations externes.
+ * Registre des intégrations externes (SMS, email, push web, paiement).
  *
  * - En production / développement (EV_INTEGRATIONS absent ou "real") : les
  *   adaptateurs HTTP réels sont instanciés paresseusement.
@@ -8,9 +8,10 @@
  *   l'accès échoue explicitement plutôt que de retomber sur le réseau.
  */
 import { ResendHttpAdapter } from '@/lib/email/resend-http.adapter';
+import { WebPushAdapter } from '@/lib/push/web-push.adapter';
 import { SamirPayHttpClient } from '@/lib/samirpay/http-client';
 import { MTargetHttpAdapter } from '@/lib/sms/mtarget-http.adapter';
-import type { EmailAdapter, Integrations, PaymentGateway, SmsAdapter } from './types';
+import type { EmailAdapter, Integrations, PaymentGateway, PushAdapter, SmsAdapter } from './types';
 
 export type IntegrationsMode = 'real' | 'fake';
 
@@ -54,6 +55,17 @@ export function getEmailAdapter(): EmailAdapter {
     if (integrationsMode() === 'fake') return missing('email');
     if (!realCache.email) realCache.email = new ResendHttpAdapter();
     return realCache.email;
+}
+
+/**
+ * Lot 6 (contrat F4) : adaptateur push web. L'adaptateur réel lit sa configuration VAPID à chaque envoi
+ * (lib/push/config.ts) ; l'envoyeur ne l'appelle que si le canal est configuré.
+ */
+export function getPushAdapter(): PushAdapter {
+    if (overrides.push) return overrides.push;
+    if (integrationsMode() === 'fake') return missing('push');
+    if (!realCache.push) realCache.push = new WebPushAdapter();
+    return realCache.push;
 }
 
 export function getPaymentGateway(): PaymentGateway {

@@ -867,11 +867,17 @@ describe('6.2 PUSH : adaptateur réel (web-push pour le chiffrement, transport p
                 if (ent.isDirectory()) { if (ent.name !== 'node_modules' && !ent.name.startsWith('.')) walk(full); continue; }
                 if (!/\.(ts|tsx|js|mjs|cjs)$/.test(ent.name)) continue;
                 const text = fs.readFileSync(full, 'utf8');
-                if (/\bsendNotification\s*\(/.test(text)) offenders.push(path.relative(ROOT, full));
+                // Visé : le transport de la bibliothèque web-push (webpush.sendNotification ou import nommé), pas
+                // MTargetService.sendNotification, exigé par notif-migration et fondations-lot0 (contradiction relevée
+                // après le run rouge 60, motif resserré sans changer l'intention).
+                const webPushTransport = /\bweb-?push\s*\.\s*sendNotification\s*\(/i.test(text)
+                    || /import\s*\{[^}]*\bsendNotification\b[^}]*\}\s*from\s*['"]web-push['"]/.test(text)
+                    || /require\(\s*['"]web-push['"]\s*\)\s*\.\s*sendNotification\b/.test(text);
+                if (webPushTransport) offenders.push(path.relative(ROOT, full));
             }
         };
         for (const d of ['app', 'lib', 'components', 'hooks', 'scripts', 'public']) walk(path.join(ROOT, d));
-        assert.deepEqual(offenders, [], 'sendNotification( n’apparaît nulle part (transport par notre fetch)');
+        assert.deepEqual(offenders, [], 'le sendNotification de web-push n’apparaît nulle part (transport par notre fetch)');
     });
 
     test('VAPID_PRIVATE_KEY parmi les secrets : réutilisée comme secret dédié, la configuration est refusée', async () => {

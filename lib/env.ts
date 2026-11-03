@@ -8,7 +8,8 @@
  *
  * Secrets dédiés, sans valeur de repli, distincts entre eux et des autres secrets (contrôlé ici) :
  * OTP_HASH_SECRET (lot 1C.4), TICKET_TOTP_MASTER_KEY (code dynamique des billets, lot 4) et
- * REGISSEUR_PIN_KEY (PIN régisseur, lot 4).
+ * REGISSEUR_PIN_KEY (PIN régisseur, lot 4). Lot 6 : VAPID_PRIVATE_KEY (push web, facultative) rejoint les
+ * secrets dont la réutilisation comme secret dédié est refusée.
  *
  * Toutes les routes cron exigent CRON_SECRET, sans repli (lib/security/cron-auth.ts, refuseUnlessCron) ;
  * depuis le lot 5, moratoriums et ticket-transfers n'acceptent plus la clé service_role.
@@ -100,6 +101,22 @@ const serverEnvSchema = z.object({
     NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
     SUPPORT_EMAIL: z.string().email().optional(),
 
+    // Lot 6 (contrat E6) : délai maximal d'un appel MTarget ; au-delà, l'issue est incertaine (jamais renvoyé)
+    MTARGET_TIMEOUT_MS: limit(15000),
+
+    // Push web (lot 6, contrat F4) — FACULTATIF : les trois variables VAPID ou aucune. Sans elles (ou avec
+    // une configuration partielle ou invalide), le canal push est désactivé (lignes SKIPPED
+    // PUSH_NOT_CONFIGURED, un seul avertissement) et tout le reste fonctionne. Validées par
+    // lib/push/config.ts (et non ici) : une erreur de configuration du push n'empêche jamais le démarrage.
+    VAPID_PUBLIC_KEY: optionalString,
+    VAPID_PRIVATE_KEY: optionalString, // secret : clé privée P-256 (base64url, 32 octets)
+    VAPID_SUBJECT: optionalString, // mailto:… ou https:…
+    // Liste blanche des services push (anti-SSRF) : REMPLACE la liste par défaut ; à laisser vide en production
+    PUSH_ENDPOINT_ALLOWED_ORIGINS: optionalString,
+    PUSH_TIMEOUT_MS: limit(10000), // délai maximal d'un envoi vers un service push
+    PUSH_SUBSCRIBE_PER_USER_HOUR: limit(20), // inscriptions d'appareils par compte et par heure
+    PUSH_TEST_PER_USER_HOUR: limit(5), // notifications d'essai par compte et par heure
+
     // Codes OTP : secret HMAC dédié (lot 1C.4), sans valeur de repli
     OTP_HASH_SECRET: z.string().min(32, 'OTP_HASH_SECRET requis : secret aléatoire de 32 caractères au moins'),
     // Lot 4 : clé maître du code dynamique des billets (lib/security/totp.ts) et clé du PIN régisseur
@@ -124,7 +141,8 @@ let cached: ServerEnv | null = null;
 
 /** Secrets dédiés : chacun doit différer des autres secrets et des autres secrets dédiés. */
 const DEDICATED_SECRETS = ['OTP_HASH_SECRET', 'TICKET_TOTP_MASTER_KEY', 'REGISSEUR_PIN_KEY'] as const;
-const OTHER_SECRETS = ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_AUTH_HOOK_SECRET', 'CRON_SECRET', 'SAMIRPAY_SECRET_KEY', 'SAMIRPAY_API_KEY'] as const;
+// Lot 6 (F4) : la clé privée VAPID ne doit servir de secret dédié nulle part.
+const OTHER_SECRETS = ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_AUTH_HOOK_SECRET', 'CRON_SECRET', 'SAMIRPAY_SECRET_KEY', 'SAMIRPAY_API_KEY', 'VAPID_PRIVATE_KEY'] as const;
 
 function dedicatedSecretReuse(env: ServerEnv): string[] {
     const issues: string[] = [];

@@ -2,12 +2,12 @@
  * Enregistrement des faux adaptateurs dans le registre d'intégrations.
  * Appelé par tests/helpers/env.ts ; accessible aux tests via getFakes().
  *
- * Lot 6 : faux push (`push`, contrat F4). Tant que `Integrations` (lib/integrations/types.ts) n'a pas
- * de champ `push`, l'objet est typé localement (FakeIntegrations) et transmis tel quel à
- * setIntegrations : le registre le conserve, `getPushAdapter()` le trouvera dès que le correctif 6.2
- * l'ajoute (ce typage local est alors retiré par ce correctif).
+ * Lot 6 : faux push (`push`, contrat F4). `Integrations` (lib/integrations/types.ts) déclare le champ
+ * `push` depuis le correctif 6.2 : FakeIntegrations étend ce contrat (chaque faux est vérifié contre
+ * l'interface de son adaptateur) et `getPushAdapter()` renvoie le faux enregistré ici.
  */
 import { setIntegrations } from '../../lib/integrations/registry';
+import type { Integrations } from '../../lib/integrations/types';
 import { FakeEmailAdapter } from './fake-email';
 import { FakePushAdapter } from './fake-push';
 import { FakeSamirPayGateway } from './fake-samirpay';
@@ -22,7 +22,7 @@ export type { FakeInitMode, FakeCashoutMode, FakeWebhook } from './fake-samirpay
 export { FakeSmsAdapter } from './fake-sms';
 export type { FakeSmsOutcome, FakeSmsSendResult, RecordedSms } from './fake-sms';
 
-export interface FakeIntegrations {
+export interface FakeIntegrations extends Integrations {
     sms: FakeSmsAdapter;
     email: FakeEmailAdapter;
     payment: FakeSamirPayGateway;
@@ -46,7 +46,6 @@ export function installFakeIntegrations(): FakeIntegrations {
             'Les faux adaptateurs ne s\'installent que dans un environnement de test.'
         );
     }
-    // Objet complet (push compris) : le registre garde toutes les clés reçues.
     setIntegrations(fakes);
     installed = true;
     return fakes;
