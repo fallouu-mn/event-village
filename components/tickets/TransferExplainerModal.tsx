@@ -35,7 +35,7 @@ export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({
   const faqs = [
     {
       q: 'Mon proche doit-il avoir un compte pour recevoir le billet ?',
-      a: 'Oui, la création de compte est instantanée et 100% gratuite (juste son numéro de téléphone ou email). Cela garantit qu\'il est le seul propriétaire légitime du billet et que son QR code lui appartient.',
+      a: 'Oui, la création de compte est instantanée et 100% gratuite, avec le numéro de téléphone auquel vous envoyez le billet, confirmé par un code SMS. Cela garantit qu\'il est le seul propriétaire légitime du billet et que son QR code lui appartient.',
     },
     {
       q: 'Pourquoi une capture d\'écran (screenshot) ne marche pas ?',
@@ -43,7 +43,7 @@ export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({
     },
     {
       q: 'Que se passe-t-il si le destinataire ne réclame pas le billet ?',
-      a: 'Le lien de transfert est sécurisé et valable pendant 48 heures. Si le destinataire ne l\'accepte pas dans ce délai, le billet revient automatiquement dans votre portefeuille sans aucune action de votre part.',
+      a: 'Le transfert reste en attente pendant 48 heures. Si le destinataire ne l\'accepte pas dans ce délai, le billet revient automatiquement dans votre portefeuille sans aucune action de votre part.',
     },
     {
       q: 'Puis-je annuler le transfert si je me suis trompé de numéro ?',
@@ -125,7 +125,7 @@ export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({
                     Indiquez le destinataire
                   </h5>
                   <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                    Saisissez son numéro de téléphone ou son email. Aucun frais ne s&apos;applique.
+                    Saisissez son numéro de téléphone. Aucun frais ne s&apos;applique.
                   </p>
                 </div>
               </div>
@@ -140,10 +140,10 @@ export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({
                 </div>
                 <div>
                   <h5 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                    Lien envoyé par SMS
+                    Prévenu par SMS
                   </h5>
                   <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                    Votre proche reçoit son lien privé sécurisé valable 48 heures.
+                    Votre proche reçoit un SMS. Il se connecte avec ce numéro et accepte le billet dans « Mes billets » sous 48 heures.
                   </p>
                 </div>
               </div>

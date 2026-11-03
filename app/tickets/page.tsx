@@ -5,6 +5,7 @@ import { HelpCircle, RefreshCw, Sparkles, Ticket } from 'lucide-react';
 import { TicketCard, type TicketCardProps } from '@/components/tickets/TicketCard';
 import { TransferModal, type TransferTicketData } from '@/components/tickets/TransferModal';
 import { TransferExplainerModal } from '@/components/tickets/TransferExplainerModal';
+import { IncomingTransfers, readIncomingTransfers, type IncomingTransfersData } from '@/components/tickets/IncomingTransfers';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -21,7 +22,10 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
  *  - Temps réel : les billets du porteur (filtre user_id : émission, compostage, transfert,
  *    remboursement) et ses notifications (transfert reçu ou accepté) ; chaque signal recharge la liste
  *    par le serveur, sans recharger la page. Indicateur « En direct » / « Hors ligne ».
- *  - Onglets dans ?tab= : à venir, tous, historique (simple tri de la liste reçue, aucun agrégat).
+ *  - Onglets dans ?tab= : à venir, tous, historique (simple tri de la liste reçue, aucun agrégat), et
+ *    « Reçus » (lot 6, contrat B5 et amendement 2 : transferts entrants vers le numéro vérifié du compte,
+ *    GET /api/tickets/transfers/incoming, acceptation par « Accepter le billet », confirmation du numéro par
+ *    code SMS). Le SMS d'un transfert renvoie vers /tickets?tab=recus.
  */
 
 type TicketStatus = TicketCardProps['status'];
@@ -44,16 +48,11 @@ interface MyTicket {
   activeTransfer?: TicketCardProps['activeTransfer'];
 }
 
-const TABS = ['a-venir', 'tous', 'historique'] as const;
+const TABS = ['a-venir', 'tous', 'historique', 'recus'] as const;
 type TabKey = typeof TABS[number];
+type TicketTabKey = Exclude<TabKey, 'recus'>;
 
-const TAB_ITEMS: Array<{ id: TabKey; label: string }> = [
-  { id: 'a-venir', label: 'À venir' },
-  { id: 'tous', label: 'Tous mes billets' },
-  { id: 'historique', label: 'Historique' },
-];
-
-const EMPTY_COPY: Record<TabKey, { title: string; description: string }> = {
+const EMPTY_COPY: Record<TicketTabKey, { title: string; description: string }> = {
   'a-venir': {
     title: 'Aucun billet à venir',
     description: 'Vos prochains billets apparaîtront ici dès l’achat, sans recharger la page.',
@@ -117,7 +116,7 @@ function TicketSkeleton() {
 }
 
 export default function TicketsPage() {
-  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { user, profile, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id ?? null;
   const [tab, setTab] = useTabParam(TABS, 'a-venir');
   const [tickets, setTickets] = useState<MyTicket[]>([]);
@@ -125,6 +124,11 @@ export default function TicketsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
+
+  const [incoming, setIncoming] = useState<IncomingTransfersData>({ items: [], phoneVerificationRequired: false });
+  const [incomingPhase, setIncomingPhase] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [incomingError, setIncomingError] = useState<string | null>(null);
+  const [isRetryingIncoming, setIsRetryingIncoming] = useState(false);
 
   const [transferTicket, setTransferTicket] = useState<TransferTicketData | null>(null);
   const [isExplainerOpen, setIsExplainerOpen] = useState(false);
@@ -149,10 +153,28 @@ export default function TicketsPage() {
 
   const refreshTickets = useCallback(() => load('silent'), [load]);
 
+  /** Billets reçus : erreur affichée dans l'onglet « Reçus », la liste précédente reste sinon. */
+  const loadIncoming = useCallback(async (mode: 'initial' | 'silent') => {
+    const result = await readIncomingTransfers();
+    if (result.ok) {
+      setIncoming({ items: result.items, phoneVerificationRequired: result.phoneVerificationRequired });
+      setIncomingError(null);
+      setIncomingPhase('ready');
+      return;
+    }
+    setIncomingError(result.message);
+    if (mode === 'initial') setIncomingPhase('error');
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([load('silent'), loadIncoming('silent')]);
+  }, [load, loadIncoming]);
+
   useEffect(() => {
     if (isAuthLoading || !userId) return;
     void load('initial');
-  }, [isAuthLoading, userId, load]);
+    void loadIncoming('initial');
+  }, [isAuthLoading, userId, load, loadIncoming]);
 
   // Temps réel (contrat O5) : billets du porteur et notifications (transfert reçu, accepté, annulé).
   const { status: liveStatus } = useRealtimeRefresh({
@@ -161,7 +183,7 @@ export default function TicketsPage() {
       { table: 'tickets', filter: `user_id=eq.${userId ?? ''}` },
       { table: 'notifications', filter: `user_id=eq.${userId ?? ''}`, event: 'INSERT' },
     ],
-    onSignal: refreshTickets,
+    onSignal: refreshAll,
     enabled: Boolean(userId),
   });
 
@@ -174,11 +196,27 @@ export default function TicketsPage() {
     }
   };
 
+  const retryIncoming = async () => {
+    setIsRetryingIncoming(true);
+    try {
+      await loadIncoming('initial');
+    } finally {
+      setIsRetryingIncoming(false);
+    }
+  };
+
   const shown = useMemo(() => {
     if (tab === 'a-venir') return tickets.filter(isActiveUpcoming);
     if (tab === 'historique') return tickets.filter((t) => !isActiveUpcoming(t));
     return tickets;
   }, [tickets, tab]);
+
+  const tabItems = useMemo(() => [
+    { id: 'a-venir', label: 'À venir' },
+    { id: 'tous', label: 'Tous mes billets' },
+    { id: 'historique', label: 'Historique' },
+    { id: 'recus', label: 'Reçus', ...(incomingPhase === 'ready' && incoming.items.length > 0 ? { count: incoming.items.length } : {}) },
+  ], [incomingPhase, incoming.items.length]);
 
   if (!isAuthLoading && !isAuthenticated) {
     return (
@@ -194,7 +232,7 @@ export default function TicketsPage() {
     );
   }
 
-  const empty = EMPTY_COPY[tab];
+  const empty = tab === 'recus' ? null : EMPTY_COPY[tab];
 
   return (
     <div className="space-y-6 pb-24 lg:pb-12">
@@ -215,7 +253,7 @@ export default function TicketsPage() {
       />
 
       <Tabs
-        tabs={TAB_ITEMS}
+        tabs={tabItems}
         value={tab}
         onChange={(id) => setTab(id as TabKey)}
         ariaLabel="Filtrer mes billets"
@@ -223,6 +261,18 @@ export default function TicketsPage() {
       />
 
       <TabPanel idPrefix="mes-billets" tabIdValue={tab} className="space-y-4">
+        {tab === 'recus' ? (
+          <IncomingTransfers
+            phase={incomingPhase}
+            data={incoming}
+            error={incomingError}
+            onRetry={() => void retryIncoming()}
+            isRetrying={isRetryingIncoming}
+            phone={profile?.phone ?? null}
+            onChanged={() => void refreshAll()}
+          />
+        ) : (
+        <>
         {refreshError && phase === 'ready' && (
           <StatusBanner
             tone="warning"
@@ -289,11 +339,13 @@ export default function TicketsPage() {
         ) : (
           <EmptyState
             icon={<Ticket size={28} />}
-            title={empty.title}
-            description={empty.description}
+            title={empty?.title}
+            description={empty?.description}
             actionLabel="Explorer les événements"
             actionHref="/explore"
           />
+        )}
+        </>
         )}
       </TabPanel>
 

@@ -1,26 +1,25 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Send,
-  Smartphone,
-  Mail,
-  ShieldCheck,
-  Clock,
-  HelpCircle,
-  CheckCircle2,
-  Share2,
-  MessageCircle,
-  Copy,
-  Check,
-  X,
-  AlertCircle,
-  Sparkles,
-} from 'lucide-react';
+import { Clock, HelpCircle, Lock, Send, Share2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { TextInput } from '@/components/ui/Field';
+import { Modal } from '@/components/ui/Modal';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { formatDateTime } from '@/lib/format';
+
+/**
+ * Transfert d'un billet (lot 6, contrat B5 et amendement 2 : vers un numéro de téléphone seulement).
+ *
+ *  - Un seul champ, « Numéro de téléphone du destinataire » : l'adresse email n'est jamais vérifiée, elle
+ *    ne désigne donc plus un destinataire (le serveur refuse une cible email, 400 RECIPIENT_PHONE_REQUIRED).
+ *  - Aucun lien de réclamation : le destinataire reçoit un SMS qui l'envoie vers « Mes billets » ; il se
+ *    connecte avec ce numéro (vérifié par un code) et accepte le billet dans l'onglet « Reçus ».
+ *  - Le numéro est normalisé et validé par le serveur ; le navigateur ne fait qu'un contrôle de forme.
+ *  - Modale partagée (components/ui/Modal : focus, Échap, Fermer de 44 px), tokens du système de design.
+ */
 
 export interface TransferTicketData {
   id: string;
@@ -40,56 +39,84 @@ interface TransferModalProps {
   onOpenExplainer?: () => void;
 }
 
-export const TransferModal: React.FC<TransferModalProps> = ({
-  isOpen,
-  onClose,
-  ticket,
-  onTransferSuccess,
-  onOpenExplainer,
-}) => {
+interface TransferSuccess {
+  ticketNumber: string;
+  recipient: string;
+  expiresAt: string;
+}
+
+const HELP_TEXT = 'Le destinataire recevra un SMS. Il devra se connecter avec ce numéro pour accepter le billet sous 48 h.';
+const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
+
+/** Contrôle de forme seulement (8 à 15 chiffres, indicatif facultatif) ; la validation fait foi côté serveur. */
+function looksLikePhone(value: string): boolean {
+  return /^\+?\d{8,15}$/.test(value.replace(/[\s\-().]/g, ''));
+}
+
+export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, ticket, onTransferSuccess, onOpenExplainer }) => {
   const { session } = useAuth();
   const toast = useToast();
-
   const [recipient, setRecipient] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successData, setSuccessData] = useState<{
-    transfer_id: string;
-    ticket_number: string;
-    recipient: string;
-    expires_at: string;
-    claim_url?: string;
-  } | null>(null);
-  const [isCopied, setIsCopied] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<TransferSuccess | null>(null);
 
-  if (!isOpen || !ticket) return null;
+  if (!ticket) return null;
+
+  const reset = () => {
+    setRecipient('');
+    setFieldError(null);
+    setServerError(null);
+    setSuccess(null);
+  };
 
   const handleClose = () => {
-    setRecipient('');
-    setErrorMsg(null);
-    setSuccessData(null);
-    setIsCopied(false);
+    if (isSubmitting) return;
+    reset();
     onClose();
   };
 
-  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.trim());
-  const isPhone = /^\+?\d{8,15}$/.test(recipient.replace(/[\s\-\(\)\.]/g, ''));
+  const shareMessage = (): string => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `Je vous ai transféré un billet pour « ${ticket.eventTitle} » sur Event Village. Connectez-vous avec votre numéro, puis ouvrez Mes billets, onglet Reçus, pour l'accepter sous 48 h : ${origin}/tickets?tab=recus`;
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!recipient.trim()) {
-      setErrorMsg('Veuillez saisir un numéro de téléphone ou une adresse email.');
+  const handleShare = async () => {
+    const text = shareMessage();
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: `Billet ${ticket.eventTitle}`, text });
+        return;
+      } catch (err) {
+        // Partage fermé par l'utilisateur : rien à signaler ; toute autre erreur passe à la copie.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        console.warn('[TransferModal] partage natif impossible, copie du message :', err instanceof Error ? err.message : String(err));
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Message copié : collez-le dans la conversation de votre choix.');
+    } catch (err) {
+      console.error('[TransferModal] copie du message impossible :', err instanceof Error ? err.message : String(err));
+      toast.error('Le message n’a pas pu être copié. Prévenez votre proche directement.');
+    }
+  };
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const value = recipient.trim();
+    if (!value) {
+      setFieldError('Saisissez le numéro de téléphone du destinataire.');
       return;
     }
-
-    if (!isEmail && !isPhone) {
-      setErrorMsg('Format invalide. Saisissez un numéro (ex: 77 123 45 67) ou un email valide.');
+    if (!looksLikePhone(value)) {
+      setFieldError('Numéro invalide : saisissez un numéro de téléphone (par exemple 77 123 45 67).');
       return;
     }
-
+    setFieldError(null);
+    setServerError(null);
     setIsSubmitting(true);
-    setErrorMsg(null);
-
     try {
       const res = await fetch(`/api/tickets/${ticket.id}/transfer`, {
         method: 'POST',
@@ -97,302 +124,157 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           'Content-Type': 'application/json',
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({
-          recipient: recipient.trim(),
-        }),
+        body: JSON.stringify({ recipient: value }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setErrorMsg(data.error || 'Impossible d\'initier le transfert.');
+      let data: { success?: boolean; error?: unknown; transfer?: { ticket_number?: unknown; recipient?: unknown; expires_at?: unknown } } = {};
+      try {
+        data = await res.json();
+      } catch (err) {
+        console.error(`[TransferModal] réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
+        setServerError(`Réponse inattendue du serveur (erreur ${res.status}).`);
         return;
       }
-
-      setSuccessData({
-        transfer_id: data.transfer.transfer_id,
-        ticket_number: data.transfer.ticket_number,
-        recipient: data.transfer.recipient,
-        expires_at: data.transfer.expires_at,
-        claim_url: data.transfer.claim_url,
-      });
-
-      toast.success(`Transfert initié vers ${data.transfer.recipient}`);
+      if (!res.ok || data.success !== true || !data.transfer) {
+        setServerError(typeof data.error === 'string' && data.error ? data.error : 'Le transfert n’a pas pu être lancé. Réessayez.');
+        return;
+      }
+      const result: TransferSuccess = {
+        ticketNumber: typeof data.transfer.ticket_number === 'string' ? data.transfer.ticket_number : ticket.ticketNumber,
+        recipient: typeof data.transfer.recipient === 'string' ? data.transfer.recipient : value,
+        expiresAt: typeof data.transfer.expires_at === 'string' ? data.transfer.expires_at : '',
+      };
+      setSuccess(result);
+      toast.success(`Transfert lancé vers ${result.recipient}.`);
       onTransferSuccess(ticket.id);
-    } catch (err: any) {
-      setErrorMsg('Erreur de connexion. Veuillez vérifier votre réseau.');
+    } catch (err) {
+      console.error('[TransferModal] transfert injoignable :', err instanceof Error ? err.message : String(err));
+      setServerError(NETWORK_MESSAGE);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const claimLink = successData?.claim_url || (typeof window !== 'undefined' ? `${window.location.origin}/tickets` : 'https://eventvillage.sn/tickets');
-  const shareText = `Bonjour ! Je viens de t'offrir un billet officiel pour "${ticket.eventTitle}" (${ticket.seat || 'Pass Standard'}) sur Event Village. Clique ici pour l'ajouter à tes billets : ${claimLink}`;
-
-  const handleCopyShareText = () => {
-    navigator.clipboard.writeText(shareText);
-    setIsCopied(true);
-    toast.success('Lien et message d\'invitation copiés !');
-    setTimeout(() => setIsCopied(false), 2500);
-  };
-
-  const handleShareWhatsapp = () => {
-    const encoded = encodeURIComponent(shareText);
-    const rawPhone = successData?.recipient || recipient;
-    const phoneClean = rawPhone.replace(/\D/g, '');
-    const waPhone = phoneClean.startsWith('221') ? phoneClean : phoneClean.length === 9 ? `221${phoneClean}` : phoneClean;
-    const waUrl = waPhone.length >= 9 ? `https://wa.me/${waPhone}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
-    window.open(waUrl, '_blank');
-  };
-
-  const handleNativeShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: `Billet ${ticket.eventTitle}`,
-        text: shareText,
-      }).catch(() => {});
-    } else {
-      handleCopyShareText();
-    }
-  };
+  const footer = success ? (
+    <div className="flex w-full flex-wrap justify-end gap-2">
+      <Button variant="secondary" onClick={() => void handleShare()} leftIcon={<Share2 size={18} aria-hidden="true" />}>
+        Prévenir mon proche
+      </Button>
+      <Button variant="primary" onClick={handleClose}>
+        Terminer
+      </Button>
+    </div>
+  ) : (
+    <div className="flex w-full flex-wrap justify-end gap-2">
+      <Button variant="ghost" onClick={handleClose} disabled={isSubmitting}>
+        Annuler
+      </Button>
+      <Button
+        variant="primary"
+        type="submit"
+        form="transfert-billet"
+        isLoading={isSubmitting}
+        leftIcon={<Send size={18} aria-hidden="true" />}
+      >
+        Envoyer le billet
+      </Button>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* Backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-slate-950/70 backdrop-blur-md"
-        onClick={handleClose}
-      />
-
-      {/* Modal Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 30, scale: 0.96 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="relative z-10 w-full max-w-lg bg-white dark:bg-[#16161A] border border-slate-200/80 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden text-left max-h-[92dvh] flex flex-col"
-      >
-        {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between bg-gradient-to-r from-orange-50/60 to-transparent dark:from-orange-950/20 dark:to-transparent flex-shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FF6A3D] to-[#FF3D68] text-white flex items-center justify-center shadow-md shadow-[#FF5722]/30 flex-shrink-0">
-              <Send size={18} className="translate-x-0.5" />
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Transférer ce billet"
+      subtitle={`Billet ${ticket.ticketNumber}${ticket.seat ? ` · ${ticket.seat}` : ''}`}
+      icon={<Send size={20} aria-hidden="true" />}
+      footer={footer}
+      busy={isSubmitting}
+      maxWidth="lg"
+    >
+      {success ? (
+        <div className="space-y-4">
+          <StatusBanner tone="success" title="Transfert lancé">
+            Le billet est réservé pour le numéro {success.recipient}, qui va recevoir un SMS.
+          </StatusBanner>
+          <dl className="space-y-3 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <dt className="text-fg-muted">Événement</dt>
+              <dd className="min-w-0 break-words font-semibold text-fg">{ticket.eventTitle}</dd>
             </div>
-            <div className="min-w-0">
-              <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight leading-tight truncate">
-                Transférer ce billet
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
-                N° {ticket.ticketNumber} • {ticket.seat || 'Pass Standard'}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <dt className="flex items-center gap-1.5 text-fg-muted">
+                <Clock size={16} aria-hidden="true" />
+                À accepter avant
+              </dt>
+              <dd className="font-semibold text-fg tabular-nums">{success.expiresAt ? formatDateTime(success.expiresAt) : '48 h après l’envoi'}</dd>
+            </div>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <dt className="flex items-center gap-1.5 text-fg-muted">
+                <Lock size={16} aria-hidden="true" />
+                Votre billet
+              </dt>
+              <dd className="font-semibold text-fg">Verrouillé jusqu’à l’acceptation</dd>
+            </div>
+          </dl>
+          <p className="text-sm leading-relaxed text-fg-muted">
+            S’il n’est pas accepté sous 48 h, le billet vous revient automatiquement. Vous pouvez annuler le transfert depuis la carte du billet tant qu’il n’est pas accepté.
+          </p>
+        </div>
+      ) : (
+        <form id="transfert-billet" noValidate onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
+          <div className="rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+            <p className="font-semibold text-fg">{ticket.eventTitle}</p>
+            {(ticket.dateFormatted || ticket.timeFormatted) && (
+              <p className="mt-1 text-fg-muted">
+                {[ticket.dateFormatted, ticket.timeFormatted ? `à ${ticket.timeFormatted}` : null].filter(Boolean).join(' ')}
               </p>
-            </div>
+            )}
+            {ticket.venue && <p className="mt-1 text-fg-muted">{ticket.venue}</p>}
+            <p className="mt-2 font-semibold text-success-fg">Transfert gratuit</p>
           </div>
 
-          <button
-            onClick={handleClose}
-            aria-label="Fermer"
-            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white flex items-center justify-center transition-colors flex-shrink-0"
-          >
-            <X size={16} />
-          </button>
-        </div>
+          <TextInput
+            label="Numéro de téléphone du destinataire"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            required
+            value={recipient}
+            onChange={(e) => {
+              setRecipient(e.target.value);
+              if (fieldError) setFieldError(null);
+            }}
+            placeholder="77 123 45 67"
+            disabled={isSubmitting}
+            hint={HELP_TEXT}
+            error={fieldError ?? undefined}
+          />
 
-        {/* Body Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-slate-800 dark:text-zinc-200">
-          {successData ? (
-            /* ÉTAT DE SUCCÈS */
-            <div className="text-center space-y-4 py-2">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-inner">
-                <CheckCircle2 size={36} className="stroke-[2.5]" />
-              </div>
-
-              <div>
-                <h4 className="text-lg font-black text-slate-900 dark:text-white">
-                  Transfert initié avec succès !
-                </h4>
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400 mt-1">
-                  Le billet est maintenant réservé pour <strong className="text-slate-900 dark:text-white font-mono">{successData.recipient}</strong>.
-                </p>
-              </div>
-
-              {/* Box détails & expiration */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 text-left space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 dark:text-zinc-400">Événement :</span>
-                  <span className="font-bold text-slate-900 dark:text-white truncate max-w-[200px]">
-                    {ticket.eventTitle}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 dark:text-zinc-400">Délai d&apos;acceptation :</span>
-                  <span className="font-bold text-[#FF5722] flex items-center gap-1">
-                    <Clock size={12} /> 48 heures max
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 dark:text-zinc-400">Statut du billet :</span>
-                  <span className="font-bold text-amber-600 dark:text-amber-400">
-                    🔒 Verrouillé jusqu&apos;à réclamation
-                  </span>
-                </div>
-              </div>
-
-              {/* Actions de partage immédiat */}
-              <div className="space-y-2 pt-2">
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Prévenez votre proche directement :
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="md"
-                    onClick={handleShareWhatsapp}
-                    leftIcon={<MessageCircle size={16} className="text-emerald-500" />}
-                    fullWidth
-                  >
-                    WhatsApp
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="md"
-                    onClick={handleNativeShare}
-                    leftIcon={isCopied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                    fullWidth
-                  >
-                    {isCopied ? 'Copié !' : 'Partager'}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* FORMULAIRE DE TRANSFERT */
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Carte Récapitulative du Billet */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 flex items-center justify-between text-xs">
-                <div className="min-w-0 pr-2">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">
-                    Événement
-                  </span>
-                  <p className="font-bold text-slate-900 dark:text-white truncate mt-0.5">
-                    {ticket.eventTitle}
-                  </p>
-                  {(ticket.dateFormatted || ticket.timeFormatted) && (
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-                      {ticket.dateFormatted} {ticket.timeFormatted ? `à ${ticket.timeFormatted}` : ''}
-                    </p>
-                  )}
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">
-                    Frais
-                  </span>
-                  <p className="font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    0 FCFA (Gratuit)
-                  </p>
-                </div>
-              </div>
-
-              {/* Champ Destinataire */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-900 dark:text-white">
-                  Numéro de téléphone ou Email du destinataire <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-zinc-500">
-                    {isEmail ? <Mail size={16} /> : <Smartphone size={16} />}
-                  </div>
-                  <input
-                    type="text"
-                    value={recipient}
-                    onChange={(e) => {
-                      setRecipient(e.target.value);
-                      if (errorMsg) setErrorMsg(null);
-                    }}
-                    placeholder="Ex: 77 123 45 67 ou ami@gmail.com"
-                    autoFocus
-                    disabled={isSubmitting}
-                    className="w-full pl-10 pr-4 py-3 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#FF5722] focus:border-transparent transition-all"
-                  />
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                  Le destinataire recevra un SMS/Email avec son lien personnel pour réclamer le billet.
-                </p>
-              </div>
-
-              {/* Message d'erreur */}
-              {errorMsg && (
-                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
-                  <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
-
-              {/* Règles de Sécurité & Reassurance */}
-              <div className="p-3.5 rounded-2xl bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200/60 dark:border-orange-900/40 space-y-2 text-xs text-slate-700 dark:text-zinc-300">
-                <div className="flex items-center gap-1.5 font-bold text-[#FF5722] text-xs">
-                  <ShieldCheck size={14} />
-                  <span>Garantie Sécurité Event Village</span>
-                </div>
-                <ul className="space-y-1 text-[11px] text-slate-600 dark:text-zinc-400">
-                  <li>• Dès acceptation, un nouveau QR code dynamique sera émis pour votre proche.</li>
-                  <li>• Le lien expire sous 48h : si non réclamé, le billet vous est restitué automatiquement.</li>
-                  <li>• Vous pouvez annuler le transfert à tout moment avant réclamation.</li>
-                </ul>
-              </div>
-
-              {/* Lien d'aide */}
-              {onOpenExplainer && (
-                <div className="text-center">
-                  <button
-                    type="button"
-                    onClick={onOpenExplainer}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FF5722] hover:underline"
-                  >
-                    <HelpCircle size={13} />
-                    <span>Comment fonctionne le transfert ? (Explications & FAQ)</span>
-                  </button>
-                </div>
-              )}
-            </form>
+          {serverError && (
+            <StatusBanner tone="danger" announce="alert" title="Transfert impossible">
+              {serverError}
+            </StatusBanner>
           )}
-        </div>
 
-        {/* Footer Buttons */}
-        <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/80 dark:bg-[#16161A] flex items-center justify-end gap-2 flex-shrink-0">
-          {successData ? (
-            <Button variant="primary" size="md" onClick={handleClose} fullWidth className="sm:w-auto">
-              Terminer
+          <div className="space-y-2 rounded-2xl border border-border bg-surface p-4 text-sm text-fg">
+            <p className="flex items-center gap-2 font-semibold">
+              <ShieldCheck size={18} className="text-brand-fg" aria-hidden="true" />
+              Ce qui se passe ensuite
+            </p>
+            <ul className="list-disc space-y-1 pl-5 text-fg-muted">
+              <li>Dès l’acceptation, un nouveau QR code est créé pour votre proche ; le vôtre ne sert plus.</li>
+              <li>Sans acceptation sous 48 h, le billet vous revient automatiquement.</li>
+              <li>Vous pouvez annuler le transfert tant qu’il n’est pas accepté.</li>
+            </ul>
+          </div>
+
+          {onOpenExplainer && (
+            <Button type="button" variant="ghost" onClick={onOpenExplainer} leftIcon={<HelpCircle size={18} aria-hidden="true" />}>
+              Comment fonctionne le transfert ?
             </Button>
-          ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="md"
-                onClick={handleClose}
-                disabled={isSubmitting}
-              >
-                Annuler
-              </Button>
-              <Button
-                variant="primary"
-                size="md"
-                onClick={handleSubmit}
-                isLoading={isSubmitting}
-                leftIcon={<Send size={15} />}
-              >
-                {isSubmitting ? 'Transfert en cours...' : 'Envoyer le billet (0 FCFA)'}
-              </Button>
-            </>
           )}
-        </div>
-      </motion.div>
-    </div>
+        </form>
+      )}
+    </Modal>
   );
 };
