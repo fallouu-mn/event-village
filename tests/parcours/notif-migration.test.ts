@@ -588,9 +588,9 @@ describe('6.7 J1.9 — reprise des lignes d’event_change_notifications dans la
             assert.deepEqual(data.changed_fields, r.status === 'NOT_REQUIRED' ? ['title'] : ['start_date', 'location'], `${label} : template_data.changed_fields`);
             if (r.status === 'PENDING') {
                 assert.equal(Number(row.attempts), 2, 'PENDING : tentatives reprises');
-                assert.equal(new Date(String(row.next_attempt_at)).getTime(), nextAttempt.getTime(), 'PENDING : prochain essai repris');
+                assert.equal(new Date(row.next_attempt_at as string | Date).getTime(), nextAttempt.getTime(), 'PENDING : prochain essai repris');
             }
-            if (r.status === 'SENT') assert.equal(new Date(String(row.sent_at)).getTime(), sentAt.getTime(), 'SENT : sent_at repris');
+            if (r.status === 'SENT') assert.equal(new Date(row.sent_at as string | Date).getTime(), sentAt.getTime(), 'SENT : sent_at repris');
         }
     });
 });
