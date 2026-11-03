@@ -5,7 +5,6 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { storeOtp } from '@/lib/auth/otp-store';
@@ -83,15 +82,21 @@ export async function POST(req: NextRequest) {
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
         // Lot 1B.7 : le code est enregistré en base AVANT l'envoi (vérifiable depuis toute instance).
+        let otpId: string;
         try {
-            await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt), 'REGISTER');
+            otpId = await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt), 'REGISTER');
         } catch (storeErr) {
             console.error('[API /api/partner/register]', storeErr instanceof Error ? storeErr.message : storeErr);
             return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
         }
 
         // L'adaptateur renvoie success:false sans lever : le résultat est contrôlé (lot 1C.9).
-        const smsResult = await mTargetService.sendOtp(normalizedPhone, otpCode, { reservation: reserved.reservation });
+        // Lot 6 (E7) : envoi synchrone journalisé dans la boîte d'envoi, sans le code.
+        const smsResult = await mTargetService.sendOtp(normalizedPhone, otpCode, {
+            reservation: reserved.reservation,
+            purpose: 'REGISTER',
+            log: { type: 'OTP_REGISTER', ref: otpId },
+        });
         if (!smsResult.success) {
             console.error('[API /api/partner/register] Échec envoi SMS OTP:', smsResult.error);
             return NextResponse.json(
@@ -213,14 +218,9 @@ export async function POST(req: NextRequest) {
 
         // 6. (Lot 1B.7) Le code OTP a été enregistré en base avant l'envoi du SMS.
 
-        // 7. Triple Notification CDC : SMS + Email + In-App (partenaire + superadmins)
-        await NotificationService.sendPartnerRegistrationNotification({
-            email: effectiveEmail,
-            phone: normalizedPhone,
-            companyName: data.companyName.trim(),
-            partnerName: `${data.firstName.trim()} ${data.lastName.trim()}`,
-            userId: userId,
-        });
+        // 7. Lot 6 (J2.5, décision 14) : l'accusé de réception (in-app et email, plus de SMS : doublon du
+        //    code d'inscription) et l'alerte aux administrateurs sont mis en file par le trigger
+        //    trg_partners_notify dans la transaction de l'insertion de la fiche (étape 3).
 
         return NextResponse.json({
             success: true,

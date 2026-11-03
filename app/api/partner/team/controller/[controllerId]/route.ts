@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { requireActiveSession, serverHasRole, serverIsAdmin, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
-import { NotificationService } from '@/lib/notifications/notification.service';
-import { mTargetService } from '@/lib/sms/mtarget.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 
@@ -31,7 +29,8 @@ type RemovalReply = {
 //    retiré s'il ne reste aucune affectation ; caisse ouverte → 409 (trigger controller_removal_guard).
 //  - Rien retiré (contrôleur hors de cette équipe, inexistant) → 404 CONTROLLER_NOT_IN_TEAM, sans SMS
 //    ni notification.
-//  - Rôle retiré : sessions révoquées, codes OTP résiduels supprimés. Puis SMS, notification et journal.
+//  - Rôle retiré : sessions révoquées, codes OTP résiduels supprimés. Puis journal ; les avis au
+//    contrôleur passent par la boîte d'envoi (trigger sur event_controllers, lot 6).
 // ──────────────────────────────────────────────────────────
 export async function DELETE(
     req: NextRequest,
@@ -116,21 +115,8 @@ export async function DELETE(
             }
         }
 
-        // 4. Avis au contrôleur (le retrait est acquis : un échec est journalisé, jamais avalé)
-        let smsSent = false;
-        if (ctrlProfile?.phone) {
-            const sms = await mTargetService.sendControllerAccountDeletedNotice(ctrlProfile.phone, { actorId: user.id });
-            smsSent = sms.success === true;
-            if (!smsSent) console.warn(`[DELETE team/controller] SMS de retrait non envoyé (${sms.code ?? sms.error ?? 'raison inconnue'}).`);
-        }
-        const inApp = await NotificationService.createNotification({
-            userId: controllerId,
-            title: 'Retrait de l’équipe de contrôle',
-            message: 'Vous avez été retiré de l’équipe des contrôleurs par l’organisateur.',
-            type: 'SYSTEM',
-            data: { partner_id: partnerId, removed_by: user.id },
-        });
-        if (!inApp) console.warn(`[DELETE team/controller] notification in-app au contrôleur ${controllerId} non créée.`);
+        // 4. Lot 6 (J2.4) : l'avis de retrait (in-app et push par affectation, un SMS regroupé) est mis
+        //    en file par le trigger trg_event_controllers_notify dans la transaction de la RPC.
 
         await AdminService.logAudit({
             userId: user.id,
@@ -154,7 +140,7 @@ export async function DELETE(
             message: 'Contrôleur retiré de l’équipe.',
             removed_assignments: Number(removal.removed_assignments ?? 0),
             deactivated: roleRemoved,
-            notified: { sms: smsSent, in_app: inApp },
+            notification: 'QUEUED',
         });
     } catch (err: unknown) {
         console.error('[DELETE /api/partner/team/controller] erreur :', err instanceof Error ? err.message : String(err));

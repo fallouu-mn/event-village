@@ -27,6 +27,7 @@ import { POST as registerClient } from '../../app/api/auth/register/route';
 import { POST as smsHook } from '../../app/api/auth/sms-hook/route';
 import { getFakes } from '../fakes';
 import { BASE_URL, jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { flushNotifications, outboxRows } from './notif-helpers';
 
 const LIMITS = {
     SMS_OTP_PER_PHONE_15MIN: '2',
@@ -115,6 +116,11 @@ describe('Anti-abus SMS', () => {
             const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
             const { data: audit } = await service.from('audit_logs').select('id').eq('action', 'SMS_GLOBAL_DAILY_CAP_REACHED').gte('created_at', since);
             assert.ok((audit || []).length >= 1, 'alerte « plafond SMS atteint » journalisée dans audit_logs');
+            // Lot 6 (6.1, J2.13) : l'alerte est mise en file par notification_admin_alert (ADMIN_SMS_CAP_GLOBAL,
+            // clé du jour UTC) ; l'envoyeur livre les lignes du SUPERADMIN avant la lecture (assertion inchangée).
+            const capDay = new Date().toISOString().slice(0, 10);
+            const queued = await outboxRows({ userId: fx.users.SUPERADMIN.id, keyPrefix: `ADMIN_SMS_CAP_GLOBAL:${capDay}:`, status: 'PENDING' });
+            if (queued.length > 0) await flushNotifications({ ids: queued.map((r) => r.id) });
             const { data: notif } = await service.from('notifications').select('id, channel').eq('user_id', fx.users.SUPERADMIN.id).eq('type', 'SMS_DAILY_CAP_REACHED').gte('created_at', since);
             assert.ok((notif || []).length >= 1, 'notification in-app aux superadmins');
             assert.ok((notif || []).every((n) => n.channel !== 'SMS'), 'l’alerte ne part jamais par SMS');

@@ -16,7 +16,6 @@
  */
 import crypto from 'crypto';
 import { getServerEnv, type ServerEnv } from '@/lib/env';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { reserveQuota } from '@/lib/security/quota';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -195,14 +194,18 @@ const SHIFT_CLOSE_REFUSALS: Record<string, [number, string]> = {
     PIN_INVALID: [401, 'Code PIN régisseur incorrect.'],
 };
 
-/** Résultat d'une clôture de caisse : caisse relue, chiffres de la RPC et issue de l'alerte. */
+/**
+ * Résultat d'une clôture de caisse : caisse relue, chiffres de la RPC. Lot 6 (J2.1) : `alertQueued`
+ * dit si l'alerte d'écart (SHIFT_DISCREPANCY : in-app, SMS, push au partenaire) a été mise en file dans
+ * la transaction de la clôture ; plus aucun SMS synchrone.
+ */
 export interface ShiftCloseResult {
     shift: Shift;
     expected: number;
     declared: number;
     discrepancy: number;
     pinCosigned: boolean;
-    alert: { inApp: boolean; smsSent: boolean; smsCode?: string } | null;
+    alertQueued: boolean;
 }
 
 const EVENT_PROBLEM_MESSAGES: Record<string, string> = {
@@ -368,8 +371,8 @@ export class ShiftService {
      * ces pré-contrôles sur une lecture sans verrou évitent de consommer un essai de PIN pour une demande
      * incomplète. Le PIN est haché ici (clé REGISSEUR_PIN_KEY, hors base) avec le sel courant ; la RPC
      * shift_close refait tous les contrôles sous verrou de la caisse (écart relu sur le total attendu
-     * final), compare le haché, clôture, journalise et écrit l'alerte in-app dans la même transaction.
-     * Le SMS d'alerte part après le commit ; son issue est dans le résultat.
+     * final), compare le haché, clôture, journalise et met en file, dans la même transaction, l'alerte
+     * d'écart au partenaire et, si la caisse est fermée par un tiers, l'avis au contrôleur (lot 6, J2.1).
      */
     static async closeShift(
         userId: string,
@@ -419,21 +422,6 @@ export class ShiftService {
         }
 
         const discrepancy = Number(data.discrepancy ?? 0);
-        let sms: { sent: boolean; code?: string } = { sent: false };
-        if (discrepancy !== 0) {
-            try {
-                sms = await NotificationService.sendShiftDiscrepancySms({
-                    partnerId: shift.partner_id,
-                    eventTitle: String(data.event_title ?? shift.events?.title ?? 'votre événement'),
-                    controllerName: String(data.controller_name ?? ctrlName(shift.users)),
-                    discrepancyAmount: discrepancy,
-                });
-            } catch (smsErr) {
-                console.error(`[ShiftService] SMS d'alerte de la caisse ${shift.id} non envoyé :`, smsErr instanceof Error ? smsErr.message : String(smsErr));
-                sms = { sent: false, code: 'SMS_FAILED' };
-            }
-        }
-
         const closed = await readShift(shift.id);
         if (!closed) throw new Error(`Caisse ${shift.id} introuvable après sa clôture.`);
         return {
@@ -442,7 +430,7 @@ export class ShiftService {
             declared: Number(data.declared ?? declared),
             discrepancy,
             pinCosigned: data.pin_cosigned === true,
-            alert: discrepancy === 0 ? null : { inApp: !!data.alert_id, smsSent: sms.sent, smsCode: sms.sent ? undefined : sms.code },
+            alertQueued: data.alert_queued === true,
         };
     }
 

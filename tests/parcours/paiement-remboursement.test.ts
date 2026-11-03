@@ -21,6 +21,7 @@ import {
     Buyer, callsOf, cart, checkout, createSaleEvent, deliverWebhook, fakePay, importModule, newBuyer, paymentById,
     providerSays, service, setFakeMode,
 } from './paiement-helpers';
+import { flushNotifications, outboxRows } from './notif-helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let Cashouts: any;
@@ -109,6 +110,10 @@ describe('Remboursement automatique et module de cashout', () => {
         assert.equal(row?.status, 'A_ENVOYER');
         assert.ok(row?.blocked_reason, `motif de blocage : ${JSON.stringify(out)}`);
         const fx = await loadFixtures();
+        // Lot 6 (6.1, J2.2) : l'alerte est mise en file par trg_cashouts_notify (ADMIN_REFUND_TO_RETRY) ;
+        // l'envoyeur livre les lignes de ce cashout au SUPERADMIN avant la lecture (assertion inchangée).
+        const queued = await outboxRows({ userId: fx.users.SUPERADMIN.id, keyPrefix: `ADMIN_REFUND_TO_RETRY:${c.id}:`, status: 'PENDING' });
+        if (queued.length > 0) await flushNotifications({ ids: queued.map((r) => r.id) });
         const { data: alerts } = await service.from('notifications').select('id').eq('user_id', fx.users.SUPERADMIN.id).eq('type', 'CASHOUT_ALERT').contains('metadata', { cashout_id: c.id });
         assert.ok((alerts?.length ?? 0) >= 1, 'alerte admin');
     });

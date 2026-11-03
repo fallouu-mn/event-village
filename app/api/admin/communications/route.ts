@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
-import { mTargetService } from '@/lib/sms/mtarget.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +31,8 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/admin/communications
- * Crée et diffuse une nouvelle campagne avec modération de contenu obligatoire (§121-§126)
+ * Crée une campagne en brouillon, avec modération de contenu obligatoire (§121-§126). Lot 6 : l'envoi
+ * immédiat est désactivé (décision 43) ; la réponse le dit (`sendingDisabled: true`).
  */
 export async function POST(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'communications.manage' });
@@ -92,7 +92,9 @@ export async function POST(req: NextRequest) {
         // Dédoublonnage
         targetPhones = Array.from(new Set(targetPhones));
 
-        // 3. Enregistrement de la campagne
+        // 3. Enregistrement de la campagne, toujours en brouillon. Lot 6 (décision 43, confirmée par
+        //    l'utilisateur) : l'envoi immédiat est désactivé (marketing hors périmètre : ni préférences,
+        //    ni désabonnement, ni plafond dédié) ; aucun SMS ne part d'ici. `sendNow` est ignoré.
         const { data: campaignRow, error: campErr } = await supabase
             .from('campaigns')
             .insert({
@@ -101,61 +103,41 @@ export async function POST(req: NextRequest) {
                 sender_profile: senderProfile || 'Event Village Info',
                 target_audience: targetAudience || 'ALL_CLIENTS',
                 channels: channels || ['SMS'],
-                status: sendNow ? 'SENDING' : 'DRAFT',
+                status: 'DRAFT',
                 recipient_count: targetPhones.length,
                 delivered_count: 0,
                 created_by: auth.user!.id,
-                sent_at: sendNow ? new Date().toISOString() : null,
+                sent_at: null,
             })
             .select()
             .single();
 
-        if (campErr) {
-            return NextResponse.json({ error: campErr.message }, { status: 500 });
+        if (campErr || !campaignRow) {
+            console.error('[API admin/communications POST] enregistrement de la campagne :', campErr?.message ?? 'réponse vide');
+            return NextResponse.json({ error: 'Enregistrement de la campagne impossible.', code: 'CAMPAIGN_SAVE_FAILED' }, { status: 500 });
         }
 
-        // 4. Envoi réel si demandé
-        let deliveredCount = 0;
-        if (sendNow && channels?.includes('SMS')) {
-            for (const phone of targetPhones.slice(0, 50)) { // Limite de sécurité batch
-                try {
-                    const formattedMsg = `[${senderProfile || 'Event Village Info'}] ${message.trim()}`;
-                    const res = await mTargetService.sendSms(phone, formattedMsg);
-                    if (res.success) deliveredCount++;
-                } catch {
-                    // Continue batch
-                }
-            }
-
-            await supabase
-                .from('campaigns')
-                .update({
-                    status: 'SENT',
-                    delivered_count: deliveredCount,
-                    sent_at: new Date().toISOString(),
-                })
-                .eq('id', campaignRow.id);
-        }
-
-        // 5. Journal d'Audit
+        // 4. Journal d'Audit
         await AdminService.logAudit({
             userId: auth.user!.id,
             userRole: auth.user!.role,
-            action: 'SEND_COMMUNICATION',
+            action: 'SAVE_COMMUNICATION_DRAFT',
             objectType: 'campaigns',
             objectId: campaignRow.id,
-            newValue: { title, targetAudience, channels, recipient_count: targetPhones.length },
+            newValue: { title, targetAudience, channels, recipient_count: targetPhones.length, send_now_requested: sendNow === true },
         });
 
         return NextResponse.json({
             success: true,
+            campaign: campaignRow,
             campaignId: campaignRow.id,
-            deliveredCount,
+            deliveredCount: 0,
             recipientCount: targetPhones.length,
-            message: `Campagne "${title}" créée et diffusée auprès de ${targetPhones.length} destinataire(s).`,
+            sendingDisabled: true,
+            message: "L'envoi immédiat des campagnes est désactivé : il sera repris avec le lot des communications.",
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        console.error('[API admin/communications POST]', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Enregistrement de la campagne momentanément impossible.', code: 'CAMPAIGN_SAVE_FAILED' }, { status: 500 });
     }
 }

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { NotificationService } from '@/lib/notifications/notification.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,30 +67,25 @@ export async function PATCH(req: NextRequest) {
         .update(updatePayload)
         .eq('id', id);
 
-    if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    if (updateErr) {
+        console.error('[API admin/promotions PATCH] décision :', updateErr.message);
+        return NextResponse.json({ error: 'Enregistrement de la décision impossible.', code: 'PROMOTION_UPDATE_FAILED' }, { status: 500 });
+    }
 
     // Activer/désactiver is_featured sur l'événement
     if (status === 'APPROUVEE') {
-        await supabase
+        const { error: featureErr } = await supabase
             .from('events')
             .update({ is_featured: true, featured_until: end_date ? new Date(end_date).toISOString() : null })
             .eq('id', promo.event_id);
+        if (featureErr) {
+            console.error('[API admin/promotions PATCH] mise en avant de l’événement :', featureErr.message);
+            return NextResponse.json({ error: 'Décision enregistrée, mais la mise en avant de l’événement a échoué. Réessayez.', code: 'FEATURE_UPDATE_FAILED' }, { status: 500 });
+        }
     }
 
-    // Notification au partenaire
-    const partnerUserId = (promo.events as any)?.partners?.user_id;
-    const eventTitle = (promo.events as any)?.title || 'votre événement';
-    if (partnerUserId) {
-        await NotificationService.createNotification({
-            userId: partnerUserId,
-            title: status === 'APPROUVEE' ? 'Promotion approuvée !' : 'Demande de promotion refusée',
-            message: status === 'APPROUVEE'
-                ? `Votre demande de promotion pour "${eventTitle}" a été approuvée. Votre événement est mis en avant sur la plateforme.`
-                : `Votre demande de promotion pour "${eventTitle}" a été refusée.${admin_notes ? ` Motif : ${admin_notes}` : ''}`,
-            type: 'SYSTEM',
-            data: { promotionId: id, eventId: promo.event_id, status },
-        });
-    }
+    // Lot 6 (J2.11) : l'avis au partenaire (PROMOTION_DECIDED) est mis en file par le trigger
+    // trg_sponsored_promotions_notify dans la transaction de la décision.
 
-    return NextResponse.json({ success: true, status });
+    return NextResponse.json({ success: true, status, notification: 'QUEUED' });
 }

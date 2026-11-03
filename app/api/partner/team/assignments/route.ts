@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
-import { NotificationService } from '@/lib/notifications/notification.service';
-import { mTargetService } from '@/lib/sms/mtarget.service';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { grantUserRoles } from '@/lib/auth/roles';
@@ -226,41 +224,24 @@ export async function PATCH(req: NextRequest) {
         if (can_accept_cash !== undefined) {
             const remainingToUpdate = requestedEventIds.filter(id => !toAdd.includes(id));
             if (remainingToUpdate.length > 0) {
-                await supabase
+                const { error: cashErr } = await supabase
                     .from('event_controllers')
                     .update({ can_accept_cash })
                     .eq('user_id', controllerId)
                     .in('event_id', remainingToUpdate);
+                if (cashErr) {
+                    console.error('[PATCH team/assignments] permission espèces :', cashErr.message);
+                    return NextResponse.json({ error: 'Impossible de mettre à jour la permission espèces.' }, { status: 500 });
+                }
             }
         }
 
         // 7. (Lot 1B.6) Plus de réactivation : un compte non ACTIF a été refusé en 2.5.
 
-        // 8. Notifications
-        if (ctrlUser?.phone) {
-            try {
-                await mTargetService.sendControllerAssignmentsUpdatedNotice(ctrlUser.phone, requestedEventIds.length, { actorId: user.id });
-            } catch (smsErr) {
-                console.warn('[PATCH team/assignments] SMS non-bloquant:', smsErr);
-            }
-        }
-
-        try {
-            await NotificationService.createNotification({
-                userId: controllerId,
-                title: 'Affectations mises à jour',
-                message: `Vos événements assignés ont été mis à jour (${requestedEventIds.length} actif(s)).`,
-                type: 'SYSTEM',
-                data: {
-                    partner_id: partnerId,
-                    added: toAdd,
-                    removed: toRemove,
-                    total_active: requestedEventIds.length,
-                },
-            });
-        } catch (notifErr) {
-            console.warn('[PATCH team/assignments] In-app non-bloquante:', notifErr);
-        }
+        // 8. Lot 6 (J2.4) : avis d'affectation et de retrait mis en file par le trigger
+        //    trg_event_controllers_notify dans la transaction de chaque écriture ci-dessus (in-app et push
+        //    par affectation ; un SMS regroupé par instruction : les ajouts forment une seule insertion,
+        //    les retraits une seule suppression).
 
         // 9. Audit
         try {
@@ -284,6 +265,7 @@ export async function PATCH(req: NextRequest) {
             added: toAdd,
             removed: toRemove,
             total_active: requestedEventIds.length,
+            notification: 'QUEUED',
         });
 
     } catch (err: unknown) {

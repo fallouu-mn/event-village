@@ -30,7 +30,8 @@ const CloseShiftSchema = z.object({
  * contrôleur de la caisse, le partenaire propriétaire ou un admin ; montant entier ≥ 0 ; en cas
  * d'écart, justification (10 caractères au moins) et co-signature par le PIN régisseur (quota par
  * caisse) ; une seule clôture (verrou de la caisse, la seconde reçoit 409 SHIFT_NOT_OPEN) ; alerte
- * in-app au partenaire dans la même transaction, SMS après la clôture (issue dans `alert`).
+ * d'écart au partenaire mise en file dans la même transaction (lot 6 : `alert_queued`, aucun SMS
+ * envoyé par la route).
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
             declared: result.declared,
             discrepancy: result.discrepancy,
             pin_cosigned: result.pinCosigned,
-            alert: result.alert ? { in_app: result.alert.inApp, sms_sent: result.alert.smsSent, sms_code: result.alert.smsCode ?? null } : null,
+            alert_queued: result.alertQueued,
             message: result.discrepancy === 0
                 ? 'Session de caisse clôturée sans écart.'
                 : 'Session de caisse clôturée avec un écart. L’organisateur a été alerté.',

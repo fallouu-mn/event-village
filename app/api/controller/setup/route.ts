@@ -7,7 +7,6 @@ import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { AdminService } from '@/lib/admin/admin.service';
-import { mTargetService } from '@/lib/sms/mtarget.service';
 import { addUserRole } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
@@ -148,6 +147,21 @@ export async function POST(req: NextRequest) {
             console.warn(`[controller/setup] code OTP ${otpCheck.id} déjà consommé par une requête concurrente`);
         }
 
+        // 4 bis. Lot 6 (B1) : le code reçu par SMS prouve la possession du numéro. Première date
+        //        conservée (aucune écriture si elle est déjà posée) ; une erreur n'est jamais avalée.
+        const { error: verifyErr } = await supabase
+            .from('users')
+            .update({ phone_verified_at: new Date().toISOString() })
+            .eq('id', profile.id)
+            .is('phone_verified_at', null);
+        if (verifyErr) {
+            console.error('[controller/setup] phone_verified_at :', verifyErr.message);
+            return NextResponse.json({
+                error: 'Vérification momentanément impossible. Demandez un nouveau code.',
+                code: 'PHONE_VERIFY_FAILED',
+            }, { status: 503 });
+        }
+
         // 5. Audit
         await AdminService.logAudit({
             userId: profile.id,
@@ -159,16 +173,21 @@ export async function POST(req: NextRequest) {
             metadata: { source: 'controller-setup' },
         });
 
-        // 6. SMS de confirmation d'activation
-        try {
-            await mTargetService.sendControllerActivationConfirmation(normalizedPhone);
-        } catch (smsErr) {
-            console.warn('[controller/setup] SMS confirmation non bloquant:', smsErr instanceof Error ? smsErr.message : smsErr);
+        // 6. Lot 6 (J2.12) : avis d'activation (in-app, SMS) mis en file par la boîte d'envoi, une fois par
+        //    compte (clé CONTROLLER_ACTIVATED:<compte>). Le mot de passe est déjà posé (GoTrue, hors
+        //    transaction) : un échec de mise en file est journalisé et rendu explicite dans la réponse.
+        let activationNotice: 'QUEUED' | 'FAILED' = 'QUEUED';
+        const { data: notice, error: noticeErr } = await supabase.rpc('notification_controller_activated', { p: { user_id: profile.id } });
+        const noticeReply = (notice ?? null) as { ok?: boolean; code?: string } | null;
+        if (noticeErr || noticeReply?.ok !== true) {
+            activationNotice = 'FAILED';
+            console.error('[controller/setup] avis d’activation non mis en file :', noticeErr?.message ?? noticeReply?.code ?? 'réponse vide');
         }
 
         return NextResponse.json({
             success: true,
             message: 'Mot de passe défini. Vous pouvez maintenant vous connecter.',
+            activation_notice: activationNotice,
         });
 
     } catch (err: unknown) {

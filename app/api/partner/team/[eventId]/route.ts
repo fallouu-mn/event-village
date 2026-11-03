@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { requireActiveSession, serverIsAdmin, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
-import { NotificationService } from '@/lib/notifications/notification.service';
-import { mTargetService } from '@/lib/sms/mtarget.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
@@ -141,25 +139,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
         if (delErr) throw new Error(`retrait de l'affectation : ${delErr.message}`);
         if ((deleted ?? []).length === 0) return assignmentNotFound(); // retrait concurrent
 
-        // 4. Avis au contrôleur et journal (le retrait est acquis : un échec est journalisé, jamais avalé)
-        const eventTitle = event.title || 'votre événement';
-        let smsSent = false;
-        const { data: ctrlUser, error: ctrlErr } = await supabase.from('users').select('id, phone').eq('id', assignment.user_id).maybeSingle();
-        if (ctrlErr) {
-            console.error('[DELETE team/eventId] lecture du contrôleur pour l’avis :', ctrlErr.message);
-        } else if (ctrlUser?.phone) {
-            const sms = await mTargetService.sendControllerRevocationNotice(ctrlUser.phone, eventTitle, { actorId: user.id });
-            smsSent = sms.success === true;
-            if (!smsSent) console.warn(`[DELETE team/eventId] SMS de retrait non envoyé (${sms.code ?? sms.error ?? 'raison inconnue'}).`);
-        }
-        const inApp = await NotificationService.createNotification({
-            userId: assignment.user_id,
-            title: 'Accès contrôleur retiré',
-            message: `Votre affectation de contrôleur pour l’événement « ${eventTitle} » a pris fin.`,
-            type: 'SYSTEM',
-            data: { event_id: eventId, event_title: eventTitle },
-        });
-        if (!inApp) console.warn(`[DELETE team/eventId] notification in-app au contrôleur ${assignment.user_id} non créée.`);
+        // 4. Lot 6 (J2.4) : l'avis de retrait au contrôleur (in-app, push, SMS) est mis en file par le
+        //    trigger trg_event_controllers_notify dans la transaction de la suppression. Journal.
         await AdminService.logAudit({
             userId: user.id,
             userRole: String(user.role),
@@ -170,7 +151,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
             metadata: { removed_by: user.id },
         });
 
-        return NextResponse.json({ success: true, message: 'Contrôleur retiré de l’événement.', notified: { sms: smsSent, in_app: inApp } });
+        return NextResponse.json({ success: true, message: 'Contrôleur retiré de l’événement.', notification: 'QUEUED' });
     } catch (err: unknown) {
         console.error('[DELETE team/eventId] erreur :', err instanceof Error ? err.message : String(err));
         return NextResponse.json({ error: 'Retrait du contrôleur momentanément impossible.', code: 'REMOVAL_FAILED' }, { status: 500 });

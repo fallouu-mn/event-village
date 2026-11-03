@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { alertSuperadmins } from '@/lib/admin/alerts';
+import { logAdminAlert } from '@/lib/admin/alerts';
 import { getServerEnv } from '@/lib/env';
 import { CashoutService } from '@/lib/payments/cashout.service';
 import { reconcilePayment, releasePayment, type PaymentRecord, type ReconcileOutcome } from '@/lib/payments/confirmation.service';
@@ -69,7 +69,10 @@ async function run(req: NextRequest) {
             .eq('status', 'A_ENVOYER').not('send_started_at', 'is', null).lt('send_started_at', staleClaim).select('id, idempotency_key, amount');
         if (sErr) throw new Error(`envois interrompus : ${sErr.message}`);
         for (const c of stale ?? []) {
-            await alertSuperadmins({ action: 'CASHOUT_UNCERTAIN', type: 'CASHOUT_ALERT', title: 'Remboursement à vérifier', content: `Envoi ${c.idempotency_key} (${c.amount} F) interrompu : vérification manuelle requise.`, objectType: 'cashouts', objectId: c.id, metadata: { cashout_id: c.id } });
+            // Lot 6 (J2.2) : l'avis aux administrateurs (ADMIN_CASHOUT_UNCERTAIN) est mis en file par le trigger
+            // trg_cashouts_notify dans la transaction de la mise à jour ci-dessus ; ici, le journal d'audit seul.
+            const logged = await logAdminAlert({ action: 'CASHOUT_UNCERTAIN', objectType: 'cashouts', objectId: c.id, metadata: { cashout_id: c.id, idempotency_key: c.idempotency_key, amount: c.amount, detail: 'envoi interrompu (réservation sans réponse enregistrée)' } });
+            if (!logged) console.error(`[cron payments-reconcile] alerte de l'envoi ${c.idempotency_key} non journalisée`);
         }
         summary.cashouts_interrupted = stale?.length ?? 0;
         return NextResponse.json({ ok: true, ...summary });

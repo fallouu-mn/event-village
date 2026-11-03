@@ -286,59 +286,70 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 3. Traiter les assignations pour chaque événement sélectionné
+        // 3. Traiter les assignations pour chaque événement sélectionné. Lot 6 (J2.4) : les nouvelles
+        //    affectations sont insérées en une seule instruction ; le trigger trg_event_controllers_notify
+        //    met en file leurs avis (in-app et push par affectation, un seul SMS regroupé par requête).
+        const ASSIGNMENT_COLUMNS = 'id, event_id, user_id, can_accept_cash, created_at';
         const finalAssignments: any[] = [];
         let anyNewlyAssigned = false;
 
+        const { data: existingAssignments, error: existingErr } = await supabase
+            .from('event_controllers')
+            .select(ASSIGNMENT_COLUMNS)
+            .eq('user_id', controllerUserId)
+            .in('event_id', targetEventIds);
+        if (existingErr) {
+            console.error('[invite-controller] lecture des affectations existantes :', existingErr.message);
+            return NextResponse.json({ error: 'Lecture des affectations impossible. Réessayez.' }, { status: 500 });
+        }
+        const existingByEvent = new Map((existingAssignments ?? []).map((a) => [a.event_id as string, a]));
+
         for (const evId of targetEventIds) {
-            const { data: alreadyAssigned } = await supabase
-                .from('event_controllers')
-                .select('id, event_id, user_id, can_accept_cash, created_at')
-                .eq('event_id', evId)
-                .eq('user_id', controllerUserId)
-                .maybeSingle();
-
-            if (alreadyAssigned) {
-                let updatedAssignment = alreadyAssigned;
-                if (can_accept_cash !== undefined && can_accept_cash !== alreadyAssigned.can_accept_cash) {
-                    const { data: updated, error: updateErr } = await supabase
-                        .from('event_controllers')
-                        .update({ can_accept_cash })
-                        .eq('id', alreadyAssigned.id)
-                        .select('id, event_id, user_id, can_accept_cash, created_at')
-                        .single();
-                    if (!updateErr && updated) {
-                        updatedAssignment = updated;
-                    }
-                }
-                finalAssignments.push(updatedAssignment);
-            } else {
-                anyNewlyAssigned = true;
-                const { data: assignment, error: insertErr } = await supabase
+            const alreadyAssigned = existingByEvent.get(evId);
+            if (!alreadyAssigned) continue;
+            let updatedAssignment = alreadyAssigned;
+            if (can_accept_cash !== undefined && can_accept_cash !== alreadyAssigned.can_accept_cash) {
+                const { data: updated, error: updateErr } = await supabase
                     .from('event_controllers')
-                    .insert({ event_id: evId, user_id: controllerUserId, can_accept_cash, created_by: user.id })
-                    .select('id, event_id, user_id, can_accept_cash, created_at')
+                    .update({ can_accept_cash })
+                    .eq('id', alreadyAssigned.id)
+                    .select(ASSIGNMENT_COLUMNS)
                     .single();
-
-                if (insertErr) {
-                    console.error('[invite-controller] Insert event_controllers error:', insertErr.message);
-                } else if (assignment) {
-                    finalAssignments.push(assignment);
-                    // Audit log par assignation
-                    const evTitle = partnerEvents.find(e => e.id === evId)?.title || 'Événement';
-                    await AdminService.logAudit({
-                        userId: user.id,
-                        userRole: user.role as any,
-                        action: 'CONTROLLER_INVITED',
-                        objectType: 'event_controllers',
-                        objectId: assignment.id,
-                        newValue: {
-                            event_id: evId, controller_user_id: controllerUserId,
-                            can_accept_cash, is_new_user: isNewUser,
-                        },
-                        metadata: { invited_by: user.id, event_title: evTitle },
-                    });
+                if (updateErr || !updated) {
+                    console.error('[invite-controller] mise à jour de la permission espèces :', updateErr?.message ?? 'aucune ligne');
+                    return NextResponse.json({ error: 'Mise à jour de la permission espèces impossible. Réessayez.' }, { status: 500 });
                 }
+                updatedAssignment = updated;
+            }
+            finalAssignments.push(updatedAssignment);
+        }
+
+        const toInsert = targetEventIds.filter((evId) => !existingByEvent.has(evId));
+        if (toInsert.length > 0) {
+            anyNewlyAssigned = true;
+            const { data: inserted, error: insertErr } = await supabase
+                .from('event_controllers')
+                .insert(toInsert.map((evId) => ({ event_id: evId, user_id: controllerUserId, can_accept_cash, created_by: user.id })))
+                .select(ASSIGNMENT_COLUMNS);
+            if (insertErr || !inserted) {
+                console.error('[invite-controller] Insert event_controllers error:', insertErr?.message ?? 'réponse vide');
+                return NextResponse.json({ error: 'Impossible d\'enregistrer les affectations. Réessayez.' }, { status: 500 });
+            }
+            for (const assignment of inserted) {
+                finalAssignments.push(assignment);
+                const evTitle = partnerEvents.find(e => e.id === assignment.event_id)?.title || 'Événement';
+                await AdminService.logAudit({
+                    userId: user.id,
+                    userRole: user.role as any,
+                    action: 'CONTROLLER_INVITED',
+                    objectType: 'event_controllers',
+                    objectId: assignment.id,
+                    newValue: {
+                        event_id: assignment.event_id, controller_user_id: controllerUserId,
+                        can_accept_cash, is_new_user: isNewUser,
+                    },
+                    metadata: { invited_by: user.id, event_title: evTitle },
+                });
             }
         }
 
@@ -348,10 +359,11 @@ export async function POST(req: NextRequest) {
         const otpCode   = randomInt(100000, 1000000).toString();
         const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
+        let otpId: string | null = null;
         if (isNewUser) {
             // Lot 1B.7 : code d'activation en base uniquement (vérifié par /api/controller/setup).
             try {
-                await storeOtp(normalizedPhone, otpCode, new Date(expiresAt), 'CONTROLLER_SETUP');
+                otpId = await storeOtp(normalizedPhone, otpCode, new Date(expiresAt), 'CONTROLLER_SETUP');
             } catch (storeErr) {
                 console.error('[invite-controller]', storeErr instanceof Error ? storeErr.message : storeErr);
                 return NextResponse.json({ error: 'Impossible de préparer le code d\'activation. Réessayez.' }, { status: 500 });
@@ -361,41 +373,29 @@ export async function POST(req: NextRequest) {
         const baseUrl   = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
         const setupLink = `${baseUrl}/controller/setup?phone=${encodeURIComponent(normalizedPhone)}`;
 
+        // Lot 6 (E7) : seul le nouveau compte reçoit un SMS synchrone (code d'activation et lien),
+        // journalisé dans la boîte d'envoi sans le code ni le lien. Un compte existant n'a plus de SMS
+        // direct : ses affectations sont annoncées par la boîte d'envoi (trigger, J2.4).
         let smsSent = false;
         let smsRefusal: string | null = null;
-        try {
-            if (isNewUser) {
+        if (isNewUser) {
+            try {
                 const smsRes = await mTargetService.sendControllerInvite(
                     normalizedPhone,
                     otpCode,
                     setupLink,
                     first_name && first_name !== 'Contrôleur' ? first_name : undefined,
-                    { actorId: user.id }
+                    { actorId: user.id, log: { type: 'CONTROLLER_INVITE', ref: otpId!, userId: controllerUserId, actorId: user.id } }
                 );
                 smsSent = smsRes.success;
                 if (!smsRes.success) {
                     smsRefusal = smsRes.code ?? 'SMS_NOT_DELIVERED';
                     console.warn('[invite-controller] SMS mTarget non délivré:', smsRes.error);
                 }
-            } else {
-                // Compte client existant : possède déjà son propre mot de passe ; le SMS le salue par
-                // le prénom de son profil, jamais par un nom saisi par le partenaire.
-                const name = existingProfile?.first_name || '';
-                const greeting = name.trim() ? `Bonjour ${name.trim()}, ` : '';
-                const countEv = targetEventIds.length;
-                const evSuffix = countEv > 1 ? `pour ${countEv} événements` : `pour l'événement`;
-                const loginLink = `${baseUrl}/login`;
-                const smsMsg = `Event Village : ${greeting}vous avez été désigné comme contrôleur ${evSuffix}. Connectez-vous avec vos identifiants habituels : ${loginLink}`;
-                const smsRes = await mTargetService.sendNotification(normalizedPhone, smsMsg, { actorId: user.id });
-                smsSent = smsRes.success;
-                if (!smsRes.success) {
-                    smsRefusal = smsRes.code ?? 'SMS_NOT_DELIVERED';
-                    console.warn('[invite-controller] SMS notification non délivré:', smsRes.error);
-                }
+            } catch (smsErr) {
+                smsRefusal = 'SMS_NOT_DELIVERED';
+                console.error('[invite-controller] SMS d\'invitation en échec :', smsErr instanceof Error ? smsErr.message : smsErr);
             }
-        } catch (smsErr) {
-            smsRefusal = 'SMS_NOT_DELIVERED';
-            console.warn('[invite-controller] SMS non bloquant:', smsErr instanceof Error ? smsErr.message : smsErr);
         }
 
         const countEvents = targetEventIds.length;
@@ -406,9 +406,11 @@ export async function POST(req: NextRequest) {
                 ? `Contrôleur assigné avec succès ${msgSuffix}.`
                 : `Droits mis à jour ${msgSuffix}.`;
         // Lot 4.8 : le partenaire sait si le SMS est parti (refus de la garde anti-abus compris).
-        const actionMsg = smsSent
-            ? `${baseMsg} ${isNewUser ? "SMS avec code d'activation envoyé." : 'SMS envoyé.'}`
-            : `${baseMsg} SMS non envoyé (${smsRefusal ?? 'SMS_NOT_DELIVERED'}) : renvoyez l'invitation plus tard.`;
+        const actionMsg = !isNewUser
+            ? `${baseMsg} Le contrôleur est prévenu dans l'application et par SMS.`
+            : smsSent
+                ? `${baseMsg} SMS avec code d'activation envoyé.`
+                : `${baseMsg} SMS non envoyé (${smsRefusal ?? 'SMS_NOT_DELIVERED'}) : renvoyez l'invitation plus tard.`;
 
         return NextResponse.json({
             success:      true,
@@ -417,6 +419,7 @@ export async function POST(req: NextRequest) {
             is_new_user:  isNewUser,
             sms_sent:     smsSent,
             sms_refusal:  smsRefusal,
+            ...(isNewUser ? {} : { notification: 'QUEUED' }),
             message:      actionMsg,
             // Lot 1C.1 : le code d'activation n'est jamais renvoyé au partenaire (il part par SMS).
         }, { status: anyNewlyAssigned || isNewUser ? 201 : 200 });

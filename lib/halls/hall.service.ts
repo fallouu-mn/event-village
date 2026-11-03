@@ -1,5 +1,4 @@
 import { getServiceRoleClient } from '../supabase/server';
-import { NotificationService } from '../notifications/notification.service';
 import { FinancialCalculatorService } from '../payments/financial-calculator.service';
 
 export interface CreateHallInput {
@@ -307,16 +306,8 @@ export class HallService {
             throw new Error(`Échec création réservation: ${errorMsg}`);
         }
 
-        // 8. Notification au Partenaire gérant la salle
-        if (hall.partners?.user_id) {
-            await NotificationService.createNotification({
-                userId: hall.partners.user_id,
-                title: 'Nouvelle Demande de Réservation de Salle',
-                message: `Une demande de réservation a été effectuée pour la salle "${hall.name}" du ${input.startDate} au ${input.endDate} (Total: ${totalAmount} FCFA, Acompte: ${depositAmount} FCFA).`,
-                type: 'RESERVATION',
-                data: { hallId: input.hallId, reservationId: reservation.id, totalAmount },
-            });
-        }
+        // 8. Lot 6 (J2.11) : l'avis au partenaire gérant la salle (HALL_RESERVATION_REQUESTED) est mis en
+        //    file par le trigger trg_hall_reservations_notify dans la transaction de l'insertion.
 
         return reservation;
     }
@@ -354,14 +345,8 @@ export class HallService {
             throw new Error(`Échec confirmation réservation: ${error?.message}`);
         }
 
-        // Notification au client
-        await NotificationService.createNotification({
-            userId: updated.client_id,
-            title: 'Réservation de Salle Confirmée !',
-            message: `Votre réservation pour la période du ${updated.start_date} au ${updated.end_date} a été confirmée par le partenaire.`,
-            type: 'RESERVATION',
-            data: { reservationId },
-        });
+        // Lot 6 (J2.11) : avis au client (HALL_RESERVATION_CONFIRMED) mis en file par le trigger
+        // trg_hall_reservations_notify.
 
         return updated;
     }
@@ -404,17 +389,9 @@ export class HallService {
             throw new Error(`Échec annulation: ${error?.message}`);
         }
 
-        // Notification croisée
-        const targetUserId = isOwner ? existing.client_id : existing.partners?.user_id;
-        if (targetUserId) {
-            await NotificationService.createNotification({
-                userId: targetUserId,
-                title: 'Réservation de Salle Annulée',
-                message: `La réservation du ${existing.start_date} au ${existing.end_date} a été annulée. Motif : ${reason || 'Non spécifié'}.`,
-                type: 'RESERVATION',
-                data: { reservationId },
-            });
-        }
+        // Lot 6 (J2.11) : avis au client et au partenaire (HALL_RESERVATION_CANCELLED) mis en file par le
+        // trigger trg_hall_reservations_notify. Le motif saisi n'a pas de colonne : il est journalisé.
+        if (reason) console.info(`[HallService] réservation ${reservationId} annulée par ${isOwner ? 'le partenaire' : 'le client'} : ${reason}`);
 
         return updated;
     }

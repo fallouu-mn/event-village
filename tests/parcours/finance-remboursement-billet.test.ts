@@ -26,6 +26,7 @@ import {
     paymentRow, withSettings, type TestPartner,
 } from './finance-helpers';
 import { categoryState, fakePay, importModule, newBuyer, service, setFakeMode, type Buyer, type SaleEvent } from './paiement-helpers';
+import { flushNotifications, outboxRows } from './notif-helpers';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
@@ -91,6 +92,10 @@ async function confirmTransfer(cashout: Record<string, unknown>): Promise<void> 
 }
 
 async function refundedMessagesFor(buyer: Buyer): Promise<string[]> {
+    // Lot 6 (6.1, J2.2) : in-app et SMS passent par la boîte d'envoi ; l'envoyeur livre d'abord les
+    // lignes du client (restreint à ses lignes) avant la lecture. L'assertion de fond est inchangée.
+    const pending = await outboxRows({ userId: buyer.userId, status: 'PENDING' });
+    if (pending.length > 0) await flushNotifications({ ids: pending.map((r) => r.id) });
     const { data, error } = await service.from('notifications').select('title, content').eq('user_id', buyer.userId);
     assert.equal(error, null, `notifications : ${error?.message}`);
     const inApp = (data ?? []).map((n) => `${n.title} — ${n.content}`).filter((m) => REFUNDED_WORD.test(m));

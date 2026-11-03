@@ -38,6 +38,7 @@ import { routeContext } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
 import { assignController, authed, createTimedEvent, newController, type RouteResult } from './acces-helpers';
+import { flushNotifications, outboxRows } from './notif-helpers';
 
 const CONTROLLER_ROUTE = '../../app/api/partner/team/controller/[controllerId]/route';
 const ASSIGNMENT_ROUTE = '../../app/api/partner/team/[eventId]/route';
@@ -122,24 +123,37 @@ async function notificationIds(userId: string): Promise<string[]> {
     return (data ?? []).map((n) => String(n.id)).sort();
 }
 
-interface Trace { assignments: Array<{ id: string; event_id: string }>; roles: string[]; sms: number; notifications: string[] }
+/** Lignes de la boîte d'envoi destinées au contrôleur (lot 6), triées. */
+async function outboxIds(userId: string): Promise<string[]> {
+    return (await outboxRows({ userId })).map((r) => r.id).sort();
+}
 
+interface Trace { assignments: Array<{ id: string; event_id: string }>; roles: string[]; sms: number; notifications: string[]; outbox: string[] }
+
+/**
+ * Lot 6 (6.1, J2.4) : SMS et in-app passent par la boîte d'envoi. L'envoyeur livre d'abord les lignes en
+ * attente du contrôleur (restreint à ses lignes) ; la trace porte en plus ses lignes de boîte d'envoi.
+ */
 async function trace(ctrl: Buyer): Promise<Trace> {
+    const pending = await outboxRows({ userId: ctrl.userId, status: 'PENDING' });
+    if (pending.length > 0) await flushNotifications({ ids: pending.map((r) => r.id) });
     return {
         assignments: await assignmentsOf(ctrl.userId),
         roles: await rolesOf(ctrl.userId),
         sms: getFakes().sms.messagesTo(ctrl.phoneE164).length,
         notifications: await notificationIds(ctrl.userId),
+        outbox: await outboxIds(ctrl.userId),
     };
 }
 
-/** Refus sans aucun effet : affectations, rôles, SMS et notifications du contrôleur inchangés. */
+/** Refus sans aucun effet : affectations, rôles, SMS, notifications et boîte d'envoi du contrôleur inchangés. */
 async function assertUntouched(ctrl: Buyer, before: Trace, label: string): Promise<void> {
     const now = await trace(ctrl);
     assert.deepEqual(now.assignments, before.assignments, `${label} : affectations intactes`);
     assert.deepEqual(now.roles, before.roles, `${label} : rôles intacts`);
     assert.equal(now.sms, before.sms, `${label} : aucun SMS envoyé au contrôleur`);
     assert.deepEqual(now.notifications, before.notifications, `${label} : aucune notification au contrôleur`);
+    assert.deepEqual(now.outbox, before.outbox, `${label} : aucune ligne de boîte d'envoi pour le contrôleur (lot 6)`);
 }
 
 // ── C3 ─────────────────────────────────────────────────────────────────────

@@ -44,6 +44,7 @@ import { routeContext } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, newController, openShift, shiftRow, type RouteResult } from './acces-helpers';
+import { flushNotifications, outboxRows } from './notif-helpers';
 
 const CLOSE_ROUTE = '../../app/api/controller/shifts/close/route';
 const PIN_ROUTE = '../../app/api/partner/events/[id]/regisseur-pin/route';
@@ -135,13 +136,25 @@ async function closedState(shiftId: string): Promise<Closed> {
     };
 }
 
+/**
+ * Lot 6 (6.1, J2.1) : l'alerte in-app passe par la boîte d'envoi. Motif « vider → photographier → agir →
+ * vider → comparer » : l'envoyeur livre les lignes en attente du partenaire (restreint à ses lignes)
+ * avant la photographie et avant la comparaison ; l'assertion de fond est inchangée.
+ */
+async function flushPartnerLines(): Promise<void> {
+    const pending = await outboxRows({ userId: partner.userId, status: 'PENDING' });
+    if (pending.length > 0) await flushNotifications({ ids: pending.map((r) => r.id) });
+}
+
 async function partnerNotificationIds(): Promise<Set<string>> {
+    await flushPartnerLines();
     const { data, error } = await service.from('notifications').select('id').eq('user_id', partner.userId);
     assert.equal(error, null, `notifications du partenaire : ${error?.message}`);
     return new Set((data ?? []).map((n) => String(n.id)));
 }
 
 async function newPartnerNotifications(before: Set<string>): Promise<Row[]> {
+    await flushPartnerLines();
     const { data, error } = await service.from('notifications').select('id, title, content, channel, type').eq('user_id', partner.userId);
     assert.equal(error, null, `notifications du partenaire : ${error?.message}`);
     return ((data ?? []) as Row[]).filter((n) => !before.has(String(n.id)));

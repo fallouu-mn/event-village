@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
@@ -63,70 +62,23 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // 2. Appel de la fonction SQL PostgreSQL idempotente
-        const { data: activationResult, error: rpcErr } = await (supabase.rpc as any)(
-            'activate_partner_trial',
-            { p_partner_id: partnerId }
-        );
-
-        if (rpcErr) {
-            // Fallback JS si la fonction RPC n'est pas encore migrée
-            const isFounder = partner.is_founder || false;
-            const trialDays = isFounder ? 90 : 60;
-            const startedAt = partner.trial_started_at || new Date().toISOString();
-            const endsAt = partner.trial_ends_at || new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
-
-            if (!partner.trial_started_at) {
-                await supabase
-                    .from('partners')
-                    .update({
-                        trial_started_at: startedAt,
-                        trial_ends_at: endsAt,
-                        status: 'ACTIF',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', partnerId);
-
-                // Lot 1B.6 : plus d'écriture de users.status ici ; le compte appelant est ACTIF par construction.
-
-                // Notification Première Activation
-                if (partner.phone) {
-                    await NotificationService.sendFirstActivationNotification({
-                        email: partner.email || '',
-                        phone: partner.phone,
-                        companyName: partner.company_name,
-                        trialDays,
-                        trialEndsAt: endsAt,
-                        userId: partner.user_id,
-                    });
-                }
-            }
-
-            return NextResponse.json({
-                success: true,
-                isNewActivation: !partner.trial_started_at,
-                trialDays,
-                trialStartedAt: startedAt,
-                trialEndsAt: endsAt,
-                status: 'ACTIF',
-            });
+        // 2. Fonction SQL idempotente. Lot 6 (J2.8) : elle met en file TRIAL_STARTED (in-app, SMS) dans
+        //    sa transaction à la première activation ; plus de repli JavaScript (il écrivait un statut
+        //    partenaire inexistant et envoyait le SMS directement) : un échec de la RPC donne 500.
+        const { data: activationResult, error: rpcErr } = await supabase.rpc('activate_partner_trial', { p_partner_id: partnerId });
+        if (rpcErr || !activationResult) {
+            console.error('[API /api/partner/activation] activate_partner_trial :', rpcErr?.message ?? 'réponse vide');
+            return NextResponse.json({ error: 'Activation de la période d’essai momentanément impossible.', code: 'TRIAL_ACTIVATION_FAILED' }, { status: 500 });
         }
-
-        // Si l'activation vient de se produire, envoyer la notification
-        if (activationResult?.is_new_activation && partner.phone) {
-            await NotificationService.sendFirstActivationNotification({
-                email: partner.email || '',
-                phone: partner.phone,
-                companyName: partner.company_name,
-                trialDays: activationResult.trial_days,
-                trialEndsAt: activationResult.trial_ends_at,
-                userId: partner.user_id,
-            });
+        const reply = activationResult as { success?: boolean };
+        if (reply.success !== true) {
+            console.error('[API /api/partner/activation] activation refusée :', JSON.stringify(activationResult));
+            return NextResponse.json({ error: 'Fiche partenaire introuvable.', code: 'PARTNER_NOT_FOUND' }, { status: 404 });
         }
 
         return NextResponse.json(activationResult);
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        console.error('[API /api/partner/activation]', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Activation de la période d’essai momentanément impossible.', code: 'TRIAL_ACTIVATION_FAILED' }, { status: 500 });
     }
 }

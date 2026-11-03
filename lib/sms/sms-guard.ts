@@ -14,8 +14,8 @@
  * vers un numéro n'épuisent pas ses codes de connexion.
  * Le destinataire est compté sous sa forme facturée (formatMTargetPhoneNumber) : « 77… »,
  * « +221… » et « 00221… » partagent un compteur.
- * Plafond atteint (global, ou part non OTP) : alerte journalisée (audit_logs) et notification in-app
- * aux superadmins, une fois par jour et par type, jamais par SMS.
+ * Plafond atteint (global, ou part non OTP) : alerte journalisée (audit_logs) et mise en file pour les
+ * administrateurs (notification_admin_alert), une fois par jour et par type, jamais par SMS.
  * Garde indisponible : refus (fail-closed), jamais d'envoi « à l'aveugle ».
  */
 import { getServerEnv } from '@/lib/env';
@@ -102,7 +102,12 @@ function rulesFor(recipient: string, ctx: SmsContext): QuotaRule[] {
 
 type CapKind = 'GLOBAL' | 'NON_OTP_SHARE';
 
-/** Alerte de plafond, une fois par jour UTC et par type : journal d'audit + in-app superadmins. */
+/**
+ * Alerte de plafond, une fois par jour UTC et par type : journal d'audit (audit_logs) puis mise en file
+ * pour les administrateurs (RPC notification_admin_alert, types ADMIN_SMS_CAP_GLOBAL et
+ * ADMIN_SMS_CAP_NON_OTP, destinataires par permission notifications.read ; la clé porte le jour UTC).
+ * Lot 6 (J2.13) : plus aucune écriture directe de notification. L'alerte ne part jamais par SMS.
+ */
 async function raiseCapAlert(kind: CapKind, context: Record<string, unknown>): Promise<void> {
     const bucket = kind === 'GLOBAL' ? 'global_cap' : 'non_otp_share';
     const first = await reserveQuota([{ scope: 'sms_alert', bucket, windowSecs: DAY, max: 1 }], 'alerte plafond SMS');
@@ -111,9 +116,6 @@ async function raiseCapAlert(kind: CapKind, context: Record<string, unknown>): P
     const cap = env.SMS_GLOBAL_DAILY_CAP;
     const limit = kind === 'GLOBAL' ? cap : nonOtpGlobalCap();
     const action = kind === 'GLOBAL' ? 'SMS_GLOBAL_DAILY_CAP_REACHED' : 'SMS_NON_OTP_DAILY_SHARE_REACHED';
-    const content = kind === 'GLOBAL'
-        ? `Le plafond de ${cap} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar).`
-        : `La part des SMS hors codes de connexion (${limit} sur ${cap} par jour) est atteinte : seuls les codes OTP partent encore jusqu'à minuit (UTC, heure de Dakar).`;
     console.error(`[SMS_QUOTA] ${action} (${limit} SMS sur un plafond de ${cap})`);
     const supabase = getServiceRoleClient();
     const { error: auditErr } = await supabase.from('audit_logs').insert({
@@ -123,23 +125,17 @@ async function raiseCapAlert(kind: CapKind, context: Record<string, unknown>): P
         metadata: { ...context, cap, limit, reserved_otp_percent: env.SMS_GLOBAL_OTP_RESERVED_PERCENT },
     });
     if (auditErr) console.error('[SMS_QUOTA] journalisation de l’alerte impossible :', auditErr.message);
-    const { data: admins, error: adminsErr } = await supabase.from('user_roles').select('user_id').eq('role', 'SUPERADMIN');
-    if (adminsErr) {
-        console.error('[SMS_QUOTA] lecture des superadmins impossible :', adminsErr.message);
+    const day = new Date().toISOString().slice(0, 10);
+    const type = kind === 'GLOBAL' ? 'ADMIN_SMS_CAP_GLOBAL' : 'ADMIN_SMS_CAP_NON_OTP';
+    const { data, error } = await supabase.rpc('notification_admin_alert', {
+        p: { type, ref: day, data: { ...context, day, cap, limit } },
+    });
+    if (error) {
+        console.error(`[SMS_QUOTA] mise en file de l’alerte ${type} impossible :`, error.message);
         return;
     }
-    if (!admins?.length) return;
-    const { error: notifErr } = await supabase.from('notifications').insert(admins.map((a) => ({
-        user_id: a.user_id,
-        type: kind === 'GLOBAL' ? 'SMS_DAILY_CAP_REACHED' : 'SMS_NON_OTP_SHARE_REACHED',
-        title: kind === 'GLOBAL' ? 'Plafond quotidien de SMS atteint' : 'Part quotidienne des SMS hors OTP atteinte',
-        content,
-        channel: 'PUSH',
-        status: 'SENT',
-        sent_at: new Date().toISOString(),
-        metadata: { ...context, cap, limit },
-    })));
-    if (notifErr) console.error('[SMS_QUOTA] notification des superadmins impossible :', notifErr.message);
+    const reply = (data ?? null) as { ok?: boolean; code?: string; message?: string } | null;
+    if (reply?.ok !== true) console.error(`[SMS_QUOTA] alerte ${type} refusée :`, reply?.code ?? 'réponse vide', reply?.message ?? '');
 }
 
 export async function reserveSms(to: string, ctx: SmsContext = {}): Promise<SmsReserveResult> {

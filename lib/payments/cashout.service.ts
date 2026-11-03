@@ -11,12 +11,16 @@
  * L'envoi est réservé par une mise à jour conditionnelle (send_started_at) : deux envois
  * simultanés ne produisent qu'un seul appel SamirPay. Opérateur, numéro (9 chiffres), prénom et
  * nom viennent du paiement et du compte : s'il en manque un, l'envoi reste bloqué (blocked_reason)
- * et les superadmins sont alertés. Le solde partenaire est vérifié avant l'envoi (fail-closed).
+ * et les administrateurs sont alertés. Le solde partenaire est vérifié avant l'envoi (fail-closed).
  * Lot 3 : les effets d'un envoi confirmé ou refusé sont appliqués en base par cashout_finalize
  * (billets REMBOURSE, paiement PARTIAL puis REFUNDED ; retrait PAID, ou REJECTED avec solde rendu).
  * Le client n'est prévenu du versement qu'à sa confirmation.
+ * Lot 6 (J2.2) : aucun message n'est écrit ici. Le trigger trg_cashouts_notify met en file, dans la
+ * transaction de chaque changement de statut ou de motif de blocage, les avis au bénéficiaire, au
+ * partenaire (remboursements d'une annulation) et aux administrateurs ; ce module garde le journal
+ * d'audit des alertes (lib/admin/alerts.ts).
  */
-import { alertSuperadmins } from '@/lib/admin/alerts';
+import { logAdminAlert } from '@/lib/admin/alerts';
 import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError, type SamirPayOperatorName } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -25,7 +29,6 @@ import { rpcWithRetry } from './rpc';
 
 export type CashoutStatus = 'A_ENVOYER' | 'ENVOYE' | 'CONFIRME' | 'ECHOUE' | 'INCERTAIN';
 export type CashoutKind = 'REFUND' | 'EVENT_CANCELLATION_REFUND' | 'TICKET_REFUND' | 'WITHDRAWAL';
-const REFUND_KINDS: readonly CashoutKind[] = ['REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND'];
 
 export interface CashoutRow {
     id: string;
@@ -71,55 +74,34 @@ async function patch(id: string, fields: Record<string, unknown>): Promise<void>
     if (error) throw new Error(`Mise à jour du cashout ${id} impossible : ${error.message}`);
 }
 
+/**
+ * Journal d'une alerte de cashout (audit_logs) et horodatage alerted_at. Lot 6 (J2.2) : l'avis aux
+ * administrateurs est mis en file par le trigger trg_cashouts_notify, dans la transaction qui pose le
+ * statut ou le motif de blocage ; il ne s'écrit plus ici.
+ */
 async function alert(row: CashoutRow, reason: string, detail: string): Promise<void> {
-    await alertSuperadmins({
+    const logged = await logAdminAlert({
         action: `CASHOUT_${reason}`,
-        type: 'CASHOUT_ALERT',
-        title: row.kind === 'WITHDRAWAL' ? 'Retrait à vérifier' : 'Remboursement à vérifier',
-        content: `Envoi ${row.idempotency_key} (${row.amount} F) : ${detail}. Aucun nouvel envoi automatique ; vérification manuelle requise.`,
         objectType: 'cashouts',
         objectId: row.id,
-        metadata: { cashout_id: row.id, kind: row.kind, payment_id: row.payment_id, withdrawal_id: row.withdrawal_id, reason, amount: row.amount, phone: maskPhone(row.phone_number) },
+        metadata: {
+            cashout_id: row.id, kind: row.kind, payment_id: row.payment_id, withdrawal_id: row.withdrawal_id, reason, detail,
+            amount: row.amount, phone: maskPhone(row.phone_number),
+        },
     });
+    if (!logged) console.error(`[cashout] alerte ${reason} de l'envoi ${row.idempotency_key} non journalisée`);
     const { error } = await getServiceRoleClient().from('cashouts').update({ alerted_at: new Date().toISOString() }).eq('id', row.id);
     if (error) console.error(`[cashout] horodatage de l'alerte ${row.id} impossible :`, error.message);
 }
 
-/** Notification in-app au bénéficiaire. Un échec d'écriture est remonté à l'appelant. */
-async function notifyUser(userId: string | null, type: string, title: string, content: string, metadata: Record<string, unknown>): Promise<void> {
-    if (!userId) return;
-    const { error } = await getServiceRoleClient().from('notifications').insert({
-        user_id: userId, type, title, content, channel: 'PUSH', status: 'SENT', sent_at: new Date().toISOString(), metadata,
-    });
-    if (error) throw new Error(`Notification ${type} de ${userId} impossible : ${error.message}`);
-}
-
-const formatF = (n: number) => `${Number(n).toLocaleString('fr-FR')} FCFA`;
-const walletLabel = (op: SamirPayOperatorName | null) => (op === 'ORANGE_MONEY' ? 'Orange Money' : 'Wave');
-
 /**
- * Effets d'un envoi confirmé ou refusé (cashout_finalize, en base), puis message au bénéficiaire :
- * le versement n'est annoncé qu'à la confirmation.
+ * Effets d'un envoi confirmé ou refusé (cashout_finalize, en base). Lot 6 (J2.2) : le message au
+ * bénéficiaire (remboursement versé, retrait versé ou refusé) est mis en file par le trigger
+ * trg_cashouts_notify au changement de statut ; le versement n'est annoncé qu'à la confirmation.
  */
 async function finalize(row: CashoutRow, outcome: 'CONFIRME' | 'ECHOUE', detail: string): Promise<void> {
     const { data, error } = await rpcWithRetry<Record<string, unknown>>('cashout_finalize', { p_cashout_id: row.id, p_outcome: outcome, p_detail: detail });
     if (error || !data) throw new Error(`Finalisation de l'envoi ${row.idempotency_key} impossible : ${error?.message ?? 'réponse vide'}`);
-    if (REFUND_KINDS.includes(row.kind)) {
-        if (outcome !== 'CONFIRME') return;
-        await notifyUser(row.beneficiary_user_id, 'REFUND_PROCESSED', 'Remboursement versé',
-            `Vous avez été remboursé de ${formatF(row.amount)} sur votre compte ${walletLabel(row.operator)}.`,
-            { cashout_id: row.id, refund_id: row.refund_id, payment_id: row.payment_id, ticket_ids: data.ticket_ids ?? [], amount: row.amount });
-        return;
-    }
-    if (outcome === 'CONFIRME') {
-        await notifyUser(row.beneficiary_user_id, 'WITHDRAWAL_PAID', 'Retrait versé',
-            `Votre retrait de ${formatF(row.amount)} a été versé sur votre compte ${walletLabel(row.operator)}.`,
-            { cashout_id: row.id, withdrawal_id: row.withdrawal_id, amount: row.amount });
-    } else {
-        await notifyUser(row.beneficiary_user_id, 'WITHDRAWAL_REJECTED', 'Retrait refusé',
-            'Votre retrait n\'a pas pu être versé par l\'opérateur : le montant est revenu sur votre solde.',
-            { cashout_id: row.id, withdrawal_id: row.withdrawal_id, amount: row.amount });
-    }
 }
 
 export class CashoutService {
@@ -151,11 +133,10 @@ export class CashoutService {
         const out = { ok: true, mode, already: data.already === true, refundId: (data.refund_id as string | undefined) ?? undefined, amount: Number(data.amount ?? 0) };
         if (mode !== 'CASHOUT' || !data.cashout_id) return out;
         const cashout = await load(String(data.cashout_id));
-        if (!out.already) {
-            if (cashout.blocked_reason && !cashout.alerted_at) await alert(cashout, 'BLOCKED', BLOCK_LABELS[cashout.blocked_reason] ?? cashout.blocked_reason);
-            await notifyUser(cashout.beneficiary_user_id, 'REFUND_REQUESTED', 'Demande de remboursement en cours',
-                `Votre demande de remboursement de ${formatF(cashout.amount)} est en cours de traitement : vous serez prévenu dès le versement.`,
-                { cashout_id: cashout.id, ticket_id: params.ticketId, amount: cashout.amount });
+        // Lot 6 (J2.2) : l'avis « remboursement demandé » est mis en file par trg_cashouts_notify à la
+        // création du cashout (TICKET_REFUND), dans la transaction de ticket_refund_request.
+        if (!out.already && cashout.blocked_reason && !cashout.alerted_at) {
+            await alert(cashout, 'BLOCKED', BLOCK_LABELS[cashout.blocked_reason] ?? cashout.blocked_reason);
         }
         return { ...out, cashout };
     }
@@ -247,11 +228,12 @@ export class CashoutService {
                     await patch(r.id, { blocked_reason: 'SOLDE_INSUFFISANT' });
                     out[r.id] = { status: r.status, skipped: 'SOLDE_INSUFFISANT' };
                 }
-                await alertSuperadmins({
-                    action: 'CASHOUT_BATCH_BLOCKED', type: 'CASHOUT_ALERT', title: 'Remboursements bloqués',
-                    content: `Lot de ${eligible.length} remboursement(s) (${total} F) bloqué : solde SamirPay de ${solde} F.`,
+                // Avis aux administrateurs et au partenaire : trigger trg_cashouts_notify (blocked_reason)
+                const logged = await logAdminAlert({
+                    action: 'CASHOUT_BATCH_BLOCKED',
                     objectType: 'cashouts', metadata: { cashout_ids: eligible.map((r) => r.id), total, solde },
                 });
+                if (!logged) console.error(`[cashout] blocage du lot de ${eligible.length} remboursement(s) non journalisé`);
                 return out;
             }
         }
