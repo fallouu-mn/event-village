@@ -460,6 +460,9 @@ describe('6.5 Garde-fous de détection (transaction annulée)', () => {
         const admin = await superadminId();
 
         await inRolledBackTransaction(async (db) => {
+            // Les triggers de contrainte différés du lot 5 (état public, stock) laisseraient des événements en attente
+            // sur events, et ALTER TABLE refuse alors de s'exécuter (55006, run 61) : ils sont exécutés immédiatement.
+            await db.query('SET CONSTRAINTS ALL IMMEDIATE');
             await db.query('ALTER TABLE public.event_status_history DISABLE TRIGGER trg_notif_cancel_on_status');
             const t = await db.query<{ r: Row }>('SELECT public.event_transition($1::jsonb) AS r',
                 [JSON.stringify({ event_id: ev.eventId, actor_id: admin, to_status: 'SUSPENDU', reason: 'Garde-fou du lot 6 (rappels)' })]);
