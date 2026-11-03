@@ -33,6 +33,9 @@ export const ADMIN_PERMISSIONS = [
     'communications.manage',
     'statistics.read',
     'pricing.manage',
+    // Lot 6 (contrat L1) : supervision de la boîte d'envoi (lecture) et relance d'un envoi en échec
+    'notifications.read',
+    'notifications.write',
 ] as const;
 
 export type AdminPermission = typeof ADMIN_PERMISSIONS[number];
