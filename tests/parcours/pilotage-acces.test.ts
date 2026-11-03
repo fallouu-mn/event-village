@@ -259,7 +259,8 @@ describe('5.10 Page de pilotage app/partner/events/[id]/page.tsx (contrôles sta
         assert.ok(fs.existsSync(path.join(ROOT, PAGE)), `${PAGE} absente : la page de pilotage n’existe pas`);
         const graph = pageGraph();
         assert.ok(importsModule(graph, ['components/ui/Tabs.tsx', 'components/ui/Tabs.ts']), `Tabs importé de components/ui/Tabs (fichiers lus : ${graph.map((s) => s.rel).join(', ')})`);
-        assert.ok(graph.some((s) => /<Tabs\b/.test(s.code)), 'composant <Tabs> rendu');
+        // Lot 6 (contrat A7, adaptation signalée) : <ScrollableTabs> de components/ui enveloppe <Tabs>.
+        assert.ok(graph.some((s) => /<(?:Scrollable)?Tabs\b/.test(s.code)), 'composant <Tabs> ou <ScrollableTabs> rendu');
         const strings = new Set(graph.flatMap((s) => s.strings.map((x) => x.trim())));
         for (const label of TAB_LABELS) assert.ok(strings.has(label), `onglet « ${label} » absent des textes de la page`);
     });

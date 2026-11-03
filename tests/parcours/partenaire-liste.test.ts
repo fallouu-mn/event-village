@@ -454,7 +454,9 @@ describe('5.11 — app/partner/events/page.tsx (contrôles statiques)', () => {
     test('onglets : composant Tabs, libellés de EVENT_STATUS_META, onglet « Annulé », compteurs de l’overview', () => {
         const files = screenFiles(LIST_PAGE);
         const code = files.map(codeOf).join('\n');
-        assertRenders(files, 'Tabs', LIST_PAGE);
+        // Lot 6 (contrat A7, adaptation signalée) : onglets rendus par components/ui/ScrollableTabs, qui enveloppe Tabs ;
+        // screenFiles exclut components/ui (l'ancien ScrollableTabs du dossier partenaire laissait voir Tabs).
+        assertRenders(files, 'ScrollableTabs', LIST_PAGE);
         assert.ok(files.some((f) => bindingsOf(f).some((b) => b.from === 'lib/events/event-status.ts')), 'onglets sans EVENT_STATUS_META (source unique des libellés, contrat B)');
         assert.ok(/['"]ANNULE['"]/.test(code) || /Object\.(?:keys|entries)\(\s*EVENT_STATUS_META\s*\)/.test(code) || /\bEVENT_STATUSES\b/.test(code), 'pas d’onglet ANNULE');
         assert.match(code, /\bcounts\b/, 'onglets sans compteurs (counts de l’overview)');
