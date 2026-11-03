@@ -45,12 +45,14 @@ import { randomSenegalPhone, routeContext } from './helpers';
 import { cronRequest, importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, ticketRow, type RouteResult } from './acces-helpers';
+import { dispatchAt, loadLotModule, outboxRows } from './notif-helpers';
 
 const ROOT = process.cwd();
 const SERVICE_FILE = 'lib/tickets/ticket-transfer.service.ts';
 const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
 const CRON_ROUTE = '../../app/api/cron/ticket-transfers/route';
 const RPCS = ['ticket_transfer_initiate', 'ticket_transfer_cancel', 'ticket_transfers_expire'];
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '');
 
 let partner: TestPartner;
 let ev: SaleEvent;
@@ -119,11 +121,17 @@ async function lockOf(ticketId: string): Promise<boolean> {
     return (await ticketRow(ticketId)).transfer_locked === true;
 }
 
-/** recipient_notified de la réponse de la route (racine, ou objet `transfer`). */
-function recipientNotified(body: Row): unknown {
-    if ('recipient_notified' in body) return body.recipient_notified;
+/** recipient_notification de la réponse de la route (racine, ou objet `transfer`) — lot 6 (B4). */
+function recipientNotification(body: Row): unknown {
+    if ('recipient_notification' in body) return body.recipient_notification;
     const transfer = (body.transfer ?? {}) as Row;
-    return transfer.recipient_notified;
+    return transfer.recipient_notification;
+}
+
+async function eventTitle(eventId: string): Promise<string> {
+    const { data, error } = await service.from('events').select('title').eq('id', eventId).single();
+    assert.equal(error, null, `titre de l'événement : ${error?.message}`);
+    return String(data.title);
 }
 
 function claimHash(): string {
@@ -270,7 +278,9 @@ describe('C1 — RPC du contrat dans le catalogue', () => {
 // ── Initiation par la route ────────────────────────────────────────────────
 
 describe('C1 — initiation par la route', () => {
-    test('initiation vers un téléphone : transfert PENDING et transfer_locked posés ensemble ; SMS remis → recipient_notified true', async () => {
+    // Lot 6 (contrat B6, T) : l'offre au destinataire passe par la boîte d'envoi (recipient_notification
+    // QUEUED, ligne TRANSFER_OFFERED SMS PENDING), puis l'envoyeur la remet ; plus aucun SMS dans la route.
+    test('initiation vers un téléphone : transfert PENDING et transfer_locked posés ensemble ; offre en file (QUEUED), SMS exact remis par l’envoyeur', async () => {
         const ticketId = tickets[0];
         const recipient = randomSenegalPhone('77');
         const sms = getFakes().sms;
@@ -281,21 +291,44 @@ describe('C1 — initiation par la route', () => {
         assert.equal(pending.length, 1, `un transfert PENDING en base (trouvé ${pending.length})`);
         assert.equal(pending[0].from_user_id, owner.userId, 'émetteur = porteur');
         assert.equal(await lockOf(ticketId), true, 'billet verrouillé (transfer_locked)');
-        assert.equal(sms.messagesTo(recipient).length, sentBefore + 1, 'un SMS au destinataire');
-        assert.equal(recipientNotified(res.body), true, `recipient_notified: true attendu dans la réponse : ${show(res)}`);
+        assert.equal(recipientNotification(res.body), 'QUEUED', `recipient_notification: QUEUED attendu dans la réponse : ${show(res)}`);
+        assert.equal(sms.messagesTo(recipient).length, sentBefore, 'aucun SMS envoyé par la route (boîte d’envoi)');
+
+        const rows = await outboxRows({ type: 'TRANSFER_OFFERED', keyPrefix: `TRANSFER_OFFERED:${pending[0].id}:` });
+        assert.deepEqual(rows.map((r) => `${r.channel}:${r.status}`), ['SMS:PENDING'], `offre en file : une ligne SMS PENDING (${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))})`);
+        assert.equal(rows[0].recipient_phone, recipient, 'SMS au numéro saisi');
+        await dispatchAt(new Date(), { ids: rows.map((r) => r.id) });
+        const [sent] = await outboxRows({ ids: [rows[0].id] });
+        assert.equal(sent.status, 'SENT', `SMS remis par l’envoyeur (${sent.status} ${sent.reason ?? ''})`);
+        assert.ok(sent.provider_message_id, 'identifiant du fournisseur enregistré');
+        const fmt = await loadLotModule('../../lib/notifications/sms-format', 'formats SMS (contrat F2)');
+        const smsVar = fmt.smsVar as (v: string, max: number) => string;
+        const smsShortDateTime = fmt.smsShortDateTime as (v: string) => string;
+        const expected = `Event Village : un billet ${smsVar(await eventTitle(ev.eventId), 20)} vous est transféré. Connectez-vous avec ce numéro avant le ${smsShortDateTime(new Date(String(pending[0].expires_at)).toISOString())} : ${APP_URL}/tickets`;
+        assert.deepEqual(sms.messagesTo(recipient).slice(sentBefore).map((m) => m.message), [expected], 'un SMS au destinataire, texte exact (G3)');
     });
 
-    test('échec du SMS au destinataire : transfert conservé (PENDING, billet verrouillé), recipient_notified false', async () => {
+    test('échec du SMS au destinataire : transfert conservé (PENDING, billet verrouillé), ligne relancée (PENDING, 1 tentative, prochain essai à +1 min)', async () => {
         const ticketId = tickets[1];
         const recipient = randomSenegalPhone('77');
         const sms = getFakes().sms;
-        sms.failNext('panne MTarget simulée (lot 5, C1)');
         const res = await initiateByRoute(owner, ticketId, recipient);
+        assert.equal(res.status, 200, `l’initiation ne dépend pas du SMS : ${show(res)}`);
+        assert.equal(recipientNotification(res.body), 'QUEUED', `recipient_notification: QUEUED attendu dans la réponse : ${show(res)}`);
+        const pending = await pendingOf(ticketId);
+        assert.equal(pending.length, 1, 'transfert PENDING en base');
+        const rows = await outboxRows({ type: 'TRANSFER_OFFERED', keyPrefix: `TRANSFER_OFFERED:${pending[0].id}:SMS` });
+        assert.equal(rows.length, 1, 'ligne SMS de l’offre');
+        sms.failNext('panne MTarget simulée (lot 6, relance)');
+        const now = new Date();
+        await dispatchAt(now, { ids: rows.map((r) => r.id) });
         assert.ok(sms.messagesTo(recipient).some((m) => !m.success), 'précondition : l’envoi au destinataire a échoué (faux MTarget)');
-        assert.equal(res.status, 200, `l’échec du SMS ne casse pas le transfert : ${show(res)}`);
+        const [retry] = await outboxRows({ ids: [rows[0].id] });
+        assert.equal(retry.status, 'PENDING', `échec temporaire : ligne remise en attente (${retry.status} ${retry.reason ?? ''})`);
+        assert.equal(Number(retry.attempts), 1, 'une tentative comptée');
+        assert.equal(new Date(String(retry.next_attempt_at)).getTime(), now.getTime() + 60_000, 'prochain essai une minute après la tentative');
         assert.equal((await pendingOf(ticketId)).length, 1, 'transfert PENDING conservé en base');
         assert.equal(await lockOf(ticketId), true, 'billet verrouillé');
-        assert.equal(recipientNotified(res.body), false, `recipient_notified: false attendu dans la réponse : ${show(res)}`);
     });
 
     test('garde-fou : deux initiations simultanées du même billet → une seule réussit, un seul transfert PENDING', async () => {
@@ -341,8 +374,9 @@ describe('C1 — RPC transactionnelles', () => {
               WHERE n.nspname = 'public' AND p.proname = 'ticket_transfer_initiate'`)).rows);
         assert.equal(rows[0].n, 1, 'précondition : fonction ticket_transfer_initiate présente');
 
-        const invalid = await rpc('ticket_transfer_initiate', initiateParams(ticketId, owner.userId, randomSenegalPhone('77'), { claim_token_hash: null }));
-        assert.ok(invalid.error || invalid.data?.ok === false, `entrée invalide (claim_token_hash absent) acceptée : ${JSON.stringify(invalid.data)}`);
+        // Lot 6 (B6, décision 38) : le jeton n'existe plus au contrat ; entrée invalide = destinataire absent.
+        const invalid = await rpc('ticket_transfer_initiate', initiateParams(ticketId, owner.userId, randomSenegalPhone('77'), { recipient: null, to_phone_or_email: null }));
+        assert.ok(invalid.error || invalid.data?.ok === false, `entrée invalide (destinataire absent) acceptée : ${JSON.stringify(invalid.data)}`);
         assert.deepEqual(await transfersOf(ticketId), [], 'aucun transfert écrit');
         assert.equal(await lockOf(ticketId), false, 'aucun verrou posé sans transfert');
 

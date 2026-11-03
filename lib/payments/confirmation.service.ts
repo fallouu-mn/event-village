@@ -3,21 +3,20 @@
  * et au cron de réconciliation.
  *  - Seul le statut renvoyé par SamirPay pour l'identifiant ENREGISTRÉ fait foi.
  *  - Billetterie : la RPC payment_confirm (transaction unique, idempotente, tout ou rien) émet
- *    les billets ou bascule le paiement en remboursement ; les notifications et l'envoi du
- *    remboursement ne sont lancés qu'au premier passage (résultat CONFIRMED ou REFUND_REQUIRED).
+ *    les billets ou bascule le paiement en remboursement ; les notifications (confirmation d'achat,
+ *    nouvelle commande, catégorie ou événement complet) sont mises en file dans la même transaction
+ *    (lot 6) ; l'envoi du remboursement n'est lancé qu'au premier passage (REFUND_REQUIRED).
  *  - Autres cibles (commande, salle, table, abonnement) : transition conditionnelle vers SUCCESS
  *    puis effets métier, une seule fois.
  *  - FAILED / CANCELLED chez SamirPay : payment_release (réservations rendues) ; PENDING trop
  *    ancien : expiration.
  */
 import { getServerEnv } from '@/lib/env';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CashoutService } from './cashout.service';
 import { rpcWithRetry } from './rpc';
-import { notifyStockMilestones } from './stock-notifications';
 
 export type ConfirmSource = 'WEBHOOK' | 'STATUS_POLL' | 'RECONCILIATION';
 
@@ -50,41 +49,10 @@ export async function loadPayment(id: string): Promise<PaymentRecord | null> {
     return data as PaymentRecord | null;
 }
 
-async function notifyTicketPurchase(paymentId: string, ticketIds: string[]): Promise<void> {
-    const supabase = getServiceRoleClient();
-    const { data: pay, error } = await supabase.from('payments').select('id, client_id, amount, facial_amount, service_fee, payer_phone, metadata').eq('id', paymentId).single();
-    if (error || !pay) {
-        console.error(`[confirmation] notifications du paiement ${paymentId} impossibles :`, error?.message);
-        return;
-    }
-    const { data: tickets, error: tErr } = await supabase.from('tickets').select('ticket_number, event_id, category_id').in('id', ticketIds);
-    if (tErr || !tickets?.length) {
-        console.error(`[confirmation] billets du paiement ${paymentId} illisibles pour les notifications :`, tErr?.message);
-        return;
-    }
-    try {
-        await NotificationService.sendTicketPurchaseNotifications({
-            userId: pay.client_id,
-            eventId: tickets[0].event_id,
-            categoryId: new Set(tickets.map((t) => t.category_id)).size === 1 ? tickets[0].category_id : undefined,
-            ticketCount: tickets.length,
-            ticketNumbers: tickets.map((t) => t.ticket_number),
-            totalAmount: Number(pay.amount),
-            serviceFee: Number(pay.service_fee ?? 0),
-            facialAmount: pay.facial_amount === null ? undefined : Number(pay.facial_amount),
-            clientPhone: pay.payer_phone ? `+221${pay.payer_phone}` : undefined,
-        });
-    } catch (err) {
-        console.error(`[confirmation] notifications d'achat du paiement ${paymentId} en échec :`, err instanceof Error ? err.message : String(err));
-    }
-    await notifyStockMilestones(tickets.map((t) => t.category_id));
-}
-
 /** Confirmation billetterie par la RPC unique. */
 export async function confirmTicketPayment(paymentId: string, source: ConfirmSource): Promise<{ result: string; cashout_id?: string; ticket_ids?: string[] }> {
     const { data, error } = await rpcWithRetry<{ result: string; cashout_id?: string; ticket_ids?: string[]; reason?: string }>('payment_confirm', { p_payment_id: paymentId, p_source: source });
     if (error || !data) throw new Error(`Confirmation du paiement ${paymentId} impossible : ${error?.message}`);
-    if (data.result === 'CONFIRMED') await notifyTicketPurchase(paymentId, data.ticket_ids ?? []);
     if (data.result === 'REFUND_REQUIRED' && data.cashout_id) {
         console.warn(`[confirmation] paiement ${paymentId} encaissé mais non honorable (${data.reason}) : remboursement`);
         try {
@@ -119,12 +87,7 @@ async function confirmOtherPayment(payment: PaymentRecord, source: ConfirmSource
         if (r.error) console.error(`[confirmation] effet métier du paiement ${payment.id} en échec :`, r.error.message);
     }
     if (payment.payment_target === 'SUBSCRIPTION') await activateSubscription(payment);
-    const { error: nErr } = await supabase.from('notifications').insert({
-        user_id: payment.client_id, type: 'PAYMENT_SUCCESS', title: 'Paiement confirmé',
-        content: `Votre paiement de ${payment.amount} ${payment.currency ?? 'XOF'} a été validé.`,
-        channel: 'PUSH', status: 'PENDING', metadata: { payment_id: payment.id, order_id: payment.external_order_id },
-    });
-    if (nErr) console.error(`[confirmation] notification du paiement ${payment.id} impossible :`, nErr.message);
+    // Lot 6 (J2.10) : l'avis « paiement confirmé » est mis en file par le trigger trg_payments_other_success.
     return 'CONFIRMED';
 }
 
@@ -154,12 +117,7 @@ async function activateSubscription(payment: PaymentRecord): Promise<void> {
         console.error(`[confirmation] abonnement du partenaire ${partnerId} non activé :`, error.message);
         return;
     }
-    const { error: nErr } = await supabase.from('notifications').insert({
-        user_id: payment.client_id, type: 'SUBSCRIPTION_ACTIVATED', title: 'Abonnement activé',
-        content: `Votre pack ${plan.name} est activé pour ${days} jours.`, channel: 'PUSH', status: 'PENDING',
-        metadata: { plan_id: plan.id, payment_id: payment.id },
-    });
-    if (nErr) console.error(`[confirmation] notification d'abonnement impossible :`, nErr.message);
+    // Lot 6 (J2.7) : l'avis « abonnement activé » est mis en file par le trigger trg_partners_subscription.
 }
 
 async function releaseOther(payment: PaymentRecord, status: 'FAILED' | 'CANCELLED' | 'EXPIRED'): Promise<void> {

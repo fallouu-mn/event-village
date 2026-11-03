@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 import { advanceEventTo, posterUrl } from './cycle-helpers';
+import { flushNotifications, outboxRows } from './notif-helpers';
 
 const warnings: string[] = [];
 const originalWarn = console.warn;
@@ -91,9 +92,17 @@ describe('Email optionnel, SMS obligatoire', () => {
         const hook = payment.buildWebhook(pending!.external_transaction_id);
         const hookRes = await samirpayWebhook(new NextRequest(hook.url, { method: 'POST', headers: hook.headers, body: hook.body }));
         assert.equal(hookRes.status, 200, `webhook : HTTP ${hookRes.status} ${JSON.stringify(await hookRes.json())}`);
+        // Lot 6 (T) : la confirmation d'achat part par la boîte d'envoi ; passage de l'envoyeur sur ses lignes.
+        const purchaseRows = await outboxRows({ keyPrefix: `PURCHASE_CONFIRMED:${body.payment_id}:` });
+        assert.ok(purchaseRows.length > 0, 'confirmation d’achat mise en file');
+        await flushNotifications({ ids: purchaseRows.map((r) => r.id) });
         assert.ok(getFakes().sms.messagesTo(buyerPhone).length >= 1, 'SMS de confirmation d’achat envoyé');
 
         assert.equal(getFakes().email.sent.length, 0, `emails tentés sans RESEND_API_KEY : ${getFakes().email.sent.map((e) => e.to).join(', ')}`);
+        const emailRows = (await outboxRows({ ids: purchaseRows.map((r) => r.id) })).filter((r) => r.channel === 'EMAIL');
+        assert.equal(emailRows.length, 1, 'une ligne EMAIL pour la confirmation d’achat');
+        assert.deepEqual([emailRows[0].status, emailRows[0].reason], ['SKIPPED', 'EMAIL_NOT_CONFIGURED'],
+            'aucun email tenté : ligne EMAIL SKIPPED EMAIL_NOT_CONFIGURED (motif explicite, contrat F3)');
         const emailWarnings = warnings.filter((w) => /email/i.test(w) && /d[ée]sactiv/i.test(w));
         assert.equal(emailWarnings.length, 1, `un seul avertissement « email désactivé » attendu, obtenu ${emailWarnings.length} :\n${warnings.filter((w) => /email|resend/i.test(w)).join('\n')}`);
     });

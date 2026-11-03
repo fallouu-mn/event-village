@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import { RegisterPartnerSchema, normalizePhoneNumber } from '../lib/validations/auth';
 import { randomUUID } from 'node:crypto';
 import { reserveQuota } from '../lib/security/quota';
-import { NotificationService } from '../lib/notifications/notification.service';
 import { AdminService } from '../lib/admin/admin.service';
 import { TEST_PASSWORD } from './helpers/fixture-data';
 

@@ -10,7 +10,6 @@ import { createClient } from '@supabase/supabase-js';
 import '../helpers/env';
 
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { NotificationService } from '../../lib/notifications/notification.service';
 import { GET as getTicketsRoute } from '../../app/api/tickets/route';
 import { POST as claimFreeRoute } from '../../app/api/tickets/claim-free/route';
 import { POST as controllerScanRoute } from '../../app/api/controller/scan/route';
@@ -207,26 +206,7 @@ describe('BILLETTERIE CLIENT — CYCLE DE VIE COMPLET (20 POINTS D\'AUDIT & CONF
         console.log(`  ✓ Notification In-App Acheteur validée : "${notif.title}"`);
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // TEST 6 : Notifications SMS & Email acheteur dispatchées
-    // ─────────────────────────────────────────────────────────────
-    test('Test 6 : NotificationService orchestre les canaux Email et SMS Acheteur', async () => {
-        const notifResult = await NotificationService.sendTicketPurchaseNotifications({
-            userId: buyerUserId,
-            eventId,
-            categoryId: paidCatId,
-            ticketCount: 3,
-            ticketNumbers: ['EV-TIC-TEST1', 'EV-TIC-TEST2', 'EV-TIC-TEST3'],
-            totalAmount: 15000,
-            clientPhone: '771234567',
-            clientEmail: 'client.test@eventvillage.sn',
-            clientName: 'Client Test Multi-Achat',
-        });
-
-        assert.strictEqual(notifResult.client.inApp, true, 'In-App acheteur validé');
-        assert.strictEqual(notifResult.organizer.inApp, true, 'In-App organisateur validé');
-        console.log('  ✓ 6 Canaux orchestrés (Buyer In-App/SMS/Email + Organizer In-App/SMS/Email)');
-    });
+    // [lot 6 — cas supprimé] Test 6 NotificationService orchestre les canaux Email et SMS Acheteur : NotificationService.sendTicketPurchaseNotifications supprimé (contrat K) ; PURCHASE_CONFIRMED (IN_APP, SMS, EMAIL du payeur) et NEW_ORDER (IN_APP de l'organisateur) sont créés par payment_confirm dans la boîte d'envoi et livrés par l'envoyeur ; couvert par tests/parcours/notif-canaux.test.ts, tests/parcours/notif-preferences.test.ts (PURCHASE_CONFIRMED) et tests/parcours/notif-migration.test.ts (inventaire K1 : payment_confirm nomme ses types). Le test 7 lisait la notification organisateur écrite par ce cas : il ne s'appuie plus sur aucune écriture de ce fichier
 
     // ─────────────────────────────────────────────────────────────
     // TEST 7 : Notification In-App Organisateur générée en base

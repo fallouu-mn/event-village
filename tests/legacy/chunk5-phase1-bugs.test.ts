@@ -1,7 +1,6 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { getServiceRoleClient } from '../../lib/supabase/server';
-import { NotificationService } from '../../lib/notifications/notification.service';
 import { randomUUID } from 'crypto';
 
 import * as fs from 'fs';
@@ -89,22 +88,7 @@ describe('CHUNK 5 — PHASE 1 : ÉRADICATION DES BUGS CRITIQUES', () => {
     // [lot 2 — cas supprimé] BUG 1 Enum et invariant de remboursement : PaymentService.processRefund supprimé (remboursements par le module de cashout, lib/payments/cashout.service.ts) ; couvert par tests/parcours/paiement-remboursement.test.ts (remboursement partiel d'une commande sans équivalent)
     // [lot 2 — cas supprimé] BUG 2 Webhook d'abonnement et idempotence : samirPayClient.initPayment et PaymentService.handleSamirPayWebhook supprimés (webhook par lib/payments/webhook.service.ts) ; couvert par tests/parcours/paiement-webhook.test.ts (parcours billet ; activation d'abonnement sans cas dédié)
 
-    test('BUG 3 — Reset Password SMS : Câblage de NotificationService et non-divulgation de l\'OTP', async () => {
-        // 1. Envoi de notification de réinitialisation de mot de passe
-        const notifResult = await NotificationService.sendPasswordResetNotification({
-            phone: clientPhone,
-            resetCode: '654321',
-            email: clientEmail,
-        });
-
-        assert.equal(typeof notifResult.smsSent, 'boolean');
-        assert.equal(notifResult.emailSent, true);
-
-        // 2. Appel via l'endpoint /api/auth/send-otp avec purpose: PASSWORD_RESET
-        // Vérification que le numéro est bien validé et que le code n'est jamais retourné dans le JSON
-        const otpCode = '123456';
-        assert.ok(!JSON.stringify(notifResult).includes(otpCode), 'L\'OTP ne doit jamais être retourné dans l\'objet de résultat public');
-    });
+    // [lot 6 — cas supprimé] BUG 3 Reset Password SMS : NotificationService.sendPasswordResetNotification supprimé (contrat K, NotificationService supprimé en entier) ; le code de réinitialisation part par mTargetService.sendOtp (purpose PASSWORD_RESET) depuis /api/auth/send-otp, journalisé sans le code ; couvert par tests/parcours/notif-modeles.test.ts (texte OTP_PASSWORD_RESET), tests/parcours/notif-outbox.test.ts (journal synchrone sans code) et tests/parcours/notif-migration.test.ts (route send-otp : sendOtp seul, avec log)
 
     // [lot 2 — cas supprimé] BUG 4 Rollback FAILED et webhook hors ordre (salle, table) : PaymentService.handleSamirPayWebhook supprimé (le webhook n'accepte que status=success et interroge SamirPay) ; couvert par tests/parcours/paiement-webhook.test.ts et tests/parcours/paiement-reconciliation.test.ts (parcours billet ; libération salle et table sans cas dédié)
 });

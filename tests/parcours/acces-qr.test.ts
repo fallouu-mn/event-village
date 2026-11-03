@@ -32,6 +32,7 @@ import { assertAccessInvariants } from '../helpers/access-invariants';
 import { routeContext } from './helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
+import { markPhoneVerified } from './notif-helpers';
 import {
     authed, createTimedEvent, newController, scan, scansOf, ticketPayload, ticketRow, withAccessSettings, type RouteResult,
 } from './acces-helpers';
@@ -81,17 +82,21 @@ async function scanRow(scanId: unknown): Promise<Row> {
     return data as Row;
 }
 
-/** Transfert P2P complet par les routes : initiation par le porteur, réclamation par le destinataire. */
+/**
+ * Transfert P2P complet par les routes : initiation par le porteur vers le numéro vérifié du destinataire,
+ * réclamation par le destinataire (lot 6, contrat B6 avec l'amendement 2 : plus de jeton, transfert vers un
+ * numéro seulement ; réclamation par l'identifiant du transfert).
+ */
 async function transferTicket(owner: Buyer, recipient: Buyer, ticketId: string): Promise<void> {
+    await markPhoneVerified(recipient.userId);
     const { POST: initiate } = await importModule('../../app/api/tickets/[id]/transfer/route');
-    const initRes: Response = await initiate(authed(`/api/tickets/${ticketId}/transfer`, 'POST', owner, { recipient: recipient.email }), routeContext({ id: ticketId }));
+    const initRes: Response = await initiate(authed(`/api/tickets/${ticketId}/transfer`, 'POST', owner, { recipient: recipient.phoneE164 }), routeContext({ id: ticketId }));
     const initBody = (await initRes.json()) as Row;
     assert.equal(initRes.status, 200, `initiation du transfert : HTTP ${initRes.status} ${JSON.stringify(initBody)}`);
-    const claimUrl = String(((initBody.transfer ?? {}) as Row).claim_url ?? '');
-    const token = claimUrl.split('/').filter(Boolean).pop();
-    assert.ok(token, `jeton de réclamation absent de la réponse : ${JSON.stringify(initBody)}`);
-    const { POST: claim } = await importModule('../../app/api/tickets/claim/[token]/route');
-    const claimRes: Response = await claim(authed(`/api/tickets/claim/${token}`, 'POST', recipient, {}), routeContext({ token }));
+    const transferId = String(((initBody.transfer ?? {}) as Row).transfer_id ?? '');
+    assert.ok(transferId, `identifiant du transfert absent de la réponse : ${JSON.stringify(initBody)}`);
+    const { POST: claim } = await importModule('../../app/api/tickets/transfers/[id]/claim/route');
+    const claimRes: Response = await claim(authed(`/api/tickets/transfers/${transferId}/claim`, 'POST', recipient, {}), routeContext({ id: transferId }));
     const claimBody = (await claimRes.json()) as Row;
     assert.equal(claimRes.status, 200, `réclamation du transfert : HTTP ${claimRes.status} ${JSON.stringify(claimBody)}`);
 }

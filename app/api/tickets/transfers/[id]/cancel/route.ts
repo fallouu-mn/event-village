@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/tickets/transfers/[id]/cancel
- * Annulation d'un transfert PENDING par son émetteur : CANCELLED et billet déverrouillé dans la même
- * transaction (RPC ticket_transfer_cancel), secrets du billet inchangés.
+ * Annulation d'un transfert PENDING par son émetteur : CANCELLED, billet déverrouillé et avis au
+ * destinataire mis en file dans la même transaction (RPC ticket_transfer_cancel), secrets du billet
+ * inchangés. Lot 6 : `recipient_notification` (QUEUED) remplace `recipient_notified`.
  */
 export async function POST(
     req: NextRequest,
@@ -25,7 +26,7 @@ export async function POST(
 
     try {
         const result = await TicketTransferService.cancelTransfer(user.id, transferId);
-        return NextResponse.json({ success: true, message: result.message, recipient_notified: result.recipient_notified, transfer: result });
+        return NextResponse.json({ success: true, message: result.message, recipient_notification: result.recipient_notification, transfer: result });
     } catch (err: unknown) {
         const refusal = err as Partial<TransferRefusal>;
         if (typeof refusal?.statusCode === 'number') {

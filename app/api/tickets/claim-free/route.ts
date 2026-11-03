@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { rpcWithRetry } from '@/lib/payments/rpc';
-import { notifyStockMilestones } from '@/lib/payments/stock-notifications';
 import { reserveQuota } from '@/lib/security/quota';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -18,7 +16,8 @@ const ClaimFreeSchema = z.object({
 /**
  * POST /api/tickets/claim-free — billets gratuits (lot 2.6) : contrôles partagés et limite par
  * compte et par catégorie (max_per_order, billets déjà détenus compris) appliqués dans une seule
- * transaction (free_tickets_claim) ; demandes limitées par compte (quota en base).
+ * transaction (free_tickets_claim) ; demandes limitées par compte (quota en base). Lot 6 : la
+ * confirmation part par la boîte d'envoi (même transaction que l'émission).
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -57,16 +56,8 @@ export async function POST(req: NextRequest) {
         const ticketIds = data.ticket_ids ?? [];
         const { data: tickets, error: tErr } = await getServiceRoleClient().from('tickets').select('id, ticket_number').in('id', ticketIds);
         if (tErr) console.error('[claim-free] lecture des billets émis impossible :', tErr.message);
-        try {
-            await NotificationService.sendTicketPurchaseNotifications({
-                userId, eventId: cat.event_id, categoryId, ticketCount: ticketIds.length,
-                ticketNumbers: (tickets ?? []).map((t) => t.ticket_number), totalAmount: 0,
-                smsActorId: userId, // lot 4.8 : SMS comptés sur le compte qui réclame (SMS_PER_ACCOUNT_DAY)
-            });
-        } catch (err) {
-            console.error('[claim-free] notifications en échec :', err instanceof Error ? err.message : String(err));
-        }
-        await notifyStockMilestones([categoryId]);
+        // Lot 6 (J1.2, J1.5) : confirmation (SMS compté sur le compte qui réclame) et épuisement de la
+        // catégorie mis en file dans la transaction de free_tickets_claim ; aucun envoi depuis la route.
         return NextResponse.json({ success: true, ticket_ids: ticketIds, tickets: tickets ?? [] });
     } catch (err) {
         console.error('[API /api/tickets/claim-free] erreur interne :', err instanceof Error ? err.message : String(err));

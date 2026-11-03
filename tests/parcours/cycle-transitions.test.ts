@@ -45,6 +45,7 @@ import {
     assertRpcOk, createDraftEvent, createEventInStatus, eventHistory, eventStatus, rpcCancel, rpcTransition, shiftEventDates,
     type AdvanceOptions, type DraftEvent, type DraftEventOptions, type EventHistoryRow, type EventStatus, type RpcBody,
 } from './cycle-helpers';
+import { flushNotifications } from './notif-helpers';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 interface Reply { status: number; body: Record<string, unknown> }
@@ -199,6 +200,14 @@ function mentionsEvent(n: NotificationRow, ev: DraftEvent): boolean {
 async function freshNotifications(userId: string, seen: NotificationRow[]): Promise<NotificationRow[]> {
     const ids = seen.map((n) => n.id);
     return (await notificationsOf(userId)).filter((n) => !ids.includes(n.id));
+}
+
+/**
+ * Lot 6 (T) : l'in-app est écrite par l'envoyeur unique (boîte d'envoi). Passage restreint à l'événement,
+ * motif « vider → photographier → agir → vider → comparer ».
+ */
+async function flushEvent(ev: DraftEvent): Promise<void> {
+    await flushNotifications({ eventIds: [ev.eventId] });
 }
 
 // ── D1 : table de transitions ──────────────────────────────────────────────
@@ -617,6 +626,7 @@ describe('5.2 Notifications au partenaire (route admin)', () => {
         const REFUS = `Programme incomplet, merci de le compléter (${Date.now()})`;
         const SUSPENSION = `Contrôle des autorisations en cours (${Date.now()})`;
 
+        await flushEvent(ev);
         let seen = await notificationsOf(owner.userId);
         const r1 = await adminRoute(ev.eventId, admin, { to: 'BROUILLON', reason: REFUS });
         assert.equal(r1.status, 200, `refus par la route admin : ${show(r1)}`);
@@ -626,21 +636,26 @@ describe('5.2 Notifications au partenaire (route admin)', () => {
             { old: 'EN_ATTENTE', next: 'BROUILLON', actor: admin.userId, role: 'ADMIN', reason: REFUS },
             'refus journalisé avec l’ADMIN de la session et le motif',
         );
+        await flushEvent(ev);
         let fresh = await freshNotifications(owner.userId, seen);
         assert.ok(fresh.some((n) => mentionsEvent(n, ev) && `${n.title} ${n.content}`.includes(REFUS)), `notification de refus avec le motif : ${JSON.stringify(fresh)}`);
 
         assertRpcOk(await rpcTransition(ev.eventId, owner.userId, 'EN_ATTENTE'), 'nouvelle soumission');
+        await flushEvent(ev);
         seen = await notificationsOf(owner.userId);
         const r2 = await adminRoute(ev.eventId, admin, { to: 'VALIDE' });
         assert.equal(r2.status, 200, `validation par la route admin : ${show(r2)}`);
+        await flushEvent(ev);
         fresh = await freshNotifications(owner.userId, seen);
         assert.ok(fresh.some((n) => mentionsEvent(n, ev)), `notification de validation : ${JSON.stringify(fresh)}`);
 
         assertRpcOk(await rpcTransition(ev.eventId, owner.userId, 'PUBLIE'), 'publication par le partenaire');
+        await flushEvent(ev);
         seen = await notificationsOf(owner.userId);
         const r3 = await adminRoute(ev.eventId, admin, { to: 'SUSPENDU', reason: SUSPENSION });
         assert.equal(r3.status, 200, `suspension par la route admin : ${show(r3)}`);
         assert.equal((await lastHistory(ev.eventId)).reason, SUSPENSION, 'motif de suspension journalisé');
+        await flushEvent(ev);
         fresh = await freshNotifications(owner.userId, seen);
         assert.ok(fresh.some((n) => mentionsEvent(n, ev) && `${n.title} ${n.content}`.includes(SUSPENSION)), `notification de suspension avec le motif : ${JSON.stringify(fresh)}`);
     });

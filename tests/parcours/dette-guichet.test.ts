@@ -12,7 +12,8 @@
  *    l'incrément de la caisse ;
  *  - aucun rattachement au compte du numéro ; le vendeur n'est jamais porteur ;
  *  - Idempotency-Key obligatoire (400 sans) ; une même clé donne la même vente ;
- *  - reçu SMS si buyerPhone est fourni (catégorie COUNTER_RECEIPT), receipt_sent dans la réponse ;
+ *  - reçu SMS si buyerPhone est fourni (catégorie COUNTER_RECEIPT), receipt_sent dans la réponse
+ *    (lot 6 : reçu mis en file, receipt_queued et receipt_refusal dans la réponse) ;
  *  - le partenaire et l'admin ne vendent pas au guichet (statu quo NOT_ASSIGNED) ; invariant (g) vrai.
  *
  * Rouge avant correctif :
@@ -44,6 +45,7 @@ import { randomSenegalPhone } from './helpers';
 import { categoryState, eventTickets, importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, paymentRow, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, newController, openShift, scan, shiftRow, ticketPayload, type RouteResult } from './acces-helpers';
+import { dispatchAt, outboxRows } from './notif-helpers';
 
 const ROUTE = '../../app/api/controller/counter-sale/route';
 const STANDARD = 3000;
@@ -197,7 +199,7 @@ describe('C7 — vente au guichet = entrée immédiate', () => {
         const res = await counterSale(seller, { eventId: ev.eventId, items: items(2) });
         assert.equal(res.status, 200, `vente au guichet : ${show(res)}`);
         assert.notEqual(res.body.ok, false, `vente acceptée : ${show(res)}`);
-        assert.notEqual(res.body.receipt_sent, true, `aucun reçu sans numéro : ${show(res)}`);
+        assert.equal(res.body.receipt_queued, false, `aucun reçu sans numéro (lot 6 : receipt_queued) : ${show(res)}`);
 
         const { payment, tickets } = await saleOutcome(before);
         assert.equal(tickets.length, 2, 'deux billets émis');
@@ -270,26 +272,41 @@ describe('C7 — vente au guichet = entrée immédiate', () => {
         assert.equal(afterReplay.sold, before.sold + 1, 'stock décrémenté une seule fois');
     });
 
-    test('reçu SMS : numéro fourni → SMS au numéro, receipt_sent true ; échec du SMS → vente conservée, receipt_sent false', async () => {
+    // Lot 6 (contrat J1.3, T) : le reçu est mis en file dans la transaction de la vente (receipt_queued),
+    // puis remis par l'envoyeur ; un échec d'envoi laisse la ligne en relance, la vente est conservée.
+    test('reçu SMS : numéro fourni → reçu en file (receipt_queued), SMS remis par l’envoyeur ; échec du SMS → vente conservée, ligne relancée', async () => {
         const sms = getFakes().sms;
         const phone = randomSenegalPhone('76');
         let before = await snapshot();
         const ok = await counterSale(seller, { eventId: ev.eventId, items: items(1), buyerPhone: phone });
         assert.equal(ok.status, 200, `vente avec reçu : ${show(ok)}`);
+        assert.equal(ok.body.receipt_queued, true, `receipt_queued: true attendu : ${show(ok)}`);
+        assert.equal(ok.body.receipt_refusal, null, `aucun refus du reçu : ${show(ok)}`);
+        assert.equal(sms.messagesTo(phone).length, 0, 'aucun SMS envoyé par la route (boîte d’envoi)');
+        const okRows = await outboxRows({ type: 'COUNTER_RECEIPT', phone });
+        assert.deepEqual(okRows.map((r) => `${r.channel}:${r.status}`), ['SMS:PENDING'], `reçu en file : ${JSON.stringify(okRows.map((r) => [r.channel, r.status, r.reason]))}`);
+        assert.equal(okRows[0].shift_id, shiftId, 'reçu rattaché à la caisse (quota par caisse)');
+        await dispatchAt(new Date(), { ids: okRows.map((r) => r.id) });
         const received = sms.messagesTo(phone);
         assert.equal(received.length, 1, `un reçu SMS au numéro de l’acheteur (trouvé ${received.length})`);
         assert.equal(received[0].success, true, 'reçu remis');
         assert.doesNotMatch(received[0].message, EMOJI, `reçu sans emoji : ${received[0].message}`);
-        assert.equal(ok.body.receipt_sent, true, `receipt_sent: true attendu : ${show(ok)}`);
+        assert.equal((await outboxRows({ ids: [okRows[0].id] }))[0].status, 'SENT', 'ligne du reçu SENT');
         await saleOutcome(before);
 
         const failing = randomSenegalPhone('76');
         before = await snapshot();
-        sms.failNext('panne MTarget simulée (lot 5, C7)');
         const ko = await counterSale(seller, { eventId: ev.eventId, items: items(1), buyerPhone: failing });
+        assert.equal(ko.status, 200, `vente avec reçu : ${show(ko)}`);
+        assert.equal(ko.body.receipt_queued, true, `receipt_queued: true attendu : ${show(ko)}`);
+        const koRows = await outboxRows({ type: 'COUNTER_RECEIPT', phone: failing });
+        assert.equal(koRows.length, 1, 'ligne du reçu en file');
+        sms.failNext('panne MTarget simulée (lot 6, relance du reçu)');
+        await dispatchAt(new Date(), { ids: koRows.map((r) => r.id) });
         assert.ok(sms.messagesTo(failing).some((m) => !m.success), 'précondition : l’envoi du reçu a échoué (faux MTarget)');
-        assert.equal(ko.status, 200, `l’échec du reçu n’annule pas la vente : ${show(ko)}`);
-        assert.equal(ko.body.receipt_sent, false, `receipt_sent: false attendu : ${show(ko)}`);
+        const [retry] = await outboxRows({ ids: [koRows[0].id] });
+        assert.equal(retry.status, 'PENDING', `échec temporaire : reçu remis en attente (${retry.status} ${retry.reason ?? ''})`);
+        assert.equal(Number(retry.attempts), 1, 'une tentative comptée');
         const { tickets } = await saleOutcome(before);
         assert.equal(tickets.length, 1, 'vente conservée');
         assert.equal(tickets[0].status, 'UTILISE', 'billet composté');

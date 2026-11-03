@@ -13,9 +13,10 @@
  *    qu'il y a des ventes (catégorie d'événement ; jauge supprimée ou sous vendus + réservés :
  *    LOCKED_AFTER_SALES et le champ en cause) ; TERMINE et ANNULE → 409 EVENT_LOCKED ; status, services,
  *    gallery_urls, ticket_categories, slug, partner_id, is_featured → 400 FIELD_NOT_EDITABLE partout ;
- *  - champ notifié qui change : une ligne event_change_notifications par porteur (billets VALIDE), une
- *    notification dans l'application tout de suite, un SMS en file pour les dates, les heures et le lieu
- *    (titre : application seulement), envoyé par le cron event-change-notifications ; réponse
+ *  - champ notifié qui change : une ligne SMS EVENT_CHANGED de la boîte d'envoi par porteur (billets
+ *    VALIDE ; lot 6 : la file du lot 5 est absorbée), une notification dans l'application au passage de
+ *    l'envoyeur, un SMS en file pour les dates, les heures et le lieu (titre seul : ligne SKIPPED
+ *    TITLE_ONLY), envoyé par l'envoyeur unique ; réponse
  *    { notified_holders, sms_queued } ; une valeur renvoyée à l'identique n'est pas un changement (heure
  *    « HH:mm » du formulaire contre « HH:mm:ss » en base, R29) ;
  *  - fonds : report de la fin après des ventes → available_at des crédits VENTE recalculé dans la même
@@ -29,10 +30,12 @@
  *  - refus : { error: <message français>, code, field?, fields? } ; fields : [{ path, code?, message }]
  *    (chemin pointé, « ticket_categories.0.price ») ou { chemin: message } ; LOCKED_AFTER_SALES et doublon de
  *    nom : HTTP 400 ou 409 (contrat muet sur le statut) ;
- *  - event_change_notifications : colonnes event_id et user_id (porteur) ; notification dans l'application :
+ *  - boîte d'envoi (lot 6) : lignes EVENT_CHANGED, canal SMS, event_id et recipient_user_id (porteur) ;
+ *    notification dans l'application (après passage de l'envoyeur) :
  *    ligne notifications du porteur dont metadata cite l'événement ;
  *  - SALE_END_AFTER_EVENT : liste dans body.categories (identifiants, ou objets { id, name }) ;
- *  - cron : GET /api/cron/event-change-notifications, protégé par refuseUnlessCron.
+ *  - envoi (lot 6) : dispatchNotifications à midi (Dakar) le lendemain, hors plage de silence ; l'ancien
+ *    cron de la file du lot 5 est supprimé.
  * Rouge avant correctif :
  *  - préparation : event_transition et event_cancel n'existent pas (cycle-helpers.ts, advanceEventTo) pour
  *    tout événement au-delà de BROUILLON ;
@@ -63,7 +66,8 @@ import { inspect } from '../helpers/db';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { getFakes } from '../fakes';
 import { routeContext } from './helpers';
-import { cart, checkout, cronRequest, importModule, newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
+import { cart, checkout, importModule, newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
+import { dispatchAt, flushNotifications, noonDakarTomorrow } from './notif-helpers';
 import { buyConfirmed, jsonRequest, newPartner, withSettings, type TestPartner } from './finance-helpers';
 import {
     advanceEventTo, assertRpcOk, createDraftEvent, createEventInStatus, eventHistory, posterUrl, rpcTransition,
@@ -243,10 +247,20 @@ async function newEventNotifications(userId: string, eventId: string, seen: Set<
     return ((data ?? []) as Row[]).filter((n) => !seen.has(String(n.id)) && JSON.stringify(n.metadata ?? {}).includes(eventId));
 }
 
+/**
+ * Lot 6 (contrat J1.9, T) : la file du lot 5 est absorbée par la boîte d'envoi. Lignes SMS EVENT_CHANGED de
+ * l'événement, une par porteur ; `user_id` = destinataire (recipient_user_id).
+ */
 async function changeRows(eventId: string): Promise<Row[]> {
-    const { data, error } = await service.from('event_change_notifications').select('*').eq('event_id', eventId);
-    assert.equal(error, null, `event_change_notifications de ${eventId} : ${error?.message} (code ${error?.code})`);
-    return (data ?? []) as Row[];
+    const { data, error } = await service.from('notification_outbox').select('*')
+        .eq('event_id', eventId).eq('type', 'EVENT_CHANGED').eq('channel', 'SMS');
+    assert.equal(error, null, `boîte d'envoi (EVENT_CHANGED, SMS) de ${eventId} : ${error?.message} (code ${error?.code})`);
+    return ((data ?? []) as Row[]).map((r) => ({ ...r, user_id: r.recipient_user_id }));
+}
+
+/** Lot 6 (T) : l'in-app est écrite par l'envoyeur ; passage restreint à l'événement (vider → photographier → agir → vider). */
+async function flushEvent(eventId: string): Promise<void> {
+    await flushNotifications({ eventIds: [eventId] });
 }
 
 async function saleCredit(paymentId: string): Promise<Row> {
@@ -468,12 +482,14 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         const sale = await sell(ev, 'Standard');
         const before = await eventRow(ev.eventId);
         assert.equal(before.start_time, '20:00:00', 'précondition : heure stockée au format HH:mm:ss');
+        await flushEvent(ev.eventId);
         const seen = await notificationIds(sale.buyer.userId);
 
         const res = await putEvent(partner, ev.eventId, formPatch(before, { description: 'Correction de la description, rien d’autre' }));
         assertOk(res, 'enregistrement sans changement de champ notifié');
         assertNotified(res, 'enregistrement sans changement réel', 0, 0);
-        assert.deepEqual(await changeRows(ev.eventId), [], 'aucune ligne event_change_notifications');
+        await flushEvent(ev.eventId);
+        assert.deepEqual(await changeRows(ev.eventId), [], 'aucune ligne de changement dans la boîte d’envoi');
         assert.deepEqual(await newEventNotifications(sale.buyer.userId, ev.eventId, seen), [], 'aucune notification au porteur');
         const after = await eventRow(ev.eventId);
         assert.equal(after.description, 'Correction de la description, rien d’autre', 'champ libre appliqué');
@@ -482,10 +498,11 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
             'dates, catégorie et jauge inchangées');
     });
 
-    test('changement de date d’un PUBLIÉ : une ligne event_change_notifications par porteur VALIDE, notification dans l’application, { notified_holders, sms_queued }', async () => {
+    test('changement de date d’un PUBLIÉ : une ligne SMS EVENT_CHANGED par porteur VALIDE, notification dans l’application, { notified_holders, sms_queued }', async () => {
         const ev = await prepareEvent('date', STANDARD, 'PUBLIE', { day: 6 });
         const a = await sell(ev, 'Standard', 2);
         const b = await sell(ev, 'Standard', 1);
+        await flushEvent(ev.eventId);
         const seenA = await notificationIds(a.buyer.userId);
         const seenB = await notificationIds(b.buyer.userId);
         const seenPartner = await notificationIds(partner.userId);
@@ -498,11 +515,13 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         assertNotified(res, 'report d’un jour (3 billets, 2 porteurs)', 2, 2);
 
         const rows = await changeRows(ev.eventId);
+        assert.ok(rows.every((r) => r.status === 'PENDING'), `SMS de changement en file : ${JSON.stringify(rows.map((r) => [r.status, r.reason]))}`);
+        await flushEvent(ev.eventId);
         assert.deepEqual(rows.map((r) => String(r.user_id)).sort(), [a.buyer.userId, b.buyer.userId].sort(),
             `une ligne par porteur, dédoublonnée : ${JSON.stringify(rows)}`);
         for (const [label, holder, seen] of [['porteur de 2 billets', a.buyer, seenA], ['porteur d’un billet', b.buyer, seenB]] as Array<[string, Buyer, Set<string>]>) {
             const notes = await newEventNotifications(holder.userId, ev.eventId, seen);
-            assert.ok(notes.length >= 1, `${label} : notification dans l’application créée tout de suite`);
+            assert.ok(notes.length >= 1, `${label} : notification dans l’application créée au passage de l’envoyeur`);
         }
         assert.deepEqual(await newEventNotifications(partner.userId, ev.eventId, seenPartner), [], 'l’organisateur n’est pas notifié comme porteur');
     });
@@ -510,12 +529,16 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
     test('changement de titre : notification dans l’application seulement, aucun SMS en file', async () => {
         const ev = await prepareEvent('titre', STANDARD, 'PUBLIE');
         const sale = await sell(ev, 'Standard');
+        await flushEvent(ev.eventId);
         const seen = await notificationIds(sale.buyer.userId);
         const res = await putEvent(partner, ev.eventId, { title: `${ev.title} (nouveau titre)` });
         assertOk(res, 'changement de titre');
         assert.equal((await eventRow(ev.eventId)).title, `${ev.title} (nouveau titre)`, 'titre appliqué');
         assertNotified(res, 'changement de titre', 1, 0);
-        assert.deepEqual((await changeRows(ev.eventId)).map((r) => String(r.user_id)), [sale.buyer.userId], 'une ligne pour le porteur');
+        const titleRows = await changeRows(ev.eventId);
+        assert.deepEqual(titleRows.map((r) => String(r.user_id)), [sale.buyer.userId], 'une ligne pour le porteur');
+        assert.deepEqual(titleRows.map((r) => [r.status, r.reason]), [['SKIPPED', 'TITLE_ONLY']], 'titre seul : aucun SMS, ligne SKIPPED TITLE_ONLY');
+        await flushEvent(ev.eventId);
         assert.ok((await newEventNotifications(sale.buyer.userId, ev.eventId, seen)).length >= 1, 'notification dans l’application créée');
     });
 
@@ -531,12 +554,15 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         assert.equal(after.location, 'Nouvelle salle de test, Dakar', 'lieu appliqué');
         assert.equal((after.practical_info as Row | null)?.address, 'Route de la Corniche Ouest, Dakar', 'adresse appliquée');
         assertNotified(res, 'changement de lieu', 1, 1);
-        assert.deepEqual((await changeRows(ev.eventId)).map((r) => String(r.user_id)), [sale.buyer.userId], 'une ligne pour le porteur');
+        const placeRows = await changeRows(ev.eventId);
+        assert.deepEqual(placeRows.map((r) => String(r.user_id)), [sale.buyer.userId], 'une ligne pour le porteur');
+        assert.deepEqual(placeRows.map((r) => r.status), ['PENDING'], 'SMS de changement de lieu en file');
     });
 
     test('champs libres d’un PUBLIÉ (description, programme, infos pratiques hors adresse, affiche, coordonnées) : appliqués sans notification', async () => {
         const ev = await prepareEvent('libres', STANDARD, 'PUBLIE');
         const sale = await sell(ev, 'Standard');
+        await flushEvent(ev.eventId);
         const seen = await notificationIds(sale.buyer.userId);
         const poster = posterUrl(partner.partnerId);
         const program = [
@@ -553,7 +579,8 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         });
         assertOk(res, 'champs libres');
         assertNotified(res, 'champs libres', 0, 0);
-        assert.deepEqual(await changeRows(ev.eventId), [], 'aucune ligne event_change_notifications');
+        await flushEvent(ev.eventId);
+        assert.deepEqual(await changeRows(ev.eventId), [], 'aucune ligne de changement dans la boîte d’envoi');
         assert.deepEqual(await newEventNotifications(sale.buyer.userId, ev.eventId, seen), [], 'aucune notification au porteur');
         const after = await eventRow(ev.eventId);
         assert.equal(after.description, 'Programme détaillé publié', 'description');
@@ -715,24 +742,25 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         assert.equal((await eventRow(ev.eventId)).end_time, '22:30:00', 'fin appliquée');
     });
 
-    test('file des SMS : le cron event-change-notifications envoie un SMS par porteur et une seule fois ; refus sans CRON_SECRET', async () => {
-        const cron = await handlerOf('../../app/api/cron/event-change-notifications/route', 'GET');
-        assert.equal((await invoke(cron, cronRequest('/api/cron/event-change-notifications', null))).status, 401, 'cron sans secret refusé');
-
+    // Lot 6 (T) : l'ancien cron de la file du lot 5 est supprimé ; l'envoyeur unique envoie le SMS regroupé.
+    // Passage à midi (Dakar) le lendemain : SMS optionnel hors plage de silence (section Y du contrat).
+    test('SMS de changement : l’envoyeur envoie un SMS par porteur et une seule fois', async () => {
         const ev = await prepareEvent('cron-sms', STANDARD, 'PUBLIE', { day: 8 });
         const sale = await sell(ev, 'Standard');
+        await flushEvent(ev.eventId);
         const res = await putEvent(partner, ev.eventId, { start_time: '21:00', end_time: '23:45' });
         assertOk(res, 'changement d’heure');
         assertNotified(res, 'changement d’heure', 1, 1);
 
         const sms = getFakes().sms;
         const before = sms.messagesTo(sale.buyer.phoneE164).length;
-        const run = await invoke(cron, cronRequest('/api/cron/event-change-notifications'));
-        assert.equal(run.status, 200, `cron : HTTP ${run.status} ${JSON.stringify(run.body)}`);
-        assert.equal(sms.messagesTo(sale.buyer.phoneE164).length, before + 1, 'un SMS au porteur après le passage du cron');
-        const again = await invoke(cron, cronRequest('/api/cron/event-change-notifications'));
-        assert.equal(again.status, 200, `second passage : HTTP ${again.status} ${JSON.stringify(again.body)}`);
+        const noon = noonDakarTomorrow();
+        await dispatchAt(noon, { eventIds: [ev.eventId] });
+        assert.equal(sms.messagesTo(sale.buyer.phoneE164).length, before + 1, 'un SMS au porteur après le passage de l’envoyeur');
+        await dispatchAt(new Date(noon.getTime() + 61_000), { eventIds: [ev.eventId] });
         assert.equal(sms.messagesTo(sale.buyer.phoneE164).length, before + 1, 'second passage : aucun SMS en double');
+        const rows = await changeRows(ev.eventId);
+        assert.deepEqual(rows.map((r) => r.status), ['SENT'], `ligne SMS du changement envoyée : ${JSON.stringify(rows.map((r) => [r.status, r.reason]))}`);
     });
 });
 

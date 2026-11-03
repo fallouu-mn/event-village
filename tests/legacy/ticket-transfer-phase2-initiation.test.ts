@@ -226,36 +226,7 @@ describe('CHANTIER 2 — PHASE 2 : INITIATION DU TRANSFERT DE BILLET P2P (9 TEST
         console.log('   ✅ 1. Initiation API vérifiée : ZÉRO token exposé en HTTP + tickets.transfer_locked=true + DB ticket_transfers valide');
     });
 
-    test('2. Initiation avec vérification du hash SHA-256 via injection de token de test (Service & DB)', async () => {
-        const knownTestToken = 'a1b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef';
-        const expectedHash = crypto.createHash('sha256').update(knownTestToken).digest('hex');
-
-        const result = await TicketTransferService.initiateTransfer(
-            buyerAUserId,
-            ticket2Id,
-            '  Destinataire.Ami@Dakar.SN  ',
-            { injectedClaimToken: knownTestToken }
-        );
-
-        assert.strictEqual(result.success, true);
-        assert.strictEqual(result.recipient, 'destinataire.ami@dakar.sn', 'Email normalisé en minuscules');
-        assert.strictEqual(result.recipient_type, 'EMAIL', 'Type EMAIL');
-        assert.strictEqual(result.claim_token, knownTestToken, 'Service interne retourne le token pour l\'envoi out-of-band');
-
-        // Vérification en base que le hash correspond exactement au SHA-256 du token connu
-        const { data: transferDb } = await supabase
-            .from('ticket_transfers')
-            .select('*')
-            .eq('ticket_id', ticket2Id)
-            .maybeSingle();
-
-        if (transferDb) {
-            assert.strictEqual(transferDb.claim_token_hash, expectedHash, 'claim_token_hash en DB est STRICTEMENT le SHA-256 du token');
-            assert.notStrictEqual(transferDb.claim_token_hash, knownTestToken, 'Le token en clair n\'est JAMAIS stocké en DB');
-        }
-
-        console.log('   ✅ 2. Hachage cryptographique vérifié en base : DB.claim_token_hash === SHA-256(injectedToken)');
-    });
+    // [lot 6 — cas supprimé] 2. Initiation avec hachage SHA-256 d'un token injecté vers un email : l'option injectedClaimToken, le champ claim_token et la cible email sont retirés par le contrat B et l'amendement 2 (transfert sans jeton, vers un numéro seulement : une cible email donne 400 RECIPIENT_PHONE_REQUIRED) ; couvert par tests/parcours/notif-transferts.test.ts (refus d'une cible email, réclamation par l'identifiant du transfert)
 
     test('3. Refus si un autre utilisateur tente de transférer le billet (403 Forbidden)', async () => {
         const req = new NextRequest(`http://localhost:3000/api/tickets/${ticket3Id}/transfer`, {
@@ -362,42 +333,5 @@ describe('CHANTIER 2 — PHASE 2 : INITIATION DU TRANSFERT DE BILLET P2P (9 TEST
         console.log('   ✅ 8. Token cryptographiquement aléatoire et hashé conforme');
     });
 
-    test('9. Rejet absolu du token injecté lorsque NODE_ENV === "production" (Token aléatoire forcé)', async () => {
-        const previousEnv = process.env.NODE_ENV;
-        const maliciousTestToken = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
-        const maliciousHash = crypto.createHash('sha256').update(maliciousTestToken).digest('hex');
-
-        try {
-            // Simulation de l'environnement de production
-            (process.env as any).NODE_ENV = 'production';
-
-            const result = await TicketTransferService.initiateTransfer(
-                buyerAUserId,
-                ticket4Id,
-                '770001122',
-                { injectedClaimToken: maliciousTestToken }
-            );
-
-            // Le token retourné en interne NE DOIT PAS être le token injecté
-            assert.notStrictEqual(result.claim_token, maliciousTestToken, 'Le token injecté doit être ignoré en production');
-            assert.strictEqual(result.claim_token.length, 64, 'Un token cryptographique aléatoire de 64 caractères a été généré');
-
-            // Le hash en base NE DOIT PAS être le hash du token injecté
-            const { data: transferDb } = await supabase
-                .from('ticket_transfers')
-                .select('*')
-                .eq('ticket_id', ticket4Id)
-                .maybeSingle();
-
-            if (transferDb) {
-                assert.notStrictEqual(transferDb.claim_token_hash, maliciousHash, 'Le hash en DB n\'est PAS celui du token injecté');
-                const realHash = crypto.createHash('sha256').update(result.claim_token).digest('hex');
-                assert.strictEqual(transferDb.claim_token_hash, realHash, 'Le hash en DB correspond au token aléatoire généré');
-            }
-
-            console.log('   ✅ 9. Sécurité prouvée : injectedClaimToken est 100% ignoré en mode production');
-        } finally {
-            (process.env as any).NODE_ENV = previousEnv;
-        }
-    });
+    // [lot 6 — cas supprimé] 9. Rejet du token injecté en production : l'option injectedClaimToken et le champ claim_token de l'initiation sont retirés par le contrat B (transfert sans jeton, réclamé par l'identifiant du transfert depuis le compte dont le numéro vérifié est la cible) ; plus aucun jeton à injecter ; absence de jeton couverte par tests/parcours/notif-transferts.test.ts
 });

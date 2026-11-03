@@ -24,6 +24,7 @@ import { BASE_URL, routeContext } from './helpers';
 import { GET as ticketPdfRoute } from '../../app/api/tickets/[id]/pdf/route';
 import { buyConfirmed, createPartnerEvent, jsonRequest, newPartner, paymentRow, type TestPartner } from './finance-helpers';
 import { cart, checkout, importModule, initCalls, newBuyer, pollStatus, type SaleEvent } from './paiement-helpers';
+import { flushNotifications, outboxRows } from './notif-helpers';
 
 type Handler = (req: NextRequest) => Promise<Response>;
 
@@ -126,7 +127,9 @@ describe('Confirmation : SMS et PDF du billet', () => {
         const b = await newBuyer('affichage-sms');
         const sms = getFakes().sms;
         const before0 = sms.messagesTo(b.phoneE164).length;
-        await buyConfirmed(b, ev, [['Standard', 1]], 'WAVE');
+        const { payment } = await buyConfirmed(b, ev, [['Standard', 1]], 'WAVE');
+        // Lot 6 (T) : la confirmation part par la boîte d'envoi ; passage de l'envoyeur sur ses lignes avant la lecture.
+        await flushNotifications({ ids: (await outboxRows({ keyPrefix: `PURCHASE_CONFIRMED:${payment.id}:` })).map((r) => r.id) });
         const received = sms.messagesTo(b.phoneE164).slice(before0).filter((m) => /achat|billet/i.test(m.message));
         assert.ok(received.length >= 1, 'SMS de confirmation envoyé à l’acheteur');
         const text = received[received.length - 1].message;

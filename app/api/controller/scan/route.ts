@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { isScanResult, SCAN_RESULT_LABELS, type ScanResult } from '@/lib/scan/scan-result';
 import { reserveQuota } from '@/lib/security/quota';
@@ -124,10 +123,8 @@ export async function POST(req: NextRequest) {
         if (data.http === 403) {
             return NextResponse.json({ error: 'Vous n’êtes pas autorisé à contrôler cet événement.', code: data.code }, { status: 403 });
         }
-        if (data.result === 'valid') {
-            const ticket = data.ticket as { id: string; ticket_number: string; category: string } | undefined;
-            if (ticket) notifyScanned(ticket, String(p.event_id), user.id);
-        }
+        // Lot 6 (J1.4) : l'avis « entrée validée » au porteur est mis en file par le trigger
+        // trg_tickets_scanned_notify, dans la transaction du compostage.
         return scanResponse(data);
     } catch (err) {
         console.error('[API /api/controller/scan] erreur :', err instanceof Error ? err.message : String(err));
@@ -164,23 +161,4 @@ export async function PUT(req: NextRequest) {
         console.error('[API /api/controller/scan PUT] erreur :', err instanceof Error ? err.message : String(err));
         return serverError(user.id, parsed.data.eventId, 'Erreur serveur pendant l’encaissement.');
     }
-}
-
-/** Notification au porteur après un compostage (non bloquante, échec journalisé). */
-function notifyScanned(ticket: { id: string; ticket_number: string; category: string }, eventId: string, scannerId: string): void {
-    void (async () => {
-        const { data: t, error } = await getServiceRoleClient().from('tickets').select('user_id, events(title, location)').eq('id', ticket.id).single();
-        if (error || !t) throw new Error(`billet ${ticket.id} : ${error?.message}`);
-        const ev = t.events as unknown as { title?: string; location?: string } | null;
-        await NotificationService.sendTicketScannedSuccessNotification({
-            ticketId: ticket.id,
-            ticketNumber: ticket.ticket_number,
-            eventTitle: ev?.title,
-            categoryName: ticket.category,
-            userId: t.user_id as string,
-            checkedInAt: new Date().toISOString(),
-            controllerId: scannerId,
-            venue: ev?.location,
-        });
-    })().catch((err) => console.error(`[controller/scan] notification du scan du billet ${ticket.id} (événement ${eventId}) en échec :`, err instanceof Error ? err.message : String(err)));
 }

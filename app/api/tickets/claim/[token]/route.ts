@@ -1,89 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession } from '@/lib/auth/session';
-import { TicketTransferService, type TransferRefusal } from '@/lib/tickets/ticket-transfer.service';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/tickets/claim/[token]
- * Consultation publique et protégée d'un transfert de billet en attente.
- * Ne retourne AUCUN secret sensible (pas de hash, pas de totp_secret, pas de qr_code).
+ * Lot 6 (contrat B4, décision 37, amendement 5) — l'ancien lien de réclamation par jeton est retiré.
+ * Le transfert se réclame désormais depuis « Mes billets », avec le numéro auquel il a été envoyé
+ * (POST /api/tickets/transfers/[id]/claim). Cette route répond 410 quel que soit le jeton, vrai ou faux,
+ * sans lire la base : la réponse ne dit rien de l'existence d'un transfert.
  */
-export async function GET(
-    req: NextRequest,
-    context: { params: Promise<{ token: string }> | { token: string } }
-) {
-    try {
-        const resolvedParams = await Promise.resolve(context?.params);
-        const token = resolvedParams?.token;
+const RETIRED = {
+    error: "Ce lien n'est plus utilisé. Connectez-vous avec le numéro auquel le billet a été envoyé, puis ouvrez « Mes billets ».",
+    code: 'CLAIM_LINK_RETIRED',
+} as const;
 
-        if (!token) {
-            return NextResponse.json({ error: 'Jeton de réclamation manquant.' }, { status: 400 });
-        }
+type RouteContext = { params: Promise<{ token: string }> | { token: string } };
 
-        const info = await TicketTransferService.getClaimTransferInfo(token);
-        return NextResponse.json({
-            success: true,
-            transfer: info,
-        });
-    } catch (err: unknown) {
-        const refusal = err as Partial<TransferRefusal>;
-        if (typeof refusal?.statusCode !== 'number') {
-            console.error('[GET /api/tickets/claim/[token]] erreur :', err instanceof Error ? err.message : String(err));
-            return NextResponse.json({ error: 'Consultation du transfert momentanément impossible. Réessayez.', code: 'CLAIM_INFO_FAILED' }, { status: 500 });
-        }
-        return NextResponse.json({
-            error: refusal.message,
-            expired: refusal.expired === true,
-            already_claimed: refusal.already_claimed === true,
-            cancelled: refusal.cancelled === true,
-        }, { status: refusal.statusCode });
-    }
+function retired(): NextResponse {
+    return NextResponse.json(RETIRED, { status: 410, headers: { 'Cache-Control': 'no-store' } });
 }
 
-/**
- * POST /api/tickets/claim/[token]
- * Réclamation atomique d'un billet par le destinataire authentifié.
- * Vérifie l'identité du compte connecté vs to_phone_or_email,
- * change le propriétaire, effectue la rotation cryptographique du secret TOTP & QR,
- * et incrémente la version de sécurité.
- */
-export async function POST(
-    req: NextRequest,
-    context: { params: Promise<{ token: string }> | { token: string } }
-) {
-    try {
-        // 1. Authentification
-        const activeSession = await requireActiveSession(req);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user) {
-            return NextResponse.json({
-                error: 'Authentification requise. Veuillez vous connecter pour réclamer ce billet.',
-            }, { status: 401 });
-        }
+/** GET /api/tickets/claim/[token] : 410, sans lecture de la base (le jeton n'est pas lu). */
+export async function GET(_req: NextRequest, _context: RouteContext) {
+    void _req;
+    void _context;
+    return retired();
+}
 
-        const resolvedParams = await Promise.resolve(context?.params);
-        const token = resolvedParams?.token;
-
-        if (!token) {
-            return NextResponse.json({ error: 'Jeton de réclamation manquant.' }, { status: 400 });
-        }
-
-        // 2. Exécution de la réclamation atomique
-        const result = await TicketTransferService.claimTransfer(user.id, token);
-
-        return NextResponse.json({
-            success: true,
-            message: result.message,
-            claim: result,
-        });
-    } catch (err: unknown) {
-        const refusal = err as Partial<TransferRefusal>;
-        if (typeof refusal?.statusCode !== 'number') {
-            console.error('[POST /api/tickets/claim/[token]] erreur :', err instanceof Error ? err.message : String(err));
-            return NextResponse.json({ error: 'Réclamation momentanément impossible. Réessayez.', code: 'CLAIM_FAILED' }, { status: 500 });
-        }
-        return NextResponse.json({ error: refusal.message }, { status: refusal.statusCode });
-    }
+/** POST /api/tickets/claim/[token] : session active exigée (statut du compte), puis 410 sans lecture de la base. */
+export async function POST(req: NextRequest, _context: RouteContext) {
+    void _context;
+    const activeSession = await requireActiveSession(req);
+    if (activeSession.response) return activeSession.response;
+    return retired();
 }

@@ -6,6 +6,9 @@
  *    ligne et ticket_refund_request pour les autres billets. Elle accepte VALIDE, PUBLIE et SUSPENDU.
  *  - Les remboursements créés (A_ENVOYER) sont envoyés après le commit, en un lot (solde vérifié une fois),
  *    par le module commun de cashout ; INCERTAIN n'est jamais renvoyé automatiquement.
+ *  - Lot 6 : l'avis d'annulation aux porteurs est mis en file par le trigger d'historique (même
+ *    transaction que event_cancel) et l'avis « remboursement versé » par le trigger sur cashouts ; ce
+ *    module n'envoie plus rien (un seul avis par remboursement).
  *  - Le motif interne reste dans event_cancellations (propriétaire et admins) : il n'est écrit nulle part
  *    ailleurs et n'est jamais renvoyé au public.
  *  - Impact avant annulation et avancement des remboursements : RPC event_cancellation_impact et
@@ -14,10 +17,6 @@
 
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CashoutService } from '@/lib/payments/cashout.service';
-import { OPERATOR_LABELS, type SamirPayOperatorName } from '@/lib/samirpay/types';
-import { mTargetService } from '@/lib/sms/mtarget.service';
-import { EmailService, EmailTemplates } from '@/lib/email/email.service';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { EventLifecycleError, refusalToError, type LifecycleRefusal } from '@/lib/events/event-lifecycle.service';
 
 export interface EventCancellationInput {
@@ -134,7 +133,7 @@ export class EventCancellationService {
             refundsSent++;
             const { data: c, error: cErr } = await supabase
                 .from('cashouts')
-                .select('amount, operator, phone_number, first_name, last_name, idempotency_key, beneficiary_user_id')
+                .select('amount')
                 .eq('id', cashoutId)
                 .single();
             if (cErr || !c) {
@@ -142,17 +141,6 @@ export class EventCancellationService {
                 continue;
             }
             totalAmountSent += Number(c.amount);
-            if (outcome.status !== 'CONFIRME') continue;
-            await this.dispatchRefundNotifications({
-                userId: c.beneficiary_user_id ?? undefined,
-                buyerName: [c.first_name, c.last_name].filter(Boolean).join(' '),
-                buyerPhone: c.phone_number ? `+221${c.phone_number}` : '',
-                eventTitle: result.title,
-                ticketNumber: '',
-                refundAmount: Number(c.amount),
-                refundTransactionId: c.idempotency_key ?? cashoutId,
-                operator: c.operator ? OPERATOR_LABELS[c.operator as SamirPayOperatorName] : 'Mobile Money',
-            });
         }
         const refundsPending = cashoutIds.length - refundsSent;
 
@@ -231,73 +219,5 @@ export class EventCancellationService {
             status: sent ? 'PROCESSED' : 'FAILED',
             message: sent ? 'Remboursement envoyé.' : `Remboursement non envoyé (${outcome.skipped ?? outcome.status}).`,
         };
-    }
-
-    /**
-     * Dispatcher omnicanal (SMS, Email, In-App).
-     */
-    private static async dispatchRefundNotifications(params: {
-        userId?: string;
-        buyerName: string;
-        buyerEmail?: string;
-        buyerPhone: string;
-        eventTitle: string;
-        ticketNumber: string;
-        refundAmount: number;
-        refundTransactionId: string;
-        reason?: string;
-        operator: string;
-    }): Promise<void> {
-        // 1. SMS direct via MTarget
-        if (params.buyerPhone) {
-            const smsText = `Event Village: L'événement "${params.eventTitle}" a été annulé. Votre remboursement de ${params.refundAmount.toLocaleString('fr-FR')} FCFA a été versé sur votre compte ${params.operator}. Réf: ${params.refundTransactionId}`;
-            try {
-                await mTargetService.sendSms(params.buyerPhone, smsText);
-            } catch (smsErr) {
-                console.warn('[EventCancellationService] Échec envoi SMS:', smsErr);
-            }
-        }
-
-        // 2. Email HTML transactionnel
-        if (params.buyerEmail && params.buyerEmail.includes('@')) {
-            try {
-                const emailContent = EmailTemplates.eventCancelledAndRefunded({
-                    recipientName: params.buyerName,
-                    eventTitle: params.eventTitle,
-                    ticketNumber: params.ticketNumber,
-                    refundAmount: params.refundAmount,
-                    refundTransactionId: params.refundTransactionId,
-                    reason: params.reason,
-                    operator: params.operator,
-                });
-
-                await EmailService.send({
-                    to: params.buyerEmail,
-                    subject: emailContent.subject,
-                    html: emailContent.html,
-                });
-            } catch (emailErr) {
-                console.warn('[EventCancellationService] Échec envoi Email:', emailErr);
-            }
-        }
-
-        // 3. Notification In-App
-        if (params.userId) {
-            try {
-                await NotificationService.createNotification({
-                    userId: params.userId,
-                    title: 'Événement annulé & Billet remboursé',
-                    message: `L'événement "${params.eventTitle}" a été annulé. Un montant de ${params.refundAmount.toLocaleString('fr-FR')} FCFA a été remboursé sur votre compte ${params.operator}.`,
-                    type: 'PAYMENT',
-                    data: {
-                        eventTitle: params.eventTitle,
-                        refundAmount: params.refundAmount,
-                        refundTransactionId: params.refundTransactionId,
-                    },
-                });
-            } catch (inAppErr) {
-                console.warn('[EventCancellationService] Échec notification In-App:', inAppErr);
-            }
-        }
     }
 }

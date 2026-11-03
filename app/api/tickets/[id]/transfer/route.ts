@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
-import { InitiateTransferSchema } from '@/lib/validations/transfer';
-import { TicketTransferService, type TransferRefusal } from '@/lib/tickets/ticket-transfer.service';
+import { normalizeRecipient } from '@/lib/validations/transfer';
+import { TicketTransferService, TRANSFER_PHONE, type TransferRefusal } from '@/lib/tickets/ticket-transfer.service';
 
 export const dynamic = 'force-dynamic';
 
+const BodySchema = z.object({
+    recipient: z.string({ required_error: 'Le numéro de téléphone du destinataire est requis.' })
+        .trim()
+        .min(3, 'Saisissez le numéro de téléphone du destinataire.')
+        .max(254, 'Numéro de téléphone du destinataire invalide.'),
+}).strict();
+
 /**
- * POST /api/tickets/[id]/transfer
- * Initie le transfert d'un billet VALIDE vers un destinataire (téléphone ou email) : transfert PENDING
- * et verrou du billet posés dans la même transaction (RPC ticket_transfer_initiate), puis lien de
- * réclamation envoyé au destinataire. `recipient_notified` dit si cet envoi a réussi (un échec ne
- * casse pas le transfert : le lien reste partageable).
+ * POST /api/tickets/[id]/transfer — lot 6, contrat B4 avec l'amendement 2 (transfert vers un numéro
+ * seulement, sans jeton ni lien) : transfert PENDING, verrou du billet et offre au destinataire (SMS au
+ * numéro, cloche et push au compte dont le numéro vérifié est la cible) dans la même transaction (RPC
+ * ticket_transfer_initiate). Une adresse email est refusée (400 RECIPIENT_PHONE_REQUIRED).
  */
 export async function POST(
     req: NextRequest,
@@ -32,16 +39,23 @@ export async function POST(
     } catch {
         return NextResponse.json({ error: 'Corps JSON invalide.', code: 'INVALID_BODY' }, { status: 400 });
     }
-    const parseResult = InitiateTransferSchema.safeParse(body);
-    if (!parseResult.success) {
+    const parsed = BodySchema.safeParse(body);
+    if (!parsed.success) {
         return NextResponse.json({
-            error: parseResult.error.errors[0]?.message || 'Données de transfert invalides.',
+            error: parsed.error.errors[0]?.message || 'Numéro de téléphone du destinataire invalide.',
             code: 'INVALID_BODY',
         }, { status: 400 });
     }
+    const target = normalizeRecipient(parsed.data.recipient);
+    if (target.type === 'EMAIL' || parsed.data.recipient.includes('@')) {
+        return NextResponse.json({ error: 'Le billet se transfère vers un numéro de téléphone.', code: 'RECIPIENT_PHONE_REQUIRED' }, { status: 400 });
+    }
+    if (!TRANSFER_PHONE.test(target.normalized)) {
+        return NextResponse.json({ error: 'Numéro de téléphone du destinataire invalide.', code: 'INVALID_BODY' }, { status: 400 });
+    }
 
     try {
-        const result = await TicketTransferService.initiateTransfer(user.id, ticketId, parseResult.data.recipient);
+        const result = await TicketTransferService.initiateTransfer(user.id, ticketId, target.normalized);
         const transfer = {
             transfer_id: result.transfer_id,
             ticket_id: result.ticket_id,
@@ -50,15 +64,11 @@ export async function POST(
             recipient_type: result.recipient_type,
             expires_at: result.expires_at,
             event_title: result.event_title,
-            claim_url: result.claim_url,
-            recipient_notified: result.recipient_notified,
+            recipient_notification: result.recipient_notification,
         };
         return NextResponse.json({
             success: true,
-            message: result.recipient_notified
-                ? `Transfert initié : le lien de réclamation a été envoyé à ${result.recipient}.`
-                : `Transfert initié, mais le lien n’a pas pu être envoyé à ${result.recipient} : partagez-le vous-même.`,
-            recipient_notified: result.recipient_notified,
+            message: `Transfert initié : ${result.recipient} recevra un SMS et devra se connecter avec ce numéro pour accepter le billet sous 48 h.`,
             transfer,
         });
     } catch (err: unknown) {

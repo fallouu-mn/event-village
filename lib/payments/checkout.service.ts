@@ -26,7 +26,6 @@ import { isSamirPayError, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '
 import { reserveQuota } from '@/lib/security/quota';
 import { normalizePayerPhone } from './payer-phone';
 import { rpcWithRetry } from './rpc';
-import { notifyStockMilestones } from './stock-notifications';
 
 /** Plafond absolu d'une ligne de panier, aligné sur la borne de max_per_order (CHECK 1..50). */
 export const MAX_PER_ORDER_CAP = 50;
@@ -157,7 +156,7 @@ export async function startTicketCheckout(params: {
             if (free.problems?.length) return problemsOutcome(free.problems);
             return { status: 409, body: { error: free.message ?? 'Billets gratuits refusés.', code: free.code } };
         }
-        await notifyStockMilestones(items.map((i) => i.category_id));
+        // Lot 6 (J1.2, J1.5) : confirmation et épuisement mis en file par free_tickets_claim et ses triggers.
         return { status: 200, body: { free: true, status: 'SUCCESS', ticket_ids: free.ticket_ids ?? [] } };
     }
 

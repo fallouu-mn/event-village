@@ -60,8 +60,24 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: message }, { status });
         }
 
-        // 3. Récupération du profil utilisateur et génération de session
         const supabase = getServiceRoleClient();
+
+        // Lot 6 (contrat B1) : un code SMS vérifié prouve la possession du numéro ; la première date est
+        // conservée (équivalent de COALESCE). Seule preuve utilisée pour recevoir un billet transféré.
+        const { error: verifiedErr } = await supabase
+            .from('users')
+            .update({ phone_verified_at: new Date().toISOString() })
+            .eq('phone', normalizedPhone)
+            .is('phone_verified_at', null);
+        if (verifiedErr) {
+            console.error('[API verify-otp] enregistrement de la vérification du numéro impossible :', verifiedErr.message);
+            return NextResponse.json(
+                { error: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'PHONE_VERIFY_FAILED' },
+                { status: 503 }
+            );
+        }
+
+        // 3. Récupération du profil utilisateur et génération de session
         const { data: userProfile } = await supabase
             .from('users')
             .select('*')

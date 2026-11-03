@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { rpcWithRetry } from '@/lib/payments/rpc';
-import { mTargetService } from '@/lib/sms/mtarget.service';
-import { getServiceRoleClient } from '@/lib/supabase/server';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
 
 export const dynamic = 'force-dynamic';
@@ -48,8 +46,10 @@ type SaleReply = Record<string, unknown> & {
  * (catégorie active, stock sous verrou) ; dans la même transaction (RPC counter_sale) : billets sans
  * compte au statut UTILISE, une entrée acceptée par billet (méthode COUNTER), paiement hors plateforme
  * au prix facial rattaché à la caisse, total attendu de la caisse incrémenté. Aucun rattachement au
- * compte du numéro saisi ; le vendeur n'est jamais porteur. Reçu SMS au numéro s'il est fourni, après la
- * vente : `receipt_sent` dit s'il est parti (un échec n'annule pas la vente).
+ * compte du numéro saisi ; le vendeur n'est jamais porteur. Lot 6 (J1.3) : le reçu SMS au numéro fourni
+ * est mis en file dans la même transaction (boîte d'envoi, quota par caisse) : `receipt_queued` dit qu'il
+ * est en file (ou déjà parti), `receipt_refusal` donne le motif s'il a été écarté dès la vente ; un échec
+ * d'envoi n'annule jamais la vente (relances de l'envoyeur).
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -99,28 +99,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ...sale, error: String(sale.message ?? 'Vente refusée.'), code }, { status: REFUSAL_STATUS[code] ?? 400 });
     }
 
-    // Reçu SMS après la vente (jamais sur un rejeu : il est déjà parti, ou a échoué, à la première demande)
-    let receiptSent = false;
-    let receiptCode: string | null = null;
-    if (buyerE164 && sale.replayed !== true) {
-        try {
-            const { data: ev, error: evErr } = await getServiceRoleClient().from('events').select('title').eq('id', parsed.data.eventId).maybeSingle();
-            if (evErr) throw new Error(`lecture du titre de l'événement : ${evErr.message}`);
-            const res = await mTargetService.sendCounterReceipt(buyerE164, {
-                eventTitle: String(ev?.title ?? 'Event Village'),
-                ticketCount: Array.isArray(sale.ticket_ids) ? sale.ticket_ids.length : 0,
-                amount: Number(sale.amount ?? 0),
-                reference: String(sale.transaction_id ?? sale.payment_id ?? ''),
-            }, String(sale.shift_id));
-            receiptSent = res.success === true;
-            if (!receiptSent) {
-                receiptCode = res.code ?? 'SMS_FAILED';
-                console.warn(`[API /api/controller/counter-sale] reçu de la vente ${sale.payment_id} non envoyé (${receiptCode}).`);
-            }
-        } catch (smsErr) {
-            receiptCode = 'SMS_FAILED';
-            console.error(`[API /api/controller/counter-sale] reçu de la vente ${sale.payment_id} en échec :`, smsErr instanceof Error ? smsErr.message : String(smsErr));
-        }
+    // La vente est acquise : un état du reçu illisible est journalisé et signalé, jamais une erreur (un
+    // vendeur qui croirait la vente perdue la referait).
+    const receiptKnown = typeof sale.receipt_queued === 'boolean';
+    if (!receiptKnown) {
+        console.error(`[API /api/controller/counter-sale] réponse de counter_sale sans état du reçu (vente ${sale.payment_id}).`);
     }
-    return NextResponse.json({ ...sale, receipt_requested: !!buyerE164, receipt_sent: receiptSent, receipt_code: receiptCode });
+    return NextResponse.json({
+        ...sale,
+        receipt_requested: !!buyerE164,
+        receipt_queued: receiptKnown ? sale.receipt_queued : false,
+        receipt_refusal: !receiptKnown ? 'RECEIPT_STATE_UNKNOWN' : typeof sale.receipt_refusal === 'string' ? sale.receipt_refusal : null,
+    });
 }

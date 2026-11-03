@@ -13,7 +13,6 @@ import '../helpers/env';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { TicketPdfService } from '../../lib/tickets/ticket-pdf.service';
 import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
-import { NotificationService } from '../../lib/notifications/notification.service';
 import { GET as getTicketPdfRoute } from '../../app/api/tickets/[id]/pdf/route';
 
 describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (12 TESTS)', async () => {
@@ -157,8 +156,12 @@ describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (
         ticketTransferredId = t3.id;
 
         // Effectuer le transfert P2P réel de ticket 3 de Buyer A vers Buyer B
+        // [lot 6] Plus de jeton (contrat B) : le destinataire accepte par l'identifiant du transfert, avec le
+        // numéro de son compte vérifié par OTP (users.phone_verified_at), comme tests/parcours/acces-qr.test.ts.
+        const { error: verifyErr } = await supabase.from('users').update({ phone_verified_at: new Date().toISOString() }).eq('id', buyerBUserId);
+        if (verifyErr) throw new Error(`Phone verification of buyer B failed: ${verifyErr.message}`);
         const transferRes = await TicketTransferService.initiateTransfer(buyerAUserId, ticketTransferredId, '+221772345678');
-        await TicketTransferService.claimTransfer(buyerBUserId, transferRes.claim_token);
+        await TicketTransferService.acceptTransfer(buyerBUserId, transferRes.transfer_id);
 
         console.log('[SETUP] Prêt.');
     });
@@ -309,58 +312,12 @@ describe('CHANTIER 3 : FINALISATION & EXPORTS DES BILLETS — SUITE OFFICIELLE (
         assert.ok(!pdfText.includes('claim_token_hash'), 'Aucun claim_token_hash ne doit être exposé');
     });
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // TEST 8 : Notification SMS après paiement SUCCESS avec lien sécurisé
-    // ─────────────────────────────────────────────────────────────────────────
-    await test('TEST 8 : Notification SMS après paiement SUCCESS (Exactement 1 notification avec lien portefeuille)', async () => {
-        const notifResult = await NotificationService.sendTicketPurchaseNotifications({
-            userId: buyerAUserId,
-            eventId: testEventId,
-            categoryId: testCategoryId,
-            orderNumber: `CMD-TEST-${ts}`,
-            ticketCount: 2,
-            ticketNumbers: [`TCK-PDF-1-${ts}`, `TCK-PDF-2-${ts}`],
-            totalAmount: 50000,
-            clientPhone: '+221771234567',
-            clientEmail: 'buyerA@eventvillage.sn',
-            clientName: 'Mamadou Diallo',
-        });
-
-        assert.ok(notifResult.client.inApp, 'La notification in-app acheteur doit être créée');
-        assert.ok(
-            notifResult.client.sms !== undefined || notifResult.client.inApp,
-            'Le flux de notification SMS acheteur a été exécuté'
-        );
-    });
+    // [lot 6 — cas supprimé] TEST 8 Notification SMS après paiement SUCCESS : NotificationService.sendTicketPurchaseNotifications supprimé (contrat K) ; PURCHASE_CONFIRMED (IN_APP, SMS avec le lien « Mes billets », EMAIL) est créé par payment_confirm dans la boîte d'envoi et livré par l'envoyeur ; couvert par tests/parcours/finance-affichage.test.ts (texte exact du SMS), tests/parcours/notif-canaux.test.ts et tests/parcours/notif-preferences.test.ts (PURCHASE_CONFIRMED)
 
     // [lot 2 — cas supprimé] TEST 9 Webhook SUCCESS répété (idempotence) : PaymentService.handleSamirPayWebhook supprimé (webhook par lib/payments/webhook.service.ts, émission par la RPC payment_confirm) ; couvert par tests/parcours/paiement-webhook.test.ts et tests/parcours/paiement-confirmation.test.ts
     // [lot 2 — cas supprimé] TEST 10 Non-régression Hold Cart : EventService.getActiveHeldQuantity, PaymentService.handleSamirPayWebhook et createPayment(TICKET) supprimés (réservation en base par la RPC checkout_create_payment) ; couvert par tests/parcours/paiement-reservation.test.ts
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // TEST 11 : Non-régression Transfert P2P
-    // ─────────────────────────────────────────────────────────────────────────
-    await test('TEST 11 : Non-régression — Transfert P2P toujours 100% opérationnel', async () => {
-        // Création d'un ticket temporaire
-        const { data: tP2P } = await supabase.from('tickets').insert({
-            event_id: testEventId,
-            category_id: testCategoryId,
-            user_id: buyerAUserId,
-            ticket_number: `TCK-P2P-REG-${ts}`,
-            price: 25000,
-            qr_code: `EV-QR-P2P-REG-${ts}`,
-            status: 'VALIDE',
-            totp_secret: crypto.randomBytes(32).toString('hex'),
-        }).select('id').single();
-
-        const tr = await TicketTransferService.initiateTransfer(buyerAUserId, tP2P!.id, '+221772345678');
-        assert.ok(tr.success);
-        assert.ok(tr.claim_token);
-
-        const cancel = await TicketTransferService.cancelTransfer(buyerAUserId, tr.transfer_id);
-        assert.ok(cancel.success);
-
-        await supabase.from('tickets').delete().eq('id', tP2P!.id);
-    });
+    // [lot 6 — cas supprimé] TEST 11 Non-régression Transfert P2P : exigeait un claim_token dans la réponse de l'initiation, retiré par le contrat B (transfert sans jeton, vers un numéro, réclamé par l'identifiant du transfert) ; initiation puis annulation couvertes par tests/parcours/dette-transferts.test.ts
 
     // [lot 4 — cas supprimé] TEST 12 Non-régression QR/TOTP et compostage : generateTotp, verifyTotp et RPC atomic_ticket_checkin supprimés (verifyTicketCode, compostage par la RPC ticket_scan) ; couvert par tests/parcours/acces-totp.test.ts et tests/parcours/acces-scan.test.ts
 });

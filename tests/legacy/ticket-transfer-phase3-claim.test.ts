@@ -12,7 +12,7 @@ import '../helpers/env';
 
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { TicketTransferService } from '../../lib/tickets/ticket-transfer.service';
-import { GET as getClaimRoute, POST as claimRoute } from '../../app/api/tickets/claim/[token]/route';
+import { GET as getClaimRoute } from '../../app/api/tickets/claim/[token]/route';
 import { POST as cancelRoute } from '../../app/api/tickets/transfers/[id]/cancel/route';
 
 describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ P2P (18 TESTS)', async () => {
@@ -178,36 +178,7 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
 
     let trExpiredId: string;
 
-    test('TEST 1 : GET claim avec token valide (Détails publics retournés, 0 fuite sensible)', async () => {
-        // Initiation vers le téléphone de Buyer B (+221772345678)
-        const initResult = await TicketTransferService.initiateTransfer(
-            buyerAUserId,
-            tClaimNominalId,
-            '+221772345678'
-        );
-
-        const req = new NextRequest(`http://localhost:3000/api/tickets/claim/${initResult.claim_token}`, {
-            method: 'GET',
-        });
-
-        const res = await getClaimRoute(req, { params: { token: initResult.claim_token } });
-        const data = await res.json();
-
-        assert.strictEqual(res.status, 200, 'HTTP 200 attendu');
-        assert.strictEqual(data.success, true);
-        assert.ok(data.transfer.event.title.includes('Festival Grand P2P'), 'Titre événement présent');
-        assert.strictEqual(data.transfer.ticket.category_name, 'Pass VIP Prestige');
-        assert.strictEqual(data.transfer.sender_name_masked, 'Mamadou D.', 'Nom expéditeur masqué');
-        assert.ok(data.transfer.recipient_target_masked.includes('***'), 'Destinataire masqué');
-
-        // 🛡️ SÉCURITÉ : ZÉRO fuite cryptographique
-        const serialized = JSON.stringify(data);
-        assert.strictEqual(serialized.includes('claim_token_hash'), false, 'ZÉRO claim_token_hash');
-        assert.strictEqual(serialized.includes('totp_secret'), false, 'ZÉRO totp_secret');
-        assert.strictEqual(serialized.includes('qr_code'), false, 'ZÉRO qr_code');
-
-        console.log('   ✅ TEST 1 : GET claim valide avec masquage et 0 fuite sensible validé');
-    });
+    // [lot 6 — cas supprimé] TEST 1 : GET claim avec token valide : le champ claim_token de l'initiation est retiré et la route /api/tickets/claim/[token] répond 410 CLAIM_LINK_RETIRED sans lire la base (contrat B4) ; détails publics et masquage d'un transfert reçu couverts par tests/parcours/notif-transferts.test.ts (GET /api/tickets/transfers/incoming)
 
     test('TEST 2 : GET claim avec token invalide (Rejet 404)', async () => {
         const fakeToken = '0000000000000000000000000000000000000000000000000000000000000000';
@@ -253,106 +224,9 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
         console.log('   ✅ TEST 3 : Transfert expiré rejeté avec HTTP 410');
     });
 
-    let claimedTransferIdForTest13: string;
-
-    test('TEST 4 : CLAIM nominal compte existant (Changement user_id, status CLAIMED, déverrouillage)', async () => {
-        const initNominal = await TicketTransferService.initiateTransfer(buyerAUserId, tCancelAfterClaimId, '+221772345678');
-        claimedTransferIdForTest13 = initNominal.transfer_id;
-
-        const req = new NextRequest(`http://localhost:3000/api/tickets/claim/${initNominal.claim_token}`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${buyerBToken}`,
-            },
-        });
-
-        const res = await claimRoute(req, { params: { token: initNominal.claim_token } });
-        const data = await res.json();
-
-        assert.strictEqual(res.status, 200, 'HTTP 200 attendu pour claim nominal');
-        assert.strictEqual(data.success, true);
-        assert.strictEqual(data.claim.new_user_id, buyerBUserId, 'Nouveau propriétaire est Buyer B');
-
-        // Vérification directe en base
-        const { data: ticketDb } = await supabase.from('tickets').select('*').eq('id', tCancelAfterClaimId).single();
-        assert.strictEqual(ticketDb!.user_id, buyerBUserId, 'tickets.user_id est passé à Buyer B');
-        const isLocked = await TicketTransferService.isTicketLocked(tCancelAfterClaimId);
-        assert.strictEqual(isLocked, false, 'tickets.transfer_locked est passé à false');
-
-        const trDbUpdated = await TicketTransferService.getTransferRecord(initNominal.transfer_id);
-        assert.strictEqual(trDbUpdated!.status, 'CLAIMED', 'ticket_transfers.status est CLAIMED');
-        assert.strictEqual(trDbUpdated!.to_user_id, buyerBUserId, 'ticket_transfers.to_user_id est Buyer B');
-        assert.ok(trDbUpdated!.claimed_at, 'claimed_at est renseigné');
-
-        console.log('   ✅ TEST 4 : CLAIM nominal réussi, propriétaire transféré et déverrouillé');
-    });
-
-    test('TEST 5 : CLAIM avec mauvais destinataire (Rejet HTTP 403 & Billet intact)', async () => {
-        // Transfert initié vers Buyer B (+221772345678)
-        const initDestinedToB = await TicketTransferService.initiateTransfer(buyerAUserId, tClaimConcurrenceId, '+221772345678');
-
-        // Buyer C (Ousmane Ba, +221779998877) tente de réclamer ce token
-        const req = new NextRequest(`http://localhost:3000/api/tickets/claim/${initDestinedToB.claim_token}`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${buyerCToken}`, // Mauvais compte connecté
-            },
-        });
-
-        const res = await claimRoute(req, { params: { token: initDestinedToB.claim_token } });
-        const data = await res.json();
-
-        assert.strictEqual(res.status, 403, 'HTTP 403 attendu pour destinataire non concordant');
-        assert.ok(data.error.includes('réservé'), 'Message d\'erreur explicite');
-
-        // Vérification DB : le billet reste à Buyer A, verrouillé, et le transfert reste PENDING
-        const { data: tDb } = await supabase.from('tickets').select('*').eq('id', tClaimConcurrenceId).single();
-        assert.strictEqual(tDb!.user_id, buyerAUserId, 'Le propriétaire reste Buyer A');
-        const isLocked = await TicketTransferService.isTicketLocked(tClaimConcurrenceId);
-        assert.strictEqual(isLocked, true, 'Le billet reste verrouillé');
-
-        const trDb = await TicketTransferService.getTransferRecord(initDestinedToB.transfer_id);
-        assert.strictEqual(trDb!.status, 'PENDING', 'Le statut reste PENDING');
-
-        console.log('   ✅ TEST 5 : Tentative de claim par mauvais compte rejetée en HTTP 403');
-    });
-
-    test('TEST 6 : DOUBLE CLAIM concurrent (Promise.allSettled — Exactement 1 succès, 1 rejet)', async () => {
-        // Ré-initialisation propre pour garantir le test concurrent
-        await supabase.from('ticket_transfers').delete().eq('ticket_id', tClaimConcurrenceId);
-        await supabase.from('tickets').update({ transfer_locked: false, user_id: buyerAUserId }).eq('id', tClaimConcurrenceId);
-        const memMap = (TicketTransferService as any).inMemoryTransfers as Map<string, any>;
-        if (memMap) {
-            Array.from(memMap.entries()).forEach(([id, tr]) => {
-                if (tr?.ticket_id === tClaimConcurrenceId) {
-                    memMap.delete(id);
-                }
-            });
-        }
-        (TicketTransferService as any).activeTransfersLock.delete(tClaimConcurrenceId);
-
-        const initConcur = await TicketTransferService.initiateTransfer(buyerAUserId, tClaimConcurrenceId, '+221772345678');
-
-        const p1 = TicketTransferService.claimTransfer(buyerBUserId, initConcur.claim_token);
-        const p2 = TicketTransferService.claimTransfer(buyerBUserId, initConcur.claim_token);
-
-        const results = await Promise.allSettled([p1, p2]);
-        const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<any>[];
-        const rejected = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[];
-
-        console.log(`   📊 Résultats double claim concurrent :`);
-        console.log(`      - Succès : ${fulfilled.length}`);
-        console.log(`      - Rejets : ${rejected.length}`);
-
-        assert.strictEqual(fulfilled.length, 1, 'EXACTEMENT 1 succès');
-        assert.strictEqual(rejected.length, 1, 'EXACTEMENT 1 rejet en concurrence');
-
-        // Vérification en base : statut CLAIMED
-        const trDbFinal = await TicketTransferService.getTransferRecord(initConcur.transfer_id);
-        assert.strictEqual(trDbFinal!.status, 'CLAIMED', 'Statut final unique CLAIMED');
-
-        console.log('   ✅ TEST 6 : Protection atomique contre les doubles réclamations simultanées validée');
-    });
+    // [lot 6 — cas supprimé] TEST 4 : CLAIM nominal par jeton : claim_token et la réclamation par /api/tickets/claim/[token] sont retirés (contrat B : réclamation par POST /api/tickets/transfers/[id]/claim depuis le compte dont le numéro vérifié est la cible) ; couvert par tests/parcours/notif-transferts.test.ts (destinataire vérifié : 200, billet transféré, identité renouvelée) et tests/parcours/acces-qr.test.ts (transfert complet par les routes)
+    // [lot 6 — cas supprimé] TEST 5 : CLAIM avec mauvais destinataire : réclamation par jeton retirée (contrat B) ; couvert par tests/parcours/notif-transferts.test.ts (404 TRANSFER_NOT_FOUND identique pour le transfert d'un autre, billet inchangé)
+    // [lot 6 — cas supprimé] TEST 6 : DOUBLE CLAIM concurrent : TicketTransferService.claimTransfer et claim_token supprimés (contrat B, acceptTransfer par l'identifiant du transfert) ; second appel séquentiel refusé (409 TRANSFER_NOT_PENDING) couvert par tests/parcours/notif-transferts.test.ts ; non couvert : deux réclamations simultanées
 
     // [lot 4 — cas supprimé] TEST 7 — Ancien QR révoqué et nouveau QR opérationnel : generateTotp, verifyTotp et buildDynamicQrPayload supprimés ; couvert par tests/parcours/acces-totp.test.ts (transfert : code de l'ancien secret refusé, nouveau porteur accepté) et tests/parcours/acces-qr.test.ts (identifiants régénérés, ancien QR et ancien numéro refusés)
     // [lot 4 — cas supprimé] TEST 8 : security_version (N → N + 1) : lisait le billet réclamé par le cas 7 (supprimé) ; non couvert : l'incrément de security_version par ticket_transfer_claim n'est vérifié par aucune suite active
@@ -409,22 +283,7 @@ describe('CHANTIER 2 — PHASE 3 : RÉCLAMATION, ROTATION DU SECRET & SÉCURITÉ
         console.log('   ✅ TEST 12 : Tentative d\'annulation par un tiers rejetée en HTTP 403');
     });
 
-    test('TEST 13 : Annulation après CLAIM (Rejet HTTP 400)', async () => {
-        const req = new NextRequest(`http://localhost:3000/api/tickets/transfers/${claimedTransferIdForTest13}/cancel`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${buyerAToken}`,
-            },
-        });
-
-        const res = await cancelRoute(req, { params: { id: claimedTransferIdForTest13 } });
-        const data = await res.json();
-
-        assert.strictEqual(res.status, 400, 'HTTP 400 attendu');
-        assert.ok(data.error.toLowerCase().includes('réclamé') || data.error.toLowerCase().includes('impossible'), 'Message clair');
-
-        console.log('   ✅ TEST 13 : Annulation d\'un billet déjà réclamé rejetée');
-    });
+    // [lot 6 — cas supprimé] TEST 13 : Annulation après CLAIM : annulait le transfert réclamé par le test 4 (supprimé) ; non couvert par une suite active (annulation d'un transfert déjà réclamé)
 
     test('TEST 14 : Expiration TTL 48h (Cleanup Job : EXPIRED & Déverrouillage)', async () => {
         const expiredCleanupResult = await TicketTransferService.expireOverdueTransfers();
