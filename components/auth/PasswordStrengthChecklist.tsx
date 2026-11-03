@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Check, X } from 'lucide-react';
-import { clsx } from 'clsx';
+import { cn } from '@/components/ui/cn';
 
 const PASSWORD_CRITERIA = [
     { key: 'length',  label: 'Au moins 8 caractères',                    test: (p: string) => p.length >= 8 },
@@ -21,39 +21,41 @@ export function allPasswordCriteriaMet(password: string) {
 
 interface PasswordStrengthChecklistProps {
     password: string;
+    /** Identifiant de la liste, à relier au champ du mot de passe par aria-describedby. */
+    id?: string;
 }
 
-export function PasswordStrengthChecklist({ password }: PasswordStrengthChecklistProps) {
+/**
+ * Critères de robustesse du mot de passe (lot 6, contrat A5) : liste lue par les lecteurs d'écran
+ * (« respecté » / « manquant » en texte, la couleur ne porte jamais seule l'information), 14 px, tokens.
+ */
+export function PasswordStrengthChecklist({ password, id }: PasswordStrengthChecklistProps) {
     if (password.length === 0) return null;
 
     const criteria = getPasswordCriteriaStatus(password);
 
     return (
-        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 space-y-2">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-2">
-                Robustesse du mot de passe
-            </p>
-            {criteria.map((c) => (
-                <div key={c.key} className="flex items-center gap-2">
-                    <div className={clsx(
-                        'w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                        c.passed
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-red-100 dark:bg-red-950/50 text-red-500 border border-red-300 dark:border-red-800'
-                    )}>
-                        {c.passed
-                            ? <Check size={10} strokeWidth={3} />
-                            : <X size={10} strokeWidth={3} />
-                        }
-                    </div>
-                    <span className={clsx(
-                        'text-[11px] font-semibold transition-colors',
-                        c.passed ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
-                    )}>
-                        {c.label}
-                    </span>
-                </div>
-            ))}
+        <div id={id} className="space-y-2 rounded-2xl border border-border bg-surface-sunken p-3.5">
+            <p className="text-sm font-semibold text-fg">Robustesse du mot de passe</p>
+            <ul className="space-y-1.5">
+                {criteria.map((c) => (
+                    <li key={c.key} className="flex items-center gap-2">
+                        <span
+                            aria-hidden="true"
+                            className={cn(
+                                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border transition-colors duration-200',
+                                c.passed ? 'border-success bg-success text-on-tone' : 'border-danger-border bg-danger-bg text-danger-fg',
+                            )}
+                        >
+                            {c.passed ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />}
+                        </span>
+                        <span className={cn('text-sm font-medium', c.passed ? 'text-success-fg' : 'text-danger-fg')}>
+                            {c.label}
+                            <span className="sr-only">{c.passed ? ' : respecté' : ' : manquant'}</span>
+                        </span>
+                    </li>
+                ))}
+            </ul>
         </div>
     );
 }

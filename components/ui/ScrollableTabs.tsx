@@ -2,18 +2,26 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Tabs, type TabsProps } from '@/components/ui/Tabs';
-import { cn } from '@/components/ui/cn';
+import { Tabs, type TabsProps } from './Tabs';
+import { cn } from './cn';
 
 /** Écart (px) sous lequel un bord est considéré comme atteint (arrondis des positions de défilement). */
 const EDGE_TOLERANCE_PX = 4;
 
 /**
- * Onglets du pilotage quand ils débordent (six onglets à 390 px) : la barre défile horizontalement (Tabs),
- * un dégradé sur la couleur du fond de page (token surface-sunken) et un chevron signalent qu'il reste des
- * onglets de chaque côté, et l'onglet actif est ramené au centre de la barre (au montage, puis à chaque
- * changement, y compris au clavier). Sans débordement (ordinateur), aucun indice n'est affiché.
- * Les indices sont décoratifs (aria-hidden) et ne captent aucun clic.
+ * Largeur d'un indice de débordement, en px : celle de `w-8` (2 rem). Le conteneur qui défile reçoit la même
+ * marge de défilement (`scroll-px-8`, scroll-padding-inline) : un onglet amené à l'écran (clavier, onglet
+ * actif) n'est jamais caché sous un indice.
+ */
+const HINT_WIDTH_PX = 32;
+
+/**
+ * Onglets qui débordent (lot 5 : pilotage, liste des organisateurs ; lot 6 : file admin à 8 onglets, page admin
+ * Notifications). La barre défile horizontalement (Tabs) ; un dégradé sur la couleur du fond de page (token
+ * surface-sunken) et un chevron signalent qu'il reste des onglets de chaque côté, et l'onglet actif est ramené
+ * au centre de la zone libre entre les deux indices (au montage, puis à chaque changement, y compris au
+ * clavier). Sans débordement (ordinateur), aucun indice n'est affiché.
+ * Les indices sont décoratifs (aria-hidden) et ne captent aucun clic. Même API que Tabs (TabsProps).
  */
 export function ScrollableTabs(props: TabsProps) {
     const { value, className, ...rest } = props;
@@ -50,7 +58,8 @@ export function ScrollableTabs(props: TabsProps) {
         };
     }, [scroller, updateEdges]);
 
-    // Onglet actif centré dans la barre (effet du parent : il passe après le scrollIntoView de Tabs).
+    // Onglet actif centré entre les deux indices (effet du parent : il passe après le scrollIntoView de Tabs).
+    // Un onglet plus large que la zone libre est aligné juste après l'indice de gauche.
     useEffect(() => {
         const el = scroller();
         const active = el?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
@@ -60,7 +69,9 @@ export function ScrollableTabs(props: TabsProps) {
         }
         const box = el.getBoundingClientRect();
         const tab = active.getBoundingClientRect();
-        const target = el.scrollLeft + (tab.left - box.left) - (box.width - tab.width) / 2;
+        const free = box.width - 2 * HINT_WIDTH_PX;
+        const offset = tab.width <= free ? (box.width - tab.width) / 2 : HINT_WIDTH_PX;
+        const target = el.scrollLeft + (tab.left - box.left) - offset;
         const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         el.scrollTo({ left: Math.max(0, target), behavior: reduceMotion ? 'auto' : 'smooth' });
         updateEdges();
@@ -68,11 +79,11 @@ export function ScrollableTabs(props: TabsProps) {
 
     return (
         <div ref={wrapperRef} className="relative">
-            <Tabs {...rest} value={value} className={className} />
+            <Tabs {...rest} value={value} className={cn('scroll-px-8', className)} />
             <span
                 aria-hidden="true"
                 className={cn(
-                    'pointer-events-none absolute inset-y-0 -left-4 flex w-12 items-center justify-start bg-gradient-to-r from-surface-sunken via-surface-sunken/80 to-surface-sunken/0 pl-1 text-fg-muted transition-opacity duration-200 sm:left-0',
+                    'pointer-events-none absolute inset-y-0 -left-4 flex w-8 items-center justify-start bg-gradient-to-r from-surface-sunken via-surface-sunken/90 to-surface-sunken/0 text-fg-muted transition-opacity duration-200 sm:left-0',
                     edges.start ? 'opacity-100' : 'opacity-0',
                 )}
             >
@@ -81,7 +92,7 @@ export function ScrollableTabs(props: TabsProps) {
             <span
                 aria-hidden="true"
                 className={cn(
-                    'pointer-events-none absolute inset-y-0 -right-4 flex w-12 items-center justify-end bg-gradient-to-l from-surface-sunken via-surface-sunken/80 to-surface-sunken/0 pr-1 text-fg-muted transition-opacity duration-200 sm:right-0',
+                    'pointer-events-none absolute inset-y-0 -right-4 flex w-8 items-center justify-end bg-gradient-to-l from-surface-sunken via-surface-sunken/90 to-surface-sunken/0 text-fg-muted transition-opacity duration-200 sm:right-0',
                     edges.end ? 'opacity-100' : 'opacity-0',
                 )}
             >

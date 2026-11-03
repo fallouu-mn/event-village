@@ -5,12 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
     UserPlus,
-    User,
-    Phone,
-    Mail,
-    Gift,
     ShieldCheck,
-    AlertCircle,
     RotateCcw,
     CheckCircle2,
     Eye,
@@ -18,11 +13,22 @@ import {
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { TextInput } from '@/components/ui/Field';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { RegisterClientSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
+
+/**
+ * Inscription d'un client (lot 6, contrat A5 : écran sur le système de design, logique inchangée) :
+ * validation RegisterClientSchema, POST /api/auth/register, code SMS (/api/auth/verify-otp), puis connexion
+ * avec l'email réel ou l'email technique `<numéro>@eventvillage.sn`, et redirection selon le rôle.
+ */
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -227,204 +233,154 @@ export default function RegisterPage() {
         }
     };
 
-    return (
-        <div className="min-h-[85vh] flex items-center justify-center p-4 sm:p-6 pb-20">
-            <div className="w-full max-w-lg space-y-6">
-                {/* Header & Logo */}
-                <div className="text-center space-y-2">
-                    <div className="flex justify-center mb-3">
-                        <Logo variant="full" />
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                        {step === 1 && 'Créer un compte Client'}
-                        {step === 2 && 'Vérification du Téléphone'}
-                        {step === 3 && 'Compte Activé !'}
-                    </h1>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400">
-                        {step === 1 && 'Rejoignez Event Village pour réserver vos billets, tables et commandes.'}
-                        {step === 2 && 'Confirmez votre numéro de téléphone par SMS pour sécuriser vos accès.'}
-                        {step === 3 && 'Bienvenue sur Event Village ! Redirection en cours...'}
-                    </p>
-                </div>
+    const stepDescription = step === 1
+        ? 'Rejoignez Event Village pour réserver vos billets, tables et commandes.'
+        : step === 2
+            ? 'Confirmez votre numéro de téléphone par SMS pour sécuriser vos accès.'
+            : 'Bienvenue sur Event Village. Redirection en cours…';
 
-                {/* Carte Formulaire */}
-                <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-6">
-                    {/* Indicateur d'étape */}
-                    <div className="flex items-center justify-center gap-2">
-                        <div className={`h-2 rounded-full transition-all ${step >= 1 ? 'w-12 bg-[#FF5722]' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
-                        <div className={`h-2 rounded-full transition-all ${step >= 2 ? 'w-12 bg-[#FF5722]' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
-                        <div className={`h-2 rounded-full transition-all ${step === 3 ? 'w-12 bg-emerald-500' : 'w-4 bg-slate-200 dark:bg-zinc-800'}`} />
+    return (
+        <div className="flex justify-center py-4 sm:py-8">
+            <div className="w-full max-w-lg space-y-5">
+                <div className="flex justify-center">
+                    <Logo variant="full" />
+                </div>
+                <PageHeader
+                    eyebrow={<span className="text-sm font-semibold text-fg-muted">Étape {step} sur 3</span>}
+                    title={step === 1 ? 'Créer un compte' : step === 2 ? 'Vérification du téléphone' : 'Compte activé'}
+                    description={stepDescription}
+                    className="pb-0 sm:pb-0"
+                />
+
+                {/* Carte du formulaire */}
+                <div className="space-y-6 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-8">
+                    {/* Progression : informations, vérification, activation (décorative : l'étape est écrite au-dessus du titre) */}
+                    <div aria-hidden="true" className="flex items-center justify-center gap-2">
+                        {([1, 2, 3] as const).map((s) => (
+                            <span
+                                key={s}
+                                className={cn(
+                                    'h-2 rounded-full transition-colors duration-200',
+                                    s === 3 && step === 3 ? 'w-12 bg-success' : step >= s ? 'w-12 bg-brand' : 'w-4 bg-border',
+                                )}
+                            />
+                        ))}
                     </div>
 
                     {/* Messages d'erreur et de succès */}
                     {errorMessage && (
-                        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start gap-2.5">
-                            <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
-                            <span>{errorMessage}</span>
-                        </div>
+                        <StatusBanner tone="danger" announce="alert" title={errorMessage} />
                     )}
 
-                    {successMessage && (
-                        <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs flex items-start gap-2.5">
-                            <ShieldCheck size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" />
-                            <span>{successMessage}</span>
-                        </div>
+                    {successMessage && step !== 3 && (
+                        <StatusBanner tone="success" icon={<ShieldCheck size={20} />} title={successMessage} />
                     )}
 
-                    {/* ÉTAPE 1 : Formulaire d'inscription */}
+                    {/* ÉTAPE 1 : formulaire d'inscription */}
                     {step === 1 && (
                         <form onSubmit={handleRegisterSubmit} className="space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Prénom
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={firstName}
-                                            onChange={(e) => setFirstName(e.target.value)}
-                                            placeholder="Moussa"
-                                            required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
-                                        />
-                                        <User size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Nom
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={lastName}
-                                            onChange={(e) => setLastName(e.target.value)}
-                                            placeholder="Diop"
-                                            required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
-                                        />
-                                        <User size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                    </div>
-                                </div>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <TextInput
+                                    id="inscription-prenom"
+                                    label="Prénom"
+                                    value={firstName}
+                                    onChange={(e) => setFirstName(e.target.value)}
+                                    placeholder="Moussa"
+                                    autoComplete="given-name"
+                                    required
+                                />
+                                <TextInput
+                                    id="inscription-nom"
+                                    label="Nom"
+                                    value={lastName}
+                                    onChange={(e) => setLastName(e.target.value)}
+                                    placeholder="Diop"
+                                    autoComplete="family-name"
+                                    required
+                                />
                             </div>
 
-                            <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                    Numéro de Téléphone (Sénégal) *
-                                </label>
+                            <TextInput
+                                id="inscription-telephone"
+                                label="Numéro de téléphone (Sénégal)"
+                                type="tel"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                                placeholder="77 123 45 67 ou +221 78 987 65 43"
+                                hint="Format sénégalais : 77, 78, 76, 70 ou 75."
+                                required
+                            />
+
+                            <TextInput
+                                id="inscription-email"
+                                label="Adresse email (facultative)"
+                                type="email"
+                                autoComplete="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="client@domaine.com"
+                            />
+
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="relative">
-                                    <input
-                                        type="tel"
-                                        value={phone}
-                                        onChange={(e) => setPhone(e.target.value)}
-                                        placeholder="77 123 45 67 ou +221 78 987 65 43"
+                                    <TextInput
+                                        id="inscription-mot-de-passe"
+                                        label="Mot de passe"
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="8 caractères au moins"
+                                        autoComplete="new-password"
                                         required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
+                                        className={cn('pr-14', password.length > 0 && (allPasswordCriteriaMet(password) ? 'border-success' : 'border-warning'))}
                                     />
-                                    <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
+                                    <IconButton
+                                        aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                                        aria-controls="inscription-mot-de-passe"
+                                        onClick={() => setShowPassword((v) => !v)}
+                                        disabled={isLoading}
+                                        className="absolute bottom-px right-px"
+                                    >
+                                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                    </IconButton>
                                 </div>
-                                <span className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1 block">
-                                    Format sénégalais : 77, 78, 76, 70 ou 75.
-                                </span>
-                            </div>
 
-                            <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                    Adresse Email (Optionnelle)
-                                </label>
                                 <div className="relative">
-                                    <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="client@domaine.com"
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
+                                    <TextInput
+                                        id="inscription-confirmation"
+                                        label="Confirmer le mot de passe"
+                                        type={showConfirmPassword ? 'text' : 'password'}
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        placeholder="Le même mot de passe"
+                                        autoComplete="new-password"
+                                        required
+                                        className="pr-14"
                                     />
-                                    <Mail size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Mot de passe *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type={showPassword ? 'text' : 'password'}
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            placeholder="Min. 8 car., 1 Maj, 1 chiffre, 1 spécial"
-                                            required
-                                            autoComplete="new-password"
-                                            className={`w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none transition-all ${
-                                                password.length > 0 && allPasswordCriteriaMet(password)
-                                                    ? 'border-emerald-500 focus:border-emerald-500'
-                                                    : password.length > 0
-                                                    ? 'border-amber-400 focus:border-amber-400'
-                                                    : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722]'
-                                            }`}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowPassword((v) => !v)}
-                                            disabled={isLoading}
-                                            aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-                                            className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors disabled:opacity-50 cursor-pointer"
-                                            tabIndex={-1}
-                                        >
-                                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Confirmer *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type={showConfirmPassword ? 'text' : 'password'}
-                                            value={confirmPassword}
-                                            onChange={(e) => setConfirmPassword(e.target.value)}
-                                            placeholder="••••••••"
-                                            required
-                                            autoComplete="new-password"
-                                            className="w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowConfirmPassword((v) => !v)}
-                                            disabled={isLoading}
-                                            aria-label={showConfirmPassword ? 'Masquer la confirmation' : 'Afficher la confirmation'}
-                                            className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors disabled:opacity-50 cursor-pointer"
-                                            tabIndex={-1}
-                                        >
-                                            {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                        </button>
-                                    </div>
+                                    <IconButton
+                                        aria-label={showConfirmPassword ? 'Masquer la confirmation' : 'Afficher la confirmation'}
+                                        aria-controls="inscription-confirmation"
+                                        onClick={() => setShowConfirmPassword((v) => !v)}
+                                        disabled={isLoading}
+                                        className="absolute bottom-px right-px"
+                                    >
+                                        {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                    </IconButton>
                                 </div>
                             </div>
 
                             <PasswordStrengthChecklist password={password} />
 
-                            <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                    Code de Parrainage (Optionnel)
-                                </label>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        value={referralCode}
-                                        onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                                        placeholder="ex: EV-AMB-1234"
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all"
-                                    />
-                                    <Gift size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                </div>
-                            </div>
+                            <TextInput
+                                id="inscription-parrainage"
+                                label="Code de parrainage (facultatif)"
+                                value={referralCode}
+                                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                                placeholder="ex : EV-AMB-1234"
+                                autoComplete="off"
+                            />
 
                             <Button
                                 type="submit"
@@ -439,20 +395,19 @@ export default function RegisterPage() {
                         </form>
                     )}
 
-                    {/* ÉTAPE 2 : Saisie OTP SMS */}
+                    {/* ÉTAPE 2 : code reçu par SMS */}
                     {step === 2 && (
                         <form onSubmit={handleVerifyOtp} className="space-y-6">
-                            <div className="text-center space-y-1">
-                                <span className="text-xs font-bold text-slate-700 dark:text-zinc-300">
-                                    Code SMS à 6 chiffres envoyé au {normalizePhoneNumber(phone)}
-                                </span>
-                            </div>
+                            <p id="inscription-otp-aide" className="text-center text-sm font-semibold text-fg">
+                                Code à 6 chiffres envoyé au <span className="whitespace-nowrap tabular-nums">{normalizePhoneNumber(phone)}</span>
+                            </p>
 
                             <OtpInput
                                 value={otpCode}
                                 onChange={setOtpCode}
                                 disabled={isLoading}
                                 hasError={!!errorMessage}
+                                describedBy="inscription-otp-aide"
                             />
 
                             <Button
@@ -467,56 +422,52 @@ export default function RegisterPage() {
                                 Valider mon inscription
                             </Button>
 
-                            <div className="flex items-center justify-between text-xs pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setStep(1)}
-                                    className="text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white font-medium"
-                                >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setStep(1)}>
                                     Modifier mes informations
-                                </button>
+                                </Button>
 
-                                <button
+                                <Button
                                     type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-brand-fg"
                                     onClick={handleResendOtp}
                                     disabled={countdown > 0 || isLoading}
-                                    className="text-[#FF5722] font-bold disabled:opacity-50 flex items-center gap-1"
+                                    leftIcon={<RotateCcw size={16} />}
                                 >
-                                    <RotateCcw size={12} />
-                                    <span>{countdown > 0 ? `Renvoyer (${countdown}s)` : 'Renvoyer le code SMS'}</span>
-                                </button>
+                                    {countdown > 0 ? `Renvoyer (${countdown} s)` : 'Renvoyer le code SMS'}
+                                </Button>
                             </div>
                         </form>
                     )}
 
-                    {/* ÉTAPE 3 : Succès & Activation */}
+                    {/* ÉTAPE 3 : compte activé */}
                     {step === 3 && (
-                        <div className="py-8 text-center space-y-4">
-                            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center mx-auto border-2 border-emerald-500 shadow-md animate-bounce">
+                        <div role="status" className="space-y-4 py-6 text-center">
+                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-2 border-success-border bg-success-bg text-success-fg" aria-hidden="true">
                                 <CheckCircle2 size={36} />
                             </div>
-                            <h2 className="text-lg font-black text-slate-900 dark:text-white">
-                                Compte activé avec succès !
+                            <h2 className="text-lg font-bold text-fg">
+                                Compte activé avec succès
                             </h2>
-                            <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-xs mx-auto">
-                                Vous êtes désormais connecté à Event Village. Redirection automatique vers votre espace...
+                            <p className="mx-auto max-w-xs text-sm text-fg-muted">
+                                Vous êtes désormais connecté à Event Village. Redirection automatique vers votre espace…
                             </p>
                         </div>
                     )}
 
-                    {/* Lien vers Login */}
+                    {/* Lien vers la connexion */}
                     {step === 1 && (
-                        <div className="pt-4 border-t border-slate-200 dark:border-zinc-800 text-center">
-                            <span className="text-xs text-slate-500 dark:text-zinc-400">
-                                Déjà un compte ?{' '}
-                            </span>
+                        <p className="flex flex-wrap items-center justify-center gap-x-1.5 border-t border-border pt-4 text-sm text-fg-muted">
+                            <span>Déjà un compte ?</span>
                             <Link
                                 href="/login"
-                                className="text-xs font-black text-[#FF5722] hover:underline"
+                                className="inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                                 Se connecter
                             </Link>
-                        </div>
+                        </p>
                     )}
                 </div>
             </div>

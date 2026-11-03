@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { clsx } from 'clsx';
 import {
     KeyRound,
     Eye,
@@ -11,24 +10,36 @@ import {
     Check,
     X,
     Lock,
-    Clock,
-    AlertCircle,
-    AlertTriangle,
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { TextInput } from '@/components/ui/Field';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
 import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { detachPushSubscription } from '@/lib/push/client';
 import { useToast } from '@/components/ui/Toast';
 
-// =========================================================================
-// 🛡️ ANTI-FORCE BRUTE — RESET FLOW
-// =========================================================================
+/**
+ * Nouveau mot de passe (lot 6, contrat A5 : écran sur le système de design, logique inchangée).
+ * Accès par le flux téléphone (drapeau sessionStorage ev_recovery_verified posé par /forgot-password et
+ * session Supabase) ou par le lien email (événement PASSWORD_RECOVERY). Après la mise à jour : toutes les
+ * sessions sont révoquées (/api/auth/sign-out-global), l'appareil est détaché du push, puis signOut.
+ */
+
+// Verrou du navigateur contre les essais répétés
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 60;
 const STORAGE_KEY_LOCKOUT = 'ev_reset_lockout_until';
 const STORAGE_KEY_ATTEMPTS = 'ev_reset_failed_attempts';
 
+/** Stockage du navigateur indisponible (navigation privée, quota) : signalé, le parcours continue. */
+function storageWarning(action: string, err: unknown): void {
+    console.warn(`[ResetPassword] stockage du navigateur indisponible (${action}) :`, err instanceof Error ? err.message : String(err));
+}
 
 export default function ResetPasswordPage() {
     const router = useRouter();
@@ -54,7 +65,7 @@ export default function ResetPasswordPage() {
     // Accepte deux flux :
     //   A. Flux téléphone/OTP  → sessionStorage flag 'ev_recovery_verified' + session Supabase
     //   B. Flux email          → session Supabase créée par le clic sur le lien magique
-    //       ⚠️ Le hash fragment (#access_token=...&type=recovery) est traité de manière
+    //       Attention : le hash fragment (#access_token=...&type=recovery) est traité de manière
     //       asynchrone par le client Supabase. getSession() seul peut retourner null
     //       avant que le hash ne soit consommé → on écoute aussi onAuthStateChange.
     useEffect(() => {
@@ -75,7 +86,9 @@ export default function ResetPasswordPage() {
                         sessionStorage.removeItem('ev_recovery_ts');
                     }
                 }
-            } catch {}
+            } catch (err) {
+                storageWarning('drapeaux de récupération', err);
+            }
             setIsCheckingSession(false);
         };
 
@@ -101,7 +114,8 @@ export default function ResetPasswordPage() {
                 // soit traité par le client Supabase (flux email)
                 fallbackTimer = setTimeout(deny, 4000);
             }
-        }).catch(() => {
+        }).catch((err: unknown) => {
+            console.warn('[ResetPassword] lecture de la session impossible :', err instanceof Error ? err.message : String(err));
             fallbackTimer = setTimeout(deny, 4000);
         });
 
@@ -136,7 +150,9 @@ export default function ResetPasswordPage() {
                     localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
                 }
             }
-        } catch {}
+        } catch (err) {
+            storageWarning('lecture du verrou', err);
+        }
     }, []);
 
     // ── 3. Décompte verrouillage ───────────────────────────────────────────
@@ -150,7 +166,9 @@ export default function ResetPasswordPage() {
                     try {
                         localStorage.removeItem(STORAGE_KEY_LOCKOUT);
                         localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
-                    } catch {}
+                    } catch (err) {
+                        storageWarning('levée du verrou', err);
+                    }
                     return 0;
                 }
                 return prev - 1;
@@ -169,15 +187,25 @@ export default function ResetPasswordPage() {
         try {
             const stored = localStorage.getItem(STORAGE_KEY_ATTEMPTS);
             if (stored) current = parseInt(stored, 10) || 0;
-        } catch {}
+        } catch (err) {
+            storageWarning("lecture du nombre d'échecs", err);
+        }
 
         const next = current + 1;
         setFailedAttempts(next);
-        try { localStorage.setItem(STORAGE_KEY_ATTEMPTS, next.toString()); } catch {}
+        try {
+            localStorage.setItem(STORAGE_KEY_ATTEMPTS, next.toString());
+        } catch (err) {
+            storageWarning("écriture du nombre d'échecs", err);
+        }
 
         if (next >= MAX_FAILED_ATTEMPTS) {
             const until = Date.now() + LOCKOUT_DURATION_SECONDS * 1000;
-            try { localStorage.setItem(STORAGE_KEY_LOCKOUT, until.toString()); } catch {}
+            try {
+                localStorage.setItem(STORAGE_KEY_LOCKOUT, until.toString());
+            } catch (err) {
+                storageWarning('écriture du verrou', err);
+            }
             setIsLockedOut(true);
             setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
             setInitialLockoutDuration(LOCKOUT_DURATION_SECONDS);
@@ -221,13 +249,22 @@ export default function ResetPasswordPage() {
             try {
                 sessionStorage.removeItem('ev_recovery_verified');
                 sessionStorage.removeItem('ev_recovery_ts');
-            } catch {}
+            } catch (err) {
+                storageWarning('effacement des drapeaux de récupération', err);
+            }
 
             // Nettoyer le compteur d'échecs
             try {
                 localStorage.removeItem(STORAGE_KEY_LOCKOUT);
                 localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
-            } catch {}
+            } catch (err) {
+                storageWarning('effacement du verrou', err);
+            }
+
+            // Lot 6 (contrat F4) : l'appareil ne reçoit plus les notifications push du compte après la
+            // déconnexion. Détaché AVANT la révocation globale, tant que la session authentifie encore le
+            // retrait côté serveur (erreur journalisée par detachPushSubscription, la déconnexion continue).
+            await detachPushSubscription();
 
             // Révoquer TOUTES les sessions (tous appareils) via admin API
             const currentSession = (await supabase.auth.getSession()).data.session;
@@ -257,12 +294,12 @@ export default function ResetPasswordPage() {
     // ── Écran de vérification de session ──────────────────────────────────
     if (isCheckingSession) {
         return (
-            <div className="min-h-[85vh] flex items-center justify-center p-4">
-                <div className="text-center space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center mx-auto animate-pulse">
-                        <Lock size={24} className="text-slate-400" />
+            <div className="flex justify-center py-12">
+                <div role="status" className="space-y-3 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-sunken text-fg-muted motion-safe:animate-pulse" aria-hidden="true">
+                        <Lock size={24} />
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">
+                    <p className="text-sm font-medium text-fg-muted">
                         Vérification de la session sécurisée…
                     </p>
                 </div>
@@ -271,164 +308,109 @@ export default function ResetPasswordPage() {
     }
 
     return (
-        <div className="min-h-[85vh] flex items-center justify-center p-4 sm:p-6">
-            <div className="w-full max-w-md space-y-6">
-                {/* Header */}
-                <div className="text-center space-y-2">
-                    <div className="flex justify-center mb-3">
-                        <Logo variant="full" />
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                        Nouveau mot de passe
-                    </h1>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400">
-                        Choisissez un mot de passe fort pour sécuriser votre compte.
-                    </p>
+        <div className="flex justify-center py-4 sm:py-8">
+            <div className="w-full max-w-md space-y-5">
+                <div className="flex justify-center">
+                    <Logo variant="full" />
                 </div>
+                <PageHeader
+                    title="Nouveau mot de passe"
+                    description="Choisissez un mot de passe fort pour sécuriser votre compte."
+                    className="pb-0 sm:pb-0"
+                />
 
-                {/* Carte Formulaire */}
-                <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-6 relative transition-all duration-300">
-
-                    {/* 🔒 BANNIÈRE VERROUILLAGE SÉCURITÉ */}
+                {/* Carte du formulaire */}
+                <div className="space-y-6 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-8">
+                    {/* Verrouillage temporaire */}
                     {isLockedOut && (
-                        <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-red-500/15 via-red-500/5 to-amber-500/10 border-2 border-red-500/40 dark:border-red-500/50 shadow-xl shadow-red-500/10 animate-in fade-in duration-300 space-y-4">
-                            <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 border border-red-500/30 text-[10px] font-black text-red-700 dark:text-red-300 tracking-wider uppercase">
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                <span>Verrouillé</span>
+                        <StatusBanner tone="danger" announce="alert" icon={<Lock size={20} />} title="Saisie temporairement bloquée">
+                            <p>Trop de tentatives échouées. L&apos;accès est bloqué pendant quelques instants.</p>
+                            <p className="mt-2 font-semibold tabular-nums">
+                                Nouvel essai possible dans {lockoutRemaining} s
+                            </p>
+                            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-danger-border" aria-hidden="true">
+                                <div
+                                    className="h-full rounded-full bg-danger motion-safe:transition-[width] motion-safe:duration-1000 motion-safe:ease-linear"
+                                    style={{ width: `${progressPercent}%` }}
+                                />
                             </div>
-
-                            <div className="flex items-start gap-3.5 pr-20">
-                                <div className="w-11 h-11 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-600 dark:text-red-400 flex-shrink-0 shadow-inner">
-                                    <Lock size={22} className="animate-bounce duration-1000" />
-                                </div>
-                                <div className="space-y-1">
-                                    <h3 className="text-sm font-black text-red-950 dark:text-red-200 tracking-tight">
-                                        Protection Anti-Intrusion
-                                    </h3>
-                                    <p className="text-[11px] text-red-900/80 dark:text-red-300/80 leading-relaxed">
-                                        5 tentatives de soumission échouées. L&apos;accès est temporairement bloqué.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="p-3.5 rounded-2xl bg-white/80 dark:bg-zinc-900/90 border border-red-200 dark:border-red-900/60 flex items-center justify-between shadow-xs">
-                                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300">
-                                    <Clock size={15} className="text-red-500 animate-spin duration-3000" />
-                                    <span>Déverrouillage dans :</span>
-                                </div>
-                                <div className="px-3 py-1 rounded-xl bg-red-500 text-white font-mono text-sm font-black tracking-widest shadow-sm">
-                                    {lockoutRemaining < 10 ? `0${lockoutRemaining}s` : `${lockoutRemaining}s`}
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <div className="w-full h-1.5 rounded-full bg-red-200/60 dark:bg-red-950/80 overflow-hidden">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-red-500 to-[#FF5722] transition-all duration-1000 ease-linear rounded-full"
-                                        style={{ width: `${progressPercent}%` }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                        </StatusBanner>
                     )}
 
-                    {/* Avertissement tentatives */}
+                    {/* Tentatives restantes */}
                     {!isLockedOut && failedAttempts > 0 && failedAttempts < MAX_FAILED_ATTEMPTS && (
-                        <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2.5">
-                            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" />
-                            <span>
-                                <strong>Attention :</strong> {failedAttempts}/{MAX_FAILED_ATTEMPTS} tentatives échouées.
-                            </span>
-                        </div>
+                        <StatusBanner tone="warning" title={`${failedAttempts} tentative${failedAttempts > 1 ? 's' : ''} échouée${failedAttempts > 1 ? 's' : ''} sur ${MAX_FAILED_ATTEMPTS}`}>
+                            La saisie sera bloquée pendant {LOCKOUT_DURATION_SECONDS} secondes au bout de {MAX_FAILED_ATTEMPTS} échecs.
+                        </StatusBanner>
                     )}
 
                     {/* Message d'erreur */}
                     {errorMessage && !isLockedOut && (
-                        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start gap-2.5">
-                            <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
-                            <span>{errorMessage}</span>
-                        </div>
+                        <StatusBanner tone="danger" announce="alert" title={errorMessage} />
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
-                        {/* Champ Nouveau mot de passe */}
-                        <div>
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                Nouveau mot de passe
-                            </label>
-                            <div className="relative">
-                                <input
-                                    type={showPassword ? 'text' : 'password'}
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="••••••••••••"
-                                    required
-                                    disabled={isLockedOut || isLoading}
-                                    className={clsx(
-                                        'w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none transition-all',
-                                        password.length > 0 && allCriteriaMet
-                                            ? 'border-emerald-500 focus:border-emerald-500'
-                                            : password.length > 0
-                                            ? 'border-amber-400 focus:border-amber-400'
-                                            : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722]',
-                                        isLockedOut && 'opacity-50 cursor-not-allowed'
-                                    )}
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword((v) => !v)}
-                                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors"
-                                    tabIndex={-1}
-                                >
-                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                </button>
-                            </div>
+                        {/* Nouveau mot de passe */}
+                        <div className="relative">
+                            <TextInput
+                                id="reinitialisation-mot-de-passe"
+                                label="Nouveau mot de passe"
+                                type={showPassword ? 'text' : 'password'}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="8 caractères au moins"
+                                autoComplete="new-password"
+                                required
+                                disabled={isLockedOut || isLoading}
+                                className={cn('pr-14', password.length > 0 && (allCriteriaMet ? 'border-success' : 'border-warning'))}
+                            />
+                            <IconButton
+                                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                                aria-controls="reinitialisation-mot-de-passe"
+                                onClick={() => setShowPassword((v) => !v)}
+                                disabled={isLockedOut || isLoading}
+                                className="absolute bottom-px right-px"
+                            >
+                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                            </IconButton>
                         </div>
 
-                        {/* Checklist de robustesse */}
+                        {/* Critères de robustesse */}
                         <PasswordStrengthChecklist password={password} />
 
-                        {/* Champ Confirmation */}
-                        <div>
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                Confirmer le mot de passe
-                            </label>
+                        {/* Confirmation */}
+                        <div className="space-y-1.5">
                             <div className="relative">
-                                <input
+                                <TextInput
+                                    id="reinitialisation-confirmation"
+                                    label="Confirmer le mot de passe"
                                     type={showConfirm ? 'text' : 'password'}
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
-                                    placeholder="••••••••••••"
+                                    placeholder="Le même mot de passe"
+                                    autoComplete="new-password"
                                     required
                                     disabled={isLockedOut || isLoading}
-                                    className={clsx(
-                                        'w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none transition-all',
-                                        confirmPassword.length > 0 && passwordsMatch
-                                            ? 'border-emerald-500 focus:border-emerald-500'
-                                            : confirmPassword.length > 0
-                                            ? 'border-red-400 focus:border-red-400'
-                                            : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722]',
-                                        isLockedOut && 'opacity-50 cursor-not-allowed'
-                                    )}
+                                    className={cn('pr-14', confirmPassword.length > 0 && (passwordsMatch ? 'border-success' : 'border-danger'))}
                                 />
-                                <button
-                                    type="button"
+                                <IconButton
+                                    aria-label={showConfirm ? 'Masquer la confirmation' : 'Afficher la confirmation'}
+                                    aria-controls="reinitialisation-confirmation"
                                     onClick={() => setShowConfirm((v) => !v)}
-                                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors"
-                                    tabIndex={-1}
+                                    disabled={isLockedOut || isLoading}
+                                    className="absolute bottom-px right-px"
                                 >
-                                    {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
-                                </button>
+                                    {showConfirm ? <EyeOff size={20} /> : <Eye size={20} />}
+                                </IconButton>
                             </div>
                             {confirmPassword.length > 0 && (
-                                <p className={clsx(
-                                    'text-[10px] font-bold mt-1.5 flex items-center gap-1',
-                                    passwordsMatch ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'
-                                )}>
+                                <p
+                                    aria-live="polite"
+                                    className={cn('flex items-center gap-1.5 text-sm font-semibold', passwordsMatch ? 'text-success-fg' : 'text-danger-fg')}
+                                >
                                     {passwordsMatch
-                                        ? <><Check size={11} strokeWidth={3} /> Les mots de passe correspondent</>
-                                        : <><X size={11} strokeWidth={3} /> Les mots de passe ne correspondent pas</>
-                                    }
+                                        ? <><Check size={16} strokeWidth={3} aria-hidden="true" /> Les mots de passe correspondent</>
+                                        : <><X size={16} strokeWidth={3} aria-hidden="true" /> Les mots de passe ne correspondent pas</>}
                                 </p>
                             )}
                         </div>
@@ -442,15 +424,15 @@ export default function ResetPasswordPage() {
                             disabled={isLockedOut || isLoading || !allCriteriaMet || !passwordsMatch}
                             leftIcon={isLockedOut ? <Lock size={18} /> : <ShieldCheck size={18} />}
                         >
-                            {isLockedOut ? `Verrouillé (${lockoutRemaining}s)` : 'Définir le nouveau mot de passe'}
+                            {isLockedOut ? `Bloqué (${lockoutRemaining} s)` : 'Définir le nouveau mot de passe'}
                         </Button>
                     </form>
 
-                    {/* Note sécurité */}
-                    <div className="p-3 rounded-2xl bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-800 flex items-start gap-2.5">
-                        <KeyRound size={13} className="text-slate-400 flex-shrink-0 mt-0.5" />
-                        <p className="text-[10px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                            Après confirmation, votre session actuelle sera automatiquement déconnectée pour garantir la sécurité de votre compte.
+                    {/* Note de sécurité */}
+                    <div className="flex items-start gap-2.5 rounded-2xl border border-border bg-surface-sunken p-3">
+                        <KeyRound size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                        <p className="text-sm leading-relaxed text-fg-muted">
+                            Après confirmation, toutes vos sessions sont fermées, sur tous vos appareils, pour garantir la sécurité de votre compte.
                         </p>
                     </div>
                 </div>

@@ -18,7 +18,7 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EVENT_STATUSES, EVENT_STATUS_META, type EventStatus } from '@/lib/events/event-status';
 import { formatFcfa, formatInteger } from '@/lib/format';
 import { KpiAmount } from '@/components/partner/pilotage/PilotageBlocks';
-import { ScrollableTabs } from '@/components/partner/pilotage/ScrollableTabs';
+import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
 import { PartnerEventCard, type EventAction, type PartnerEventItem } from '@/components/partner/events-list/PartnerEventCard';
 import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';

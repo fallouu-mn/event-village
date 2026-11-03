@@ -2,11 +2,11 @@ import { Skeleton, StatCardSkeleton, ListRowSkeleton } from '@/components/ui/Ske
 
 export default function Loading() {
   return (
-    <div className="space-y-6 ev-fade-in">
+    <div role="status" aria-busy="true" className="space-y-6 ev-fade-in">
       <Skeleton className="h-8 w-44 rounded-xl" />
 
       {/* Balance card */}
-      <div className="rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 space-y-4">
+      <div className="rounded-3xl border border-border bg-surface p-6 space-y-4">
         <Skeleton className="h-5 w-32 rounded-md" />
         <Skeleton className="h-10 w-48 rounded-xl" />
         <div className="flex gap-3 pt-2">
@@ -23,12 +23,13 @@ export default function Loading() {
       </div>
 
       {/* Commissions list */}
-      <div className="rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-1">
+      <div className="rounded-3xl border border-border bg-surface p-5 space-y-1">
         <Skeleton className="h-5 w-44 rounded-lg mb-3" />
         {Array.from({ length: 5 }).map((_, i) => (
           <ListRowSkeleton key={i} />
         ))}
       </div>
+      <span className="sr-only">Chargement…</span>
     </div>
   );
 }

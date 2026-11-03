@@ -20,6 +20,7 @@ import {
     ShieldAlert, Ticket, Users, Volume2, VolumeX,
 } from 'lucide-react';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { detachPushSubscription } from '@/lib/push/client';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ErrorState } from '@/components/ui/EmptyState';
@@ -329,6 +330,9 @@ export default function ControllerScannerPage() {
 
     const handleLogout = async () => {
         const supabase = getBrowserClient();
+        // Lot 6 (contrat F4) : l'appareil ne reçoit plus les notifications push du compte après la déconnexion
+        // (erreur journalisée par detachPushSubscription, la déconnexion continue).
+        await detachPushSubscription();
         await supabase.auth.signOut({ scope: 'global' });
         router.push('/login');
     };
@@ -585,6 +589,7 @@ export default function ControllerScannerPage() {
                                 <Button
                                     variant={inputMode === 'camera' ? 'primary' : 'secondary'}
                                     size="lg"
+                                    className="gap-2 whitespace-nowrap px-4 text-sm"
                                     aria-pressed={inputMode === 'camera'}
                                     onClick={() => { setInputMode('camera'); if (!cashPending) setFeedback(null); }}
                                     leftIcon={<Camera size={18} />}
@@ -594,6 +599,7 @@ export default function ControllerScannerPage() {
                                 <Button
                                     variant={inputMode === 'manual' ? 'primary' : 'secondary'}
                                     size="lg"
+                                    className="gap-2 whitespace-nowrap px-4 text-sm"
                                     aria-pressed={inputMode === 'manual'}
                                     onClick={() => { setInputMode('manual'); if (!cashPending) setFeedback(null); }}
                                     leftIcon={<Keyboard size={18} />}

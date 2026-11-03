@@ -2,7 +2,7 @@ import { Skeleton, EventCardSkeleton } from '@/components/ui/Skeleton';
 
 export default function Loading() {
   return (
-    <div className="space-y-6 ev-fade-in">
+    <div role="status" aria-busy="true" className="space-y-6 ev-fade-in">
       <Skeleton className="h-14 w-full rounded-2xl" />
       <div className="flex gap-2 overflow-hidden">
         {['w-20', 'w-24', 'w-16', 'w-20', 'w-24'].map((w, i) => (
@@ -14,6 +14,7 @@ export default function Loading() {
           <EventCardSkeleton key={i} />
         ))}
       </div>
+      <span className="sr-only">Chargement…</span>
     </div>
   );
 }

@@ -860,7 +860,9 @@ describe('5.7 — écrans admin (contrôles statiques)', () => {
         const files = screenFiles(ADMIN_LIST_PAGE);
         const code = files.map(codeOf).join('\n');
         assertRenders(files, 'StatusBadge', ADMIN_LIST_PAGE);
-        assertRenders(files, 'Tabs', ADMIN_LIST_PAGE);
+        // Lot 6 (contrat A7, adaptation signalée) : les onglets par statut sont rendus par components/ui/ScrollableTabs,
+        // qui enveloppe Tabs avec les indices de défilement ; screenFiles exclut components/ui, d'où ce nom.
+        assertRenders(files, 'ScrollableTabs', ADMIN_LIST_PAGE);
         assertRenders(files, 'Pagination', ADMIN_LIST_PAGE);
         assert.match(code, /['"`]\/api\/admin\/events[?'"`]/, `${ADMIN_LIST_PAGE} : ne lit pas GET /api/admin/events`);
         const retry = assertRenders(files, 'ErrorState', ADMIN_LIST_PAGE);

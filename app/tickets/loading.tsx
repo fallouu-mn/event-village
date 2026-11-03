@@ -2,7 +2,7 @@ import { Skeleton, TicketSkeleton } from '@/components/ui/Skeleton';
 
 export default function Loading() {
   return (
-    <div className="space-y-5 ev-fade-in">
+    <div role="status" aria-busy="true" className="space-y-5 ev-fade-in">
       <div className="flex items-center justify-between">
         <Skeleton className="h-8 w-40 rounded-xl" />
         <Skeleton className="h-8 w-24 rounded-xl" />
@@ -17,6 +17,7 @@ export default function Loading() {
           <TicketSkeleton key={i} />
         ))}
       </div>
+      <span className="sr-only">Chargement…</span>
     </div>
   );
 }

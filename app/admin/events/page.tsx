@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link';
 import { CalendarDays, ClipboardCheck, MapPin, Search } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Tabs, TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { Pagination } from '@/components/ui/Pagination';
@@ -24,6 +25,7 @@ import { formatDateTime, formatEventDateTime, toDakarDateTimeLocal } from '@/lib
  * l'administration.
  *  - Onglets par statut (libellés de EVENT_STATUS_META) avec les compteurs du serveur, « En attente de
  *    validation » par défaut ; l'onglet courant est porté par `?status=` (lien direct vers la file).
+ *    Lot 6 (contrat A7) : 8 onglets en ScrollableTabs (indice de débordement, onglet actif centré).
  *  - Recherche littérale dans le titre (anti-rebond de 300 ms), pagination serveur (20 par page).
  *  - Mise à jour en direct : une soumission (admin_signals) ou un changement de statut
  *    (event_status_history) recharge la page courante depuis le serveur, sans toucher au défilement.
@@ -163,7 +165,9 @@ export default function AdminEventsPage() {
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: 'admin-evenements',
     subscriptions: [
-      { table: 'admin_signals', event: 'INSERT' },
+      // Lot 6 (contrat C6) : seuls les signaux qui concernent cette file ; les alertes de la boîte d'envoi
+      // (NOTIFICATION_FAILED, SMS_DAILY_THRESHOLD…) ne rechargent pas la liste des événements.
+      { table: 'admin_signals', event: 'INSERT', filter: 'kind=in.(EVENT_SUBMITTED,PARTNER_REGISTERED)' },
       { table: 'event_status_history', event: 'INSERT' },
     ],
     onSignal: refreshSilently,
@@ -356,7 +360,7 @@ export default function AdminEventsPage() {
         )}
       </form>
 
-      <Tabs tabs={tabs} value={tab} onChange={changeTab} ariaLabel="Statut des événements" idPrefix={ID_PREFIX} />
+      <ScrollableTabs tabs={tabs} value={tab} onChange={changeTab} ariaLabel="Statut des événements" idPrefix={ID_PREFIX} />
 
       <TabPanel idPrefix={ID_PREFIX} tabIdValue={tab} className="flex flex-col gap-4">
         <p className="text-sm text-fg-muted">{currentStatusHint}</p>

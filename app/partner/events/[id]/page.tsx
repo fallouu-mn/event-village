@@ -27,7 +27,7 @@ import { EntriesTab } from '@/components/partner/pilotage/EntriesTab';
 import { TeamTab } from '@/components/partner/pilotage/TeamTab';
 import { CashTab } from '@/components/partner/pilotage/CashTab';
 import { ClosingTab } from '@/components/partner/pilotage/ClosingTab';
-import { ScrollableTabs } from '@/components/partner/pilotage/ScrollableTabs';
+import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import type { EventAction, PilotageOverview } from '@/components/partner/pilotage/types';
 
 /**

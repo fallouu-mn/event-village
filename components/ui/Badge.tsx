@@ -37,6 +37,8 @@ export const Badge: React.FC<BadgeProps> = ({
 
   return (
     <span
+      // Lot 6 (contrat A6) : texte de 12 px admis par le contrôle des captures (pastille, MASTER.md).
+      data-ev-caption=""
       className={clsx(
         'inline-flex items-center border select-none leading-tight',
         variants[variant],

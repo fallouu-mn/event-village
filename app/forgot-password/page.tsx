@@ -1,32 +1,41 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { clsx } from 'clsx';
 import {
     KeyRound,
     Phone,
-    Mail,
     ArrowLeft,
     ShieldCheck,
-    AlertCircle,
     RotateCcw,
     Lock,
-    Clock,
-    AlertTriangle,
+    Check,
     CheckCircle2,
     Send,
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { TextInput } from '@/components/ui/Field';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 
-// =========================================================================
-// 🛡️ ANTI-FORCE BRUTE — RECOVERY FLOW
-// =========================================================================
+/**
+ * Mot de passe oublié (lot 6, contrat A5 : écran sur le système de design, logique inchangée).
+ *  - Email : resetPasswordForEmail ; l'écran de succès s'affiche toujours (erreur ou exception comprises)
+ *    pour ne jamais révéler si un compte existe.
+ *  - Téléphone : /api/auth/send-otp (purpose PASSWORD_RESET), /api/auth/verify-otp, session par verifyOtp
+ *    type « magiclink », puis drapeaux sessionStorage ev_recovery_verified / ev_recovery_ts lus par
+ *    /reset-password.
+ *  - Verrou du navigateur (clés ev_recovery_lockout_until / ev_recovery_failed_attempts) en plus du 429 du
+ *    serveur.
+ */
+
+// Verrou du navigateur contre les essais répétés (le serveur reste l'autorité : 429 avec remainingSeconds)
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 60;
 const STORAGE_KEY_LOCKOUT = 'ev_recovery_lockout_until';
@@ -34,6 +43,11 @@ const STORAGE_KEY_ATTEMPTS = 'ev_recovery_failed_attempts';
 
 type FlowMode = 'email' | 'phone' | null;
 type Step = 1 | 2 | 'email-sent';
+
+/** Stockage du navigateur indisponible (navigation privée, quota) : signalé, le parcours continue. */
+function storageWarning(action: string, err: unknown): void {
+    console.warn(`[ForgotPassword] stockage du navigateur indisponible (${action}) :`, err instanceof Error ? err.message : String(err));
+}
 
 function detectMode(value: string): FlowMode {
     if (value.includes('@')) return 'email';
@@ -92,7 +106,9 @@ export default function ForgotPasswordPage() {
                     localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
                 }
             }
-        } catch {}
+        } catch (err) {
+            storageWarning('lecture du verrou', err);
+        }
     }, []);
 
     // ── 2. Décompte verrouillage ───────────────────────────────────────────
@@ -106,7 +122,9 @@ export default function ForgotPasswordPage() {
                     try {
                         localStorage.removeItem(STORAGE_KEY_LOCKOUT);
                         localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
-                    } catch {}
+                    } catch (err) {
+                        storageWarning('levée du verrou', err);
+                    }
                     setSuccessMessage('Accès déverrouillé. Vous pouvez réessayer.');
                     return 0;
                 }
@@ -122,15 +140,25 @@ export default function ForgotPasswordPage() {
         try {
             const stored = localStorage.getItem(STORAGE_KEY_ATTEMPTS);
             if (stored) current = parseInt(stored, 10) || 0;
-        } catch {}
+        } catch (err) {
+            storageWarning("lecture du nombre d'échecs", err);
+        }
 
         const next = current + 1;
         setFailedAttempts(next);
-        try { localStorage.setItem(STORAGE_KEY_ATTEMPTS, next.toString()); } catch {}
+        try {
+            localStorage.setItem(STORAGE_KEY_ATTEMPTS, next.toString());
+        } catch (err) {
+            storageWarning("écriture du nombre d'échecs", err);
+        }
 
         if (next >= MAX_FAILED_ATTEMPTS) {
             const until = Date.now() + LOCKOUT_DURATION_SECONDS * 1000;
-            try { localStorage.setItem(STORAGE_KEY_LOCKOUT, until.toString()); } catch {}
+            try {
+                localStorage.setItem(STORAGE_KEY_LOCKOUT, until.toString());
+            } catch (err) {
+                storageWarning('écriture du verrou', err);
+            }
             setIsLockedOut(true);
             setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
             setInitialLockoutDuration(LOCKOUT_DURATION_SECONDS);
@@ -187,8 +215,11 @@ export default function ForgotPasswordPage() {
 
             // Toujours afficher le succès (même si l'email n'existe pas — sécurité)
             setStep('email-sent');
-        } catch {
-            setStep('email-sent'); // Afficher succès même en cas d'exception réseau
+        } catch (err) {
+            // Exception réseau : journalisée, et l'écran reste celui du succès pour ne jamais révéler si le
+            // compte existe (comportement inchangé).
+            console.warn('[ForgotPassword] demande de lien de récupération en échec :', err instanceof Error ? err.message : String(err));
+            setStep('email-sent');
         } finally {
             setIsLoading(false);
         }
@@ -302,13 +333,18 @@ export default function ForgotPasswordPage() {
             try {
                 sessionStorage.setItem('ev_recovery_verified', '1');
                 sessionStorage.setItem('ev_recovery_ts', Date.now().toString());
-            } catch {}
+            } catch (err) {
+                // Sans ces drapeaux, /reset-password s'appuie sur la seule session Supabase créée par verifyOtp.
+                storageWarning('drapeaux de récupération', err);
+            }
 
             // Réinitialiser le compteur d'échecs
             try {
                 localStorage.removeItem(STORAGE_KEY_LOCKOUT);
                 localStorage.removeItem(STORAGE_KEY_ATTEMPTS);
-            } catch {}
+            } catch (err) {
+                storageWarning('effacement du verrou', err);
+            }
 
             router.push('/reset-password');
         } catch (err: unknown) {
@@ -338,172 +374,107 @@ export default function ForgotPasswordPage() {
     // RENDU
     // =========================================================================
     return (
-        <div className="min-h-[85vh] flex items-center justify-center p-4 sm:p-6">
-            <div className="w-full max-w-md space-y-6">
-
-                {/* Header */}
-                <div className="text-center space-y-2">
-                    <div className="flex justify-center mb-3">
-                        <Logo variant="full" />
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                        Récupération du compte
-                    </h1>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400">
-                        {stepLabels[step]}
-                    </p>
+        <div className="flex justify-center py-4 sm:py-8">
+            <div className="w-full max-w-md space-y-5">
+                <div className="flex justify-center">
+                    <Logo variant="full" />
                 </div>
-
-                {/* Indicateurs d'étapes — masqués sur l'écran succès email */}
-                {step !== 'email-sent' && (
-                    <div className="flex items-center gap-2 justify-center">
-                        {([1, 2] as const).map((s) => {
-                            const stepNum = step as number;
-                            return (
-                                <React.Fragment key={s}>
-                                    <div className={clsx(
-                                        'w-8 h-8 rounded-full flex items-center justify-center text-xs font-black border-2 transition-all',
-                                        stepNum === s
-                                            ? 'bg-[#FF5722] border-[#FF5722] text-white shadow-md shadow-[#FF5722]/30'
-                                            : stepNum > s
-                                            ? 'bg-emerald-500 border-emerald-500 text-white'
-                                            : 'bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 text-slate-400'
-                                    )}>
-                                        {stepNum > s ? '✓' : s}
-                                    </div>
-                                    {s < 2 && (
-                                        <div className={clsx(
-                                            'flex-1 h-0.5 rounded-full max-w-[60px] transition-all',
-                                            stepNum > s ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-zinc-700'
-                                        )} />
-                                    )}
-                                </React.Fragment>
-                            );
-                        })}
-                    </div>
-                )}
+                <PageHeader
+                    eyebrow={step !== 'email-sent'
+                        ? <span className="text-sm font-semibold text-fg-muted">Étape {step === 1 ? 1 : 2} sur 2</span>
+                        : undefined}
+                    title="Mot de passe oublié"
+                    description={stepLabels[step]}
+                    className="pb-0 sm:pb-0"
+                />
 
                 {/* Carte principale */}
-                <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-6 relative transition-all duration-300">
-
-                    {/* 🔒 BANNIÈRE VERROUILLAGE SÉCURITÉ */}
-                    {isLockedOut && (
-                        <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-red-500/15 via-red-500/5 to-amber-500/10 border-2 border-red-500/40 dark:border-red-500/50 shadow-xl shadow-red-500/10 animate-in fade-in duration-300 space-y-4">
-                            <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 border border-red-500/30 text-[10px] font-black text-red-700 dark:text-red-300 tracking-wider uppercase">
-                                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                <span>Verrouillé</span>
-                            </div>
-
-                            <div className="flex items-start gap-3.5 pr-20">
-                                <div className="w-11 h-11 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-600 dark:text-red-400 flex-shrink-0 shadow-inner">
-                                    <Lock size={22} className="animate-bounce duration-1000" />
-                                </div>
-                                <div className="space-y-1">
-                                    <h3 className="text-sm font-black text-red-950 dark:text-red-200 tracking-tight">
-                                        Protection Anti-Intrusion
-                                    </h3>
-                                    <p className="text-[11px] text-red-900/80 dark:text-red-300/80 leading-relaxed">
-                                        5 codes incorrects consécutifs. La saisie est temporairement bloquée pour protéger votre compte.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="p-3.5 rounded-2xl bg-white/80 dark:bg-zinc-900/90 border border-red-200 dark:border-red-900/60 flex items-center justify-between shadow-xs">
-                                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300">
-                                    <Clock size={15} className="text-red-500 animate-spin duration-3000" />
-                                    <span>Déverrouillage dans :</span>
-                                </div>
-                                <div className="px-3 py-1 rounded-xl bg-red-500 text-white font-mono text-sm font-black tracking-widest shadow-sm">
-                                    {lockoutRemaining < 10 ? `0${lockoutRemaining}s` : `${lockoutRemaining}s`}
-                                </div>
-                            </div>
-
-                            <div className="space-y-1">
-                                <div className="w-full h-1.5 rounded-full bg-red-200/60 dark:bg-red-950/80 overflow-hidden">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-red-500 to-[#FF5722] transition-all duration-1000 ease-linear rounded-full"
-                                        style={{ width: `${progressPercent}%` }}
-                                    />
-                                </div>
-                                <div className="flex justify-between text-[10px] text-slate-400 dark:text-zinc-500">
-                                    <span>Sécurité active</span>
-                                    <span>F5 / Rechargement bloqué</span>
-                                </div>
-                            </div>
+                <div className="space-y-6 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-8">
+                    {/* Progression (décorative : l'étape est écrite au-dessus du titre) */}
+                    {step !== 'email-sent' && (
+                        <div aria-hidden="true" className="flex items-center justify-center gap-2">
+                            {([1, 2] as const).map((s) => {
+                                const stepNum = step as number;
+                                return (
+                                    <React.Fragment key={s}>
+                                        <span
+                                            className={cn(
+                                                'flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-bold transition-colors duration-200',
+                                                stepNum === s
+                                                    ? 'border-brand bg-brand text-on-brand'
+                                                    : stepNum > s
+                                                        ? 'border-success bg-success text-on-tone'
+                                                        : 'border-border bg-surface text-fg-muted',
+                                            )}
+                                        >
+                                            {stepNum > s ? <Check size={16} strokeWidth={3} /> : s}
+                                        </span>
+                                        {s < 2 && (
+                                            <span className={cn('h-0.5 w-14 rounded-full transition-colors duration-200', stepNum > s ? 'bg-success' : 'bg-border')} />
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
                         </div>
                     )}
 
-                    {/* Avertissement tentatives */}
+                    {/* Verrouillage temporaire (5 codes incorrects, ou 429 du serveur) */}
+                    {isLockedOut && (
+                        <StatusBanner tone="danger" announce="alert" icon={<Lock size={20} />} title="Saisie temporairement bloquée">
+                            <p>
+                                Trop de tentatives infructueuses. La saisie est bloquée pendant quelques instants pour protéger votre compte.
+                            </p>
+                            <p className="mt-2 font-semibold tabular-nums">
+                                Nouvel essai possible dans {lockoutRemaining} s
+                            </p>
+                            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-danger-border" aria-hidden="true">
+                                <div
+                                    className="h-full rounded-full bg-danger motion-safe:transition-[width] motion-safe:duration-1000 motion-safe:ease-linear"
+                                    style={{ width: `${progressPercent}%` }}
+                                />
+                            </div>
+                        </StatusBanner>
+                    )}
+
+                    {/* Tentatives restantes */}
                     {!isLockedOut && failedAttempts > 0 && failedAttempts < MAX_FAILED_ATTEMPTS && (
-                        <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2.5">
-                            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" />
-                            <span>
-                                <strong>Attention :</strong> {failedAttempts}/{MAX_FAILED_ATTEMPTS} tentatives échouées.
-                            </span>
-                        </div>
+                        <StatusBanner tone="warning" title={`${failedAttempts} tentative${failedAttempts > 1 ? 's' : ''} échouée${failedAttempts > 1 ? 's' : ''} sur ${MAX_FAILED_ATTEMPTS}`}>
+                            La saisie sera bloquée pendant {LOCKOUT_DURATION_SECONDS} secondes au bout de {MAX_FAILED_ATTEMPTS} échecs.
+                        </StatusBanner>
                     )}
 
                     {/* Erreur */}
                     {errorMessage && !isLockedOut && (
-                        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start gap-2.5">
-                            <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
-                            <span>{errorMessage}</span>
-                        </div>
+                        <StatusBanner tone="danger" announce="alert" title={errorMessage} />
                     )}
 
-                    {/* Succès SMS */}
+                    {/* Code envoyé par SMS */}
                     {successMessage && step === 2 && (
-                        <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs flex items-start gap-2.5">
-                            <ShieldCheck size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" />
-                            <span>{successMessage}</span>
-                        </div>
+                        <StatusBanner tone="success" icon={<ShieldCheck size={20} />} title={successMessage} />
                     )}
 
                     {/* ===================================================== */}
-                    {/* ÉTAPE 1 — SAISIE IDENTIFIANT (email OU téléphone)      */}
+                    {/* ÉTAPE 1 — IDENTIFIANT (email OU téléphone)             */}
                     {/* ===================================================== */}
                     {step === 1 && (
                         <form onSubmit={handleStep1Submit} className="space-y-4">
-                            <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                    Email ou numéro de téléphone
-                                </label>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        inputMode={inputMode === 'email' ? 'email' : 'tel'}
-                                        value={identifier}
-                                        onChange={(e) => handleIdentifierChange(e.target.value)}
-                                        placeholder="ex: email@domain.com ou 77 123 45 67"
-                                        required
-                                        autoComplete="username"
-                                        disabled={isLockedOut || isLoading}
-                                        className={clsx(
-                                            'w-full px-4 py-3 pr-11 rounded-2xl bg-slate-50 dark:bg-zinc-900 border text-xs font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5722] transition-all',
-                                            isLockedOut && 'opacity-50 cursor-not-allowed',
-                                            'border-slate-200 dark:border-zinc-800'
-                                        )}
-                                    />
-                                    <div className="absolute right-3.5 top-3.5 text-slate-400">
-                                        {inputMode === 'email' ? <Mail size={16} /> : <Phone size={16} />}
-                                    </div>
-                                </div>
-
-                                {/* Badge mode détecté */}
-                                {inputMode && (
-                                    <div className={clsx(
-                                        'mt-2 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border',
-                                        inputMode === 'email'
-                                            ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300'
-                                            : 'bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-800 text-[#FF5722]'
-                                    )}>
-                                        {inputMode === 'email'
-                                            ? <><Mail size={10} /> Récupération par lien email</>
-                                            : <><Phone size={10} /> Récupération par SMS</>
-                                        }
-                                    </div>
-                                )}
-                            </div>
+                            <TextInput
+                                id="recuperation-identifiant"
+                                label="Email ou numéro de téléphone"
+                                type="text"
+                                inputMode={inputMode === 'email' ? 'email' : 'tel'}
+                                value={identifier}
+                                onChange={(e) => handleIdentifierChange(e.target.value)}
+                                placeholder="ex : email@domaine.com ou 77 123 45 67"
+                                required
+                                autoComplete="username"
+                                disabled={isLockedOut || isLoading}
+                                hint={inputMode === 'email'
+                                    ? 'Récupération par lien envoyé à cette adresse email.'
+                                    : inputMode === 'phone'
+                                        ? 'Récupération par code envoyé par SMS à ce numéro.'
+                                        : undefined}
+                            />
 
                             <Button
                                 type="submit"
@@ -512,36 +483,34 @@ export default function ForgotPasswordPage() {
                                 fullWidth
                                 isLoading={isLoading}
                                 disabled={isLockedOut || isLoading || !identifier.trim()}
-                                leftIcon={isLockedOut ? <Lock size={18} /> : inputMode === 'email' ? <Send size={18} /> : <KeyRound size={18} />}
+                                leftIcon={isLockedOut ? <Lock size={18} /> : inputMode === 'email' ? <Send size={18} /> : inputMode === 'phone' ? <Phone size={18} /> : <KeyRound size={18} />}
                             >
                                 {isLockedOut
-                                    ? `Verrouillé (${lockoutRemaining}s)`
+                                    ? `Bloqué (${lockoutRemaining} s)`
                                     : inputMode === 'email'
-                                    ? 'Envoyer le lien de récupération'
-                                    : inputMode === 'phone'
-                                    ? 'Envoyer le code SMS'
-                                    : 'Continuer'
-                                }
+                                        ? 'Envoyer le lien de récupération'
+                                        : inputMode === 'phone'
+                                            ? 'Envoyer le code SMS'
+                                            : 'Continuer'}
                             </Button>
                         </form>
                     )}
 
                     {/* ===================================================== */}
-                    {/* ÉTAPE 2 — SAISIE OTP (flux téléphone seulement)        */}
+                    {/* ÉTAPE 2 — CODE REÇU PAR SMS (flux téléphone seulement) */}
                     {/* ===================================================== */}
                     {step === 2 && (
                         <form onSubmit={handleVerifyOtp} className="space-y-5">
-                            <div className="text-center">
-                                <span className="text-xs font-bold text-slate-700 dark:text-zinc-300">
-                                    Code envoyé au <strong className="text-[#FF5722]">{normalizePhoneNumber(identifier.trim())}</strong>
-                                </span>
-                            </div>
+                            <p id="recuperation-otp-aide" className="text-center text-sm font-semibold text-fg">
+                                Code envoyé au <span className="whitespace-nowrap tabular-nums text-brand-fg">{normalizePhoneNumber(identifier.trim())}</span>
+                            </p>
 
                             <OtpInput
                                 value={otpCode}
                                 onChange={setOtpCode}
                                 disabled={isLockedOut || isLoading}
                                 hasError={!!errorMessage}
+                                describedBy="recuperation-otp-aide"
                             />
 
                             <Button
@@ -553,70 +522,52 @@ export default function ForgotPasswordPage() {
                                 disabled={isLockedOut || isLoading || otpCode.length !== 6}
                                 leftIcon={isLockedOut ? <Lock size={18} /> : <ShieldCheck size={18} />}
                             >
-                                {isLockedOut ? `Verrouillé (${lockoutRemaining}s)` : 'Valider le code'}
+                                {isLockedOut ? `Bloqué (${lockoutRemaining} s)` : 'Valider le code'}
                             </Button>
 
-                            <div className="flex items-center justify-between text-xs pt-1">
-                                <button
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Button
                                     type="button"
+                                    variant="ghost"
+                                    size="sm"
                                     onClick={() => { setStep(1); setOtpCode(''); setErrorMessage(null); setSuccessMessage(null); }}
                                     disabled={isLockedOut}
-                                    className="text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white font-medium disabled:opacity-50"
                                 >
                                     Modifier le numéro
-                                </button>
+                                </Button>
 
-                                <button
+                                <Button
                                     type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-brand-fg"
                                     onClick={() => handleSendOtp()}
                                     disabled={isLockedOut || countdown > 0 || isLoading}
-                                    className="text-[#FF5722] font-bold disabled:opacity-50 flex items-center gap-1"
+                                    leftIcon={<RotateCcw size={16} />}
                                 >
-                                    <RotateCcw size={12} />
-                                    <span>{countdown > 0 ? `Renvoyer (${countdown}s)` : 'Renvoyer le code'}</span>
-                                </button>
+                                    {countdown > 0 ? `Renvoyer (${countdown} s)` : 'Renvoyer le code'}
+                                </Button>
                             </div>
                         </form>
                     )}
 
                     {/* ===================================================== */}
-                    {/* SUCCÈS EMAIL — Écran de confirmation                   */}
+                    {/* LIEN ENVOYÉ — écran de confirmation                    */}
                     {/* ===================================================== */}
                     {step === 'email-sent' && (
-                        <div className="space-y-5 text-center">
-                            <div className="flex justify-center">
-                                <div className="w-20 h-20 rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
-                                    <CheckCircle2 size={40} className="text-emerald-500" />
-                                </div>
-                            </div>
+                        <div className="space-y-5">
+                            <StatusBanner tone="success" icon={<CheckCircle2 size={20} />} title="Lien envoyé">
+                                Si un compte correspond à cette adresse, un lien de récupération vient de lui être envoyé.
+                                Ouvrez-le pour choisir un nouveau mot de passe.
+                            </StatusBanner>
 
-                            <div className="space-y-2">
-                                <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
-                                    Lien envoyé avec succès
-                                </h3>
-                                <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
-                                    Un lien de récupération a été envoyé à votre adresse email. Veuillez cliquer sur ce lien pour choisir un nouveau mot de passe.
-                                </p>
-                            </div>
-
-                            <div className="p-4 rounded-2xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-left space-y-2">
-                                <p className="text-[11px] font-black uppercase tracking-wider text-sky-700 dark:text-sky-300">
-                                    Que faire ensuite ?
-                                </p>
-                                <ul className="text-[11px] text-sky-800 dark:text-sky-200 space-y-1.5 leading-relaxed">
-                                    <li className="flex items-start gap-1.5">
-                                        <span className="text-sky-500 mt-0.5 flex-shrink-0">1.</span>
-                                        <span>Ouvrez l&apos;email reçu de <strong>no-reply@eventvillage.sn</strong></span>
-                                    </li>
-                                    <li className="flex items-start gap-1.5">
-                                        <span className="text-sky-500 mt-0.5 flex-shrink-0">2.</span>
-                                        <span>Cliquez sur <strong>&quot;Réinitialiser mon mot de passe&quot;</strong></span>
-                                    </li>
-                                    <li className="flex items-start gap-1.5">
-                                        <span className="text-sky-500 mt-0.5 flex-shrink-0">3.</span>
-                                        <span>Le lien expire dans <strong>60 minutes</strong>. Vérifiez aussi vos spams.</span>
-                                    </li>
-                                </ul>
+                            <div className="space-y-2 rounded-2xl border border-info-border bg-info-bg p-4 text-info-fg">
+                                <h2 className="text-sm font-semibold">Que faire ensuite ?</h2>
+                                <ol className="list-decimal space-y-1.5 pl-5 text-sm leading-relaxed">
+                                    <li>Ouvrez l&apos;email reçu de <strong>no-reply@eventvillage.sn</strong>.</li>
+                                    <li>Choisissez <strong>« Réinitialiser mon mot de passe »</strong>.</li>
+                                    <li>Le lien expire dans <strong>60 minutes</strong>. Pensez à vérifier le dossier des courriers indésirables.</li>
+                                </ol>
                             </div>
 
                             <Button
@@ -631,15 +582,11 @@ export default function ForgotPasswordPage() {
                         </div>
                     )}
 
-                    {/* Retour connexion */}
-                    <div className="pt-4 border-t border-slate-200 dark:border-zinc-800 text-center">
-                        <Link
-                            href="/login"
-                            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-zinc-300 hover:text-[#FF5722] transition-colors"
-                        >
-                            <ArrowLeft size={14} />
-                            <span>Retour à la connexion</span>
-                        </Link>
+                    {/* Retour à la connexion */}
+                    <div className="flex justify-center border-t border-border pt-4">
+                        <LinkButton href="/login" variant="ghost" size="sm" leftIcon={<ArrowLeft size={16} />}>
+                            Retour à la connexion
+                        </LinkButton>
                     </div>
                 </div>
             </div>
