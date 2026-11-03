@@ -87,7 +87,14 @@ export async function POST(req: NextRequest) {
         // 4. Garde anti-abus puis envoi
         const reserved = await reserveSms(phone, { category: 'OTP' });
         if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
-        const sendResult = await mTargetService.sendOtp(phone, otpCode, { reservation: reserved.reservation });
+        // Lot 6 (E7) : envoi synchrone journalisé sans le code ; référence = en-tête webhook-id (signature
+        // Standard Webhooks), sinon un identifiant propre à cet appel (appel authentifié par Bearer).
+        const hookRef = req.headers.get('webhook-id')?.trim() || crypto.randomUUID();
+        const sendResult = await mTargetService.sendOtp(phone, otpCode, {
+            reservation: reserved.reservation,
+            purpose: 'AUTH_HOOK',
+            log: { type: 'OTP_AUTH_HOOK', ref: hookRef.slice(0, 200) },
+        });
         if (!sendResult.success) {
             console.error('[SMS Hook] Échec de transmission MTarget:', sendResult.error);
             return NextResponse.json({ error: 'Envoi du SMS impossible.' }, { status: 502 });

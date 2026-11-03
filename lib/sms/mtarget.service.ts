@@ -1,5 +1,5 @@
 /**
- * Façade SMS métier (OTP, invitations contrôleur, notifications).
+ * Façade SMS métier (OTP, invitation d'un contrôleur, envoi par l'envoyeur de la boîte d'envoi).
  *
  * L'envoi effectif passe par l'adaptateur fourni par le registre d'intégrations :
  * MTarget en production, faux adaptateur (sans réseau) en test.
@@ -8,18 +8,107 @@
  * en base (lib/sms/sms-guard.ts) ; un refus ou une garde indisponible renvoie un échec explicite
  * (code SMS_RATE_LIMITED / SMS_DAILY_CAP_REACHED / SMS_ACCOUNT_LIMIT_REACHED / SMS_GUARD_UNAVAILABLE)
  * sans rien envoyer.
+ * Lot 6 (contrat E6, E7) : chaque résultat porte une issue `outcome` (SENT, REJECTED, UNCERTAIN) ; seuls
+ * l'envoyeur de la boîte d'envoi (sendSms) et les envois synchrones (sendOtp, sendControllerInvite)
+ * appellent cette façade. Les textes des codes et de l'invitation sont ceux du catalogue
+ * (renderSyncSms) ; `ctx.log` inscrit l'envoi dans la boîte d'envoi (notification_sync_log), sans le code.
  * Aucun autre module n'appelle l'adaptateur SMS directement (contrôlé par les tests).
  */
 import { getSmsAdapter } from '@/lib/integrations/registry';
 import type { SmsSendResult } from '@/lib/integrations/types';
-import { formatMTargetPhoneNumber } from './mtarget-http.adapter';
+import { renderSyncSms } from '@/lib/notifications/catalog';
+import { logSyncSms, type SyncLogContext, type SyncSmsOutcome, type SyncSmsType } from '@/lib/notifications/sync-log';
+import { formatMTargetPhoneNumber, type MTargetOutcome } from './mtarget-http.adapter';
 import { reserveSms, type SmsContext } from './sms-guard';
 
 export { formatMTargetPhoneNumber } from './mtarget-http.adapter';
-export type { MTargetConfig } from './mtarget-http.adapter';
+export type { MTargetConfig, MTargetOutcome, MTargetSmsResult } from './mtarget-http.adapter';
 export { reserveSms, smsRefusalHttp, type SmsCategory, type SmsContext, SmsReservation } from './sms-guard';
+export type { SyncLogContext } from '@/lib/notifications/sync-log';
 
-export type MTargetSendResult = SmsSendResult;
+/** Résultat de la façade : `SmsSendResult` plus l'issue du contrat E6 (absente seulement chez un adaptateur ancien). */
+export type MTargetSendResult = SmsSendResult & {
+    outcome?: MTargetOutcome;
+    retryable?: boolean;
+    providerCode?: string;
+    uncertainty?: 'PROVIDER_TIMEOUT' | 'PROVIDER_UNREADABLE';
+};
+
+/** Objet d'un code à usage unique : fixe le texte (réinitialisation) et le type du journal. */
+export type OtpSmsPurpose = 'LOGIN' | 'REGISTER' | 'PASSWORD_RESET' | 'WITHDRAWAL' | 'AUTH_HOOK';
+
+const OTP_TYPE_BY_PURPOSE: Readonly<Record<OtpSmsPurpose, SyncSmsType>> = {
+    LOGIN: 'OTP_LOGIN',
+    REGISTER: 'OTP_REGISTER',
+    PASSWORD_RESET: 'OTP_PASSWORD_RESET',
+    WITHDRAWAL: 'OTP_WITHDRAWAL',
+    AUTH_HOOK: 'OTP_AUTH_HOOK',
+};
+
+/** Contexte d'un envoi synchrone : garde (SmsContext), objet du code, journal sans code. */
+export type SyncSmsContext = SmsContext & {
+    purpose?: OtpSmsPurpose;
+    log?: SyncLogContext;
+};
+
+/**
+ * Lecture unique d'un résultat SMS (envoyeur et journal synchrone) :
+ *  - GUARD_REFUSED : la garde anti-abus a refusé, rien n'est parti (motif SMS_DAILY_CAP, SMS_ACCOUNT_CAP,
+ *    SMS_RECIPIENT_CAP) ; GUARD_UNAVAILABLE : garde indisponible, rien n'est parti ;
+ *  - SENT ; RETRYABLE : refus temporaire, rien n'est parti ; REJECTED : refus définitif ;
+ *  - UNCERTAIN : peut-être parti (jamais renvoyé).
+ */
+export type SmsResultKind = 'SENT' | 'GUARD_REFUSED' | 'GUARD_UNAVAILABLE' | 'RETRYABLE' | 'REJECTED' | 'UNCERTAIN';
+
+export interface SmsResultClass {
+    kind: SmsResultKind;
+    /** Motif de la boîte d'envoi (contrat C4) ; absent pour SENT. */
+    reason?: string;
+    /** Détail lisible (jamais le texte du message). */
+    detail?: string;
+}
+
+export function classifySmsResult(res: MTargetSendResult): SmsResultClass {
+    switch (res.code) {
+        case 'SMS_DAILY_CAP_REACHED':
+            return { kind: 'GUARD_REFUSED', reason: 'SMS_DAILY_CAP', detail: res.error };
+        case 'SMS_ACCOUNT_LIMIT_REACHED':
+            return { kind: 'GUARD_REFUSED', reason: 'SMS_ACCOUNT_CAP', detail: res.error };
+        case 'SMS_RATE_LIMITED':
+            return { kind: 'GUARD_REFUSED', reason: 'SMS_RECIPIENT_CAP', detail: res.error };
+        case 'SMS_GUARD_UNAVAILABLE':
+            return { kind: 'GUARD_UNAVAILABLE', reason: 'SMS_GUARD_UNAVAILABLE', detail: res.error };
+        default:
+            break;
+    }
+    const outcome: MTargetOutcome = res.outcome ?? (res.success ? 'SENT' : 'REJECTED');
+    if (outcome === 'SENT') return { kind: 'SENT' };
+    if (outcome === 'UNCERTAIN') return { kind: 'UNCERTAIN', reason: res.uncertainty ?? 'PROVIDER_TIMEOUT', detail: res.error };
+    const detail = res.providerCode ? `code ${res.providerCode} : ${res.error ?? 'refus du fournisseur'}` : res.error;
+    // Issue absente (adaptateur antérieur au lot 6) : refus traité comme temporaire (lib/integrations/types.ts).
+    if (res.retryable === true || res.outcome === undefined) return { kind: 'RETRYABLE', reason: 'SMS_PROVIDER_ERROR', detail };
+    return { kind: 'REJECTED', reason: 'SMS_REJECTED', detail };
+}
+
+/** Issue d'un envoi synchrone pour le journal (statut final, motif obligatoire hors SENT). */
+function syncLogOutcome(res: MTargetSendResult): { outcome: SyncSmsOutcome; reason?: string } {
+    const c = classifySmsResult(res);
+    switch (c.kind) {
+        case 'SENT':
+            return { outcome: 'SENT' };
+        case 'GUARD_REFUSED':
+            return { outcome: 'SKIPPED', reason: c.reason };
+        case 'UNCERTAIN':
+            return { outcome: 'UNCERTAIN', reason: c.reason };
+        default:
+            return { outcome: 'FAILED', reason: c.reason };
+    }
+}
+
+/** Contexte de la garde seul (sans objet ni journal). */
+function guardContext(ctx: SyncSmsContext): SmsContext {
+    return { ip: ctx.ip, actorId: ctx.actorId, shiftId: ctx.shiftId, reservation: ctx.reservation };
+}
 
 export class MTargetService {
     /**
@@ -34,6 +123,8 @@ export class MTargetService {
                 console.warn(`[SMS] envoi refusé par la garde (${reserved.refusal.code}) vers ${formatMTargetPhoneNumber(to).slice(0, 6)}…`);
                 return {
                     success: false,
+                    outcome: 'REJECTED',
+                    retryable: false,
                     recipient: formatMTargetPhoneNumber(to),
                     error: reserved.refusal.message,
                     code: reserved.refusal.code,
@@ -43,62 +134,42 @@ export class MTargetService {
             reservation = reserved.reservation;
         }
         reservation.consume(to);
-        return getSmsAdapter().sendSms(to, message);
-    }
-
-    /** Code OTP (catégorie OTP : limites par numéro et par IP en plus). */
-    async sendOtp(phone: string, otpCode: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
-        const message = `Votre code de verification Event Village est : ${otpCode}. Valable 10 minutes.`;
-        return this.sendSms(phone, message, { category: 'OTP', ...ctx });
-    }
-
-    async sendControllerInvite(phone: string, otpCode: string, setupLink: string, firstName?: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
-        const greeting = firstName && firstName.trim() ? `Bonjour ${firstName.trim()}, vous etes invite` : `Vous etes invite`;
-        const message = `Event Village : ${greeting} comme controleur. Code : ${otpCode} (valable 24h). Activez votre compte : ${setupLink}`;
-        return this.sendSms(phone, message, { category: 'CONTROLLER_INVITE', ...ctx });
+        return getSmsAdapter().sendSms(to, message) as Promise<MTargetSendResult>;
     }
 
     /**
-     * Reçu d'une vente au guichet (lot 5, C7) : catégorie COUNTER_RECEIPT, quota par caisse. Texte sans
-     * accents (SMS GSM), sans donnée personnelle.
+     * Code à usage unique (catégorie OTP : limites par numéro et par IP en plus). Texte du catalogue selon
+     * l'objet (`ctx.purpose`, réinitialisation à part) ; `ctx.log` journalise l'envoi sans le code.
      */
-    async sendCounterReceipt(phone: string, receipt: { eventTitle: string; ticketCount: number; amount: number; reference: string }, shiftId: string): Promise<MTargetSendResult> {
-        const amount = String(Math.trunc(receipt.amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-        const tickets = receipt.ticketCount > 1 ? `${receipt.ticketCount} billets` : '1 billet';
-        const message = `Event Village : achat au guichet pour "${receipt.eventTitle}" - ${tickets}, ${amount} F CFA. Entree validee. Ref ${receipt.reference}.`;
-        return this.sendSms(phone, message, { category: 'COUNTER_RECEIPT', shiftId });
+    async sendOtp(phone: string, otpCode: string, ctx: SyncSmsContext = {}): Promise<MTargetSendResult> {
+        const type: SyncSmsType = ctx.log?.type ?? OTP_TYPE_BY_PURPOSE[ctx.purpose ?? 'LOGIN'];
+        const message = renderSyncSms(type, { code: otpCode });
+        const result = await this.sendSms(phone, message, { ...guardContext(ctx), category: 'OTP' });
+        if (ctx.log) await this.journal(ctx.log, phone, result);
+        return result;
     }
 
-    async sendControllerActivationConfirmation(phone: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
-        const message = `Event Village : Votre compte controleur est active avec succes. Vous pouvez desormais vous connecter et scanner les billets.`;
-        return this.sendSms(phone, message, ctx);
-    }
-
-    async sendControllerRevocationNotice(phone: string, eventTitle: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
-        const message = `Event Village : Votre acces controleur pour l'evenement "${eventTitle}" a pris fin.`;
-        return this.sendSms(phone, message, ctx);
-    }
-
-    async sendControllerAllEventsRevokedNotice(phone: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
-        const message = `Event Village : Vos affectations en tant que controleur ont ete retirees par l'organisateur. Vous n'avez plus d'evenement actif.`;
-        return this.sendSms(phone, message, ctx);
-    }
-
-    async sendControllerAccountDeletedNotice(phone: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
-        const message = `Event Village : Votre compte controleur a ete desactive de l'equipe organisatrice.`;
-        return this.sendSms(phone, message, ctx);
-    }
-
-    async sendControllerAssignmentsUpdatedNotice(phone: string, eventCount: number, ctx: SmsContext = {}): Promise<MTargetSendResult> {
-        const message = `Event Village : Vos affectations de controleur ont ete mises a jour (${eventCount} evenement(s) assigne(s)).`;
-        return this.sendSms(phone, message, ctx);
+    /** Invitation d'un nouveau contrôleur : code d'activation 24 h et lien (texte du catalogue). */
+    async sendControllerInvite(phone: string, otpCode: string, setupLink: string, firstName?: string, ctx: SyncSmsContext = {}): Promise<MTargetSendResult> {
+        const name = firstName && firstName.trim() ? firstName.trim() : undefined;
+        const message = renderSyncSms('CONTROLLER_INVITE', { code: otpCode, setupLink, ...(name ? { firstName: name } : {}) });
+        const result = await this.sendSms(phone, message, { ...guardContext(ctx), category: 'CONTROLLER_INVITE' });
+        if (ctx.log) await this.journal(ctx.log, phone, result);
+        return result;
     }
 
     /**
-     * Envoi de notification métier (ex: confirmation d'achat de ticket, validation de réservation)
+     * Alias historique de sendSms (contrat K : conservé pour tests/fondations-lot0.test.ts). Aucun module
+     * applicatif ne l'appelle : les notifications passent par la boîte d'envoi et son envoyeur.
      */
     async sendNotification(phone: string, message: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
         return this.sendSms(phone, message, ctx);
+    }
+
+    /** Journal synchrone (E7) : l'échec d'écriture est journalisé par logSyncSms, le code parti n'est pas annulé. */
+    private async journal(log: SyncLogContext, phone: string, result: MTargetSendResult): Promise<void> {
+        const { outcome, reason } = syncLogOutcome(result);
+        await logSyncSms({ ...log, phone, outcome, reason, providerMessageId: result.messageId ?? null });
     }
 }
 

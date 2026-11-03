@@ -55,15 +55,21 @@ export async function POST(req: NextRequest) {
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
         // Lot 1B.7 : le code est enregistré en base AVANT l'envoi (vérifiable depuis toute instance).
+        let otpId: string;
         try {
-            await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt), 'REGISTER');
+            otpId = await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt), 'REGISTER');
         } catch (storeErr) {
             console.error('[API /api/auth/register]', storeErr instanceof Error ? storeErr.message : storeErr);
             return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
         }
 
         // L'adaptateur renvoie success:false sans lever : le résultat est contrôlé (lot 1C.9).
-        const smsResult = await mTargetService.sendOtp(normalizedPhone, otpCode, { reservation: reserved.reservation });
+        // Lot 6 (E7) : envoi synchrone journalisé dans la boîte d'envoi, sans le code.
+        const smsResult = await mTargetService.sendOtp(normalizedPhone, otpCode, {
+            reservation: reserved.reservation,
+            purpose: 'REGISTER',
+            log: { type: 'OTP_REGISTER', ref: otpId },
+        });
         if (!smsResult.success) {
             console.error('[API /api/auth/register] Échec envoi SMS OTP:', smsResult.error);
             return NextResponse.json(

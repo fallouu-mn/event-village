@@ -42,13 +42,19 @@ export async function POST(req: NextRequest) {
     if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
     const code = randomInt(100000, 1000000).toString();
+    let otpId: string;
     try {
-        await storeOtp(phone, code, new Date(Date.now() + 10 * 60 * 1000), 'WITHDRAWAL');
+        otpId = await storeOtp(phone, code, new Date(Date.now() + 10 * 60 * 1000), 'WITHDRAWAL');
     } catch (err) {
         console.error('[API /api/withdrawals/otp] enregistrement du code impossible :', err instanceof Error ? err.message : String(err));
         return NextResponse.json({ error: 'Impossible de préparer le code de confirmation. Réessayez.' }, { status: 500 });
     }
-    const sent = await mTargetService.sendOtp(phone, code, { reservation: reserved.reservation });
+    // Lot 6 (E7) : envoi synchrone journalisé dans la boîte d'envoi, sans le code.
+    const sent = await mTargetService.sendOtp(phone, code, {
+        reservation: reserved.reservation,
+        purpose: 'WITHDRAWAL',
+        log: { type: 'OTP_WITHDRAWAL', ref: otpId, userId: session.user.id, actorId: session.user.id },
+    });
     if (!sent.success) {
         console.error('[API /api/withdrawals/otp] envoi du SMS impossible :', sent.error);
         return NextResponse.json({ error: 'Impossible d’envoyer le code par SMS. Réessayez.' }, { status: 502 });

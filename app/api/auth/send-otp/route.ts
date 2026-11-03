@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomInt } from 'crypto';
 import { mTargetService } from '@/lib/sms/mtarget.service';
-import { NotificationService } from '@/lib/notifications/notification.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { storeOtp, type OtpPurpose } from '@/lib/auth/otp-store';
+import { storeOtp } from '@/lib/auth/otp-store';
 import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
@@ -15,9 +14,13 @@ function generateOtpCode(): string {
     return randomInt(100000, 1000000).toString();
 }
 
+/** Type du journal synchrone (lot 6, contrat E7) selon l'objet du code. */
+const SYNC_TYPE = { LOGIN: 'OTP_LOGIN', REGISTER: 'OTP_REGISTER', PASSWORD_RESET: 'OTP_PASSWORD_RESET' } as const;
+
 /**
  * POST /api/auth/send-otp
- * Génère un code OTP sécurisé et l'envoie par SMS via MTarget / NotificationService
+ * Génère un code OTP sécurisé et l'envoie par SMS (envoi synchrone, journalisé sans le code dans la
+ * boîte d'envoi : lot 6, contrat E7). Le code de réinitialisation a son propre texte (catalogue).
  */
 export async function POST(req: NextRequest) {
     try {
@@ -31,7 +34,7 @@ export async function POST(req: NextRequest) {
         const rawPhone = body.phone?.trim();
         const purpose = (body.purpose || body.type || 'AUTH').toUpperCase();
         // Lot 3 : objet enregistré avec le code (un code ne vaut que pour son objet)
-        const otpPurpose: OtpPurpose = purpose === 'PASSWORD_RESET' ? 'PASSWORD_RESET'
+        const otpPurpose: keyof typeof SYNC_TYPE = purpose === 'PASSWORD_RESET' ? 'PASSWORD_RESET'
             : ['REGISTER', 'SIGNUP', 'INSCRIPTION'].includes(purpose) ? 'REGISTER'
             : 'LOGIN';
 
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
         const supabase = getServiceRoleClient();
 
         // Si demande de réinitialisation de mot de passe, vérifier l'existence du compte
-        let userEmail: string | undefined;
+        let resetUserId: string | null = null;
         if (purpose === 'PASSWORD_RESET') {
             const { data: userRecord } = await supabase
                 .from('users')
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
                     { status: 404 }
                 );
             }
-            userEmail = userRecord.email || undefined;
+            resetUserId = String(userRecord.id);
         }
 
         // 0. Lot 1C.9 : réservation anti-abus (numéro, IP, plafond global) AVANT d'enregistrer le
@@ -77,34 +80,24 @@ export async function POST(req: NextRequest) {
         const expiresAt = Date.now() + 10 * 60 * 1000; // Valide 10 minutes
 
         // 2-3. Lot 1B.7 : enregistrement en base, seule source de vérité (aucun cache mémoire).
+        let otpId: string;
         try {
-            await storeOtp(normalizedPhone, otpCode, new Date(expiresAt), otpPurpose);
+            otpId = await storeOtp(normalizedPhone, otpCode, new Date(expiresAt), otpPurpose);
         } catch (storeErr) {
             console.error('[API /api/auth/send-otp]', storeErr instanceof Error ? storeErr.message : storeErr);
             return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
         }
 
-        // 4. Envoi effectif du SMS
-        let sendSuccess = false;
-        let errorMessage: string | undefined;
-
-        if (purpose === 'PASSWORD_RESET') {
-            const notifRes = await NotificationService.sendPasswordResetNotification({
-                phone: normalizedPhone,
-                resetCode: otpCode,
-                email: userEmail,
-                sms: { reservation: reserved.reservation },
-            });
-            // Le code ne part que par SMS : emailSent ne signifie pas qu'un email est parti.
-            sendSuccess = notifRes.smsSent;
-            if (!sendSuccess) {
-                errorMessage = 'Impossible d\'envoyer le SMS de réinitialisation.';
-            }
-        } else {
-            const sendResult = await mTargetService.sendOtp(normalizedPhone, otpCode, { reservation: reserved.reservation });
-            sendSuccess = sendResult.success;
-            errorMessage = sendResult.error;
-        }
+        // 4. Envoi effectif du SMS (synchrone : l'utilisateur attend), journalisé sans le code (lot 6, E7).
+        //    Le code ne part que par SMS (réinitialisation comprise).
+        const sendResult = await mTargetService.sendOtp(normalizedPhone, otpCode, {
+            reservation: reserved.reservation,
+            purpose: otpPurpose,
+            log: { type: SYNC_TYPE[otpPurpose], ref: otpId, userId: resetUserId },
+        });
+        const sendSuccess = sendResult.success;
+        const errorMessage = sendSuccess ? undefined
+            : purpose === 'PASSWORD_RESET' ? 'Impossible d\'envoyer le SMS de réinitialisation.' : sendResult.error;
 
         if (!sendSuccess) {
             console.error('[API send-otp] Échec envoi SMS:', errorMessage);
