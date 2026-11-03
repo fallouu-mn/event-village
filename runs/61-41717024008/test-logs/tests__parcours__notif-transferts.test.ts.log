@@ -1,0 +1,637 @@
+TAP version 13
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+# Subtest: 6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amendement 2)
+    # Subtest: numéro vérifié : réponse QUEUED sans jeton ni lien, TRANSFER_OFFERED par SMS au numéro et in-app + push au compte ; SMS exact sans lien de réclamation
+    ok 1 - numéro vérifié : réponse QUEUED sans jeton ni lien, TRANSFER_OFFERED par SMS au numéro et in-app + push au compte ; SMS exact sans lien de réclamation
+      ---
+      duration_ms: 221.653596
+      type: 'test'
+      ...
+    # Subtest: numéro sans vérification : SMS au numéro seulement (aucune in-app à un compte non prouvé)
+    ok 2 - numéro sans vérification : SMS au numéro seulement (aucune in-app à un compte non prouvé)
+      ---
+      duration_ms: 144.227277
+      type: 'test'
+      ...
+    # Subtest: cible email : 400 RECIPIENT_PHONE_REQUIRED, aucun transfert, billet libre
+    ok 3 - cible email : 400 RECIPIENT_PHONE_REQUIRED, aucun transfert, billet libre
+      ---
+      duration_ms: 151.461519
+      type: 'test'
+      ...
+    1..3
+ok 1 - 6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amendement 2)
+  ---
+  duration_ms: 972.520344
+  type: 'suite'
+  ...
+# Subtest: 6.7 Transfert — liste entrante (B3 ticket_transfers_incoming, B4)
+    # Subtest: vérifié → l’élément ; non vérifié → phoneVerificationRequired sans détail ; autre compte → rien ; ancien transfert vers un email → rien
+    ok 1 - vérifié → l’élément ; non vérifié → phoneVerificationRequired sans détail ; autre compte → rien ; ancien transfert vers un email → rien
+      ---
+      duration_ms: 613.86974
+      type: 'test'
+      ...
+    1..1
+ok 2 - 6.7 Transfert — liste entrante (B3 ticket_transfers_incoming, B4)
+  ---
+  duration_ms: 614.017231
+  type: 'suite'
+  ...
+# Subtest: 6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_accept, B4)
+    # Subtest: destinataire vérifié : 200, billet transféré, identité du billet renouvelée, TRANSFER_CLAIMED_SENDER et TRANSFER_RECEIVED (in-app, push, aucun SMS) ; second appel 409
+    ok 1 - destinataire vérifié : 200, billet transféré, identité du billet renouvelée, TRANSFER_CLAIMED_SENDER et TRANSFER_RECEIVED (in-app, push, aucun SMS) ; second appel 409
+      ---
+      duration_ms: 197.446449
+      type: 'test'
+      ...
+    # Subtest: refus : 404 identique (inconnu, transfert d’un autre, ancien transfert vers un email), 403 PHONE_NOT_VERIFIED, 410 TRANSFER_EXPIRED, 400 SELF_TRANSFER ; billet inchangé
+    ok 2 - refus : 404 identique (inconnu, transfert d’un autre, ancien transfert vers un email), 403 PHONE_NOT_VERIFIED, 410 TRANSFER_EXPIRED, 400 SELF_TRANSFER ; billet inchangé
+      ---
+      duration_ms: 633.528104
+      type: 'test'
+      ...
+    1..2
+ok 3 - 6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_accept, B4)
+  ---
+  duration_ms: 831.375495
+  type: 'suite'
+  ...
+# Subtest: 6.7 Transfert — ancien lien /tickets/claim/<jeton> retiré (B4, décision 37)
+    # Subtest: GET et POST → 410 CLAIM_LINK_RETIRED, même réponse pour un vrai et un faux jeton ; POST sans session → 401 ; transfert intact
+    ok 1 - GET et POST → 410 CLAIM_LINK_RETIRED, même réponse pour un vrai et un faux jeton ; POST sans session → 401 ; transfert intact
+      ---
+      duration_ms: 167.875371
+      type: 'test'
+      ...
+    # Subtest: contrôle statique : la route retirée ne lit pas la base ; la page est une redirection serveur vers /tickets?tab=recus
+    not ok 2 - contrôle statique : la route retirée ne lit pas la base ; la page est une redirection serveur vers /tickets?tab=recus
+      ---
+      duration_ms: 4.061497
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:2:23697'
+      failureType: 'testCodeFailure'
+      error: 'app/tickets/claim/[token]/page.tsx : composant serveur (pas de « use client »)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useState, useEffect, useMemo } from 'react';
+        import Image from 'next/image';
+        import Link from 'next/link';
+        import { useRouter } from 'next/navigation';
+        import { motion, AnimatePresence } from 'framer-motion';
+        import {
+          Gift,
+          ShieldCheck,
+          Calendar,
+          Clock,
+          MapPin,
+          Ticket,
+          UserCheck,
+          Sparkles,
+          ArrowRight,
+          AlertTriangle,
+          CheckCircle2,
+          Lock,
+          RefreshCw,
+          LogIn,
+          HelpCircle,
+          XCircle,
+        } from 'lucide-react';
+        import { Button } from '@/components/ui/Button';
+        import { Skeleton } from '@/components/ui/Skeleton';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { useToast } from '@/components/ui/Toast';
+        import { TransferExplainerModal } from '@/components/tickets/TransferExplainerModal';
+        
+        interface ClaimPageProps {
+          params: {
+            token: string;
+          };
+        }
+        
+        export default function ClaimTicketPage({ params }: ClaimPageProps) {
+          const router = useRouter();
+          const toast = useToast();
+          const { user, profile, isAuthenticated, isLoading: isAuthLoading, session } = useAuth();
+        
+          const token = params.token;
+        
+          const [isLoading, setIsLoading] = useState(true);
+          const [claimData, setClaimData] = useState<any | null>(null);
+          const [errorState, setErrorState] = useState<{
+            message: string;
+            expired?: boolean;
+            alreadyClaimed?: boolean;
+            cancelled?: boolean;
+          } | null>(null);
+        
+          const [isClaiming, setIsClaiming] = useState(false);
+          const [claimSuccess, setClaimSuccess] = useState<any | null>(null);
+          const [isExplainerOpen, setIsExplainerOpen] = useState(false);
+        
+          
+          useEffect(() => {
+            if (!token) return;
+        
+            let isMounted = true;
+            const fetchClaimInfo = async () => {
+              try {
+                setIsLoading(true);
+                setErrorState(null);
+        
+                const res = await fetch(`/api/tickets/claim/${token}`);
+                const data = await res.json();
+        
+                if (!isMounted) return;
+        
+                if (res.ok && data.success && data.transfer) {
+                  setClaimData(data.transfer);
+                } else {
+                  setErrorState({
+                    message: data.error || 'Impossible de charger ce transfert.',
+                    expired: data.expired || false,
+                    alreadyClaimed: data.already_claimed || false,
+                    cancelled: data.cancelled || false,
+                  });
+                }
+              } catch (err) {
+                if (isMounted) {
+                  setErrorState({
+                    message: 'Connexion impossible. Vérifiez votre accès réseau.',
+                  });
+                }
+              } finally {
+                if (isMounted) setIsLoading(false);
+              }
+            };
+        
+            fetchClaimInfo();
+        
+            return () => {
+              isMounted = false;
+            };
+          }, [token]);
+        
+          
+          const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
+        
+          useEffect(() => {
+            if (!claimData?.expires_at) return;
+        
+            const targetTime = new Date(claimData.expires_at).getTime();
+        
+            const updateTimer = () => {
+              const now = Date.now();
+              const diff = targetTime - now;
+        
+              if (diff <= 0) {
+                setTimeLeft({ hours: 0, minutes: 0, seconds: 0 });
+                setErrorState({
+                  message: 'Ce lien de transfert a expiré. Le billet a été retourné à l\'expéditeur.',
+                  expired: true,
+                });
+                return;
+              }
+        
+              const hours = Math.floor(diff / (1000 * 60 * 60));
+              const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+              const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        
+              setTimeLeft({ hours, minutes, seconds });
+            };
+        
+            updateTimer();
+            const interval = setInterval(updateTimer, 1000);
+        
+            return () => clearInterval(interval);
+          }, [claimData?.expires_at]);
+        
+          
+          const handleClaim = async () => {
+            if (!isAuthenticated) {
+              const redirectUrl = `/tickets/claim/${token}`;
+              router.push(`/login?redirect=${encodeURIComponent(redirectUrl)}`);
+              return;
+            }
+        
+            setIsClaiming(true);
+            try {
+              const res = await fetch(`/api/tickets/claim/${token}`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+                },
+              });
+        
+              const data = await res.json();
+        
+              if (res.ok && data.success) {
+                setClaimSuccess(data.claim);
+                toast.success('Billet réclamé avec succès ! Nouveau QR code généré.');
+              } else {
+                toast.error(data.error || 'Erreur lors de la réclamation du billet.');
+                setErrorState({
+                  message: data.error || 'Impossible de réclamer ce billet.',
+                  alreadyClaimed: data.error?.includes('déjà été réclamé'),
+                });
+              }
+            } catch {
+              toast.error('Erreur de connexion. Veuillez réessayer.');
+            } finally {
+              setIsClaiming(false);
+            }
+          };
+        
+          const formattedEventDate = useMemo(() => {
+            if (!claimData?.event?.start_date) return '';
+            try {
+              const d = new Date(claimData.event.start_date);
+              return d.toLocaleDateString('fr-FR', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+              });
+            } catch {
+              return claimData.event.start_date;
+            }
+          }, [claimData?.event?.start_date]);
+        
+          
+          if (isLoading || isAuthLoading) {
+            return (
+              <div className="min-h-[80vh] flex items-center justify-center p-4">
+                <div className="w-full max-w-md p-6 bg-white dark:bg-[#16161A] border border-slate-200 dark:border-zinc-800 rounded-3xl shadow-xl space-y-4">
+                  <Skeleton className="h-44 w-full rounded-2xl" />
+                  <Skeleton className="h-6 w-3/4 rounded-lg" />
+                  <Skeleton className="h-4 w-1/2 rounded-lg" />
+                  <Skeleton className="h-12 w-full rounded-2xl mt-4" />
+                </div>
+              </div>
+            );
+          }
+        
+          
+          if (claimSuccess) {
+            return (
+              <div className="min-h-[85vh] flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                  className="w-full max-w-md bg-white dark:bg-[#16161A] border border-slate-200/80 dark:border-zinc-800 rounded-3xl shadow-2xl p-6 sm:p-8 text-center space-y-6"
+                >
+                  <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-inner">
+                    <CheckCircle2 size={44} className="stroke-[2.5]" />
+                  </div>
+        
+                  <div className="space-y-2">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50">
+                      <Sparkles size={13} /> Billet 100% à vous
+                    </span>
+                    <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                      Félicitations !
+                    </h1>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400">
+                      Le billet pour <strong className="text-slate-900 dark:text-white">{claimSuccess.event_title || 'l\'événement'}</strong> est maintenant enregistré sur votre compte personnel.
+                    </p>
+                  </div>
+        
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 text-left space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-zinc-400">N° de Billet :</span>
+                      <span className="font-mono font-black text-slate-900 dark:text-white">
+                        {claimSuccess.ticket_number}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-zinc-400">Sécurité :</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <ShieldCheck size={13} /> QR Code dynamique activé
+                      </span>
+                    </div>
+                  </div>
+        
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    onClick={() => router.push('/tickets')}
+                    rightIcon={<ArrowRight size={16} />}
+                  >
+                    Accéder à mon portefeuille de billets
+                  </Button>
+                </motion.div>
+              </div>
+            );
+          }
+        
+          
+          if (errorState || !claimData) {
+            return (
+              <div className="min-h-[85vh] flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="w-full max-w-md bg-white dark:bg-[#16161A] border border-slate-200/80 dark:border-zinc-800 rounded-3xl shadow-2xl p-6 sm:p-8 text-center space-y-6"
+                >
+                  <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+                    {errorState?.expired ? (
+                      <Clock size={32} />
+                    ) : errorState?.cancelled ? (
+                      <XCircle size={32} />
+                    ) : (
+                      <AlertTriangle size={32} />
+                    )}
+                  </div>
+        
+                  <div className="space-y-2">
+                    <h1 className="text-xl font-black text-slate-900 dark:text-white">
+                      {errorState?.expired
+                        ? 'Lien de transfert expiré'
+                        : errorState?.cancelled
+                        ? 'Transfert annulé par l\'expéditeur'
+                        : errorState?.alreadyClaimed
+                        ? 'Billet déjà réclamé'
+                        : 'Transfert introuvable'}
+                    </h1>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-400">
+                      {errorState?.message || 'Ce lien de transfert n\'est plus actif ou valide.'}
+                    </p>
+                  </div>
+        
+                  <div className="pt-2 flex flex-col gap-2">
+                    <Link href="/tickets">
+                      <Button variant="secondary" size="md" fullWidth>
+                        Voir mes billets
+                      </Button>
+                    </Link>
+                    <Link href="/explore">
+                      <Button variant="primary" size="md" fullWidth>
+                        Explorer les événements
+                      </Button>
+                    </Link>
+                  </div>
+                </motion.div>
+              </div>
+            );
+          }
+        
+          
+          return (
+            <div className="min-h-[85vh] flex items-center justify-center p-4 py-8 sm:py-12">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="w-full max-w-lg bg-white dark:bg-[#16161A] border border-slate-200/80 dark:border-zinc-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+              >
+                {}
+                <div className="bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] p-4 text-white text-center flex items-center justify-center gap-2">
+                  <Gift size={18} className="animate-bounce" />
+                  <span className="text-xs font-black tracking-wide uppercase">
+                    Vous avez reçu un billet officiel Event Village !
+                  </span>
+                </div>
+        
+                {}
+                <div className="relative w-full h-52 bg-slate-950 overflow-hidden">
+                  <Image
+                    src={
+                      claimData.event.image_url ||
+                      'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80'
+                    }
+                    alt={claimData.event.title}
+                    fill
+                    className="object-cover"
+                    priority
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
+        
+                  {}
+                  <div className="absolute top-3 left-3">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/90 dark:bg-black/80 backdrop-blur-md text-slate-900 dark:text-white shadow-md">
+                      <Gift size={13} className="text-[#FF5722]" />
+                      <span>Transféré par <strong>{claimData.sender_name_masked}</strong></span>
+                    </span>
+                  </div>
+        
+                  {}
+                  <div className="absolute bottom-3 left-4 right-4 text-white">
+                    <span className="inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-[#FF5722] text-white uppercase tracking-wider mb-1">
+                      {claimData.ticket.category_name}
+                    </span>
+                    <h1 className="text-xl font-black tracking-tight leading-tight">
+                      {claimData.event.title}
+                    </h1>
+                  </div>
+                </div>
+        
+                {}
+                <div className="p-5 sm:p-6 space-y-5">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="flex items-start gap-2">
+                      <Calendar size={15} className="text-[#FF5722] mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Date</span>
+                        <p className="font-bold text-slate-900 dark:text-white capitalize mt-0.5">
+                          {formattedEventDate || 'Date à confirmer'}
+                        </p>
+                      </div>
+                    </div>
+        
+                    <div className="flex items-start gap-2">
+                      <Clock size={15} className="text-[#FF5722] mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Heure</span>
+                        <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                          {claimData.event.start_time ? claimData.event.start_time.substring(0, 5) : '20:00'}
+                        </p>
+                      </div>
+                    </div>
+        
+                    <div className="flex items-start gap-2 col-span-2">
+                      <MapPin size={15} className="text-[#FF5722] mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">Lieu</span>
+                        <p className="font-bold text-slate-900 dark:text-white mt-0.5">
+                          {claimData.event.location}, {claimData.event.city}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+        
+                  {}
+                  {timeLeft && (
+                    <div className="p-3.5 rounded-2xl bg-orange-50/80 dark:bg-orange-950/20 border border-orange-200/70 dark:border-orange-900/40 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-zinc-300">
+                        <Clock size={16} className="text-[#FF5722]" />
+                        <span>Temps restant pour réclamer :</span>
+                      </div>
+                      <div className="font-mono font-black text-[#FF5722] text-sm">
+                        {String(timeLeft.hours).padStart(2, '0')}h {String(timeLeft.minutes).padStart(2, '0')}m {String(timeLeft.seconds).padStart(2, '0')}s
+                      </div>
+                    </div>
+                  )}
+        
+                  {}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">
+                        Destiné au numéro / email
+                      </span>
+                      <p className="font-mono font-bold text-slate-900 dark:text-white mt-0.5">
+                        {claimData.recipient_target_masked}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                      <ShieldCheck size={14} /> Sécurisé
+                    </span>
+                  </div>
+        
+                  {}
+                  {!isAuthenticated ? (
+                    <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 space-y-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400">
+                        <LogIn size={15} />
+                        <span>Connexion requise pour recevoir ce billet</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 dark:text-zinc-400 leading-relaxed">
+                        Connectez-vous ou créez votre compte gratuit en 10 secondes avec votre numéro pour attribuer le billet à votre portefeuille.
+                      </p>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        fullWidth
+                        onClick={() => {
+                          const redirectUrl = `/tickets/claim/${token}`;
+                          router.push(`/login?redirect=${encodeURIComponent(redirectUrl)}`);
+                        }}
+                        leftIcon={<LogIn size={15} />}
+                      >
+                        Se connecter pour accepter le billet
+                      </Button>
+                    </div>
+                  ) : (
+                    
+                    <div className="space-y-3">
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        fullWidth
+                        onClick={handleClaim}
+                        isLoading={isClaiming}
+                        leftIcon={<UserCheck size={18} />}
+                      >
+                        {isClaiming ? 'Réclamation en cours...' : 'Accepter & Ajouter à mes billets'}
+                      </Button>
+        
+                      <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500 text-center">
+                        <ShieldCheck size={13} className="text-emerald-500" />
+                        <span>Le QR Code sera immédiatement synchronisé sur votre profil.</span>
+                      </div>
+                    </div>
+                  )}
+        
+                  {}
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsExplainerOpen(true)}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 dark:text-zinc-400 hover:text-[#FF5722] dark:hover:text-[#FF5722] transition-colors"
+                    >
+                      <HelpCircle size={13} />
+                      <span>Comment fonctionne la sécurité du billet ?</span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+        
+              {}
+              <TransferExplainerModal
+                isOpen={isExplainerOpen}
+                onClose={() => setIsExplainerOpen(false)}
+              />
+            </div>
+          );
+        }
+        
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:411:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..2
+not ok 4 - 6.7 Transfert — ancien lien /tickets/claim/<jeton> retiré (B4, décision 37)
+  ---
+  duration_ms: 172.261056
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:2:21993'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 6.7 Transfert — verify-otp pose phone_verified_at (B1)
+    # Subtest: code de connexion vérifié : phone_verified_at posé une fois (conservé ensuite) ; le transfert qui attendait devient visible
+    not ok 1 - code de connexion vérifié : phone_verified_at posé une fois (conservé ensuite) ; le transfert qui attendait devient visible
+      ---
+      duration_ms: 137.882381
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:2:25105'
+      failureType: 'testCodeFailure'
+      error: 'billets de la suite épuisés'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        takeTicket (/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:87:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:422:43)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 5 - 6.7 Transfert — verify-otp pose phone_verified_at (B1)
+  ---
+  duration_ms: 138.011825
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:2:25012'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] notif-transferts — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] notif-transferts — purge des réservations échues : {"expired":0}
+[INVARIANT] notif-transferts — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] notif-transferts — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] notif-transferts — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] notif-transferts — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] notif-transferts — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] notif-transferts — envoyeur : 75 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] notif-transferts — (m)(n)(o) : 0 violation(s)
+1..5
+# tests 9
+# suites 5
+# pass 7
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3095.995104
