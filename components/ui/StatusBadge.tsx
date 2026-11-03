@@ -1,14 +1,16 @@
 import React from 'react';
 import { EVENT_STATUS_META, isEventStatus } from '@/lib/events/event-status';
 import { TICKET_STATUS_META, isTicketStatus } from '@/lib/tickets/ticket-status';
+import { OUTBOX_STATUS_LABELS, OUTBOX_STATUS_TONES, OUTBOX_STATUSES, type OutboxStatus } from '@/lib/notifications/outbox-labels';
 import { cn } from './cn';
 import { TONE_DOT, TONE_SOFT, type Tone } from './tones';
 
 /**
- * Domaines de statut couverts : événement (EVENT_STATUS_META) et billet (TICKET_STATUS_META). Les autres
+ * Domaines de statut couverts : événement (EVENT_STATUS_META), billet (TICKET_STATUS_META) et, au lot 6,
+ * notification de la boîte d'envoi (OUTBOX_STATUS_LABELS et OUTBOX_STATUS_TONES, contrat L4). Les autres
  * domaines (paiements…) restent sur Badge.tsx tant qu'ils ne sont pas migrés.
  */
-export type StatusDomain = 'event' | 'ticket';
+export type StatusDomain = 'event' | 'ticket' | 'notification';
 
 export interface StatusBadgeProps {
   /** Domaine du statut : un même code (VALIDE) n'a pas le même sens pour un billet et pour un événement. */
@@ -26,9 +28,14 @@ const SIZES = {
 
 const UNKNOWN_LABEL = 'Statut inconnu';
 
+function isOutboxStatus(value: string | null | undefined): value is OutboxStatus {
+  return typeof value === 'string' && (OUTBOX_STATUSES as readonly string[]).includes(value);
+}
+
 function metaOf(domain: StatusDomain, status: string | null | undefined): { label: string; tone: Tone; description?: string } {
   if (domain === 'event' && isEventStatus(status)) return EVENT_STATUS_META[status];
   if (domain === 'ticket' && isTicketStatus(status)) return TICKET_STATUS_META[status];
+  if (domain === 'notification' && isOutboxStatus(status)) return { label: OUTBOX_STATUS_LABELS[status], tone: OUTBOX_STATUS_TONES[status] };
   return { label: UNKNOWN_LABEL, tone: 'neutral' };
 }
 
@@ -41,6 +48,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ domain, status, size =
   const meta = metaOf(domain, status);
   return (
     <span
+      // Lot 6 (contrat A6) : texte de 12 px admis par le contrôle des captures (pastille, MASTER.md).
+      data-ev-caption=""
       className={cn('inline-flex max-w-full items-center whitespace-nowrap border font-semibold leading-tight', TONE_SOFT[meta.tone], SIZES[size], className)}
       title={meta.description}
     >

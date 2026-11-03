@@ -264,7 +264,9 @@ export default function AdminDashboardPage() {
 
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: 'admin-tableau-de-bord',
-    subscriptions: [{ table: 'admin_signals', event: 'INSERT' }],
+    // Lot 6 (contrat C6) : seuls les signaux de la file du tableau de bord rechargent la page ; les
+    // signaux de la boîte d'envoi (échecs, volume de SMS) relèvent de la page Notifications.
+    subscriptions: [{ table: 'admin_signals', event: 'INSERT', filter: 'kind=in.(EVENT_SUBMITTED,PARTNER_REGISTERED)' }],
     onSignal: refreshAll,
   });
 

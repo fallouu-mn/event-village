@@ -29,6 +29,7 @@ import {
   FileText,
   Megaphone,
   Award,
+  BellRing,
   X,
   Menu,
   Search,
@@ -166,6 +167,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     proItems.push({ name: 'Tarifs et monétisation', href: '/admin/pricing', icon: Sliders });
     proItems.push({ name: 'Communications et campagnes', href: '/admin/communications', icon: Radio });
     proItems.push({ name: 'Journal d’audit', href: '/admin/audit', icon: Activity });
+    proItems.push({ name: 'Notifications', href: '/admin/notifications', icon: BellRing });
     proItems.push({ name: 'Scanner de contrôle', href: '/scan', icon: QrCode });
   } else if (isPartner && !isPartnerRoute) {
     proItems.push({ name: 'Espace partenaire', href: '/partner/dashboard', icon: LayoutDashboard });
@@ -204,6 +206,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       label: 'Système',
       items: [
         { name: 'Journal d’audit', href: '/admin/audit', icon: FileText },
+        { name: 'Notifications', href: '/admin/notifications', icon: BellRing },
         { name: 'Scanner', href: '/scan', icon: QrCode },
       ],
     },
