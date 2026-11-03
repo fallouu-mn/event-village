@@ -4,47 +4,57 @@ import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+    AlertTriangle,
+    ArrowRight,
     Bell,
+    CalendarClock,
     Check,
     CheckCheck,
+    Info,
+    Settings2,
+    ShoppingBag,
     Ticket,
-    DollarSign,
-    Gift,
-    Shield,
-    FileText,
-    ArrowRight,
+    UserRound,
+    Wallet,
     X,
-    type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { Badge } from '@/components/ui/Badge';
 import { IconButton } from '@/components/ui/IconButton';
 import { cn } from '@/components/ui/cn';
+import { TONE_ICON, type Tone } from '@/components/ui/tones';
 import { formatShortDate, toDate } from '@/lib/format';
+import { internalActionUrl } from '@/lib/notifications/action-url';
+import { notificationTypeMeta, type NotificationCategory } from '@/lib/notifications/notification-types';
 
+/** Notification telle que la renvoie GET /api/notifications (lot 6, contrat N2). */
 export interface InAppNotification {
     id: string;
     userId: string;
     type: string;
     title: string;
     content: string;
-    channel?: string;
     status: string;
     isRead: boolean;
-    readAt?: string;
-    metadata?: Record<string, any>;
+    readAt?: string | null;
+    /** Chemin interne déjà filtré par le serveur (internalActionUrl), sinon null. */
+    actionUrl: string | null;
     createdAt: string;
 }
 
-/** Icône et ton de chaque type de notification (tokens du système de design ; type inconnu : cloche neutre). */
-const TYPE_ICONS: Record<string, { icon: LucideIcon; className: string }> = {
-    KYC: { icon: FileText, className: 'bg-warning-bg text-warning-fg' },
-    PAYMENT: { icon: DollarSign, className: 'bg-success-bg text-success-fg' },
-    TICKET: { icon: Ticket, className: 'bg-brand-bg text-brand-fg' },
-    REFERRAL: { icon: Gift, className: 'bg-info-bg text-info-fg' },
-    SECURITY: { icon: Shield, className: 'bg-danger-bg text-danger-fg' },
+type BellFilter = 'ALL' | 'UNREAD';
+
+/** Icône et ton par catégorie (mêmes catégories que la page /notifications : notificationTypeMeta). */
+const CATEGORY_ICON: Record<NotificationCategory, { icon: React.ElementType; tone: Tone }> = {
+    event: { icon: CalendarClock, tone: 'info' },
+    ticket: { icon: Ticket, tone: 'brand' },
+    payment: { icon: Wallet, tone: 'success' },
+    order: { icon: ShoppingBag, tone: 'neutral' },
+    account: { icon: UserRound, tone: 'neutral' },
+    alert: { icon: AlertTriangle, tone: 'warning' },
+    info: { icon: Info, tone: 'neutral' },
 };
-const DEFAULT_TYPE_ICON = { icon: Bell, className: 'bg-surface-sunken text-fg-muted' };
 
 /** Compteur affiché sur la pastille (le même texte figure dans le nom accessible du bouton). */
 function badgeText(count: number): string {
@@ -67,14 +77,35 @@ function formatRelativeTime(isoDate: string): string {
     return formatShortDate(date);
 }
 
+/** Lecture défensive d'une notification de l'API : le lien est revérifié (chemin interne seulement). */
+function toNotification(raw: unknown): InAppNotification | null {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const n = raw as Record<string, unknown>;
+    if (typeof n.id !== 'string') return null;
+    return {
+        id: n.id,
+        userId: typeof n.userId === 'string' ? n.userId : '',
+        type: typeof n.type === 'string' ? n.type : 'SYSTEM',
+        title: typeof n.title === 'string' ? n.title : '',
+        content: typeof n.content === 'string' ? n.content : '',
+        status: typeof n.status === 'string' ? n.status : '',
+        isRead: n.isRead === true,
+        readAt: typeof n.readAt === 'string' ? n.readAt : null,
+        actionUrl: internalActionUrl(n.actionUrl),
+        createdAt: typeof n.createdAt === 'string' ? n.createdAt : '',
+    };
+}
+
 /**
- * Cloche des notifications de l'en-tête (relecture des captures du run 50) :
- *  - bouton de 44 × 44 px ; le compteur visible fait partie du nom accessible (« Notifications, 87 non
- *    lues » : WCAG 2.5.3, règle axe label-content-name-mismatch) ;
- *  - pastille sur le ton plein de la marque (texte blanc 5,18:1 ; l'ancien #FF5722 donnait 3,16:1) ;
- *  - panneau sur les tokens : chaque notification est un vrai bouton, « Marquer comme lue » est un
- *    bouton icône de 44 px nommé, filtres en boutons à bascule (aria-pressed) ;
- *  - aucune animation hors prefers-reduced-motion.
+ * Cloche des notifications de l'en-tête (lot 6, contrat N3) :
+ *  - liste et compteur portent sur le même ensemble (notifications de l'application du compte), servis par
+ *    le serveur : « Toutes » par /api/notifications?limit=20, « Non lues » par ?limit=20&filter=unread
+ *    (aucun filtrage dans le navigateur) ; non lues d'abord (tri du serveur) ;
+ *  - libellés et icônes par notificationTypeMeta (comme la page /notifications), aucun code brut ;
+ *  - un clic n'ouvre que le lien interne renvoyé par le serveur (actionUrl), jamais une adresse externe ;
+ *  - bouton de 44 × 44 px dont le nom accessible contient le compteur visible ; pastille sur le ton plein
+ *    de la marque ; panneau sur les tokens ; filtres en boutons à bascule (aria-pressed) ;
+ *  - pied : « Voir toutes les notifications » et « Préférences » ; temps réel par useRealtimeRefresh.
  */
 export function NotificationBell() {
     const router = useRouter();
@@ -86,7 +117,10 @@ export function NotificationBell() {
     const [unreadCount, setUnreadCount] = useState<number>(0);
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [isMarkingAll, setIsMarkingAll] = useState<boolean>(false);
-    const [filter, setFilter] = useState<'ALL' | 'UNREAD'>('ALL');
+    const [filter, setFilter] = useState<BellFilter>('ALL');
+    const [loadError, setLoadError] = useState<boolean>(false);
+    const filterRef = useRef<BellFilter>('ALL');
+    const requestSeq = useRef(0);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const bellRef = useRef<HTMLButtonElement>(null);
 
@@ -119,24 +153,35 @@ export function NotificationBell() {
     const isUserLoggedIn = mounted && (isAuthenticated || !!user);
 
     /**
-     * Liste et compteur relus par le serveur (GET /api/notifications : compteur = notifications PUSH non lues,
-     * statut READ et read_at). Une réponse en échec est journalisée et l'affichage précédent est conservé.
+     * Liste (20 premières de l'onglet) et compteur des non lues relus par le serveur, sur le même ensemble.
+     * Une réponse en échec est journalisée, signalée dans le panneau, et l'affichage précédent est conservé.
      */
     const fetchNotifications = useCallback(async () => {
         if (!isUserLoggedIn) return;
+        const seq = ++requestSeq.current;
         try {
-            const res = await fetch('/api/notifications?limit=20');
+            const res = filterRef.current === 'UNREAD'
+                ? await fetch('/api/notifications?limit=20&filter=unread')
+                : await fetch('/api/notifications?limit=20');
+            if (seq !== requestSeq.current) return;
             if (!res.ok) {
                 console.warn(`[NotificationBell] chargement des notifications refusé (HTTP ${res.status})`);
+                setLoadError(true);
                 return;
             }
-            const data = await res.json();
-            if (Array.isArray(data.notifications)) {
-                setNotifications(data.notifications);
-                setUnreadCount(typeof data.unreadCount === 'number' ? data.unreadCount : 0);
+            const data = await res.json() as { notifications?: unknown; unreadCount?: unknown };
+            if (seq !== requestSeq.current) return;
+            if (!Array.isArray(data.notifications)) {
+                console.warn('[NotificationBell] réponse sans liste de notifications');
+                setLoadError(true);
+                return;
             }
+            setNotifications(data.notifications.map(toNotification).filter((n): n is InAppNotification => n !== null));
+            setUnreadCount(typeof data.unreadCount === 'number' ? data.unreadCount : 0);
+            setLoadError(false);
         } catch (err) {
-            console.warn('[NotificationBell] Erreur chargement:', err);
+            console.warn('[NotificationBell] chargement des notifications impossible :', err instanceof Error ? err.message : String(err));
+            if (seq === requestSeq.current) setLoadError(true);
         }
     }, [isUserLoggedIn]);
 
@@ -146,8 +191,8 @@ export function NotificationBell() {
         void fetchNotifications();
     }, [isUserLoggedIn, user?.id, fetchNotifications]);
 
-    // Temps réel (lot 5, contrat O3) : une notification reçue ou lue ailleurs (INSERT, UPDATE) recharge la
-    // liste et le compteur ; rechargement aussi à la connexion et à chaque reconnexion.
+    // Temps réel : une notification reçue ou lue ailleurs (INSERT, UPDATE) recharge la liste et le compteur ;
+    // rechargement aussi à la connexion et à chaque reconnexion.
     useRealtimeRefresh({
         channelKey: `notifications-bell-${user?.id ?? 'anonyme'}`,
         subscriptions: [{ table: 'notifications', filter: `user_id=eq.${user?.id ?? ''}` }],
@@ -155,10 +200,17 @@ export function NotificationBell() {
         enabled: isUserLoggedIn && !!user?.id,
     });
 
+    const changeFilter = (next: BellFilter) => {
+        if (next === filterRef.current) return;
+        filterRef.current = next;
+        setFilter(next);
+        void fetchNotifications();
+    };
+
     const handleMarkAsRead = async (notif: InAppNotification) => {
         if (notif.isRead) return;
 
-        // Mise à jour optimiste, relue sur le serveur en cas d'échec
+        // Mise à jour optimiste, relue sur le serveur dans tous les cas (l'onglet « Non lues » change)
         setNotifications((prev) =>
             prev.map((n) => (n.id === notif.id ? { ...n, isRead: true, status: 'READ' } : n))
         );
@@ -168,17 +220,16 @@ export function NotificationBell() {
             const res = await fetch(`/api/notifications/${notif.id}/read`, { method: 'PATCH' });
             if (!res.ok) {
                 console.error(`[NotificationBell] marquage comme lue refusé (HTTP ${res.status})`);
-                await fetchNotifications();
             }
         } catch (err) {
-            console.error('[NotificationBell] Erreur markAsRead:', err);
-            await fetchNotifications();
+            console.error('[NotificationBell] marquage comme lue impossible :', err instanceof Error ? err.message : String(err));
         }
+        await fetchNotifications();
     };
 
     const handleMarkAllAsRead = async () => {
         setIsMarkingAll(true);
-        // Mise à jour optimiste, relue sur le serveur en cas d'échec
+        // Mise à jour optimiste, relue sur le serveur ensuite
         setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, status: 'READ' })));
         setUnreadCount(0);
 
@@ -186,27 +237,22 @@ export function NotificationBell() {
             const res = await fetch('/api/notifications', { method: 'PATCH' });
             if (!res.ok) {
                 console.error(`[NotificationBell] marquage de toutes les notifications refusé (HTTP ${res.status})`);
-                await fetchNotifications();
             }
         } catch (err) {
-            console.error('[NotificationBell] Erreur markAllAsRead:', err);
-            await fetchNotifications();
+            console.error('[NotificationBell] marquage de toutes les notifications impossible :', err instanceof Error ? err.message : String(err));
         } finally {
+            await fetchNotifications();
             setIsMarkingAll(false);
         }
     };
 
     const handleNotificationClick = async (notif: InAppNotification) => {
-        await handleMarkAsRead(notif);
+        const target = internalActionUrl(notif.actionUrl);
         setIsOpen(false);
-
-        const actionUrl = notif.metadata?.actionUrl;
-        if (actionUrl) {
-            router.push(actionUrl);
-        }
+        if (target) router.push(target);
+        await handleMarkAsRead(notif);
     };
 
-    const visibleNotifs = filter === 'UNREAD' ? notifications.filter((n) => !n.isRead) : notifications;
     const showBadge = mounted && unreadCount > 0;
     const countText = badgeText(unreadCount);
     const bellLabel = showBadge
@@ -218,6 +264,8 @@ export function NotificationBell() {
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         active ? 'bg-brand-bg font-semibold text-brand-fg' : 'text-fg-muted hover:bg-surface-sunken hover:text-fg',
     );
+
+    const footerLinkClass = 'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -283,30 +331,36 @@ export function NotificationBell() {
                     </div>
 
                     <div className="flex gap-2 border-b border-border px-3 py-1.5" role="group" aria-label="Filtrer les notifications">
-                        <button type="button" aria-pressed={filter === 'ALL'} onClick={() => setFilter('ALL')} className={filterClass(filter === 'ALL')}>
+                        <button type="button" aria-pressed={filter === 'ALL'} onClick={() => changeFilter('ALL')} className={filterClass(filter === 'ALL')}>
                             Toutes
                         </button>
-                        <button type="button" aria-pressed={filter === 'UNREAD'} onClick={() => setFilter('UNREAD')} className={filterClass(filter === 'UNREAD')}>
+                        <button type="button" aria-pressed={filter === 'UNREAD'} onClick={() => changeFilter('UNREAD')} className={filterClass(filter === 'UNREAD')}>
                             {`Non lues (${unreadCount})`}
                         </button>
                     </div>
 
                     <div className="max-h-80 overflow-y-auto overscroll-contain">
-                        {visibleNotifs.length === 0 ? (
+                        {loadError && (
+                            <p role="status" className="border-b border-border bg-warning-bg px-4 py-2 text-sm text-warning-fg">
+                                Notifications non mises à jour : la liste affichée est celle du dernier chargement.
+                            </p>
+                        )}
+                        {notifications.length === 0 ? (
                             <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
                                 <Bell size={24} className="text-fg-muted" aria-hidden="true" />
                                 <p className="text-sm font-semibold text-fg">
                                     {filter === 'UNREAD' ? 'Aucune notification non lue' : 'Aucune notification'}
                                 </p>
                                 <p className="text-sm text-fg-muted">
-                                    Vos alertes d’activité, validations et réservations s’afficheront ici.
+                                    Billets, rappels, remboursements et changements d’événement s’afficheront ici.
                                 </p>
                             </div>
                         ) : (
                             <ul className="divide-y divide-border">
-                                {visibleNotifs.map((notif) => {
-                                    const meta = TYPE_ICONS[notif.type] ?? DEFAULT_TYPE_ICON;
-                                    const Icon = meta.icon;
+                                {notifications.map((notif) => {
+                                    const meta = notificationTypeMeta(notif.type);
+                                    const { icon: Icon, tone } = CATEGORY_ICON[meta.category];
+                                    const showTypeLabel = meta.label.trim().toLowerCase() !== notif.title.trim().toLowerCase();
                                     return (
                                         <li key={notif.id} className={cn('flex items-start gap-1 pr-2', !notif.isRead && 'bg-brand-bg')}>
                                             <button
@@ -314,7 +368,7 @@ export function NotificationBell() {
                                                 onClick={() => void handleNotificationClick(notif)}
                                                 className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                             >
-                                                <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', meta.className)} aria-hidden="true">
+                                                <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', TONE_ICON[tone])} aria-hidden="true">
                                                     <Icon size={16} />
                                                 </span>
                                                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -327,8 +381,15 @@ export function NotificationBell() {
                                                             {formatRelativeTime(notif.createdAt)}
                                                         </time>
                                                     </span>
-                                                    <span className="line-clamp-2 text-sm text-fg-muted">{notif.content}</span>
-                                                    {notif.metadata?.actionUrl && (
+                                                    {showTypeLabel && (
+                                                        <span>
+                                                            <Badge variant="neutral" size="sm">{meta.label}</Badge>
+                                                        </span>
+                                                    )}
+                                                    {notif.content && notif.content !== notif.title && (
+                                                        <span className="line-clamp-2 text-sm text-fg-muted">{notif.content}</span>
+                                                    )}
+                                                    {notif.actionUrl && (
                                                         <span className="inline-flex items-center gap-1 pt-1 text-sm font-semibold text-brand-fg">
                                                             Consulter
                                                             <ArrowRight size={14} aria-hidden="true" />
@@ -352,13 +413,13 @@ export function NotificationBell() {
                         )}
                     </div>
 
-                    <div className="border-t border-border p-2 text-center">
-                        <Link
-                            href="/notifications"
-                            onClick={() => setIsOpen(false)}
-                            className="inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-sm font-semibold text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
+                    <div className="flex flex-wrap items-center justify-between gap-1 border-t border-border p-2">
+                        <Link href="/notifications" onClick={() => setIsOpen(false)} className={footerLinkClass}>
                             Voir toutes les notifications
+                        </Link>
+                        <Link href="/profile/notifications" onClick={() => setIsOpen(false)} className={footerLinkClass}>
+                            <Settings2 size={16} aria-hidden="true" />
+                            Préférences
                         </Link>
                     </div>
                 </section>
