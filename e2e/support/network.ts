@@ -76,11 +76,32 @@ export interface GuardOptions {
     ignoreConsoleErrors?: boolean;
 }
 
+/**
+ * Lot 6 (run 64) — la requête, ou une requête dont elle est la redirection (redirectedFrom), est-elle un
+ * préchargement du routeur Next ? Preuve exigée par en-tête de requête : `Next-Router-Prefetch: 1`,
+ * `Purpose: prefetch` ou `Sec-Purpose: prefetch`, ou bien `RSC: 1` avec `_rsc=` dans l'URL. Renvoie la
+ * preuve trouvée (pour l'index), ou null. Une requête sans preuve reste un échec bloquant.
+ */
+export function nextPrefetchOrigin(request: Request): string | null {
+    let hops = 0;
+    for (let r: Request | null = request; r && hops < 10; r = r.redirectedFrom(), hops++) {
+        const h = r.headers();
+        const where = hops === 0 ? '' : ` sur ${shortUrl(r.url())}, ${hops} redirection(s) avant`;
+        if (h['next-router-prefetch'] === '1') return `en-tête next-router-prefetch${where}`;
+        if (/prefetch/i.test(h['purpose'] ?? '')) return `en-tête purpose: prefetch${where}`;
+        if (/prefetch/i.test(h['sec-purpose'] ?? '')) return `en-tête sec-purpose: prefetch${where}`;
+        if (h['rsc'] === '1' && r.url().includes('_rsc=')) return `en-tête rsc et _rsc dans l’URL${where}`;
+    }
+    return null;
+}
+
 /** Erreurs observées sur une page ; `freeze()` arrête la collecte (ex. passage hors ligne volontaire). */
 export class PageGuard {
     readonly consoleErrors: string[] = [];
     readonly pageErrors: string[] = [];
     readonly failedRequests: string[] = [];
+    /** Lot 6 : préchargements du routeur Next abandonnés (net::ERR_ABORTED), non bloquants mais listés. */
+    readonly abortedPrefetches: string[] = [];
     private frozen = false;
     private allowFailures: RegExp[] = [];
     private ignoreConsole = false;
@@ -101,6 +122,16 @@ export class PageGuard {
         page.on('requestfailed', (request) => {
             if (this.frozen || wasBlocked(context, request) || this.isAllowedFailure(request.url())) return;
             const errorText = request.failure()?.errorText ?? 'échec';
+            // Lot 6 (run 64) : préchargement Next abandonné, y compris après une redirection du middleware
+            // (anonyme : /tickets → /login?redirect=…, page de connexion dynamique depuis le lot 6) : compté et
+            // listé comme avertissement non bloquant, jamais ignoré en silence.
+            if (errorText === 'net::ERR_ABORTED') {
+                const prefetch = nextPrefetchOrigin(request);
+                if (prefetch) {
+                    this.abortedPrefetches.push(`${request.method()} ${shortUrl(request.url())} : ${errorText} (${prefetch})`);
+                    return;
+                }
+            }
             // Préchargements RSC interrompus par une navigation : bruit normal du routeur Next.js
             if (errorText === 'net::ERR_ABORTED' && request.url().includes('_rsc=')) return;
             this.failedRequests.push(`${request.method()} ${shortUrl(request.url())} : ${errorText}`);
@@ -142,6 +173,11 @@ export class PageGuard {
             ...this.consoleErrors.map((e) => `erreur de console : ${e}`),
             ...this.failedRequests.map((e) => `requête en échec : ${e}`),
         ];
+    }
+
+    /** Lot 6 : préchargements Next abandonnés (non bloquants), un avertissement par requête. */
+    nonBlockingIssues(): string[] {
+        return this.abortedPrefetches.map((e) => `préchargement Next abandonné (non bloquant) : ${e}`);
     }
 
     get pageRef(): Page {
