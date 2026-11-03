@@ -64,7 +64,36 @@ export const NOTIFICATION_TYPE_META: Readonly<Record<string, NotificationTypeMet
     // Informations générales
     SYSTEM: { label: 'Information', category: 'info' },
     COMMUNICATION: { label: 'Message d’Event Village', category: 'info' },
+    // Lot 6 (contrat G1) : types in-app écrits par la boîte d'envoi (notification_outbox_mark)
+    TICKET_TRANSFER: { label: 'Transfert de billet', category: 'ticket' },
+    REMINDER: { label: 'Rappel', category: 'event' },
+    SALES: { label: 'Ventes', category: 'event' },
+    REFUND_PROGRESS: { label: 'Remboursements de l’annulation', category: 'payment' },
+    WITHDRAWAL_PENDING_CHECK: { label: 'Retrait en vérification', category: 'payment' },
+    TRIAL: { label: 'Période d’essai', category: 'account' },
+    CONTROLLER: { label: 'Contrôle d’accès', category: 'event' },
+    ADMIN_REVIEW: { label: 'À valider', category: 'alert' },
+    NOTIFICATION_ALERT: { label: 'Envoi en échec', category: 'alert' },
+    SMS_DAILY_THRESHOLD: { label: 'Volume de SMS', category: 'alert' },
+    PROMOTION: { label: 'Mise en avant', category: 'event' },
 };
+
+/** Catégorie connue (filtre `?category=` de GET /api/notifications, onglets de la page). */
+export function isNotificationCategory(value: unknown): value is NotificationCategory {
+    return typeof value === 'string' && (NOTIFICATION_CATEGORIES as readonly string[]).includes(value);
+}
+
+/**
+ * Lot 6 (contrat N2) — types d'une catégorie, pour le filtre servi par le serveur. Seuls les types
+ * déclarés ici sont retenus : un type inconnu s'affiche « Information » mais n'entre dans aucun filtre de
+ * catégorie (il reste visible dans « Toutes » et « Non lues »).
+ */
+export function notificationTypesOfCategory(category: NotificationCategory): string[] {
+    return Object.entries(NOTIFICATION_TYPE_META)
+        .filter(([, meta]) => meta.category === category)
+        .map(([type]) => type)
+        .sort();
+}
 
 const UNKNOWN_TYPE_META: NotificationTypeMeta = { label: 'Information', category: 'info' };
 

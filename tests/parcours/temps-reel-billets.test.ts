@@ -8,8 +8,9 @@
  *    reçue par le porteur et par le partenaire propriétaire ;
  *  - notifications : le destinataire reçoit sa notification (INSERT) et son passage à « lue » (UPDATE),
  *    un autre compte et anon ne reçoivent rien ;
- *  - compteur de la cloche (GET /api/notifications) : notifications de l'application (canal PUSH) non lues
- *    seulement.
+ *  - compteur de la cloche (GET /api/notifications) : lot 6 (contrat F1, N1, section T) — la liste et le
+ *    compteur portent sur le même ensemble, toutes les notifications du compte, au canal unique IN_APP
+ *    (règle contraire à celle du lot 5, où le compteur ne prenait que le canal PUSH).
  * La suite crée son partenaire, ses acheteurs et son événement (dans la fenêtre de scan).
  * Rouge avant correctif :
  *  - tickets en REPLICA IDENTITY FULL (supabase/migrations/0004_indexes.sql:134,
@@ -90,14 +91,15 @@ function carriesData(e: ReceivedChange): boolean {
     return Object.keys(e.new).length > 0 || Object.keys(e.old).length > 0;
 }
 
-async function insertNotification(userId: string, fields: { title?: string; channel?: string; status?: string } = {}): Promise<string> {
+/** Lot 6 (contrat F1, section T) : canal toujours IN_APP (CHECK notifications_channel_in_app) ; plus de paramètre `channel`. */
+async function insertNotification(userId: string, fields: { title?: string; status?: string } = {}): Promise<string> {
     const title = fields.title ?? `Notification de test ${randomUUID().slice(0, 8)}`;
     const { data, error } = await service.from('notifications').insert({
         user_id: userId,
         type: 'TICKET_TRANSFER_CLAIMED',
         title,
         content: 'Notification dédiée aux tests du temps réel (lot 5).',
-        channel: fields.channel ?? 'PUSH',
+        channel: 'IN_APP',
         status: fields.status ?? 'SENT',
         read_at: fields.status === 'READ' ? new Date().toISOString() : null,
         metadata: { source: 'tests-lot5-temps-reel' },
@@ -210,24 +212,33 @@ describe('Notifications : le destinataire seul reçoit les siennes (O2, O5)', ()
         }
     });
 
-    test('compteur de la cloche : GET /api/notifications compte les seules notifications PUSH non lues', async () => {
+    // Lot 6 (section T du contrat, consigne 6.2 et 6.10) : la règle du lot 5 (« compteur = PUSH non lues »)
+    // est remplacée par « la liste et le compteur portent sur le même ensemble » ; le canal est unique (IN_APP).
+    test('compteur de la cloche : GET /api/notifications, la liste et le compteur portent sur le même ensemble (toutes les notifications du compte)', async () => {
         const user = await newBuyer('tr-cloche');
-        await insertNotification(user.userId, { channel: 'PUSH', status: 'SENT' });
-        await insertNotification(user.userId, { channel: 'PUSH', status: 'PENDING' });
-        await insertNotification(user.userId, { channel: 'PUSH', status: 'READ' });
-        await insertNotification(user.userId, { channel: 'SMS', status: 'SENT' });
-        await insertNotification(user.userId, { channel: 'EMAIL', status: 'PENDING' });
+        await insertNotification(user.userId, { status: 'SENT' });
+        await insertNotification(user.userId, { status: 'PENDING' });
+        await insertNotification(user.userId, { status: 'READ' });
+        await insertNotification(user.userId, { status: 'SENT' });
+        await insertNotification(user.userId, { status: 'PENDING' });
 
-        const { data: rows, error } = await service.from('notifications').select('channel, status').eq('user_id', user.userId);
+        const { data: rows, error } = await service.from('notifications').select('id, channel, status').eq('user_id', user.userId);
         assert.equal(error, null, `notifications du compte : ${error?.message}`);
-        const pushUnread = (rows ?? []).filter((n) => n.channel === 'PUSH' && n.status !== 'READ').length;
-        const allUnread = (rows ?? []).filter((n) => n.status !== 'READ').length;
-        assert.ok(allUnread > pushUnread, `jeu de test : des notifications non lues hors PUSH existent (${allUnread} contre ${pushUnread})`);
+        const all = rows ?? [];
+        assert.equal(all.length, 5, `jeu de test : 5 notifications du compte, ${all.length} en base`);
+        assert.ok(all.every((n) => n.channel === 'IN_APP'), `canal unique IN_APP : ${JSON.stringify(all.map((n) => n.channel))}`);
+        const unreadIds = all.filter((n) => n.status !== 'READ').map((n) => String(n.id)).sort();
+        assert.ok(unreadIds.length > 0 && unreadIds.length < all.length, `jeu de test : des notifications lues et non lues (${unreadIds.length} non lues sur ${all.length})`);
 
         const { GET } = await importModule('../../app/api/notifications/route');
         const res: Response = await GET(jsonRequest('/api/notifications?limit=20', 'GET', user.accessToken));
-        const body = (await res.json()) as { unreadCount?: unknown };
+        const body = (await res.json()) as { unreadCount?: unknown; total?: unknown; notifications?: Array<{ id: unknown; isRead: unknown }> };
         assert.equal(res.status, 200, `GET /api/notifications : HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
-        assert.equal(body.unreadCount, pushUnread, `compteur : notifications PUSH non lues (${pushUnread}), tous canaux : ${allUnread} ; reçu ${JSON.stringify(body.unreadCount)}`);
+        assert.equal(body.unreadCount, unreadIds.length, `compteur : toutes les non lues du compte (${unreadIds.length}) ; reçu ${JSON.stringify(body.unreadCount)}`);
+        assert.equal(body.total, all.length, `total : toutes les notifications du compte (${all.length}) ; reçu ${JSON.stringify(body.total)}`);
+        const listed = body.notifications ?? [];
+        assert.equal(listed.length, all.length, `la cloche liste toutes les notifications du compte (${all.length}), reçu ${listed.length}`);
+        assert.deepEqual(listed.filter((n) => n.isRead === false).map((n) => String(n.id)).sort(), unreadIds,
+            'les non lues de la liste sont exactement celles du compteur (même ensemble)');
     });
 });
