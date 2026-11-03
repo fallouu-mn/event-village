@@ -303,8 +303,12 @@ describe('6.0 d — publication supabase_realtime', () => {
         const cust = await signedInClient({ email: clientA.email });
         const anon = anonClient();
         try {
+            // Commande témoin et réservations sur des canaux SÉPARÉS : un abonnement à une table retirée de la
+            // publication peut être refusé par Realtime, ce qui coupait le canal entier, témoin compris (run 61).
             const ownerB = subscribeBundle(owner, 'partenaire propriétaire', {
                 orders: { table: 'orders', filter: `partner_id=eq.${partnerA.partnerId}` },
+            });
+            const ownerR = subscribeBundle(owner, 'partenaire propriétaire (réservations)', {
                 hallFiltered: { table: 'hall_reservations', filter: `partner_id=eq.${partnerA.partnerId}` },
                 hall: { table: 'hall_reservations' },
                 tableFiltered: { table: 'table_reservations', filter: `partner_id=eq.${partnerA.partnerId}` },
@@ -312,17 +316,26 @@ describe('6.0 d — publication supabase_realtime', () => {
             });
             const custB = subscribeBundle(cust, 'client de la réservation', {
                 orders: { table: 'orders', filter: `client_id=eq.${clientA.userId}` },
+            });
+            const custR = subscribeBundle(cust, 'client de la réservation (réservations)', {
                 hallFiltered: { table: 'hall_reservations', filter: `client_id=eq.${clientA.userId}` },
                 hall: { table: 'hall_reservations' },
                 tableFiltered: { table: 'table_reservations', filter: `client_id=eq.${clientA.userId}` },
                 table: { table: 'table_reservations' },
             });
-            const anonB = subscribeBundle(anon, 'anon', {
-                control: controlTarget(),
+            const anonB = subscribeBundle(anon, 'anon', { control: controlTarget() });
+            const anonR = subscribeBundle(anon, 'anon (réservations)', {
                 hall: { table: 'hall_reservations' },
                 table: { table: 'table_reservations' },
             });
             await Promise.all([ownerB.ready, custB.ready, anonB.ready]);
+            // Réservations : abonnement accepté (aucun message ne doit arriver) ou refusé par Realtime (aucune
+            // diffusion possible) ; tout autre état, dont le délai dépassé, fait échouer le test.
+            for (const r of [ownerR, custR, anonR]) {
+                const o = await Object.values<Collector>(r.feeds)[0].outcome;
+                console.log(`[TEMPS-REEL-6.0d] abonnement ${r.label} : ${o.status}${o.error ? ` (${o.error})` : ''}`);
+                assert.ok(o.status === 'SUBSCRIBED' || o.status === 'CHANNEL_ERROR', `abonnement ${r.label} : état inattendu ${o.status} ${o.error ?? ''}`);
+            }
             await produceUntilReceived(ownerB.feeds.orders, touchOrder, about('id', [orderId]), { what: 'vivacité : commande reçue par le partenaire propriétaire' });
             await produceUntilReceived(custB.feeds.orders, touchOrder, about('id', [orderId]), { what: 'vivacité : commande reçue par son client' });
             await proveLive(anonB.feeds.control);
@@ -339,8 +352,8 @@ describe('6.0 d — publication supabase_realtime', () => {
             const hallLeak = about('id', [hallReservationId]);
             const tableLeak = about('id', [tableReservationId]);
             const leaks = [
-                ...leaksOf([ownerB.feeds.hallFiltered, ownerB.feeds.hall, custB.feeds.hallFiltered, custB.feeds.hall, anonB.feeds.hall], hallLeak),
-                ...leaksOf([ownerB.feeds.tableFiltered, ownerB.feeds.table, custB.feeds.tableFiltered, custB.feeds.table, anonB.feeds.table], tableLeak),
+                ...leaksOf([ownerR.feeds.hallFiltered, ownerR.feeds.hall, custR.feeds.hallFiltered, custR.feeds.hall, anonR.feeds.hall], hallLeak),
+                ...leaksOf([ownerR.feeds.tableFiltered, ownerR.feeds.table, custR.feeds.tableFiltered, custR.feeds.table, anonR.feeds.table], tableLeak),
             ];
             console.log(`[TEMPS-REEL-6.0d] marqueurs : salle ${hallMarker}, table ${tableMarker}`);
             assert.deepEqual(leaks, [], `réservations diffusées en temps réel :\n${leaks.join('\n')}`);
