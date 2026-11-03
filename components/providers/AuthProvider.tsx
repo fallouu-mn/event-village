@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { User, Session } from '@supabase/supabase-js';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { detachPushSubscription } from '@/lib/push/client';
 
 export interface UserProfile {
     id: string;
@@ -110,6 +111,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signOut = async () => {
         try {
+            // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
+            await detachPushSubscription();
             const supabase = getBrowserClient();
             await supabase.auth.signOut();
         } catch (e) {

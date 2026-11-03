@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconButton } from '@/components/ui/IconButton';
 import { Logo } from '@/components/ui/Logo';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { detachPushSubscription } from '@/lib/push/client';
 
 /**
  * En-tête de l'espace contrôleur (relecture des captures du run 50) : tokens du système de design, cibles
@@ -22,6 +23,8 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
     const [showLogout, setShowLogout] = useState(false);
 
     const handleLogout = async () => {
+        // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
+        await detachPushSubscription();
         const supabase = createBrowserClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
