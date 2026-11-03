@@ -1,20 +1,26 @@
 'use client';
 
 /**
- * Réglages de la plateforme : finance (lot 3, clés finance.*) et contrôle d'accès (lot 4, clés
- * access.*), lus et modifiés par GET / PUT /api/admin/finance-settings, présentés par section.
- * Lecture : ADMIN et SUPERADMIN ; modification : SUPERADMIN seul, avec un motif obligatoire. Chaque modification est historisée et ne s'applique qu'aux
- * opérations futures (jamais rétroactive). La validation des valeurs est faite par le serveur.
+ * Réglages de la plateforme : finance (lot 3, clés finance.*), contrôle d'accès (lot 4, clés access.*) et
+ * notifications (lot 6, clés notif.* : rappels J-1 et H-3, SMS des rappels, plage sans SMS, seuil d'alerte),
+ * lus et modifiés par GET / PUT /api/admin/finance-settings, présentés par section.
+ * Lecture : ADMIN et SUPERADMIN ; modification : SUPERADMIN seul, avec un motif obligatoire. Chaque
+ * modification est historisée et ne s'applique qu'aux opérations futures (jamais rétroactive). La
+ * validation des valeurs (bornes, choix admis) est faite par le serveur (finance_setting_set).
+ * Lot 6 : page migrée sur le système de design (tokens, PageHeader, Field, StatusBanner, 44 px, 14 px).
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
-import Link from 'next/link';
-import { AlertCircle, ChevronLeft, History, Pencil, RefreshCw, Save, ScanLine, SlidersHorizontal, Wallet, X } from 'lucide-react';
+import { Bell, History, Pencil, RefreshCw, Save, ScanLine, Wallet, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/EmptyState';
+import { Select, TextInput } from '@/components/ui/Field';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
+import { formatDateTime } from '@/lib/format';
 import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
 
 type Kind = 'percent' | 'integer' | 'boolean' | 'choice';
@@ -32,6 +38,12 @@ const BEARER_LABELS: Record<string, string> = { EVENT_VILLAGE: 'Event Village', 
 const MANUAL_ENTRY_SCOPE_LABELS: Record<string, string> = {
   ASSIGNED_CONTROLLER: 'Contrôleur affecté seul',
   STAFF: 'Contrôleur affecté, partenaire et admin',
+};
+/** Politique SMS d'un rappel (notif.j1_sms, notif.h3_sms). */
+const SMS_POLICY_LABELS: Record<string, string> = {
+  ALWAYS: 'Toujours',
+  IF_NO_PUSH: 'Seulement sans notification push',
+  NEVER: 'Jamais',
 };
 
 /** Libellés et aides d'affichage ; les bornes sont contrôlées par le serveur (finance_setting_set). */
@@ -51,6 +63,15 @@ const META: Record<string, SettingMeta> = {
   'access.manual_entry_scope': { label: 'Saisie manuelle d’un numéro de billet', help: 'Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.', kind: 'choice', options: MANUAL_ENTRY_SCOPE_LABELS },
   'access.counter_sale_enabled': { label: 'Vente au guichet en espèces', help: 'Un contrôleur autorisé à encaisser, avec une caisse ouverte, vend des billets au prix facial, sans frais.', kind: 'boolean' },
   'access.low_stock_threshold': { label: 'Seuil « bientôt complet »', help: 'Quand il reste ce nombre de places ou moins dans une catégorie, la page publique affiche le restant ; au-delà, seulement « disponible ». Entier de 1 à 1000.', kind: 'integer', unit: 'places' },
+  'notif.reminder_j1_enabled': { label: 'Rappel la veille', help: 'Rappel envoyé la veille du début aux porteurs d’un billet valable de l’événement en ligne.', kind: 'boolean' },
+  'notif.reminder_j1_hour': { label: 'Heure du rappel de la veille', help: 'Heure de Dakar à laquelle part le rappel de la veille. De 6 à 20.', kind: 'integer', unit: 'h' },
+  'notif.reminder_h3_enabled': { label: 'Rappel avant le début', help: 'Rappel envoyé quelques heures avant le début, avec le conseil d’ouvrir son billet avant d’arriver.', kind: 'boolean' },
+  'notif.reminder_h3_hours': { label: 'Heures avant le début', help: 'Nombre d’heures entre le rappel et le début de l’événement. De 1 à 12.', kind: 'integer', unit: 'h' },
+  'notif.j1_sms': { label: 'SMS du rappel de la veille', help: 'Envoi du SMS en plus de l’application et des notifications push.', kind: 'choice', options: SMS_POLICY_LABELS },
+  'notif.h3_sms': { label: 'SMS du rappel avant le début', help: 'Envoi du SMS en plus de l’application et des notifications push.', kind: 'choice', options: SMS_POLICY_LABELS },
+  'notif.sms_quiet_start': { label: 'Début de la plage sans SMS', help: 'Heure de Dakar à partir de laquelle aucun SMS optionnel ne part ; le rappel passe alors par les autres canaux. De 0 à 23.', kind: 'integer', unit: 'h' },
+  'notif.sms_quiet_end': { label: 'Fin de la plage sans SMS', help: 'Heure de Dakar de fin de la plage. Un début égal à la fin supprime la plage. De 0 à 23.', kind: 'integer', unit: 'h' },
+  'notif.sms_daily_alert': { label: "Seuil d'alerte SMS du jour", help: 'Nombre de SMS envoyés dans la journée au-delà duquel les administrateurs sont alertés. De 1 à 1 000 000.', kind: 'integer', unit: 'SMS' },
 };
 
 /** Ordre d'affichage des réglages dans leur section (celui de META ; clé inconnue en dernier). */
@@ -61,6 +82,7 @@ const rank = (key: string) => (META_ORDER.includes(key) ? META_ORDER.indexOf(key
 const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: LucideIcon }> = [
   { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
   { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet et seuil de stock affiché au public.', icon: ScanLine },
+  { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS et seuil d’alerte du volume de SMS.', icon: Bell },
 ];
 
 interface Setting {
@@ -91,16 +113,9 @@ function displayValue(key: string, value: unknown): string {
   const v = unwrap(value);
   if (v === null || v === undefined) return '—';
   if (meta?.kind === 'boolean') return v === true ? 'Activé' : 'Désactivé';
-  if (meta?.kind === 'choice') return meta.options?.[String(v)] ?? String(v);
+  if (meta?.kind === 'choice') return meta.options?.[String(v)] ?? 'Valeur non répertoriée';
   if (typeof v === 'number') return `${v.toLocaleString('fr-FR')}${meta?.unit ? ` ${meta.unit}` : ''}`;
   return String(v);
-}
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dakar' });
 }
 
 function parseSettings(body: unknown): { settings: Setting[]; history: HistoryRow[] } | null {
@@ -135,21 +150,21 @@ export default function AdminFinanceSettingsPage() {
     setIsLoading(true);
     try {
       const res = await fetch('/api/admin/finance-settings', { cache: 'no-store' });
-      const body = await readJsonBody(res, 'réglages financiers');
+      const body = await readJsonBody(res, 'réglages de la plateforme');
       if (!res.ok) {
         setLoadError(serverErrorMessage(body) ?? `Réglages indisponibles (erreur ${res.status}).`);
         return;
       }
       const parsed = parseSettings(body);
       if (!parsed) {
-        console.error('[réglages financiers] réponse inattendue :', body);
+        console.error('[réglages de la plateforme] réponse inattendue :', body);
         setLoadError('Réponse inattendue du serveur.');
         return;
       }
       setData(parsed);
       setLoadError(null);
     } catch (err) {
-      console.error('[réglages financiers] chargement impossible :', err);
+      console.error('[réglages de la plateforme] chargement impossible :', err);
       setLoadError('Connexion impossible : vérifiez votre réseau puis réessayez.');
     } finally {
       setIsLoading(false);
@@ -193,7 +208,7 @@ export default function AdminFinanceSettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value, reason: reason.trim() }),
       });
-      const body = await readJsonBody(res, 'réglages financiers/modification');
+      const body = await readJsonBody(res, 'réglages de la plateforme/modification');
       if (!res.ok) {
         setSaveError(
           serverErrorMessage(body) ??
@@ -201,42 +216,32 @@ export default function AdminFinanceSettingsPage() {
         );
         return;
       }
-      toast.success(`Réglage « ${meta?.label ?? key} » enregistré. Il s’applique aux prochaines opérations.`);
+      toast.success(`Réglage « ${meta?.label ?? 'sans libellé'} » enregistré. Il s’applique aux prochaines opérations.`);
       setEditing(null);
       void load();
     } catch (err) {
-      console.error('[réglages financiers] enregistrement impossible :', err);
+      console.error('[réglages de la plateforme] enregistrement impossible :', err);
       setSaveError('Connexion impossible : le réglage n’a peut-être pas été enregistré. Actualisez avant de réessayer.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const inputClass =
-    'w-full h-11 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF5722]/30 focus:border-[#FF5722]';
-
   return (
-    <div className="space-y-6 pb-16">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <Link href="/admin" className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 dark:text-zinc-400 hover:text-[#FF5722] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] rounded-md">
-            <ChevronLeft size={14} aria-hidden="true" /> Administration
-          </Link>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <SlidersHorizontal className="text-[#FF5722]" size={24} aria-hidden="true" />
-            Réglages de la plateforme
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-zinc-400">
-            Chaque modification est historisée et ne s’applique qu’aux opérations futures. Modification réservée aux superadministrateurs.
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={14} aria-hidden="true" />} onClick={() => void load()} disabled={isLoading}>
-          Actualiser
-        </Button>
-      </div>
+    <div className="space-y-6 pb-24 lg:pb-12">
+      <PageHeader
+        title="Réglages de la plateforme"
+        description="Chaque modification est historisée et ne s’applique qu’aux opérations futures. Modification réservée aux superadministrateurs."
+        back={{ href: '/admin', label: 'Administration' }}
+        actions={(
+          <Button variant="secondary" leftIcon={<RefreshCw size={18} aria-hidden="true" />} onClick={() => void load()} isLoading={isLoading && Boolean(data)} disabled={isLoading}>
+            Actualiser
+          </Button>
+        )}
+      />
 
       {loadError && !data ? (
-        <ErrorState title="Réglages indisponibles" description={loadError} onRetry={() => void load()} />
+        <ErrorState title="Réglages indisponibles" description={loadError} onRetry={() => void load()} isRetrying={isLoading} />
       ) : !data ? (
         <div className="space-y-3" aria-busy="true">
           <span className="sr-only">Chargement des réglages…</span>
@@ -245,10 +250,9 @@ export default function AdminFinanceSettingsPage() {
       ) : (
         <>
           {loadError && (
-            <div role="alert" className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-center gap-2 text-xs text-red-700 dark:text-red-300">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-              {loadError}
-            </div>
+            <StatusBanner tone="danger" announce="alert" title="Réglages non actualisés">
+              {loadError} Les valeurs affichées sont celles du dernier chargement.
+            </StatusBanner>
           )}
           {SECTIONS.map((section) => {
             const items = data.settings.filter((s) => s.key.startsWith(section.prefix)).sort((a, b) => rank(a.key) - rank(b.key));
@@ -257,31 +261,33 @@ export default function AdminFinanceSettingsPage() {
             const SectionIcon = section.icon;
             return (
               <section key={section.prefix} aria-labelledby={headingId} className="space-y-3">
-                <div className="space-y-0.5">
-                  <h2 id={headingId} className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <SectionIcon size={16} className="text-[#FF5722]" aria-hidden="true" /> {section.title}
+                <div className="space-y-1">
+                  <h2 id={headingId} className="flex items-center gap-2 text-lg font-semibold text-fg">
+                    <SectionIcon size={20} className="text-brand-fg" aria-hidden="true" />
+                    {section.title}
                   </h2>
-                  <p className="text-[11px] text-slate-500 dark:text-zinc-400">{section.help}</p>
+                  <p className="text-sm text-fg-muted">{section.help}</p>
                 </div>
-                <ul className="rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800">
+                <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
                   {items.map((s) => {
                     const meta = META[s.key];
+                    const label = meta?.label ?? 'Réglage sans libellé';
                     const isEditing = editing === s.key;
-                    const valueId = `${fieldId}-${s.key}-value`;
-                    const reasonId = `${fieldId}-${s.key}-reason`;
-                    const errorId = `${fieldId}-${s.key}-error`;
+                    const formId = `${fieldId}-${s.key}-form`;
                     return (
-                      <li key={s.key} className="p-4 space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-black text-slate-900 dark:text-white">{meta?.label ?? s.key}</div>
-                            <div className="text-[11px] text-slate-500 dark:text-zinc-400">{meta?.help ?? s.key}</div>
-                            <div className="text-[11px] text-slate-400 dark:text-zinc-500 font-mono">{s.key} · modifié le {formatDateTime(s.updatedAt)}</div>
+                      <li key={s.key} className="space-y-3 p-4">
+                        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                          <div className="min-w-0 space-y-0.5">
+                            <p className="text-sm font-semibold text-fg">{label}</p>
+                            {meta?.help && <p className="text-sm text-fg-muted">{meta.help}</p>}
+                            <p className="text-sm text-fg-muted">
+                              Modifié le <time dateTime={s.updatedAt ?? undefined}>{formatDateTime(s.updatedAt)}</time>
+                            </p>
                           </div>
-                          <div className="flex items-center gap-3 shrink-0">
-                            <span className="text-sm font-black text-[#FF5722] tabular-nums">{displayValue(s.key, s.value)}</span>
+                          <div className="flex flex-shrink-0 items-center gap-3">
+                            <span className="text-base font-semibold tabular-nums text-brand-fg">{displayValue(s.key, s.value)}</span>
                             {!isEditing && (
-                              <Button variant="ghost" size="sm" leftIcon={<Pencil size={14} aria-hidden="true" />} onClick={() => startEdit(s)} aria-label={`Modifier ${meta?.label ?? s.key}`}>
+                              <Button variant="ghost" size="sm" leftIcon={<Pencil size={16} aria-hidden="true" />} onClick={() => startEdit(s)} aria-label={`Modifier ${label}`}>
                                 Modifier
                               </Button>
                             )}
@@ -290,68 +296,62 @@ export default function AdminFinanceSettingsPage() {
 
                         {isEditing && (
                           <form
+                            id={formId}
                             noValidate
                             onSubmit={(e) => {
                               e.preventDefault();
                               void save(s.key);
                             }}
-                            className="grid grid-cols-1 sm:grid-cols-[minmax(0,12rem)_1fr_auto] gap-3 items-start p-3 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800"
+                            className="grid grid-cols-1 items-start gap-3 rounded-2xl border border-border bg-surface-sunken p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
                           >
-                            <div>
-                              <label htmlFor={valueId} className="block text-[11px] font-bold text-slate-600 dark:text-zinc-300 mb-1">
-                                Nouvelle valeur{meta?.unit ? ` (${meta.unit})` : ''}
-                              </label>
-                              {meta?.kind === 'boolean' ? (
-                                <select id={valueId} value={draft} onChange={(e) => setDraft(e.target.value)} className={inputClass}>
-                                  <option value="true">Activé</option>
-                                  <option value="false">Désactivé</option>
-                                </select>
-                              ) : meta?.kind === 'choice' ? (
-                                <select id={valueId} value={draft} onChange={(e) => setDraft(e.target.value)} className={inputClass}>
-                                  {Object.entries(meta.options ?? {}).map(([k, label]) => (
-                                    <option key={k} value={k}>{label}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input
-                                  id={valueId}
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={draft}
-                                  onChange={(e) => setDraft(e.target.value)}
-                                  aria-describedby={saveError ? errorId : undefined}
-                                  className={`${inputClass} tabular-nums`}
-                                />
-                              )}
-                            </div>
-                            <div>
-                              <label htmlFor={reasonId} className="block text-[11px] font-bold text-slate-600 dark:text-zinc-300 mb-1">
-                                Motif <span className="text-[#FF5722]" aria-hidden="true">*</span>
-                              </label>
-                              <input
-                                id={reasonId}
-                                type="text"
-                                value={reason}
-                                maxLength={300}
-                                placeholder="Ex : décision du comité du 15 novembre"
-                                onChange={(e) => setReason(e.target.value)}
-                                aria-describedby={saveError ? errorId : undefined}
-                                className={inputClass}
+                            {meta?.kind === 'boolean' ? (
+                              <Select
+                                label="Nouvelle valeur"
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
+                                options={[{ value: 'true', label: 'Activé' }, { value: 'false', label: 'Désactivé' }]}
                               />
-                            </div>
-                            <div className="flex gap-2 sm:pt-5">
-                              <Button type="submit" variant="primary" size="sm" isLoading={isSaving} leftIcon={<Save size={14} aria-hidden="true" />}>
+                            ) : meta?.kind === 'choice' ? (
+                              <Select
+                                label="Nouvelle valeur"
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
+                                options={Object.entries(meta.options ?? {}).map(([value, optionLabel]) => ({ value, label: optionLabel }))}
+                              />
+                            ) : (
+                              <TextInput
+                                label={`Nouvelle valeur${meta?.unit ? ` (${meta.unit})` : ''}`}
+                                type="text"
+                                inputMode="decimal"
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
+                                className="tabular-nums"
+                              />
+                            )}
+                            <TextInput
+                              label="Motif"
+                              required
+                              value={reason}
+                              maxLength={300}
+                              placeholder="Ex : décision du comité du 15 novembre"
+                              onChange={(e) => setReason(e.target.value)}
+                              hint="3 caractères au moins ; visible dans l’historique."
+                            />
+                            {saveError && (
+                              <div className="sm:col-span-2">
+                                <StatusBanner tone="danger" announce="alert" title="Réglage non enregistré">
+                                  {saveError}
+                                </StatusBanner>
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-2 sm:col-span-2">
+                              <Button type="submit" variant="primary" isLoading={isSaving} leftIcon={<Save size={18} aria-hidden="true" />}>
                                 Enregistrer
                               </Button>
-                              <Button type="button" variant="ghost" size="sm" disabled={isSaving} onClick={() => setEditing(null)} leftIcon={<X size={14} aria-hidden="true" />}>
+                              <Button type="button" variant="ghost" disabled={isSaving} onClick={() => setEditing(null)} leftIcon={<X size={18} aria-hidden="true" />}>
                                 Annuler
                               </Button>
                             </div>
-                            {saveError && (
-                              <p id={errorId} role="alert" className="sm:col-span-3 text-[11px] font-medium text-red-600 dark:text-red-400">
-                                {saveError}
-                              </p>
-                            )}
                           </form>
                         )}
                       </li>
@@ -363,23 +363,24 @@ export default function AdminFinanceSettingsPage() {
           })}
 
           <section aria-labelledby={`${fieldId}-historique`} className="space-y-3">
-            <h2 id={`${fieldId}-historique`} className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <History size={16} className="text-[#FF5722]" aria-hidden="true" /> Historique des modifications
+            <h2 id={`${fieldId}-historique`} className="flex items-center gap-2 text-lg font-semibold text-fg">
+              <History size={20} className="text-brand-fg" aria-hidden="true" />
+              Historique des modifications
             </h2>
             {data.history.length === 0 ? (
-              <p className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 text-xs text-slate-500 dark:text-zinc-400">Aucune modification enregistrée.</p>
+              <p className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg-muted">Aucune modification enregistrée.</p>
             ) : (
-              <ul className="rounded-2xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800">
+              <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
                 {data.history.map((h, i) => (
-                  <li key={`${h.key}-${h.changedAt}-${i}`} className="px-4 py-3 text-xs space-y-0.5">
-                    <div className="font-bold text-slate-900 dark:text-white">{META[h.key]?.label ?? h.key}</div>
-                    <div className="text-slate-600 dark:text-zinc-300 tabular-nums">
-                      {displayValue(h.key, h.oldValue)} → {displayValue(h.key, h.newValue)}
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-zinc-400">
-                      {formatDateTime(h.changedAt)}
+                  <li key={`${h.key}-${h.changedAt}-${i}`} className="space-y-0.5 px-4 py-3 text-sm">
+                    <p className="font-semibold text-fg">{META[h.key]?.label ?? 'Réglage sans libellé'}</p>
+                    <p className="tabular-nums text-fg">
+                      {displayValue(h.key, h.oldValue)} <span aria-hidden="true">→</span><span className="sr-only">devient</span> {displayValue(h.key, h.newValue)}
+                    </p>
+                    <p className="text-fg-muted">
+                      <time dateTime={h.changedAt}>{formatDateTime(h.changedAt)}</time>
                       {h.reason && ` · ${h.reason}`}
-                    </div>
+                    </p>
                   </li>
                 ))}
               </ul>
