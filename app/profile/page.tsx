@@ -3,286 +3,276 @@
 import React from 'react';
 import Link from 'next/link';
 import {
-  User,
-  Shield,
+  Bell,
   Briefcase,
-  Wallet,
-  LogOut,
   ChevronRight,
-  Phone,
-  Mail,
-  Sun,
-  Moon,
-  Sparkles,
   LogIn,
+  LogOut,
+  Mail,
+  Moon,
+  Phone,
   QrCode,
+  Shield,
+  Sparkles,
+  Sun,
+  User,
+  Wallet,
 } from 'lucide-react';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { cn } from '@/components/ui/cn';
+import { TONE_ICON, type Tone } from '@/components/ui/tones';
+
+/**
+ * Profil et réglages du compte (lot 6, contrat H4 : migré sur le système de design pour recevoir le lien
+ * vers les préférences de notification).
+ *  - Aucun code brut à l'écran : rôles et statut du compte par leurs libellés français ; aucun emoji.
+ *  - Thème : trois boutons à bascule (aria-pressed) de 44 px.
+ *  - Raccourcis : liens pleine largeur de 44 px au moins (préférences de notification, portefeuille,
+ *    espaces professionnels selon les rôles).
+ *  - Déconnexion par useAuth().signOut, qui détache d'abord l'appareil des notifications push.
+ */
+
+const ROLE_LABELS: Record<string, string> = {
+  CLIENT: 'Client',
+  PARTENAIRE: 'Partenaire',
+  CONTROLEUR: 'Contrôleur',
+  ADMIN: 'Administrateur',
+  SUPERADMIN: 'Super-administrateur',
+};
+
+const ACCOUNT_STATUS_LABELS: Record<string, string> = {
+  ACTIF: 'Compte actif',
+  EN_ATTENTE: 'Compte en attente de validation',
+  SUSPENDU: 'Compte suspendu',
+};
+
+const THEMES: Array<{ id: 'light' | 'dark' | 'system'; label: string; icon: React.ElementType }> = [
+  { id: 'light', label: 'Clair', icon: Sun },
+  { id: 'dark', label: 'Sombre', icon: Moon },
+  { id: 'system', label: 'Système', icon: Sparkles },
+];
+
+interface Shortcut {
+  href: string;
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  tone: Tone;
+}
+
+const SHORTCUT_CLASS =
+  'group flex min-h-11 items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-4 transition-colors duration-200 hover:border-brand-fg/40 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+function ShortcutBody({ title, description, icon: Icon, tone }: Omit<Shortcut, 'href'>) {
+  return (
+    <>
+      <span className="flex min-w-0 items-center gap-3">
+        <span className={cn('flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl', TONE_ICON[tone])} aria-hidden="true">
+          <Icon size={20} />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-fg group-hover:text-brand-fg">{title}</span>
+          <span className="block text-sm text-fg-muted">{description}</span>
+        </span>
+      </span>
+      <ChevronRight size={18} className="flex-shrink-0 text-fg-muted group-hover:text-brand-fg" aria-hidden="true" />
+    </>
+  );
+}
 
 export default function ProfilePage() {
   const { theme, setTheme } = useTheme();
-  const { user, profile, partner, isLoading, isAuthenticated, signOut } = useAuth();
+  const { profile, partner, isLoading, isAuthenticated, signOut } = useAuth();
 
   if (isLoading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      <div className="mx-auto max-w-2xl space-y-6 pb-24 lg:pb-12" aria-busy="true">
+        <span className="sr-only">Chargement du profil…</span>
         <Skeleton className="h-10 w-48 rounded-2xl" />
-        <Skeleton className="h-44 w-full rounded-3xl" />
-        <Skeleton className="h-32 w-full rounded-3xl" />
+        <Skeleton className="h-36 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-2xl" />
       </div>
     );
   }
 
   if (!isAuthenticated || !profile) {
     return (
-      <div className="max-w-md mx-auto min-h-[60vh] flex flex-col items-center justify-center text-center p-6 space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
-          <User size={40} />
-        </div>
-        <div className="space-y-2">
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">
-            Connexion Requise
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400">
-            Connectez-vous pour consulter vos informations personnelles, vos billets et vos réservations.
-          </p>
-        </div>
-        <Link href="/login" className="w-full">
-          <Button variant="primary" size="lg" fullWidth leftIcon={<LogIn size={18} />}>
-            Se connecter ou Créer un compte
-          </Button>
-        </Link>
+      <div className="mx-auto max-w-lg pb-24 pt-6 lg:pb-12">
+        <EmptyState
+          icon={<LogIn size={28} />}
+          title="Connectez-vous pour voir votre profil"
+          description="Vos coordonnées, vos préférences de notification et vos accès aux espaces professionnels sont liés à votre compte."
+          actionLabel="Se connecter"
+          actionHref="/login?redirect=%2Fprofile"
+        />
       </div>
     );
   }
 
-  const initials = `${profile.first_name?.[0] || 'U'}${profile.last_name?.[0] || 'E'}`.toUpperCase();
-  const fullName = `${profile.first_name} ${profile.last_name}`;
-  const isAmbassador = profile.referral_status === 'AMBASSADEUR';
-  const roles = profile.roles || [profile.role];
+  const initials = `${profile.first_name?.[0] || ''}${profile.last_name?.[0] || ''}`.toUpperCase() || 'EV';
+  const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Mon compte';
+  const roles = profile.roles?.length ? profile.roles : [profile.role];
   const isPartner = roles.includes('PARTENAIRE');
   const isAdmin = roles.includes('ADMIN') || roles.includes('SUPERADMIN');
   const isController = roles.includes('CONTROLEUR') || isAdmin;
+  const isAmbassador = profile.referral_status === 'AMBASSADEUR';
+  const roleText = roles.map((r) => ROLE_LABELS[r] ?? 'Compte').filter((v, i, all) => all.indexOf(v) === i);
+  const statusText = ACCOUNT_STATUS_LABELS[profile.status] ?? 'Statut du compte inconnu';
+  const partnerValidated = partner?.status === 'VALIDE';
 
-  const handleSignOut = async () => {
-    await signOut();
-  };
+  const shortcuts: Shortcut[] = [
+    {
+      href: '/wallet',
+      title: 'Portefeuille et parrainage',
+      description: 'Vos gains de parrainage et vos demandes de retrait',
+      icon: Wallet,
+      tone: 'success',
+    },
+  ];
+  if (isPartner || isAdmin) {
+    shortcuts.push({
+      href: '/partner/dashboard',
+      title: 'Espace partenaire',
+      description: 'Vos événements, vos ventes et votre équipe de contrôle',
+      icon: Briefcase,
+      tone: 'info',
+    });
+  }
+  if (isController) {
+    shortcuts.push({
+      href: '/partner/scan',
+      title: 'Contrôle des billets',
+      description: 'Scanner les QR codes à l’entrée d’un événement',
+      icon: QrCode,
+      tone: 'neutral',
+    });
+  }
+  if (isAdmin) {
+    shortcuts.push({
+      href: '/admin/dashboard',
+      title: 'Administration',
+      description: 'Validation des partenaires et des événements, finance, journal d’audit',
+      icon: Shield,
+      tone: 'neutral',
+    });
+  }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-20">
-      {/* 1. Header */}
-      <div className="border-b border-slate-200 dark:border-zinc-800 pb-4">
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-          <User className="text-[#FF5722]" size={28} />
-          <span>Mon Profil & Paramètres</span>
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-0.5">
-          Gérez vos coordonnées, préférences d’affichage et accès aux espaces pro.
-        </p>
-      </div>
+    <div className="mx-auto max-w-2xl space-y-6 pb-24 lg:pb-12">
+      <PageHeader
+        title="Mon profil"
+        description="Vos coordonnées, l’affichage de l’application, vos notifications et vos accès."
+      />
 
-      {/* 2. Carte d'Identité Utilisateur */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
-        <div className="w-20 h-20 rounded-2xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] font-black text-2xl flex items-center justify-center border-2 border-orange-200 dark:border-orange-900/50 shadow-sm flex-shrink-0">
+      <section aria-labelledby="profil-identite" className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-5 text-center sm:flex-row sm:items-start sm:text-left">
+        <span className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl border border-brand-fg/30 bg-brand-bg text-xl font-bold text-brand-fg" aria-hidden="true">
           {initials}
-        </div>
-        <div className="flex-1 space-y-1.5">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <h2 className="text-lg font-black text-slate-900 dark:text-white">{fullName}</h2>
-            {isAmbassador && (
-              <Badge variant="brand" size="sm">
-                ⭐ AMBASSADEUR EVENT VILLAGE
-              </Badge>
-            )}
+        </span>
+        <div className="min-w-0 flex-1 space-y-2">
+          <h2 id="profil-identite" className="break-words text-lg font-semibold text-fg">{fullName}</h2>
+          <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
+            {isAmbassador && <Badge variant="brand">Ambassadeur Event Village</Badge>}
             {isPartner && (
-              <Badge variant="warning" size="sm">
-                💼 {partner?.status === 'VALIDE' ? 'PARTENAIRE VALIDÉ' : 'PARTENAIRE EN ATTENTE'}
-              </Badge>
-            )}
-            {isAdmin && (
-              <Badge variant="success" size="sm">
-                🛡️ {roles.includes('SUPERADMIN') ? 'SUPERADMIN' : 'ADMIN'}
+              <Badge variant={partnerValidated ? 'success' : 'warning'}>
+                {partnerValidated ? 'Partenaire validé' : 'Partenaire en attente de validation'}
               </Badge>
             )}
           </div>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 flex items-center justify-center sm:justify-start gap-1.5 flex-wrap">
-            <span className="flex items-center gap-1">
-              <Phone size={12} className="text-[#FF5722]" />
-              <span>{profile.phone || 'Non renseigné'}</span>
-            </span>
+          <dl className="space-y-1 text-sm text-fg-muted">
+            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
+              <dt className="flex items-center gap-1.5">
+                <Phone size={16} aria-hidden="true" />
+                <span className="sr-only">Téléphone</span>
+              </dt>
+              <dd className="text-fg tabular-nums">{profile.phone || 'Non renseigné'}</dd>
+            </div>
             {profile.email && (
-              <>
-                <span className="mx-0.5">•</span>
-                <span className="flex items-center gap-1">
-                  <Mail size={12} className="text-[#FF5722]" />
-                  <span>{profile.email}</span>
-                </span>
-              </>
+              <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
+                <dt className="flex items-center gap-1.5">
+                  <Mail size={16} aria-hidden="true" />
+                  <span className="sr-only">Email</span>
+                </dt>
+                <dd className="break-all text-fg">{profile.email}</dd>
+              </div>
             )}
-          </p>
-          <p className="text-[11px] text-slate-400 dark:text-zinc-500 pt-0.5">
-            Rôle{roles.length > 1 ? 's' : ''} : <strong className="text-slate-700 dark:text-zinc-300">{roles.join(', ')}</strong> • Statut : <span className="text-emerald-600 font-bold">{profile.status}</span>
-          </p>
+            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
+              <dt className="flex items-center gap-1.5">
+                <User size={16} aria-hidden="true" />
+                <span>{roleText.length > 1 ? 'Rôles :' : 'Rôle :'}</span>
+              </dt>
+              <dd className="text-fg">{roleText.join(', ')}</dd>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
+              <dt className="sr-only">Statut du compte</dt>
+              <dd className="text-fg">{statusText}</dd>
+            </div>
+          </dl>
         </div>
-      </div>
+      </section>
 
-      {/* 3. Préférences de Thème Visuel (Light / Dark / Système) */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-3">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-          Thème Visuel de l’Application
-        </h3>
-        <div className="grid grid-cols-3 gap-2.5">
-          <button
-            type="button"
-            onClick={() => setTheme('light')}
-            className={`p-3 rounded-2xl border text-xs font-bold transition-all flex flex-col items-center gap-1.5 ${
-              theme === 'light'
-                ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-xs'
-                : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
-            }`}
-          >
-            <Sun size={18} />
-            <span>Mode Clair</span>
-          </button>
+      <section aria-labelledby="profil-raccourcis" className="space-y-3">
+        <h2 id="profil-raccourcis" className="text-base font-semibold text-fg">Réglages et espaces</h2>
+        <ul className="space-y-3">
+          <li>
+            <Link href="/profile/notifications" className={SHORTCUT_CLASS}>
+              <ShortcutBody
+                title="Préférences de notification"
+                description="Rappels, changements d’événement, SMS et notifications push sur cet appareil"
+                icon={Bell}
+                tone="brand"
+              />
+            </Link>
+          </li>
+          {shortcuts.map(({ href, ...body }) => (
+            <li key={href}>
+              <Link href={href} className={SHORTCUT_CLASS}>
+                <ShortcutBody {...body} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-          <button
-            type="button"
-            onClick={() => setTheme('dark')}
-            className={`p-3 rounded-2xl border text-xs font-bold transition-all flex flex-col items-center gap-1.5 ${
-              theme === 'dark'
-                ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-xs'
-                : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
-            }`}
-          >
-            <Moon size={18} />
-            <span>Mode Sombre</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setTheme('system')}
-            className={`p-3 rounded-2xl border text-xs font-bold transition-all flex flex-col items-center gap-1.5 ${
-              theme === 'system'
-                ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-xs'
-                : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-300'
-            }`}
-          >
-            <Sparkles size={18} />
-            <span>Système</span>
-          </button>
+      <section aria-labelledby="profil-theme" className="space-y-3 rounded-2xl border border-border bg-surface p-5">
+        <h2 id="profil-theme" className="text-base font-semibold text-fg">Affichage</h2>
+        <div className="grid grid-cols-3 gap-2" role="group" aria-label="Thème de l’application">
+          {THEMES.map(({ id, label, icon: Icon }) => {
+            const active = theme === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setTheme(id)}
+                className={cn(
+                  'flex min-h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors duration-200',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  active ? 'border-brand bg-brand text-on-brand' : 'border-border bg-surface-sunken text-fg hover:border-border-strong',
+                )}
+              >
+                <Icon size={18} aria-hidden="true" />
+                <span>{label}</span>
+              </button>
+            );
+          })}
         </div>
-      </div>
+      </section>
 
-      {/* 4. Raccourcis Navigation & Espaces */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white px-1">
-          Espaces & Services
-        </h3>
-
-        <Link
-          href="/wallet"
-          className="p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center">
-              <Wallet size={20} />
-            </div>
-            <div>
-              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white group-hover:text-[#FF5722] transition-colors">
-                Portefeuille & Commissions de Parrainage
-              </h4>
-              <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                Consulter vos gains et demander un retrait Wave / OM
-              </p>
-            </div>
-          </div>
-          <ChevronRight size={18} className="text-slate-400 group-hover:text-[#FF5722] transition-colors" />
-        </Link>
-
-        {(isPartner || isAdmin) && (
-          <Link
-            href="/partner/dashboard"
-            className="p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all flex items-center justify-between group"
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-500 flex items-center justify-center">
-                <Briefcase size={20} />
-              </div>
-              <div>
-                <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white group-hover:text-[#FF5722] transition-colors">
-                  Espace Partenaire / Organisateur (B2B)
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                  Dashboard KPIs, Realtime, Planning & Gestion des offres
-                </p>
-              </div>
-            </div>
-            <ChevronRight size={18} className="text-slate-400 group-hover:text-[#FF5722] transition-colors" />
-          </Link>
-        )}
-
-        {isController && (
-          <Link
-            href="/partner/scan"
-            className="p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all flex items-center justify-between group"
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500 flex items-center justify-center">
-                <QrCode size={20} />
-              </div>
-              <div>
-                <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white group-hover:text-[#FF5722] transition-colors">
-                  Scanner de Billets & Contrôle d&apos;Accès
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                  Contrôle sécurisé des QR Codes aux entrées d&apos;événements
-                </p>
-              </div>
-            </div>
-            <ChevronRight size={18} className="text-slate-400 group-hover:text-[#FF5722] transition-colors" />
-          </Link>
-        )}
-
-        {isAdmin && (
-          <Link
-            href="/admin/dashboard"
-            className="p-4 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all flex items-center justify-between group"
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/40 text-purple-500 flex items-center justify-center">
-                <Shield size={20} />
-              </div>
-              <div>
-                <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white group-hover:text-[#FF5722] transition-colors">
-                  Supervision Superadmin
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                  Gestion des Ambassadeurs, validation partenaires et audit log
-                </p>
-              </div>
-            </div>
-            <ChevronRight size={18} className="text-slate-400 group-hover:text-[#FF5722] transition-colors" />
-          </Link>
-        )}
-      </div>
-
-      {/* 5. Déconnexion Réelle */}
-      <div className="pt-2">
-        <Button
-          variant="secondary"
-          size="md"
-          fullWidth
-          onClick={handleSignOut}
-          leftIcon={<LogOut size={16} />}
-          className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 border-red-200 dark:border-red-900/40"
-        >
-          Se déconnecter
-        </Button>
-      </div>
+      <Button
+        variant="secondary"
+        fullWidth
+        onClick={() => void signOut()}
+        leftIcon={<LogOut size={18} aria-hidden="true" />}
+        className="border-danger-border text-danger-fg hover:bg-danger-bg"
+      >
+        Se déconnecter
+      </Button>
     </div>
   );
 }

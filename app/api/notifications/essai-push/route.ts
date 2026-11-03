@@ -10,7 +10,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/notifications/test-push — lot 6 (contrat H3, amendement 6). Bouton « Envoyer une notification
+ * POST /api/notifications/essai-push — lot 6 (contrat H3, amendement 6). Bouton « Envoyer une notification
  * d'essai » de la page des préférences.
  *  - compte ACTIF ou EN_ATTENTE (suspendu → 403) ;
  *  - quota PUSH_TEST_PER_USER_HOUR par compte (défaut 5) → 429 ;
@@ -24,7 +24,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' };
 const NO_DEVICE = { error: "Activez d'abord les notifications sur cet appareil.", code: 'NO_PUSH_SUBSCRIPTION' };
 
 function failure(what: string, detail: string): NextResponse {
-    console.error(`[API POST /api/notifications/test-push] ${what} :`, detail);
+    console.error(`[API POST /api/notifications/essai-push] ${what} :`, detail);
     return NextResponse.json(
         { error: 'La notification d’essai n’a pas pu être préparée. Réessayez dans un instant.', code: 'TEST_PUSH_FAILED' },
         { status: 500, headers: NO_STORE },

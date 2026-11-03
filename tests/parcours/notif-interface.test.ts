@@ -797,7 +797,7 @@ describe('6.4 — page « Préférences de notification » (H4)', () => {
         assert.deepEqual(missing, [], `${SWITCH} :\n  ${missing.join('\n  ')}`);
     });
 
-    test('PushDeviceCard : les cinq états du push sur cet appareil, essai par /api/notifications/test-push, aucune demande d\'autorisation directe', () => {
+    test('PushDeviceCard : les cinq états du push sur cet appareil, essai par /api/notifications/essai-push, aucune demande d\'autorisation directe', () => {
         requireFile(PUSH_CARD, 'contrat H4');
         const code = codeOf(PUSH_CARD);
         const texts = [
@@ -808,7 +808,7 @@ describe('6.4 — page « Préférences de notification » (H4)', () => {
         for (const fn of ['currentPushState', 'enablePush', 'disablePush']) {
             if (!importsName(PUSH_CARD, fn, /^@\/lib\/push\/client$/)) missing.push(`${fn} importée de @/lib/push/client`);
         }
-        if (!/\/api\/notifications\/test-push/.test(code) || !/method:\s*["']POST["']/.test(code)) missing.push('POST /api/notifications/test-push');
+        if (!/\/api\/notifications\/test-push/.test(code) || !/method:\s*["']POST["']/.test(code)) missing.push('POST /api/notifications/essai-push');
         if (/requestPermission/.test(code)) missing.push('aucun requestPermission (présent)');
         assert.deepEqual(missing, [], `${PUSH_CARD} :\n  ${missing.join('\n  ')}`);
     });

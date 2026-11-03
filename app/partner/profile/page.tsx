@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Save, User, MapPin, Phone, Mail, Building2, Briefcase, ImageIcon, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { Bell, Save, User, MapPin, Phone, Mail, Building2, Briefcase, ImageIcon, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { LinkButton } from "@/components/ui/LinkButton";
 
 const ACTIVITY_TYPES = [
   { value: "RESTAURANT", label: "Restaurant" },
@@ -65,6 +66,11 @@ export default function PartnerProfilePage() {
           <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-0.5">Votre vitrine publique sur Event Village</p>
         </div>
       </div>
+
+      {/* Lot 6 (contrat H4) : accès aux préférences de notification du compte (lien seulement, page non migrée) */}
+      <LinkButton href="/profile/notifications" variant="secondary" leftIcon={<Bell size={18} aria-hidden="true" />}>
+        Préférences de notification
+      </LinkButton>
 
       {feedback && (
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-xs font-bold border transition-all ${feedback.type === "success" ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800" : "bg-red-50 text-red-800 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800"}`}>

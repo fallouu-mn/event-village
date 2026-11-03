@@ -20,7 +20,7 @@
  * Horloge simulée seulement par `now` de scheduleAt / dispatchAt (jamais dans le passé) ; réglages des
  * rappels posés à leurs défauts le temps des cas (withNotifSettings) ; comptage par numéro neuf.
  *
- * Rouge avant correctif : app/api/notifications/preferences et app/api/notifications/test-push n'existent
+ * Rouge avant correctif : app/api/notifications/preferences et app/api/notifications/essai-push n'existent
  * pas ; ni notification_preferences, ni push_subscriptions, ni la boîte d'envoi, ni les RPC
  * notification_preferences_get / notification_preference_set / notification_test_push_enqueue, ni le
  * planificateur ni l'envoyeur.
@@ -45,7 +45,7 @@ type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 interface RouteResult { status: number; body: Row }
 
 const PREFS_ROUTE = '../../app/api/notifications/preferences/route';
-const TEST_PUSH_ROUTE = '../../app/api/notifications/test-push/route';
+const TEST_PUSH_ROUTE = '../../app/api/notifications/essai-push/route';
 
 const CHANNELS = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'] as const;
 type Channel = (typeof CHANNELS)[number];
@@ -123,7 +123,7 @@ async function setPref(user: Buyer, topic: string, channel: Channel, enabled: bo
 }
 
 function testPush(user: Buyer): Promise<RouteResult> {
-    return call(TEST_PUSH_ROUTE, 'POST', 'POST /api/notifications/test-push (contrat H3)', authed('/api/notifications/test-push', 'POST', user, {}));
+    return call(TEST_PUSH_ROUTE, 'POST', 'POST /api/notifications/essai-push (contrat H3)', authed('/api/notifications/essai-push', 'POST', user, {}));
 }
 
 interface TopicView { topic: string; label: string; description: string; channels: Record<string, { label: string; enabled: boolean }> }

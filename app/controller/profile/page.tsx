@@ -5,9 +5,10 @@ import Link from 'next/link';
 import {
     ArrowLeft, User, Phone, ShieldCheck, Calendar,
     MapPin, KeyRound, Eye, EyeOff, CheckCircle2, Loader2,
-    Banknote, AlertCircle,
+    Banknote, AlertCircle, Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { useToast } from '@/components/ui/Toast';
 
 interface Assignment {
@@ -154,6 +155,11 @@ export default function ControllerProfilePage() {
                     </div>
                 )}
             </div>
+
+            {/* Lot 6 (contrat H4) : accès aux préférences de notification du compte (lien seulement, page non migrée) */}
+            <LinkButton href="/profile/notifications" variant="secondary" fullWidth leftIcon={<Bell size={18} aria-hidden="true" />}>
+                Préférences de notification
+            </LinkButton>
 
             {/* Événements assignés */}
             <div className="space-y-3">
