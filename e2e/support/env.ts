@@ -95,6 +95,10 @@ export function e2eConfig(): E2eConfig {
         const value = process.env[key];
         if (value) localUrl(key, value);
     }
+    // Lot 6 (contrat P4) : services push admis locaux seulement (faux service push de scripts/e2e/fake-services.mjs).
+    for (const origin of (process.env.PUSH_ENDPOINT_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean)) {
+        localUrl('PUSH_ENDPOINT_ALLOWED_ORIGINS', origin);
+    }
     const allowed = new Set<string>([new URL(APP_URL).host, new URL(DEFAULT_SUPABASE_URL).host, supabase.host, fake.host]);
     if (!present) {
         console.log(`[e2e] ${E2E_ENV_FILE} absent : hôtes locaux par défaut (${Array.from(allowed).join(', ')}).`);

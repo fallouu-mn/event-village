@@ -8,6 +8,17 @@
  * Avertissements (index.txt) : cibles interactives < 44 px, textes < 14 px, violations axe-core.
  * Détail axe (index.txt, relecture du run 50) : pour chaque règle, les AXE_NODES_PER_RULE premiers nœuds
  * (sélecteur, HTML tronqué, résumé de l'échec : couleurs et ratio pour color-contrast).
+ *
+ * Lot 6 (contrat A6, modification signalée, aucun avertissement brut retiré) :
+ *  - chaque texte < 14 px est classé « admis » (ancêtre small, time, figcaption, caption, legend, texte
+ *    SVG, ou attribut data-ev-caption : mentions et légendes) ou « hors exemption » ; l'avertissement brut
+ *    reste tel quel, une ligne donne les nombres brut / admis / hors exemption, et TOUS les textes hors
+ *    exemption sont listés (sélecteur court, taille, texte) dans smallTextDetails (index.txt) ;
+ *  - la zone cliquable d'un champ masqué (sr-only) est celle de son libellé visible de plus grande surface
+ *    (au lieu du premier libellé visible) ;
+ *  - RAW_ENUM_VALUES reçoit les codes du lot 6 (statuts et canaux de la boîte d'envoi, politiques SMS,
+ *    motif QUIET_HOURS, sujets des préférences), pas « SMS » ni « EMAIL », mots légitimes ;
+ *  - metrics donne, par capture, les nombres de chaque règle (tableau « écran × règle » du rapport).
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -35,19 +46,43 @@ export const RAW_ENUM_VALUES: readonly string[] = [
     'valid', 'invalid', 'already_used', 'wrong_event', 'event_cancelled', 'event_ended', 'event_suspended',
     'event_not_open', 'payment_required', 'cash_required', 'qr_expired', 'dynamic_qr_required',
     'manual_entry_refused', 'forbidden', 'refunded', 'cancelled', 'rate_limited', 'server_error',
+    // boîte d'envoi (lot 6, C2 et C4), canaux, politiques SMS des rappels (I1), sujets des préférences (C5)
+    'SENDING', 'SENT', 'SKIPPED', 'UNCERTAIN', 'IN_APP', 'PUSH', 'ALWAYS', 'IF_NO_PUSH', 'NEVER', 'QUIET_HOURS',
+    'REMINDERS', 'EVENT_UPDATES', 'PRO_ACTIVITY',
 ];
+
+/** Ancêtres qui font d'un texte < 14 px une mention ou une légende admise (contrat A6). */
+export const CAPTION_SELECTOR = 'small, time, figcaption, caption, legend, svg text, [data-ev-caption]';
 
 /** Nœuds détaillés par règle axe dans index.txt, et longueurs maximales des extraits. */
 export const AXE_NODES_PER_RULE = 5;
 const AXE_HTML_MAX = 160;
 const AXE_SUMMARY_MAX = 300;
 
+/** Nombres par règle d'une capture (lot 6, tableau « écran × règle » du rapport, contrat A6). */
+export interface PageCheckMetrics {
+    scrollWidth: number;
+    viewportWidth: number;
+    smallTargets: number;
+    /** Textes < 14 px, nombre brut (inchangé depuis le lot 5). */
+    smallTexts: number;
+    /** Dont admis (mention ou légende, CAPTION_SELECTOR). */
+    smallTextsAdmitted: number;
+    /** Dont hors exemption. */
+    smallTextsOutside: number;
+    axeViolations: number;
+    /** Règles axe en échec et nombre de nœuds de chacune. */
+    axeRules: Array<{ id: string; impact: string; nodes: number }>;
+}
+
 export interface PageCheckResult {
     blocking: string[];
     warnings: string[];
     /** Une ligne par nœud fautif : « <règle> [i/n] <cible> | <html> | <résumé> ». */
     axeDetails: string[];
-    metrics: { scrollWidth: number; viewportWidth: number; smallTargets: number; smallTexts: number; axeViolations: number };
+    /** Lot 6 : une ligne par texte < 14 px hors exemption, TOUS listés : « <taille> px | <sélecteur> | « texte » ». */
+    smallTextDetails: string[];
+    metrics: PageCheckMetrics;
 }
 
 interface DomReport {
@@ -56,11 +91,11 @@ interface DomReport {
     sectionSigns: string[];
     enumHits: Array<{ value: string; sample: string }>;
     smallTargets: Array<{ tag: string; name: string; w: number; h: number }>;
-    smallTexts: Array<{ size: number; sample: string }>;
+    smallTexts: Array<{ size: number; sample: string; admittedBy: string | null; selector: string }>;
 }
 
 /** Exécuté dans la page : aucune référence extérieure, tout passe par l'argument. */
-function inspectDom(arg: { enums: string[] }): DomReport {
+function inspectDom(arg: { enums: string[]; captionSelector: string }): DomReport {
     const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const enumRe = new RegExp(`(?<![\\p{L}\\p{N}_])(${arg.enums.map(escape).join('|')})(?![\\p{L}\\p{N}_])`, 'gu');
     // Constructeur plutôt que littéral : le tsconfig du projet ne cible pas ES6 (drapeau « u »)
@@ -72,9 +107,34 @@ function inspectDom(arg: { enums: string[] }): DomReport {
         const r = el.getBoundingClientRect();
         return r.width > 0 && r.height > 0;
     };
+    // Sélecteur court d'un élément (3 niveaux au plus, arrêt sur un id) : repère lisible dans index.txt.
+    const shortSelector = (el: Element): string => {
+        const parts: string[] = [];
+        let cur: Element | null = el;
+        for (let depth = 0; cur && depth < 3; depth++) {
+            let s = cur.tagName.toLowerCase();
+            if (cur.id) {
+                parts.unshift(`${s}#${cur.id}`);
+                break;
+            }
+            const classes = Array.from(cur.classList).filter((c) => !c.includes(':')).slice(0, 2);
+            if (classes.length > 0) s += `.${classes.join('.')}`;
+            parts.unshift(s);
+            cur = cur.parentElement;
+        }
+        const out = parts.join(' > ');
+        return out.length > 140 ? `${out.slice(0, 139)}…` : out;
+    };
+    // Mention ou légende admise (contrat A6) : ancêtre small, time, figcaption, caption, legend, texte SVG ou data-ev-caption.
+    const admittedBy = (el: Element): string | null => {
+        const hit = el.closest(arg.captionSelector);
+        if (!hit) return null;
+        if (hit.hasAttribute('data-ev-caption')) return 'data-ev-caption';
+        return hit.namespaceURI === 'http://www.w3.org/2000/svg' ? 'svg text' : hit.tagName.toLowerCase();
+    };
     const sectionSigns: string[] = [];
     const enumHits: Array<{ value: string; sample: string }> = [];
-    const smallTexts: Array<{ size: number; sample: string }> = [];
+    const smallTexts: Array<{ size: number; sample: string; admittedBy: string | null; selector: string }> = [];
     const seenCodes = new Set<string>();
     const scan = (text: string, where: string) => {
         if (text.includes('§')) sectionSigns.push(`${where} : « ${text.trim().slice(0, 80)} »`);
@@ -98,7 +158,7 @@ function inspectDom(arg: { enums: string[] }): DomReport {
         if (!parent || !text.trim() || skipTags.has(parent.tagName) || !isVisible(parent)) continue;
         scan(text, 'texte');
         const size = parseFloat(getComputedStyle(parent).fontSize);
-        if (size < 14) smallTexts.push({ size, sample: text.trim().slice(0, 50) });
+        if (size < 14) smallTexts.push({ size, sample: text.trim().slice(0, 50), admittedBy: admittedBy(parent), selector: shortSelector(parent) });
     }
     for (const el of Array.from(document.querySelectorAll('[aria-label], [title], [placeholder], img[alt]'))) {
         if (!isVisible(el)) continue;
@@ -126,8 +186,15 @@ function inspectDom(arg: { enums: string[] }): DomReport {
             while (p && getComputedStyle(p).position === 'static') p = p.parentElement;
             if (p) hit = p;
         } else if ('labels' in el) {
-            const wrapping = Array.from((el as HTMLInputElement).labels ?? []).find((l) => l.contains(el));
-            const target = wrapping ?? Array.from((el as HTMLInputElement).labels ?? []).find((l) => isVisible(l));
+            const labels = Array.from((el as HTMLInputElement).labels ?? []);
+            const wrapping = labels.find((l) => l.contains(el));
+            // Lot 6 (A6) : champ masqué (sr-only) → libellé visible de plus grande surface (au lieu du premier).
+            const area = (l: Element) => {
+                const b = l.getBoundingClientRect();
+                return b.width * b.height;
+            };
+            const largest = labels.filter((l) => isVisible(l)).sort((a, b) => area(b) - area(a))[0];
+            const target = wrapping ?? largest;
             if (target && (wrapping || el.getBoundingClientRect().width <= 1)) hit = target;
         }
         const r = hit.getBoundingClientRect();
@@ -167,7 +234,7 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
     // Les transpileurs qui conservent les noms de fonctions (esbuild/tsx) insèrent un appel à
     // __name dans le code sérialisé : l'aide est définie dans la page avant l'évaluation.
     await page.evaluate('window.__name = window.__name || function (f) { return f; };');
-    const dom = await page.evaluate(inspectDom, { enums: [...RAW_ENUM_VALUES] });
+    const dom = await page.evaluate(inspectDom, { enums: [...RAW_ENUM_VALUES], captionSelector: CAPTION_SELECTOR });
     const blocking: string[] = [];
     const warnings: string[] = [];
     if (opts.mobile && dom.scrollWidth > 391) {
@@ -186,12 +253,22 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
         const bySize = summarize(dom.smallTexts, (t) => `${t.size} px`, 6);
         warnings.push(`${dom.smallTexts.length} texte(s) < 14 px [${bySize}] : ${dom.smallTexts.slice(0, 5).map((t) => `« ${t.sample} »`).join(', ')}`);
     }
+    // Lot 6 (A6) : classement des textes < 14 px, en plus de l'avertissement brut ci-dessus (inchangé).
+    const admitted = dom.smallTexts.filter((t) => t.admittedBy !== null);
+    const outside = dom.smallTexts.filter((t) => t.admittedBy === null);
+    if (dom.smallTexts.length > 0) {
+        const admittedWhy = summarize(admitted, (t) => String(t.admittedBy), 7);
+        warnings.push(`textes < 14 px classés : ${dom.smallTexts.length} brut(s), ${admitted.length} admis${admitted.length > 0 ? ` [${admittedWhy}]` : ''}, ${outside.length} hors exemption`);
+    }
+    const smallTextDetails = outside.map((t) => `${t.size} px | ${t.selector} | « ${oneLine(t.sample, 60)} »`);
     let axeViolations = 0;
     const axeDetails: string[] = [];
+    const axeRules: PageCheckMetrics['axeRules'] = [];
     if (opts.axe) {
         const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
         axeViolations = results.violations.length;
         for (const v of results.violations) {
+            axeRules.push({ id: v.id, impact: v.impact ?? 'inconnu', nodes: v.nodes.length });
             warnings.push(`axe-core ${v.id} (${v.impact ?? 'impact inconnu'}, ${v.nodes.length} nœud(s)) : ${v.help}`);
             v.nodes.slice(0, AXE_NODES_PER_RULE).forEach((node, i) => {
                 const target = node.target.map((t) => (Array.isArray(t) ? t.join(' >>> ') : String(t))).join(' ; ');
@@ -204,6 +281,16 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
         blocking,
         warnings,
         axeDetails,
-        metrics: { scrollWidth: dom.scrollWidth, viewportWidth: dom.viewportWidth, smallTargets: dom.smallTargets.length, smallTexts: dom.smallTexts.length, axeViolations },
+        smallTextDetails,
+        metrics: {
+            scrollWidth: dom.scrollWidth,
+            viewportWidth: dom.viewportWidth,
+            smallTargets: dom.smallTargets.length,
+            smallTexts: dom.smallTexts.length,
+            smallTextsAdmitted: admitted.length,
+            smallTextsOutside: outside.length,
+            axeViolations,
+            axeRules,
+        },
     };
 }

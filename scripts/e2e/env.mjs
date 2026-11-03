@@ -74,5 +74,16 @@ export function assertLocalServices(tag) {
     if (process.env.SUPABASE_DB_URL) requireLocalUrl(tag, 'SUPABASE_DB_URL');
     if (process.env.RESEND_API_KEY) fail(tag, 'RESEND_API_KEY est renseignée : en e2e le canal email doit être désactivé (aucune requête vers Resend).');
     if (process.env.EV_INTEGRATIONS === 'fake') fail(tag, 'EV_INTEGRATIONS=fake : interdit avec next start (lib/env.ts) ; l\'application e2e utilise les vrais adaptateurs pointés sur les faux services.');
+    // Lot 6 (contrat P4) : les services push admis ne peuvent être que locaux (faux service push).
+    const pushOrigins = (process.env.PUSH_ENDPOINT_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    for (const origin of pushOrigins) {
+        let url;
+        try {
+            url = new URL(origin);
+        } catch (err) {
+            fail(tag, `PUSH_ENDPOINT_ALLOWED_ORIGINS : « ${origin} » n'est pas une origine valide (${err instanceof Error ? err.message : String(err)}).`);
+        }
+        if (!LOCAL_HOSTNAMES.has(url.hostname)) fail(tag, `PUSH_ENDPOINT_ALLOWED_ORIGINS vise un service push hors de la machine (${url.hostname}) : en e2e, seul le faux service push local est admis.`);
+    }
     return { app, samirpay, mtarget };
 }

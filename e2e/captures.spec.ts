@@ -7,6 +7,9 @@
  * La capture est faite même si un contrôle échoue ; le test échoue ensuite sur les contrôles
  * bloquants (défilement horizontal à 390 px, « § », enum brut, erreur de console, requête en
  * échec). Avertissements (cibles < 44 px, textes < 14 px, axe-core) dans index.txt.
+ * Lot 6 (contrat P1) : `stubResponse` (réponse d'API valide imposée, ex. liste vide) et `fakePush` (état
+ * du push simulé par e2e/support/fake-push.ts ; en mode « granted », l'abonnement vient du faux service
+ * push, POST /__test/push/subscribers). Chaque simulation est écrite dans les notes de l'index.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,8 +18,28 @@ import { test, expect, type CaptureRole, type ThemeKey } from './support/fixture
 import { runPageChecks } from './support/checks';
 import { writeCaptureRecord, type CaptureRecord } from './support/capture-record';
 import { CAPTURES_DIR, readDemoIds, type DemoIds } from './support/demo-ids';
+import { e2eConfig } from './support/env';
 import { fakeScanMode, installFakeCamera } from './support/fake-camera';
+import { installFakePush, type FakePushSubscriptionJson } from './support/fake-push';
 import { SCREENS, type Screen } from './support/screens';
+
+/** Abonné neuf du faux service push (clés P-256 réelles), pour l'état « activé » simulé. */
+async function fakePushSubscriber(): Promise<FakePushSubscriptionJson> {
+    const url = `${e2eConfig().fakeServicesUrl}/__test/push/subscribers`;
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const text = await res.text();
+    if (res.status !== 201) throw new Error(`[e2e] faux service push : POST /__test/push/subscribers → HTTP ${res.status} ${text.slice(0, 200)}`);
+    let body: Partial<FakePushSubscriptionJson>;
+    try {
+        body = JSON.parse(text) as Partial<FakePushSubscriptionJson>;
+    } catch (err) {
+        throw new Error(`[e2e] faux service push : réponse illisible (${err instanceof Error ? err.message : String(err)}) : ${text.slice(0, 200)}`);
+    }
+    if (typeof body.endpoint !== 'string' || typeof body.keys?.p256dh !== 'string' || typeof body.keys?.auth !== 'string') {
+        throw new Error(`[e2e] faux service push : abonnement incomplet ${text.slice(0, 200)}`);
+    }
+    return { endpoint: body.endpoint, keys: { p256dh: body.keys.p256dh, auth: body.keys.auth } };
+}
 
 const THEMES: ReadonlyArray<{ key: ThemeKey; colorScheme: 'light' | 'dark' }> = [
     { key: 'clair', colorScheme: 'light' },
@@ -87,6 +110,24 @@ for (const theme of THEMES) {
                                 body: JSON.stringify({ error: 'Erreur simulée par les tests de bout en bout.', code: 'E2E_SIMULATED_ERROR' }),
                             }));
                         }
+                        if (screen.stubResponse) {
+                            const stub = screen.stubResponse;
+                            record.notes.push(`réponse simulée : ${stub.url} remplacée par HTTP ${stub.status} ${JSON.stringify(stub.body).slice(0, 160)}`);
+                            await page.route(stub.url, (route) => route.fulfill({
+                                status: stub.status,
+                                contentType: 'application/json; charset=utf-8',
+                                body: JSON.stringify(stub.body),
+                            }));
+                        }
+                        if (screen.fakePush) {
+                            const subscription = screen.fakePush === 'granted' ? await fakePushSubscriber() : null;
+                            record.notes.push(screen.fakePush === 'granted'
+                                ? `push simulé (granted) : permission accordée au clic sans fenêtre, inscription du service worker et pushManager.subscribe remplacés ; abonnement du faux service push ${subscription?.endpoint ?? '?'} ; configuration VAPID, route d'inscription et base réelles`
+                                : screen.fakePush === 'denied'
+                                    ? 'push simulé (denied) : Notification.permission = « denied », appels à requestPermission comptés'
+                                    : 'push simulé (unsupported) : window.PushManager et window.Notification supprimés');
+                            await context.addInitScript(installFakePush, { mode: screen.fakePush, subscription });
+                        }
                         if (screen.fakeCamera) await context.addInitScript(installFakeCamera, { mode: fakeScanMode() });
                         const response = await page.goto(record.url, { waitUntil: 'load' });
                         record.status = response ? response.status() : null;
@@ -101,6 +142,8 @@ for (const theme of THEMES) {
                         record.blocking.push(...checks.blocking);
                         record.warnings.push(...checks.warnings);
                         record.axeDetails = checks.axeDetails;
+                        record.smallTextDetails = checks.smallTextDetails;
+                        record.metrics = checks.metrics;
                         const shot = await capture(page, screen, file);
                         record.captured = true;
                         await testInfo.attach(file, { path: shot, contentType: 'image/png' });
@@ -119,6 +162,7 @@ for (const theme of THEMES) {
                         throw err;
                     } finally {
                         record.blocking.push(...guard.blockingIssues());
+                        record.warnings.push(...guard.nonBlockingIssues());
                         record.durationMs = Date.now() - started;
                         writeCaptureRecord(record);
                     }

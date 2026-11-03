@@ -4,6 +4,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import type { PageCheckMetrics } from './checks';
 import { RESULTS_DIR } from './demo-ids';
 
 export interface CaptureRecord {
@@ -20,6 +21,10 @@ export interface CaptureRecord {
     warnings: string[];
     /** Nœuds fautifs de chaque règle axe (checks.ts, AXE_NODES_PER_RULE par règle). Absent des anciens résultats. */
     axeDetails?: string[];
+    /** Lot 6 (A6) : tous les textes < 14 px hors exemption (checks.ts). Absent des anciens résultats. */
+    smallTextDetails?: string[];
+    /** Lot 6 (A6) : nombres par règle (tableau « écran × règle »). Absent si les contrôles n'ont pas tourné. */
+    metrics?: PageCheckMetrics;
     notes: string[];
     error: string | null;
     durationMs: number;

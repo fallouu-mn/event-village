@@ -125,7 +125,11 @@ jobs:
           gen() { openssl rand -hex 32; }
           SP_KEY="$(gen)"; SP_SECRET="$(gen)"; MT_USER="e2e-$(openssl rand -hex 6)"; MT_PASS="$(gen)"
           HOOK_SECRET="$(gen)"; CRON_SECRET_E2E="$(gen)"; OTP_SECRET="$(gen)"; TOTP_KEY="$(gen)"; PIN_KEY="$(gen)"
-          for v in "$SP_KEY" "$SP_SECRET" "$MT_PASS" "$HOOK_SECRET" "$CRON_SECRET_E2E" "$OTP_SECRET" "$TOTP_KEY" "$PIN_KEY"; do
+          # Lot 6 (contrat P4) : paire VAPID P-256 générée pour ce run (clé publique non compressée et clé privée, base64url)
+          VAPID_PAIR="$(node -e "const c=require('crypto');const k=c.generateKeyPairSync('ec',{namedCurve:'prime256v1'});const p=k.publicKey.export({format:'jwk'});const d=k.privateKey.export({format:'jwk'}).d;process.stdout.write(Buffer.concat([Buffer.from([4]),Buffer.from(p.x,'base64url'),Buffer.from(p.y,'base64url')]).toString('base64url')+' '+d)")"
+          VAPID_PUB="${VAPID_PAIR%% *}"; VAPID_PRIV="${VAPID_PAIR##* }"
+          if [ "${#VAPID_PUB}" -ne 87 ] || [ "${#VAPID_PRIV}" -ne 43 ]; then echo "Paire VAPID générée invalide"; exit 1; fi
+          for v in "$SP_KEY" "$SP_SECRET" "$MT_PASS" "$HOOK_SECRET" "$CRON_SECRET_E2E" "$OTP_SECRET" "$TOTP_KEY" "$PIN_KEY" "$VAPID_PRIV"; do
             echo "::add-mask::${v}"
           done
           umask 077
@@ -156,6 +160,11 @@ jobs:
             echo "OTP_HASH_SECRET=${OTP_SECRET}"
             echo "TICKET_TOTP_MASTER_KEY=${TOTP_KEY}"
             echo "REGISSEUR_PIN_KEY=${PIN_KEY}"
+            # Lot 6 (contrat P4) : push web vers le faux service push local seulement
+            echo "VAPID_PUBLIC_KEY=${VAPID_PUB}"
+            echo "VAPID_PRIVATE_KEY=${VAPID_PRIV}"
+            echo "VAPID_SUBJECT=mailto:notifications@e2e.eventvillage.local"
+            echo "PUSH_ENDPOINT_ALLOWED_ORIGINS=http://127.0.0.1:4010"
           } > .env.e2e
           echo ".env.e2e généré : $(grep -c '=' .env.e2e) variables (URL=${API_URL}, valeurs secrètes masquées)"
 

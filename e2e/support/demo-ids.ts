@@ -1,6 +1,8 @@
 /**
  * Lot 5.1 — identifiants du seed de démonstration (tests/seed/seed-demo.ts), lus par les specs.
  * Le fichier est écrit dans `.e2e-captures/` (ignoré par git). Module pur : aucun client Supabase.
+ * Lot 6 (contrat P1) : version 2, avec les lignes de boîte d'envoi de la supervision admin
+ * (`notifications`) et le transfert entrant du client de démonstration (`transfers`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,7 +12,7 @@ export const DEMO_IDS_FILE = path.join(E2E_OUTPUT_DIR, 'demo-ids.json');
 export const CAPTURES_DIR = path.join(E2E_OUTPUT_DIR, 'captures');
 export const RESULTS_DIR = path.join(E2E_OUTPUT_DIR, 'results');
 
-export const DEMO_IDS_VERSION = 1;
+export const DEMO_IDS_VERSION = 2;
 
 export const DEMO_ACCOUNT_KEYS = [
     'organisateur', 'organisateur2', 'organisateur3', 'admin', 'client', 'controleur', 'controleur2', 'controleur3',
@@ -47,7 +49,16 @@ export interface DemoIds {
     /** Tous les événements du seed de démonstration, dans l'ordre de création. */
     allEvents: DemoEvent[];
     tickets: { clientValide: string; clientUtilise: string };
+    /**
+     * Lot 6 : lignes de notification_outbox de la page admin « Notifications » : FAILED après 5 tentatives
+     * (détail avec « Relancer »), SENT, et journal d'un code à usage unique (le code n'est jamais stocké).
+     */
+    notifications: { failedId: string; sentId: string; otpLogId: string };
+    /** Lot 6 : transfert PENDING vers le numéro vérifié du client de démonstration (onglet « Reçus »). */
+    transfers: { incomingId: string };
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function writeDemoIds(ids: DemoIds): void {
     fs.mkdirSync(E2E_OUTPUT_DIR, { recursive: true });
@@ -72,6 +83,9 @@ export function readDemoIds(): DemoIds {
     const missing = [
         ...DEMO_ACCOUNT_KEYS.filter((k) => !parsed.accounts?.[k]?.email).map((k) => `accounts.${k}`),
         ...DEMO_EVENT_KEYS.filter((k) => !parsed.events?.[k]?.id).map((k) => `events.${k}`),
+        ...(['failedId', 'sentId', 'otpLogId'] as const)
+            .filter((k) => !UUID_RE.test(String(parsed.notifications?.[k] ?? ''))).map((k) => `notifications.${k}`),
+        ...(UUID_RE.test(String(parsed.transfers?.incomingId ?? '')) ? [] : ['transfers.incomingId']),
     ];
     if (missing.length > 0) throw new Error(`[e2e] demo-ids.json incomplet : ${missing.join(', ')}.`);
     cached = parsed as DemoIds;
