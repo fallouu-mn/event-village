@@ -77,8 +77,8 @@ before(async () => {
     ev = await createDraftEvent(partner, 'notif-transferts', [{ name: 'Standard', price: 5_000, total: 40, maxPerOrder: 20 }], { title, startsInHours: 96 });
     await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: partner.userId });
     owner = await newBuyer('transf-expediteur', { firstName: 'Awa', lastName: 'Diallo' });
-    tickets = (await buyConfirmed(owner, ev, [['Standard', 12]])).tickets.map((t) => String(t.id));
-    assert.equal(tickets.length, 12, 'douze billets au porteur');
+    tickets = (await buyConfirmed(owner, ev, [['Standard', 16]])).tickets.map((t) => String(t.id));
+    assert.equal(tickets.length, 16, 'seize billets au porteur (13 prélèvements par takeTicket, run 61 : douze ne suffisaient pas)');
 });
 
 // ── Outils locaux ──────────────────────────────────────────────────────────

@@ -412,7 +412,10 @@ const INVENTORY: Insertion[] = [
     },
     { k1: 'sécurité', trigger: { name: 'on_auth_user_password_changed', table: 'auth.users' }, types: ['PASSWORD_CHANGED'] },
     { k1: 'essai push', fn: 'notification_test_push_enqueue', types: ['PUSH_TEST'] },
-    { k1: 'échec', fn: 'notification_outbox_mark', types: ['ADMIN_NOTIFICATION_FAILED'] },
+    // Point d'insertion réel : notif_failed_alert, appelée par notification_outbox_mark et par la reprise des SENDING
+    // de notification_outbox_claim (comportement prouvé par notif-envoyeur, « 5 échecs → FAILED + alerte ») ;
+    // l'entrée visait notification_outbox_mark, qui ne nomme pas le type (run 61).
+    { k1: 'échec', fn: 'notif_failed_alert', types: ['ADMIN_NOTIFICATION_FAILED'] },
     { k1: 'seuil', fn: 'notification_daily_checks', types: ['ADMIN_SMS_DAILY_THRESHOLD'] },
 ];
 
@@ -578,7 +581,8 @@ describe('6.7 J1.9 — reprise des lignes d’event_change_notifications dans la
             assert.equal(row.status, r.expect.status, `${label} : statut ${row.status} (attendu ${r.expect.status})`);
             assert.equal(row.reason ?? null, r.expect.reason, `${label} : motif ${row.reason}`);
             if (r.expect.detail !== undefined) assert.equal(row.reason_detail, r.expect.detail, `${label} : détail = sms_code`);
-            assert.equal(new Date(String(row.due_at)).getTime(), created.getTime(), `${label} : due_at = created_at de la ligne reprise`);
+            // pg rend une Date : String() la réécrivait sans millisecondes (écart de 433 ms au run 61, défaut du test).
+            assert.equal(new Date(row.due_at as string | Date).getTime(), created.getTime(), `${label} : due_at = created_at de la ligne reprise`);
             const data = row.template_data as Record<string, unknown>;
             assert.equal(data.migrated_from, 'event_change_notifications', `${label} : template_data.migrated_from`);
             assert.deepEqual(data.changed_fields, r.status === 'NOT_REQUIRED' ? ['title'] : ['start_date', 'location'], `${label} : template_data.changed_fields`);
