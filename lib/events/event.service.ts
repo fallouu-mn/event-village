@@ -415,41 +415,50 @@ export class EventService {
     }
 
     /**
-     * Suppression d'un événement (autorisé uniquement si statut BROUILLON). Les catégories, l'historique et la
-     * file des notifications suivent par cascade, dans la même instruction.
+     * Suppression d'un événement du partenaire. La règle est en base (lot 6, 6.0 b) : le trigger
+     * events_delete_guard refuse (EV423) tout événement sorti du brouillon et tout brouillon déjà soumis ;
+     * un brouillon neuf part avec ses catégories et sa ligne d'historique CREATION, par cascade, dans la
+     * même instruction. Aucun pré-contrôle du statut ici : le trigger est la seule source de la règle et de
+     * son message. Refus : 404 EVENT_NOT_FOUND, 409 EVENT_NOT_DELETABLE (message du trigger), 500
+     * EVENT_DELETE_FAILED (erreur journalisée).
      */
-    public static async deleteEvent(eventId: string, partnerUserId: string) {
+    public static async deleteEvent(eventId: string, partnerUserId: string): Promise<{ success: true }> {
         const supabase = getServiceRoleClient();
         const partnerId = await this.resolvePartnerId(partnerUserId);
+        if (!UUID_RE.test(eventId)) throw new EventServiceError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
 
         const { data: existing, error: findErr } = await supabase
             .from('events')
-            .select('id, status')
+            .select('id')
             .eq('id', eventId)
             .eq('partner_id', partnerId)
-            .single();
+            .maybeSingle();
 
-        if (findErr || !existing) {
-            throw new Error('Événement introuvable.');
+        if (findErr) {
+            console.error(`[EventService.deleteEvent] lecture de ${eventId} impossible : ${findErr.code} ${findErr.message}`);
+            throw new EventServiceError(500, 'EVENT_DELETE_FAILED', 'Suppression de l’événement impossible pour le moment.');
         }
-
-        if (existing.status !== 'BROUILLON') {
-            throw new Error('Seuls les événements en statut BROUILLON peuvent être supprimés.');
-        }
+        if (!existing) throw new EventServiceError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
 
         const { data: deleted, error: delErr } = await supabase
             .from('events')
             .delete()
             .eq('id', eventId)
-            .eq('status', 'BROUILLON')
+            .eq('partner_id', partnerId)
             .select('id');
 
         if (delErr) {
+            // EV423 : refus du trigger events_delete_guard, message français écrit en base pour l'utilisateur.
+            if (delErr.code === 'EV423') throw new EventServiceError(409, 'EVENT_NOT_DELETABLE', delErr.message);
             console.error(`[EventService.deleteEvent] suppression de ${eventId} impossible : ${delErr.code} ${delErr.message}`);
-            throw new Error('Suppression de l’événement impossible pour le moment.');
+            if (delErr.code === '23503') {
+                throw new EventServiceError(409, 'EVENT_NOT_DELETABLE', 'Cet événement a des données liées : il ne peut pas être supprimé.');
+            }
+            throw new EventServiceError(500, 'EVENT_DELETE_FAILED', 'Suppression de l’événement impossible pour le moment.');
         }
         if (!deleted || deleted.length === 0) {
-            throw new Error('Seuls les événements en statut BROUILLON peuvent être supprimés.');
+            // Supprimé entre la lecture et la suppression (double clic, autre onglet).
+            throw new EventServiceError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
         }
 
         return { success: true };

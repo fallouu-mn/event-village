@@ -72,7 +72,10 @@ export async function PUT(
 }
 
 /**
- * DELETE /api/partner/events/[id]
+ * DELETE /api/partner/events/[id] — lot 6 (6.0 b, contrat A2)
+ * Brouillon neuf seulement (règle en base, trigger events_delete_guard). Réponses : 200 `{ success: true }` ;
+ * 404 EVENT_NOT_FOUND ; 409 EVENT_NOT_DELETABLE (événement sorti du brouillon, ou brouillon déjà soumis :
+ * message du trigger) ; 500 EVENT_DELETE_FAILED.
  */
 export async function DELETE(
     request: NextRequest,
@@ -91,6 +94,9 @@ export async function DELETE(
 
         return NextResponse.json(result);
     } catch (error: unknown) {
+        if (error instanceof EventServiceError) return NextResponse.json(error.toBody(), { status: error.status });
+        // Autres refus : profil partenaire introuvable (message français de resolvePartnerId).
+        console.error('[API partner/events/[id] DELETE]', error instanceof Error ? error.message : String(error));
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Échec de la suppression.' },
             { status: 400 }
