@@ -31,6 +31,13 @@
  *  - réglage notif.* absent : la planification lève (transaction annulée, décision 25) ;
  *  - route /api/cron/reminders : 503, 401, 200 ; contrôles statiques (I3, mêmes règles qu'E5).
  *
+ * Lot 7 (7.0 b et 7.1, T7) : les billets émis par cette suite sont à 0 F (giveTicket : FREE ou INVITATION) ;
+ * avec le défaut notif.free_ticket_reminder_sms = NEVER, leurs rappels perdraient le SMS (7.0 b). La suite prouve
+ * les rappels d'un porteur ordinaire : la politique SAME_AS_PAID est posée le temps de la suite (lue avant,
+ * remise en fin de suite), les attentes SMS sont inchangées ; le cas NEVER est prouvé par rappels-gratuits.
+ * Texte in-app du H-3 (D33) : « … il restera disponible sans réseau. » remplace « … demande une connexion ».
+ * Rouges jusqu'à fix(7.0a) (réglage absent avant la migration 20261105000001).
+ *
  * Rouge avant correctif : lib/notifications/reminders.ts (scheduleReminders), la RPC
  * notification_reminders_schedule, la boîte d'envoi, l'envoyeur, push_subscriptions et la route
  * app/api/cron/reminders n'existent pas : scheduleAt échoue « planificateur des rappels (contrat I3)
@@ -50,13 +57,26 @@ import { cronRequest, newBuyer, service, type Buyer, type CategorySpec } from '.
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { newController, scan, ticketPayload, ticketRow } from './acces-helpers';
 import {
-    assertNotificationInvariants, createReminderEvent, dakarAt, dakarDay, dispatchAt, fakeBrowserSubscription,
-    loadLotModule, newVapidKeys, outboxRows, pushTo, scheduleAt, smsMark, smsTo, withEnv, withNotifSettings, withVapid,
+    assertNotificationInvariants, createReminderEvent, dakarAt, dakarDay, dispatchAt, fakeBrowserSubscription, getNotifSetting,
+    loadLotModule, newVapidKeys, outboxRows, pushTo, scheduleAt, setNotifSetting, smsMark, smsTo, withEnv, withNotifSettings, withVapid,
     type FakeBrowserSubscription, type OutboxChannel, type OutboxRow, type OutboxStatus, type ReminderEvent,
     type ScheduleReport, type VapidKeys,
 } from './notif-helpers';
 
+// Lot 7 (T7) : billets à 0 F traités comme des billets payants le temps de la suite (voir l'en-tête).
+let savedFreeReminderSms: unknown;
+let freeReminderSmsApplied = false;
+
+before(async () => {
+    savedFreeReminderSms = await getNotifSetting('notif.free_ticket_reminder_sms');
+    await setNotifSetting('notif.free_ticket_reminder_sms', 'SAME_AS_PAID', 'lot 7 (T7) : rappels des billets à 0 F de notif-rappels comme ceux d’un billet payant');
+    freeReminderSmsApplied = true;
+});
+
 after(async () => {
+    if (freeReminderSmsApplied) {
+        await setNotifSetting('notif.free_ticket_reminder_sms', savedFreeReminderSms, 'restauration après notif-rappels (lot 7, T7)');
+    }
     await assertNotificationInvariants('notif-rappels');
 });
 
@@ -268,7 +288,7 @@ function j1InAppRe(ev: ReminderEvent): RegExp {
     return new RegExp(`^« ${esc(ev.title)} » demain à ${timeRe(ev.startAt)}, ${esc(LOCATION)}, ${esc(CITY)}\\. Vos billets sont dans Mes billets\\.$`);
 }
 function h3InAppRe(ev: ReminderEvent): RegExp {
-    return new RegExp(`^« ${esc(ev.title)} » commence à ${timeRe(ev.startAt)} \\(${esc(LOCATION)}\\)\\. Ouvrez votre billet dans l'application avant d'arriver : le QR change toutes les 20 secondes et demande une connexion\\.$`);
+    return new RegExp(`^« ${esc(ev.title)} » commence à ${timeRe(ev.startAt)} \\(${esc(LOCATION)}\\)\\. Ouvrez votre billet dans l'application avant d'arriver : il restera disponible sans réseau\\.$`); // lot 7 (T7, D33) : lien et SMS du H-3 inchangés
 }
 function controllerInAppRe(ev: ReminderEvent, point: string | null, cash: boolean): RegExp {
     return new RegExp(`^Demain « ${esc(ev.title)} » à ${timeRe(ev.startAt)}, point d'entrée ${esc(point ?? 'à préciser')}, espèces ${cash ? 'autorisées' : 'non autorisées'}\\.$`);

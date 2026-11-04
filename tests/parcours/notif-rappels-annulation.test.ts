@@ -25,6 +25,12 @@
  *     suspension laisse les lignes PENDING et le contrôle le relève ; trg_notif_cancel_on_reschedule
  *     désactivé → même chose pour un changement de date ; trigger réactivé → contrôle vide (contre-épreuve).
  *
+ * Lot 7 (7.0 b, T8) : les billets de cette suite sont à 0 F (giveFreeTicket) ; avec le défaut
+ * notif.free_ticket_reminder_sms = NEVER, la ligne SMS des rappels serait SKIPPED FREE_TICKETS_ONLY dès la
+ * planification et ne pourrait plus passer à CANCELLED. La suite prouve l'annulation des rappels d'un porteur
+ * ordinaire : SAME_AS_PAID est posé le temps de la suite (valeur lue avant, remise en fin de suite), attentes
+ * inchangées. Rouge jusqu'à fix(7.0a) (réglage absent avant la migration 20261105000001).
+ *
  * Rouge avant correctif : scheduleReminders (lib/notifications/reminders.ts), la RPC de planification, la
  * boîte d'envoi et les triggers trg_notif_cancel_on_status / trg_notif_cancel_on_reschedule n'existent pas
  * (migration 20261103000004) ; la route de réclamation par identifiant non plus (contrat B4) : scheduleAt
@@ -43,12 +49,25 @@ import { buyConfirmed, newPartner, superadminId, type TestPartner } from './fina
 import { authed, ticketRow } from './acces-helpers';
 import { advanceEventTo, eventStatus, shiftEventDates } from './cycle-helpers';
 import {
-    assertNotificationInvariants, createReminderEvent, dakarAt, dakarDay, deleteOutboxRows, dispatchAt, insertOutboxRow,
-    loadLotModule, markPhoneVerified, outboxRows, scheduleAt, smsMark, smsTo,
+    assertNotificationInvariants, createReminderEvent, dakarAt, dakarDay, deleteOutboxRows, dispatchAt, getNotifSetting, insertOutboxRow,
+    loadLotModule, markPhoneVerified, outboxRows, scheduleAt, setNotifSetting, smsMark, smsTo,
     type OutboxChannel, type OutboxRow, type ReminderEvent, type ScheduleReport,
 } from './notif-helpers';
 
+// Lot 7 (T8) : billets à 0 F traités comme des billets payants le temps de la suite (voir l'en-tête).
+let savedFreeReminderSms: unknown;
+let freeReminderSmsApplied = false;
+
+before(async () => {
+    savedFreeReminderSms = await getNotifSetting('notif.free_ticket_reminder_sms');
+    await setNotifSetting('notif.free_ticket_reminder_sms', 'SAME_AS_PAID', 'lot 7 (T8) : rappels des billets à 0 F de notif-rappels-annulation comme ceux d’un billet payant');
+    freeReminderSmsApplied = true;
+});
+
 after(async () => {
+    if (freeReminderSmsApplied) {
+        await setNotifSetting('notif.free_ticket_reminder_sms', savedFreeReminderSms, 'restauration après notif-rappels-annulation (lot 7, T8)');
+    }
     await assertNotificationInvariants('notif-rappels-annulation');
 });
 

@@ -61,8 +61,14 @@ const ESSENTIALS = [
 const NO_DEVICE_ERROR = "Activez d'abord les notifications sur cet appareil.";
 const TEST_PUSH_MESSAGE = "Notification d'essai envoyée : elle arrive dans la minute.";
 
-/** Réglages des rappels au défaut du contrat I1 le temps des cas (aucune dépendance aux autres suites). */
+/**
+ * Réglages des rappels au défaut du contrat I1 le temps des cas (aucune dépendance aux autres suites).
+ * Lot 7 (7.0 b, T8) : les billets de la suite sont à 0 F (giveTicket) ; SAME_AS_PAID garde le SMS de leurs
+ * rappels (sinon SKIPPED FREE_TICKETS_ONLY à la planification, à la place de PREFERENCE_DISABLED) ; attentes
+ * inchangées, rouges jusqu'à fix(7.0a) (réglage absent avant la migration 20261105000001).
+ */
 const REMINDER_DEFAULTS: Partial<Record<NotifSettingKey, unknown>> = {
+    'notif.free_ticket_reminder_sms': 'SAME_AS_PAID',
     'notif.reminder_j1_enabled': true,
     'notif.reminder_j1_hour': 10,
     'notif.j1_sms': 'ALWAYS',
