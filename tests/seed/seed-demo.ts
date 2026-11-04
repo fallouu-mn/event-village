@@ -33,6 +33,20 @@
  * notifications.write à l'ADMIN de démonstration. Fin par assertNotificationInvariants('seed-demo')
  * ((a) à (o)) ; demo-ids.json en version 2.
  *
+ * Lot 7 (contrat 11.1 et 13 T24, tâche 7.6 ; commit fix(7.6)) :
+ *  - schéma du lot 7 exigé au contrôle préalable (missingTerrainSchema : versions du secret, téléchargements hors
+ *    ligne, colonnes ticket_scans.secret_version et client_key, triggers de rotation) ;
+ *  - ticket_scan appelé comme la route (contrat 3.3) : version du secret lue avec le secret du billet
+ *    (`secret_version`) et clé d'idempotence par lecture (`client_key`, D39) ;
+ *  - jamais deux paiements PENDING d'un même acheteur sur un même événement (garde M6, PAYMENT_PENDING) : les
+ *    deux réservations en cours de « ce soir » sont tenues par deux acheteurs distincts ;
+ *  - événement « veille » (début ≈ 20 h) avec un billet du client : billet dans la fenêtre hors ligne (− 24 h) ;
+ *  - paiements du client en attente, réussi et échoué (pages /paiement/<id> des captures) ;
+ *  - partenaire « premiers pas » : VALIDE, période d'essai, aucun événement, fiche sans logo (première utilisation) ;
+ *  - permission communications.manage à l'administrateur (page des campagnes) ;
+ *  - billet « à saisir à la main » (non composté) pour la saisie manuelle des captures ;
+ *  - fin par assertTerrainInvariants('seed-demo') ((a) à (q)) ; demo-ids.json en version 3.
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -54,6 +68,7 @@ import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
 import { inspect } from '../helpers/db';
 import { TEST_PASSWORD } from '../helpers/fixture-data';
+import { assertTerrainInvariants, missingTerrainSchema } from '../helpers/terrain-invariants';
 import { DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoIds } from '../../e2e/support/demo-ids';
 import { dakarDateLabel, logoHtml, posterHtml, POSTER_SIZE, renderPng, type PALETTES, type PosterMotif } from '../../e2e/support/poster';
 
@@ -154,7 +169,9 @@ const LOT5_FILES: Array<[string, string]> = [
     ['tests/helpers/lifecycle-invariants.ts', 'K — invariants (j)(k)(l)'],
     ['app/api/controller/scan/incidents/route.ts', 'C8 — déclaration des incidents par l’appareil'],
 ];
-const ORGANIZER_COMPANIES = ['Baobab Scène Productions', 'Sine-Saloum Culture & Loisirs', 'Atelier Petite-Côte'];
+/** Lot 7 : partenaire « premiers pas » (VALIDE, aucun événement), pour la première utilisation (E5). */
+const NEW_PARTNER_COMPANY = 'Teranga Découvertes';
+const ORGANIZER_COMPANIES = ['Baobab Scène Productions', 'Sine-Saloum Culture & Loisirs', 'Atelier Petite-Côte', NEW_PARTNER_COMPANY];
 
 async function preflight(): Promise<void> {
     const missing: string[] = [];
@@ -185,9 +202,11 @@ async function preflight(): Promise<void> {
     if (!found.bucket) missing.push(`bucket de stockage « ${BUCKET} » créé par migration — F1`);
     else if (!found.bucket.public) missing.push(`bucket « ${BUCKET} » non public — F1`);
     for (const [file, why] of LOT5_FILES) if (!fs.existsSync(path.resolve(process.cwd(), file))) missing.push(`fichier ${file} — ${why}`);
+    // Lot 7 (M4, M5) : versions du secret et téléchargements hors ligne, sans lesquels (p)(q) ne se vérifient pas
+    for (const object of await missingTerrainSchema()) missing.push(`${object} — lot 7 (M4, M5 : invariants (p)(q))`);
     if (missing.length > 0) {
         throw new Error(
-            '[seed-demo] ÉCHEC ATTENDU tant que le lot 5 n’est pas livré : la base locale n’a pas les objets du contrat cible.\n'
+            '[seed-demo] la base locale n’a pas les objets du contrat cible (lots 5 et 7).\n'
             + missing.map((m) => `  - ${m}`).join('\n')
             + '\nLe seed de démonstration ne fait passer les statuts que par les RPC du lot 5 : aucune écriture directe de events.status, aucun repli.',
         );
@@ -211,6 +230,7 @@ const PEOPLE: Record<DemoAccountKey, Person & { roles: string[]; primaryRole: st
     controleur: { firstName: 'Ibrahima', lastName: 'Gueye', phone: '+221700000106', email: 'ibrahima.gueye@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
     controleur2: { firstName: 'Seynabou', lastName: 'Ba', phone: '+221700000107', email: 'seynabou.ba@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
     controleur3: { firstName: 'Lamine', lastName: 'Cissé', phone: '+221700000108', email: 'lamine.cisse@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
+    partenaireNeuf: { firstName: 'Ndèye', lastName: 'Gning', phone: '+221700000109', email: 'ndeye.gning@demo.eventvillage.local', roles: ['CLIENT', 'PARTENAIRE'], primaryRole: 'PARTENAIRE' },
 };
 
 const BUYER_FIRST = ['Awa', 'Moussa', 'Aminata', 'Cheikh', 'Ndeye', 'Babacar', 'Mame', 'Alioune', 'Coumba', 'Pape', 'Rokhaya', 'Adama',
@@ -295,6 +315,27 @@ async function createPartner(spec: OrganizerSpec, owner: Account, browser: Brows
     return partnerId;
 }
 
+/**
+ * Lot 7 (E5, première utilisation) : partenaire VALIDE en période d'essai (essai posé ici : la page ne relance
+ * pas l'activation pendant les captures), sans aucun événement et sans logo (étape « profil » encore à faire).
+ */
+async function createNewPartner(owner: Account): Promise<string> {
+    const { data: plan, error: planErr } = await service.from('subscription_plans').select('id').eq('code', 'STARTER').maybeSingle();
+    if (planErr) fail('subscription_plans.STARTER', planErr);
+    const { data, error } = await service.from('partners').insert({
+        user_id: owner.userId, company_name: NEW_PARTNER_COMPANY, commercial_name: 'Teranga Découvertes',
+        description: 'Visites guidées et soirées découverte du patrimoine de Rufisque.',
+        address: '8, rue du Port, Rufisque', city: 'Rufisque', phone: owner.phone, email: owner.email, is_verified: true, status: 'VALIDE',
+        subscription_plan_id: plan?.id ?? null, trial_started_at: new Date(NOW.getTime() - 2 * 86_400_000).toISOString(),
+        trial_ends_at: new Date(NOW.getTime() + 88 * 86_400_000).toISOString(),
+    }).select('id').single();
+    if (error || !data) fail(`partenaire ${NEW_PARTNER_COMPANY}`, error);
+    const partnerId = data.id as string;
+    const { error: actErr } = await service.from('partner_activities').upsert({ partner_id: partnerId, activity_type: 'ORGANISATEUR', is_active: true }, { onConflict: 'partner_id,activity_type' });
+    if (actErr) fail(`activité ${NEW_PARTNER_COMPANY}`, actErr);
+    return partnerId;
+}
+
 // ── Événements ───────────────────────────────────────────────────────────────
 
 type Lifecycle = 'BROUILLON' | 'EN_ATTENTE' | 'REFUSE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'ANNULE' | 'ANNULE_SANS_VENTE' | 'TERMINE';
@@ -361,6 +402,24 @@ const EVENTS: EventSeed[] = [
         ],
         lifecycle: 'PUBLIE',
         sales: sales([['Prévente', [2, 1, 2, 1, 1, 2, 2, 1, 1, 2, 1, 2, 1, 2, 1]], ['Standard', [1, 2, 3, 1, 2, 1, 1, 2, 2, 1, 4, 1, 2, 1, 1, 3, 2, 1, 2, 1]], ['VIP', [2, 1, 1, 2, 1]]]),
+    },
+    {
+        // Lot 7 (contrat 11.1) : « la veille » — début ≈ 20 h après le seed, billet du client dans la fenêtre
+        // de téléchargement hors ligne (début − 24 h) ; access.scan_window_before_hours n'est pas modifié.
+        key: 'veille', organizer: 'organisateur', title: 'Concert des Lumières de Gorée', category: 'CONCERT',
+        venue: 'Place du Gouvernement', city: 'Gorée', lat: 14.6670, lng: -17.3980, start: soon(20 * 60), hours: 4, capacity: 250,
+        palette: 'nuit', motif: 'etoiles',
+        description: 'Concert acoustique sur la place de l’île, chaloupe de 18 h depuis Dakar. Billet présenté sur téléphone, même sans réseau.',
+        program: [
+            { time: '18:30', kind: 'ACTIVITE', title: 'Accueil sur la place' },
+            { time: '19:30', kind: 'ARTISTE', title: 'Récital', participant: 'Ensemble Lumières de l’Île' },
+        ],
+        categories: [
+            { name: 'Entrée', price: 6000, total: 200, description: 'Placement libre sur la place.' },
+            { name: 'Premier rang', price: 12000, total: 30, description: 'Chaises des premiers rangs.' },
+        ],
+        lifecycle: 'PUBLIE',
+        sales: sales([['Entrée', [2, 1, 3, 1]], ['Premier rang', [1, 2]]]),
     },
     {
         key: 'publie', organizer: 'organisateur', title: 'Festival Jazz sur le Fleuve', category: 'FESTIVAL',
@@ -661,7 +720,11 @@ async function cancelEvent(ev: CreatedEvent, actorId: string): Promise<string[]>
 
 interface Purchase { paymentId: string; ticketIds: string[]; buyerId: string; category: string }
 
-async function buyOnline(ev: CreatedEvent, buyer: Account, category: string, qty: number, confirm = true): Promise<Purchase> {
+/**
+ * Achat par le checkout réel. `outcome` : SUCCESS (confirmé par la réconciliation), PENDING (laissé en cours :
+ * réservation active) ou FAILED (refusé par le faux SamirPay, libéré par la réconciliation : lot 7, captures).
+ */
+async function buyOnline(ev: CreatedEvent, buyer: Account, category: string, qty: number, outcomeWanted: 'SUCCESS' | 'PENDING' | 'FAILED' = 'SUCCESS'): Promise<Purchase> {
     const cat = ev.categories[category];
     if (!cat) fail(`achat ${ev.seed.title}`, `catégorie inconnue « ${category} »`);
     const operator = rand() < 0.6 ? 'WAVE' : 'ORANGE_MONEY';
@@ -672,9 +735,18 @@ async function buyOnline(ev: CreatedEvent, buyer: Account, category: string, qty
     });
     const paymentId = String(outcome.body.payment_id ?? '');
     if (outcome.status !== 200 || !paymentId) fail(`checkout « ${ev.seed.title} » / ${category} ×${qty}`, `HTTP ${outcome.status} ${JSON.stringify(outcome.body)}`);
-    if (!confirm) return { paymentId, ticketIds: [], buyerId: buyer.userId, category };
+    if (outcomeWanted === 'PENDING') return { paymentId, ticketIds: [], buyerId: buyer.userId, category };
     const payment = await loadPayment(paymentId);
     if (!payment?.external_transaction_id) fail(`paiement ${paymentId}`, 'identifiant SamirPay absent après le checkout');
+    if (outcomeWanted === 'FAILED') {
+        getFakes().payment.setTransactionStatus(payment.external_transaction_id, 'FAILED');
+        const failed = await reconcilePayment(payment, 'WEBHOOK');
+        if (failed !== 'FAILED') fail(`refus du paiement ${paymentId}`, `résultat ${failed}`);
+        const { data: row, error: rowErr } = await service.from('payments').select('status').eq('id', paymentId).single();
+        if (rowErr || !row) fail(`statut du paiement refusé ${paymentId}`, rowErr);
+        if (row.status !== 'FAILED') fail(`paiement refusé ${paymentId}`, `statut ${String(row.status)} au lieu de FAILED`);
+        return { paymentId, ticketIds: [], buyerId: buyer.userId, category };
+    }
     getFakes().payment.setTransactionStatus(payment.external_transaction_id, 'SUCCESS');
     const result = await reconcilePayment(payment, 'WEBHOOK');
     if (result !== 'CONFIRMED') fail(`confirmation du paiement ${paymentId}`, `résultat ${result}`);
@@ -706,24 +778,41 @@ async function spreadPurchases(purchases: Purchase[], until: Date): Promise<void
 
 interface ScanResult { result: string; scan_id?: string }
 
-async function ticketSecret(ticketId: string): Promise<string> {
-    const { data, error } = await service.from('tickets').select('totp_secret').eq('id', ticketId).single();
+/** Secret et version du secret du billet, lus ensemble comme le fait la route (contrat 3.3). */
+async function ticketSecret(ticketId: string): Promise<{ secret: string; version: number }> {
+    const { data, error } = await service.from('tickets').select('totp_secret, security_version').eq('id', ticketId).single();
     if (error || !data) fail(`secret du billet ${ticketId}`, error);
-    return String(data.totp_secret);
+    const version = Number(data.security_version);
+    if (!Number.isInteger(version) || version < 1) fail(`version du secret du billet ${ticketId}`, `valeur illisible ${JSON.stringify(data.security_version)}`);
+    return { secret: String(data.totp_secret), version };
 }
 
-/** Scan caméra tel que le fait la route : payload EVT1, code vérifié hors base, empreinte. */
+/** Clé d'idempotence d'une lecture (D39 ; forme admise par ticket_scans.client_key : ^[A-Za-z0-9_-]{8,100}$). */
+function scanKey(): string {
+    return `seed-${randomUUID()}`;
+}
+
+/**
+ * Scan caméra tel que le fait la route (app/api/controller/scan/route.ts) : payload EVT1, code vérifié hors base,
+ * empreinte, version du secret avec lequel le code a été vérifié (recontrôlée sous verrou par ticket_scan) et clé
+ * d'idempotence de la lecture.
+ */
 async function scanQr(scannerId: string, eventId: string, ticketId: string, expect: string, opts: { staleCode?: boolean } = {}): Promise<ScanResult> {
-    const secret = await ticketSecret(ticketId);
+    const { secret, version } = await ticketSecret(ticketId);
     const at = opts.staleCode ? new Date(Date.now() - 10 * 60_000) : new Date();
     const payload = buildTicketPayload(ticketId, generateTicketCode(ticketId, secret, at));
     const parsed = parseTicketPayload(payload);
     if (!parsed) fail('payload de scan', `payload illisible ${payload}`);
     const totpOk = verifyTicketCode(parsed.ticketId, secret, parsed.code);
-    return scanRpc({ scanner_id: scannerId, event_id: eventId, method: 'QR', payload_hash: sha256(payload), ticket_id: parsed.ticketId, totp_ok: totpOk }, expect);
+    return scanRpc({
+        scanner_id: scannerId, event_id: eventId, method: 'QR', payload_hash: sha256(payload), ticket_id: parsed.ticketId,
+        totp_ok: totpOk, secret_version: version,
+    }, expect);
 }
 
+/** ticket_scan avec une clé d'idempotence neuve par lecture (sauf clé fournie). */
 async function scanRpc(p: Record<string, unknown>, expect: string): Promise<ScanResult> {
+    if (p.client_key === undefined) p = { ...p, client_key: scanKey() };
     const { data, error } = await service.rpc('ticket_scan', { p });
     if (error) fail(`ticket_scan (${expect} attendu)`, error);
     const r = data as ScanResult & { http?: number };
@@ -736,6 +825,15 @@ async function assign(ev: CreatedEvent, ctrl: Account, entryPoint: string, cash:
         { event_id: ev.id, user_id: ctrl.userId, can_accept_cash: cash, created_by: ev.ownerId, entry_point: entryPoint },
         { onConflict: 'event_id,user_id' });
     if (error) fail(`affectation de ${ctrl.firstName} ${ctrl.lastName}`, error);
+}
+
+/** Garde M6 (lot 7) : au plus un paiement PENDING par acheteur et par événement, vérifiée sur la base. */
+async function assertSinglePendingPerBuyerAndEvent(): Promise<void> {
+    const duplicates = await inspect(async (db) => (await db.query<{ client_id: string; event_id: string; n: number }>(
+        `SELECT client_id::text, event_id::text, count(*)::int AS n FROM public.payments
+          WHERE status::text = 'PENDING' AND payment_target::text = 'TICKET'
+          GROUP BY client_id, event_id HAVING count(*) > 1`)).rows);
+    if (duplicates.length > 0) fail('paiements en attente', `plusieurs paiements PENDING pour un même acheteur et un même événement : ${JSON.stringify(duplicates)}`);
 }
 
 async function openShift(ev: CreatedEvent, ctrl: Account, openingFloat: number): Promise<string> {
@@ -944,7 +1042,8 @@ async function main(): Promise<void> {
         accounts[key] = await createAccount(p, p.roles, p.primaryRole, key.startsWith('controleur'));
     }
     const { error: permErr } = await service.from('admin_permissions').upsert(
-        ['events.read', 'events.write', 'notifications.read', 'notifications.write'].map((permission) => ({ user_id: accounts.admin.userId, permission })), { onConflict: 'user_id,permission' });
+        // Lot 7 (7.0 f) : communications.manage pour la page des campagnes (/admin/communications)
+        ['events.read', 'events.write', 'notifications.read', 'notifications.write', 'communications.manage'].map((permission) => ({ user_id: accounts.admin.userId, permission })), { onConflict: 'user_id,permission' });
     if (permErr) fail('permissions de l’administrateur de démonstration', permErr);
     const buyers: Account[] = [];
     for (const p of buyerPeople()) buyers.push(await createAccount(p, ['CLIENT'], 'CLIENT', false));
@@ -965,6 +1064,8 @@ async function main(): Promise<void> {
         await browser.close();
     }
     log(`${created.length} événements créés en brouillon`);
+    const newPartnerId = await createNewPartner(accounts.partenaireNeuf);
+    log(`partenaire « premiers pas » ${NEW_PARTNER_COMPANY} : VALIDE, en essai, aucun événement, sans logo`);
 
     const admin = accounts.admin.userId;
     const byKey = (key: DemoEventKey): CreatedEvent => {
@@ -1010,8 +1111,21 @@ async function main(): Promise<void> {
     purchases.get(byKey('publie').id)?.push(clientPublie);
     purchases.get(byKey('annule').id)?.push(clientAnnule);
     purchases.get(byKey('termine').id)?.push(clientTermine);
-    for (let i = 0; i < 2; i++) await buyOnline(ceSoir, pick(buyers), 'Standard', 1, false);
-    log('2 paiements laissés en cours (réservations actives)');
+    // Lot 7 : billet du client « la veille » (fenêtre hors ligne ouverte : début − 24 h)
+    const veille = byKey('veille');
+    const clientVeille = await buyOnline(veille, client, 'Entrée', 1);
+    purchases.get(veille.id)?.push(clientVeille);
+    // Réservations en cours : deux acheteurs DISTINCTS (garde M6 du lot 7 : un seul paiement PENDING par acheteur
+    // et par événement, refus PAYMENT_PENDING sinon ; A5 l'avait relevé ici, deux tirages pick() pouvant coïncider)
+    const pendingBuyers = [buyers[0], buyers[1]];
+    for (const b of pendingBuyers) await buyOnline(ceSoir, b, 'Standard', 1, 'PENDING');
+    log(`2 paiements laissés en cours (réservations actives) par ${pendingBuyers.map((b) => `${b.firstName} ${b.lastName}`).join(' et ')}`);
+    // Lot 7 (7.3, captures /paiement/<id>) : paiements du client en attente et échoué, sur deux autres événements
+    // (aucun paiement en attente du client sur « ce soir » : la modale d'achat des captures reste sans bandeau)
+    const clientPending = await buyOnline(byKey('publieComplet'), client, 'Entrée individuelle', 1, 'PENDING');
+    const clientFailed = await buyOnline(byKey('publie'), client, 'Pass soirée', 1, 'FAILED');
+    await assertSinglePendingPerBuyerAndEvent();
+    log(`paiements du client : en attente ${clientPending.paymentId}, réussi ${clientCeSoir.paymentId}, échoué ${clientFailed.paymentId}`);
 
     // Prévente close après ses ventes : catégorie désactivée (exclue du prix « à partir de »)
     for (const ev of created) {
@@ -1068,6 +1182,11 @@ async function main(): Promise<void> {
     const { data: t4, error: t4Err } = await service.from('tickets').select('ticket_number').eq('id', notYet[4]).single();
     if (t4Err || !t4) fail('numéro de billet', t4Err);
     await scanRpc({ scanner_id: c1.userId, event_id: ceSoir.id, method: 'MANUAL', ticket_number: t4.ticket_number, identity_verified: false, payload_hash: sha256(String(t4.ticket_number).toUpperCase()) }, 'manual_entry_refused');
+    // Lot 7 (capture de la saisie manuelle) : billet jamais présenté, vérifié par le contrôleur 1 (lecture seule)
+    const { data: t5, error: t5Err } = await service.from('tickets').select('id, ticket_number, status').eq('id', notYet[5]).single();
+    if (t5Err || !t5) fail('billet de la saisie manuelle', t5Err);
+    if (t5.status !== 'VALIDE') fail('billet de la saisie manuelle', `statut ${String(t5.status)} au lieu de VALIDE`);
+    const manualTicket = { id: String(t5.id), number: String(t5.ticket_number) };
 
     // Billets « à régler sur place » : deux encaissés au scan, un absent
     const payOnSite = await payOnSiteTickets(ceSoir, pick(buyers), 'Standard', 3);
@@ -1207,7 +1326,10 @@ async function main(): Promise<void> {
     const toAccount = (key: DemoAccountKey): DemoAccount => ({
         email: accounts[key].email, userId: accounts[key].userId, firstName: accounts[key].firstName, lastName: accounts[key].lastName,
         ...(key.startsWith('organisateur') ? { partnerId: partners[key as OrganizerSpec['key']] } : {}),
+        ...(key === 'partenaireNeuf' ? { partnerId: newPartnerId } : {}),
     });
+    const veilleTicket = clientVeille.ticketIds[0];
+    if (!veilleTicket) fail('billet « la veille » du client', 'aucun billet émis');
     const ids: DemoIds = {
         version: DEMO_IDS_VERSION,
         generatedAt: new Date().toISOString(),
@@ -1215,18 +1337,20 @@ async function main(): Promise<void> {
         accounts: Object.fromEntries((Object.keys(accounts) as DemoAccountKey[]).map((k) => [k, toAccount(k)])) as Record<DemoAccountKey, DemoAccount>,
         events: Object.fromEntries(created.filter((c) => c.seed.key !== null).map((c) => [String(c.seed.key), demoEvent(c, finalStatus[c.seed.lifecycle])])) as Record<DemoEventKey, DemoEvent>,
         allEvents: created.map((c) => demoEvent(c, finalStatus[c.seed.lifecycle])),
-        tickets: { clientValide: clientCeSoir.ticketIds[1], clientUtilise: clientCeSoir.ticketIds[0] },
+        tickets: {
+            clientValide: clientCeSoir.ticketIds[1], clientUtilise: clientCeSoir.ticketIds[0], clientVeille: veilleTicket,
+            manualLookup: manualTicket,
+        },
         notifications: { failedId, sentId, otpLogId },
         transfers: { incomingId: incomingTransferId },
+        payments: { pending: clientPending.paymentId, success: clientCeSoir.paymentId, failed: clientFailed.paymentId },
     };
     writeDemoIds(ids);
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);
 
-    log('invariants (a) à (o)…');
-    const invariants = await importModule('../helpers/notification-invariants');
-    const assertNotificationInvariants = invariants.assertNotificationInvariants as ((label: string) => Promise<void>) | undefined;
-    if (typeof assertNotificationInvariants !== 'function') fail('invariants', 'tests/helpers/notification-invariants.ts n’exporte pas assertNotificationInvariants');
-    await assertNotificationInvariants('seed-demo');
+    // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7
+    log('invariants (a) à (q)…');
+    await assertTerrainInvariants('seed-demo');
 
     log(`OK en ${((Date.now() - started) / 1000).toFixed(1)}s`);
 }
