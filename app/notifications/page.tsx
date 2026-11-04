@@ -23,7 +23,8 @@ import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pagination } from '@/components/ui/Pagination';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import { TabPanel, Tabs, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { TONE_ICON, type Tone } from '@/components/ui/tones';
@@ -183,10 +184,16 @@ export default function NotificationsPage() {
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [now, setNow] = useState(() => Date.now());
   const requestSeq = useRef(0);
+  const hasShownList = useRef(false);
   const viewRef = useRef<{ tab: TabKey; page: number }>({ tab, page });
   viewRef.current = { tab, page };
 
-  /** « initial » : écran d'erreur si l'échec survient ; « silent » : la liste reste, un bandeau le signale. */
+  /**
+   * « initial » : écran d'erreur si l'échec survient ; « silent » : la liste reste, un bandeau le signale.
+   * Tant qu'aucune liste n'a été affichée, un échec mène toujours à l'écran d'erreur : un rechargement
+   * silencieux (temps réel) lancé pendant le premier chargement rend ce dernier caduc, et son échec laissait
+   * la page en chargement sans fin (capture du run 66).
+   */
   const load = useCallback(async (mode: 'initial' | 'silent') => {
     const seq = ++requestSeq.current;
     const { tab: currentTab, page: currentPage } = viewRef.current;
@@ -206,9 +213,10 @@ export default function NotificationsPage() {
       setLoadError(null);
       setRefreshError(null);
       setPhase('ready');
+      hasShownList.current = true;
       return;
     }
-    if (mode === 'initial') {
+    if (mode === 'initial' || !hasShownList.current) {
       setLoadError(res.message);
       setPhase('error');
     } else {
@@ -355,7 +363,7 @@ export default function NotificationsPage() {
         )}
       />
 
-      <Tabs
+      <ScrollableTabs
         tabs={tabItems}
         value={tab}
         onChange={changeTab}

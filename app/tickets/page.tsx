@@ -12,7 +12,8 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import { TabPanel, Tabs, useTabParam } from '@/components/ui/Tabs';
+import { TabPanel, useTabParam } from '@/components/ui/Tabs';
+import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
@@ -252,7 +253,7 @@ export default function TicketsPage() {
         )}
       />
 
-      <Tabs
+      <ScrollableTabs
         tabs={tabItems}
         value={tab}
         onChange={(id) => setTab(id as TabKey)}
