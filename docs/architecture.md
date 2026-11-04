@@ -155,64 +155,85 @@ Le frontend doit être mobile-first.
 Les opérations financières ne doivent jamais dépendre
 d'un état local hors ligne.
 
+## Mise en œuvre (lot 7)
+
+- **Installation** : `public/manifest.json` (`id`, `scope` et `start_url`
+  à `/`, `display: standalone`, icônes 192 et 512, icône `maskable`
+  `public/icons/icon-maskable-512.png`, raccourci « Billets hors ligne ») ;
+  sur iPhone, `app/layout.tsx` déclare l'icône `public/icons/apple-touch-icon.png`
+  et les balises `apple-mobile-web-app-*` par `metadata` (aucune balise écrite
+  à la main). Marche à suivre pour l'utilisateur : `docs/installer-application.md`.
+- **Service worker** `public/sw.js` (même URL qu'au lot 6, push conservé) :
+  cache versionné `ev-hors-ligne-<version>`, limité à la page
+  `/billet/hors-ligne`, à ses fichiers statiques (`/_next/static/`) et aux
+  icônes. Jamais une réponse de `/api/`, jamais une autre page connectée,
+  jamais une réponse d'authentification. Les anciens caches sont supprimés à
+  l'activation. Sur échec réseau, la navigation vers `/` ou `/tickets` est
+  redirigée vers `/billet/hors-ligne`.
+- **Seule donnée hors connexion : le billet.** `GET /api/tickets/[id]/offline-codes`
+  (porteur seul, billet valide, événement publié, de 24 h avant le début à la
+  fermeture du scan) renvoie la suite des codes du QR dynamique (pas de 20 s,
+  48 h au plus), jamais le secret. Le navigateur les garde dans IndexedDB
+  (`lib/tickets/offline-store.ts`), par compte, billet et version du secret, et
+  choisit le code à l'heure du serveur (`lib/tickets/offline-clock.ts`, écart
+  d'horloge mesuré au téléchargement). La synchronisation
+  (`components/tickets/OfflineTicketsSync.tsx`) télécharge à l'ouverture de
+  l'application et au retour du réseau, et purge à la déconnexion, au transfert
+  et au changement de compte.
+- **Le contrôle d'entrée n'est jamais validé hors ligne** : deux portes
+  pourraient accepter le même billet. Le scanner l'explique et attend le réseau.
+
 ---
 
 # 6. STRUCTURE NEXT.JS
 
-Structure recommandée :
+Structure actuelle (lot 7) :
 
 app/
-  (public)/
-  (client)/
-  (partner)/
-  (admin)/
-  api/
+  page.tsx, events/, tickets/, paiement/, profile/, wallet/, orders/
+  billet/hors-ligne/   page publique et statique du billet hors ligne
+  partner/             espace partenaire (événements, équipe, finances…)
+  controller/          espace contrôleur (scanner, activation, profil)
+  admin/               administration
+  halls/, restaurants/ services gardés par les interrupteurs features.*
+  api/                 Route Handlers, par domaine
 
 components/
-  ui/
-  client/
-  partner/
-  admin/
-  shared/
+  ui/                  système de design (design-system/event-village/MASTER.md)
+  layout/  navigation/  providers/  pwa/
+  tickets/  payment/  scan/  shifts/  partner/  notifications/  auth/  events/
 
 lib/
-  supabase/
-  samirpay/
-  payments/
-  referrals/
-  notifications/
-  qr/
-  validations/
+  supabase/  security/  auth/  admin/
+  payments/  samirpay/  finance/
+  tickets/             billets, transferts, codes hors ligne
+  scan/  scanner/  hardware/   résultats de scan, caméra, vibration
+  shifts/              caisses des contrôleurs
+  notifications/       registre, catalogue, envoyeur de la boîte d'envoi
+  sms/  push/  email/
+  features/            interrupteurs des services (features.*)
+  validations/  format.ts  env.ts
 
 hooks/
-  use-realtime.ts
-  use-orders.ts
-  use-notifications.ts
+  useRealtimeRefresh.ts
+  usePartnerOrders.ts
 
 supabase/
-  migrations/
-  functions/
-  seed.sql
+  migrations/          seule source du schéma
+  ops/                 planification (pg_cron), hors migrations
+  hotfix/
+  seed.sql             jamais joué en production
 
 docs/
   CDC-V3.md
   architecture.md
-  database.md
-  payments.md
-  realtime.md
-
-agents/
-  AGENTS.md
-  agent-ui.md
-  agent-database.md
-  agent-backend.md
-  agent-payment.md
-  agent-realtime.md
-  agent-pwa.md
-  agent-security.md
-  agent-testing.md
+  deploiement-projet-neuf.md
+  guide-organisateur-entrees.md
+  installer-application.md
+  lot<N>-rapport.md
 
 public/
+  manifest.json  sw.js  icons/
 
 ---
 
@@ -1039,6 +1060,27 @@ Le contrôle doit être effectué côté serveur.
 Le frontend ne doit pas simplement considérer
 un QR comme valide sans vérification backend.
 
+## Mise en œuvre (lots 4 à 7)
+
+- Le QR d'un billet est dynamique : `EVT1:<id du billet>:<code>`, code à
+  6 chiffres renouvelé toutes les 20 secondes, dérivé d'un secret propre au
+  billet (`lib/security/totp.ts`, clé maître `TICKET_TOTP_MASTER_KEY`). Le
+  secret ne quitte jamais le serveur. Le PDF du billet ne contient pas de QR.
+- Chaque billet a une **version de secret** (`tickets.security_version`). Un
+  trigger sur `tickets` la fait avancer, avec un nouveau secret, au transfert,
+  à l'annulation, au remboursement et à la régénération ; l'historique est
+  dans `ticket_secret_versions`. Un code d'une version antérieure est refusé
+  au scan (« QR expiré ») : les codes hors ligne d'un ancien porteur ne
+  servent plus.
+- Le scan (`POST /api/controller/scan`, RPC `ticket_scan`) contrôle le code et
+  la version sous le verrou du billet. Chaque lecture porte une clé
+  d'idempotence (`Idempotency-Key`) : une relance rend le verdict d'origine,
+  jamais une seconde entrée.
+- Saisie manuelle en deux temps : vérification sans compostage
+  (`POST /api/controller/scan/lookup`), puis validation avec la pièce
+  d'identité et la même clé.
+- Guide d'exploitation : `docs/guide-organisateur-entrees.md`.
+
 ---
 
 # 32. NOTIFICATIONS
@@ -1067,6 +1109,25 @@ Paiement confirmé
  ↓
 Notification
 
+## Mise en œuvre (lots 6 et 7)
+
+- Une seule voie : la boîte d'envoi `notification_outbox`, alimentée dans la
+  transaction métier par les RPC (`notif_enqueue`), puis vidée par l'envoyeur
+  `lib/notifications/dispatcher.ts` (tâche planifiée, chaque minute). Canaux
+  livrés : dans l'application, SMS (MTarget), email (Resend), push web.
+  WhatsApp n'est pas livré.
+- Registre `notification_types` : famille `ESSENTIAL` (achat, transfert,
+  annulation, remboursement, sécurité du compte…) ou `OPTIONAL` (rappels,
+  changements, signaux aux professionnels). Contenus : `lib/notifications/catalog.ts`.
+- Lot 7 : les SMS optionnels ont un budget quotidien
+  (`notif.sms_optional_daily_cap`, appliqué à la réservation de la boîte
+  d'envoi), avec alerte des administrateurs à 80 % et alerte de la veille ;
+  les SMS indispensables ne sont plus soumis à aucun plafond journalier global.
+  Différence avec `SMS_GLOBAL_DAILY_CAP` : `docs/deploiement-projet-neuf.md` (5.5).
+- Lot 7 : les confirmations d'achat, de billets gratuits et de billet reçu
+  par transfert portent le détail figé à l'émission (catégories, numéros de
+  billets) ; l'email ne contient jamais de QR, de code ni de secret.
+
 ---
 
 # 33. ARCHITECTURE DES SERVICES
@@ -1074,26 +1135,34 @@ Notification
 Les règles métier importantes doivent être isolées
 dans des services.
 
-Exemple :
+Exemples dans le dépôt :
 
 lib/
   payments/
     payment.service.ts
-
-  referrals/
-    referral.service.ts
+    checkout.service.ts
+    confirmation.service.ts
 
   orders/
     order.service.ts
 
-  reservations/
-    reservation.service.ts
+  shifts/
+    shift.service.ts
 
   tickets/
-    ticket.service.ts
+    ticket-transfer.service.ts
+    offline-codes.service.ts
 
   notifications/
-    notification.service.ts
+    dispatcher.ts
+    catalog.ts
+
+  features/
+    flags.ts
+
+Les règles qui exigent l'atomicité (paiement, émission des billets,
+scan, caisse, notifications) sont dans des RPC PostgreSQL
+(`supabase/migrations/`), appelées par ces services.
 
 Les Route Handlers doivent rester fins.
 
@@ -1162,6 +1231,17 @@ Principes :
 Le glassmorphism et les animations
 ne doivent pas dégrader les performances mobiles.
 
+Depuis le lot 7 :
+
+- poids JavaScript de chaque page principale (accueil, page
+  événement, Mes billets, scanner, billet hors ligne) mesuré après
+  `next build` par `scripts/js-budget.mjs`, contre un budget bloquant
+  (`scripts/js-budget.json`) ;
+- modales, carte, caisse et guichet chargés à la demande
+  (`next/dynamic`) ; `framer-motion`, `liquid-glass-react` et
+  `react-leaflet` retirés ;
+- `sharp` installé pour l'optimisation des images par Next.js.
+
 ---
 
 # 37. DESIGN
@@ -1187,6 +1267,12 @@ Priorités :
 Les dashboards contenant beaucoup de données
 doivent privilégier la lisibilité plutôt que
 les effets visuels.
+
+Référence : `design-system/event-village/MASTER.md` et les composants
+de `components/ui`. Le scanner du contrôleur est toujours en thème
+sombre, avec des résultats plein écran sur des couleurs dédiées
+(jetons `--scan-*`, texte d'un contraste d'au moins 7:1), une
+vibration distincte par type de résultat et aucun son.
 
 ---
 
