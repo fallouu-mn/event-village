@@ -21,6 +21,9 @@
  *  6. Destinataires admin : notif_admin_recipients ne lit pas users.role (un compte ADMIN par users.role
  *     seulement n'est pas destinataire ; un ADMIN de user_roles dont users.role vaut CLIENT l'est) ; aucun
  *     filtre `role` sur `from('users')` dans lib.
+ * Lot 7 (T6) : liste des routes OTP (app/api/auth/register/start remplace app/api/auth/register, D1 ; rouge
+ * jusqu'à fix(7.3s)) et points d'insertion des alertes du budget SMS optionnel (ADMIN_SMS_OPTIONAL_80,
+ * ADMIN_SMS_FORECAST, D15 ; rouges jusqu'à fix(7.0a)).
  *
  * Rouge avant correctif : les envois directs sont partout (notification.service.ts, routes d'équipe,
  * invitation par sendNotification, counter-sale, setup, cashout, sms-guard, alerts…), lib/push et
@@ -151,9 +154,13 @@ const WHITELIST_PREFIXES: ReadonlyArray<[string, string]> = [
 const WHITELIST_FILES: ReadonlyArray<[string, string]> = [
     ['lib/notifications/dispatcher.ts', "l'envoyeur unique (contrat E4)"],
 ];
-/** Routes synchrones : une seule méthode permise (contrat E7). */
+/**
+ * Routes synchrones : une seule méthode permise (contrat E7). Lot 7 (D1, T6) : le code d'inscription est envoyé
+ * par la nouvelle route app/api/auth/register/start (numéro d'abord) ; app/api/auth/register vérifie le code et
+ * n'envoie plus de SMS (elle sort de la liste : tout appel à l'adaptateur y devient un motif interdit).
+ */
 const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendControllerInvite'; why: string }>> = {
-    'app/api/auth/register/route.ts': { method: 'sendOtp', why: "code d'inscription" },
+    'app/api/auth/register/start/route.ts': { method: 'sendOtp', why: "code d'inscription (démarrage, numéro d'abord)" },
     'app/api/auth/send-otp/route.ts': { method: 'sendOtp', why: 'code de connexion, inscription, réinitialisation' },
     'app/api/auth/sms-hook/route.ts': { method: 'sendOtp', why: 'hook « Send SMS » de Supabase Auth' },
     'app/api/withdrawals/otp/route.ts': { method: 'sendOtp', why: 'code de retrait' },
@@ -399,7 +406,8 @@ const INVENTORY: Insertion[] = [
     { k1: 'C1-C2', fn: 'shift_close', types: ['SHIFT_DISCREPANCY', 'SHIFT_CLOSED_BY_OTHER'] },
     { k1: 'C3, C5-C12', trigger: { name: 'trg_event_controllers_notify', table: 'public.event_controllers' }, types: ['CONTROLLER_ASSIGNED', 'CONTROLLER_UNASSIGNED'] },
     { k1: 'C4', fn: 'notification_controller_activated', types: ['CONTROLLER_ACTIVATED'] },
-    { k1: 'rappels', fn: 'notification_reminders_schedule', types: ['REMINDER_J1', 'REMINDER_H3', 'CONTROLLER_REMINDER'] },
+    // Lot 7 (7.0 a, T6) : la planification met aussi en file l'alerte de la veille (ADMIN_SMS_FORECAST).
+    { k1: 'rappels', fn: 'notification_reminders_schedule', types: ['REMINDER_J1', 'REMINDER_H3', 'CONTROLLER_REMINDER', 'ADMIN_SMS_FORECAST'] },
     {
         k1: 'P1-P7', trigger: { name: 'trg_partners_notify', table: 'public.partners' },
         types: ['PARTNER_REGISTERED_ACK', 'ADMIN_PARTNER_REGISTERED', 'PARTNER_VALIDATED', 'PARTNER_REJECTED', 'PARTNER_SUSPENDED', 'PARTNER_REACTIVATED'],
@@ -416,7 +424,9 @@ const INVENTORY: Insertion[] = [
     // de notification_outbox_claim (comportement prouvé par notif-envoyeur, « 5 échecs → FAILED + alerte ») ;
     // l'entrée visait notification_outbox_mark, qui ne nomme pas le type (run 61).
     { k1: 'échec', fn: 'notif_failed_alert', types: ['ADMIN_NOTIFICATION_FAILED'] },
-    { k1: 'seuil', fn: 'notification_daily_checks', types: ['ADMIN_SMS_DAILY_THRESHOLD'] },
+    // Lot 7 (7.0 a, T6, D15) : le seuil notif.sms_daily_alert est remplacé par l'alerte à 80 % du budget optionnel ;
+    // ADMIN_SMS_DAILY_THRESHOLD reste au registre (lignes déjà écrites) sans point d'insertion.
+    { k1: 'seuil', fn: 'notification_daily_checks', types: ['ADMIN_SMS_OPTIONAL_80'] },
 ];
 
 /** Types sans point d'insertion SQL littéral : appelés par TypeScript (OTP, invitation, plafond SMS). */

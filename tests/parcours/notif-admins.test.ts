@@ -11,6 +11,10 @@
  *    administrateur et par canal, clé `<TYPE>:<référence>:<admin_id>:<canal>`, aucun SMS aux admins.
  *  - admin_signals : REFUND_TO_RETRY, CASHOUT_UNCERTAIN, NOTIFICATION_FAILED, SMS_DAILY_THRESHOLD acceptés,
  *    un seul signal par référence (index unique partiel).
+ * Lot 7 (7.0 a et 7.0 d, T2) : le seuil du jour devient l'alerte à 80 % du budget des SMS optionnels
+ * (ADMIN_SMS_OPTIONAL_80, signal SMS_OPTIONAL_80, notif.sms_optional_daily_cap ; notif.sms_daily_alert est
+ * supprimée, D15) ; le cas du plafond porte sur un jour futur tiré au hasard, et non plus sur le jour UTC réel
+ * (couplage avec sms-anti-abus supprimé, consigne 7.0 d). Rouges jusqu'à fix(7.0a).
  * Comptage par lignes de la boîte d'envoi filtrées par type et référence (jamais globalement) ; les
  * comptes administrateurs sont créés par la suite.
  *
@@ -20,12 +24,13 @@
  * refuse les nouveaux types (CHECK du lot 5).
  *
  * Interprétations retenues :
- *  - seuil du jour : prouvé sur un jour futur tiré au hasard (200 à 350 jours) avec un SMS envoyé ce
- *    jour-là par l'horloge simulée et un seuil de 1 (withNotifSettings), pour ne dépendre d'aucune autre
- *    suite (une alerte par jour) ; un autre jour futur sans SMS sert de témoin ;
- *  - plafond SMS : notification_admin_alert appelée directement (le plafond réel ne se déclenche qu'une
- *    fois par jour UTC, déjà consommé par sms-anti-abus) ; l'appel par sms-guard est vérifié par
- *    notif-migration.
+ *  - alerte à 80 % du budget optionnel (lot 7) : prouvée sur un jour futur tiré au hasard (200 à 350 jours)
+ *    avec un SMS optionnel envoyé ce jour-là par l'horloge simulée et un plafond de 1, donc un seuil de 1
+ *    (withNotifSettings), pour ne dépendre d'aucune autre suite (une alerte par jour) ; un autre jour futur
+ *    sans SMS sert de témoin ;
+ *  - plafond SMS : notification_admin_alert appelée directement sur un jour futur tiré au hasard (600 à
+ *    900 jours, lot 7 : plus aucune ligne sur le jour UTC réel, que sms-anti-abus vérifie seul) ; l'appel
+ *    par sms-guard est vérifié par notif-migration.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -289,13 +294,17 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
         await assertInApp(sent, admins['notifications.read'], 'Envoi en échec', [], `/admin/notifications/${row.id}`);
     });
 
-    test('seuil de SMS du jour atteint (seuil 1) : ADMIN_SMS_DAILY_THRESHOLD (in-app, email) une fois pour le jour, un signal SMS_DAILY_THRESHOLD ; jour sans SMS : rien', async () => {
+    // Lot 7 (7.0 a, T2) : seuil notif.sms_daily_alert supprimé (D15) ; alerte à 80 % du budget des SMS optionnels.
+    test('80 % du budget optionnel atteint (plafond 1, seuil 1) : ADMIN_SMS_OPTIONAL_80 (in-app, email) une fois pour le jour, un signal SMS_OPTIONAL_80 ; jour sans SMS : rien', async () => {
         const day = dakarDay(200 + randomInt(0, 150));
         const quietDay = dakarDay(400 + randomInt(0, 150));
         const at = dakarAt(day, '12:00');
         const atIso = at.toISOString();
-        const row = await insertOutboxRow({ type: 'PASSWORD_CHANGED', channel: 'SMS', recipient_phone: randomSenegalPhone('76'), due_at: atIso, next_attempt_at: atIso });
-        await withNotifSettings({ 'notif.sms_daily_alert': 1 }, async () => {
+        const row = await insertOutboxRow({
+            type: 'FIRST_TICKET_SOLD', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channel: 'SMS', recipient_phone: randomSenegalPhone('76'),
+            template_data: { title: 'TEST Seuil optionnel' }, due_at: atIso, next_attempt_at: atIso,
+        });
+        await withNotifSettings({ 'notif.sms_optional_daily_cap': 1 }, async () => {
             await dispatchAt(at, { ids: [row.id] });
             const [sent] = await outboxRows({ ids: [row.id] });
             assert.equal(sent.status, 'SENT', `SMS du jour simulé envoyé (${sent.status} ${sent.reason})`);
@@ -305,7 +314,9 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
             assert.equal(r.ok, true, `réponse : ${JSON.stringify(r)}`);
             assert.equal(r.day, day, `jour de Dakar : ${JSON.stringify(r)}`);
             assert.ok(Number(r.sms_today) >= 1, `SMS du jour : ${JSON.stringify(r)}`);
-            assert.equal(Number(r.threshold), 1, `seuil : ${JSON.stringify(r)}`);
+            assert.ok(Number(r.optional_today) >= 1, `SMS optionnels du jour : ${JSON.stringify(r)}`);
+            assert.equal(Number(r.optional_cap), 1, `plafond optionnel : ${JSON.stringify(r)}`);
+            assert.equal(Number(r.optional_threshold), 1, `seuil de 80 % (ceil(0,8 × 1)) : ${JSON.stringify(r)}`);
             const again = await service.rpc('notification_daily_checks', { p: { now: atIso } });
             assert.equal(again.error, null, `second contrôle : ${again.error?.message}`);
             assert.equal((again.data as Row).alerted, false, `second contrôle du jour : aucune nouvelle alerte (${JSON.stringify(again.data)})`);
@@ -313,17 +324,21 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
             assert.equal(quiet.error, null, `contrôle d'un jour sans SMS : ${quiet.error?.message}`);
             assert.equal((quiet.data as Row).alerted, false, `jour sans SMS : pas d'alerte (${JSON.stringify(quiet.data)})`);
         });
-        const rows = await adminAlert('ADMIN_SMS_DAILY_THRESHOLD', `ADMIN_SMS_DAILY_THRESHOLD:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP']);
+        const rows = await adminAlert('ADMIN_SMS_OPTIONAL_80', `ADMIN_SMS_OPTIONAL_80:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP']);
         const perAdmin = rows.filter((r) => r.recipient_user_id === superadmin.userId);
         assert.equal(perAdmin.length, 2, 'une alerte par canal pour le jour, même après deux contrôles');
-        const { data: sig, error: sErr } = await service.from('admin_signals').select('id, ref_id').eq('kind', 'SMS_DAILY_THRESHOLD').in('ref_id', rows.map((r) => r.id));
+        for (const r of perAdmin) {
+            assert.deepEqual({ day: r.template_data.day, cap: Number(r.template_data.cap), threshold: Number(r.template_data.threshold) }, { day, cap: 1, threshold: 1 }, `données de l'alerte : ${JSON.stringify(r.template_data)}`);
+        }
+        const { data: sig, error: sErr } = await service.from('admin_signals').select('id, ref_id').eq('kind', 'SMS_OPTIONAL_80').in('ref_id', rows.map((r) => r.id));
         assert.equal(sErr, null, `admin_signals : ${sErr?.message}`);
-        assert.equal((sig ?? []).length, 1, `un signal SMS_DAILY_THRESHOLD pour le jour (référence : première ligne d'alerte) : ${JSON.stringify(sig)}`);
-        assert.deepEqual(await outboxRows({ type: 'ADMIN_SMS_DAILY_THRESHOLD', keyPrefix: `ADMIN_SMS_DAILY_THRESHOLD:${quietDay}:` }), [], 'jour sans SMS : aucune ligne');
+        assert.equal((sig ?? []).length, 1, `un signal SMS_OPTIONAL_80 pour le jour (référence : première ligne d'alerte) : ${JSON.stringify(sig)}`);
+        assert.deepEqual(await outboxRows({ type: 'ADMIN_SMS_OPTIONAL_80', keyPrefix: `ADMIN_SMS_OPTIONAL_80:${quietDay}:` }), [], 'jour sans SMS : aucune ligne');
     });
 
     test('plafond de SMS (notification_admin_alert) : ADMIN_SMS_CAP_GLOBAL et _NON_OTP en in-app aux admins notifications.read, une fois par jour ; type hors liste refusé', async () => {
-        const day = new Date().toISOString().slice(0, 10);
+        // Lot 7 (7.0 d, T2) : jour futur tiré au hasard ; aucune ligne ADMIN_SMS_CAP_* du jour UTC réel n'est écrite ici.
+        const day = dakarDay(600 + randomInt(0, 300));
         for (const type of ['ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP']) {
             const call = async () => service.rpc('notification_admin_alert', { p: { type, ref: day, data: { cap: 1000, limit: type === 'ADMIN_SMS_CAP_GLOBAL' ? 1000 : 700 } } });
             const first = await call();

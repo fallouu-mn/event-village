@@ -9,7 +9,9 @@
  *    aucun code ni lien même si la ligne en portait ; ligne inconnue → 404 NOT_FOUND ;
  *  - GET /api/admin/notifications/stats : par jour et par canal (envoyées, échecs, non envoyées,
  *    incertaines, annulées), SMS du mois (SENT + UNCERTAIN, journaux OTP compris, nombre d'OTP), SMS du
- *    jour et seuil `notif.sms_daily_alert` — mesurés par différence autour de lignes écrites par la suite ;
+ *    jour — mesurés par différence autour de lignes écrites par la suite ; lot 7 (7.0 a, T3) : `threshold` =
+ *    80 % du plafond des SMS optionnels (ceil(0,8 × notif.sms_optional_daily_cap), qui remplace
+ *    notif.sms_daily_alert), `optional_cap` et `optional_today` servis tels quels ;
  *  - permissions (L1, L3) : sans session 401 ; client 403 ; ADMIN sans `notifications.*` 403 partout ;
  *    `notifications.read` seule : lecture oui, relance 403 ; `notifications.write` : relance ; SUPERADMIN
  *    partout ; RPC notification_retry avec un acteur sans permission, suspendu ou client → FORBIDDEN ;
@@ -73,6 +75,8 @@ const REASONS = [
     'SMS_REJECTED', 'SMS_GUARD_UNAVAILABLE', 'SMS_PROVIDER_ERROR', 'EMAIL_REJECTED', 'EMAIL_PROVIDER_ERROR', 'PUSH_REJECTED',
     'PUSH_PAYLOAD_TOO_LARGE', 'PUSH_PROVIDER_ERROR', 'TEMPLATE_ERROR', 'SENDING_INTERRUPTED', 'MIGRATED_FAILED',
     'PROVIDER_TIMEOUT', 'PROVIDER_UNREADABLE', 'MIGRATED_WHILE_SENDING',
+    // Lot 7 (7.0 a, 7.0 b, T3) : budget des SMS optionnels atteint ; rappel d'un porteur de billets gratuits seulement.
+    'SMS_OPTIONAL_CAP', 'FREE_TICKETS_ONLY',
 ];
 
 /** Lignes écrites par la suite (supprimées en fin de suite) et comptes admin créés (suspendus en fin de suite). */
@@ -357,7 +361,15 @@ describe('6.8 Liste des notifications : filtres, pagination, destinataire masqu�
 // ── Statistiques (L2) ──────────────────────────────────────────────────────
 
 interface DayStat { day: string; channel: string; sent: number; failed: number; skipped: number; uncertain: number; cancelled: number }
-interface StatsSnapshot { byDay: DayStat[]; smsMonth: { month: string; sent: number; uncertain: number; otp: number }; smsToday: number; threshold: unknown }
+interface StatsSnapshot {
+    byDay: DayStat[];
+    smsMonth: { month: string; sent: number; uncertain: number; otp: number };
+    smsToday: number;
+    threshold: unknown;
+    /** Lot 7 (T3) : plafond des SMS optionnels et SMS optionnels du jour, tels que servis. */
+    optionalCap: unknown;
+    optionalToday: unknown;
+}
 
 function snapshotOf(r: RouteResult): StatsSnapshot {
     assert.equal(r.status, 200, `statistiques : ${show(r)}`);
@@ -372,6 +384,8 @@ function snapshotOf(r: RouteResult): StatsSnapshot {
         smsMonth: { month: String(m.month), sent: Number(m.sent), uncertain: Number(m.uncertain), otp: Number(m.otp) },
         smsToday: Number(r.body.sms_today),
         threshold: r.body.threshold,
+        optionalCap: r.body.optional_cap,
+        optionalToday: r.body.optional_today,
     };
 }
 
@@ -415,7 +429,12 @@ describe('6.8 Statistiques : par canal et par jour, SMS du mois et du jour (L2)'
             assert.equal(after1.smsMonth.uncertain - before1.smsMonth.uncertain, 1, 'SMS du mois : UNCERTAIN');
             assert.equal(after1.smsMonth.otp - before1.smsMonth.otp, 1, 'SMS du mois : 1 journal OTP');
             assert.equal(after1.smsToday - before1.smsToday, 4, 'SMS du jour : SENT + UNCERTAIN, journal OTP compris');
-            assert.deepEqual(after1.threshold, await getNotifSetting('notif.sms_daily_alert'), 'seuil = notif.sms_daily_alert');
+            // Lot 7 (7.0 a, T3) : seuil = 80 % du plafond des SMS optionnels (null si le plafond vaut 0), servi par le serveur.
+            const cap = await getNotifSetting('notif.sms_optional_daily_cap');
+            assert.equal(typeof cap, 'number', `plafond des SMS optionnels : ${JSON.stringify(cap)}`);
+            assert.equal(after1.optionalCap, cap, `optional_cap = notif.sms_optional_daily_cap (${JSON.stringify(after1.optionalCap)})`);
+            assert.deepEqual(after1.threshold, (cap as number) > 0 ? Math.ceil(((cap as number) * 8) / 10) : null, `seuil = ceil(0,8 × ${String(cap)}) (${JSON.stringify(after1.threshold)})`);
+            assert.ok(Number.isInteger(after1.optionalToday) && (after1.optionalToday as number) >= 0, `optional_today : entier servi par le serveur (${JSON.stringify(after1.optionalToday)})`);
             const days = new Set(after1.byDay.map((d) => d.day));
             assert.ok(days.size <= 14, `14 jours au plus, ${days.size}`);
             assert.ok(after1.byDay.every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.day) && d.day <= day && d.day >= dakarDay(-13)), 'jours de Dakar des 14 derniers jours');

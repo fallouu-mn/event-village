@@ -2,10 +2,12 @@
  * Lot 6, tâche 6.5 — réglages notif.* des rappels (contrat I1, décisions 24 et 25), sur le même mécanisme
  * historisé que finance.* (lot 3) et access.* (lot 4) : même RPC (finance_setting_set), même validation
  * (fin_setting_valid), même route (/api/admin/finance-settings), même page (/admin/finance-settings).
- *  - les 9 clés notif.* existent avec leur valeur par défaut et une description ;
+ *  - les 10 clés notif.* existent avec leur valeur par défaut et une description (lot 7, T4 : 9 − 1 + 2,
+ *    notif.sms_daily_alert supprimée, notif.sms_optional_daily_cap et notif.free_ticket_reminder_sms ajoutées) ;
  *  - bornes de chaque clé par la RPC : valeurs admises appliquées, valeurs refusées (INVALID_VALUE) sans
  *    effet ni historique ; heure du J-1 de 6 à 20, heures du H-3 de 1 à 12, choix ALWAYS | IF_NO_PUSH |
- *    NEVER, plage de silence de 0 à 23 (début = fin admis : plage vide), seuil SMS de 1 à 1 000 000 ;
+ *    NEVER, plage de silence de 0 à 23 (début = fin admis : plage vide) ; lot 7 : plafond des SMS optionnels
+ *    de 0 à 1 000 000, choix NEVER | SAME_AS_PAID pour les rappels des billets gratuits ;
  *  - notif_in_quiet_hours (contrat D) : plage qui passe minuit (22 h - 8 h), plage vide (début = fin),
  *    plage dans la journée ;
  *  - finance_setting_set : ADMIN refusé (FORBIDDEN, nouveau message du contrat I1.3), clé notif.*
@@ -15,8 +17,10 @@
  *    l'ADMIN, 200 pour le SUPERADMIN (entier, booléen, choix), valeur hors bornes et clé inconnue 400 ;
  *  - POST /api/admin/pricing (ADMIN avec pricing.manage, écriture service_role sans validation) : 403
  *    NOTIF_SETTING, ni modification ni création d'une clé notif.* ;
- *  - page /admin/finance-settings : 9 libellés exacts (unité « h » pour les heures), choix en français,
- *    section « Notifications » (icône Bell) — contrôle statique.
+ *  - page /admin/finance-settings : 10 libellés exacts (unité « h » pour les heures), choix en français,
+ *    section « Notifications » (icône Bell), plus aucune entrée notif.sms_daily_alert ; lot 7 : section
+ *    « Fonctionnalités » (interrupteurs features.*) — contrôle statique.
+ * Lot 7 (7.0 a, 7.0 b, T4) : rouge jusqu'à fix(7.0a) (clés et bornes) et fix(7.0f) (libellés de la page).
  *
  * Rouge avant correctif : aucune clé notif.* n'existe (migration 20261103000003 absente) ;
  * finance_setting_set répond UNKNOWN_KEY pour toute clé notif.* ; notif_in_quiet_hours n'existe pas ;
@@ -80,7 +84,7 @@ function inner(v: unknown): unknown {
     return v && typeof v === 'object' && 'value' in (v as Row) ? (v as Row).value : v;
 }
 
-/** Valeurs courantes des 9 clés (chacune doit exister). */
+/** Valeurs courantes des 10 clés (chacune doit exister). */
 async function snapshot(): Promise<Map<NotifSettingKey, unknown>> {
     const out = new Map<NotifSettingKey, unknown>();
     for (const k of KEYS) out.set(k, await getNotifSetting(k));
@@ -120,7 +124,9 @@ const ACCEPTED: Array<[NotifSettingKey, unknown]> = [
     ['notif.h3_sms', 'ALWAYS'], ['notif.h3_sms', 'NEVER'], ['notif.h3_sms', 'IF_NO_PUSH'],
     ['notif.sms_quiet_start', 0], ['notif.sms_quiet_start', 23], ['notif.sms_quiet_start', 8],
     ['notif.sms_quiet_end', 0], ['notif.sms_quiet_end', 23], ['notif.sms_quiet_end', 8],
-    ['notif.sms_daily_alert', 1], ['notif.sms_daily_alert', 1_000_000], ['notif.sms_daily_alert', 2000],
+    // Lot 7 (T4) : notif.sms_daily_alert supprimée ; bornes des deux clés du lot 7.
+    ['notif.sms_optional_daily_cap', 0], ['notif.sms_optional_daily_cap', 1_000_000], ['notif.sms_optional_daily_cap', 700],
+    ['notif.free_ticket_reminder_sms', 'SAME_AS_PAID'], ['notif.free_ticket_reminder_sms', 'NEVER'],
 ];
 
 const REFUSED: Array<[NotifSettingKey, unknown]> = [
@@ -132,17 +138,20 @@ const REFUSED: Array<[NotifSettingKey, unknown]> = [
     ['notif.h3_sms', 'SOMETIMES'], ['notif.h3_sms', ''], ['notif.h3_sms', null],
     ['notif.sms_quiet_start', -1], ['notif.sms_quiet_start', 24], ['notif.sms_quiet_start', 7.5], ['notif.sms_quiet_start', '22'],
     ['notif.sms_quiet_end', -1], ['notif.sms_quiet_end', 24], ['notif.sms_quiet_end', 8.5],
-    ['notif.sms_daily_alert', 0], ['notif.sms_daily_alert', 1_000_001], ['notif.sms_daily_alert', 2.5], ['notif.sms_daily_alert', -5],
+    ['notif.sms_optional_daily_cap', -1], ['notif.sms_optional_daily_cap', 1_000_001], ['notif.sms_optional_daily_cap', 2.5],
+    ['notif.sms_optional_daily_cap', '700'], ['notif.sms_optional_daily_cap', null], ['notif.sms_optional_daily_cap', true],
+    ['notif.free_ticket_reminder_sms', 'ALWAYS'], ['notif.free_ticket_reminder_sms', 'never'], ['notif.free_ticket_reminder_sms', ''],
+    ['notif.free_ticket_reminder_sms', 1], ['notif.free_ticket_reminder_sms', null],
 ];
 
 describe('6.5 Réglages notif.* (contrat I1)', () => {
-    test('les 9 clés notif.* existent avec leur valeur par défaut et une description', async () => {
-        assert.equal(KEYS.length, 9, 'neuf clés au contrat I1');
+    test('les 10 clés notif.* existent avec leur valeur par défaut et une description', async () => {
+        assert.equal(KEYS.length, 10, 'dix clés : neuf du contrat I1, moins notif.sms_daily_alert, plus deux du lot 7 (M1)');
         const { data, error } = await service.from('platform_settings').select('key, value, description').like('key', 'notif.%');
         assert.equal(error, null, `lecture des clés notif.* : ${error?.message}`);
         const rows = (data ?? []) as Array<{ key: string; value: unknown; description: string | null }>;
         assert.deepEqual(rows.map((r) => r.key).sort(), [...KEYS].sort(),
-            `clés notif.* en base : ${JSON.stringify(rows.map((r) => r.key))} (migration 20261103000003 attendue)`);
+            `clés notif.* en base : ${JSON.stringify(rows.map((r) => r.key))} (migrations 20261103000003 et 20261105000001 attendues)`);
         for (const key of KEYS) {
             const row = rows.find((r) => r.key === key)!;
             assert.deepEqual(inner(row.value), NOTIF_SETTING_DEFAULTS[key], `valeur par défaut de ${key}`);
@@ -255,10 +264,11 @@ describe('6.5 Réglages notif.* (contrat I1)', () => {
 });
 
 describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (contrat I1.6)', () => {
-    test('GET : l’ADMIN et le SUPERADMIN lisent les 9 clés notif.* et leur historique', async () => {
-        const key: NotifSettingKey = 'notif.sms_daily_alert';
+    test('GET : l’ADMIN et le SUPERADMIN lisent les 10 clés notif.* et leur historique', async () => {
+        // Lot 7 (T4) : marqueur posé sur notif.sms_optional_daily_cap (notif.sms_daily_alert est supprimée).
+        const key: NotifSettingKey = 'notif.sms_optional_daily_cap';
         const saved = await getNotifSetting(key);
-        const marker = saved === 1500 ? 1600 : 1500;
+        const marker = saved === 650 ? 651 : 650;
         try {
             await setNotifSetting(key, marker, 'marqueur d’historique pour la route, lot 6');
             for (const who of ['ADMIN', 'SUPERADMIN'] as const) {
@@ -297,6 +307,9 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
                 ['notif.reminder_h3_enabled', !(saved.get('notif.reminder_h3_enabled') as boolean)],
                 ['notif.h3_sms', saved.get('notif.h3_sms') === 'ALWAYS' ? 'NEVER' : 'ALWAYS'],
                 ['notif.sms_quiet_start', saved.get('notif.sms_quiet_start') === 21 ? 20 : 21],
+                // Lot 7 (T4) : un entier et un choix des clés du lot 7.
+                ['notif.sms_optional_daily_cap', saved.get('notif.sms_optional_daily_cap') === 690 ? 691 : 690],
+                ['notif.free_ticket_reminder_sms', saved.get('notif.free_ticket_reminder_sms') === 'SAME_AS_PAID' ? 'NEVER' : 'SAME_AS_PAID'],
             ];
             for (const [key, value] of changes) {
                 const reason = `test de la route, lot 6 (${key})`;
@@ -319,6 +332,7 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
         const bad: Array<[string, unknown]> = [
             ['notif.reminder_h3_hours', 13], ['notif.reminder_j1_hour', 21], ['notif.j1_sms', 'PARFOIS'],
             ['notif.sms_quiet_end', 24], ['notif.reminder_j1_enabled', 'oui'],
+            ['notif.sms_optional_daily_cap', -1], ['notif.free_ticket_reminder_sms', 'ALWAYS'],
         ];
         for (const [key, value] of bad) {
             const res = await PUT(jsonRequest(ROUTE, 'PUT', superadmin.accessToken, { key, value, reason: 'valeur refusée attendue' }));
@@ -376,7 +390,7 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
         }
     });
 
-    test('page /admin/finance-settings : 9 libellés exacts, choix en français, section « Notifications » (contrôle statique)', () => {
+    test('page /admin/finance-settings : 10 libellés exacts, choix en français, section « Notifications », section « Fonctionnalités » (contrôle statique)', () => {
         const page = readFileSync(path.join(process.cwd(), 'app/admin/finance-settings/page.tsx'), 'utf8');
         const apostrophe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, "(?:'|’|\\\\')");
         const labels: Record<NotifSettingKey, { label: string; kind: string; unit?: string }> = {
@@ -388,7 +402,9 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
             'notif.h3_sms': { label: 'SMS du rappel avant le début', kind: 'choice' },
             'notif.sms_quiet_start': { label: 'Début de la plage sans SMS', kind: 'integer', unit: 'h' },
             'notif.sms_quiet_end': { label: 'Fin de la plage sans SMS', kind: 'integer', unit: 'h' },
-            'notif.sms_daily_alert': { label: "Seuil d'alerte SMS du jour", kind: 'integer' },
+            // Lot 7 (T4) : libellés des deux clés du lot 7 (contrat 4.6 : SETTING_META des 5 clés ; rédaction retenue ici).
+            'notif.sms_optional_daily_cap': { label: 'Plafond quotidien des SMS optionnels', kind: 'integer' },
+            'notif.free_ticket_reminder_sms': { label: 'SMS des rappels pour les billets gratuits', kind: 'choice' },
         };
         for (const key of KEYS) {
             const quoted = key.replace(/\./g, '\\.');
@@ -402,6 +418,16 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
         assert.match(page, /\bALWAYS['"]?\s*:\s*['"]Toujours['"]/, 'choix ALWAYS : « Toujours »');
         assert.match(page, /\bIF_NO_PUSH['"]?\s*:\s*['"]Seulement sans notification push['"]/, 'choix IF_NO_PUSH : « Seulement sans notification push »');
         assert.match(page, /\bNEVER['"]?\s*:\s*['"]Jamais['"]/, 'choix NEVER : « Jamais »');
+        // Lot 7 (T4) : choix de notif.free_ticket_reminder_sms, clé supprimée absente, section des interrupteurs.
+        assert.match(page, /\bSAME_AS_PAID['"]?\s*:\s*['"]Comme un billet payant['"]/, 'choix SAME_AS_PAID : « Comme un billet payant »');
+        assert.doesNotMatch(page, /notif\.sms_daily_alert/, 'plus aucune entrée notif.sms_daily_alert (supprimée, D15)');
+        for (const key of ['features.halls_enabled', 'features.tables_enabled', 'features.orders_enabled']) {
+            const entry = page.match(new RegExp(`['"]${key.replace(/\./g, '\\.')}['"]\\s*:\\s*\\{([^}]*)\\}`));
+            assert.ok(entry, `${key} : aucune entrée META dans la page des réglages (contrat, section 4.6)`);
+            assert.match(entry[1], /kind:\s*['"]boolean['"]/, `${key} : interrupteur affiché en booléen`);
+            assert.match(entry[1], /label:\s*['"`][^'"`]{3,}['"`]/, `${key} : libellé`);
+        }
+        assert.match(page, /prefix:\s*['"]features\.['"]\s*,\s*title:\s*['"]Fonctionnalités['"]/, 'section « Fonctionnalités » (préfixe features.)');
         assert.match(page, /prefix:\s*['"]notif\.['"]\s*,\s*title:\s*['"]Notifications['"][^}]*icon:\s*Bell\b/, 'section « Notifications » (préfixe notif., icône Bell)');
         assert.match(page, /import\s*\{[^}]*\bBell\b[^}]*\}\s*from\s*['"]lucide-react['"]/, 'icône Bell importée de lucide-react');
     });

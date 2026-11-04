@@ -16,8 +16,10 @@
  *    UNCERTAIN SENDING_INTERRUPTED sans second envoi, dernière tentative → FAILED ;
  *  - SMS incertain (uncertainNext) : UNCERTAIN, jamais renvoyé, même un jour plus tard ;
  *  - horloge passée refusée : INVALID_NOW (claim, mark, daily_checks), dispatchNotifications rejette ;
- *  - plafond SMS (SMS_GLOBAL_DAILY_CAP par withEnv) → SKIPPED SMS_DAILY_CAP sans relance ; seuil du jour
- *    (notif.sms_daily_alert) → une seule alerte par jour ;
+ *  - plafond SMS (SMS_GLOBAL_DAILY_CAP par withEnv) : lot 7 (7.0 a, T1, renverse la décision 9 du lot 6) —
+ *    un SMS indispensable (PASSWORD_CHANGED) part quand même, un rappel optionnel (REMINDER_J1) → SKIPPED
+ *    SMS_DAILY_CAP sans relance ; alerte à 80 % du budget optionnel (notif.sms_optional_daily_cap, remplace
+ *    notif.sms_daily_alert) → une seule alerte par jour ;
  *  - route /api/cron/notifications-dispatch : 503, 401, 200 (rapport, envoi réel) ; contrôles statiques E5.
  * Texte vérifié (catalogue G3/G4, type PASSWORD_CHANGED, sans variable) :
  *  SMS « Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous,
@@ -33,16 +35,18 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
 import { service, newBuyer, cronRequest, type Buyer } from './paiement-helpers';
 import { BASE_URL, randomSenegalPhone } from './helpers';
+import { newPartner } from './finance-helpers';
 import {
-    addMinutes, assertNotificationInvariants, dakarAt, dakarDay, dispatchAt, fakeBrowserSubscription, insertOutboxRow,
+    addMinutes, assertNotificationInvariants, createReminderEvent, dakarAt, dakarDay, dispatchAt, fakeBrowserSubscription, insertOutboxRow,
     loadLotModule, lotFunction, newAdmin, outboxRows, smsMark, smsTo, pushTo, withEnv, withNotifSettings, withVapid,
     type DispatchRunReport, type OutboxInsert, type OutboxRow, type TestAdmin,
 } from './notif-helpers';
+import { issueFreeTicket } from './terrain-helpers';
 
 after(async () => {
     await assertNotificationInvariants('notif-envoyeur');
@@ -483,53 +487,81 @@ describe('6.1 Envoyeur : horloge dans le passé refusée (Conventions)', () => {
 
 // ── Plafond et seuil ───────────────────────────────────────────────────────
 
-describe('6.1 Envoyeur : plafond SMS et seuil du jour (décisions 4 et 9, contrat E3)', () => {
-    test('plafond quotidien atteint : SKIPPED SMS_DAILY_CAP, aucune relance, aucun SMS', async () => {
-        const phone = randomSenegalPhone('76');
-        const row = await dueRow({ recipient_phone: phone });
-        const mark = smsMark(phone);
-        const t = new Date();
-        await withEnv({ SMS_GLOBAL_DAILY_CAP: '1' }, async () => {
-            await dispatchAt(t, { ids: [row.id] });
+describe('6.1 Envoyeur : plafond SMS et seuil du jour (décision 4, contrat E3 ; lot 7, 7.0 a)', () => {
+    // Lot 7 (7.0 a, T1) : la décision 9 du lot 6 (plafond appliqué aussi aux indispensables) est renversée par la
+    // consigne. Sous SMS_GLOBAL_DAILY_CAP = 1 (part non OTP 0), l'indispensable part ; l'optionnel garde la garde
+    // anti-abus (D14) et sort en SKIPPED SMS_DAILY_CAP, définitif. Jour simulé lointain tiré au hasard : le budget
+    // optionnel de ce jour (compté au jour de l'envoyeur) n'est consommé par aucune autre suite.
+    test('plafond global (SMS_GLOBAL_DAILY_CAP = 1) : PASSWORD_CHANGED (indispensable) SENT au texte exact ; REMINDER_J1 (optionnel) SKIPPED SMS_DAILY_CAP, aucune relance', async () => {
+        const day = dakarDay(150 + randomInt(0, 400));
+        const t = dakarAt(day, '12:00');
+        const nextDay = new Date(t.getTime() + DAY).toISOString().slice(0, 10);
+        const partner = await newPartner('envoyeur-plafond');
+        const ev = await createReminderEvent(partner, 'envoyeur-plafond', {
+            startDate: nextDay, startTime: '20:00', categories: [{ name: 'Entree libre', price: 0, total: 5 }],
+            title: `Plafond ${randomBytes(3).toString('hex')}`, location: 'Salle Sorano', city: 'Dakar',
         });
-        const r = await rowOf(row.id);
+        const holder = await newBuyer('envoyeur-plafond');
+        await issueFreeTicket(ev.eventId, ev.categories['Entree libre'].id, holder);
+        const phone = randomSenegalPhone('76');
+        const essential = await dueRow({ recipient_phone: phone });
+        const optional = await dueRow({
+            type: 'REMINDER_J1', family: 'OPTIONAL', topic: 'REMINDERS', recipient_user_id: holder.userId, event_id: ev.eventId,
+            template_data: { sms_policy: 'ALWAYS' },
+        });
+        const mark = smsMark(phone);
+        const markOptional = smsMark(holder.phoneE164);
+        await withEnv({ SMS_GLOBAL_DAILY_CAP: '1' }, async () => {
+            await dispatchAt(t, { ids: [essential.id, optional.id] });
+        });
+        const e = await rowOf(essential.id);
+        assert.equal(e.status, 'SENT', `indispensable sous le plafond global : ${brief(e)}`);
+        assert.deepEqual(smsTo(phone, mark).map((m) => m.message), [PASSWORD_SMS], 'un SMS indispensable, texte exact');
+        const r = await rowOf(optional.id);
         assert.equal(r.status, 'SKIPPED', brief(r));
         assert.equal(r.reason, 'SMS_DAILY_CAP');
-        assert.equal(getFakes().sms.messagesTo(phone).length - mark, 0, 'aucun SMS tenté');
-        const later = await dispatchAt(new Date(t.getTime() + DAY), { ids: [row.id] });
+        assert.equal(getFakes().sms.messagesTo(holder.phoneE164).length - markOptional, 0, 'aucun SMS optionnel tenté');
+        const later = await dispatchAt(new Date(t.getTime() + DAY), { ids: [optional.id] });
         assert.equal(later.claimed, 0, 'SKIPPED est final : pas de relance le lendemain');
-        assert.equal(getFakes().sms.messagesTo(phone).length - mark, 0, 'toujours aucun SMS');
+        assert.equal(getFakes().sms.messagesTo(holder.phoneE164).length - markOptional, 0, 'toujours aucun SMS optionnel');
     });
 
-    test('seuil de SMS du jour dépassé : une seule alerte ADMIN_SMS_DAILY_THRESHOLD et un seul signal par jour', async () => {
+    // Lot 7 (7.0 a, T1, D15) : le seuil notif.sms_daily_alert est supprimé ; l'alerte part à 80 % du budget des SMS
+    // optionnels (ceil(0,8 × plafond)), une fois par jour. Plafond 1 : seuil 1, un SMS optionnel du jour suffit.
+    test('80 % du budget des SMS optionnels atteint : une seule alerte ADMIN_SMS_OPTIONAL_80 et un seul signal SMS_OPTIONAL_80 par jour', async () => {
         // Jour lointain de Dakar : seuls les SMS datés par cette horloge y comptent (aucune autre suite).
-        const day = dakarDay(137);
+        const day = dakarDay(150 + randomInt(0, 400));
         const t = dakarAt(day, '12:00');
         const phone = randomSenegalPhone('76');
-        const row = await dueRow({ recipient_phone: phone });
-        await withNotifSettings({ 'notif.sms_daily_alert': 1 }, async () => {
+        const row = await dueRow({ type: 'FIRST_TICKET_SOLD', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', recipient_phone: phone, template_data: { title: 'TEST Seuil optionnel' } });
+        await withNotifSettings({ 'notif.sms_optional_daily_cap': 1 }, async () => {
             await dispatchAt(t, { ids: [row.id] });
-            assert.equal((await rowOf(row.id)).status, 'SENT', 'SMS du jour envoyé');
+            assert.equal((await rowOf(row.id)).status, 'SENT', 'SMS optionnel du jour envoyé');
             const first = await rpcOk('notification_daily_checks', { now: addMinutes(t, 1).toISOString() });
             assert.equal(first.day, day, `jour de Dakar : ${JSON.stringify(first)}`);
             assert.ok(Number(first.sms_today) >= 1, `SMS du jour comptés : ${JSON.stringify(first)}`);
-            assert.equal(first.threshold, 1, 'seuil lu dans notif.sms_daily_alert');
+            assert.ok(Number(first.optional_today) >= 1, `SMS optionnels du jour comptés : ${JSON.stringify(first)}`);
+            assert.equal(first.optional_cap, 1, 'plafond lu dans notif.sms_optional_daily_cap');
+            assert.equal(first.optional_threshold, 1, 'seuil = ceil(0,8 × 1)');
             const second = await rpcOk('notification_daily_checks', { now: addMinutes(t, 2).toISOString() });
             assert.equal(second.alerted, false, `seconde vérification du même jour : aucune nouvelle alerte (${JSON.stringify(second)})`);
             await dispatchAt(addMinutes(t, 3), { ids: [row.id] });
         });
-        const all = await outboxRows({ type: 'ADMIN_SMS_DAILY_THRESHOLD', keyPrefix: `ADMIN_SMS_DAILY_THRESHOLD:${day}:` });
+        const all = await outboxRows({ type: 'ADMIN_SMS_OPTIONAL_80', keyPrefix: `ADMIN_SMS_OPTIONAL_80:${day}:` });
         const mine = all.filter((a) => a.recipient_user_id === adminWith.userId);
         assert.deepEqual(mine.map((a) => a.channel).sort(), ['EMAIL', 'IN_APP'], `alerte du jour pour l’admin (I M) : ${JSON.stringify(mine.map((a) => a.idempotency_key))}`);
         for (const a of mine) {
-            assert.equal(a.idempotency_key, `ADMIN_SMS_DAILY_THRESHOLD:${day}:${adminWith.userId}:${a.channel}`, 'clé par jour et par admin');
+            assert.equal(a.idempotency_key, `ADMIN_SMS_OPTIONAL_80:${day}:${adminWith.userId}:${a.channel}`, 'clé par jour et par admin');
             assert.equal(a.template_data.day, day);
+            assert.equal(a.template_data.cap, 1);
             assert.equal(a.template_data.threshold, 1);
-            assert.ok(Number(a.template_data.count) >= 1, `nombre de SMS : ${JSON.stringify(a.template_data)}`);
+            const used = Number(a.template_data.used);
+            assert.ok(used >= 1, `nombre de SMS optionnels : ${JSON.stringify(a.template_data)}`);
+            assert.equal(a.template_data.percent, Math.floor(100 * used / 1), `pourcentage : ${JSON.stringify(a.template_data)}`);
         }
         assert.equal(all.filter((a) => a.recipient_user_id === adminWithout.userId).length, 0, 'admin sans notifications.read : aucune alerte');
-        const sig = await signals('SMS_DAILY_THRESHOLD', all.map((a) => a.id));
-        assert.equal(sig.length, 1, `un seul signal SMS_DAILY_THRESHOLD pour le jour : ${JSON.stringify(sig)}`);
+        const sig = await signals('SMS_OPTIONAL_80', all.map((a) => a.id));
+        assert.equal(sig.length, 1, `un seul signal SMS_OPTIONAL_80 pour le jour : ${JSON.stringify(sig)}`);
     });
 });
 

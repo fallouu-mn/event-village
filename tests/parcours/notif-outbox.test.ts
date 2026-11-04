@@ -144,6 +144,9 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M], 'ADMIN', 'B', 'notifications.read'),
     ess('ADMIN_SMS_CAP_GLOBAL', [I], 'ADMIN', 'B', 'notifications.read'),
     ess('ADMIN_SMS_CAP_NON_OTP', [I], 'ADMIN', 'B', 'notifications.read'),
+    // Lot 7, tâche 7.0 a (contrat M2.1, D15) : alerte à 80 % du plafond optionnel, prévision de la veille.
+    ess('ADMIN_SMS_OPTIONAL_80', [I, M], 'ADMIN', 'B', 'notifications.read'),
+    ess('ADMIN_SMS_FORECAST', [I, M], 'ADMIN', 'B', 'notifications.read'),
     sync('OTP_LOGIN'),
     sync('OTP_REGISTER'),
     sync('OTP_PASSWORD_RESET'),

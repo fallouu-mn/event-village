@@ -9,6 +9,8 @@
  * contrat I1 n'existent pas encore (migration 20261103000003), d'où l'échec des cas qui les lisent.
  * Pas d'assertNotificationInvariants ici : la règle du lot 1A (clé anon seule, aucune connexion
  * privilégiée dans tests/security) l'interdit ; la suite n'écrit rien dans la boîte d'envoi.
+ * Lot 7 (7.0 a, T5) : liste des clés à jour (10) : notif.sms_daily_alert supprimée (D15),
+ * notif.sms_optional_daily_cap et notif.free_ticket_reminder_sms ajoutées (M1) ; rouge jusqu'à fix(7.0a).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -19,7 +21,8 @@ import { assertDenied, signInFixture, uniqueSuffix } from './helpers';
 const KEY = 'notif.reminder_h3_hours';
 const KEYS = [
     'notif.reminder_j1_enabled', 'notif.reminder_j1_hour', 'notif.reminder_h3_enabled', 'notif.reminder_h3_hours',
-    'notif.j1_sms', 'notif.h3_sms', 'notif.sms_quiet_start', 'notif.sms_quiet_end', 'notif.sms_daily_alert',
+    'notif.j1_sms', 'notif.h3_sms', 'notif.sms_quiet_start', 'notif.sms_quiet_end',
+    'notif.sms_optional_daily_cap', 'notif.free_ticket_reminder_sms',
 ];
 
 async function readValue(client: SupabaseClient, key: string): Promise<unknown> {
@@ -29,11 +32,11 @@ async function readValue(client: SupabaseClient, key: string): Promise<unknown> 
 }
 
 describe('R22 — réglages des notifications', () => {
-    test('un ADMIN ne modifie aucune des 9 clés notif.* par REST (update ni upsert)', async () => {
+    test('un ADMIN ne modifie aucune des 10 clés notif.* par REST (update ni upsert)', async () => {
         const admin = await signInFixture('ADMIN');
         for (const key of KEYS) {
             const original = await readValue(admin.client, key);
-            assert.ok(original !== undefined, `${key} absente : le lot 6 crée les clés notif.* (migration 20261103000003)`);
+            assert.ok(original !== undefined, `${key} absente : les lots 6 et 7 créent les clés notif.* (migrations 20261103000003, 20261105000001)`);
             try {
                 const upd = await admin.client.from('platform_settings').update({ value: { value: 99 } }).eq('key', key).select('key');
                 assert.ok(upd.error || (upd.data ?? []).length === 0, `${key} : update accepté : ${JSON.stringify(upd.data)}`);
