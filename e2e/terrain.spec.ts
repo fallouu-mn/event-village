@@ -6,7 +6,9 @@
  * test, début à ≈ 20 h de l'heure réelle, billets gratuits émis par free_tickets_claim, contrôleur A affecté) et
  * pose `access.scan_window_before_hours = 24` (D6), remis dans un finally. Aucune route n'accepte d'heure.
  * Comptes : fumee-client (porteur des billets présentés hors ligne), fumee-client-bis (porteur des billets
- * scannés en série, lus par sa route live-code), fumee-controleur (scanner).
+ * scannés en série, lus par sa route live-code tant qu'ils sont valables ; un billet déjà composté, que cette
+ * route refuse par un 409, est relu avec un code calculé par terrain-setup.ts `payload`), fumee-controleur (scanner).
+ * Le QR présenté au scanner est tenu devant la caméra simulée jusqu'à l'envoi de la lecture (sonde, support/terrain.ts).
  *
  * Contextes : service worker autorisé seulement pour le client (`serviceWorkers: 'allow'`, D7) ; horloge
  * installée seulement dans le contexte du client du test 1 (jamais chez le contrôleur ni pendant une mesure :
@@ -23,9 +25,9 @@ import type { RoleKey } from './support/accounts';
 import { CDP_NO_THROTTLING, cdpNetworkConditions, NET_3G } from './support/devices';
 import { PageGuard } from './support/network';
 import {
-    fmtMs, forgedPayload, installScanProbe, livePayload, median, openScanner, percentile, prepareTerrainEvent,
-    presentPayload, presentPayloadNoResult, probeTracks, probeVibrations, restoreTerrainSetting, scanMarks, ticketScans,
-    writePerfFile, type ProbeRecord, type TerrainEvent,
+    codeOf, computedPayload, describeProbe, fmtMs, forgedPayload, installScanProbe, livePayload, median, openScanner, percentile,
+    prepareTerrainEvent, presentPayload, presentPayloadNoResult, probeTracks, probeVibrations, restoreTerrainSetting, scanMarks,
+    ticketScans, writePerfFile, type ProbeRecord, type TerrainEvent,
 } from './support/terrain';
 
 const OFFLINE_PATH = '/billet/hors-ligne';
@@ -251,15 +253,16 @@ test('3. réponse du scan perdue : relance automatique avec la même clé, une s
 
 interface ScanRow { reseau: 'normal' | '3G'; attendu: 'valid' | 'already_used'; ticket: string; record: ProbeRecord }
 
-/** Payload courant d'un billet, différent de `used` (QR changé : pas suivant de 20 s). */
-async function freshPayload(holder: Page, ticketId: string, used: string): Promise<string> {
-    const deadline = Date.now() + 30_000;
-    for (;;) {
-        const p = await livePayload(holder, ticketId);
-        if (p !== used) return p;
-        if (Date.now() > deadline) throw new Error(`live-code du billet ${ticketId} : même code après 30 s`);
-        await holder.waitForTimeout(2_000); // attente réelle du pas suivant du QR dynamique (20 s)
-    }
+/**
+ * QR du pas courant d'un billet DÉJÀ COMPOSTÉ, d'un autre pas que `used` (anti-doublon D41). La route live-code
+ * du porteur refuse un billet UTILISE (409, run 72) : le code est calculé par terrain-setup.ts `payload`
+ * (lib/security/totp.ts, secret de la base locale), qui attend réellement le pas suivant si besoin (20 s au plus).
+ */
+function freshPayload(ticketId: string, used: string): string {
+    const out = computedPayload(ticketId, codeOf(used));
+    if (out.payload === used) throw new Error(`payload calculé du billet ${ticketId} identique à la lecture précédente`);
+    if (out.status !== 'UTILISE') console.log(`[e2e][terrain] billet ${ticketId} au statut ${out.status} avant sa relecture (UTILISE attendu)`);
+    return out.payload;
 }
 
 test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lecture hors ligne', async ({ browser }, testInfo) => {
@@ -293,7 +296,7 @@ test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lect
                 rows.push({ reseau: serie.reseau, attendu: 'valid', ticket: t.number, record });
             }
             for (const t of serie.tickets) {
-                const payload = await freshPayload(holder, t.id, used.get(t.id) as string);
+                const payload = freshPayload(t.id, used.get(t.id) as string);
                 const { record } = await presentPayload(ctl.page, payload, `${serie.reseau} : billet déjà utilisé ${t.number}`);
                 rows.push({ reseau: serie.reseau, attendu: 'already_used', ticket: t.number, record });
             }
@@ -317,10 +320,16 @@ test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lect
                 ...r,
                 sondeAttente: p.readAt !== null && p.pendingAt !== null ? p.pendingAt - p.readAt : null,
                 sondeResultat: p.readAt !== null && p.resultAt !== null ? p.resultAt - p.readAt : null,
+                // Depuis la lecture envoyée par l'écran (dernière lecture avant le POST) : diffère de la précédente
+                // seulement si l'écran a ignoré une lecture (lectures > 1)
+                sondeResultatEnvoyee: p.lastReadAt !== null && p.resultAt !== null ? p.resultAt - p.lastReadAt : null,
                 marqueAttente: read && pending ? pending.startTime - read.startTime : null,
                 marqueResultat: read && result ? result.startTime - read.startTime : null,
             };
         });
+        const ignored = measured.filter((m) => m.record.reads > 1);
+        console.log(`[SCAN-MESURE] lectures ignorées par l'écran (QR relu au moins une fois avant l'envoi) : ${ignored.length} sur ${measured.length}`
+            + `${ignored.length ? ` (${ignored.map((m) => `${m.reseau} ${m.ticket} : ${m.record.reads} lectures`).join(', ')})` : ''}`);
 
         const summary: string[] = ['reseau\tsource\tmesure\tn\tmediane_ms\tp95_ms\tmin_ms\tmax_ms'];
         const stat = (reseau: 'normal' | '3G', pick: (m: typeof measured[number]) => number | null) => {
@@ -334,6 +343,7 @@ test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lect
                 ['marques', 'resultat', (m: typeof measured[number]) => m.marqueResultat],
                 ['sonde', 'attente', (m: typeof measured[number]) => m.sondeAttente],
                 ['sonde', 'resultat', (m: typeof measured[number]) => m.sondeResultat],
+                ['sonde-lecture-envoyee', 'resultat', (m: typeof measured[number]) => m.sondeResultatEnvoyee],
             ] as const) {
                 const st = stat(reseau, pick);
                 results[`${reseau}:${source}:${mesure}`] = st;
@@ -341,8 +351,9 @@ test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lect
                 console.log(`[SCAN-MESURE] ${reseau} ${source} ${mesure === 'attente' ? 'attente − lecture' : 'résultat − lecture'} : n=${st.n} médiane=${fmtMs(st.med)} ms p95=${fmtMs(st.p95)} ms (min ${fmtMs(st.min)}, max ${fmtMs(st.max)})`);
             }
         }
-        const detail = ['reseau\tattendu\tobtenu_sonde\tbillet\tsonde_attente_ms\tsonde_resultat_ms\tmarque_attente_ms\tmarque_resultat_ms',
-            ...measured.map((m) => [m.reseau, m.attendu, m.record.result ?? '', m.ticket, fmtMs(m.sondeAttente), fmtMs(m.sondeResultat), fmtMs(m.marqueAttente), fmtMs(m.marqueResultat)].join('\t'))];
+        const detail = ['reseau\tattendu\tobtenu_sonde\tbillet\tlectures\tsonde_attente_ms\tsonde_resultat_ms\tsonde_resultat_lecture_envoyee_ms\tmarque_attente_ms\tmarque_resultat_ms',
+            ...measured.map((m) => [m.reseau, m.attendu, m.record.result ?? '', m.ticket, m.record.reads, fmtMs(m.sondeAttente), fmtMs(m.sondeResultat),
+                fmtMs(m.sondeResultatEnvoyee), fmtMs(m.marqueAttente), fmtMs(m.marqueResultat)].join('\t'))];
         const fileSummary = writePerfFile('scan.tsv', summary.join('\n'));
         writePerfFile('scan-lectures.tsv', detail.join('\n'));
         await testInfo.attach('scan.tsv', { path: fileSummary, contentType: 'text/tab-separated-values' });
@@ -359,7 +370,9 @@ test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lect
         // Hors ligne : une lecture → état « Hors ligne », aucune vibration (D47)
         await ctl.context.setOffline(true);
         ctl.guard.freeze();
-        const offline = await presentPayloadNoResult(ctl.page, await livePayload(holder, ev.tickets[0].id), 'lecture hors ligne');
+        // Billet 1 composté : code calculé (la route live-code le refuse) ; un autre pas que sa relecture n'est pas
+        // exigé (aucun envoi attendu hors ligne)
+        const offline = await presentPayloadNoResult(ctl.page, computedPayload(ev.tickets[0].id).payload, 'lecture hors ligne');
         await expect.soft(ctl.page.locator('[data-scan-state="offline"]').first(), 'lecture hors ligne : état data-scan-state="offline"').toBeAttached({ timeout: 10_000 });
         const offlineVibrations = (await probeVibrations(ctl.page)).filter((v) => offline.record.readAt !== null && v.at >= offline.record.readAt);
         expect.soft(offlineVibrations.map((v) => v.pattern), 'aucune vibration pour un incident technique (hors ligne)').toEqual([]);
@@ -398,17 +411,23 @@ test('5. vibrations : accepté [60], refusé [120,60,120,60,120], motifs distinc
         await openScanner(ctl.page, ev.title);
 
         const accepted = await scanAndExpect(ctl.page, await livePayload(holder, ev.tickets[0].id), 'billet valide', 'valid');
+        await expect.poll(async () => (await probeVibrations(ctl.page)).filter((v) => v.at >= (accepted.readAt as number)).length,
+            { message: 'au moins une vibration pour l’entrée acceptée', timeout: 5_000 }).toBeGreaterThan(0);
+        await ctl.page.waitForTimeout(300); // une vibration posée par un effet après l'affichage est aussi relevée
+        // Fenêtre de l'accepté relevée AVANT de présenter le code falsifié (de sa première lecture à maintenant) :
+        // l'assertion D50 de l'accepté est jugée même si la lecture suivante échoue
+        const acceptWindow = (await probeVibrations(ctl.page)).filter((v) => v.at >= (accepted.readAt as number)).map((v) => v.pattern);
+        console.log(`[e2e][terrain] vibrations reçues pour l'accepté (lectures : ${accepted.reads}) : ${JSON.stringify(acceptWindow)}`);
+        expect.soft(acceptWindow, 'accepté : exactement une vibration [60] (D50 ; plus de vibration de 80 ms à la lecture)').toEqual([VIBRATION_ACCEPTE]);
+
         const refusedPayload = forgedPayload(await livePayload(holder, ev.tickets[1].id));
-        const { record: refused } = await presentPayload(ctl.page, refusedPayload, 'code qui ne se vérifie pas');
-        expect(REFUS.has(String(refused.result)), `code falsifié : résultat de refus attendu, obtenu « ${refused.result ?? '—'} »`).toBe(true);
+        const { index: refusedIndex, record: refused } = await presentPayload(ctl.page, refusedPayload, 'code qui ne se vérifie pas');
+        expect(REFUS.has(String(refused.result)), `code falsifié : résultat de refus attendu, obtenu « ${refused.result ?? '—'} » — ${await describeProbe(ctl.page, refusedIndex)}`).toBe(true);
         await expect.poll(async () => (await probeVibrations(ctl.page)).filter((v) => v.at >= (refused.readAt as number)).length,
             { message: 'une vibration pour le refus', timeout: 5_000 }).toBeGreaterThan(0);
 
-        const all = await probeVibrations(ctl.page);
-        const acceptWindow = all.filter((v) => v.at >= (accepted.readAt as number) && v.at < refused.armedAt).map((v) => v.pattern);
-        const refuseWindow = all.filter((v) => v.at >= (refused.readAt as number)).map((v) => v.pattern);
-        console.log(`[e2e][terrain] vibrations reçues : accepté ${JSON.stringify(acceptWindow)}, refusé ${JSON.stringify(refuseWindow)}`);
-        expect(acceptWindow, 'accepté : exactement une vibration [60] (D50 ; plus de vibration de 80 ms à la lecture)').toEqual([VIBRATION_ACCEPTE]);
+        const refuseWindow = (await probeVibrations(ctl.page)).filter((v) => v.at >= (refused.readAt as number)).map((v) => v.pattern);
+        console.log(`[e2e][terrain] vibrations reçues pour le refus (lectures : ${refused.reads}) : ${JSON.stringify(refuseWindow)}`);
         expect(refuseWindow, 'refusé : exactement une vibration [120,60,120,60,120] (D50)').toEqual([VIBRATION_REFUS]);
         expect(JSON.stringify(acceptWindow)).not.toBe(JSON.stringify(refuseWindow));
     } finally {

@@ -10,7 +10,8 @@
  * Contrôle de cohérence BLOQUANT : le plus gros fichier /_next/static/ met au moins taille ÷ débit entre
  * requestStart et responseEnd, sinon « bridage non appliqué ».
  *
- * Mesures (script d'initialisation, sans toucher au produit) : FCP, LCP (lus avant toute interaction),
+ * Mesures (script d'initialisation, sans toucher au produit) : FCP, LCP (relus à + 3 s, avant toute interaction ;
+ * un FCP ou un LCP que Chromium n'émet pas est expliqué dans la colonne note_fcp_lcp du TSV),
  * premier affichage utile (premier requestAnimationFrame après l'apparition du marqueur de l'écran),
  * JavaScript transféré (encodedBodySize des /_next/static/**.js) (a) arrivé avant le marqueur et (b) à + 3 s,
  * CSS, total, et recoupement par les réponses réseau (taille du corps reçue). Scanner : deux relevés, avant la
@@ -74,12 +75,34 @@ const SCREENS: Screen[] = [
     },
 ];
 
-interface PerfState { fcp: number | null; lcp: number | null; useful: number | null; usefulBy: string | null }
+interface PerfState {
+    fcp: number | null;
+    lcp: number | null;
+    lcpCount: number;
+    useful: number | null;
+    usefulBy: string | null;
+    /** Premier passage de la page à l'état masqué (0 : masquée dès le chargement) ; null : jamais masquée. */
+    hiddenAt: number | null;
+    /** Documents chargés dans l'onglet depuis le début du passage (> 1 : navigation complète ou rechargement). */
+    docs: number | null;
+    observers: string | null;
+}
 
 /** Script d'initialisation (sérialisé : aucune référence extérieure). */
 function installPerfProbe(arg: { selectors: string[]; buttonTexts: string[] }): void {
-    const state: PerfState = { fcp: null, lcp: null, useful: null, usefulBy: null };
+    const state: PerfState = { fcp: null, lcp: null, lcpCount: 0, useful: null, usefulBy: null, hiddenAt: null, docs: null, observers: null };
     (window as unknown as { __evPerf: PerfState }).__evPerf = state;
+    try {
+        const n = Number(window.sessionStorage.getItem('__evPerfDocs') ?? '0') + 1;
+        window.sessionStorage.setItem('__evPerfDocs', String(n));
+        state.docs = n;
+    } catch (err) {
+        console.warn(`[e2e][perf] compteur de documents indisponible : ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (document.visibilityState === 'hidden') state.hiddenAt = 0;
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && state.hiddenAt === null) state.hiddenAt = performance.now();
+    }, true);
     try {
         performance.setResourceTimingBufferSize(2000);
     } catch (err) {
@@ -91,10 +114,13 @@ function installPerfProbe(arg: { selectors: string[]; buttonTexts: string[] }): 
         }).observe({ type: 'paint', buffered: true });
         new PerformanceObserver((list) => {
             const entries = list.getEntries();
+            state.lcpCount += entries.length;
             const last = entries[entries.length - 1];
             if (last) state.lcp = last.startTime;
         }).observe({ type: 'largest-contentful-paint', buffered: true });
+        state.observers = 'paint,largest-contentful-paint';
     } catch (err) {
+        state.observers = `indisponibles : ${err instanceof Error ? err.message : String(err)}`;
         console.warn(`[e2e][perf] observateurs de performance indisponibles : ${err instanceof Error ? err.message : String(err)}`);
     }
     let found = false;
@@ -145,10 +171,47 @@ interface ResourceSnapshot {
     biggest: { name: string; bytes: number; ms: number } | null;
 }
 
+interface PaintReading {
+    state: PerfState;
+    /** first-contentful-paint lu dans la chronologie (performance.getEntriesByName), indépendant de l'observateur. */
+    fcpTimeline: number | null;
+    paints: string[];
+    navType: string | null;
+    path: string;
+    visibility: string;
+}
+
+/** FCP et LCP relus à + 3 s (avant toute interaction) : les entrées livrées après le marqueur sont comprises. */
+async function readPaint(page: Page): Promise<PaintReading> {
+    return page.evaluate(() => {
+        const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+        const fcp = performance.getEntriesByName('first-contentful-paint')[0];
+        return {
+            state: { ...(window as unknown as { __evPerf: PerfState }).__evPerf },
+            fcpTimeline: fcp ? fcp.startTime : null,
+            paints: performance.getEntriesByType('paint').map((e) => `${e.name}@${Math.round(e.startTime)}`),
+            navType: nav ? nav.type : null,
+            path: window.location.pathname,
+            visibility: document.visibilityState,
+        };
+    });
+}
+
+/** Explication d'un FCP ou d'un LCP absent, écrite dans le TSV (colonne note_fcp_lcp). */
+function paintNote(p: PaintReading, fcp: number | null, lcp: number | null): string | null {
+    if (fcp !== null && lcp !== null) return null;
+    const missing = [fcp === null ? 'FCP' : null, lcp === null ? 'LCP' : null].filter(Boolean).join(' et ');
+    return `${missing} non émis par Chromium à + 3 s : chronologie paint [${p.paints.join(', ') || 'vide'}], `
+        + `entrées LCP ${p.state.lcpCount}, observateurs ${p.state.observers ?? 'non créés'}, `
+        + `page masquée ${p.state.hiddenAt === null ? 'jamais' : `à ${Math.round(p.state.hiddenAt)} ms`} (état ${p.visibility}), `
+        + `documents chargés ${p.state.docs ?? '?'}, navigation ${p.navType ?? '?'} vers ${p.path}`;
+}
+
 interface PassResult {
     pass: number;
     fcp: number | null;
     lcp: number | null;
+    note: string | null;
     useful: number | null;
     usefulBy: string | null;
     jsBeforeUseful: number | null;
@@ -203,7 +266,7 @@ async function snapshot(page: Page, usefulAt: number | null): Promise<ResourceSn
 
 async function onePass(browser: Browser, testInfo: TestInfo, screen: Screen, pass: number): Promise<PassResult> {
     const out: PassResult = {
-        pass, fcp: null, lcp: null, useful: null, usefulBy: null, jsBeforeUseful: null, js3s: null, css: null, total: null,
+        pass, fcp: null, lcp: null, note: null, useful: null, usefulBy: null, jsBeforeUseful: null, js3s: null, css: null, total: null,
         jsNetwork: null, cameraMs: null, jsCamera: null, biggest: null, error: null,
     };
     const context = await browser.newContext({
@@ -250,6 +313,16 @@ async function onePass(browser: Browser, testInfo: TestInfo, screen: Screen, pas
         const first = await snapshot(page, state.useful);
         out.jsBeforeUseful = first.jsBeforeUseful;
         await page.waitForTimeout(3_000); // (b) : JavaScript chargé à + 3 s (contrat 11.6)
+        // FCP et LCP relus ici, toujours avant toute interaction (run 72 : scanner sans FCP ni LCP sur les 5
+        // passages quand ils n'étaient lus qu'à l'apparition du marqueur) ; repli FCP sur la chronologie
+        const paint = await readPaint(page);
+        out.fcp = paint.state.fcp ?? paint.fcpTimeline ?? out.fcp;
+        out.lcp = paint.state.lcp ?? out.lcp;
+        out.note = paintNote(paint, out.fcp, out.lcp);
+        if (state.fcp === null || state.lcp === null) {
+            console.log(`[PERF] ${screen.id} passage ${pass} : à l'apparition du marqueur, FCP ${fmtMs(state.fcp)} ms et LCP ${fmtMs(state.lcp)} ms ; `
+                + `à + 3 s : FCP ${fmtMs(out.fcp)} ms, LCP ${fmtMs(out.lcp)} ms${out.note ? ` — ${out.note}` : ''}`);
+        }
         const later = await snapshot(page, state.useful);
         out.js3s = later.js;
         out.css = later.css;
@@ -278,7 +351,7 @@ async function onePass(browser: Browser, testInfo: TestInfo, screen: Screen, pas
     return out;
 }
 
-const TSV_HEADER = 'ecran\tpassage\tfcp_ms\tlcp_ms\tutile_ms\tmarqueur\tjs_avant_utile_o\tjs_3s_o\tcss_o\ttotal_o\tjs_reseau_o\tcamera_ms\tjs_camera_o\tplus_gros_fichier\tfichier_o\tfichier_ms\tfichier_min_ms\terreur';
+const TSV_HEADER = 'ecran\tpassage\tfcp_ms\tlcp_ms\tutile_ms\tmarqueur\tjs_avant_utile_o\tjs_3s_o\tcss_o\ttotal_o\tjs_reseau_o\tcamera_ms\tjs_camera_o\tplus_gros_fichier\tfichier_o\tfichier_ms\tfichier_min_ms\terreur\tnote_fcp_lcp';
 
 function num(v: number | null): string {
     return v === null ? '' : String(Math.round(v));
@@ -287,7 +360,7 @@ function num(v: number | null): string {
 function row(screen: Screen, label: string, r: Omit<PassResult, 'pass'>): string {
     return [screen.id, label, num(r.fcp), num(r.lcp), num(r.useful), r.usefulBy ?? '', num(r.jsBeforeUseful), num(r.js3s), num(r.css), num(r.total),
         num(r.jsNetwork), num(r.cameraMs), num(r.jsCamera), r.biggest?.name ?? '', num(r.biggest?.bytes ?? null), num(r.biggest?.ms ?? null),
-        num(r.biggest?.minMs ?? null), r.error ?? ''].join('\t');
+        num(r.biggest?.minMs ?? null), r.error ?? '', (r.note ?? '').replace(/\s+/g, ' ')].join('\t');
 }
 
 function aggregate(results: PassResult[], pick: (r: PassResult) => number | null): { med: number | null; max: number | null } {
@@ -306,11 +379,11 @@ for (const screen of SCREENS) {
             appendPerfFile('perf.tsv', TSV_HEADER, [row(screen, String(pass), r)]);
             console.log(`[PERF] ${screen.id} passage ${pass} : ${r.error ? `ÉCHEC ${r.error}` : `FCP ${fmtMs(r.fcp)} ms, LCP ${fmtMs(r.lcp)} ms, utile ${fmtMs(r.useful)} ms (${r.usefulBy}), JS (a) ${r.jsBeforeUseful} o, JS (b) ${r.js3s} o, CSS ${r.css} o, total ${r.total} o${screen.camera ? `, caméra ${fmtMs(r.cameraMs)} ms, JS caméra ${r.jsCamera} o` : ''}`}`);
         }
-        const keys: Array<[keyof Omit<PassResult, 'pass' | 'usefulBy' | 'biggest' | 'error'>, string]> = [
+        const keys: Array<[keyof Omit<PassResult, 'pass' | 'usefulBy' | 'biggest' | 'error' | 'note'>, string]> = [
             ['fcp', 'fcp'], ['lcp', 'lcp'], ['useful', 'utile'], ['jsBeforeUseful', 'js (a)'], ['js3s', 'js (b)'], ['css', 'css'], ['total', 'total'],
             ['jsNetwork', 'js réseau'], ['cameraMs', 'caméra'], ['jsCamera', 'js caméra'],
         ];
-        const med: Omit<PassResult, 'pass'> = { fcp: null, lcp: null, useful: null, usefulBy: null, jsBeforeUseful: null, js3s: null, css: null, total: null, jsNetwork: null, cameraMs: null, jsCamera: null, biggest: null, error: null };
+        const med: Omit<PassResult, 'pass'> = { fcp: null, lcp: null, note: null, useful: null, usefulBy: null, jsBeforeUseful: null, js3s: null, css: null, total: null, jsNetwork: null, cameraMs: null, jsCamera: null, biggest: null, error: null };
         const max: Omit<PassResult, 'pass'> = { ...med };
         for (const [k] of keys) {
             const a = aggregate(results, (r) => r[k]);
@@ -325,6 +398,7 @@ for (const screen of SCREENS) {
             `  premier affichage utile : médiane ${fmtMs(med.useful)} ms, max ${fmtMs(max.useful)} ms ; FCP médiane ${fmtMs(med.fcp)} ms ; LCP médiane ${fmtMs(med.lcp)} ms, max ${fmtMs(max.lcp)} ms`,
             `  JavaScript (a) avant le marqueur : médiane ${ko(med.jsBeforeUseful)}, max ${ko(max.jsBeforeUseful)} ; (b) à + 3 s : médiane ${ko(med.js3s)} ; CSS ${ko(med.css)} ; total ${ko(med.total)} ; recoupement réseau ${ko(med.jsNetwork)}`,
             ...(screen.camera ? [`  caméra en lecture : médiane ${fmtMs(med.cameraMs)} ms ; JavaScript à + 3 s caméra lancée : médiane ${ko(med.jsCamera)}, max ${ko(max.jsCamera)}`] : []),
+            ...results.filter((r) => r.note).map((r) => `  passage ${r.pass} : ${r.note}`),
             `  budget post-build ${screen.budgetRoute} : ${budget === null ? 'aucun (mesure seule)' : `${ko(budget)} + ${ko(BUDGET_TOLERANCE)} de tolérance`}`,
         ];
         appendPerfFile('perf.txt', null, lines);

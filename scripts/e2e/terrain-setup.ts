@@ -7,6 +7,7 @@
  *        --tickets <1..10> [--start-in-hours <h>] [--before-hours <0..48>]
  *   node --import tsx scripts/e2e/terrain-setup.ts restore-setting --key <clé access.*> --value <JSON>
  *   node --import tsx scripts/e2e/terrain-setup.ts scans --ticket <uuid>
+ *   node --import tsx scripts/e2e/terrain-setup.ts payload --ticket <uuid> [--not-code <6 chiffres>]
  *
  * prepare : événement du partenaire A (seed de test) créé par les RPC (event_create, soumission, validation par
  *   le SUPERADMIN, publication ; affiche reprise d'un événement du partenaire A déjà déposée), début à l'heure
@@ -16,6 +17,16 @@
  *   --before-hours est donné, avec la valeur d'avant dans la réponse : l'appelant la remet par
  *   `restore-setting` dans un finally. Aucune heure simulée : tout est placé par rapport à l'heure réelle.
  * scans : lignes ticket_scans du billet et état du billet, lus par le service_role.
+ * payload : QR dynamique du pas COURANT d'un billet quel que soit son statut (run 72 : la route live-code du
+ *   porteur refuse un billet UTILISE par un 409, aujourd'hui comme après le lot ; la relecture d'un billet
+ *   composté a besoin d'un code frais). Secret du billet lu par le service_role sur la base LOCALE, code
+ *   calculé par lib/security/totp.ts (generateTicketCode, buildTicketPayload : réutilisés, jamais recopiés ;
+ *   clé maître TICKET_TOTP_MASTER_KEY de `.env.e2e`, la même que l'application démarrée), puis revérifié
+ *   par verifyTicketCode. Avec --not-code, si le code du pas courant est celui-là, attente RÉELLE du pas
+ *   suivant (20 s au plus) : un code d'un autre pas que la lecture précédente (anti-doublon D41).
+ *   Format (contrat 3.1, inchangé par fix(7.1s)) : « EVT1:<billet>:<6 chiffres> », clé dérivée du secret
+ *   COURANT du billet ; la version du secret (security_version, contrôlée par la route après fix(7.2s)) est
+ *   celle de la ligne lue, rendue pour le diagnostic. Ni le secret ni la clé ne sont imprimés.
  *
  * Schéma : seulement des objets du lot 6 et d'avant (le seed et ce script tournent au run « avant »).
  * Garde-fous : `.env.e2e` chargé et URL locales vérifiées par e2eConfig() (même règle que
@@ -41,7 +52,8 @@ function usage(message: string): never {
     process.stderr.write(
         `${TAG} ${message}\nUsage : terrain-setup.ts prepare --label <texte> --holder client|client-bis --tickets <1..10> [--start-in-hours <h>] [--before-hours <0..48>]\n`
         + '        terrain-setup.ts restore-setting --key <access.*> --value <JSON>\n'
-        + '        terrain-setup.ts scans --ticket <uuid>\n',
+        + '        terrain-setup.ts scans --ticket <uuid>\n'
+        + '        terrain-setup.ts payload --ticket <uuid> [--not-code <6 chiffres>]\n',
     );
     process.exit(2);
 }
@@ -231,15 +243,75 @@ async function scans(flags: Map<string, string>): Promise<{ ticket: { id: string
     return { ticket: { id: String(t.id), status: String(t.status), checked_in_at: (t.checked_in_at as string | null) ?? null }, scans: (data ?? []) as ScanRow[] };
 }
 
+interface PayloadReport {
+    ticket_id: string;
+    status: string;
+    secret_version: number | null;
+    step_seconds: number;
+    counter: number;
+    code: string;
+    payload: string;
+    computed_at: string;
+    /** Millisecondes avant le pas suivant, à l'heure du calcul. */
+    next_step_in_ms: number;
+    /** Attente réelle du pas suivant (--not-code), en millisecondes. */
+    waited_ms: number;
+}
+
+async function payload(flags: Map<string, string>): Promise<PayloadReport> {
+    const id = (flags.get('ticket') ?? '').toLowerCase();
+    if (!UUID_RE.test(id)) usage(`--ticket : identifiant de billet invalide « ${id} »`);
+    const notCode = flags.get('not-code') ?? null;
+    if (notCode !== null && !/^\d{6}$/.test(notCode)) usage(`--not-code : 6 chiffres attendus, reçu « ${notCode} »`);
+    if (!process.env.TICKET_TOTP_MASTER_KEY) throw new Error(`${TAG} TICKET_TOTP_MASTER_KEY absente de l'environnement (.env.e2e) : code dynamique incalculable`);
+    // Import différé : seule cette commande charge lib/env (validation de tout l'environnement serveur)
+    const totp = await import('../../lib/security/totp');
+    const { data: t, error } = await serviceClient().from('tickets').select('id, status, totp_secret, security_version').eq('id', id).maybeSingle();
+    if (error) throw new Error(`${TAG} billet ${id} : ${error.message}`);
+    if (!t) throw new Error(`${TAG} billet ${id} introuvable`);
+    const secret = String(t.totp_secret ?? '');
+    const started = Date.now();
+    let at = new Date();
+    let code = totp.generateTicketCode(id, secret, at);
+    if (notCode !== null && code === notCode) {
+        const nextStep = (totp.counterAt(at) + 1) * totp.TOTP_STEP_SECONDS * 1000;
+        const waitMs = Math.max(0, nextStep - Date.now()) + 50;
+        if (waitMs > (totp.TOTP_STEP_SECONDS * 1000) + 1000) throw new Error(`${TAG} attente du pas suivant incohérente : ${waitMs} ms`);
+        await new Promise<void>((resolve) => { setTimeout(resolve, waitMs); });
+        at = new Date();
+        code = totp.generateTicketCode(id, secret, at);
+        if (code === notCode) throw new Error(`${TAG} billet ${id} : même code au pas suivant (${totp.counterAt(at)}), collision improbable`);
+    }
+    if (!totp.verifyTicketCode(id, secret, code, at)) throw new Error(`${TAG} billet ${id} : le code calculé ne se vérifie pas (lib/security/totp.ts)`);
+    const counter = totp.counterAt(at);
+    const built = totp.buildTicketPayload(id, code);
+    const parsed = totp.parseTicketPayload(built);
+    if (!parsed || parsed.ticketId !== id || parsed.code !== code) throw new Error(`${TAG} payload construit illisible par parseTicketPayload : « ${built} »`);
+    const version = t.security_version === null || t.security_version === undefined ? null : Number(t.security_version);
+    return {
+        ticket_id: id,
+        status: String(t.status),
+        secret_version: version,
+        step_seconds: totp.TOTP_STEP_SECONDS,
+        counter,
+        code,
+        payload: built,
+        computed_at: at.toISOString(),
+        next_step_in_ms: (counter + 1) * totp.TOTP_STEP_SECONDS * 1000 - at.getTime(),
+        waited_ms: Date.now() - started,
+    };
+}
+
 async function main(): Promise<void> {
     const [command, ...rest] = process.argv.slice(2);
-    if (command !== 'prepare' && command !== 'restore-setting' && command !== 'scans') usage(`commande inconnue : ${command ?? '(aucune)'}`);
+    if (command !== 'prepare' && command !== 'restore-setting' && command !== 'scans' && command !== 'payload') usage(`commande inconnue : ${command ?? '(aucune)'}`);
     const flags = parseFlags(rest);
     e2eConfig();
     if (process.env.EV_INTEGRATIONS) usage('EV_INTEGRATIONS est défini : le projet terrain utilise les vrais adaptateurs pointés sur les faux services.');
     const report = command === 'prepare' ? await prepare(flags)
         : command === 'restore-setting' ? await restoreSetting(flags)
-        : await scans(flags);
+        : command === 'scans' ? await scans(flags)
+        : await payload(flags);
     process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 
