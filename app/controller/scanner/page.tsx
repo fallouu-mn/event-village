@@ -22,6 +22,23 @@
  * Chiffres (porte, entrées, refus, historique) lus sur /api/controller/scans, jamais comptés ici (D42).
  * Marques de mesure : ev-scan:read (lecture envoyée), ev-scan:pending (« Envoi… » affiché),
  * ev-scan:result (résultat affiché).
+ *
+ * Reprise de session (amendement A10, demande de l'utilisateur du 04/11 : « quand je quitte l'application et je
+ * reviens, les données sont parties ») : arrière-plan, navigation aller-retour, rechargement, fermeture puis
+ * réouverture de l'application installée.
+ *  1. Événement, mode (caméra ou saisie manuelle) et onglet retenus sur l'appareil (lib/scan/scan-session : clé
+ *     par compte, aucune donnée personnelle, oubliés après 24 h) ; repris seulement si l'affectation existe encore
+ *     et que l'événement est ouvert au contrôle (relu sur /api/controller/assignments), sinon écran de choix avec
+ *     un message ; effacés au changement d'événement et à la déconnexion.
+ *  2. Compteur de porte et derniers scans relus sur /api/controller/scans au montage, à chaque retour au premier
+ *     plan (visibilitychange) et à chaque page restaurée (pageshow) ; jamais tenus dans la page.
+ *  3. Scan dont le verdict n'est pas arrivé (requête coupée, réponse perdue, application fermée pendant l'envoi) :
+ *     sa clé et sa requête restent sur l'appareil 2 minutes au plus, et il est renvoyé au retour avec la MÊME clé
+ *     (le serveur rend le verdict d'origine, sans nouvelle entrée, D40) ; résultat affiché avec « Résultat
+ *     retrouvé » ; effacé dès qu'un verdict arrive.
+ *  4. Caisse ouverte relue sur /api/controller/shifts/active aux mêmes moments.
+ *  5. Caméra coupée en arrière-plan ; au retour (ou après un rechargement), écran « Reprendre le contrôle » qui la
+ *     relance en un geste, sans repasser par le choix de l'événement.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -38,15 +55,19 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { TabPanel, Tabs } from '@/components/ui/Tabs';
 import { CameraQrScanner, type CameraReadVerdict } from '@/components/scan/CameraQrScanner';
 import { CombatFlashOverlay } from '@/components/scan/CombatFlashOverlay';
-import { ManualEntryForm } from '@/components/scan/ManualEntryForm';
 import { ScannerShiftBanner, type ServedShift } from '@/components/scan/ScannerShiftBanner';
 import { ScanStatusBar } from '@/components/scan/ScanStatusBar';
 import { ScanHistoryList, type ServedRefusal, type ServedScan } from '@/components/scan/ScanHistoryList';
 import { ScannerStartScreen, type StartChoice } from '@/components/scan/ScannerStartScreen';
 import {
-    categoryFor, confirmCashCheckin, isTechnicalOutcome, postScan, SCAN_INCIDENTS_ENDPOINT, titleFor,
+    categoryFor, confirmCashCheckin, isTechnicalOutcome, newIdempotencyKey, postScan, SCAN_INCIDENTS_ENDPOINT, titleFor,
     type ScanOutcome, type ScanRequest,
 } from '@/components/scan/scan-client';
+import {
+    clearAllScanMemory, clearPendingScan, clearScanSession, isVerdictReceived, pendingPayload, readPendingScan,
+    readScanSession, savePendingScan, saveScanSession, useScannerReturn, type ScanArea, type ScanInputMode,
+    type ScanReturnReason,
+} from '@/lib/scan/scan-session';
 import { EVENT_STATUS_META, isEventEligibleForController, isEventStatus } from '@/lib/events/event-status';
 import { formatEventDateTime, formatFcfa, formatTime } from '@/lib/format';
 import { triggerHapticFeedback } from '@/lib/hardware/feedback';
@@ -56,6 +77,12 @@ import type { ShiftSummary } from '@/lib/shifts/shift.service';
 const OpenShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.OpenShiftModal), { ssr: false });
 const CloseShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CloseShiftModal), { ssr: false });
 const ZSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.ZSummaryModal), { ssr: false });
+// Saisie manuelle (mode secondaire) chargée à la demande et préchargée dès le départ du contrôle : la reprise de
+// session (A10) tient dans le budget de poids du scanner (7.5) sans retarder le passage en saisie manuelle
+const ManualEntryForm = dynamic(() => import('@/components/scan/ManualEntryForm').then((m) => m.ManualEntryForm), {
+    ssr: false,
+    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement de la saisie manuelle…</p>,
+});
 const CounterSalePanel = dynamic(() => import('@/components/scan/CounterSalePanel').then((m) => m.CounterSalePanel), {
     ssr: false,
     loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du guichet…</p>,
@@ -85,11 +112,12 @@ interface ScanStats {
     recent: ServedScan[];
 }
 
-type InputMode = 'camera' | 'manual';
+type InputMode = ScanInputMode;
 type Stage = 'idle' | 'pending' | 'slow' | 'result';
-type Area = 'controle' | 'guichet' | 'caisse';
+type Area = ScanArea;
 
-interface Shown { id: number; outcome: ScanOutcome; payload: string | null }
+/** Résultat affiché ; `recoveredAt` : heure de la lecture d'un scan renvoyé au retour (A10). */
+interface Shown { id: number; outcome: ScanOutcome; payload: string | null; recoveredAt: number | null }
 
 interface DeviceIncident { eventId: string; kind: 'NETWORK' | 'TIMEOUT'; at: string }
 
@@ -108,6 +136,8 @@ const AUTO_RETURN_KEY = 'ev_scanner_auto_return_ms';
 const STATS_AFTER_SCAN_MS = 800;
 const STATS_AFTER_REALTIME_MS = 5000;
 const MAX_INCIDENTS_PER_REPORT = 20;
+/** Mémoire de l'appareil (lib/scan/scan-session) : surface du contrôleur. */
+const SURFACE = 'controleur' as const;
 
 /** Libellé (EVENT_STATUS_META) d'un événement fermé au contrôle : terminé, suspendu ou annulé ; null sinon. */
 function closedStatusLabel(status?: string): string | null {
@@ -150,6 +180,14 @@ export default function ControllerScannerPage() {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [started, setStarted] = useState(false);
     const [controllerName, setControllerName] = useState('');
+    /** Compte du contrôleur (servi par /api/controller/assignments) : clé de la mémoire de l'appareil. */
+    const [accountId, setAccountId] = useState<string | null>(null);
+    /** Session retenue non reprise (événement fermé, affectation retirée) : dit sur l'écran de choix. */
+    const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
+    /** Scan en attente oublié ou gardé pour plus tard : dit sous la caméra. */
+    const [pendingNotice, setPendingNotice] = useState<string | null>(null);
+    /** Session retrouvée : la caméra attend « Reprendre le contrôle » (aucun démarrage sans geste, A10). */
+    const [resumeGate, setResumeGate] = useState(false);
 
     // Scan
     const [inputMode, setInputMode] = useState<InputMode>('camera');
@@ -179,6 +217,21 @@ export default function ControllerScannerPage() {
 
     const eventIdRef = useRef<string | null>(null);
     eventIdRef.current = started ? eventId : null;
+    const startedRef = useRef(started);
+    startedRef.current = started;
+    const selectedIdRef = useRef(selectedId);
+    selectedIdRef.current = selectedId;
+    const accountIdRef = useRef(accountId);
+    accountIdRef.current = accountId;
+    const canCashRef = useRef(false);
+    canCashRef.current = selected?.can_accept_cash === true;
+    /** Un POST de scan est en cours dans cette page (le scan en attente n'est alors jamais renvoyé en double). */
+    const inFlightRef = useRef(false);
+    /** Le contrôleur a quitté l'application pendant l'envoi en cours (useScannerReturn). */
+    const awayRef = useRef(false);
+    const restoreDoneRef = useRef(false);
+    /** Renvoi du scan en attente (défini plus bas, lu par les effets déclarés avant lui). */
+    const resumePendingRef = useRef<(reason: string) => void>(() => undefined);
     /** Un scan est envoyé ou son résultat est affiché : toute lecture est écartée (avec trace). */
     const busyRef = useRef(false);
     const lastValidRef = useRef<{ payload: string; at: number } | null>(null);
@@ -213,7 +266,12 @@ export default function ControllerScannerPage() {
     }, []);
 
     // ── Affectations ──
-    const fetchAssignments = useCallback(async () => {
+    /**
+     * `quiet` (relecture au retour, A10) : pendant un contrôle, un échec de lecture est journalisé sans remplacer
+     * l'écran de scan par l'écran d'erreur (réseau instable au retour d'un appel).
+     */
+    const fetchAssignments = useCallback(async (opts: { quiet?: boolean } = {}) => {
+        const quiet = opts.quiet === true && startedRef.current;
         try {
             const res = await fetch('/api/controller/assignments', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
             if (res.status === 401) {
@@ -222,7 +280,8 @@ export default function ControllerScannerPage() {
             }
             const data = await res.json();
             if (!res.ok || !data.success) {
-                setLoadError(data.error || 'Impossible de charger les événements.');
+                if (quiet) console.warn('[scanner] affectations non relues :', res.status);
+                else setLoadError(data.error || 'Impossible de charger les événements.');
                 return;
             }
             const list: Assignment[] = ((data.assignments ?? []) as Array<Record<string, unknown>>).map((a) => ({
@@ -239,13 +298,23 @@ export default function ControllerScannerPage() {
             if (data.controller) {
                 const name = [data.controller.first_name, data.controller.last_name].filter(Boolean).join(' ');
                 setControllerName(name);
+                if (typeof data.controller.id === 'string' && data.controller.id !== '') setAccountId(data.controller.id);
             }
-            setSelectedId((current) => (current && list.some((a) => a.id === current) ? current
+            // Affectation retirée pendant le contrôle (relue au retour) : retour à l'écran de choix, jamais un autre
+            // événement contrôlé à l'insu du contrôleur
+            const current = selectedIdRef.current;
+            if (startedRef.current && current && !list.some((a) => a.id === current)) {
+                setStarted(false);
+                setResumeGate(false);
+                setRestoreNotice('Vous n’êtes plus affecté à l’événement que vous contrôliez : choisissez un événement.');
+                if (typeof data.controller?.id === 'string') clearScanSession(SURFACE, data.controller.id);
+            }
+            setSelectedId((cur) => (cur && list.some((a) => a.id === cur) ? cur
                 : (list.find((a) => isEventEligibleForController(a.events?.status)) ?? list[0])?.id ?? null));
             setLoadError('');
         } catch (err) {
             console.warn('[scanner] affectations : réseau indisponible', err instanceof Error ? err.message : String(err));
-            setLoadError('Réseau indisponible : vos événements n’ont pas pu être chargés.');
+            if (!quiet) setLoadError('Réseau indisponible : vos événements n’ont pas pu être chargés.');
         } finally {
             setLoading(false);
         }
@@ -342,6 +411,7 @@ export default function ControllerScannerPage() {
             setOnline(true);
             void flushIncidents();
             void fetchStats();
+            resumePendingRef.current('online');
         };
         const goOffline = () => setOnline(false);
         window.addEventListener('online', goOnline);
@@ -360,6 +430,8 @@ export default function ControllerScannerPage() {
         void fetchStats();
         if (selected?.can_accept_cash) void fetchActiveShift();
         else setActiveShift(null);
+        resumePendingRef.current('montage');
+        import('@/components/scan/ManualEntryForm').catch((err: unknown) => console.warn('[scanner] saisie manuelle non préchargée :', err instanceof Error ? err.message : String(err)));
         const supabase = getBrowserClient();
         const channel = supabase
             .channel(`scanner-tickets-live-${eventId}`)
@@ -370,6 +442,54 @@ export default function ControllerScannerPage() {
             .subscribe();
         return () => { void supabase.removeChannel(channel); };
     }, [started, eventId, selected?.can_accept_cash, fetchStats, fetchActiveShift, scheduleStats]);
+
+    // ── Reprise de session (A10) : événement et mode retenus, repris si l'événement est encore ouvert au contrôle ──
+    useEffect(() => {
+        if (restoreDoneRef.current || loading || !accountId) return;
+        restoreDoneRef.current = true;
+        const memory = readScanSession(SURFACE, accountId);
+        if (!memory) return;
+        const match = assignments.find((a) => a.id === memory.assignmentId) ?? assignments.find((a) => a.events?.id === memory.eventId);
+        if (!match) {
+            clearScanSession(SURFACE, accountId);
+            setRestoreNotice('L’événement que vous contrôliez ne vous est plus affecté : choisissez un événement.');
+            return;
+        }
+        const title = match.events?.title || 'Événement sans titre';
+        if (!isEventEligibleForController(match.events?.status)) {
+            clearScanSession(SURFACE, accountId);
+            const closed = closedStatusLabel(match.events?.status);
+            setRestoreNotice(closed
+                ? `Le contrôle de « ${title} » est fermé (${closed}) : choisissez un événement.`
+                : `Le contrôle de « ${title} » n’est pas ouvert : choisissez un événement.`);
+            return;
+        }
+        lastValidRef.current = null;
+        setSelectedId(match.id);
+        setInputMode(memory.mode);
+        setArea(memory.area);
+        setResumeGate(memory.mode === 'camera');
+        setRestoreNotice(null);
+        setStarted(true);
+    }, [loading, accountId, assignments]);
+
+    // Mémoire de l'appareil tenue à jour (événement, affectation, mode, onglet ; aucune donnée personnelle)
+    const selectedAssignmentId = selected?.id ?? null;
+    const selectedEventId = selected?.events?.id ?? null;
+    useEffect(() => {
+        if (!started || !accountId || !selectedAssignmentId || !selectedEventId) return;
+        saveScanSession(SURFACE, accountId, { eventId: selectedEventId, assignmentId: selectedAssignmentId, mode: inputMode, area });
+    }, [started, accountId, selectedAssignmentId, selectedEventId, inputMode, area]);
+
+    // ── Retour dans l'application (A10) : affectations, chiffres, caisse relus sur le serveur ; scan en attente renvoyé ──
+    const handleReturn = useCallback((reason: ScanReturnReason) => {
+        void fetchAssignments({ quiet: true });
+        if (!startedRef.current) return;
+        void fetchStats();
+        if (canCashRef.current) void fetchActiveShift();
+        resumePendingRef.current(reason);
+    }, [fetchAssignments, fetchStats, fetchActiveShift]);
+    useScannerReturn(handleReturn, awayRef);
 
     useEffect(() => () => {
         for (const t of [slowTimerRef, noticeTimerRef, statsTimerRef]) if (t.current) clearTimeout(t.current);
@@ -384,7 +504,7 @@ export default function ControllerScannerPage() {
     }, [shown]);
 
     // ── Résultat : vibration, plein écran, compteurs ──
-    const presentOutcome = useCallback((outcome: ScanOutcome, payload: string | null) => {
+    const presentOutcome = useCallback((outcome: ScanOutcome, payload: string | null, recoveredAt: number | null = null) => {
         if (slowTimerRef.current) {
             clearTimeout(slowTimerRef.current);
             slowTimerRef.current = null;
@@ -400,7 +520,7 @@ export default function ControllerScannerPage() {
         }
         busyRef.current = true;
         seqRef.current += 1;
-        setShown({ id: seqRef.current, outcome, payload });
+        setShown({ id: seqRef.current, outcome, payload, recoveredAt });
         setStage('result');
         if (!technical) {
             scheduleStats(STATS_AFTER_SCAN_MS);
@@ -415,9 +535,19 @@ export default function ControllerScannerPage() {
         busyRef.current = false;
     }, []);
 
-    /** Envoi d'un scan (caméra ou saisie manuelle) : « Envoi… », « Réseau lent », puis résultat. */
-    const runScan = useCallback(async (request: ScanRequest, payload: string | null, key?: string) => {
+    /**
+     * Envoi d'un scan (caméra ou saisie manuelle) : « Envoi… », « Réseau lent », puis résultat. La clé et la requête
+     * sont gardées sur l'appareil jusqu'au verdict (A10) : un scan coupé par la sortie de l'application est renvoyé
+     * au retour avec la même clé (`recoveredAt` : heure de la lecture d'origine).
+     */
+    const runScan = useCallback(async (request: ScanRequest, payload: string | null, key?: string, recoveredAt: number | null = null) => {
+        const scanKey = key ?? newIdempotencyKey();
+        const account = accountIdRef.current;
+        if (account) savePendingScan(SURFACE, account, { key: scanKey, eventId: request.eventId, request, createdAt: recoveredAt ?? Date.now() });
         busyRef.current = true;
+        inFlightRef.current = true;
+        awayRef.current = document.visibilityState === 'hidden';
+        setPendingNotice(null);
         setCashError(null);
         setShown(null);
         setAttempt(1);
@@ -427,18 +557,63 @@ export default function ControllerScannerPage() {
             slowTimerRef.current = null;
             setStage((s) => (s === 'pending' ? 'slow' : s));
         }, SLOW_AFTER_MS);
-        const outcome = await postScan(request, { key, onAttempt: setAttempt });
+        let outcome: ScanOutcome;
+        try {
+            outcome = await postScan(request, { key: scanKey, onAttempt: setAttempt });
+        } finally {
+            inFlightRef.current = false;
+        }
+        const verdict = isVerdictReceived(outcome);
+        // Gardé pour un renvoi au retour seulement si le contrôleur a quitté l'application pendant l'envoi ; un incident
+        // vu à l'écran est tranché par lui (jamais renvoyé plus tard)
+        if (account && (verdict || !awayRef.current)) clearPendingScan(SURFACE, account, scanKey);
+        if (!verdict && awayRef.current) {
+            console.info('[scanner] sortie pendant l’envoi : scan renvoyé au retour avec sa clé');
+            if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+            busyRef.current = false;
+            setStage('idle');
+            if (document.visibilityState === 'visible') resumePendingRef.current('visible');
+            return;
+        }
         if (redirectIfSessionExpired(outcome)) {
             if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
             busyRef.current = false;
             setStage('idle');
             return;
         }
-        presentOutcome(outcome, payload);
+        presentOutcome(outcome, payload, recoveredAt);
     }, [presentOutcome, redirectIfSessionExpired]);
 
     const runScanRef = useRef(runScan);
     runScanRef.current = runScan;
+
+    /**
+     * Scan en attente (A10) : renvoyé avec la même clé s'il a moins de 2 minutes, concerne l'événement contrôlé et
+     * qu'aucun scan n'est en cours ni affiché ; hors ligne, gardé jusqu'au retour du réseau ; trop ancien, oublié
+     * et signalé (le verdict éventuel est dans « Derniers scans », servi par le serveur).
+     */
+    const resumePendingScan = useCallback((reason: string) => {
+        const account = accountIdRef.current;
+        const id = eventIdRef.current;
+        if (!account || !id) return;
+        if (busyRef.current || inFlightRef.current) return;
+        const { pending, expired } = readPendingScan(SURFACE, account);
+        if (expired) {
+            setPendingNotice(`Billet lu à ${formatTime(expired.createdAt)} sans réponse : vérifiez « Derniers scans » ou scannez-le de nouveau.`);
+        }
+        if (!pending) return;
+        if (pending.eventId !== id) {
+            clearPendingScan(SURFACE, account, pending.key);
+            return;
+        }
+        if (navigator.onLine === false) {
+            setPendingNotice(`Billet lu à ${formatTime(pending.createdAt)} sans réponse : renvoi au retour du réseau, sans double entrée.`);
+            return;
+        }
+        console.info(`[scanner] scan renvoyé avec sa clé (${reason})`);
+        void runScanRef.current(pending.request, pendingPayload(pending), pending.key, pending.createdAt);
+    }, []);
+    resumePendingRef.current = resumePendingScan;
 
     /** Lecture ignorée : toujours tracée (console, au plus une fois par QR et par 5 s) et dite à l'écran. */
     const traceIgnored = useCallback((payload: string, reason: string, notice: string | null) => {
@@ -521,6 +696,8 @@ export default function ControllerScannerPage() {
     };
 
     const handleLogout = async () => {
+        // A10 : la mémoire du contrôle (événement, mode, scan en attente) ne survit pas à la déconnexion
+        clearAllScanMemory();
         const supabase = getBrowserClient();
         // Lot 6 (contrat F4) : l'appareil ne reçoit plus les notifications push du compte après la déconnexion
         // (erreur journalisée par detachPushSubscription, la déconnexion continue).
@@ -538,9 +715,19 @@ export default function ControllerScannerPage() {
         }
     };
 
+    /** Changement de mode : choix explicite, la caméra démarre aussitôt (le toucher vaut geste). */
+    const chooseMode = (mode: InputMode) => {
+        setResumeGate(false);
+        setInputMode(mode);
+    };
+
     const backToStart = () => {
         dismissResult();
         lastValidRef.current = null;
+        // Changement d'événement voulu : la session retenue est oubliée (un rechargement ramène à l'écran de choix)
+        if (accountId) clearScanSession(SURFACE, accountId);
+        setResumeGate(false);
+        setRestoreNotice(null);
         setStarted(false);
         setArea('controle');
         setStats(null);
@@ -624,11 +811,18 @@ export default function ControllerScannerPage() {
         }));
         return (
             <>
+                {restoreNotice && (
+                    <div className="mb-4">
+                        <StatusBanner tone="warning" title="Contrôle précédent non repris">
+                            {restoreNotice}
+                        </StatusBanner>
+                    </div>
+                )}
                 <ScannerStartScreen
                     choices={choices}
                     selectedId={selectedId}
                     onSelect={setSelectedId}
-                    onStart={() => { lastValidRef.current = null; setStarted(true); }}
+                    onStart={() => { lastValidRef.current = null; setResumeGate(false); setRestoreNotice(null); setStarted(true); }}
                     controllerName={controllerName || undefined}
                 />
                 {logoutButton}
@@ -690,8 +884,10 @@ export default function ControllerScannerPage() {
                         <CameraQrScanner
                             onScan={handleCameraRead}
                             paused={cameraPaused || cashPending}
-                            onSwitchToManual={() => setInputMode('manual')}
+                            onSwitchToManual={() => chooseMode('manual')}
                             overlay={pendingLayer}
+                            autoStart={!resumeGate}
+                            onResume={() => setResumeGate(false)}
                         />
                     )}
                     {inputMode === 'manual' && (
@@ -708,6 +904,12 @@ export default function ControllerScannerPage() {
                         </div>
                     )}
 
+                    {pendingNotice && (
+                        <StatusBanner tone="warning" title="Scan sans réponse">
+                            {pendingNotice}
+                        </StatusBanner>
+                    )}
+
                     {ignoredNotice && (
                         <p role="status" className="rounded-xl border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-fg">
                             {ignoredNotice}
@@ -721,7 +923,7 @@ export default function ControllerScannerPage() {
                             size="lg"
                             className="gap-2 whitespace-nowrap px-4 text-sm"
                             aria-pressed={inputMode === 'camera'}
-                            onClick={() => setInputMode('camera')}
+                            onClick={() => chooseMode('camera')}
                             leftIcon={<Camera size={18} />}
                         >
                             Caméra
@@ -731,7 +933,7 @@ export default function ControllerScannerPage() {
                             size="lg"
                             className="gap-2 whitespace-nowrap px-4 text-sm"
                             aria-pressed={inputMode === 'manual'}
-                            onClick={() => setInputMode('manual')}
+                            onClick={() => chooseMode('manual')}
                             leftIcon={<Keyboard size={18} />}
                         >
                             Saisie manuelle
@@ -779,9 +981,11 @@ export default function ControllerScannerPage() {
         </div>
     );
 
-    // Durée du plein écran : entrée validée = préférence de l'appareil ; encaissement = attend une action
+    // Durée du plein écran : entrée validée = préférence de l'appareil ; encaissement = attend une action ; résultat
+    // retrouvé au retour dans l'application (A10) = attend un toucher (le contrôleur revient et doit le voir)
     const overlayDuration = !outcome ? 0
         : cashPending ? 0
+        : shown?.recoveredAt ? 0
         : outcome.result === 'valid' && !isTechnicalOutcome(outcome) ? autoReturnMs
         : REFUSAL_RETURN_MS;
     const recentByMe = outcome?.result === 'already_used' && outcome.ticket?.checked_in_by_me === true && outcome.ticket.checked_in_at
@@ -841,6 +1045,7 @@ export default function ControllerScannerPage() {
                     amountDue={outcome.amountDue}
                     durationMs={overlayDuration}
                     onDismiss={dismissResult}
+                    recoveredAt={shown?.recoveredAt ?? null}
                 >
                     {cashPending ? (
                         canCash ? (

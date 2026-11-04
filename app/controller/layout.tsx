@@ -11,6 +11,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Logo } from '@/components/ui/Logo';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { detachPushSubscription } from '@/lib/push/client';
+import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 
 /**
  * En-tête de l'espace contrôleur (relecture des captures du run 50) : tokens du système de design, cibles
@@ -28,6 +29,8 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
     const [showLogout, setShowLogout] = useState(false);
 
     const handleLogout = async () => {
+        // Lot 7 (A10) : mémoire du contrôle (événement, mode, scan en attente) effacée à la déconnexion
+        clearAllScanMemory();
         // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
         await detachPushSubscription();
         const supabase = createBrowserClient(

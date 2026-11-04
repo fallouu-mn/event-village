@@ -101,7 +101,11 @@ export async function middleware(req: NextRequest) {
     // Lot 4.3 : voie de scan unique et caisse partagées par le contrôleur, le partenaire propriétaire
     // et l'admin ; chaque route vérifie elle-même le droit sur l'événement (affectation ou propriété).
     // Lot 5 (C8) : y compris la déclaration des incidents de scan (/api/controller/scan/incidents)
+    // Lot 7 (A10) : chiffres et derniers scans du scanneur (GET /api/controller/scans), relus au retour dans
+    // l'application par /partner/scan aussi ; la route rend 404 sans aucune donnée hors du droit sur l'événement
+    // (scan_scanner_authorized : affectation, propriété de l'événement ou admin), comme la voie de scan.
     const isSharedControlApi = pathname === '/api/controller/scan' || pathname.startsWith('/api/controller/scan/')
+        || pathname === '/api/controller/scans'
         || pathname.startsWith('/api/controller/shifts');
     const isPartnerArea = pathname.startsWith('/partner') && pathname !== '/partner/register';
 

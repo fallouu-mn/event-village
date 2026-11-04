@@ -27,7 +27,7 @@
  * missing, not_yet, offline_missing, expired), `data-ev-qr-payload` et `data-ev-qr-counter` de la page hors ligne.
  * Les assertions et les seuils sont inchangés.
  */
-import type { Browser, BrowserContext, Locator, Page, TestInfo } from '@playwright/test';
+import type { Browser, BrowserContext, Locator, Page, Route, TestInfo } from '@playwright/test';
 import { test, expect, openRoleContext } from './support/fixtures';
 import type { RoleKey } from './support/accounts';
 import { CDP_NO_THROTTLING, cdpNetworkConditions, NET_3G } from './support/devices';
@@ -515,6 +515,246 @@ test('6. onglet en arrière-plan : pistes de la caméra arrêtées', async ({ br
         await expect.poll(async () => (await probeTracks(ctl.page)).filter((t) => t.kind === 'video' && t.readyState !== 'ended').length, {
             message: 'pistes vidéo encore actives après visibilitychange (hidden) : la caméra doit être libérée (D48)', timeout: 10_000,
         }).toBe(0);
+    } finally {
+        await s.close();
+        restoreTerrainSetting(ev);
+    }
+});
+
+// ── 7. Reprise de session du contrôleur (amendement A10) ───────────────────
+//
+// Demande de l'utilisateur du 04/11 : « quand je scanne quelqu'un et que je quitte l'application et je reviens, les
+// données sont parties ». Le contrôleur scanne, quitte (autre page puis retour, rechargement, arrière-plan simulé par
+// visibilitychange) et revient : même événement, même mode, compteur et historique relus sur le serveur, caméra
+// relancée par « Reprendre le contrôle », puis un autre billet. Enfin, deux scans en cours au moment de la sortie
+// (réponse perdue pendant un passage en arrière-plan ; application rechargée pendant l'envoi) : au retour, chacun est
+// renvoyé avec la MÊME clé, le verdict d'origine est affiché (« Résultat retrouvé ») et la base n'a qu'une entrée.
+
+const PENDING_PREFIX = 'ev-scan-pending:';
+
+/** Compteur de la barre d'état (« Vos entrées : N entrée(s) » ou « Porte X : N entrée(s) »), servi par le serveur. */
+async function expectDoorCount(page: Page, n: number, what: string): Promise<void> {
+    const re = new RegExp(`^(?:Vos entrées|Porte .+) : ${n} entrées?$`);
+    await expect(page.getByRole('status').filter({ hasText: re }).first(),
+        `${what} : compteur de porte relu sur le serveur, ${n} entrée(s) attendue(s)`).toBeVisible({ timeout: 20_000 });
+}
+
+/** Historique « Derniers scans » (servi par /api/controller/scans) : ouvert au besoin, chaque billet présent. */
+async function expectHistory(page: Page, ticketNumbers: string[], what: string): Promise<void> {
+    const toggle = page.getByRole('button', { name: /derniers scans/i });
+    await expect(toggle, `${what} : historique « Derniers scans » affiché`).toBeVisible({ timeout: 20_000 });
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    for (const number of ticketNumbers) {
+        await expect(page.getByText(number).filter({ visible: true }).first(), `${what} : billet ${number} dans l'historique relu sur le serveur`).toBeVisible({ timeout: 20_000 });
+    }
+}
+
+/** Contrôle repris sans repasser par l'écran de choix : même événement, même mode ; caméra : « Reprendre le contrôle ». */
+async function expectResumed(page: Page, title: string, mode: 'camera' | 'manual', what: string): Promise<void> {
+    await expect(page.getByRole('heading', { level: 1, name: title }), `${what} : même événement repris (barre d'état du scanner)`).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole('heading', { level: 1, name: /^commencer le contr[ôo]le$/i }), `${what} : l'écran de choix n'est pas réaffiché`).toHaveCount(0);
+    const pressed = page.getByRole('button', { name: mode === 'camera' ? /^caméra$/i : /^saisie manuelle$/i });
+    await expect(pressed, `${what} : même mode (${mode === 'camera' ? 'caméra' : 'saisie manuelle'})`).toHaveAttribute('aria-pressed', 'true');
+    if (mode === 'camera') {
+        await expect(page.getByRole('button', { name: /^reprendre le contr[ôo]le$/i }), `${what} : écran « Reprendre le contrôle »`).toBeVisible();
+    }
+}
+
+async function setVisibility(page: Page, state: 'hidden' | 'visible'): Promise<void> {
+    await page.evaluate((v) => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => v === 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+    }, state);
+}
+
+async function waitVideoPlaying(page: Page, what: string): Promise<void> {
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('video')).some((v) => v.readyState >= 2), null, { timeout: 30_000 })
+        .catch((err: unknown) => {
+            throw new Error(`${what} : aucun flux vidéo en lecture (${err instanceof Error ? err.message.split('\n')[0] : String(err)})`);
+        });
+    await expect.poll(async () => (await probeTracks(page)).filter((t) => t.kind === 'video' && t.readyState === 'live').length,
+        { message: `${what} : piste vidéo en marche`, timeout: 10_000 }).toBeGreaterThan(0);
+}
+
+/** Résultat d'origine affiché après un renvoi avec la même clé : « valid », « Résultat retrouvé », jamais « déjà utilisé ». */
+async function expectRecovered(page: Page, what: string): Promise<void> {
+    await expect(page.locator('[data-scan-result="valid"][data-scan-recovered="true"]').first(),
+        `${what} : scan renvoyé avec sa clé, verdict d'origine affiché`).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/résultat retrouvé/i).first(), `${what} : ligne « Résultat retrouvé »`).toBeVisible();
+    await expect(page.locator('[data-scan-result="already_used"]'), `${what} : jamais « déjà utilisé » pour le renvoi de sa propre lecture`).toHaveCount(0);
+}
+
+/** POST du scan terminés en erreur réseau (sonde du scanner, depuis le chargement de la page). */
+async function probePostErrors(page: Page): Promise<number> {
+    return page.evaluate(() => {
+        const probe = (window as unknown as { __evScanProbe?: { posts: Array<{ error: string | null }> } }).__evScanProbe;
+        if (!probe) throw new Error('sonde du scanner absente de la page');
+        return probe.posts.filter((p) => p.error !== null).length;
+    });
+}
+
+/** Clés d'idempotence des scans en attente gardés sur l'appareil (localStorage). */
+async function pendingScanKeys(page: Page): Promise<string[]> {
+    return page.evaluate((prefix) => Object.keys(window.localStorage).filter((k) => k.startsWith(prefix)).map((k) => {
+        try {
+            return String((JSON.parse(window.localStorage.getItem(k) ?? '{}') as { key?: unknown }).key ?? '');
+        } catch (err) {
+            return `illisible : ${err instanceof Error ? err.message : String(err)}`;
+        }
+    }), PENDING_PREFIX);
+}
+
+test('7. reprise de session : même événement et même mode après une sortie, chiffres et historique relus, « Reprendre le contrôle », scan sans réponse renvoyé avec sa clé', async ({ browser }, testInfo) => {
+    test.setTimeout(6 * 60_000);
+    const s = new Session(browser, testInfo);
+    let ev: TerrainEvent | null = null;
+    try {
+        ev = prepareTerrainEvent('reprise de session', 'client-bis', 4);
+        const [t1, t2, t3, t4] = ev.tickets;
+        const holder = await s.holder('fumee-client-bis');
+        const ctl = await s.open('fumee-controleur', { probe: true });
+        const page = ctl.page;
+        await openScanner(page, ev.title);
+
+        // 1. Un billet valide
+        await scanAndExpect(page, await livePayload(holder, t1.id), 'reprise : billet 1', 'valid');
+        await expectDoorCount(page, 1, 'après le billet 1');
+
+        // 2a. Autre page, puis retour arrière
+        await page.goto('/controller/profile');
+        await expect(page.getByRole('heading', { level: 1 }).first(), 'page du profil du contrôleur ouverte').toBeVisible({ timeout: 30_000 });
+        await page.goBack();
+        await expectResumed(page, ev.title, 'camera', 'retour arrière depuis le profil');
+        await expectDoorCount(page, 1, 'retour arrière');
+        await expectHistory(page, [t1.number], 'retour arrière');
+
+        // 2b. Mode « Saisie manuelle » retenu au rechargement ; retour à la caméra (démarrage immédiat : toucher)
+        await page.getByRole('button', { name: /^saisie manuelle$/i }).click();
+        await expect(page.getByRole('button', { name: /^saisie manuelle$/i })).toHaveAttribute('aria-pressed', 'true');
+        await page.reload();
+        await expectResumed(page, ev.title, 'manual', 'rechargement en saisie manuelle');
+        await expectDoorCount(page, 1, 'rechargement');
+        await expectHistory(page, [t1.number], 'rechargement');
+        await page.getByRole('button', { name: /^caméra$/i }).click();
+        await waitVideoPlaying(page, 'retour à la caméra après le rechargement');
+
+        // 2c. Arrière-plan (appel, autre application) : caméra coupée ; au retour, chiffres relus et « Reprendre le contrôle »
+        await setVisibility(page, 'hidden');
+        await expect.poll(async () => (await probeTracks(page)).filter((t) => t.kind === 'video' && t.readyState !== 'ended').length, {
+            message: 'arrière-plan : pistes vidéo arrêtées (D48)', timeout: 10_000,
+        }).toBe(0);
+        const reread = page.waitForRequest((r) => r.method() === 'GET' && new URL(r.url()).pathname === '/api/controller/scans', { timeout: 15_000 });
+        await setVisibility(page, 'visible');
+        await reread.catch((err: unknown) => {
+            throw new Error(`retour au premier plan : GET /api/controller/scans non relu (${err instanceof Error ? err.message.split('\n')[0] : String(err)})`);
+        });
+        const resume = page.getByRole('button', { name: /^reprendre le contr[ôo]le$/i });
+        await expect(resume, 'retour au premier plan : écran « Reprendre le contrôle » (aucun redémarrage sans geste)').toBeVisible();
+        expect((await probeTracks(page)).filter((t) => t.kind === 'video' && t.readyState === 'live').length,
+            'retour au premier plan : caméra encore coupée avant le geste').toBe(0);
+        await expect(page.getByRole('heading', { level: 1, name: ev.title }), 'arrière-plan : même événement').toBeVisible();
+
+        // 3. Un geste relance la caméra, puis un autre billet
+        await resume.click();
+        await waitVideoPlaying(page, '« Reprendre le contrôle »');
+        await scanAndExpect(page, await livePayload(holder, t2.id), 'reprise : billet 2 après « Reprendre le contrôle »', 'valid');
+        await expectDoorCount(page, 2, 'après le billet 2');
+
+        // 4. Scan en cours au moment de la sortie : le serveur traite la lecture, l'écran n'en voit jamais la réponse
+        const keys: Array<string | null> = [];
+        page.on('request', (req) => {
+            if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/controller/scan') keys.push(req.headers()['idempotency-key'] ?? null);
+        });
+
+        // 4a. Réponse perdue (route.abort) pendant que l'application est en arrière-plan (appel entrant), puis retour
+        let served = 0;
+        let servedStatus = 0;
+        let releaseAbort: () => void = () => undefined;
+        const abortGate = new Promise<void>((resolve) => { releaseAbort = resolve; });
+        const loseWhileAway = async (route: Route): Promise<void> => {
+            if (route.request().method() !== 'POST') {
+                await route.fallback();
+                return;
+            }
+            if (served === 0) {
+                served += 1;
+                servedStatus = (await route.fetch()).status(); // le serveur traite la lecture…
+                await abortGate;
+            }
+            await route.abort('timedout'); // … mais aucune réponse n'arrive, ni aux relances
+        };
+        await page.route('**/api/controller/scan', loseWhileAway);
+        const keysBefore3 = keys.length;
+        const errorsBefore3 = await probePostErrors(page);
+        await presentPayloadNoResult(page, await livePayload(holder, t3.id), 'reprise : billet 3, réponse perdue pendant la sortie');
+        await expect.poll(() => served, { message: 'billet 3 : lecture reçue par le serveur', timeout: 20_000 }).toBe(1);
+        expect(servedStatus, 'billet 3 : la lecture a bien été traitée par le serveur').toBe(200);
+        await setVisibility(page, 'hidden'); // l'application passe en arrière-plan pendant l'envoi
+        releaseAbort();
+        await expect.poll(async () => (await probePostErrors(page)) - errorsBefore3, {
+            message: 'billet 3 : trois essais sans réponse (même clé)', timeout: 30_000,
+        }).toBeGreaterThanOrEqual(3);
+        await expect.poll(() => pendingScanKeys(page), { message: 'billet 3 : scan gardé sur l’appareil avec sa clé', timeout: 10_000 })
+            .toEqual([keys[keysBefore3]]);
+        await expect(page.locator('[data-scan-result]'), 'billet 3 : aucun écran d’incident pendant la sortie (renvoi au retour)').toHaveCount(0);
+        await page.unroute('**/api/controller/scan', loseWhileAway);
+        await setVisibility(page, 'visible'); // retour au premier plan
+        await expectRecovered(page, 'billet 3, retour au premier plan');
+        const keys3 = keys.slice(keysBefore3);
+        expect(keys3.length, `billet 3 : trois essais puis le renvoi au retour : ${JSON.stringify(keys3)}`).toBeGreaterThanOrEqual(4);
+        expect(keys3[0], 'en-tête Idempotency-Key (D39)').toMatch(/^[0-9a-f-]{36}$/i);
+        expect(new Set(keys3).size, `billet 3 : même clé pour la lecture, ses relances et le renvoi : ${JSON.stringify(keys3)}`).toBe(1);
+        await expect.poll(() => pendingScanKeys(page), { message: 'billet 3 : scan en attente effacé au verdict', timeout: 10_000 }).toEqual([]);
+        const db3 = ticketScans(t3.id);
+        expect(db3.scans.filter((r) => r.accepted).length, `billet 3 : une seule entrée acceptée : ${JSON.stringify(db3.scans)}`).toBe(1);
+        expect(db3.scans.filter((r) => r.result === 'already_used').length, `billet 3 : aucune ligne already_used : ${JSON.stringify(db3.scans)}`).toBe(0);
+        expect(db3.ticket.status).toBe('UTILISE');
+        await expectDoorCount(page, 3, 'après le renvoi du billet 3');
+
+        // Le résultat retrouvé attend un toucher ; la caméra, coupée pendant la sortie, repart d'un geste
+        await page.locator('[data-scan-recovered="true"]').first().click();
+        await expect(page.locator('[data-scan-result]'), 'résultat retrouvé fermé d’un toucher').toHaveCount(0);
+        await page.getByRole('button', { name: /^reprendre le contr[ôo]le$/i }).click();
+        await waitVideoPlaying(page, 'avant le billet 4');
+
+        // 4b. Application fermée puis rouverte pendant l'envoi (réponse jamais reçue)
+        let held = 0;
+        let heldStatus = 0;
+        let released = false;
+        const holdResponse = async (route: Route): Promise<void> => {
+            if (released || route.request().method() !== 'POST') {
+                await route.fallback();
+                return;
+            }
+            if (held === 0) {
+                held += 1;
+                heldStatus = (await route.fetch()).status(); // le serveur traite la lecture…
+            }
+            // … et la réponse n'est jamais rendue : la page est rechargée pendant l'attente
+            await new Promise<void>((resolve) => { page.once('close', () => resolve()); });
+        };
+        await page.route('**/api/controller/scan', holdResponse);
+        const keysBefore4 = keys.length;
+        await presentPayloadNoResult(page, await livePayload(holder, t4.id), 'reprise : billet 4, application fermée pendant l’envoi');
+        await expect.poll(() => held, { message: 'billet 4 : lecture reçue par le serveur', timeout: 20_000 }).toBe(1);
+        expect(heldStatus, 'billet 4 : la lecture a bien été traitée par le serveur').toBe(200);
+        await expect(page.locator('[data-scan-state="pending"], [data-scan-state="slow"]').first(), 'billet 4 : envoi en cours, réponse attendue').toBeAttached();
+        expect(await pendingScanKeys(page), 'billet 4 : clé gardée sur l’appareil pendant l’envoi').toEqual([keys[keysBefore4]]);
+        released = true;
+        await page.reload(); // fermeture puis réouverture de l'application pendant l'envoi
+        await expectRecovered(page, 'billet 4, réouverture');
+        await page.unroute('**/api/controller/scan', holdResponse);
+        const keys4 = keys.slice(keysBefore4);
+        expect(keys4.length, `billet 4 : lecture puis renvoi à la réouverture : ${JSON.stringify(keys4)}`).toBeGreaterThanOrEqual(2);
+        expect(new Set(keys4).size, `billet 4 : même clé pour la lecture et le renvoi : ${JSON.stringify(keys4)}`).toBe(1);
+        await expect.poll(() => pendingScanKeys(page), { message: 'billet 4 : scan en attente effacé au verdict', timeout: 10_000 }).toEqual([]);
+        const db4 = ticketScans(t4.id);
+        expect(db4.scans.filter((r) => r.accepted).length, `billet 4 : une seule entrée acceptée : ${JSON.stringify(db4.scans)}`).toBe(1);
+        expect(db4.scans.filter((r) => r.result === 'already_used').length, `billet 4 : aucune ligne already_used : ${JSON.stringify(db4.scans)}`).toBe(0);
+        expect(db4.ticket.status).toBe('UTILISE');
+        await expectDoorCount(page, 4, 'après le renvoi du billet 4');
+        await expectResumed(page, ev.title, 'camera', 'réouverture pendant l’envoi');
     } finally {
         await s.close();
         restoreTerrainSetting(ev);

@@ -80,7 +80,9 @@ En haut de l'écran : le nom de l'événement, le compteur (« Porte Nord : 312 
 
 En bas : **Derniers scans** (à déplier) donne au contrôleur ses entrées, ses refus par motif et ses 20 derniers scans, et **Réglages de cet appareil** permet de régler le temps d'affichage d'une entrée validée.
 
-La caméra se met en veille après 3 minutes sans lecture, pour la batterie : touchez **Reprendre le contrôle**. Elle s'arrête aussi quand l'application passe en arrière-plan, et repart au retour. Le bouton de torche apparaît si le téléphone en a une.
+La caméra se met en veille après 3 minutes sans lecture, pour la batterie : touchez **Reprendre le contrôle**. Elle s'arrête aussi quand l'application passe en arrière-plan (appel, autre application, écran verrouillé) : au retour, un seul toucher sur **Reprendre le contrôle** la rallume. Le bouton de torche apparaît si le téléphone en a une.
+
+Le contrôleur peut quitter l'application sans rien perdre : après un appel, un passage par une autre page, un rechargement ou la fermeture puis la réouverture de l'application, il retrouve le même événement et le même mode (caméra ou saisie manuelle), sans repasser par le choix de l'événement. Le compteur et les derniers scans sont relus sur le serveur. Un billet scanné juste avant la sortie, dont la réponse n'est pas arrivée, est renvoyé au retour (dans les 2 minutes) sans risque de double entrée : l'écran affiche son résultat avec la mention « Résultat retrouvé ». Si l'événement n'est plus ouvert au contrôle, l'écran de choix revient avec un message. Tout est effacé à la déconnexion.
 
 ---
 

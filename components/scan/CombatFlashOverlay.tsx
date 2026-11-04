@@ -21,6 +21,10 @@
  * sinon retour automatique après `durationMs`. Le conteneur porte data-scan-result (résultat) et
  * data-scan-state="result" (mesures et tests de bout en bout).
  *
+ * Amendement A10 : un scan renvoyé au retour dans l'application (même clé d'idempotence, verdict d'origine rendu
+ * par le serveur) porte `recoveredAt` : la ligne « Résultat retrouvé » dit l'heure de la lecture d'origine, et le
+ * conteneur porte data-scan-recovered="true".
+ *
  * Ce n'est pas une modale : il ne piège pas le focus et ne bloque pas la caméra au-delà de son délai.
  * La position plein écran (fixed inset-0) est voulue : elle est imposée par tests/scanner-combat-ui.test.ts, et ce
  * fichier est l'exception nommée de la règle « modale écrite à la main » de tests/parcours/design-systeme.test.ts.
@@ -54,6 +58,8 @@ export interface CombatFlashOverlayProps {
     /** Retour automatique (ms) ; 0 ou absent avec des enfants : attend une action. */
     durationMs?: number;
     onDismiss?: () => void;
+    /** Heure de la lecture d'origine d'un scan renvoyé au retour dans l'application (A10) ; sinon absent. */
+    recoveredAt?: number | null;
     /** Actions (encaissement) : le toucher de l'écran ne ferme plus. */
     children?: React.ReactNode;
 }
@@ -114,6 +120,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     amountDue,
     durationMs,
     onDismiss,
+    recoveredAt,
     children,
 }) => {
     const waitsForAction = Boolean(children);
@@ -146,6 +153,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             data-scan-result={status}
             data-scan-state="result"
             data-scan-category={cat}
+            data-scan-recovered={recoveredAt ? 'true' : undefined}
             onClick={dismissOnTap}
             className={cn(
                 'fixed inset-0 z-50 flex select-none flex-col items-center justify-center gap-4 overflow-y-auto p-6 text-center',
@@ -161,6 +169,12 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             <p className="max-w-3xl text-balance text-4xl font-black leading-tight tracking-tight sm:text-5xl">
                 {heading}
             </p>
+
+            {recoveredAt ? (
+                <p className="max-w-2xl text-xl font-bold leading-snug sm:text-2xl">
+                    Résultat retrouvé : billet lu à {formatTime(recoveredAt)}.
+                </p>
+            ) : null}
 
             {status === 'valid' && (
                 <div className="flex max-w-4xl flex-col items-center gap-2">

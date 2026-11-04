@@ -6,6 +6,8 @@
  * lecteurs d'écran (role alert pour un refus ou un incident, status pour une entrée validée). Un
  * incident technique est signalé comme tel : le billet n'est pas en cause.
  * Lot 7 (D52) : aucun son, plus de bouton « Répéter en wolof ».
+ * Amendement A10 : un scan renvoyé au retour dans l'application (même clé, verdict d'origine) porte `recoveredAt`
+ * (ligne « Résultat retrouvé » avec l'heure de la lecture, attribut data-scan-recovered).
  */
 import React from 'react';
 import {
@@ -13,7 +15,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
-import { formatFcfa } from '@/lib/format';
+import { formatFcfa, formatTime } from '@/lib/format';
 import { isTechnicalOutcome, titleFor, toneFor, type ScanOutcome, type ScanTone } from './scan-client';
 
 /** Tons du résultat sur les tokens sémantiques (contrat Q) : fond doux, bordure et titre du ton, texte courant. */
@@ -52,11 +54,13 @@ export interface ScanResultPanelProps {
     outcome: ScanOutcome;
     /** Titre imposé (ex. « Encaissement non enregistré »), sinon le libellé du résultat. */
     title?: string;
+    /** Heure de la lecture d'origine d'un scan renvoyé au retour dans l'application (A10). */
+    recoveredAt?: number | null;
     /** Actions explicites sous le résultat (encaissement, réessai, abandon). */
     children?: React.ReactNode;
 }
 
-export function ScanResultPanel({ outcome, title, children }: ScanResultPanelProps) {
+export function ScanResultPanel({ outcome, title, recoveredAt, children }: ScanResultPanelProps) {
     const tone = toneFor(outcome);
     const classes = TONE_CLASSES[tone];
     const Icon = iconFor(outcome);
@@ -70,12 +74,18 @@ export function ScanResultPanel({ outcome, title, children }: ScanResultPanelPro
             role={tone === 'success' ? 'status' : 'alert'}
             aria-atomic="true"
             data-scan-result={outcome.result}
+            data-scan-recovered={recoveredAt ? 'true' : undefined}
             className={cn('flex flex-col gap-3 rounded-2xl border-2 p-4 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200', classes.box)}
         >
             <div className="flex items-start gap-3">
                 <Icon size={28} aria-hidden="true" className={cn('mt-0.5 flex-shrink-0', classes.icon)} />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <p className={cn('text-base font-bold leading-snug', classes.title)}>{heading}</p>
+                    {recoveredAt ? (
+                        <p className={cn('text-sm font-semibold', classes.body)}>
+                            Résultat retrouvé : billet lu à {formatTime(recoveredAt)}.
+                        </p>
+                    ) : null}
                     {showMessage && <p className={cn('text-sm font-medium', classes.body)}>{outcome.message}</p>}
                     {technical && (
                         <p className={cn('text-sm', classes.body)}>

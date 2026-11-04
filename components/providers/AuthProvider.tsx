@@ -6,6 +6,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { detachPushSubscription } from '@/lib/push/client';
 import { clearOfflineStore } from '@/lib/tickets/offline-store';
+import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 
 /**
  * Lot 7 (7.5) — synchronisation des billets hors ligne chargée à la demande.
@@ -165,6 +166,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // autre compte (téléphone partagé) ; clearOfflineStore ne lève jamais (échec journalisé).
                 if (event === 'SIGNED_OUT') {
                     void clearOfflineStore();
+                    // Lot 7 (A10) : mémoire du contrôle (événement, mode, scan en attente) effacée à la déconnexion
+                    clearAllScanMemory();
                 } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
                     void clearOfflineStore();
                 }
@@ -200,6 +203,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             // Lot 7 (7.1) : billets hors ligne effacés avant la déconnexion (au cas où SIGNED_OUT n'arrive pas).
             await clearOfflineStore();
+            // Lot 7 (A10) : mémoire du contrôle effacée aussi (scan partenaire et scanner contrôleur)
+            clearAllScanMemory();
             // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
             await detachPushSubscription();
             const supabase = getBrowserClient();

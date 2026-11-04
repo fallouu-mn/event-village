@@ -21,6 +21,11 @@
  * images. Le décodeur actif est exposé par `data-scan-decoder` (native, zxing+jsqr, zxing).
  * Caméra libérée (getTracks().stop()) en arrière-plan (visibilitychange) et après 3 min sans lecture
  * (veille, réveil par un toucher). Aucune vibration ici (D50 : seul le verdict vibre), aucun son.
+ * Amendement A10 (reprise de session) : au retour au premier plan, la caméra n'est PAS relancée d'office ; l'écran
+ * « Reprendre le contrôle » la relance en un geste (ce toucher redonne au navigateur l'activation de l'utilisateur
+ * qui autorise la vibration et, sur iPhone, la caméra). Session retrouvée par la page après un rechargement, une
+ * navigation ou la réouverture de l'application : `autoStart` faux, même écran « Reprendre le contrôle ». La phase
+ * est exposée par `data-scan-camera` (starting, live, error, asleep, background, restored).
  * Fonds opaques (jetons --scan-tech-*), ligne de visée fixe, aucune animation.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -51,10 +56,24 @@ export interface CameraQrScannerProps {
   idleTimeoutMs?: number;
   /** Calque posé sur l'image (état d'envoi). */
   overlay?: React.ReactNode;
+  /**
+   * Démarrage au montage (défaut). Faux : session retrouvée par la page (rechargement, navigation, réouverture),
+   * la caméra attend le geste « Reprendre le contrôle » (A10).
+   */
+  autoStart?: boolean;
+  /** Appelé quand le contrôleur touche « Reprendre le contrôle » (avant le démarrage). */
+  onResume?: () => void;
   className?: string;
 }
 
-type Phase = 'starting' | 'live' | 'error' | 'asleep' | 'background';
+type Phase = 'starting' | 'live' | 'error' | 'asleep' | 'background' | 'restored';
+
+/** Écrans de la caméra coupée : titre et explication, un seul bouton « Reprendre le contrôle ». */
+const STOPPED_TEXT: Record<'asleep' | 'background' | 'restored', { title: string; text: string }> = {
+  asleep: { title: 'Caméra en veille', text: 'Aucun billet lu depuis 3 minutes : la caméra est coupée pour la batterie.' },
+  background: { title: 'Caméra coupée', text: 'Application en arrière-plan : la caméra est coupée, votre contrôle reste ouvert.' },
+  restored: { title: 'Contrôle retrouvé', text: 'Même événement, même mode : rallumez la caméra.' },
+};
 
 interface NativeDetector { detect(source: HTMLVideoElement): Promise<Array<{ rawValue?: string }>> }
 interface ZxingReader { decodeFromCanvas(canvas: HTMLCanvasElement): { getText(): string } }
@@ -108,6 +127,8 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   onSwitchToManual,
   idleTimeoutMs = CAMERA_INACTIVITY_TIMEOUT_MS,
   overlay,
+  autoStart = true,
+  onResume,
   className,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -121,13 +142,14 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdRef = useRef(false);
   const pausedRef = useRef(paused);
-  const phaseRef = useRef<Phase>('starting');
+  const autoStartRef = useRef(autoStart);
+  const phaseRef = useRef<Phase>(autoStart ? 'starting' : 'restored');
   const onScanRef = useRef(onScan);
   const idleMsRef = useRef(idleTimeoutMs);
   const facingRef = useRef<'environment' | 'user'>('environment');
   const lastDecodeWarnRef = useRef(0);
 
-  const [phase, setPhaseState] = useState<Phase>('starting');
+  const [phase, setPhaseState] = useState<Phase>(autoStart ? 'starting' : 'restored');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraCount, setCameraCount] = useState(0);
   const [torchSupported, setTorchSupported] = useState(false);
@@ -401,9 +423,10 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   const startCameraRef = useRef(startCamera);
   startCameraRef.current = startCamera;
 
-  // Montage : démarrage ; démontage : tout est libéré (y compris un démarrage encore en attente)
+  // Montage : démarrage (sauf session retrouvée : « Reprendre le contrôle ») ; démontage : tout est libéré
+  // (y compris un démarrage encore en attente)
   useEffect(() => {
-    void startCameraRef.current();
+    if (autoStartRef.current) void startCameraRef.current();
     return () => stopCamera();
   }, [stopCamera]);
 
@@ -423,21 +446,25 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
     }
   }, [paused, armIdleTimer, stopLoop]);
 
-  // Arrière-plan : caméra réellement libérée ; premier plan : redémarrage (sauf veille)
+  // Arrière-plan : caméra réellement libérée ; premier plan : écran « Reprendre le contrôle » (A10), jamais un
+  // redémarrage sans geste (vibration et caméra exigent l'activation de l'utilisateur sur mobile)
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        if (phaseRef.current !== 'asleep') {
+        if (phaseRef.current !== 'asleep' && phaseRef.current !== 'restored') {
           stopCamera();
           setPhase('background');
         }
-      } else if (phaseRef.current === 'background') {
-        void startCameraRef.current();
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [setPhase, stopCamera]);
+
+  const resume = () => {
+    onResume?.();
+    void startCamera();
+  };
 
   const switchCamera = () => {
     facingRef.current = facingRef.current === 'environment' ? 'user' : 'environment';
@@ -457,7 +484,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   const live = phase === 'live';
 
   return (
-    <div className={cn('flex flex-col gap-3', className)} data-scan-decoder={decoderKind ?? undefined}>
+    <div className={cn('flex flex-col gap-3', className)} data-scan-decoder={decoderKind ?? undefined} data-scan-camera={phase}>
       <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl border-2 border-border-strong bg-scan-tech-bg">
         <video ref={videoRef} autoPlay playsInline muted aria-label="Image de la caméra" className="h-full w-full object-cover" />
 
@@ -488,16 +515,14 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
           </div>
         )}
 
-        {(phase === 'asleep' || phase === 'background') && (
+        {(phase === 'asleep' || phase === 'background' || phase === 'restored') && (
           <div data-testid="scanner-sleep-overlay" className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
             <PowerOff size={32} aria-hidden="true" />
-            <div className="flex max-w-xs flex-col gap-1">
-              <p className="text-base font-semibold">Caméra en veille</p>
-              <p className="text-sm leading-relaxed">
-                {phase === 'asleep' ? 'Aucun billet lu depuis 3 minutes : la caméra est coupée pour la batterie.' : 'Application en arrière-plan : la caméra est coupée.'}
-              </p>
+            <div role="status" aria-atomic="true" className="flex max-w-xs flex-col gap-1">
+              <p className="text-base font-semibold">{STOPPED_TEXT[phase].title}</p>
+              <p className="text-sm leading-relaxed">{STOPPED_TEXT[phase].text}</p>
             </div>
-            <Button variant="primary" size="lg" onClick={() => void startCamera()} leftIcon={<Camera size={18} />}>
+            <Button variant="primary" size="lg" onClick={resume} leftIcon={<Camera size={18} />}>
               Reprendre le contrôle
             </Button>
           </div>
