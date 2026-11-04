@@ -1,26 +1,25 @@
 /**
  * Lot 5.1 — Playwright (chromium seul) sur l'application démarrée par `next start` avec le build
  * de verify, la base locale seedée et les faux services (scripts/e2e/*). Lancer par `npm run e2e`
- * (scripts/e2e/run-e2e.mjs), qui enchaîne trois phases sans dépendance entre projets :
- *   connexion (projet setup) → captures (projets mobile et desktop) → fumée (projet fumee).
+ * (scripts/e2e/run-e2e.mjs), qui enchaîne des phases sans dépendance entre projets :
+ *   connexion (projet setup) → captures (projets mobile et desktop) → fumée (projet fumee)
+ *   → terrain → pwa → perf (lot 7, contrat section 11.1, décision D82).
  * Chaque phase a son dossier de sorties (E2E_PHASE) : une phase ne vide pas celles des autres.
+ *
+ * Lot 7 : `serviceWorkers: 'block'` reste le réglage global (D7) ; 'allow' seulement dans les contextes
+ * dédiés (terrain : openRoleContext(…, { serviceWorkers: 'allow' }) ; pwa : contexte persistant).
+ *  - terrain (e2e/terrain.spec.ts) : vue mobile, tests dans l'ordre du fichier (fullyParallel: false,
+ *    lancé avec --workers=1) ; un test en échec n'empêche pas les suivants (aucun mode « serial »).
+ *  - pwa (e2e/installable.spec.ts) : vue mobile, sans état de connexion (aucune dépendance au setup).
+ *  - perf (e2e/perf.spec.ts) : vue mobile, animations non réduites (mesure réaliste), --workers=1.
  */
 import { defineConfig } from '@playwright/test';
 import { APP_URL, e2eConfig } from './e2e/support/env';
+import { DESKTOP, MOBILE } from './e2e/support/devices';
 
 e2eConfig();
 
 const phase = (process.env.E2E_PHASE || 'complet').replace(/[^a-z0-9-]/gi, '');
-
-const DESKTOP = { browserName: 'chromium' as const, viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, isMobile: false, hasTouch: false };
-const MOBILE = {
-    browserName: 'chromium' as const,
-    viewport: { width: 390, height: 844 },
-    deviceScaleFactor: 2,
-    isMobile: true,
-    hasTouch: true,
-    userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
-};
 
 export default defineConfig({
     testDir: './e2e',
@@ -53,5 +52,8 @@ export default defineConfig({
         { name: 'mobile', testMatch: /captures\.spec\.ts$/, use: MOBILE },
         { name: 'desktop', testMatch: /captures\.spec\.ts$/, use: DESKTOP },
         { name: 'fumee', testMatch: /fumee\.spec\.ts$/, use: DESKTOP },
+        { name: 'terrain', testMatch: /terrain\.spec\.ts$/, use: MOBILE, fullyParallel: false },
+        { name: 'pwa', testMatch: /installable\.spec\.ts$/, use: MOBILE, fullyParallel: false },
+        { name: 'perf', testMatch: /perf\.spec\.ts$/, use: { ...MOBILE, reducedMotion: 'no-preference' }, fullyParallel: false },
     ],
 });

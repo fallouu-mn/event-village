@@ -1,7 +1,8 @@
 /**
  * Lot 5.1 — comptes utilisés par Playwright et leur état de connexion (storageState dans `.auth/`).
  *  - comptes de démonstration (seed:demo) : captures d'écran ;
- *  - comptes du seed de test (seed:test) : test de fumée, indépendant des données de démonstration.
+ *  - comptes du seed de test (seed:test) : test de fumée, indépendant des données de démonstration ;
+ *    lot 7 (D80) : second client et contrôleur A, pour le projet terrain et la fumée prolongée.
  * Le mot de passe vient des constantes de fixtures (aucun mot de passe littéral, cf.
  * tests/schema/secrets-codes-en-dur.test.ts).
  */
@@ -16,7 +17,8 @@ export const AUTH_DIR = path.resolve(process.cwd(), '.auth');
 
 export type RoleKey =
     | 'organisateur' | 'admin' | 'client' | 'controleur'
-    | 'fumee-organisateur' | 'fumee-superadmin' | 'fumee-client';
+    | 'fumee-organisateur' | 'fumee-superadmin' | 'fumee-client'
+    | 'fumee-client-bis' | 'fumee-controleur';
 
 export interface RoleSpec {
     key: RoleKey;
@@ -39,6 +41,10 @@ export const ROLES: readonly RoleSpec[] = [
     { key: 'fumee-organisateur', libelle: 'organisateur A (seed de test)', source: 'fixtures', arrivee: /\/partner(\/|$)/, email: () => FIXTURE_USERS.PARTNER_A.email },
     { key: 'fumee-superadmin', libelle: 'superadmin (seed de test)', source: 'fixtures', arrivee: /\/admin(\/|$)/, email: () => FIXTURE_USERS.SUPERADMIN.email },
     { key: 'fumee-client', libelle: 'client (seed de test)', source: 'fixtures', arrivee: /^\/$/, email: () => FIXTURE_USERS.CLIENT.email },
+    // Lot 7 (décision D80) : destinataire du transfert de la fumée prolongée et porteur des billets mesurés du
+    // projet terrain (CLIENT_BIS) ; contrôleur des projets terrain et de la fumée prolongée (CONTROLLER_A).
+    { key: 'fumee-client-bis', libelle: 'second client (seed de test)', source: 'fixtures', arrivee: /^\/$/, email: () => FIXTURE_USERS.CLIENT_BIS.email },
+    { key: 'fumee-controleur', libelle: 'contrôleur A (seed de test)', source: 'fixtures', arrivee: /\/controller\/scanner/, email: () => FIXTURE_USERS.CONTROLLER_A.email },
 ];
 
 export function roleSpec(key: RoleKey): RoleSpec {

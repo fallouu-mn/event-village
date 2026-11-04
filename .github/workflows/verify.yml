@@ -20,9 +20,13 @@ jobs:
   verify:
     name: typecheck · lint · tests (Supabase local) · build
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
+      # Lot 7 (contrat 11.7) : durée du job (délai de 60 min), écrite dans run.txt sur ci-results
+      - name: Horodatage du début du job
+        run: echo "EV_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -80,25 +84,36 @@ jobs:
           set -o pipefail
           npm run verify 2>&1 | tee /tmp/verify.log
 
+      # Lot 7 (contrat 9, 11.7, 14.1) : au run « avant », les tests rouges arrêtent verify à l'étape test ; sans ce
+      # build, ni la mesure du poids JavaScript (js-budget) ni les phases e2e (terrain, pwa, perf) ne tourneraient.
+      # Le build est refait dans l'environnement de verify (scripts/e2e/build-mesure.mjs) ; le job reste en échec.
+      - name: "Build de mesure (verify en échec : poids JavaScript et e2e quand même mesurés)"
+        id: build-mesure
+        if: ${{ !cancelled() && steps.verify.outcome == 'failure' }}
+        run: |
+          set -o pipefail
+          node scripts/e2e/build-mesure.mjs 2>&1 | tee /tmp/build-mesure.log
+
       # ── Lot 5.1 : Playwright sur le build de verify (captures d'écran et test de fumée) ─────────
-      # Étapes exécutées seulement si verify a réussi ; chacune garde son propre résultat : un seed de
+      # Étapes exécutées seulement si verify a réussi (lot 7 : ou si le build de mesure a abouti après un
+      # échec de verify) ; chacune garde son propre résultat : un seed de
       # démonstration en échec (attendu tant que le lot 5 n'est pas livré) n'empêche ni les captures
       # possibles ni la fumée, et le job reste en échec.
       - name: "E2E : version de Playwright"
         id: pw
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: "E2E : cache du navigateur Chromium"
         id: pw-cache
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
       - name: "E2E : installer Chromium"
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
           set -o pipefail
           if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
@@ -108,7 +123,7 @@ jobs:
           fi
 
       - name: "E2E : générer .env.e2e (instance locale, faux services, secrets aléatoires du run)"
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
           set -euo pipefail
           supabase status -o env > /tmp/supabase-e2e.env
@@ -165,12 +180,15 @@ jobs:
             echo "VAPID_PRIVATE_KEY=${VAPID_PRIV}"
             echo "VAPID_SUBJECT=mailto:notifications@e2e.eventvillage.local"
             echo "PUSH_ENDPOINT_ALLOWED_ORIGINS=http://127.0.0.1:4010"
+            # Lot 7 (D37) : quotas de téléchargement des codes hors ligne relevés (captures en contextes neufs)
+            echo "OFFLINE_CODES_PER_TICKET_HOUR=1000"
+            echo "OFFLINE_CODES_PER_USER_HOUR=1000"
           } > .env.e2e
           echo ".env.e2e généré : $(grep -c '=' .env.e2e) variables (URL=${API_URL}, valeurs secrètes masquées)"
 
       - name: "E2E : base propre (db reset), seed de test puis seed de démonstration"
         id: e2e-seed
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
           set -o pipefail
           {
@@ -182,7 +200,7 @@ jobs:
 
       - name: "E2E : démarrer les faux services et l'application (next start, arrière-plan)"
         id: e2e-start
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
           nohup node scripts/e2e/fake-services.mjs > /tmp/fake-services.log 2>&1 &
           nohup node scripts/e2e/start-app.mjs > /tmp/next-start.log 2>&1 &
@@ -198,7 +216,7 @@ jobs:
 
       - name: "E2E : captures d'écran et test de fumée (npm run e2e)"
         id: e2e
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') && steps.e2e-start.outcome == 'success' }}
         run: |
           set -o pipefail
           npm run e2e 2>&1 | tee /tmp/e2e.log
@@ -240,7 +258,7 @@ jobs:
             git checkout -q --orphan ci-results
           fi
           mkdir -p "$RUN_DIR"
-          for f in supabase-start db-reset seed verify containers e2e-install e2e-seed fake-services next-start e2e; do
+          for f in supabase-start db-reset seed verify build-mesure containers e2e-install e2e-seed fake-services next-start e2e; do
             [ -f "/tmp/$f.log" ] && cp "/tmp/$f.log" "$RUN_DIR/$f.log"
           done
           if [ -d "$GITHUB_WORKSPACE/.test-logs" ]; then cp -r "$GITHUB_WORKSPACE/.test-logs" "$RUN_DIR/test-logs"; fi
@@ -249,6 +267,14 @@ jobs:
             mkdir -p "$RUN_DIR/captures"
             cp -r "$GITHUB_WORKSPACE/.e2e-captures/captures/." "$RUN_DIR/captures/"
             echo "captures publiées : $(find "$RUN_DIR/captures" -name '*.png' | wc -l) PNG"
+          fi
+          # Lot 7 (contrat 9 et 11.6) : mesures (poids JavaScript post-build, scan, performance, durée des phases e2e),
+          # sous le régime des journaux conservés (pas de rotation)
+          if [ -f "$GITHUB_WORKSPACE/.verify/js-budget.tsv" ]; then cp "$GITHUB_WORKSPACE/.verify/js-budget.tsv" "$RUN_DIR/js-budget.tsv"; fi
+          if [ -d "$GITHUB_WORKSPACE/.e2e-captures/perf" ]; then
+            mkdir -p "$RUN_DIR/perf"
+            find "$GITHUB_WORKSPACE/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' \) -exec cp {} "$RUN_DIR/perf/" \;
+            echo "mesures publiées : $(find "$RUN_DIR/perf" -type f | wc -l) fichier(s)"
           fi
           # Diagnostic des échecs Playwright : error-context.md (< 512 Kio) et captures test-failed-*.png
           # (< 1,5 Mio, 80 au plus), arborescence de test-results/ conservée, dans runs/<n>-<id>/playwright/
@@ -271,9 +297,11 @@ jobs:
             echo "sha=${{ github.sha }}"
             echo "ref=${{ github.ref }}"
             echo "job_status=${JOB_STATUS}"
+            echo "build_mesure=${{ steps.build-mesure.outcome }}"
             echo "e2e_seed=${{ steps.e2e-seed.outcome }}"
             echo "e2e=${{ steps.e2e.outcome }}"
             echo "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            if [ -n "${EV_JOB_STARTED_AT:-}" ]; then echo "job_elapsed_s=$(( $(date +%s) - EV_JOB_STARTED_AT ))"; fi
           } > "$RUN_DIR/run.txt"
           git add -A
           git commit -q -m "ci-results: run ${{ github.run_number }} (${{ github.sha }}) — ${JOB_STATUS}"
@@ -289,7 +317,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: "E2E : rapport Playwright et traces (artefact)"
-        if: ${{ always() && steps.verify.outcome == 'success' }}
+        if: ${{ always() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

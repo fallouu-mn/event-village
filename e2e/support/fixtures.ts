@@ -58,8 +58,11 @@ export const test = base.extend<Fixtures>({
 
 export { expect };
 
-/** Options du projet courant recopiées dans un contexte ouvert à la main (plusieurs rôles par test). */
-function projectContextOptions(testInfo: TestInfo): BrowserContextOptions {
+/**
+ * Options du projet courant recopiées dans un contexte ouvert à la main (plusieurs rôles par test).
+ * Lot 7 : exportée pour perf.spec.ts (contexte neuf par passage, sans verrou réseau, contrat 11.6).
+ */
+export function projectContextOptions(testInfo: TestInfo): BrowserContextOptions {
     const u = testInfo.project.use;
     return {
         baseURL: u.baseURL,
