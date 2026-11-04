@@ -77,8 +77,8 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/partner/pilotage/CashTab.tsx',
     'components/partner/pilotage/ClosingTab.tsx',
     // Relecture des captures du run 50 : onglets défilants du pilotage (indice de défilement, onglet actif centré)
-    // Scanner du contrôleur (écran du lot 4 touché par le lot 5 ; run 50). CombatFlashOverlay reste hors liste :
-    // ses couleurs de haute visibilité et son plein écran sont imposés par tests/scanner-combat-ui.test.ts.
+    // Scanner du contrôleur (écran du lot 4 touché par le lot 5 ; run 50). CombatFlashOverlay est migré au lot 7
+    // (jetons --scan-*, D51) : il figure dans la section du lot 7 ci-dessous.
     'app/controller/scanner/page.tsx',
     'components/scan/ScannerShiftBanner.tsx',
     'components/scan/ScanResultPanel.tsx',
@@ -121,4 +121,56 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     // 6.8 : supervision admin (contrat L4)
     'app/admin/notifications/page.tsx',
     'app/admin/notifications/[id]/page.tsx',
+    // ── Lot 7 (contrat, section 12 ; T0f) ──
+    // Fichiers créés par le lot (aucun autre nouveau .tsx n'est permis). Absents tant que l'écran n'est pas
+    // écrit : la suite design-systeme est rouge jusqu'aux commits d'écran (fix(7.1e), fix(7.2e), fix(7.3s),
+    // fix(7.3e), fix(7.4)).
+    // 7.1 : billet hors ligne (E2)
+    'app/billet/hors-ligne/page.tsx',
+    'components/tickets/offline/OfflineTicketView.tsx',
+    'components/tickets/offline/OfflineStatusBadge.tsx',
+    'components/tickets/OfflineTicketsSync.tsx',
+    // 7.2 : scanner (E3)
+    'components/scan/ScanStatusBar.tsx',
+    'components/scan/ScanHistoryList.tsx',
+    'components/scan/CounterSalePanel.tsx',
+    'components/scan/ScannerStartScreen.tsx',
+    // 7.3 : paiement (E4) et layouts de garde des interrupteurs features.* (A5)
+    'components/payment/PendingPaymentBanner.tsx',
+    'components/payment/PaymentWaitingInfo.tsx',
+    'app/halls/layout.tsx',
+    'app/restaurants/[id]/tables/layout.tsx',
+    'app/restaurants/[id]/menu/layout.tsx',
+    'app/orders/layout.tsx',
+    'app/partner/halls/layout.tsx',
+    'app/partner/tables/layout.tsx',
+    'app/partner/orders/layout.tsx',
+    'app/partner/products/layout.tsx',
+    // 7.4 : première utilisation du partenaire (E5)
+    'components/partner/onboarding/FirstEventSteps.tsx',
+    // Fichiers existants migrés par le lot : rouges jusqu'à leur migration.
+    // 7.0 f : restes d'interface du lot 6 (E1)
+    'components/tickets/TransferExplainerModal.tsx',
+    'app/partner/register/page.tsx',
+    'app/controller/setup/page.tsx',
+    'app/admin/communications/page.tsx',
+    'app/partner/profile/page.tsx',
+    'app/controller/profile/page.tsx',
+    // 7.2 : scanner et caisse (E3)
+    'components/scan/CombatFlashOverlay.tsx',
+    'components/shifts/ShiftModals.tsx',
+    // 7.3 : parcours client (E4)
+    'components/payment/PaymentModal.tsx',
+    'app/paiement/[id]/page.tsx',
+    'app/wallet/page.tsx',
+    'app/orders/page.tsx',
+    'app/not-found.tsx',
+    'app/error.tsx',
+    // 7.4 : parcours partenaire (E5)
+    'app/partner/dashboard/page.tsx',
+    'app/partner/finance/page.tsx',
+    'app/partner/team/page.tsx',
+    'app/partner/subscription/page.tsx',
+    // Hors liste, modifiés sans migration (vérifié : présents dans PRE_LOT5_UI_FILES de design-systeme.test.ts,
+    // donc non concernés par le garde-fou des fichiers créés) : app/layout.tsx, app/partner/scan/page.tsx.
 ];

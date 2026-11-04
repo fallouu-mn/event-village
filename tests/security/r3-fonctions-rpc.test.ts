@@ -1,6 +1,10 @@
 /**
  * Lot 1A.3 (R3) — aucune RPC métier n'est appelable avec la clé anon ou un compte gratuit.
  * Les aides RLS (liste blanche) restent appelables : sinon toute la RLS casse.
+ * Lot 7 (T0d) : fonctions nouvelles du lot (M2, M4, M5) ajoutées, et contrôlées comme celles du lot 6
+ * (elles doivent EXISTER et être refusées par le privilège EXECUTE, 42501) ; 7e aide RLS
+ * ticket_category_private_read (D21). Rouges jusqu'aux migrations 20261105000002 à …05.
+ * Lot 7, tâche 7.9 (T31) : notif_ticket_lines (migration 20261105000007), même contrôle ; rouge jusqu'à fix(7.9).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -40,6 +44,25 @@ const LOT6_JSONB_RPCS = [
     'notif_enqueue_admins',
     'notif_upsert_aggregated_sms',
 ] as const;
+
+/**
+ * Lot 7 (contrat M2, M4, M5) : fonctions créées par le lot, avec des arguments factices valides en type
+ * (signature `(p jsonb)` sauf notif_sms_optional_used(p_day date) et ticket_offline_window(p_event uuid)).
+ * Les triggers (trg_tickets_secret_*) ne sont pas des RPC : leur privilège est contrôlé par
+ * tests/schema/fonctions-privileges.test.ts (groupe c).
+ */
+const LOT7_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['notif_sms_optional_used', { p_day: '2030-01-01' }],
+    ['ticket_secret_rotate', { p: {} }],
+    ['ticket_offline_window', { p_event: ZERO_UUID }],
+    ['ticket_offline_grant', { p: {} }],
+    ['ticket_offline_info', { p: {} }],
+    ['controller_scan_stats', { p: {} }],
+    ['ticket_manual_lookup', { p: {} }],
+    ['counter_sale_quote', { p: {} }],
+    // Tâche 7.9 (T31, migration 20261105000007, contrat 19.3) : lignes de billets figées dans la confirmation
+    ['notif_ticket_lines', { p_ticket_ids: [ZERO_UUID] }],
+];
 
 /** RPC métier (groupe b) avec des arguments factices valides en type. */
 const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
@@ -143,6 +166,8 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     // Lot 6 : notifications (boîte d'envoi, envoyeur, rappels, préférences, cloche, supervision,
     // transferts sans jeton, statut des partenaires), service_role uniquement
     ...lot6Rpcs(),
+    // Lot 7 : budget SMS optionnel, billet hors ligne, rotation du secret, scanner, guichet ; service_role uniquement
+    ...LOT7_RPCS,
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */
@@ -153,6 +178,8 @@ const RLS_HELPERS: Array<[string, Record<string, unknown> | undefined]> = [
     ['has_role', { p_role: 'CLIENT' }],
     ['is_partner_owner', { p_partner_id: ZERO_UUID }],
     ['auth_user_role', undefined],
+    // Lot 7 (D21) : prédicat privé des catégories de billets, sans lecture de public.users par l'appelant
+    ['ticket_category_private_read', { p_event: ZERO_UUID }],
 ];
 
 describe('R3 — RPC métier non appelables par anon / authenticated', () => {
@@ -187,6 +214,26 @@ describe('R3 — lot 6 : chaque RPC du lot existe et reste réservée au rôle d
             const { client } = await signInFixture('CLIENT_BIS');
             const auth = await client.rpc(fn, { p: {} });
             assertPrivilegeDenied(auth.error, `authenticated rpc(${fn})`);
+        });
+    }
+});
+
+/**
+ * Lot 7, même exigence que le lot 6 : une fonction absente (PGRST202) passerait pour refusée dans la boucle
+ * générale ; ici chaque fonction du lot doit exister ET être refusée par le privilège EXECUTE (42501).
+ */
+describe('R3 — lot 7 : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    for (const [fn, args] of LOT7_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (migrations 20261105000002 à …05, …07 pour notif_ticket_lines) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (migrations 20261105000002 à …05, …07 pour notif_ticket_lines) ou signature différente`);
         });
     }
 });

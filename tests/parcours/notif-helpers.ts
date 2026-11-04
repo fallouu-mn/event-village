@@ -11,7 +11,8 @@
  *    dispatchAt / flushNotifications (dispatchNotifications, contrat E4). Les modules du lot sont
  *    importés dynamiquement (loadLotModule) : avant correctif, l'aide échoue en nommant le module absent.
  *  - Lecture : outboxRows (boîte d'envoi filtrée, jamais globale), smsMark / smsTo, pushTo, emailsTo.
- *  - Réglages notif.* (withNotifSettings, par finance_setting_set, restaurés en finally), variables
+ *  - Réglages notif.* (withNotifSettings, par finance_setting_set, restaurés en finally ; lot 7, T0c :
+ *    + notif.sms_optional_daily_cap et notif.free_ticket_reminder_sms, − notif.sms_daily_alert), variables
  *    d'environnement (withEnv), clés VAPID générées (newVapidKeys, withVapid), abonnement de navigateur
  *    à clés P-256 réelles (fakeBrowserSubscription).
  *  - Comptes : markPhoneVerified (users.phone_verified_at, contrat B1), newAdmin (rôle et permissions).
@@ -361,8 +362,12 @@ export function emailsTo(address: string, since = 0): RecordedEmail[] {
     return getFakes().email.messagesTo(address).slice(since).filter((m) => m.success);
 }
 
-// ── Réglages notif.* (contrat I1) ──────────────────────────────────────────
+// ── Réglages notif.* (contrat I1 du lot 6 ; lot 7, M1 et D15) ──────────────
 
+/**
+ * Clés notif.* en vigueur au lot 7 : les 8 du lot 6 encore présentes, plus notif.sms_optional_daily_cap
+ * (7.0 a) et notif.free_ticket_reminder_sms (7.0 b). notif.sms_daily_alert est supprimée (D15).
+ */
 export type NotifSettingKey =
     | 'notif.reminder_j1_enabled'
     | 'notif.reminder_j1_hour'
@@ -372,9 +377,17 @@ export type NotifSettingKey =
     | 'notif.h3_sms'
     | 'notif.sms_quiet_start'
     | 'notif.sms_quiet_end'
-    | 'notif.sms_daily_alert';
+    | 'notif.sms_optional_daily_cap'
+    | 'notif.free_ticket_reminder_sms';
 
-/** Défauts du contrat I1. */
+/**
+ * Clé supprimée au lot 7 (D15, migration 20261105000001). Acceptée par getNotifSetting, setNotifSetting et
+ * withNotifSettings pour que les suites du lot 6 qui la posent encore compilent jusqu'à leur adaptation
+ * (section 13, T1 à T5) ; après fix(7.0a), la base ne la connaît plus et ces aides échouent en le disant.
+ */
+export type RetiredNotifSettingKey = 'notif.sms_daily_alert';
+
+/** Défauts des clés en vigueur (contrat I1 du lot 6, M1 du lot 7). */
 export const NOTIF_SETTING_DEFAULTS: Readonly<Record<NotifSettingKey, unknown>> = {
     'notif.reminder_j1_enabled': true,
     'notif.reminder_j1_hour': 10,
@@ -384,28 +397,29 @@ export const NOTIF_SETTING_DEFAULTS: Readonly<Record<NotifSettingKey, unknown>> 
     'notif.h3_sms': 'IF_NO_PUSH',
     'notif.sms_quiet_start': 22,
     'notif.sms_quiet_end': 8,
-    'notif.sms_daily_alert': 2000,
+    'notif.sms_optional_daily_cap': 700,
+    'notif.free_ticket_reminder_sms': 'NEVER',
 };
 
-export async function getNotifSetting(key: NotifSettingKey): Promise<unknown> {
+export async function getNotifSetting(key: NotifSettingKey | RetiredNotifSettingKey): Promise<unknown> {
     const { data, error } = await service.from('platform_settings').select('value').eq('key', key).maybeSingle();
     assert.equal(error, null, `lecture du réglage ${key} : ${error?.message}`);
-    assert.ok(data, `réglage ${key} absent de platform_settings (contrat I1, migration 20261103000003)`);
+    assert.ok(data, `réglage ${key} absent de platform_settings (contrat I1 du lot 6, migration 20261103000003 ; clés du lot 7 : migration 20261105000001)`);
     return (data.value as { value?: unknown }).value;
 }
 
-export async function setNotifSetting(key: NotifSettingKey, value: unknown, reason = 'test du lot 6'): Promise<void> {
+export async function setNotifSetting(key: NotifSettingKey | RetiredNotifSettingKey, value: unknown, reason = 'test du lot 6'): Promise<void> {
     const { data, error } = await service.rpc('finance_setting_set', { p_key: key, p_value: { value }, p_actor: await superadminId(), p_reason: reason });
     assert.equal(error, null, `réglage ${key} : ${error?.message}`);
     assert.equal((data as { ok?: boolean } | null)?.ok, true, `réglage ${key} refusé : ${JSON.stringify(data)}`);
 }
 
 /** Applique des réglages notif.* le temps de fn (finance_setting_set, historisé), puis remet les valeurs lues avant. */
-export async function withNotifSettings<T>(overrides: Partial<Record<NotifSettingKey, unknown>>, fn: () => Promise<T>): Promise<T> {
-    const keys = Object.keys(overrides) as NotifSettingKey[];
-    const saved = new Map<NotifSettingKey, unknown>();
+export async function withNotifSettings<T>(overrides: Partial<Record<NotifSettingKey | RetiredNotifSettingKey, unknown>>, fn: () => Promise<T>): Promise<T> {
+    const keys = Object.keys(overrides) as Array<NotifSettingKey | RetiredNotifSettingKey>;
+    const saved = new Map<NotifSettingKey | RetiredNotifSettingKey, unknown>();
     for (const k of keys) saved.set(k, await getNotifSetting(k));
-    const applied: NotifSettingKey[] = [];
+    const applied: Array<NotifSettingKey | RetiredNotifSettingKey> = [];
     try {
         for (const k of keys) {
             await setNotifSetting(k, overrides[k]);

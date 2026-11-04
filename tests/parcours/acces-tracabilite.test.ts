@@ -8,11 +8,14 @@
  *    table illisible par les rôles de l'API ;
  *  - lib/scan/scan-result.ts : type ScanResult = exactement l'union du contrat (vérifiée par le
  *    compilateur TypeScript) ;
- *  - quota par scanneur : rafale au-delà de SCAN_PER_SCANNER_10S → 429 rate_limited ;
+ *  - quota par scanneur : rafale au-delà de SCAN_PER_SCANNER_10S → 429 rate_limited ; lot 7 (T0) : la
+ *    rafale est alignée sur une fenêtre de 10 s de l'horloge de la base (fenêtres fixes de quota_reserve),
+ *    puis le test vérifie qu'elle y est restée : même limite, mêmes assertions, plus d'instabilité (run 70) ;
  *  - scanner contrôleur (contrôle statique) : statut HTTP lu, 401 → connexion, erreurs techniques
- *    (rate_limited, server_error, network_error) traitées à part, jamais « invalide » par défaut ni voix
- *    Wolof de rejet, compteur de refus réservé aux refus de billet, caméra en pause pendant une
- *    confirmation espèces, union importée de lib/scan/scan-result.
+ *    (rate_limited, server_error, network_error) traitées à part, jamais « invalide » par défaut ni son
+ *    de rejet (lot 7 : l'audio du scanner est supprimé ; l'absence de tout son est vérifiée plus largement
+ *    par tests/parcours/scanner-interface.test.ts), compteur de refus réservé aux refus de billet, caméra
+ *    en pause pendant une confirmation espèces, union importée de lib/scan/scan-result.
  * Rouge avant correctif : aucune table ticket_scans (app/api/controller/scan/route.ts:355-367 n'audite
  * que le succès) ; lib/scan/scan-result.ts n'existe pas ; limiteur en mémoire 5/s (route.ts:41-57),
  * SCAN_PER_SCANNER_10S absent de .env.test.example ; app/controller/scanner/page.tsx:483 et :548
@@ -31,8 +34,9 @@ import { assertAccessInvariants } from '../helpers/access-invariants';
 import { resetServerEnvCache } from '../../lib/env';
 import { STRONG_PASSWORD } from './helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
+import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { createTimedEvent, newController, scan, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
+import { alignQuotaWindow, assertSameQuotaWindow } from '../helpers/quota-window';
 
 type Row = Record<string, unknown>;
 
@@ -181,8 +185,13 @@ describe('4.9 Quota par scanneur', () => {
         process.env.SCAN_PER_SCANNER_10S = String(limit);
         resetServerEnvCache();
         try {
+            // Lot 7 (T0) : fenêtres fixes de 10 s (quota_reserve) ; la rafale doit tenir dans une seule. La route
+            // est chargée avant l'alignement : son premier import (suite filtrée) ne compte pas dans la rafale.
+            await importModule('../../app/api/controller/scan/route');
+            const win = await alignQuotaWindow(10, 3000);
             const out: RouteResult[] = [];
             for (let i = 0; i < limit + 2; i++) out.push(await scan(burster, { eventId: ev.eventId, payload: `TCK-RAFALE-${i}` }));
+            await assertSameQuotaWindow(win, 'rafale de scans');
             for (const r of out.slice(0, limit)) {
                 assert.equal(r.status, 200, `sous le quota : ${show(r)}`);
                 assert.equal(r.body.result, 'dynamic_qr_required', `sous le quota : ${show(r)}`);
@@ -228,14 +237,14 @@ describe('4.9 Scanner contrôleur (contrôle statique)', () => {
         assert.ok(/\b401\b[\s\S]{0,600}?['"`]\/login/.test(src), 'un 401 doit renvoyer vers /login (session expirée), pas vers un « billet invalide »');
     });
 
-    test('erreurs techniques traitées à part : jamais « invalide » par défaut, ni voix Wolof de rejet, ni compteur de refus', () => {
+    test('erreurs techniques traitées à part : jamais « invalide » par défaut, aucun son de rejet, ni compteur de refus', () => {
         const src = scannerSources();
         for (const technical of ['rate_limited', 'server_error', 'network_error']) {
             assert.ok(src.includes(`'${technical}'`) || src.includes(`"${technical}"`), `résultat technique ${technical} traité explicitement`);
         }
         assert.ok(!/(?:result|scan_result)\s*(?:\|\||\?\?)\s*['"]invalid['"]/.test(src), 'une réponse sans résultat ne doit pas devenir « invalid »');
         assert.ok(!/\?\s*['"]invalid['"]\s*:\s*['"]valid['"]/.test(src), 'une erreur d’encaissement ne doit pas devenir « invalid »');
-        assert.ok(!/else\s*\{\s*combatType\s*=\s*['"]reject['"]\s*;\s*wolofType\s*=\s*['"]INVALID['"]/.test(src), 'aucune voix « billet invalide » pour un résultat non prévu');
+        assert.ok(!/else\s*\{\s*combatType\s*=\s*['"]reject['"]\s*;\s*wolofType\s*=\s*['"]INVALID['"]/.test(src), 'aucun son « billet invalide » pour un résultat non prévu');
         for (const m of Array.from(src.matchAll(/set\w*(?:Refus|Reject)\w*\s*\(/gi))) {
             const guard = src.slice(Math.max(0, (m.index ?? 0) - 600), m.index);
             assert.ok(/server_error|rate_limited|network_error|technical|technique|isTicketRefusal|isRefusal|REFUSAL/i.test(guard),

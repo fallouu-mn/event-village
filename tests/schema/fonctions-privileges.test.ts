@@ -16,8 +16,15 @@ import { describe, test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { inRolledBackTransaction, inspect } from '../helpers/db';
 
-/** Groupe a — seule liste de fonctions autorisées à rester exécutables par anon / authenticated. */
-export const RLS_HELPER_WHITELIST = ['is_admin', 'is_superadmin', 'is_controller', 'has_role', 'is_partner_owner', 'auth_user_role'] as const;
+/**
+ * Groupe a — seule liste de fonctions autorisées à rester exécutables par anon / authenticated.
+ * Lot 7 (D21, T0e) : 7e aide, ticket_category_private_read(uuid), prédicat des politiques de
+ * ticket_categories sans privilège SELECT de l'appelant sur public.users (rouge jusqu'à fix(7.0c)).
+ */
+export const RLS_HELPER_WHITELIST = [
+    'is_admin', 'is_superadmin', 'is_controller', 'has_role', 'is_partner_owner', 'auth_user_role',
+    'ticket_category_private_read',
+] as const;
 
 interface FnRow {
     name: string;

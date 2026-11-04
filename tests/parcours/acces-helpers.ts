@@ -3,6 +3,8 @@
  * (fenêtre de scan), contrôleur affecté, billets payés en ligne ou « à régler sur place », appels
  * des routes de scan, de caisse et de code dynamique. Les modules réécrits au lot 4 (code dynamique,
  * routes nouvelles) sont importés dynamiquement : le typecheck de la CI passe avant les tests.
+ * Lot 7 (T0b, D39) : scan() envoie l'en-tête Idempotency-Key, une clé aléatoire neuve par appel (chaque
+ * appel reste une lecture distincte, comme avant), sauf clé fournie (rejeu) ou `null` (en-tête absent).
  */
 import '../helpers/env';
 import assert from 'node:assert/strict';
@@ -175,9 +177,21 @@ async function call(handler: (req: NextRequest, ctx?: unknown) => Promise<Respon
     return { status: res.status, body };
 }
 
-export async function scan(user: Buyer, body: Record<string, unknown>): Promise<RouteResult> {
+/** Clé d'idempotence d'un scan (contrat 3.3 : ^[A-Za-z0-9_-]{8,100}$) : UUID aléatoire. */
+export function newScanKey(): string {
+    return randomUUID();
+}
+
+export interface ScanOptions {
+    /** Clé envoyée dans Idempotency-Key ; absente : clé aléatoire neuve ; `null` : aucun en-tête (refus attendu, D39). */
+    idempotencyKey?: string | null;
+}
+
+export async function scan(user: Buyer, body: Record<string, unknown>, opts: ScanOptions = {}): Promise<RouteResult> {
     const { POST } = await importModule('../../app/api/controller/scan/route');
-    return call(POST, authed('/api/controller/scan', 'POST', user, body));
+    const key = opts.idempotencyKey === undefined ? newScanKey() : opts.idempotencyKey;
+    const headers: Record<string, string> = key === null ? {} : { 'idempotency-key': key };
+    return call(POST, authed('/api/controller/scan', 'POST', user, body, headers));
 }
 
 export async function cashCheckin(user: Buyer, body: Record<string, unknown>): Promise<RouteResult> {
