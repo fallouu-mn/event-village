@@ -1,19 +1,18 @@
 'use client';
 
 /**
- * Finances du partenaire (lot 3.6) : compte ORGANISATEUR du grand livre.
- *  - solde disponible au retrait, montant en attente et sa date de disponibilité, retraits en
- *    cours, créance éventuelle, historique des écritures et des retraits : tout vient de
- *    GET /api/finance/balance, aucun montant n'est recalculé ici ;
- *  - retrait : Wave ou Orange Money, numéro, montant, code de confirmation envoyé au téléphone du
- *    compte (POST /api/withdrawals/otp), puis demande (POST /api/withdrawals/request, en-tête
+ * Finances du partenaire (lot 3.6, migré au lot 7, tâche 7.4) : compte ORGANISATEUR du grand livre.
+ *  - solde disponible au retrait, montant en attente et sa date de disponibilité, retraits en cours, créance,
+ *    50 dernières écritures et 20 derniers retraits : tout vient de GET /api/finance/balance ; aucun montant
+ *    n'est recalculé ici, et l'état de chaque ligne est servi (is_pending des écritures, à l'horloge du
+ *    serveur ; effective_status des retraits, statut corrigé par l'issue de l'envoi) ;
+ *  - retrait : Wave ou Orange Money, numéro, montant, code de confirmation envoyé au téléphone du compte
+ *    (POST /api/withdrawals/otp, saisi par OtpInput), puis demande (POST /api/withdrawals/request, en-tête
  *    Idempotency-Key). Frais et seuil sont appliqués par le serveur et affichés depuis sa réponse.
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import Link from 'next/link';
 import {
-    AlertCircle,
     ArrowDownLeft,
     ArrowUpRight,
     BarChart3,
@@ -28,13 +27,20 @@ import {
     XCircle,
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { OtpInput } from '@/components/auth/OtpInput';
+import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { KpiCard } from '@/components/ui/KpiCard';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { TextInput } from '@/components/ui/Field';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/components/ui/cn';
 import {
     OPERATOR_VISUALS,
-    formatFcfa,
     formatLocalPhone,
     isUncertainOutcome,
     operatorLabel,
@@ -43,6 +49,7 @@ import {
     serverErrorMessage,
     useIdempotencyKey,
 } from '@/components/payment/PaymentModal';
+import { formatDateTime, formatFcfa } from '@/lib/format';
 import { maskPhone, normalizePayerPhone } from '@/lib/payments/payer-phone';
 import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
 
@@ -66,6 +73,8 @@ interface HistoryEntry {
     availableAt: string | null;
     createdAt: string;
     description: string | null;
+    /** Servi par le serveur (available_at après son horloge). */
+    isPending: boolean;
 }
 
 interface WithdrawalRow {
@@ -73,7 +82,8 @@ interface WithdrawalRow {
     gross: number;
     fee: number;
     net: number;
-    status: string;
+    /** Statut à afficher, servi par le serveur (effective_status). */
+    effectiveStatus: string;
     operator: string | null;
     phone: string | null;
     createdAt: string;
@@ -133,6 +143,7 @@ function parseAccount(body: unknown): AccountView | null {
                   availableAt: text(e.available_at),
                   createdAt,
                   description: text(e.description),
+                  isPending: e.is_pending === true,
               }];
           })
         : [];
@@ -150,7 +161,7 @@ function parseAccount(body: unknown): AccountView | null {
                   gross,
                   fee,
                   net,
-                  status: text(w.status) ?? 'PENDING',
+                  effectiveStatus: text(w.effective_status) ?? text(w.status) ?? 'PENDING',
                   operator: text(w.operator),
                   phone: text(w.phone_number),
                   createdAt,
@@ -173,17 +184,20 @@ function parseAccount(body: unknown): AccountView | null {
     };
 }
 
+/**
+ * Réponse de POST /api/withdrawals/request : le statut du retrait, corrigé par l'issue de l'envoi quand le
+ * serveur ne l'a pas encore reporté sur le retrait (cashout_status de la réponse, route hors de cet écran).
+ */
 function parseResult(body: unknown): WithdrawalResult | null {
     if (!isRecord(body)) return null;
     const root = isRecord(body.withdrawal) ? body.withdrawal : body;
-    const status = text(root.status);
+    const status = text(root.effective_status) ?? text(root.status);
     if (!status) return null;
-    // Issue de l'envoi (cashout_status) quand le statut du retrait n'a pas encore été mis à jour.
     const cashout = text(root.cashout_status);
-    const effective = status === 'PROCESSING' && cashout === 'CONFIRME' ? 'PAID' : status === 'PROCESSING' && cashout === 'ECHOUE' ? 'REJECTED' : status;
+    const shown = status === 'PROCESSING' && cashout === 'CONFIRME' ? 'PAID' : status === 'PROCESSING' && cashout === 'ECHOUE' ? 'REJECTED' : status;
     return {
         withdrawalId: text(root.withdrawal_id) ?? text(root.id),
-        status: effective,
+        status: shown,
         gross: readAmount(root.gross_amount),
         fee: readAmount(root.fee_amount),
         net: readAmount(root.net_amount),
@@ -203,35 +217,20 @@ const ENTRY_LABELS: Record<string, string> = {
     COMPENSATION_CREANCE: 'Compensation d’une créance',
 };
 
-const WITHDRAWAL_STATUS: Record<string, { label: string; className: string }> = {
-    PENDING: { label: 'En attente', className: 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300' },
-    PROCESSING: { label: 'En cours', className: 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300' },
-    PAID: { label: 'Versé', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' },
-    REJECTED: { label: 'Refusé, montant rendu', className: 'bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300' },
-    CANCELLED: { label: 'Annulé', className: 'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300' },
+const WITHDRAWAL_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
+    PENDING: { label: 'En attente', variant: 'warning' },
+    PROCESSING: { label: 'En cours d’envoi', variant: 'warning' },
+    PAID: { label: 'Versé', variant: 'success' },
+    REJECTED: { label: 'Refusé, montant rendu', variant: 'danger' },
+    CANCELLED: { label: 'Annulé', variant: 'neutral' },
 };
 
 function withdrawalStatus(status: string) {
-    return WITHDRAWAL_STATUS[status] ?? { label: status, className: 'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300' };
-}
-
-function formatDateTime(iso: string | null): string | null {
-    if (!iso) return null;
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toLocaleString('fr-FR', {
-        day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dakar',
-    });
+    return WITHDRAWAL_STATUS[status] ?? { label: 'Statut inconnu', variant: 'neutral' as BadgeVariant };
 }
 
 function formatSigned(amount: number): string {
     return amount < 0 ? `− ${formatFcfa(-amount)}` : `+ ${formatFcfa(amount)}`;
-}
-
-function isFuture(iso: string | null): boolean {
-    if (!iso) return false;
-    const t = Date.parse(iso);
-    return !Number.isNaN(t) && t > Date.now();
 }
 
 /** Erreur de retrait : rattachée au champ concerné quand le code serveur le permet. */
@@ -244,6 +243,12 @@ function fieldForCode(code: string | null): keyof FieldErrors | null {
     return null;
 }
 
+const STEPS: Array<{ key: Step; label: string }> = [
+    { key: 'form', label: 'Demande' },
+    { key: 'otp', label: 'Code SMS' },
+    { key: 'done', label: 'Suivi' },
+];
+
 /* ──────────────────────────────── Page ──────────────────────────────── */
 
 export default function PartnerFinancePage() {
@@ -252,11 +257,7 @@ export default function PartnerFinancePage() {
     const attempt = useIdempotencyKey();
     const fieldId = useId();
     const ids = {
-        phone: `${fieldId}-phone`,
-        phoneHelp: `${fieldId}-phone-help`,
-        amount: `${fieldId}-amount`,
-        amountHelp: `${fieldId}-amount-help`,
-        otp: `${fieldId}-otp`,
+        otpLabel: `${fieldId}-otp-label`,
         otpHelp: `${fieldId}-otp-help`,
         operatorError: `${fieldId}-operator-error`,
     };
@@ -277,13 +278,13 @@ export default function PartnerFinancePage() {
     const [result, setResult] = useState<WithdrawalResult | null>(null);
 
     const prefillDone = useRef(false);
-    const otpRef = useRef<HTMLInputElement | null>(null);
     const resultRef = useRef<HTMLDivElement | null>(null);
 
     const payoutPhone = normalizePayerPhone(phoneInput);
     const accountPhone = normalizePayerPhone(profile?.phone);
     const amountValue = /^\d+$/.test(amountInput.trim()) ? Number(amountInput.trim()) : null;
     const balance = account?.balance ?? null;
+    const stepIndex = STEPS.findIndex((s) => s.key === step);
 
     const loadAccount = useCallback(async () => {
         setIsLoading(true);
@@ -322,7 +323,6 @@ export default function PartnerFinancePage() {
     }, [accountPhone]);
 
     useEffect(() => {
-        if (step === 'otp') otpRef.current?.focus();
         if (step === 'done') resultRef.current?.focus();
     }, [step]);
 
@@ -330,7 +330,7 @@ export default function PartnerFinancePage() {
         const next: FieldErrors = {};
         if (!operator) next.operator = 'Choisissez Wave ou Orange Money.';
         if (!payoutPhone) next.phone = 'Numéro invalide : mobile sénégalais de 9 chiffres commençant par 70, 75, 76, 77 ou 78.';
-        if (amountValue === null || amountValue <= 0) next.amount = 'Indiquez un montant entier en FCFA.';
+        if (amountValue === null || amountValue <= 0) next.amount = 'Indiquez un montant entier en francs CFA.';
         else if (balance && amountValue > balance.withdrawable) {
             next.amount = `Le montant dépasse votre solde disponible au retrait (${formatFcfa(balance.withdrawable)}).`;
         }
@@ -371,7 +371,6 @@ export default function PartnerFinancePage() {
         setFlowError(null);
         if (!/^\d{6}$/.test(otpCode.trim())) {
             setErrors({ otp: 'Saisissez le code à 6 chiffres reçu par SMS.' });
-            otpRef.current?.focus();
             return;
         }
         const request = { account: ACCOUNT, amount: amountValue, method: 'MOBILE_MONEY', operator, phoneNumber: payoutPhone };
@@ -391,7 +390,6 @@ export default function PartnerFinancePage() {
                 const field = fieldForCode(code);
                 if (field === 'otp') {
                     setErrors({ otp: message });
-                    otpRef.current?.focus();
                 } else if (field) {
                     setErrors({ [field]: message });
                     setStep('form');
@@ -428,147 +426,120 @@ export default function PartnerFinancePage() {
         setFlowError(null);
     };
 
-    const inputClass = (invalid: boolean) =>
-        `w-full h-12 px-4 rounded-xl bg-slate-50 dark:bg-zinc-800 border text-base font-bold text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 transition-colors ${
-            invalid
-                ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
-                : 'border-slate-200 dark:border-zinc-700 focus:border-[#FF5722] focus:ring-[#FF5722]/20'
-        }`;
-
     return (
-        <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-8 pb-16">
-            {/* En-tête */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <Wallet className="w-6 h-6 text-[#FF5722]" aria-hidden="true" />
-                        Finances
-                    </h1>
-                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                        Ventes en ligne de vos événements. Les ventes en espèces et les invitations n’alimentent pas ce solde.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Link
-                        href="/partner/stats"
-                        className="inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-300 hover:text-[#FF5722] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722]"
-                    >
-                        <BarChart3 className="w-4 h-4" aria-hidden="true" /> Statistiques de ventes
-                    </Link>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        leftIcon={<RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
-                        onClick={() => void loadAccount()}
-                        isLoading={isLoading && account !== null}
-                        disabled={isLoading}
-                    >
-                        Actualiser
-                    </Button>
-                </div>
-            </div>
+        <div className="mx-auto max-w-4xl space-y-8 px-4 py-6 pb-24 sm:px-6">
+            <PageHeader
+                title="Finances"
+                description="Ventes en ligne de vos événements. Les ventes en espèces et les invitations n’alimentent pas ce solde."
+                actions={
+                    <>
+                        <LinkButton href="/partner/stats" variant="ghost" size="sm" leftIcon={<BarChart3 size={16} />}>
+                            Statistiques de ventes
+                        </LinkButton>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            leftIcon={<RefreshCw size={16} aria-hidden="true" />}
+                            onClick={() => void loadAccount()}
+                            isLoading={isLoading && account !== null}
+                            disabled={isLoading}
+                        >
+                            Actualiser
+                        </Button>
+                    </>
+                }
+            />
 
             {/* Soldes */}
             {loadError && !account ? (
-                <ErrorState title="Solde indisponible" description={loadError} onRetry={() => void loadAccount()} />
-            ) : !account || !balance ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-busy="true">
-                    <span className="sr-only">Chargement du solde…</span>
-                    <Skeleton className="h-32 rounded-2xl sm:col-span-3" />
-                    <Skeleton className="h-24 rounded-2xl" />
-                    <Skeleton className="h-24 rounded-2xl" />
-                    <Skeleton className="h-24 rounded-2xl" />
-                </div>
+                <ErrorState title="Solde indisponible" description={loadError} onRetry={() => void loadAccount()} isRetrying={isLoading} />
             ) : (
                 <section aria-labelledby={`${fieldId}-soldes`} className="space-y-3">
                     <h2 id={`${fieldId}-soldes`} className="sr-only">Soldes</h2>
                     {loadError && (
-                        <div role="alert" className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-center gap-2 text-xs text-red-700 dark:text-red-300">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-                            {loadError}
-                        </div>
+                        <StatusBanner tone="danger" announce="alert" title="Actualisation impossible">
+                            {loadError} Les montants affichés sont ceux de la dernière lecture réussie.
+                        </StatusBanner>
                     )}
-                    <div className="p-5 sm:p-6 rounded-2xl border border-[#FF5722]/40 bg-orange-50 dark:bg-orange-950/20 shadow-sm">
-                        <div className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Disponible au retrait</div>
-                        <div className="mt-1 text-3xl sm:text-4xl font-black text-[#FF5722] tabular-nums">{formatFcfa(balance.withdrawable)}</div>
-                        <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">Montant que vous pouvez retirer dès maintenant.</p>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="p-4 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 space-y-1">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
-                                <Hourglass className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" /> En attente
-                            </div>
-                            <div className="text-lg font-black text-slate-900 dark:text-white tabular-nums">{formatFcfa(balance.pending)}</div>
-                            <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                                {balance.pending > 0 && formatDateTime(balance.nextAvailableAt)
-                                    ? `Prochaine disponibilité : ${formatDateTime(balance.nextAvailableAt)}.`
-                                    : 'Les ventes deviennent disponibles après la fin de l’événement et le délai de garde.'}
-                            </p>
+                    {!balance ? (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" role="status" aria-busy="true">
+                            <span className="sr-only">Chargement du solde…</span>
+                            <Skeleton className="h-32 rounded-2xl sm:col-span-3" />
+                            <Skeleton className="h-28 rounded-2xl" />
+                            <Skeleton className="h-28 rounded-2xl" />
+                            <Skeleton className="h-28 rounded-2xl" />
                         </div>
-                        <div className="p-4 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 space-y-1">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
-                                <Send className="w-3.5 h-3.5 text-[#FF5722]" aria-hidden="true" /> Retraits en cours
+                    ) : (
+                        <>
+                            <div className="rounded-2xl border border-brand-fg bg-brand-bg p-5 sm:p-6">
+                                <p className="text-sm font-semibold text-fg-muted">Disponible au retrait</p>
+                                <p className="mt-1 text-3xl font-bold tabular-nums text-brand-fg sm:text-4xl">{formatFcfa(balance.withdrawable)}</p>
+                                <p className="mt-1 text-sm text-fg-muted">Montant que vous pouvez retirer dès maintenant.</p>
                             </div>
-                            <div className="text-lg font-black text-slate-900 dark:text-white tabular-nums">{formatFcfa(balance.inProgress)}</div>
-                            <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">Montant réservé pendant l’envoi vers Wave ou Orange Money.</p>
-                        </div>
-                        <div className="p-4 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 space-y-1">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" aria-hidden="true" /> Créance
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                <KpiCard
+                                    label="En attente"
+                                    value={formatFcfa(balance.pending)}
+                                    hint={balance.pending > 0 && balance.nextAvailableAt
+                                        ? `Prochaine disponibilité : ${formatDateTime(balance.nextAvailableAt)}.`
+                                        : 'Les ventes deviennent disponibles après la fin de l’événement et le délai de garde.'}
+                                    tone="warning"
+                                    icon={<Hourglass size={18} />}
+                                />
+                                <KpiCard
+                                    label="Retraits en cours"
+                                    value={formatFcfa(balance.inProgress)}
+                                    hint="Montant réservé pendant l’envoi vers Wave ou Orange Money."
+                                    tone="info"
+                                    icon={<Send size={18} />}
+                                />
+                                <KpiCard
+                                    label="Créance"
+                                    value={formatFcfa(balance.debt)}
+                                    hint={balance.debt > 0 ? 'Remboursement à compenser : déduit de vos prochaines ventes.' : 'Aucune somme à compenser.'}
+                                    tone={balance.debt > 0 ? 'danger' : 'success'}
+                                    icon={<ShieldCheck size={18} />}
+                                />
                             </div>
-                            <div className="text-lg font-black text-slate-900 dark:text-white tabular-nums">{formatFcfa(balance.debt)}</div>
-                            <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                                {balance.debt > 0
-                                    ? 'Remboursement à compenser : déduit de vos prochaines ventes.'
-                                    : 'Aucune somme à compenser.'}
-                            </p>
-                        </div>
-                    </div>
+                        </>
+                    )}
                 </section>
             )}
 
             {/* Retrait */}
-            <section
-                aria-labelledby={`${fieldId}-retrait`}
-                className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 sm:p-6 space-y-5"
-            >
+            <section aria-labelledby={`${fieldId}-retrait`} className="space-y-5 rounded-2xl border border-border bg-surface p-5 sm:p-6">
                 <div>
-                    <h2 id={`${fieldId}-retrait`} className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <Send className="w-4 h-4 text-[#FF5722]" aria-hidden="true" />
+                    <h2 id={`${fieldId}-retrait`} className="flex items-center gap-2 text-lg font-bold text-fg">
+                        <Send size={18} className="text-brand-fg" aria-hidden="true" />
                         Demander un retrait
                     </h2>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                    <p className="mt-1 text-sm text-fg-muted">
                         Wave ou Orange Money. Montant minimum et frais de retrait appliqués par Event Village à la demande, puis affichés ici.
                     </p>
                 </div>
 
-                <ol className="flex items-center gap-2 text-[11px] font-bold" aria-label="Étapes du retrait">
-                    {(['form', 'otp', 'done'] as const).map((s, i) => {
-                        const labels = { form: 'Demande', otp: 'Code SMS', done: 'Suivi' };
-                        const current = step === s;
-                        const reached = ['form', 'otp', 'done'].indexOf(step) >= i;
+                <ol className="flex flex-wrap items-center gap-2 text-sm font-semibold" aria-label="Étapes du retrait">
+                    {STEPS.map((s, i) => {
+                        const reached = stepIndex >= i;
                         return (
-                            <li key={s} className="flex items-center gap-2" aria-current={current ? 'step' : undefined}>
+                            <li key={s.key} className="flex items-center gap-2" aria-current={step === s.key ? 'step' : undefined}>
                                 <span
-                                    className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                                        reached ? 'bg-[#FF5722] text-white' : 'bg-slate-100 text-slate-400 dark:bg-zinc-800 dark:text-zinc-500'
-                                    }`}
+                                    className={cn('flex h-7 w-7 items-center justify-center rounded-full tabular-nums', reached ? 'bg-brand text-on-brand' : 'bg-surface-sunken text-fg-muted')}
                                     aria-hidden="true"
                                 >
                                     {i + 1}
                                 </span>
-                                <span className={reached ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-zinc-500'}>{labels[s]}</span>
-                                {i < 2 && <span className="w-6 h-px bg-slate-200 dark:bg-zinc-700" aria-hidden="true" />}
+                                <span className={reached ? 'text-fg' : 'text-fg-muted'}>{s.label}</span>
+                                {s.key !== 'done' && <span className="h-px w-6 bg-border" aria-hidden="true" />}
                             </li>
                         );
                     })}
                 </ol>
 
                 {flowError && (
-                    <div role="alert" className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40">
-                        <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
-                        <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">{flowError}</p>
-                    </div>
+                    <StatusBanner tone="danger" announce="alert" title="Retrait impossible">
+                        {flowError}
+                    </StatusBanner>
                 )}
 
                 {step === 'form' && (
@@ -581,10 +552,10 @@ export default function PartnerFinancePage() {
                         className="space-y-4"
                     >
                         <fieldset aria-describedby={errors.operator ? ids.operatorError : undefined}>
-                            <legend className="text-xs font-bold text-slate-700 dark:text-zinc-300 mb-2">
-                                Recevoir sur <span className="text-[#FF5722]" aria-hidden="true">*</span>
+                            <legend className="mb-2 text-sm font-semibold text-fg">
+                                Recevoir sur <span className="text-danger-fg" aria-hidden="true">*</span>
                             </legend>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                                 {SAMIRPAY_OPERATORS.map((op) => {
                                     const selected = operator === op;
                                     const visual = OPERATOR_VISUALS[op];
@@ -602,82 +573,65 @@ export default function PartnerFinancePage() {
                                                 className="peer sr-only"
                                             />
                                             <span
-                                                className={`flex items-center gap-3 min-h-[56px] p-3 rounded-2xl border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-[#FF5722] peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-zinc-900 ${
-                                                    selected
-                                                        ? 'border-[#FF5722] bg-[#FF5722]/5 dark:bg-[#FF5722]/10'
-                                                        : errors.operator
-                                                        ? 'border-red-300 dark:border-red-900/60'
-                                                        : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
-                                                }`}
+                                                className={cn(
+                                                    'flex min-h-[56px] items-center gap-3 rounded-2xl border-2 p-3 transition-colors duration-200 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface',
+                                                    selected ? 'border-brand-fg bg-brand-bg' : errors.operator ? 'border-danger' : 'border-border hover:border-border-strong',
+                                                )}
                                             >
-                                                <span aria-hidden="true" className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${visual.tile}`}>
+                                                <span aria-hidden="true" className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold', visual.tile)}>
                                                     {visual.mark}
                                                 </span>
-                                                <span className="text-sm font-bold text-slate-900 dark:text-white">{operatorLabel(op)}</span>
+                                                <span className="text-base font-semibold text-fg">{operatorLabel(op)}</span>
+                                                {selected && <CheckCircle2 size={18} className="ml-auto text-brand-fg" aria-hidden="true" />}
                                             </span>
                                         </label>
                                     );
                                 })}
                             </div>
                             {errors.operator && (
-                                <p id={ids.operatorError} className="mt-1.5 text-[11px] font-medium text-red-600 dark:text-red-400">{errors.operator}</p>
+                                <p id={ids.operatorError} className="mt-1.5 text-sm font-medium text-danger-fg">{errors.operator}</p>
                             )}
                         </fieldset>
 
-                        <div>
-                            <label htmlFor={ids.phone} className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
-                                Numéro {operator ? operatorLabel(operator) : 'Mobile Money'} qui reçoit le retrait <span className="text-[#FF5722]" aria-hidden="true">*</span>
-                            </label>
-                            <input
-                                id={ids.phone}
-                                type="tel"
-                                inputMode="tel"
-                                autoComplete="tel-national"
-                                placeholder="77 123 45 67"
-                                value={phoneInput}
-                                aria-invalid={errors.phone ? true : undefined}
-                                aria-describedby={ids.phoneHelp}
-                                onChange={(e) => {
-                                    setPhoneInput(e.target.value);
-                                    setErrors((prev) => ({ ...prev, phone: undefined }));
-                                }}
-                                onBlur={() => {
-                                    if (payoutPhone) setPhoneInput(formatLocalPhone(payoutPhone));
-                                }}
-                                className={`${inputClass(Boolean(errors.phone))} font-mono tracking-wide`}
-                            />
-                            <p id={ids.phoneHelp} className={`mt-1.5 text-[11px] leading-relaxed ${errors.phone ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-zinc-400'}`}>
-                                {errors.phone ?? 'Mobile sénégalais de 9 chiffres. Le code de confirmation part au numéro de votre compte.'}
-                            </p>
-                        </div>
+                        <TextInput
+                            label={`Numéro ${operator ? operatorLabel(operator) : 'Mobile Money'} qui reçoit le retrait`}
+                            required
+                            type="tel"
+                            inputMode="tel"
+                            autoComplete="tel-national"
+                            placeholder="77 123 45 67"
+                            value={phoneInput}
+                            error={errors.phone}
+                            hint="Mobile sénégalais de 9 chiffres. Le code de confirmation part au numéro de votre compte."
+                            onChange={(e) => {
+                                setPhoneInput(e.target.value);
+                                setErrors((prev) => ({ ...prev, phone: undefined }));
+                            }}
+                            onBlur={() => {
+                                if (payoutPhone) setPhoneInput(formatLocalPhone(payoutPhone));
+                            }}
+                            className="font-mono tracking-wide"
+                        />
 
-                        <div>
-                            <label htmlFor={ids.amount} className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
-                                Montant à retirer (FCFA) <span className="text-[#FF5722]" aria-hidden="true">*</span>
-                            </label>
-                            <input
-                                id={ids.amount}
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                autoComplete="off"
-                                placeholder="Ex : 50000"
-                                value={amountInput}
-                                aria-invalid={errors.amount ? true : undefined}
-                                aria-describedby={ids.amountHelp}
-                                onChange={(e) => {
-                                    setAmountInput(e.target.value.replace(/[^\d]/g, ''));
-                                    setErrors((prev) => ({ ...prev, amount: undefined }));
-                                }}
-                                className={`${inputClass(Boolean(errors.amount))} tabular-nums`}
-                            />
-                            <p id={ids.amountHelp} className={`mt-1.5 text-[11px] leading-relaxed ${errors.amount ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-zinc-400'}`}>
-                                {errors.amount ??
-                                    (balance
-                                        ? `Disponible : ${formatFcfa(balance.withdrawable)}. Frais calculés à la demande et déduits du montant versé.`
-                                        : 'Frais calculés à la demande et déduits du montant versé.')}
-                            </p>
-                        </div>
+                        <TextInput
+                            label="Montant à retirer (F CFA)"
+                            required
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            autoComplete="off"
+                            placeholder="Ex : 50000"
+                            value={amountInput}
+                            error={errors.amount}
+                            hint={balance
+                                ? `Disponible : ${formatFcfa(balance.withdrawable)}. Frais calculés à la demande et déduits du montant versé.`
+                                : 'Frais calculés à la demande et déduits du montant versé.'}
+                            onChange={(e) => {
+                                setAmountInput(e.target.value.replace(/[^\d]/g, ''));
+                                setErrors((prev) => ({ ...prev, amount: undefined }));
+                            }}
+                            className="tabular-nums"
+                        />
 
                         <Button
                             type="submit"
@@ -686,7 +640,7 @@ export default function PartnerFinancePage() {
                             size="lg"
                             isLoading={isSendingCode}
                             disabled={!balance || balance.withdrawable <= 0}
-                            leftIcon={<KeyRound className="w-4 h-4" aria-hidden="true" />}
+                            leftIcon={<KeyRound size={16} aria-hidden="true" />}
                         >
                             {balance && balance.withdrawable <= 0 ? 'Aucun montant disponible au retrait' : 'Recevoir le code de confirmation'}
                         </Button>
@@ -702,55 +656,46 @@ export default function PartnerFinancePage() {
                         }}
                         className="space-y-4"
                     >
-                        <dl className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700 space-y-2 text-xs">
+                        <dl className="space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
                             <div className="flex justify-between gap-3">
-                                <dt className="text-slate-500 dark:text-zinc-400">Montant demandé</dt>
-                                <dd className="font-black text-slate-900 dark:text-white tabular-nums">{formatFcfa(amountValue)}</dd>
+                                <dt className="text-fg-muted">Montant demandé</dt>
+                                <dd className="font-bold tabular-nums text-fg">{formatFcfa(amountValue)}</dd>
                             </div>
                             <div className="flex justify-between gap-3">
-                                <dt className="text-slate-500 dark:text-zinc-400">Vers</dt>
-                                <dd className="font-bold text-slate-900 dark:text-white">
+                                <dt className="text-fg-muted">Vers</dt>
+                                <dd className="text-right font-semibold text-fg">
                                     {operatorLabel(operator)} · <span className="font-mono">+221 {formatLocalPhone(payoutPhone)}</span>
                                 </dd>
                             </div>
                             <div className="flex justify-between gap-3">
-                                <dt className="text-slate-500 dark:text-zinc-400">Frais de retrait</dt>
-                                <dd className="font-bold text-slate-600 dark:text-zinc-300">Calculés à la confirmation</dd>
+                                <dt className="text-fg-muted">Frais de retrait</dt>
+                                <dd className="font-semibold text-fg">Calculés à la confirmation</dd>
                             </div>
                         </dl>
 
-                        <div>
-                            <label htmlFor={ids.otp} className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
-                                Code de confirmation <span className="text-[#FF5722]" aria-hidden="true">*</span>
-                            </label>
-                            <input
-                                ref={otpRef}
-                                id={ids.otp}
-                                type="text"
-                                inputMode="numeric"
-                                autoComplete="one-time-code"
-                                pattern="[0-9]{6}"
-                                maxLength={6}
-                                placeholder="000000"
+                        <div className="space-y-2">
+                            <p id={ids.otpLabel} className="text-sm font-semibold text-fg">
+                                Code de confirmation <span className="text-danger-fg" aria-hidden="true">*</span>
+                            </p>
+                            <OtpInput
                                 value={otpCode}
-                                aria-invalid={errors.otp ? true : undefined}
-                                aria-describedby={ids.otpHelp}
-                                onChange={(e) => {
-                                    setOtpCode(e.target.value.replace(/[^\d]/g, '').slice(0, 6));
+                                onChange={(v) => {
+                                    setOtpCode(v);
                                     setErrors((prev) => ({ ...prev, otp: undefined }));
                                 }}
-                                className={`${inputClass(Boolean(errors.otp))} font-mono text-center text-xl tracking-[0.5em]`}
+                                disabled={isSubmitting}
+                                hasError={Boolean(errors.otp)}
+                                describedBy={`${ids.otpLabel} ${ids.otpHelp}`}
                             />
-                            <p id={ids.otpHelp} className={`mt-1.5 text-[11px] leading-relaxed ${errors.otp ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-zinc-400'}`}>
-                                {errors.otp ??
-                                    `Code à 6 chiffres envoyé par SMS au ${accountPhone ? `+221 ${maskPhone(accountPhone)}` : 'numéro de votre compte'}.`}
+                            <p id={ids.otpHelp} className={cn('text-sm leading-relaxed', errors.otp ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
+                                {errors.otp ?? `Code à 6 chiffres envoyé par SMS au ${accountPhone ? `+221 ${maskPhone(accountPhone)}` : 'numéro de votre compte'}.`}
                             </p>
                         </div>
 
-                        <Button type="submit" variant="primary" fullWidth size="lg" isLoading={isSubmitting} leftIcon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
+                        <Button type="submit" variant="primary" fullWidth size="lg" isLoading={isSubmitting} leftIcon={<CheckCircle2 size={16} aria-hidden="true" />}>
                             {isSubmitting ? 'Demande en cours…' : 'Confirmer le retrait'}
                         </Button>
-                        <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                             <Button type="button" variant="ghost" fullWidth disabled={isSubmitting || isSendingCode} isLoading={isSendingCode} onClick={() => void requestCode()}>
                                 Renvoyer un code
                             </Button>
@@ -772,57 +717,39 @@ export default function PartnerFinancePage() {
                 )}
 
                 {step === 'done' && result && (
-                    <div ref={resultRef} tabIndex={-1} role="status" aria-live="polite" className="space-y-4 focus:outline-none">
-                        <div
-                            className={`flex items-start gap-3 p-4 rounded-2xl border ${
-                                result.status === 'REJECTED'
-                                    ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/40'
-                                    : result.status === 'PAID'
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/40'
-                                    : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/40'
-                            }`}
+                    <div ref={resultRef} tabIndex={-1} className="space-y-4 focus:outline-none">
+                        <StatusBanner
+                            tone={result.status === 'REJECTED' ? 'danger' : result.status === 'PAID' ? 'success' : 'warning'}
+                            icon={result.status === 'REJECTED' ? <XCircle size={20} /> : result.status === 'PAID' ? <CheckCircle2 size={20} /> : <Hourglass size={20} />}
+                            title={result.status === 'PAID'
+                                ? 'Retrait versé'
+                                : result.status === 'REJECTED'
+                                    ? 'Retrait refusé par l’opérateur'
+                                    : 'Retrait en cours de traitement'}
                         >
-                            {result.status === 'REJECTED' ? (
-                                <XCircle className="w-5 h-5 text-red-500 shrink-0" aria-hidden="true" />
-                            ) : result.status === 'PAID' ? (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" aria-hidden="true" />
-                            ) : (
-                                <Hourglass className="w-5 h-5 text-amber-500 shrink-0" aria-hidden="true" />
-                            )}
-                            <div className="space-y-1">
-                                <p className="text-sm font-black text-slate-900 dark:text-white">
-                                    {result.status === 'PAID'
-                                        ? 'Retrait versé'
-                                        : result.status === 'REJECTED'
-                                        ? 'Retrait refusé par l’opérateur'
-                                        : 'Retrait en cours de traitement'}
-                                </p>
-                                <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                                    {result.status === 'PAID'
-                                        ? 'Le montant net a été envoyé sur votre compte Mobile Money.'
-                                        : result.status === 'REJECTED'
-                                        ? 'Le montant a été rendu à votre solde disponible. Vérifiez le numéro puis refaites une demande.'
-                                        : 'Le montant reste réservé jusqu’à la confirmation de l’opérateur. Il ne sera jamais versé deux fois ; suivez son état dans l’historique ci-dessous.'}
-                                </p>
-                            </div>
-                        </div>
-                        <dl className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700 space-y-2 text-xs">
+                            {result.status === 'PAID'
+                                ? 'Le montant net a été envoyé sur votre compte Mobile Money.'
+                                : result.status === 'REJECTED'
+                                    ? 'Le montant a été rendu à votre solde disponible. Vérifiez le numéro puis refaites une demande.'
+                                    : 'Le montant reste réservé jusqu’à la confirmation de l’opérateur. Il ne sera jamais versé deux fois ; suivez son état dans « Mes retraits ».'}
+                        </StatusBanner>
+                        <dl className="space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
                             {result.gross !== null && (
                                 <div className="flex justify-between gap-3">
-                                    <dt className="text-slate-500 dark:text-zinc-400">Montant demandé</dt>
-                                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums">{formatFcfa(result.gross)}</dd>
+                                    <dt className="text-fg-muted">Montant demandé</dt>
+                                    <dd className="font-semibold tabular-nums text-fg">{formatFcfa(result.gross)}</dd>
                                 </div>
                             )}
                             {result.fee !== null && (
                                 <div className="flex justify-between gap-3">
-                                    <dt className="text-slate-500 dark:text-zinc-400">Frais de retrait</dt>
-                                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums">{formatFcfa(result.fee)}</dd>
+                                    <dt className="text-fg-muted">Frais de retrait</dt>
+                                    <dd className="font-semibold tabular-nums text-fg">{formatFcfa(result.fee)}</dd>
                                 </div>
                             )}
                             {result.net !== null && (
-                                <div className="flex justify-between gap-3 pt-2 border-t border-slate-200 dark:border-zinc-700">
-                                    <dt className="font-bold text-slate-700 dark:text-zinc-200">Montant versé</dt>
-                                    <dd className="font-black text-[#FF5722] tabular-nums">{formatFcfa(result.net)}</dd>
+                                <div className="flex justify-between gap-3 border-t border-border pt-2">
+                                    <dt className="font-semibold text-fg">Montant versé</dt>
+                                    <dd className="font-bold tabular-nums text-brand-fg">{formatFcfa(result.net)}</dd>
                                 </div>
                             )}
                         </dl>
@@ -835,38 +762,43 @@ export default function PartnerFinancePage() {
 
             {/* Retraits */}
             <section aria-labelledby={`${fieldId}-retraits`} className="space-y-3">
-                <h2 id={`${fieldId}-retraits`} className="text-sm font-black text-slate-900 dark:text-white">Mes retraits</h2>
+                <div>
+                    <h2 id={`${fieldId}-retraits`} className="text-lg font-bold text-fg">Mes retraits</h2>
+                    <p className="text-sm text-fg-muted">Vos 20 dernières demandes.</p>
+                </div>
                 {!account ? (
-                    <Skeleton className="h-20 rounded-2xl" />
+                    loadError ? null : <Skeleton className="h-20 rounded-2xl" />
                 ) : account.withdrawals.length === 0 ? (
-                    <EmptyState title="Aucun retrait" description="Vous n’avez pas encore demandé de retrait." icon={<Wallet size={28} aria-hidden="true" />} />
+                    <EmptyState title="Aucun retrait" description="Vous n’avez pas encore demandé de retrait." icon={<Wallet size={28} />} />
                 ) : (
-                    <ul className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800">
+                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
                         {account.withdrawals.map((w) => {
-                            const st = withdrawalStatus(w.status);
+                            const st = withdrawalStatus(w.effectiveStatus);
                             return (
-                                <li key={w.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                    <div className="space-y-1 min-w-0">
+                                <li key={w.id} className="flex flex-col justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center">
+                                    <div className="min-w-0 space-y-1">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${st.className}`}>{st.label}</span>
-                                            <span className="text-[11px] text-slate-500 dark:text-zinc-400">
+                                            <Badge variant={st.variant} size="sm">{st.label}</Badge>
+                                            <span className="text-sm text-fg-muted">
                                                 {w.operator === 'WAVE' || w.operator === 'ORANGE_MONEY' ? operatorLabel(w.operator) : 'Mobile Money'}
                                                 {w.phone && <span className="font-mono"> · {maskPhone(w.phone)}</span>}
                                             </span>
                                         </div>
-                                        <div className="text-[11px] text-slate-400 dark:text-zinc-500">
-                                            Demandé le {formatDateTime(w.createdAt) ?? '—'}
-                                            {w.processedAt && formatDateTime(w.processedAt) && ` · traité le ${formatDateTime(w.processedAt)}`}
-                                        </div>
-                                        {w.status === 'REJECTED' && w.rejectionReason && (
-                                            <div className="text-[11px] text-red-600 dark:text-red-400">{w.rejectionReason}</div>
+                                        <p className="text-sm text-fg-muted">
+                                            Demandé le <time dateTime={w.createdAt} className="text-sm">{formatDateTime(w.createdAt)}</time>
+                                            {w.processedAt && (
+                                                <> · traité le <time dateTime={w.processedAt} className="text-sm">{formatDateTime(w.processedAt)}</time></>
+                                            )}
+                                        </p>
+                                        {w.effectiveStatus === 'REJECTED' && w.rejectionReason && (
+                                            <p className="text-sm text-danger-fg">Motif : {w.rejectionReason}</p>
                                         )}
                                     </div>
-                                    <div className="sm:text-right shrink-0">
-                                        <div className="text-sm font-black text-slate-900 dark:text-white tabular-nums">{formatFcfa(w.gross)}</div>
-                                        <div className="text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
+                                    <div className="flex-shrink-0 sm:text-right">
+                                        <p className="text-base font-bold tabular-nums text-fg">{formatFcfa(w.gross)}</p>
+                                        <p className="text-sm tabular-nums text-fg-muted">
                                             Versé : {formatFcfa(w.net)} · frais : {formatFcfa(w.fee)}
-                                        </div>
+                                        </p>
                                     </div>
                                 </li>
                             );
@@ -877,47 +809,49 @@ export default function PartnerFinancePage() {
 
             {/* Historique */}
             <section aria-labelledby={`${fieldId}-historique`} className="space-y-3">
-                <h2 id={`${fieldId}-historique`} className="text-sm font-black text-slate-900 dark:text-white">Historique du compte</h2>
+                <div>
+                    <h2 id={`${fieldId}-historique`} className="text-lg font-bold text-fg">Historique du compte</h2>
+                    <p className="text-sm text-fg-muted">Les 50 dernières écritures, de la plus récente à la plus ancienne.</p>
+                </div>
                 {!account ? (
-                    <Skeleton className="h-28 rounded-2xl" />
+                    loadError ? null : <Skeleton className="h-28 rounded-2xl" />
                 ) : account.history.length === 0 ? (
                     <EmptyState
                         title="Aucune opération"
                         description="Vos ventes en ligne confirmées apparaîtront ici."
-                        icon={<CalendarClock size={28} aria-hidden="true" />}
+                        icon={<CalendarClock size={28} />}
                     />
                 ) : (
-                    <ul className="rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800">
+                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
                         {account.history.map((e) => {
                             const credit = e.amount > 0;
-                            const future = credit && isFuture(e.availableAt);
+                            const pendingCredit = credit && e.isPending;
                             return (
-                                <li key={e.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                                    <div className="flex items-start gap-3 min-w-0">
+                                <li key={e.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                                    <div className="flex min-w-0 items-start gap-3">
                                         <span
                                             aria-hidden="true"
-                                            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                                                credit ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300'
-                                            }`}
+                                            className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', credit ? 'bg-success-bg text-success-fg' : 'bg-surface-sunken text-fg')}
                                         >
-                                            {credit ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                                            {credit ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
                                         </span>
                                         <div className="min-w-0">
-                                            <div className="text-xs font-bold text-slate-900 dark:text-white">{ENTRY_LABELS[e.entryType] ?? e.entryType}</div>
-                                            {e.description && <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">{e.description}</div>}
-                                            <div className="text-[11px] text-slate-400 dark:text-zinc-500">
-                                                {formatDateTime(e.createdAt) ?? '—'}
-                                                {future && formatDateTime(e.availableAt) && (
-                                                    <span className="ml-1 font-bold text-amber-600 dark:text-amber-400">· disponible le {formatDateTime(e.availableAt)}</span>
+                                            <p className="text-sm font-semibold text-fg">
+                                                {ENTRY_LABELS[e.entryType] ?? 'Opération du compte'}
+                                                <span className="sr-only">{credit ? ' (crédit)' : ' (débit)'}</span>
+                                            </p>
+                                            {e.description && <p className="truncate text-sm text-fg-muted">{e.description}</p>}
+                                            <p className="text-sm text-fg-muted">
+                                                <time dateTime={e.createdAt} className="text-sm">{formatDateTime(e.createdAt)}</time>
+                                                {pendingCredit && e.availableAt && (
+                                                    <span className="ml-1 font-semibold text-warning-fg">
+                                                        · en attente, disponible le <time dateTime={e.availableAt} className="text-sm">{formatDateTime(e.availableAt)}</time>
+                                                    </span>
                                                 )}
-                                            </div>
+                                            </p>
                                         </div>
                                     </div>
-                                    <span
-                                        className={`text-sm font-black tabular-nums whitespace-nowrap ${
-                                            credit ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'
-                                        }`}
-                                    >
+                                    <span className={cn('whitespace-nowrap text-sm font-bold tabular-nums', credit ? 'text-success-fg' : 'text-fg')}>
                                         {formatSigned(e.amount)}
                                     </span>
                                 </li>

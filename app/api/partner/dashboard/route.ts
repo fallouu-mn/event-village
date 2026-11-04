@@ -5,34 +5,44 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * GET /api/partner/dashboard — tableau de bord du partenaire connecté : indicateurs lus au grand livre,
+ * événements, activité récente, et (lot 7, contrat 3.8) `onboarding` (étapes de la première utilisation,
+ * cochées ici) et `trial` (durée, début, fin de l'essai). Aucun chiffre n'est laissé au navigateur.
+ * Réponse : `{ success, dashboard, data }` (`data` : alias historique).
+ */
 export async function GET(req: NextRequest) {
-    try {
-        const activeSession = await requireActiveSession(req);
-        if (activeSession.response) return activeSession.response;
-        const user = activeSession.user;
-        if (!user) {
-            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        }
+    const activeSession = await requireActiveSession(req);
+    if (activeSession.response) return activeSession.response;
+    const user = activeSession.user;
+    if (!user) {
+        return NextResponse.json({ error: 'Authentification requise.', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
 
-        // Vérifier si l'utilisateur a une fiche partenaire ou un rôle partenaire/admin
+    try {
+        // Fiche partenaire du compte (ou rôle partenaire) : seule condition d'accès.
         const supabase = getServiceRoleClient();
-        const { data: partnerRecord } = await supabase
+        const { data: partnerRecord, error: partnerErr } = await supabase
             .from('partners')
             .select('id')
             .eq('user_id', user.id)
             .maybeSingle();
-
+        if (partnerErr) {
+            console.error(`[GET /api/partner/dashboard] fiche partenaire de ${user.id} :`, partnerErr.message);
+            return NextResponse.json({ error: 'Tableau de bord momentanément indisponible.', code: 'DASHBOARD_UNAVAILABLE' }, { status: 500 });
+        }
         if (!partnerRecord && !serverIsPartner(user)) {
-            return NextResponse.json({ error: 'Accès non autorisé. Rôle Partenaire requis.' }, { status: 403 });
+            return NextResponse.json({ error: 'Accès réservé aux partenaires.', code: 'NOT_PARTNER' }, { status: 403 });
         }
 
         const data = await PartnerDashboardService.getDashboardData(user.id);
-        return NextResponse.json({ success: true, dashboard: data, data });
-    } catch (err: any) {
-        if (err.message === 'PROFIL_PARTENAIRE_INTROUVABLE') {
-            return NextResponse.json({ error: 'Profil partenaire introuvable.' }, { status: 404 });
+        return NextResponse.json({ success: true, dashboard: data, data }, { headers: { 'Cache-Control': 'no-store' } });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message === 'PROFIL_PARTENAIRE_INTROUVABLE') {
+            return NextResponse.json({ error: 'Profil partenaire introuvable.', code: 'PARTNER_NOT_FOUND' }, { status: 404 });
         }
-        console.error('[GET /api/partner/dashboard] Erreur:', err);
-        return NextResponse.json({ error: err.message || 'Erreur serveur.' }, { status: 500 });
+        console.error(`[GET /api/partner/dashboard] compte ${user.id} :`, message);
+        return NextResponse.json({ error: 'Tableau de bord momentanément indisponible.', code: 'DASHBOARD_UNAVAILABLE' }, { status: 500 });
     }
 }

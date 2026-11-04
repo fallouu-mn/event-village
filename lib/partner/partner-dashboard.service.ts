@@ -1,5 +1,7 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { accountBalance } from '@/lib/finance/ledger';
+import { formatFcfa } from '@/lib/format';
+import { dakarInstant } from '@/lib/validations/event';
 
 /**
  * Tableau de bord, rapport de clôture (et son PDF) et export comptable du partenaire (lot 3, contrat G).
@@ -52,6 +54,8 @@ export interface PartnerEventBreakdown {
     title: string;
     startDate: string;
     startTime: string;
+    /** Début de l'événement (instant ISO, heure de Dakar appliquée par le serveur), null si illisible. */
+    startAt: string | null;
     location: string;
     city: string;
     status: string;
@@ -77,6 +81,39 @@ export interface PartnerActivityItem {
     createdAt: string;
 }
 
+/** Étapes de la première utilisation (lot 7, D70, contrat 3.8), dans l'ordre d'affichage. */
+export const ONBOARDING_STEP_KEYS = ['PROFILE', 'CREATE', 'POSTER', 'CATEGORY', 'SUBMIT', 'VALIDATED', 'PUBLISH', 'CONTROLLERS'] as const;
+export type OnboardingStepKey = (typeof ONBOARDING_STEP_KEYS)[number];
+
+export interface OnboardingStep {
+    key: OnboardingStepKey;
+    /** Étape franchie, décidée par le serveur (fiche, événement, catégories, affectations). */
+    done: boolean;
+    /** Lien interne de l'espace partenaire où l'étape se fait. */
+    href: string;
+}
+
+export interface PartnerOnboarding {
+    /** Carte visible : partenaire VALIDE qui n'a encore aucun événement PUBLIE ni TERMINE. */
+    visible: boolean;
+    steps: OnboardingStep[];
+    /** Nombre d'étapes franchies (affiché « N étapes sur 8 »). */
+    done_count: number;
+    /** Prochaine étape à faire (création à publication), null si tout est fait ou si la validation est attendue. */
+    next: OnboardingStepKey | null;
+    /** Événement soumis, en attente de la validation par l'équipe Event Village. */
+    awaiting_validation: boolean;
+}
+
+export interface PartnerTrial {
+    /** Durée de l'essai en jours (fin − début, servie telle que activate_partner_trial l'a posée), null sans essai. */
+    days: number | null;
+    started_at: string | null;
+    ends_at: string | null;
+    /** Essai en cours à l'horloge du serveur. */
+    active: boolean;
+}
+
 export interface PartnerDashboardData {
     partner: {
         id: string;
@@ -86,10 +123,16 @@ export interface PartnerDashboardData {
         email?: string;
         status: string;
         isVerified: boolean;
+        /** Motif du refus (bandeau REJETE), null sinon. */
+        rejectionReason: string | null;
+        /** Motif de la suspension (bandeau SUSPENDU), null sinon. */
+        suspendedReason: string | null;
     };
     kpis: PartnerKPIs;
     events: PartnerEventBreakdown[];
     recentActivity: PartnerActivityItem[];
+    onboarding: PartnerOnboarding;
+    trial: PartnerTrial;
 }
 
 export interface CategorySalesSummary {
@@ -313,6 +356,144 @@ export async function organizerWithdrawals(userId: string): Promise<{ totalWithd
     return { totalWithdrawn, pending, rows };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PREMIÈRE UTILISATION ET ESSAI (lot 7, tâche 7.4, D70 ; contrat 3.8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DAY_MS = 24 * 3600_000;
+
+/** Statuts d'un événement qui a déjà été soumis, validé, publié (règles du cycle de vie, event_transition). */
+const SUBMITTED_STATUSES = new Set(['EN_ATTENTE', 'VALIDE', 'PUBLIE', 'SUSPENDU', 'TERMINE']);
+const VALIDATED_STATUSES = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU', 'TERMINE']);
+const PUBLISHED_STATUSES = new Set(['PUBLIE', 'TERMINE']);
+/** Étapes obligatoires de la publication, dans l'ordre (PROFILE et CONTROLLERS sont facultatives). */
+const REQUIRED_STEPS: OnboardingStepKey[] = ['CREATE', 'POSTER', 'CATEGORY', 'SUBMIT', 'VALIDATED', 'PUBLISH'];
+
+/** Rang d'avancement d'un événement dans le parcours de publication (événement suivi par la carte). */
+function progressRank(status: string): number {
+    if (PUBLISHED_STATUSES.has(status)) return 4;
+    if (VALIDATED_STATUSES.has(status)) return 3;
+    if (status === 'EN_ATTENTE') return 2;
+    if (status === 'BROUILLON') return 1;
+    return 0; // ANNULE : jamais l'événement suivi
+}
+
+/** Instant ISO d'une date et d'une heure de Dakar (null si l'une est illisible). */
+function dakarStartIso(date: unknown, time: unknown): string | null {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const t = typeof time === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(time) ? time : '00:00';
+    const ms = dakarInstant(date, t);
+    return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+interface OnboardingEventRow {
+    id: string;
+    status: string;
+    image_url: string | null;
+    created_at: string | null;
+}
+
+interface OnboardingPartnerRow {
+    status: string;
+    description: string | null;
+    logo_url: string | null;
+}
+
+/**
+ * Étapes de la première utilisation, toutes décidées ici (aucune dans le navigateur) :
+ *  - l'événement suivi est le plus avancé des événements non annulés (puis le plus récent) ;
+ *  - CREATE, POSTER (affiche non vide), CATEGORY (au moins une catégorie active), SUBMIT, VALIDATED, PUBLISH
+ *    reprennent les conditions du serveur (event_create, SUBMIT_INCOMPLETE de event_transition, publication) ;
+ *  - PROFILE : fiche publique complétée (description et logo) ; CONTROLLERS : au moins une affectation ;
+ *  - visible tant que le partenaire est VALIDE et n'a aucun événement PUBLIE ni TERMINE.
+ */
+export async function partnerOnboarding(partnerId: string, partner: OnboardingPartnerRow, events: OnboardingEventRow[]): Promise<PartnerOnboarding> {
+    const supabase = getServiceRoleClient();
+    const tracked = events
+        .filter((e) => progressRank(e.status) > 0)
+        .sort((a, b) => progressRank(b.status) - progressRank(a.status) || String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))[0] ?? null;
+
+    let hasActiveCategory = false;
+    if (tracked) {
+        const { data, error } = await supabase
+            .from('ticket_categories')
+            .select('id')
+            .eq('event_id', tracked.id)
+            .eq('is_active', true)
+            .limit(1);
+        if (error) throw new Error(`Lecture impossible (catégories de l'événement suivi) : ${error.message}`);
+        hasActiveCategory = (data ?? []).length > 0;
+    }
+
+    let hasController = false;
+    const ids = events.map((e) => e.id);
+    for (let i = 0; i < ids.length && !hasController; i += ID_CHUNK) {
+        const { data, error } = await supabase
+            .from('event_controllers')
+            .select('id')
+            .in('event_id', ids.slice(i, i + ID_CHUNK))
+            .limit(1);
+        if (error) throw new Error(`Lecture impossible (équipe de contrôle) : ${error.message}`);
+        hasController = (data ?? []).length > 0;
+    }
+
+    const status = tracked?.status ?? '';
+    const eventHref = tracked ? `/partner/events/${tracked.id}` : '/partner/events/new';
+    const editHref = tracked ? `/partner/events/${tracked.id}/edit` : '/partner/events/new';
+    const done: Record<OnboardingStepKey, boolean> = {
+        PROFILE: Boolean(partner.description?.trim()) && Boolean(partner.logo_url?.trim()),
+        CREATE: tracked !== null,
+        POSTER: Boolean(tracked?.image_url?.trim()),
+        CATEGORY: hasActiveCategory,
+        SUBMIT: SUBMITTED_STATUSES.has(status),
+        VALIDATED: VALIDATED_STATUSES.has(status),
+        PUBLISH: PUBLISHED_STATUSES.has(status),
+        CONTROLLERS: hasController,
+    };
+    const href: Record<OnboardingStepKey, string> = {
+        PROFILE: '/partner/profile',
+        CREATE: eventHref,
+        POSTER: editHref,
+        CATEGORY: editHref,
+        SUBMIT: eventHref,
+        VALIDATED: eventHref,
+        PUBLISH: eventHref,
+        CONTROLLERS: '/partner/team',
+    };
+    const awaitingValidation = done.SUBMIT && !done.VALIDATED;
+    const next = awaitingValidation ? null : (REQUIRED_STEPS.find((k) => !done[k]) ?? null);
+    return {
+        visible: partner.status === 'VALIDE' && !events.some((e) => PUBLISHED_STATUSES.has(e.status)),
+        steps: ONBOARDING_STEP_KEYS.map((key) => ({ key, done: done[key], href: href[key] })),
+        done_count: ONBOARDING_STEP_KEYS.filter((k) => done[k]).length,
+        next,
+        awaiting_validation: awaitingValidation,
+    };
+}
+
+/** Essai du partenaire tel qu'enregistré (activate_partner_trial) : durée, début, fin, en cours à l'horloge du serveur. */
+export function partnerTrial(startedAt: string | null, endsAt: string | null, now = Date.now()): PartnerTrial {
+    const start = startedAt ? Date.parse(startedAt) : NaN;
+    const end = endsAt ? Date.parse(endsAt) : NaN;
+    return {
+        days: Number.isNaN(start) || Number.isNaN(end) ? null : Math.round((end - start) / DAY_MS),
+        started_at: startedAt,
+        ends_at: endsAt,
+        active: !Number.isNaN(end) && end > now,
+    };
+}
+
+/** Pourcentage entier de l'essai écoulé à l'horloge du serveur (0 à 100), null sans essai. */
+export function trialPercentUsed(startedAt: string | null, endsAt: string | null, now = Date.now()): number | null {
+    const start = startedAt ? Date.parse(startedAt) : NaN;
+    const end = endsAt ? Date.parse(endsAt) : NaN;
+    if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null;
+    return Math.min(100, Math.max(0, Math.round(((now - start) / (end - start)) * 100)));
+}
+
+const DELIVERY_MODE_LABELS: Record<string, string> = { LIVRAISON: 'Livraison', RETRAIT: 'Retrait', SUR_PLACE: 'Sur place' };
+const WITHDRAWAL_METHOD_LABELS: Record<string, string> = { MOBILE_MONEY: 'Mobile Money', BANK: 'Virement bancaire' };
+
 const SOLD = new Set(['VALIDE', 'UTILISE']);
 const REFUNDED_TICKET = new Set(['REMBOURSE', 'REMBOURSEMENT_EN_COURS']);
 
@@ -393,7 +574,7 @@ export class PartnerDashboardService {
         const supabase = getServiceRoleClient();
         const { data: partner, error } = await supabase
             .from('partners')
-            .select('id, user_id, company_name, commercial_name, phone, email, status, is_verified')
+            .select('id, user_id, company_name, commercial_name, phone, email, status, is_verified, rejection_reason, suspended_reason, trial_started_at, trial_ends_at, description, logo_url')
             .eq('user_id', userId)
             .maybeSingle();
 
@@ -414,7 +595,7 @@ export class PartnerDashboardService {
         const [events, recentOrdersRes, ordersCountRes, summaryRes, ledgerRows, balance, withdrawals] = await Promise.all([
             fetchAllRows<Record<string, unknown>>('événements', (from, to) => supabase
                 .from('events')
-                .select('id, title, start_date, start_time, location, city, status, capacity')
+                .select('id, title, start_date, start_time, location, city, status, capacity, image_url, created_at')
                 .eq('partner_id', partnerId)
                 .order('start_date', { ascending: false })
                 .order('id', { ascending: true })
@@ -446,7 +627,11 @@ export class PartnerDashboardService {
         const split = splitLedgerRows(ledgerRows);
         const recentOrders = recentOrdersRes.data ?? [];
 
-        const tickets = await ticketsOfEvents<TicketRow>(events.map((e) => String(e.id)), 'id, event_id, price, status, checked_in_at, created_at');
+        const [tickets, onboarding] = await Promise.all([
+            ticketsOfEvents<TicketRow>(events.map((e) => String(e.id)), 'id, event_id, ticket_number, price, status, checked_in_at, created_at'),
+            partnerOnboarding(partnerId, { status: String(partner.status), description: partner.description ?? null, logo_url: partner.logo_url ?? null },
+                events.map((e) => ({ id: String(e.id), status: String(e.status), image_url: (e.image_url as string | null) ?? null, created_at: (e.created_at as string | null) ?? null }))),
+        ]);
         const validTickets = tickets.filter((t) => SOLD.has(t.status));
         const checkedInTickets = tickets.filter((t) => t.status === 'UTILISE');
         const cancelledTickets = tickets.filter((t) => t.status === 'ANNULE');
@@ -463,6 +648,7 @@ export class PartnerDashboardService {
                 title: String(ev.title),
                 startDate: String(ev.start_date),
                 startTime: String(ev.start_time),
+                startAt: dakarStartIso(ev.start_date, ev.start_time),
                 location: String(ev.location ?? ''),
                 city: String(ev.city ?? ''),
                 status: String(ev.status),
@@ -488,8 +674,8 @@ export class PartnerDashboardService {
             recentActivity.push({
                 id: `sale-${t.id}`,
                 type: 'SALE',
-                title: `Billet Vendu — ${titleOf(t.event_id)}`,
-                description: `Billet N° ${t.id.slice(0, 8)} • ${Number(t.price).toLocaleString('fr-FR')} FCFA`,
+                title: `Billet vendu : ${titleOf(t.event_id)}`,
+                description: `Billet ${t.ticket_number ?? t.id.slice(0, 8)} · ${formatFcfa(Number(t.price))}`,
                 amount: Number(t.price),
                 status: t.status,
                 createdAt: t.created_at,
@@ -504,8 +690,8 @@ export class PartnerDashboardService {
                 recentActivity.push({
                     id: `scan-${t.id}`,
                     type: 'CHECKIN',
-                    title: 'Billet Composté aux Portes',
-                    description: `${titleOf(t.event_id)} • Contrôle validé`,
+                    title: 'Entrée validée',
+                    description: `${titleOf(t.event_id)} · contrôle à l’entrée`,
                     status: 'UTILISE',
                     createdAt: String(t.checked_in_at),
                 });
@@ -516,7 +702,7 @@ export class PartnerDashboardService {
                 id: `order-${o.id}`,
                 type: 'ORDER',
                 title: `Commande ${o.order_number}`,
-                description: `Mode: ${o.delivery_mode} • ${Number(o.total_amount).toLocaleString('fr-FR')} FCFA`,
+                description: `${DELIVERY_MODE_LABELS[String(o.delivery_mode)] ?? 'Commande'} · ${formatFcfa(Number(o.total_amount))}`,
                 amount: Number(o.total_amount),
                 status: o.order_status,
                 createdAt: o.created_at,
@@ -527,8 +713,8 @@ export class PartnerDashboardService {
             recentActivity.push({
                 id: `w-${w.id}`,
                 type: 'WITHDRAWAL',
-                title: 'Demande de Retrait',
-                description: `${w.withdrawal_method} • ${Number(w.gross_amount).toLocaleString('fr-FR')} FCFA`,
+                title: 'Demande de retrait',
+                description: `${WITHDRAWAL_METHOD_LABELS[String(w.withdrawal_method)] ?? 'Retrait'} · ${formatFcfa(Number(w.gross_amount))}`,
                 amount: Number(w.net_amount),
                 status: String(w.status),
                 createdAt: String(w.created_at),
@@ -546,7 +732,11 @@ export class PartnerDashboardService {
                 email: partner.email,
                 status: partner.status,
                 isVerified: partner.is_verified,
+                rejectionReason: partner.status === 'REJETE' ? (partner.rejection_reason ?? null) : null,
+                suspendedReason: partner.status === 'SUSPENDU' ? (partner.suspended_reason ?? null) : null,
             },
+            onboarding,
+            trial: partnerTrial(partner.trial_started_at ?? null, partner.trial_ends_at ?? null),
             kpis: {
                 grossRevenue: summary.onlineSales,
                 netRevenue: summary.organizerNet,

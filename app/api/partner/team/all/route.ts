@@ -3,14 +3,67 @@ import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController } from '@/lib/events/event-status';
+import { dakarInstant } from '@/lib/validations/event';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
 // GET /api/partner/team/all
-// Retourne tous les contrôleurs assignés aux événements de ce partenaire.
-// Architecture : 3 requêtes indépendantes + merge JS pour éviter toute ambiguïté
-// de FK hint PostgREST (event_controllers a 2 FK vers users: user_id et created_by).
+// Retourne l'équipe de contrôle du partenaire : contrôleurs affectés à ses événements, regroupés par membre,
+// avec les comptages et la liste des événements assignables décidés ici (lot 7, D66, contrat 3.8) :
+//  - members_count (contrôleurs distincts), assignments_count (affectations sur les événements du partenaire) ;
+//  - members[] : un membre par compte, ses affectations (événement, titre, début, statut, assignable) ;
+//  - assignable_events[] : événements VALIDE ou PUBLIE du partenaire (id, title, start_at), triés par date.
+// `controllers` et `events` (format du lot 5) restent servis tels quels.
+// Architecture : requêtes indépendantes + fusion en mémoire pour éviter toute ambiguïté de FK PostgREST
+// (event_controllers a 2 FK vers users : user_id et created_by).
+interface EventRow { id: string; title: string; start_date: string | null; start_time: string | null; status: string }
+
+/** Début d'un événement (instant ISO) : date et heure de Dakar, fuseau sans changement d'heure. */
+function startAtOf(e: EventRow): string | null {
+    if (!e.start_date || !/^\d{4}-\d{2}-\d{2}$/.test(e.start_date)) return null;
+    const time = e.start_time && /^\d{2}:\d{2}(:\d{2})?$/.test(e.start_time) ? e.start_time : '00:00';
+    const ms = dakarInstant(e.start_date, time);
+    return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+function byStartThenTitle(a: { start_at: string | null; title: string }, b: { start_at: string | null; title: string }): number {
+    const ta = a.start_at ? Date.parse(a.start_at) : 0;
+    const tb = b.start_at ? Date.parse(b.start_at) : 0;
+    if (ta && tb && ta !== tb) return ta - tb;
+    return (a.title || '').localeCompare(b.title || '', 'fr', { sensitivity: 'base' });
+}
+
+const NO_STORE = {
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+};
+
+const ID_CHUNK = 100;
+
+interface MemberAssignment {
+    id: string;
+    event_id: string;
+    can_accept_cash: boolean;
+    created_at: string;
+    event: { id: string; title: string; start_at: string | null; status: string; assignable: boolean } | null;
+}
+
+interface TeamMember {
+    user_id: string;
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+    status: string | null;
+    /** Compte créé par l'invitation (nom provisoire « Contrôleur »), pas encore activé par le contrôleur. */
+    pending_activation: boolean;
+    /** Encaissement des espèces autorisé sur au moins une affectation. */
+    can_accept_cash: boolean;
+    assignments_count: number;
+    assignments: MemberAssignment[];
+}
+
 export async function GET(req: NextRequest) {
     try {
         const activeSession = await requireActiveSession(req);
@@ -47,96 +100,118 @@ export async function GET(req: NextRequest) {
         // ── 2. Récupérer les événements ───────────────────────────────────────
         let eventsQuery = supabase
             .from('events')
-            .select('id, title, start_date, status');
+            .select('id, title, start_date, start_time, status');
         if (partnerId) {
             eventsQuery = eventsQuery.eq('partner_id', partnerId);
         }
 
-        const { data: events, error: evErr } = await eventsQuery;
+        const { data: eventRows, error: evErr } = await eventsQuery;
 
         if (evErr) {
             console.error('[team/all] events query:', evErr.message, evErr.details);
             return NextResponse.json({ error: 'Impossible de charger les événements.' }, { status: 500 });
         }
 
-        if (!events || events.length === 0) {
-            return NextResponse.json({ success: true, controllers: [], events: [] });
-        }
+        const events = ((eventRows ?? []) as EventRow[]).map((e) => ({ ...e, start_at: startAtOf(e) }));
+        const eventMap = new Map(events.map((e) => [e.id, e]));
+        const assignableEvents = events
+            .filter((e) => isEventEligibleForController(e.status))
+            .map((e) => ({ id: e.id, title: e.title, start_at: e.start_at, status: e.status }))
+            .sort(byStartThenTitle);
+        const legacyEvents = assignableEvents.map((e) => ({ id: e.id, title: e.title, date: eventMap.get(e.id)?.start_date ?? null, status: e.status }));
 
-        const eventIds = events.map(e => e.id);
-
-        // ── 3. Récupérer les assignations (pas de jointure — évite FK ambiguïté) ──
-        const { data: rawAssignments, error: aErr } = await supabase
-            .from('event_controllers')
-            .select('id, event_id, user_id, can_accept_cash, created_at')
-            .in('event_id', eventIds)
-            .order('created_at', { ascending: false });
-
-        if (aErr) {
-            console.error('[team/all] event_controllers query:', aErr.message, aErr.details, aErr.hint);
-            return NextResponse.json({ error: 'Impossible de charger les assignations.' }, { status: 500 });
-        }
-
-        if (!rawAssignments || rawAssignments.length === 0) {
+        if (events.length === 0) {
             return NextResponse.json({
-                success:     true,
-                controllers: [],
-                events:      events.map(e => ({ id: e.id, title: e.title, date: e.start_date, status: e.status })),
-            });
+                success: true, controllers: [], events: [], members: [], members_count: 0, assignments_count: 0, assignable_events: [],
+            }, { headers: NO_STORE });
         }
+
+        // ── 3. Récupérer les assignations (pas de jointure — évite FK ambiguïté), identifiants par lots ──
+        const eventIds = events.map((e) => e.id);
+        const rawAssignments: Array<{ id: string; event_id: string; user_id: string; can_accept_cash: boolean; created_at: string }> = [];
+        for (let i = 0; i < eventIds.length; i += ID_CHUNK) {
+            const { data, error: aErr } = await supabase
+                .from('event_controllers')
+                .select('id, event_id, user_id, can_accept_cash, created_at')
+                .in('event_id', eventIds.slice(i, i + ID_CHUNK))
+                .order('created_at', { ascending: false });
+            if (aErr) {
+                console.error('[team/all] event_controllers query:', aErr.message, aErr.details, aErr.hint);
+                return NextResponse.json({ error: 'Impossible de charger les assignations.' }, { status: 500 });
+            }
+            rawAssignments.push(...(data ?? []));
+        }
+        rawAssignments.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
         // ── 4. Récupérer les profils utilisateurs ─────────────────────────────
-        const userIds = Array.from(new Set(rawAssignments.map(a => a.user_id)));
-
-        const { data: userProfiles, error: usersErr } = await supabase
-            .from('users')
-            .select('id, first_name, last_name, phone, status')
-            .in('id', userIds);
-
-        if (usersErr) {
-            console.error('[team/all] users query:', usersErr.message, usersErr.details);
-            return NextResponse.json({ error: 'Impossible de charger les profils contrôleurs.' }, { status: 500 });
+        const userIds = Array.from(new Set(rawAssignments.map((a) => a.user_id)));
+        const userMap = new Map<string, { id: string; first_name: string | null; last_name: string | null; phone: string | null; status: string | null }>();
+        if (userIds.length > 0) {
+            const { data: userProfiles, error: usersErr } = await supabase
+                .from('users')
+                .select('id, first_name, last_name, phone, status')
+                .in('id', userIds);
+            if (usersErr) {
+                console.error('[team/all] users query:', usersErr.message, usersErr.details);
+                return NextResponse.json({ error: 'Impossible de charger les profils contrôleurs.' }, { status: 500 });
+            }
+            for (const u of userProfiles ?? []) userMap.set(u.id, u);
         }
 
-        // ── 5. Merge en mémoire ───────────────────────────────────────────────
-        const userMap  = Object.fromEntries((userProfiles ?? []).map(u => [u.id, u]));
-        const eventMap = Object.fromEntries(events.map(e => [e.id, e]));
+        // ── 5. Fusion en mémoire ──────────────────────────────────────────────
+        const controllers = rawAssignments.map((a) => {
+            const ev = eventMap.get(a.event_id);
+            return {
+                id:              a.id,
+                event_id:        a.event_id,
+                can_accept_cash: a.can_accept_cash,
+                created_at:      a.created_at,
+                users:  userMap.get(a.user_id) ?? null,
+                events: ev ? { id: ev.id, title: ev.title, date: ev.start_date, status: ev.status } : null,
+            };
+        });
 
-        const controllers = rawAssignments.map(a => ({
-            id:             a.id,
-            event_id:       a.event_id,
-            can_accept_cash: a.can_accept_cash,
-            created_at:     a.created_at,
-            users:  userMap[a.user_id]  ?? null,
-            events: eventMap[a.event_id]
-                ? {
-                    id:       eventMap[a.event_id].id,
-                    title:    eventMap[a.event_id].title,
-                    date:     eventMap[a.event_id].start_date,
-                    status:   eventMap[a.event_id].status,
-                }
-                : null,
-        }));
+        // Un membre par compte, affectations groupées (plus récente d'abord)
+        const membersById = new Map<string, TeamMember>();
+        for (const a of rawAssignments) {
+            const u = userMap.get(a.user_id);
+            let m = membersById.get(a.user_id);
+            if (!m) {
+                m = {
+                    user_id: a.user_id,
+                    first_name: u?.first_name ?? null,
+                    last_name: u?.last_name ?? null,
+                    phone: u?.phone ?? null,
+                    status: u?.status ?? null,
+                    pending_activation: (u?.first_name ?? '') === 'Contrôleur' && !u?.last_name,
+                    can_accept_cash: false,
+                    assignments_count: 0,
+                    assignments: [],
+                };
+                membersById.set(a.user_id, m);
+            }
+            const ev = eventMap.get(a.event_id);
+            m.assignments.push({
+                id: a.id,
+                event_id: a.event_id,
+                can_accept_cash: a.can_accept_cash,
+                created_at: a.created_at,
+                event: ev ? { id: ev.id, title: ev.title, start_at: ev.start_at, status: ev.status, assignable: isEventEligibleForController(ev.status) } : null,
+            });
+            m.assignments_count += 1;
+            if (a.can_accept_cash) m.can_accept_cash = true;
+        }
+        const members = Array.from(membersById.values());
 
         return NextResponse.json({
-            success:     true,
+            success:           true,
             controllers,
-            events: (events ?? [])
-                .filter(e => isEventEligibleForController(e.status))
-                .sort((a, b) => {
-                    const dateA = a.start_date ? new Date(a.start_date).getTime() : 0;
-                    const dateB = b.start_date ? new Date(b.start_date).getTime() : 0;
-                    if (dateA && dateB && dateA !== dateB) return dateA - dateB;
-                    return (a.title || '').localeCompare(b.title || '', 'fr', { sensitivity: 'base' });
-                })
-                .map(e => ({ id: e.id, title: e.title, date: e.start_date, status: e.status })),
-        }, {
-            headers: {
-                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0',
-            },
-        });
+            events:            legacyEvents,
+            members,
+            members_count:     members.length,
+            assignments_count: rawAssignments.length,
+            assignable_events: assignableEvents,
+        }, { headers: NO_STORE });
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

@@ -1,1297 +1,800 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+/**
+ * Équipe de contrôle du partenaire (lot 7, tâche 7.4, D66 ; contrat section 8).
+ *  - Une seule lecture : GET /api/partner/team/all (useServerData). Le serveur sert les membres regroupés,
+ *    leurs affectations, les comptages (members_count, assignments_count, assignments_count par membre) et
+ *    les événements assignables (assignable_events : VALIDE ou PUBLIE). Aucune éligibilité ni aucun comptage
+ *    n'est décidé ici ; la recherche par nom ou numéro filtre seulement la liste complète servie.
+ *  - Temps réel : les changements de statut des événements (event_status_history) relancent la lecture,
+ *    indicateur LiveIndicator.
+ *  - Modales sur le système de design (Modal, ConfirmDialog) ; échec de lecture : ErrorState « Réessayer ».
+ */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    Users, UserPlus, Trash2, Loader2, Phone,
-    ShieldCheck, ShieldOff, CheckCircle2, AlertCircle,
-    Calendar, ChevronDown, X, Search, Mail, Send,
-    RotateCcw, CheckSquare, Square, Settings, UserMinus,
+    AlertCircle,
+    CalendarDays,
+    CheckCircle2,
+    Phone,
+    RefreshCw,
+    Search,
+    Send,
+    Settings,
+    ShieldCheck,
+    Trash2,
     UserCheck,
+    UserMinus,
+    UserPlus,
+    Users,
+    X,
 } from 'lucide-react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
-import { useToast } from '@/components/ui/Toast';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Modal } from '@/components/ui/Modal';
+import { useServerData } from '@/components/partner/useServerData';
+import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { isEventEligibleForController } from '@/lib/events/event-status';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { DataList, type DataColumn } from '@/components/ui/DataList';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { IconButton } from '@/components/ui/IconButton';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { LiveIndicator } from '@/components/ui/LiveIndicator';
+import { Modal } from '@/components/ui/Modal';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Select, TextInput } from '@/components/ui/Field';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { Switch } from '@/components/ui/Switch';
+import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/components/ui/cn';
+import { formatDateTime, formatInteger } from '@/lib/format';
+
+/* ──────────────────────────────── Types ──────────────────────────────── */
+
+interface AssignableEvent {
+    id: string;
+    title: string;
+    start_at: string | null;
+    status: string;
+}
+
+interface MemberAssignment {
+    id: string;
+    event_id: string;
+    can_accept_cash: boolean;
+    created_at: string;
+    event: { id: string; title: string; start_at: string | null; status: string; assignable: boolean } | null;
+}
+
+interface TeamMember {
+    user_id: string;
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+    status: string | null;
+    pending_activation: boolean;
+    can_accept_cash: boolean;
+    assignments_count: number;
+    assignments: MemberAssignment[];
+}
+
+interface TeamResponse {
+    members: TeamMember[];
+    members_count: number;
+    assignments_count: number;
+    assignable_events: AssignableEvent[];
+}
 
 interface ExistingAccountConfirmState {
     // Lot 1C.1 : le serveur ne renvoie que le nom masqué du titulaire et le numéro saisi.
-    existingUser: {
-        display_name: string;
-        phone: string;
-    };
+    existingUser: { display_name: string; phone: string };
     eventIds: string[];
     canAcceptCash: boolean;
     message: string;
 }
 
-interface ControllerUser {
-    id: string;
-    first_name: string;
-    last_name: string;
-    phone: string;
-    status: string;
+interface InviteReply {
+    message?: string;
+    requires_confirmation?: boolean;
+    existing_user?: { display_name: string; phone: string };
 }
 
-interface EventRef {
+/* ─────────────────────────────── Affichage ─────────────────────────────── */
+
+function displayName(m: TeamMember): string {
+    return [m.first_name, m.last_name].filter(Boolean).join(' ') || 'Contrôleur';
+}
+
+function displayPhone(phone: string | null): string {
+    return (phone ?? '').replace(/^\+221/, '').replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4');
+}
+
+function plural(n: number, one: string, many: string): string {
+    return `${formatInteger(n)} ${n > 1 ? many : one}`;
+}
+
+/* ─────────────────────── Liste d'événements à cocher ─────────────────────── */
+
+interface EventChoice {
     id: string;
     title: string;
-    date?: string;
-    status?: string;
+    start_at: string | null;
+    status: string;
+    /** Faux : affectation existante sur un événement qui n'accepte plus de contrôleur (à retirer). */
+    assignable: boolean;
 }
 
-interface Assignment {
-    id: string;
-    event_id: string;
-    can_accept_cash: boolean;
-    created_at: string;
-    users: ControllerUser;
-    events: EventRef;
+function EventChecklist({ legend, choices, selectedIds, onToggle, name }: {
+    legend: React.ReactNode;
+    choices: EventChoice[];
+    selectedIds: string[];
+    onToggle: (id: string, assignable: boolean) => void;
+    name: string;
+}) {
+    return (
+        <fieldset className="space-y-2">
+            <legend className="text-sm font-semibold text-fg">{legend}</legend>
+            <ul className="max-h-60 space-y-1.5 overflow-y-auto rounded-xl border border-border bg-surface-sunken p-1.5">
+                {choices.map((ev) => {
+                    const checked = selectedIds.includes(ev.id);
+                    const disabled = !ev.assignable && !checked;
+                    return (
+                        <li key={ev.id}>
+                            <label
+                                className={cn(
+                                    'flex min-h-12 items-center justify-between gap-3 rounded-lg border p-2.5 transition-colors duration-200',
+                                    checked ? 'border-brand-fg bg-brand-bg' : 'border-transparent bg-surface',
+                                    disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-border-strong',
+                                )}
+                            >
+                                <span className="flex min-w-0 items-center gap-2.5">
+                                    <input
+                                        type="checkbox"
+                                        name={name}
+                                        value={ev.id}
+                                        checked={checked}
+                                        disabled={disabled}
+                                        onChange={() => onToggle(ev.id, ev.assignable)}
+                                        className="h-5 w-5 flex-shrink-0 cursor-pointer accent-brand"
+                                    />
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm font-semibold text-fg">{ev.title}</span>
+                                        {ev.start_at && (
+                                            <time dateTime={ev.start_at} className="block text-sm text-fg-muted">{formatDateTime(ev.start_at)}</time>
+                                        )}
+                                    </span>
+                                </span>
+                                <span className="flex flex-shrink-0 flex-col items-end gap-1">
+                                    <StatusBadge domain="event" status={ev.status} size="sm" />
+                                    {!ev.assignable && <span className="text-sm font-medium text-warning-fg">À retirer</span>}
+                                </span>
+                            </label>
+                        </li>
+                    );
+                })}
+            </ul>
+        </fieldset>
+    );
 }
 
-interface GroupedController {
-    user: ControllerUser;
-    assignments: Assignment[];
-}
+/* ──────────────────────────────── Page ──────────────────────────────── */
 
 export default function PartnerTeamPage() {
     const toast = useToast();
 
-    const [controllers, setControllers] = useState<Assignment[]>([]);
-    const [events, setEvents]           = useState<EventRef[]>([]);
-    const [loading, setLoading]         = useState(true);
-    const [refreshing, setRefreshing]   = useState(false);
+    // Temps réel (lot 5, contrat O3) : statuts des événements du partenaire, par leur historique (publié, RLS
+    // propriétaire). event_controllers et events ne sont pas dans la publication.
+    const [signal, setSignal] = useState(0);
+    const bump = useCallback(() => setSignal((n) => n + 1), []);
+    const { status: liveStatus } = useRealtimeRefresh({
+        channelKey: 'partner-team-statuts',
+        subscriptions: [{ table: 'event_status_history', event: 'INSERT' }],
+        onSignal: bump,
+    });
+    const { data, error, loading, refreshing, reload } = useServerData<TeamResponse>('/api/partner/team/all', signal);
+
+    const members = useMemo(() => data?.members ?? [], [data]);
+    const assignableEvents = useMemo(() => data?.assignable_events ?? [], [data]);
+
     const [filterEvent, setFilterEvent] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Modal d'invitation (Partie 2.A & 2.B)
-    const [showModal, setShowModal]             = useState(false);
-    const [invFirstName, setInvFirstName]       = useState('');
-    const [invLastName, setInvLastName]         = useState('');
-    const [invEmail, setInvEmail]               = useState('');
-    const [invPhone, setInvPhone]               = useState('');
-    const [invEventIds, setInvEventIds]         = useState<string[]>([]);
-    const [invCanCash, setInvCanCash]           = useState(false);
-    const [inviting, setInviting]               = useState(false);
-    const [invPhoneError, setInvPhoneError]     = useState('');
-    const [invNameError, setInvNameError]       = useState('');
-    const [resendingId, setResendingId]         = useState<string | null>(null);
+    // Invitation
+    const [showInvite, setShowInvite] = useState(false);
+    const [invFirstName, setInvFirstName] = useState('');
+    const [invLastName, setInvLastName] = useState('');
+    const [invEmail, setInvEmail] = useState('');
+    const [invPhone, setInvPhone] = useState('');
+    const [invEventIds, setInvEventIds] = useState<string[]>([]);
+    const [invCanCash, setInvCanCash] = useState(false);
+    const [inviting, setInviting] = useState(false);
+    const [invError, setInvError] = useState<{ phone?: string; events?: string; form?: string }>({});
     const [existingAccountConfirm, setExistingAccountConfirm] = useState<ExistingAccountConfirmState | null>(null);
-    const [confirmingPromotion, setConfirmingPromotion]       = useState(false);
+    const [confirmingPromotion, setConfirmingPromotion] = useState(false);
+    const [resendingId, setResendingId] = useState<string | null>(null);
 
-    // Modal de modification d'affectations (Partie 2.C)
-    const [editModalCtrl, setEditModalCtrl]     = useState<GroupedController | null>(null);
-    const [editEventIds, setEditEventIds]       = useState<string[]>([]);
-    const [editCanCash, setEditCanCash]         = useState(false);
+    // Modification des affectations
+    const [editMember, setEditMember] = useState<TeamMember | null>(null);
+    const [editEventIds, setEditEventIds] = useState<string[]>([]);
+    const [editCanCash, setEditCanCash] = useState(false);
     const [updatingAssignments, setUpdatingAssignments] = useState(false);
 
-    // Dialogs d'action
-    // Action D : Retirer d'un événement
+    // Confirmations
     const [confirmRemoveSingle, setConfirmRemoveSingle] = useState<{ assignmentId: string; eventId: string; eventTitle: string; ctrlName: string } | null>(null);
-    // Action E : Retirer de tous les événements
     const [confirmRemoveAll, setConfirmRemoveAll] = useState<{ controllerId: string; ctrlName: string; eventCount: number } | null>(null);
-    // Action F : Supprimer complètement le contrôleur
     const [confirmDeleteCtrl, setConfirmDeleteCtrl] = useState<{ controllerId: string; ctrlName: string } | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
 
-    // ── Fetch événements du partenaire ──
-    const fetchEvents = useCallback(async () => {
-        try {
-            const res  = await fetch('/api/partner/events', {
-                cache: 'no-store',
-                headers: { 'Cache-Control': 'no-cache' }
-            });
-            const data = await res.json();
-            if (data.success && data.events) {
-                const evList = data.events.map((e: any) => ({ id: e.id, title: e.title, date: e.date ?? e.start_date, status: e.status }));
-                setEvents(evList);
-                const eligible = evList.filter((e: any) => isEventEligibleForController(e.status));
-                if (eligible.length === 1) {
-                    setInvEventIds([eligible[0].id]);
-                }
-            }
-        } catch {
-            // Silencieux
-        }
-    }, []);
-
-    // ── Événements éligibles aux affectations contrôleur (VALIDÉ ou PUBLIÉ) ──
-    // Exclut strictement : BROUILLON, EN_ATTENTE, SUSPENDU, TERMINE
-    // Tri chronologique puis alphabétique
-    const availableEvents = useMemo(() => {
-        return events
-            .filter(e => isEventEligibleForController(e.status))
-            .sort((a, b) => {
-                const dateA = a.date ? new Date(a.date).getTime() : 0;
-                const dateB = b.date ? new Date(b.date).getTime() : 0;
-                if (dateA && dateB && dateA !== dateB) return dateA - dateB;
-                return (a.title || '').localeCompare(b.title || '', 'fr', { sensitivity: 'base' });
-            });
-    }, [events]);
-
-    // Réinitialiser le filtre événement si l'événement sélectionné n'est plus éligible / actif
+    // Un seul événement assignable : il est présélectionné à l'invitation.
     useEffect(() => {
-        if (filterEvent !== 'all' && !availableEvents.some(e => e.id === filterEvent)) {
-            setFilterEvent('all');
-        }
-    }, [filterEvent, availableEvents]);
+        if (assignableEvents.length === 1) setInvEventIds([assignableEvents[0].id]);
+    }, [assignableEvents]);
 
-    // ── Fetch contrôleurs assignés (anti-cache strict) ──
-    const fetchControllers = useCallback(async (isSilent = false) => {
-        if (!isSilent) setLoading(true);
-        try {
-            const res  = await fetch('/api/partner/team/all', {
-                cache: 'no-store',
-                headers: { 'Cache-Control': 'no-cache' }
-            });
-            const data = await res.json();
-            if (data.success) {
-                setControllers(data.controllers ?? []);
-            }
-        } catch {
-            if (!isSilent) toast.error('Impossible de charger l\'équipe.');
-        } finally {
-            if (!isSilent) setLoading(false);
-        }
-    }, [toast]);
-
+    // Filtre réinitialisé si l'événement choisi n'est plus assignable.
     useEffect(() => {
-        fetchEvents();
-        fetchControllers();
-    }, [fetchEvents, fetchControllers]);
+        if (filterEvent !== 'all' && !assignableEvents.some((e) => e.id === filterEvent)) setFilterEvent('all');
+    }, [filterEvent, assignableEvents]);
 
-    // ── Temps réel (lot 5, contrat O3) : statuts des événements du partenaire, par leur historique (publié, RLS
-    // propriétaire). event_controllers et events ne sont pas dans la publication : leurs abonnements sont retirés.
-    const refreshOnStatusChange = useCallback(async () => {
-        await Promise.all([fetchEvents(), fetchControllers(true)]);
-    }, [fetchEvents, fetchControllers]);
-
-    useRealtimeRefresh({
-        channelKey: 'partner-team-statuts',
-        subscriptions: [{ table: 'event_status_history', event: 'INSERT' }],
-        onSignal: refreshOnStatusChange,
-    });
-
-    const refreshControllers = useCallback(() => { fetchControllers(false); }, [fetchControllers]);
-
-    // ── Filtrage ──
-    const filtered = useMemo(() => {
-        return controllers.filter(a => {
-            if (filterEvent !== 'all' && a.event_id !== filterEvent) return false;
-            if (searchQuery.trim()) {
-                const q = searchQuery.toLowerCase();
-                const name = `${a.users?.first_name ?? ''} ${a.users?.last_name ?? ''}`.toLowerCase();
-                const phone = (a.users?.phone ?? '').toLowerCase();
-                if (!name.includes(q) && !phone.includes(q)) return false;
-            }
-            return true;
+    // Recherche locale sur la liste complète servie (filtre de saisie, pas un chiffre).
+    const visibleMembers = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        return members.filter((m) => {
+            if (filterEvent !== 'all' && !m.assignments.some((a) => a.event_id === filterEvent)) return false;
+            if (!q) return true;
+            return displayName(m).toLowerCase().includes(q) || (m.phone ?? '').toLowerCase().includes(q);
         });
-    }, [controllers, filterEvent, searchQuery]);
+    }, [members, filterEvent, searchQuery]);
 
-    // ── Groupement par contrôleur unique ──
-    const groupedControllers: GroupedController[] = useMemo(() => {
-        const map = new Map<string, GroupedController>();
-        for (const a of filtered) {
-            if (!a.users?.id) continue;
-            const existing = map.get(a.users.id);
-            if (existing) {
-                existing.assignments.push(a);
-            } else {
-                map.set(a.users.id, {
-                    user: a.users,
-                    assignments: [a],
-                });
-            }
-        }
-        return Array.from(map.values());
-    }, [filtered]);
-
-    const uniqueControllerCount = useMemo(() => {
-        return new Set(controllers.map(a => a.users?.id).filter(Boolean)).size;
-    }, [controllers]);
-
-    // ── Handlers Invitation (Partie 2.A & 2.B) ──
-    const toggleEventSelection = (id: string) => {
-        setInvEventIds(prev => 
-            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-        );
+    const resetInvite = () => {
+        setInvFirstName('');
+        setInvLastName('');
+        setInvEmail('');
+        setInvPhone('');
+        setInvCanCash(false);
+        setInvError({});
+        setInvEventIds(assignableEvents.length === 1 ? [assignableEvents[0].id] : []);
     };
 
-    const toggleAllEvents = () => {
-        if (invEventIds.length === availableEvents.length) {
-            setInvEventIds([]);
-        } else {
-            setInvEventIds(availableEvents.map(e => e.id));
-        }
+    /* ───────────── Invitation ───────────── */
+
+    const toggleInviteEvent = (id: string) => {
+        setInvEventIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+        setInvError((prev) => ({ ...prev, events: undefined }));
+    };
+
+    const toggleAllInviteEvents = () => {
+        setInvEventIds(invEventIds.length === assignableEvents.length ? [] : assignableEvents.map((e) => e.id));
     };
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
         if (inviting) return;
-        setInvPhoneError('');
-        setInvNameError('');
-
         const phoneSanitized = invPhone.replace(/\s/g, '');
-        if (!/^(7[0-8])\d{7}$/.test(phoneSanitized)) {
-            setInvPhoneError('Numéro sénégalais valide requis (ex: 77 123 45 67).');
-            return;
-        }
-        if (invEventIds.length === 0) {
-            setInvPhoneError('Veuillez sélectionner au moins un événement.');
-            return;
-        }
-        const hasIneligible = invEventIds.some(id => !availableEvents.some(ae => ae.id === id));
-        if (hasIneligible) {
-            setInvPhoneError("Ce contrôleur ne peut être affecté qu'à des événements confirmés.");
-            return;
-        }
+        const next: typeof invError = {};
+        if (!/^(7[0-8])\d{7}$/.test(phoneSanitized)) next.phone = 'Numéro sénégalais de 9 chiffres requis (ex : 77 123 45 67).';
+        if (invEventIds.length === 0) next.events = 'Sélectionnez au moins un événement.';
+        setInvError(next);
+        if (next.phone || next.events) return;
 
         setInviting(true);
         try {
-            const res  = await fetch('/api/partner/team/invite', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({
-                    event_ids:       invEventIds,
-                    phone:           phoneSanitized,
-                    first_name:      invFirstName.trim() || 'Contrôleur',
-                    last_name:       invLastName.trim() || '',
-                    email:           invEmail.trim() || undefined,
-                    can_accept_cash: invCanCash,
-                }),
+            const reply = await sendJson<InviteReply>('/api/partner/team/invite', 'POST', {
+                event_ids: invEventIds,
+                phone: phoneSanitized,
+                first_name: invFirstName.trim() || 'Contrôleur',
+                last_name: invLastName.trim() || '',
+                email: invEmail.trim() || undefined,
+                can_accept_cash: invCanCash,
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'invitation.');
-
-            // Détection de compte existant non-contrôleur -> demande de confirmation explicite
-            if (data.requires_confirmation && data.existing_user) {
-                setExistingAccountConfirm({
-                    existingUser: data.existing_user,
-                    eventIds: [...invEventIds],
-                    canAcceptCash: invCanCash,
-                    message: data.message || '',
-                });
+            if (reply.requires_confirmation && reply.existing_user) {
+                setExistingAccountConfirm({ existingUser: reply.existing_user, eventIds: [...invEventIds], canAcceptCash: invCanCash, message: reply.message ?? '' });
                 return;
             }
-
-            await fetchControllers(true);
-            toast.success(data.message || 'Contrôleur invité avec succès.');
-            setShowModal(false);
-            setInvFirstName(''); setInvLastName(''); setInvEmail('');
-            setInvPhone(''); setInvCanCash(false);
-            if (events.length > 1) setInvEventIds([]);
-        } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Erreur inattendue.');
+            toast.success(reply.message || 'Contrôleur invité : il reçoit son code par SMS.');
+            setShowInvite(false);
+            resetInvite();
+            await reload();
+        } catch (err) {
+            console.error('[équipe] invitation impossible :', err);
+            setInvError({ form: errorMessage(err, 'L’invitation n’a pas pu être envoyée.') });
         } finally {
             setInviting(false);
         }
     };
 
-    // ── Confirmation d'attribution du rôle Contrôleur pour un compte existant (CLIENT) ──
     const handleConfirmPromotion = async () => {
         if (!existingAccountConfirm || confirmingPromotion) return;
         setConfirmingPromotion(true);
         try {
-            const res = await fetch('/api/partner/team/invite', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    event_ids: existingAccountConfirm.eventIds,
-                    phone: existingAccountConfirm.existingUser.phone,
-                    can_accept_cash: existingAccountConfirm.canAcceptCash,
-                    confirm_promotion: true,
-                }),
+            const reply = await sendJson<InviteReply>('/api/partner/team/invite', 'POST', {
+                event_ids: existingAccountConfirm.eventIds,
+                phone: existingAccountConfirm.existingUser.phone,
+                can_accept_cash: existingAccountConfirm.canAcceptCash,
+                confirm_promotion: true,
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erreur lors de la confirmation.');
-            await fetchControllers(true);
-            toast.success(data.message || 'Rôle Contrôleur attribué avec succès.');
+            toast.success(reply.message || 'Rôle de contrôleur attribué.');
             setExistingAccountConfirm(null);
-            setShowModal(false);
-            setInvFirstName(''); setInvLastName(''); setInvEmail('');
-            setInvPhone(''); setInvCanCash(false);
-            if (events.length > 1) setInvEventIds([]);
-        } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Erreur inattendue.');
+            setShowInvite(false);
+            resetInvite();
+            await reload();
+        } catch (err) {
+            console.error('[équipe] attribution du rôle impossible :', err);
+            toast.error(errorMessage(err, 'Le rôle de contrôleur n’a pas pu être attribué.'));
         } finally {
             setConfirmingPromotion(false);
         }
     };
 
-    // ── Renvoi d'invitation ──
-    const handleResendInvite = async (assignment: Assignment) => {
-        if (resendingId || actionLoading) return;
-        setResendingId(assignment.id);
+    const handleResendInvite = async (m: TeamMember) => {
+        const first = m.assignments[0];
+        if (!first || resendingId || actionLoading) return;
+        setResendingId(m.user_id);
         try {
-            const res = await fetch('/api/partner/team/invite', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    event_id:        assignment.event_id,
-                    phone:           assignment.users.phone,
-                    first_name:      assignment.users.first_name || 'Contrôleur',
-                    last_name:       assignment.users.last_name || '',
-                    resend:          true,
-                    can_accept_cash: assignment.can_accept_cash,
-                }),
+            const reply = await sendJson<InviteReply>('/api/partner/team/invite', 'POST', {
+                event_id: first.event_id,
+                phone: m.phone,
+                first_name: m.first_name || 'Contrôleur',
+                last_name: m.last_name || '',
+                resend: true,
+                can_accept_cash: first.can_accept_cash,
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erreur lors du renvoi.');
-            toast.success(data.message || 'Invitation renvoyée par SMS avec succès.');
-        } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Erreur inattendue.');
+            toast.success(reply.message || 'Invitation renvoyée par SMS.');
+        } catch (err) {
+            console.error('[équipe] renvoi de l’invitation impossible :', err);
+            toast.error(errorMessage(err, 'L’invitation n’a pas pu être renvoyée.'));
         } finally {
             setResendingId(null);
         }
     };
 
-    // ── Action C : Modifier les événements assignés ──
-    const openEditAssignments = (grouped: GroupedController) => {
-        setEditModalCtrl(grouped);
-        setEditEventIds(grouped.assignments.map(a => a.event_id));
-        setEditCanCash(grouped.assignments.some(a => a.can_accept_cash));
+    /* ───────────── Affectations ───────────── */
+
+    const openEdit = (m: TeamMember) => {
+        setEditMember(m);
+        setEditEventIds(m.assignments.map((a) => a.event_id));
+        setEditCanCash(m.can_accept_cash);
+    };
+
+    // Événements proposés : les assignables servis, plus les affectations actuelles devenues non assignables.
+    const editChoices: EventChoice[] = useMemo(() => {
+        if (!editMember) return [];
+        const out: EventChoice[] = assignableEvents.map((e) => ({ ...e, assignable: true }));
+        for (const a of editMember.assignments) {
+            if (a.event && !a.event.assignable && !out.some((c) => c.id === a.event_id)) {
+                out.push({ id: a.event.id, title: a.event.title, start_at: a.event.start_at, status: a.event.status, assignable: false });
+            }
+        }
+        return out;
+    }, [editMember, assignableEvents]);
+
+    const toggleEditEvent = (id: string, assignable: boolean) => {
+        setEditEventIds((prev) => {
+            if (prev.includes(id)) return prev.filter((x) => x !== id);
+            return assignable ? [...prev, id] : prev;
+        });
     };
 
     const handleSaveAssignments = async () => {
-        if (!editModalCtrl || updatingAssignments) return;
+        if (!editMember || updatingAssignments) return;
         setUpdatingAssignments(true);
         try {
-            const res = await fetch('/api/partner/team/assignments', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    controller_id: editModalCtrl.user.id,
-                    event_ids: editEventIds,
-                    can_accept_cash: editCanCash,
-                }),
+            await sendJson('/api/partner/team/assignments', 'PATCH', {
+                controller_id: editMember.user_id,
+                event_ids: editEventIds,
+                can_accept_cash: editCanCash,
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour.');
-            toast.success('Affectations mises à jour avec succès.');
-            setEditModalCtrl(null);
-            await fetchControllers(true);
-        } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Erreur inattendue.');
+            toast.success('Affectations mises à jour.');
+            setEditMember(null);
+            await reload();
+        } catch (err) {
+            console.error('[équipe] mise à jour des affectations impossible :', err);
+            toast.error(errorMessage(err, 'Les affectations n’ont pas pu être mises à jour.'));
         } finally {
             setUpdatingAssignments(false);
         }
     };
 
-    // ── Action D : Retirer d'un événement ──
-    const handleRemoveSingle = async (assignmentId: string, eventId: string) => {
+    const runAction = async (url: string, success: string, fallback: string, close: () => void) => {
         if (actionLoading) return;
         setActionLoading(true);
         try {
-            const res  = await fetch(`/api/partner/team/${eventId}?assignmentId=${assignmentId}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                // Confirmation serveur obtenue -> mise à jour immédiate du state
-                setControllers(prev => prev.filter(c => c.id !== assignmentId));
-                toast.success(data.message || 'Contrôleur retiré de cet événement.');
-                setConfirmRemoveSingle(null);
-            } else {
-                toast.error(data.error || 'Erreur lors du retrait.');
-            }
-        } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Erreur réseau lors du retrait.');
+            const reply = await sendJson<{ message?: string }>(url, 'DELETE');
+            toast.success(reply.message || success);
+            close();
+            await reload();
+        } catch (err) {
+            console.error(`[équipe] ${url} :`, err);
+            toast.error(errorMessage(err, fallback));
         } finally {
             setActionLoading(false);
         }
     };
 
-    // ── Action E : Retirer de TOUS les événements du partenaire ──
-    const handleRemoveAll = async (controllerId: string) => {
-        if (actionLoading) return;
-        setActionLoading(true);
-        try {
-            const res  = await fetch(`/api/partner/team/all?controllerId=${controllerId}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                // Confirmation serveur obtenue -> mise à jour immédiate du state
-                setControllers(prev => prev.filter(c => c.users?.id !== controllerId));
-                toast.success(data.message || 'Contrôleur retiré de tous vos événements.');
-                setConfirmRemoveAll(null);
-            } else {
-                toast.error(data.error || 'Erreur lors du retrait.');
-            }
-        } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Erreur réseau lors du retrait.');
-        } finally {
-            setActionLoading(false);
-        }
-    };
+    /* ───────────── Rendu ───────────── */
 
-    // ── Action F : Supprimer complètement le contrôleur de l'équipe ──
-    const handleDeleteController = async (controllerId: string) => {
-        if (actionLoading) return;
-        setActionLoading(true);
-        try {
-            const res  = await fetch(`/api/partner/team/controller/${controllerId}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                // Confirmation serveur obtenue -> mise à jour immédiate du state
-                setControllers(prev => prev.filter(c => c.users?.id !== controllerId));
-                toast.success(data.message || 'Contrôleur supprimé et désactivé avec succès.');
-                setConfirmDeleteCtrl(null);
-            } else {
-                toast.error(data.error || 'Erreur lors de la suppression.');
-            }
-        } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Erreur réseau lors de la suppression.');
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    return (
-        <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-
-            {/* ── En-tête ── */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-                        <Users size={22} className="text-[#FF5722]" /> Mon Équipe Contrôleurs
-                    </h1>
-                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                        {uniqueControllerCount} membre{uniqueControllerCount > 1 ? 's' : ''} actif{uniqueControllerCount > 1 ? 's' : ''} — {controllers.length} affectation{controllers.length > 1 ? 's' : ''}
+    const columns: DataColumn<TeamMember>[] = [
+        {
+            key: 'member',
+            header: 'Membre',
+            render: (m) => (
+                <div className="min-w-0">
+                    <p className="truncate font-semibold text-fg">{displayName(m)}</p>
+                    <p className="flex items-center gap-1.5 font-mono text-sm text-fg-muted">
+                        <Phone size={14} aria-hidden="true" /> {displayPhone(m.phone)}
+                    </p>
+                    <p className="mt-1 flex items-center gap-1.5 text-sm text-fg-muted">
+                        {m.can_accept_cash
+                            ? <><CheckCircle2 size={14} className="text-success-fg" aria-hidden="true" /> Encaissement espèces autorisé</>
+                            : <><AlertCircle size={14} aria-hidden="true" /> Sans encaissement espèces</>}
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                            setRefreshing(true);
-                            fetchControllers().finally(() => setRefreshing(false));
-                        }}
-                        disabled={refreshing || loading}
-                        title="Synchroniser la liste en temps réel"
-                    >
-                        <RotateCcw size={14} className={refreshing ? 'animate-spin mr-1.5' : 'mr-1.5'} />
-                        <span className="hidden sm:inline">Actualiser</span>
-                    </Button>
-                    <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-                        <UserPlus size={14} className="mr-1.5" /> Inviter un Contrôleur
-                    </Button>
-                </div>
-            </div>
-
-            {/* ── Filtres ── */}
-            <div className="flex gap-2">
-                <div className="relative flex-1">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Rechercher par nom ou numéro..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs focus:outline-none focus:border-[#FF5722]"
-                    />
-                </div>
-                <div className="relative shrink-0">
-                    <select
-                        value={filterEvent}
-                        onChange={e => setFilterEvent(e.target.value)}
-                        className="h-10 pl-3 pr-8 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:border-[#FF5722]"
-                    >
-                        <option value="all">Tous les événements</option>
-                        {availableEvents.map(ev => (
-                            <option key={ev.id} value={ev.id}>{ev.title}</option>
-                        ))}
-                    </select>
-                    <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
-            </div>
-
-            {/* ── Liste des Contrôleurs (Groupés par membre) ── */}
-            {loading ? (
-                <div className="flex justify-center py-16">
-                    <Loader2 size={28} className="animate-spin text-slate-400" />
-                </div>
-            ) : groupedControllers.length === 0 ? (
-                <div className="text-center py-16 space-y-3 bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-8">
-                    <Users size={40} className="text-slate-300 dark:text-zinc-600 mx-auto" />
-                    <p className="text-sm font-bold text-slate-600 dark:text-zinc-400">
-                        {controllers.length === 0
-                            ? 'Aucun contrôleur dans votre équipe.'
-                            : 'Aucun résultat correspondant aux filtres.'}
-                    </p>
-                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                        Invitez vos vigiles pour leur donner accès au scan QR et au compostage sécurisé des billets à l&apos;entrée.
-                    </p>
-                    {controllers.length === 0 && (
-                        <Button variant="primary" size="sm" onClick={() => setShowModal(true)} className="mt-2 min-h-[44px]">
-                            <UserPlus size={14} className="mr-1.5" /> Inviter un premier contrôleur
-                        </Button>
-                    )}
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {/* ══════════════════════════════════════════════════════════
-                        VUE TABLE DESKTOP (>= 768px - md)
-                        ══════════════════════════════════════════════════════════ */}
-                    <div className="hidden md:block rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs border-collapse">
-                                <thead>
-                                    <tr className="border-b border-slate-200 dark:border-zinc-800 bg-slate-50/75 dark:bg-zinc-800/40 text-slate-500 dark:text-zinc-400 uppercase text-[10px] font-black tracking-wider">
-                                        <th className="py-3 px-4">Membre & Contact</th>
-                                        <th className="py-3 px-4">Statut</th>
-                                        <th className="py-3 px-4">Événements Assignés</th>
-                                        <th className="py-3 px-4 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60">
-                                    {groupedControllers.map(grouped => {
-                                        const ctrl = grouped.user;
-                                        const displayName = [ctrl?.first_name, ctrl?.last_name].filter(Boolean).join(' ') || 'Contrôleur';
-                                        const displayPhone = (ctrl?.phone ?? '').replace(/^\+221/, '').replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4');
-                                        const isPending = ctrl?.first_name === 'Contrôleur' && !ctrl?.last_name;
-                                        const canAcceptCashAny = grouped.assignments.some(a => a.can_accept_cash);
-
-                                        return (
-                                            <tr key={ctrl.id} className="hover:bg-slate-50/50 dark:hover:bg-zinc-800/30 transition-colors">
-                                                {/* Membre & Contact */}
-                                                <td className="py-3.5 px-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-xl bg-[#FF5722]/10 dark:bg-[#FF5722]/20 flex items-center justify-center shrink-0 border border-[#FF5722]/20">
-                                                            <span className="text-xs font-black text-[#FF5722]">
-                                                                {displayName[0]?.toUpperCase() ?? 'C'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p className="font-bold text-slate-900 dark:text-white truncate">
-                                                                {displayName}
-                                                            </p>
-                                                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5">
-                                                                <Phone size={10} className="text-slate-400" />
-                                                                <span>{displayPhone}</span>
-                                                            </div>
-                                                            <div className="mt-1">
-                                                                {canAcceptCashAny ? (
-                                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                                                        <CheckCircle2 size={10} /> Cash OK
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
-                                                                        <AlertCircle size={10} /> Sans espèces
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-
-                                                {/* Statut */}
-                                                <td className="py-3.5 px-4 whitespace-nowrap">
-                                                    {isPending ? (
-                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
-                                                            En attente activation
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40">
-                                                            Actif
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                {/* Événements assignés */}
-                                                <td className="py-3.5 px-4">
-                                                    <div className="flex flex-wrap gap-1.5 max-w-sm">
-                                                        {grouped.assignments.map(a => (
-                                                            <span
-                                                                key={a.id}
-                                                                className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700/60 text-xs text-slate-700 dark:text-zinc-300 font-medium"
-                                                            >
-                                                                <Calendar size={11} className="text-[#FF5722] shrink-0" />
-                                                                <span className="truncate max-w-[140px]">{a.events?.title || 'Événement'}</span>
-                                                                {/* Action D : Retirer de cet événement précis */}
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={actionLoading}
-                                                                    onClick={() => setConfirmRemoveSingle({
-                                                                        assignmentId: a.id,
-                                                                        eventId: a.event_id,
-                                                                        eventTitle: a.events?.title || 'cet événement',
-                                                                        ctrlName: displayName,
-                                                                    })}
-                                                                    className="w-5 h-5 rounded flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-950/40 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-50"
-                                                                    title={`Retirer de ${a.events?.title || 'cet événement'}`}
-                                                                >
-                                                                    <X size={12} />
-                                                                </button>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </td>
-
-                                                {/* Actions */}
-                                                <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                                                    <div className="inline-flex items-center gap-1.5">
-                                                        {/* Action C : Modifier événements */}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => openEditAssignments(grouped)}
-                                                            disabled={actionLoading || updatingAssignments}
-                                                            className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-xs font-bold transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
-                                                            title="Gérer les affectations d'événements"
-                                                        >
-                                                            <Settings size={13} />
-                                                            <span>Gérer</span>
-                                                        </button>
-
-                                                        {/* Renvoyer SMS */}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleResendInvite(grouped.assignments[0])}
-                                                            disabled={resendingId === grouped.assignments[0].id || actionLoading}
-                                                            className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 text-xs font-bold transition-colors inline-flex items-center gap-1.5 border border-amber-200/60 disabled:opacity-50"
-                                                            title="Renvoyer le SMS d'invitation avec code"
-                                                        >
-                                                            {resendingId === grouped.assignments[0].id ? (
-                                                                <Loader2 size={13} className="animate-spin" />
-                                                            ) : (
-                                                                <Send size={13} />
-                                                            )}
-                                                            <span>SMS</span>
-                                                        </button>
-
-                                                        {/* Action E : Retirer de TOUS les événements */}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setConfirmRemoveAll({
-                                                                controllerId: ctrl.id,
-                                                                ctrlName: displayName,
-                                                                eventCount: grouped.assignments.length,
-                                                            })}
-                                                            disabled={actionLoading}
-                                                            className="min-h-[36px] min-w-[36px] p-2 rounded-xl text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
-                                                            title="Retirer de tous les événements (Action E)"
-                                                        >
-                                                            <UserMinus size={15} />
-                                                        </button>
-
-                                                        {/* Action F : Supprimer complètement */}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setConfirmDeleteCtrl({ controllerId: ctrl.id, ctrlName: displayName })}
-                                                            disabled={actionLoading}
-                                                            className="min-h-[36px] min-w-[36px] p-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
-                                                            title="Supprimer définitivement (Action F)"
-                                                        >
-                                                            <Trash2 size={15} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* ══════════════════════════════════════════════════════════
-                        VUE CARTES MOBILES (< 768px - md)
-                        Touch targets >= 44px garantis
-                        ══════════════════════════════════════════════════════════ */}
-                    <div className="block md:hidden space-y-3">
-                        {groupedControllers.map(grouped => {
-                            const ctrl = grouped.user;
-                            const displayName = [ctrl?.first_name, ctrl?.last_name].filter(Boolean).join(' ') || 'Contrôleur';
-                            const displayPhone = (ctrl?.phone ?? '').replace(/^\+221/, '').replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4');
-                            const isPending = ctrl?.first_name === 'Contrôleur' && !ctrl?.last_name;
-                            const canAcceptCashAny = grouped.assignments.some(a => a.can_accept_cash);
-
+            ),
+        },
+        {
+            key: 'state',
+            header: 'État',
+            render: (m) => (m.pending_activation
+                ? <Badge variant="warning" size="sm">Activation en attente</Badge>
+                : <Badge variant="success" size="sm">Actif</Badge>),
+        },
+        {
+            key: 'events',
+            header: 'Événements',
+            render: (m) => (
+                <div className="space-y-1.5">
+                    <p className="text-sm text-fg-muted">{plural(m.assignments_count, 'événement', 'événements')}</p>
+                    <ul className="flex flex-wrap gap-1.5">
+                        {m.assignments.map((a) => {
+                            const title = a.event?.title ?? 'Événement';
                             return (
-                                <div
-                                    key={ctrl.id}
-                                    className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm space-y-3.5 transition-all"
-                                >
-                                    {/* Profil & Statut */}
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="w-11 h-11 rounded-xl bg-[#FF5722]/10 dark:bg-[#FF5722]/20 flex items-center justify-center shrink-0 border border-[#FF5722]/20">
-                                                <span className="text-sm font-black text-[#FF5722]">
-                                                    {displayName[0]?.toUpperCase() ?? 'C'}
-                                                </span>
-                                            </div>
-                                            <div className="min-w-0">
-                                                <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                                                    {displayName}
-                                                </h3>
-                                                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 font-mono mt-0.5">
-                                                    <Phone size={11} className="text-slate-400" />
-                                                    <span>{displayPhone}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        {isPending ? (
-                                            <span className="px-2 py-1 rounded-full text-[9px] font-bold bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 shrink-0">
-                                                En attente
-                                            </span>
-                                        ) : (
-                                            <span className="px-2 py-1 rounded-full text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40 shrink-0">
-                                                Actif
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Statut encaissement */}
-                                    <div className="text-xs">
-                                        {canAcceptCashAny ? (
-                                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                                                <CheckCircle2 size={12} /> Encaissement espèces autorisé
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                                                <AlertCircle size={12} /> Sans encaissement espèces
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Événements assignés */}
-                                    <div className="pt-2 border-t border-slate-100 dark:border-zinc-800">
-                                        <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
-                                            Événements assignés ({grouped.assignments.length}) :
-                                        </p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {grouped.assignments.map(a => (
-                                                <span
-                                                    key={a.id}
-                                                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700/60 text-xs text-slate-700 dark:text-zinc-300 font-medium"
-                                                >
-                                                    <Calendar size={11} className="text-[#FF5722] shrink-0" />
-                                                    <span className="truncate max-w-[180px]">{a.events?.title || 'Événement'}</span>
-                                                    {/* Action D : Retirer de cet événement précis */}
-                                                    <button
-                                                        type="button"
-                                                        disabled={actionLoading}
-                                                        onClick={() => setConfirmRemoveSingle({
-                                                            assignmentId: a.id,
-                                                            eventId: a.event_id,
-                                                            eventTitle: a.events?.title || 'cet événement',
-                                                            ctrlName: displayName,
-                                                        })}
-                                                        className="w-7 h-7 rounded flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-950/40 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-50"
-                                                        title={`Retirer de ${a.events?.title || 'cet événement'}`}
-                                                    >
-                                                        <X size={14} />
-                                                    </button>
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Barre d'actions tactiles mobile (min-h-[44px]) */}
-                                    <div className="pt-3 border-t border-slate-100 dark:border-zinc-800 flex items-center gap-2">
-                                        {/* Action C : Modifier événements */}
-                                        <button
-                                            type="button"
-                                            onClick={() => openEditAssignments(grouped)}
-                                            disabled={actionLoading || updatingAssignments}
-                                            className="flex-1 min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
-                                        >
-                                            <Settings size={14} />
-                                            <span>Gérer</span>
-                                        </button>
-
-                                        {/* Renvoyer SMS */}
-                                        <button
-                                            type="button"
-                                            onClick={() => handleResendInvite(grouped.assignments[0])}
-                                            disabled={resendingId === grouped.assignments[0].id || actionLoading}
-                                            className="flex-1 min-h-[44px] px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-amber-200/60 disabled:opacity-50"
-                                        >
-                                            {resendingId === grouped.assignments[0].id ? (
-                                                <Loader2 size={14} className="animate-spin" />
-                                            ) : (
-                                                <Send size={14} />
-                                            )}
-                                            <span>SMS</span>
-                                        </button>
-
-                                        {/* Action E : Retirer de TOUS les événements */}
-                                        <button
-                                            type="button"
-                                            onClick={() => setConfirmRemoveAll({
-                                                controllerId: ctrl.id,
-                                                ctrlName: displayName,
-                                                eventCount: grouped.assignments.length,
-                                            })}
-                                            disabled={actionLoading}
-                                            className="min-h-[44px] min-w-[44px] p-2 rounded-xl text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors disabled:opacity-50 flex items-center justify-center border border-amber-200/40"
-                                            title="Retirer de tous les événements"
-                                        >
-                                            <UserMinus size={18} />
-                                        </button>
-
-                                        {/* Action F : Supprimer complètement */}
-                                        <button
-                                            type="button"
-                                            onClick={() => setConfirmDeleteCtrl({ controllerId: ctrl.id, ctrlName: displayName })}
-                                            disabled={actionLoading}
-                                            className="min-h-[44px] min-w-[44px] p-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50 flex items-center justify-center border border-red-200/40"
-                                            title="Supprimer définitivement"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
-                                    </div>
-                                </div>
+                                <li key={a.id} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-border bg-surface-sunken pl-2.5 text-sm text-fg">
+                                    <CalendarDays size={14} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                                    <span className="truncate">{title}</span>
+                                    <IconButton
+                                        aria-label={`Retirer ${displayName(m)} de ${title}`}
+                                        variant="danger"
+                                        disabled={actionLoading}
+                                        onClick={() => setConfirmRemoveSingle({ assignmentId: a.id, eventId: a.event_id, eventTitle: title, ctrlName: displayName(m) })}
+                                    >
+                                        <X size={16} />
+                                    </IconButton>
+                                </li>
                             );
                         })}
-                    </div>
+                    </ul>
                 </div>
+            ),
+        },
+        {
+            key: 'actions',
+            header: 'Actions',
+            align: 'right',
+            render: (m) => (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button variant="secondary" size="sm" leftIcon={<Settings size={16} aria-hidden="true" />} onClick={() => openEdit(m)} disabled={actionLoading || updatingAssignments}>
+                        Gérer
+                    </Button>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        leftIcon={<Send size={16} aria-hidden="true" />}
+                        onClick={() => void handleResendInvite(m)}
+                        isLoading={resendingId === m.user_id}
+                        disabled={actionLoading}
+                    >
+                        Renvoyer le SMS
+                    </Button>
+                    <IconButton
+                        aria-label={`Retirer ${displayName(m)} de tous vos événements`}
+                        title="Retirer de tous les événements"
+                        variant="secondary"
+                        disabled={actionLoading}
+                        onClick={() => setConfirmRemoveAll({ controllerId: m.user_id, ctrlName: displayName(m), eventCount: m.assignments_count })}
+                    >
+                        <UserMinus size={18} />
+                    </IconButton>
+                    <IconButton
+                        aria-label={`Supprimer ${displayName(m)} de l’équipe`}
+                        title="Supprimer de l’équipe"
+                        variant="danger"
+                        disabled={actionLoading}
+                        onClick={() => setConfirmDeleteCtrl({ controllerId: m.user_id, ctrlName: displayName(m) })}
+                    >
+                        <Trash2 size={18} />
+                    </IconButton>
+                </div>
+            ),
+        },
+    ];
+
+    const filtersActive = filterEvent !== 'all' || searchQuery.trim() !== '';
+
+    return (
+        <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 pb-24 sm:px-6">
+            <PageHeader
+                eyebrow={<LiveIndicator status={liveStatus} />}
+                title="Équipe de contrôle"
+                description={data
+                    ? `${plural(data.members_count, 'membre', 'membres')} · ${plural(data.assignments_count, 'affectation', 'affectations')} sur vos événements.`
+                    : 'Les contrôleurs qui scannent les billets à l’entrée de vos événements.'}
+                actions={
+                    <>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            leftIcon={<RefreshCw size={16} aria-hidden="true" />}
+                            onClick={() => void reload()}
+                            isLoading={refreshing}
+                            disabled={loading}
+                        >
+                            Actualiser
+                        </Button>
+                        <Button variant="primary" size="sm" leftIcon={<UserPlus size={16} aria-hidden="true" />} onClick={() => setShowInvite(true)} disabled={!data}>
+                            Inviter un contrôleur
+                        </Button>
+                    </>
+                }
+            />
+
+            {error && !data ? (
+                <ErrorState title="Équipe indisponible" description={error} onRetry={() => void reload()} isRetrying={loading || refreshing} />
+            ) : loading || !data ? (
+                <div className="space-y-3" role="status" aria-busy="true">
+                    <span className="sr-only">Chargement de l’équipe…</span>
+                    <Skeleton className="h-24 rounded-2xl" />
+                    <Skeleton className="h-24 rounded-2xl" />
+                </div>
+            ) : (
+                <>
+                    {error && (
+                        <p role="alert" className="rounded-xl border border-danger-border bg-danger-bg p-3 text-sm text-danger-fg">
+                            {error} La liste affichée est celle de la dernière lecture réussie.
+                        </p>
+                    )}
+
+                    {data.members_count > 0 && (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                            <TextInput
+                                label="Rechercher un contrôleur"
+                                type="search"
+                                placeholder="Nom ou numéro"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                aside={<Search size={16} aria-hidden="true" />}
+                            />
+                            <Select
+                                label="Événement"
+                                value={filterEvent}
+                                onChange={(e) => setFilterEvent(e.target.value)}
+                                options={[{ value: 'all', label: 'Tous les événements' }, ...assignableEvents.map((ev) => ({ value: ev.id, label: ev.title }))]}
+                            />
+                        </div>
+                    )}
+
+                    <DataList
+                        items={visibleMembers}
+                        columns={columns}
+                        getKey={(m) => m.user_id}
+                        caption="Membres de l’équipe de contrôle et leurs affectations"
+                        cardTitle={(m) => displayName(m)}
+                        empty={filtersActive && data.members_count > 0 ? (
+                            <EmptyState
+                                title="Aucun contrôleur ne correspond"
+                                description="Modifiez la recherche ou choisissez « Tous les événements »."
+                                actionLabel="Effacer les filtres"
+                                onAction={() => {
+                                    setSearchQuery('');
+                                    setFilterEvent('all');
+                                }}
+                                icon={<Search size={28} />}
+                            />
+                        ) : (
+                            <EmptyState
+                                title="Aucun contrôleur dans votre équipe"
+                                description="Invitez vos contrôleurs : ils reçoivent un code par SMS et scannent les billets à l’entrée."
+                                actionLabel={assignableEvents.length > 0 ? 'Inviter un premier contrôleur' : undefined}
+                                onAction={assignableEvents.length > 0 ? () => setShowInvite(true) : undefined}
+                                icon={<Users size={28} />}
+                            />
+                        )}
+                    />
+                </>
             )}
 
-            {/* ── Action D : Dialog Confirmation Retrait d'un événement ── */}
+            {/* Retrait d'un événement */}
             <ConfirmDialog
                 isOpen={!!confirmRemoveSingle}
                 onClose={() => setConfirmRemoveSingle(null)}
-                onConfirm={() => confirmRemoveSingle && handleRemoveSingle(confirmRemoveSingle.assignmentId, confirmRemoveSingle.eventId)}
+                onConfirm={() => confirmRemoveSingle && void runAction(
+                    `/api/partner/team/${encodeURIComponent(confirmRemoveSingle.eventId)}?assignmentId=${encodeURIComponent(confirmRemoveSingle.assignmentId)}`,
+                    'Contrôleur retiré de cet événement.',
+                    'Le retrait n’a pas pu être fait.',
+                    () => setConfirmRemoveSingle(null),
+                )}
                 title="Retirer de cet événement ?"
-                message={`Voulez-vous retirer ${confirmRemoveSingle?.ctrlName} de l'événement "${confirmRemoveSingle?.eventTitle}" ? Ses autres affectations et l'historique de ses scans seront conservés.`}
-                confirmLabel="Retirer de l'événement"
+                message={`${confirmRemoveSingle?.ctrlName ?? ''} ne pourra plus contrôler « ${confirmRemoveSingle?.eventTitle ?? ''} ». Ses autres affectations et l’historique de ses scans sont conservés.`}
+                confirmLabel="Retirer de l’événement"
                 variant="danger"
                 isLoading={actionLoading}
             />
 
-            {/* ── Action E : Dialog Confirmation Retrait de TOUS les événements ── */}
+            {/* Retrait de tous les événements */}
             <ConfirmDialog
                 isOpen={!!confirmRemoveAll}
                 onClose={() => setConfirmRemoveAll(null)}
-                onConfirm={() => confirmRemoveAll && handleRemoveAll(confirmRemoveAll.controllerId)}
+                onConfirm={() => confirmRemoveAll && void runAction(
+                    `/api/partner/team/all?controllerId=${encodeURIComponent(confirmRemoveAll.controllerId)}`,
+                    'Contrôleur retiré de tous vos événements.',
+                    'Le retrait n’a pas pu être fait.',
+                    () => setConfirmRemoveAll(null),
+                )}
                 title="Retirer de tous vos événements ?"
-                message={`Voulez-vous retirer ${confirmRemoveAll?.ctrlName} de TOUS ses événements assignés (${confirmRemoveAll?.eventCount ?? 0} événement${(confirmRemoveAll?.eventCount ?? 0) > 1 ? 's' : ''} au total) ? Le contrôleur n'aura plus aucun événement actif pour votre organisation, mais son compte et son historique restent intacts.`}
+                message={`${confirmRemoveAll?.ctrlName ?? ''} sera retiré de ${confirmRemoveAll ? plural(confirmRemoveAll.eventCount, 'événement', 'événements') : ''}. Son compte et son historique restent intacts.`}
                 confirmLabel="Retirer de tous les événements"
                 variant="danger"
                 isLoading={actionLoading}
             />
 
-            {/* ── Action F : Dialog Confirmation Suppression Complète ── */}
+            {/* Suppression du contrôleur */}
             <ConfirmDialog
                 isOpen={!!confirmDeleteCtrl}
                 onClose={() => setConfirmDeleteCtrl(null)}
-                onConfirm={() => confirmDeleteCtrl && handleDeleteController(confirmDeleteCtrl.controllerId)}
-                title="Supprimer définitivement le contrôleur ?"
-                message={`Êtes-vous sûr de vouloir supprimer ${confirmDeleteCtrl?.ctrlName} de votre équipe ? Ses accès opérationnels au scanner seront immédiatement révoqués et sa session invalidée. Pour réintégrer ce contrôleur plus tard, une nouvelle invitation sera obligatoire.`}
+                onConfirm={() => confirmDeleteCtrl && void runAction(
+                    `/api/partner/team/controller/${encodeURIComponent(confirmDeleteCtrl.controllerId)}`,
+                    'Contrôleur supprimé de l’équipe.',
+                    'La suppression n’a pas pu être faite.',
+                    () => setConfirmDeleteCtrl(null),
+                )}
+                title="Supprimer le contrôleur de l’équipe ?"
+                message={`Les accès de ${confirmDeleteCtrl?.ctrlName ?? ''} au scanner sont révoqués immédiatement et sa session est fermée. Pour le réintégrer, une nouvelle invitation sera nécessaire.`}
                 confirmLabel="Supprimer le contrôleur"
                 variant="danger"
                 isLoading={actionLoading}
             />
 
-            {/* ── Action C : Modal Modification des Affectations ── */}
-            {editModalCtrl && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-                    role="dialog"
-                    aria-modal="true"
-                    onKeyDown={e => { if (e.key === 'Escape') setEditModalCtrl(null); }}
-                >
-                    <div className="absolute inset-0" onClick={() => setEditModalCtrl(null)} />
-                    <div className="relative w-full max-w-md max-h-[85dvh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-xl p-6 space-y-5 animate-in zoom-in-95 duration-200">
-                        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-zinc-800">
-                            <div>
-                                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                    <Settings size={18} className="text-[#FF5722]" /> Gérer les affectations
-                                </h2>
-                                <p className="text-xs text-slate-400 mt-0.5">
-                                    Contrôleur : <span className="font-bold text-slate-700 dark:text-zinc-200">{editModalCtrl.user.first_name} {editModalCtrl.user.last_name}</span>
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setEditModalCtrl(null)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <div className="space-y-4">
-                            {(() => {
-                                const assignableEvents = events
-                                    .filter(e => isEventEligibleForController(e.status) || editEventIds.includes(e.id))
-                                    .sort((a, b) => {
-                                        const isEligibleA = isEventEligibleForController(a.status);
-                                        const isEligibleB = isEventEligibleForController(b.status);
-                                        if (isEligibleA !== isEligibleB) return isEligibleA ? -1 : 1;
-                                        const dateA = a.date ? new Date(a.date).getTime() : 0;
-                                        const dateB = b.date ? new Date(b.date).getTime() : 0;
-                                        if (dateA && dateB && dateA !== dateB) return dateA - dateB;
-                                        return (a.title || '').localeCompare(b.title || '', 'fr', { sensitivity: 'base' });
-                                    });
-                                return (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block">
-                                            Sélectionnez les événements autorisés ({editEventIds.length}/{assignableEvents.length}) :
-                                        </label>
-                                        <div className="max-h-52 overflow-y-auto space-y-1.5 p-1 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/60">
-                                            {assignableEvents.length === 0 ? (
-                                                <div className="p-3 text-center text-xs text-slate-400">
-                                                    Aucun événement disponible pour affectation.
-                                                </div>
-                                            ) : (
-                                                assignableEvents.map(ev => {
-                                                    const isSelected = editEventIds.includes(ev.id);
-                                                    const isEligible = isEventEligibleForController(ev.status);
-                                                    return (
-                                                        <div
-                                                            key={ev.id}
-                                                            onClick={() => {
-                                                                if (isSelected) {
-                                                                    setEditEventIds(prev => prev.filter(id => id !== ev.id));
-                                                                } else if (isEligible) {
-                                                                    setEditEventIds(prev => [...prev, ev.id]);
-                                                                }
-                                                            }}
-                                                            className={`flex items-center justify-between min-h-[48px] p-2.5 rounded-lg border transition-all ${
-                                                                isSelected
-                                                                    ? isEligible
-                                                                        ? 'border-[#FF5722] bg-[#FF5722]/5 font-bold shadow-sm cursor-pointer'
-                                                                        : 'border-amber-400/60 bg-amber-500/10 font-bold shadow-sm cursor-pointer'
-                                                                    : isEligible
-                                                                        ? 'border-transparent hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 cursor-pointer'
-                                                                        : 'border-transparent opacity-50 cursor-not-allowed text-slate-400'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center gap-2.5 min-w-0">
-                                                                {isSelected ? (
-                                                                    <CheckSquare size={16} className={isEligible ? "text-[#FF5722] shrink-0" : "text-amber-500 shrink-0"} />
-                                                                ) : (
-                                                                    <Square size={16} className="text-slate-400 shrink-0" />
-                                                                )}
-                                                                <span className="text-xs truncate">{ev.title}</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-2 shrink-0 ml-2">
-                                                                {!isEligible ? (
-                                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
-                                                                        {ev.status === 'TERMINE' ? 'Terminé (à retirer)' : `${ev.status || 'Non actif'} (à retirer)`}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40">
-                                                                        {ev.status === 'PUBLIE' ? 'En ligne' : 'Validé'}
-                                                                    </span>
-                                                                )}
-                                                                {ev.date && (
-                                                                    <span className="text-[10px] text-slate-400 font-mono">
-                                                                        {new Date(ev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-
-                            {/* Toggle Cash */}
-                            <button
-                                type="button"
-                                onClick={() => setEditCanCash(!editCanCash)}
-                                className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-colors ${
-                                    editCanCash
-                                        ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
-                                        : 'border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
-                                }`}
-                            >
-                                <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300">
-                                    {editCanCash ? <ShieldCheck size={16} className="text-emerald-500" /> : <ShieldOff size={16} className="text-slate-400" />}
-                                    Autoriser l&apos;encaissement espèces
-                                </span>
-                                <div className={`w-10 h-5.5 rounded-full transition-colors flex items-center px-0.5 ${editCanCash ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-zinc-600'}`}>
-                                    <div className={`w-4.5 h-4.5 rounded-full bg-white shadow transition-transform ${editCanCash ? 'translate-x-4.5' : 'translate-x-0'}`} />
-                                </div>
-                            </button>
-
-                            <div className="flex items-center gap-2 pt-2">
-                                <Button
-                                    variant="outline"
-                                    fullWidth
-                                    size="md"
-                                    onClick={() => setEditModalCtrl(null)}
-                                >
-                                    Annuler
-                                </Button>
-                                <Button
-                                    variant="primary"
-                                    fullWidth
-                                    size="md"
-                                    isLoading={updatingAssignments}
-                                    onClick={handleSaveAssignments}
-                                >
-                                    Enregistrer
-                                </Button>
-                            </div>
-                        </div>
+            {/* Modification des affectations */}
+            <Modal
+                isOpen={!!editMember}
+                onClose={() => setEditMember(null)}
+                title="Gérer les affectations"
+                subtitle={editMember ? `Contrôleur : ${displayName(editMember)}` : undefined}
+                icon={<Settings size={20} aria-hidden="true" />}
+                maxWidth="md"
+                busy={updatingAssignments}
+                footer={
+                    <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button variant="secondary" onClick={() => setEditMember(null)} disabled={updatingAssignments}>Annuler</Button>
+                        <Button variant="primary" onClick={() => void handleSaveAssignments()} isLoading={updatingAssignments}>Enregistrer</Button>
                     </div>
+                }
+            >
+                <div className="space-y-4">
+                    {editChoices.length === 0 ? (
+                        <p className="text-sm text-fg-muted">Aucun événement validé ou publié n’accepte de contrôleur pour le moment.</p>
+                    ) : (
+                        <EventChecklist
+                            legend={<>Événements autorisés ({editEventIds.length} sur {data?.assignable_events.length ?? 0} assignables)</>}
+                            choices={editChoices}
+                            selectedIds={editEventIds}
+                            onToggle={toggleEditEvent}
+                            name="edit-events"
+                        />
+                    )}
+                    <Switch
+                        label="Autoriser l’encaissement des espèces"
+                        description="Le contrôleur peut encaisser un billet payable à l’entrée et vendre au guichet."
+                        checked={editCanCash}
+                        onChange={setEditCanCash}
+                        disabled={updatingAssignments}
+                    />
                 </div>
-            )}
+            </Modal>
 
-            {/* ── Modal d'invitation contrôleur (Partie 2.A & 2.B) ── */}
-            {showModal && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="invite-modal-title"
-                    onKeyDown={e => { if (e.key === 'Escape') setShowModal(false); }}
-                >
-                    <div className="absolute inset-0" onClick={() => setShowModal(false)} />
-                    <div className="relative w-full max-w-md max-h-[85dvh] overflow-y-auto bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-xl p-6 space-y-5 animate-in zoom-in-95 duration-200">
-                        <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-zinc-800/60">
-                            <h2 id="invite-modal-title" className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                <UserPlus size={18} className="text-[#FF5722]" /> Inviter un contrôleur
-                            </h2>
-                            <button
-                                type="button"
-                                onClick={() => setShowModal(false)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleInvite} className="space-y-4">
-                            {/* Prénom & Nom */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block mb-1.5">
-                                        Prénom <span className="text-slate-400 font-normal">(optionnel)</span>
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="Ex: Moussa"
-                                        value={invFirstName}
-                                        onChange={e => { setInvFirstName(e.target.value); setInvNameError(''); }}
-                                        className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block mb-1.5">
-                                        Nom <span className="text-slate-400 font-normal">(optionnel)</span>
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder="Ex: Diop"
-                                        value={invLastName}
-                                        onChange={e => { setInvLastName(e.target.value); setInvNameError(''); }}
-                                        className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-                            </div>
-                            {invNameError && <p className="text-[11px] text-red-500 font-medium">{invNameError}</p>}
-
-                            {/* Téléphone */}
-                            <div>
-                                <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block mb-1.5">
-                                    Numéro du contrôleur *
-                                </label>
-                                <div className="relative">
-                                    <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input
-                                        type="tel"
-                                        inputMode="tel"
-                                        placeholder="77 123 45 67"
-                                        value={invPhone}
-                                        onChange={e => { setInvPhone(e.target.value); setInvPhoneError(''); }}
-                                        className={`w-full h-11 pl-9 pr-3 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none ${
-                                            invPhoneError
-                                                ? 'border-red-400 focus:border-red-500'
-                                                : 'border-slate-200 dark:border-zinc-700 focus:border-[#FF5722]'
-                                        }`}
-                                    />
-                                </div>
-                                {invPhoneError && <p className="text-[11px] text-red-500 font-medium mt-1">{invPhoneError}</p>}
-                            </div>
-
-                            {/* Email (optionnel) */}
-                            <div>
-                                <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block mb-1.5">
-                                    Email <span className="text-slate-400 font-normal">(optionnel)</span>
-                                </label>
-                                <div className="relative">
-                                    <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input
-                                        type="email"
-                                        placeholder="controleur@email.com"
-                                        value={invEmail}
-                                        onChange={e => setInvEmail(e.target.value)}
-                                        className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Sélection multi-événements */}
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold text-slate-600 dark:text-zinc-400">
-                                        Événements à assigner * ({invEventIds.length}/{availableEvents.length})
-                                    </label>
-                                    {availableEvents.length > 1 && (
-                                        <button
-                                            type="button"
-                                            onClick={toggleAllEvents}
-                                            className="text-[11px] font-bold text-[#FF5722] hover:underline"
-                                        >
-                                            {invEventIds.length === availableEvents.length ? 'Tout désélectionner' : 'Sélectionner tous'}
-                                        </button>
-                                    )}
-                                </div>
-
-                                {availableEvents.length === 0 ? (
-                                    <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 text-center space-y-2">
-                                        <AlertCircle size={22} className="text-amber-500 mx-auto" />
-                                        <p className="text-xs font-bold text-amber-800 dark:text-amber-200">
-                                            Aucun événement disponible
-                                        </p>
-                                        <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
-                                            Les contrôleurs peuvent uniquement être affectés à des événements confirmés et opérationnels.
-                                            Créez ou faites confirmer un événement pour pouvoir l&apos;affecter.
-                                        </p>
-                                        <Link
-                                            href="/partner/events"
-                                            className="inline-flex items-center gap-1 text-xs font-bold text-[#FF5722] hover:underline pt-1"
-                                        >
-                                            Voir mes événements &rarr;
-                                        </Link>
-                                    </div>
-                                ) : (
-                                    <div className="max-h-48 overflow-y-auto space-y-1.5 p-1 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/60">
-                                        {availableEvents.map(ev => {
-                                            const isSelected = invEventIds.includes(ev.id);
-                                            return (
-                                                <div
-                                                    key={ev.id}
-                                                    onClick={() => toggleEventSelection(ev.id)}
-                                                    className={`flex items-center justify-between min-h-[48px] p-2.5 rounded-lg border cursor-pointer transition-all ${
-                                                        isSelected
-                                                            ? 'border-[#FF5722] bg-[#FF5722]/5 font-bold shadow-sm'
-                                                            : 'border-transparent hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        {isSelected ? (
-                                                            <CheckSquare size={16} className="text-[#FF5722] shrink-0" />
-                                                        ) : (
-                                                            <Square size={16} className="text-slate-400 shrink-0" />
-                                                        )}
-                                                        <span className="text-xs truncate">{ev.title}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 shrink-0 ml-2">
-                                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40">
-                                                            {ev.status === 'PUBLIE' ? 'En ligne' : 'Validé'}
-                                                        </span>
-                                                        {ev.date && (
-                                                            <span className="text-[10px] text-slate-400 font-mono">
-                                                                {new Date(ev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Toggle cash */}
-                            <button
-                                type="button"
-                                onClick={() => setInvCanCash(!invCanCash)}
-                                className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-colors ${
-                                    invCanCash
-                                        ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
-                                        : 'border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
-                                }`}
-                            >
-                                <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300">
-                                    {invCanCash ? <ShieldCheck size={16} className="text-emerald-500" /> : <ShieldOff size={16} className="text-slate-400" />}
-                                    Encaissement espèces
-                                </span>
-                                <div className={`w-10 h-5.5 rounded-full transition-colors flex items-center px-0.5 ${invCanCash ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-zinc-600'}`}>
-                                    <div className={`w-4.5 h-4.5 rounded-full bg-white shadow transition-transform ${invCanCash ? 'translate-x-4.5' : 'translate-x-0'}`} />
-                                </div>
-                            </button>
-
-                            <Button
-                                variant="primary"
-                                fullWidth
-                                size="lg"
-                                isLoading={inviting}
-                                disabled={!invPhone.trim() || invEventIds.length === 0 || availableEvents.length === 0}
-                            >
-                                {invEventIds.length > 1 ? `Inviter sur ${invEventIds.length} événements` : 'Inviter le contrôleur'}
-                            </Button>
-                        </form>
+            {/* Invitation */}
+            <Modal
+                isOpen={showInvite}
+                onClose={() => setShowInvite(false)}
+                title="Inviter un contrôleur"
+                subtitle="Il reçoit un code d’activation par SMS."
+                icon={<UserPlus size={20} aria-hidden="true" />}
+                maxWidth="md"
+                busy={inviting}
+            >
+                <form onSubmit={handleInvite} noValidate className="space-y-4">
+                    {invError.form && (
+                        <p role="alert" className="rounded-xl border border-danger-border bg-danger-bg p-3 text-sm text-danger-fg">{invError.form}</p>
+                    )}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <TextInput label="Prénom" aside="Facultatif" placeholder="Ex : Moussa" autoComplete="off" value={invFirstName} onChange={(e) => setInvFirstName(e.target.value)} />
+                        <TextInput label="Nom" aside="Facultatif" placeholder="Ex : Diop" autoComplete="off" value={invLastName} onChange={(e) => setInvLastName(e.target.value)} />
                     </div>
-                </div>
-            )}
+                    <TextInput
+                        label="Numéro du contrôleur"
+                        required
+                        type="tel"
+                        inputMode="tel"
+                        placeholder="77 123 45 67"
+                        value={invPhone}
+                        error={invError.phone}
+                        onChange={(e) => {
+                            setInvPhone(e.target.value);
+                            setInvError((prev) => ({ ...prev, phone: undefined }));
+                        }}
+                        className="font-mono"
+                    />
+                    <TextInput label="Email" aside="Facultatif" type="email" placeholder="controleur@email.com" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} />
 
-            {/* Modal de Confirmation Compte Existant (Multi-Casquette Client -> Contrôleur) */}
+                    {assignableEvents.length === 0 ? (
+                        <div className="space-y-2 rounded-xl border border-warning-border bg-warning-bg p-4 text-sm text-warning-fg">
+                            <p className="font-semibold">Aucun événement disponible</p>
+                            <p>Un contrôleur ne peut être affecté qu’à un événement validé ou publié. Faites valider un événement pour l’affecter.</p>
+                            <LinkButton href="/partner/events" variant="secondary" size="sm">Voir mes événements</LinkButton>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            <EventChecklist
+                                legend={<>Événements à assigner <span className="text-danger-fg" aria-hidden="true">*</span> ({invEventIds.length} sur {assignableEvents.length})</>}
+                                choices={assignableEvents.map((ev) => ({ ...ev, assignable: true }))}
+                                selectedIds={invEventIds}
+                                onToggle={toggleInviteEvent}
+                                name="invite-events"
+                            />
+                            {assignableEvents.length > 1 && (
+                                <Button type="button" variant="ghost" size="sm" onClick={toggleAllInviteEvents}>
+                                    {invEventIds.length === assignableEvents.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                                </Button>
+                            )}
+                            {invError.events && <p role="alert" className="text-sm font-medium text-danger-fg">{invError.events}</p>}
+                        </div>
+                    )}
+
+                    <Switch
+                        label="Encaissement des espèces"
+                        description="Autorise l’encaissement à l’entrée et la vente au guichet."
+                        checked={invCanCash}
+                        onChange={setInvCanCash}
+                        disabled={inviting}
+                    />
+
+                    <Button type="submit" variant="primary" fullWidth size="lg" isLoading={inviting} disabled={assignableEvents.length === 0}>
+                        {invEventIds.length > 1 ? `Inviter sur ${invEventIds.length} événements` : 'Inviter le contrôleur'}
+                    </Button>
+                </form>
+            </Modal>
+
+            {/* Compte existant : attribution du rôle sans doublon */}
             <Modal
                 isOpen={!!existingAccountConfirm}
                 onClose={() => setExistingAccountConfirm(null)}
-                title="Compte existant détecté"
-                subtitle="Attribution du rôle Contrôleur sans doublon"
-                icon={
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                        <UserCheck size={20} />
-                    </div>
-                }
+                title="Compte existant"
+                subtitle="Attribution du rôle de contrôleur, sans nouveau compte"
+                icon={<UserCheck size={20} aria-hidden="true" />}
+                busy={confirmingPromotion}
                 footer={
-                    <div className="flex items-center justify-end gap-3 w-full">
-                        <Button
-                            variant="secondary"
-                            onClick={() => setExistingAccountConfirm(null)}
-                            disabled={confirmingPromotion}
-                        >
-                            Annuler
-                        </Button>
-                        <Button
-                            variant="primary"
-                            onClick={handleConfirmPromotion}
-                            isLoading={confirmingPromotion}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                            Attribuer le rôle Contrôleur
-                        </Button>
+                    <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button variant="secondary" onClick={() => setExistingAccountConfirm(null)} disabled={confirmingPromotion}>Annuler</Button>
+                        <Button variant="primary" onClick={() => void handleConfirmPromotion()} isLoading={confirmingPromotion}>Attribuer le rôle de contrôleur</Button>
                     </div>
                 }
             >
                 {existingAccountConfirm && (
-                    <div className="space-y-4 py-2">
-                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/80 border border-slate-200/80 dark:border-zinc-700/80 space-y-2">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Titulaire du compte</span>
-                                <span className="font-semibold text-slate-900 dark:text-white">
-                                    {existingAccountConfirm.existingUser.display_name}
-                                </span>
+                    <div className="space-y-4">
+                        <dl className="space-y-2 rounded-xl border border-border bg-surface-sunken p-4 text-sm">
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-fg-muted">Titulaire du compte</dt>
+                                <dd className="font-semibold text-fg">{existingAccountConfirm.existingUser.display_name}</dd>
                             </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-slate-500 dark:text-zinc-400 font-medium">Numéro de téléphone</span>
-                                <span className="font-mono font-medium text-slate-900 dark:text-white">
-                                    {existingAccountConfirm.existingUser.phone}
-                                </span>
+                            <div className="flex justify-between gap-3">
+                                <dt className="text-fg-muted">Numéro</dt>
+                                <dd className="font-mono text-fg">{existingAccountConfirm.existingUser.phone}</dd>
                             </div>
-                        </div>
-
-                        <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-xs text-emerald-800 dark:text-emerald-300 space-y-1.5 leading-relaxed">
-                            <p className="font-semibold flex items-center gap-1.5">
-                                <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                Compte unifié sans perte de données
+                        </dl>
+                        <div className="space-y-1.5 rounded-xl border border-success-border bg-success-bg p-4 text-sm leading-relaxed text-success-fg">
+                            <p className="flex items-center gap-1.5 font-semibold">
+                                <ShieldCheck size={16} aria-hidden="true" /> Un seul compte, rien n’est perdu
                             </p>
-                            <p>
-                                Cet utilisateur conservera l&apos;intégralité de son historique et ses fonctionnalités Client (achats de billets, commandes, réservations, solde portefeuille) tout en accédant aux outils de contrôle pour vos événements.
-                            </p>
-                            <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
-                                Aucun compte en double ne sera créé. La transition est instantanée et transparente.
-                            </p>
+                            <p>Cette personne garde ses billets, commandes et son portefeuille, et accède en plus au scanner de vos événements.</p>
+                            {existingAccountConfirm.message && <p>{existingAccountConfirm.message}</p>}
                         </div>
                     </div>
                 )}

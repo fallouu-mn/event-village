@@ -29,6 +29,19 @@ export interface LedgerEntry {
     ticket_id: string | null;
     withdrawal_id: string | null;
     event_id: string | null;
+    /** Lot 7 (7.4) : écriture pas encore disponible (available_at après l'heure du serveur à la lecture). */
+    is_pending: boolean;
+}
+
+/**
+ * Statut d'un retrait tel qu'il doit s'afficher (lot 7, 7.4) : un retrait encore PROCESSING dont l'envoi
+ * (cashout) est déjà CONFIRME est versé (PAID) ; dont l'envoi a ÉCHOUÉ est refusé, montant rendu (REJECTED) ;
+ * sinon son statut enregistré. Une issue incertaine reste PROCESSING (jamais PAID ni REJECTED).
+ */
+export function effectiveWithdrawalStatus(status: string, cashoutStatus: string | null): string {
+    if (status === 'PROCESSING' && cashoutStatus === 'CONFIRME') return 'PAID';
+    if (status === 'PROCESSING' && cashoutStatus === 'ECHOUE') return 'REJECTED';
+    return status;
 }
 
 export async function accountBalance(ownerId: string, kind: AccountKind): Promise<AccountBalance> {
@@ -54,17 +67,34 @@ export async function accountHistory(ownerId: string, kind: AccountKind, limit =
         .order('created_at', { ascending: false })
         .limit(limit);
     if (error) throw new Error(`Historique ${kind} indisponible : ${error.message}`);
-    return (data ?? []).map((e) => ({ ...e, amount: Number(e.amount) })) as LedgerEntry[];
+    const now = Date.now();
+    return (data ?? []).map((e) => {
+        const at = Date.parse(String(e.available_at));
+        return { ...e, amount: Number(e.amount), is_pending: !Number.isNaN(at) && at > now };
+    }) as LedgerEntry[];
 }
 
 export async function withdrawalsOf(ownerId: string, kind: AccountKind, limit = 20): Promise<Array<Record<string, unknown>>> {
     const { data, error } = await getServiceRoleClient()
         .from('withdrawals')
-        .select('id, gross_amount, fee_amount, net_amount, status, operator, phone_number, withdrawal_method, created_at, processed_at, rejection_reason')
+        .select('id, gross_amount, fee_amount, net_amount, status, operator, phone_number, withdrawal_method, created_at, processed_at, rejection_reason, cashout_id')
         .eq('user_id', ownerId)
         .eq('account_kind', kind)
         .order('created_at', { ascending: false })
         .limit(limit);
     if (error) throw new Error(`Retraits ${kind} indisponibles : ${error.message}`);
-    return data ?? [];
+    const rows = data ?? [];
+    // Issue de l'envoi de chaque retrait (lecture séparée : withdrawals et cashouts se référencent l'un l'autre,
+    // l'embarquement PostgREST serait ambigu).
+    const cashoutIds = Array.from(new Set(rows.map((w) => w.cashout_id).filter((id): id is string => typeof id === 'string')));
+    const cashoutStatus = new Map<string, string>();
+    if (cashoutIds.length > 0) {
+        const { data: cashouts, error: cErr } = await getServiceRoleClient().from('cashouts').select('id, status').in('id', cashoutIds);
+        if (cErr) throw new Error(`Envois des retraits ${kind} indisponibles : ${cErr.message}`);
+        for (const c of cashouts ?? []) cashoutStatus.set(String(c.id), String(c.status));
+    }
+    return rows.map(({ cashout_id, ...w }) => ({
+        ...w,
+        effective_status: effectiveWithdrawalStatus(String(w.status), cashout_id ? cashoutStatus.get(String(cashout_id)) ?? null : null),
+    }));
 }

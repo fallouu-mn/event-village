@@ -1,597 +1,492 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
+/**
+ * Tableau de bord du partenaire (lot 7, tâche 7.4 ; contrat section 8, D69, D70).
+ *  - Une seule source : GET /api/partner/dashboard, lu par useServerData. Tous les chiffres (montants du grand
+ *    livre, billets, taux, nombre d'événements), la première utilisation (`onboarding`) et l'essai (`trial`)
+ *    sont servis par le serveur ; la page ne fait que les formater (lib/format).
+ *  - Chargement : KpiCard en squelette ; échec : ErrorState avec « Réessayer » (jamais de « 0 F CFA » sans
+ *    donnée) ; états vides explicites.
+ *  - Bandeaux du compte : en attente, refusé (avec le motif servi), suspendu (avec le motif servi).
+ *  - Bloc « Commandes en direct » affiché seulement si features.orders_enabled est ouvert (useFeatureFlags) ;
+ *    usePartnerOrders reste importé (SCENARIO 15) mais ne s'abonne que si le service est ouvert.
+ *  - Le rapport de clôture est une modale chargée à la demande (next/dynamic).
+ */
+import React, { useCallback, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import {
-  Calendar,
-  QrCode,
-  DollarSign,
-  Users,
-  TrendingUp,
-  ShoppingBag,
-  Clock,
-  ShieldCheck,
-  AlertCircle,
-  FileText,
-  Download,
-  FileSpreadsheet,
-  CheckCircle2,
-  MapPin,
-  ArrowUpRight,
-  RefreshCw,
-  Wallet,
-  Activity,
-  Layers,
-  ChevronRight
+    Activity,
+    CalendarDays,
+    CheckCircle2,
+    Clock,
+    Download,
+    FileSpreadsheet,
+    FileText,
+    QrCode,
+    RefreshCw,
+    ShieldCheck,
+    ShoppingBag,
+    Ticket,
+    TrendingUp,
+    Wallet,
 } from 'lucide-react';
 import { usePartnerOrders } from '@/hooks/usePartnerOrders';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useFeatureFlags } from '@/lib/features/client';
+import { useServerData } from '@/components/partner/useServerData';
+import { FirstEventSteps, type FirstEventOnboarding } from '@/components/partner/onboarding/FirstEventSteps';
 import { useToast } from '@/components/ui/Toast';
-import { Button } from '@/components/ui/Button';
-import { Badge, StatusBadge } from '@/components/ui/Badge';
-import { ClosingReportModal } from '@/components/partner/ClosingReportModal';
-import type { PartnerDashboardData, PartnerEventBreakdown } from '@/lib/partner/partner-dashboard.service';
+import { Button, buttonClasses } from '@/components/ui/Button';
+import { Badge, type BadgeVariant } from '@/components/ui/Badge';
+import { DataList, type DataColumn } from '@/components/ui/DataList';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { IconButton } from '@/components/ui/IconButton';
+import { KpiCard } from '@/components/ui/KpiCard';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { formatDate, formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
+import type { PartnerActivityItem, PartnerDashboardData, PartnerEventBreakdown } from '@/lib/partner/partner-dashboard.service';
+
+const ClosingReportModal = dynamic(
+    () => import('@/components/partner/ClosingReportModal').then((m) => m.ClosingReportModal),
+    { ssr: false },
+);
+
+interface DashboardResponse {
+    dashboard?: PartnerDashboardData;
+    data?: PartnerDashboardData;
+}
+
+const ORDER_STATUS_LABELS: Record<string, { label: string; variant: BadgeVariant }> = {
+    EN_ATTENTE: { label: 'En attente', variant: 'warning' },
+    CONFIRMEE: { label: 'Confirmée', variant: 'info' },
+    EN_PREPARATION: { label: 'En préparation', variant: 'warning' },
+    PRETE: { label: 'Prête', variant: 'info' },
+    EN_LIVRAISON: { label: 'En livraison', variant: 'info' },
+    LIVREE: { label: 'Livrée', variant: 'success' },
+    ANNULEE: { label: 'Annulée', variant: 'danger' },
+    REJETEE: { label: 'Refusée', variant: 'danger' },
+};
+
+const DELIVERY_MODE_LABELS: Record<string, string> = {
+    LIVRAISON: 'Livraison',
+    RETRAIT: 'Retrait sur place',
+    SUR_PLACE: 'Sur place',
+};
+
+const ACTIVITY_ICONS: Record<PartnerActivityItem['type'], { icon: React.ElementType; className: string }> = {
+    SALE: { icon: Ticket, className: 'bg-info-bg text-info-fg' },
+    CHECKIN: { icon: QrCode, className: 'bg-success-bg text-success-fg' },
+    ORDER: { icon: ShoppingBag, className: 'bg-brand-bg text-brand-fg' },
+    WITHDRAWAL: { icon: Wallet, className: 'bg-surface-sunken text-fg' },
+};
+
+/** Ouvre un export (PDF ou CSV servi par une route) dans un nouvel onglet. */
+function openExport(url: string): void {
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!win) window.location.assign(url);
+}
 
 export default function PartnerDashboardPage() {
-  const { profile, partner, user, session, isLoading: isAuthLoading } = useAuth();
-  const { orders: liveOrders, connected } = usePartnerOrders(partner?.id ?? '');
-  const toast = useToast();
+    const toast = useToast();
+    const flags = useFeatureFlags();
+    const { data: body, error, loading, refreshing, reload } = useServerData<DashboardResponse>('/api/partner/dashboard');
+    const dashboard = body?.dashboard ?? body?.data ?? null;
+    const partner = dashboard?.partner ?? null;
+    const kpis = dashboard?.kpis ?? null;
+    const trial = dashboard?.trial ?? null;
+    const onboarding = (dashboard?.onboarding ?? null) as FirstEventOnboarding | null;
 
-  const [dashboardData, setDashboardData] = useState<PartnerDashboardData | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+    // Commandes en direct : abonnement seulement si le service des commandes est ouvert (D69).
+    const ordersOpen = flags?.orders === true;
+    const { orders: liveOrders, connected } = usePartnerOrders(ordersOpen && partner ? partner.id : null);
 
-  // Selected event for Closing Report Modal
-  const [selectedClosingEventId, setSelectedClosingEventId] = useState<string | null>(null);
-  const [selectedClosingEventTitle, setSelectedClosingEventTitle] = useState<string | undefined>(undefined);
-  const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
+    const [closing, setClosing] = React.useState<{ id: string; title: string } | null>(null);
 
-  // Global CSV export state
-  const [isExportingGlobalCsv, setIsExportingGlobalCsv] = useState(false);
+    // Démarrage de l'essai à la première visite d'un partenaire validé (action idempotente du serveur),
+    // puis relecture : la durée et la date de fin affichées sont celles que le serveur a posées.
+    const activationAsked = useRef(false);
+    useEffect(() => {
+        if (!partner || !trial || activationAsked.current) return;
+        if (partner.status !== 'VALIDE' || trial.started_at) return;
+        activationAsked.current = true;
+        void (async () => {
+            try {
+                const res = await fetch('/api/partner/activation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+                if (!res.ok) {
+                    const reply = (await res.json().catch((err: unknown) => {
+                        console.error('[tableau de bord] réponse d’activation illisible :', err);
+                        return null;
+                    })) as { error?: string } | null;
+                    console.error('[tableau de bord] activation de l’essai refusée, HTTP', res.status, reply);
+                    toast.error(reply?.error ?? 'La période d’essai n’a pas pu démarrer. Rechargez la page pour réessayer.');
+                    return;
+                }
+                await reload();
+            } catch (err) {
+                console.error('[tableau de bord] activation de l’essai impossible :', err);
+                toast.error('Connexion impossible : la période d’essai démarrera à votre prochaine visite.');
+            }
+        })();
+    }, [partner, trial, reload, toast]);
 
-  const [trialInfo, setTrialInfo] = useState<{
-    trialDays?: number;
-    trialEndsAt?: string;
-    status?: string;
-  } | null>(null);
-  const activationCalledRef = React.useRef(false);
+    const handleRefresh = useCallback(() => {
+        void reload();
+    }, [reload]);
 
-  const loadDashboard = useCallback(async (showToast = false) => {
-    try {
-      if (showToast) setIsRefreshing(true);
-      const res = await fetch('/api/partner/dashboard', {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    const eventColumns: DataColumn<PartnerEventBreakdown>[] = [
+        {
+            key: 'event',
+            header: 'Événement',
+            render: (ev) => (
+                <div className="flex min-w-0 flex-col items-start gap-1.5">
+                    <span className="break-words font-semibold text-fg">{ev.title}</span>
+                    <StatusBadge domain="event" status={ev.status} size="sm" />
+                </div>
+            ),
         },
-      });
-      const json = await res.json();
-      const payload = json.dashboard || json.data;
-      if (json.success && payload) {
-        setDashboardData(payload);
-        if (showToast) toast.success('Données actualisées en temps réel.');
-      } else {
-        throw new Error(json.error || 'Erreur de chargement');
-      }
-    } catch (err: any) {
-      console.error('[loadDashboard] Erreur:', err);
-      toast.error(err.message || 'Impossible de charger les données du dashboard.');
-    } finally {
-      setIsLoadingData(false);
-      setIsRefreshing(false);
-    }
-  }, [session?.access_token, toast]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    loadDashboard();
-  }, [user?.id, loadDashboard]);
-
-  // Handle trial activation
-  useEffect(() => {
-    if (isAuthLoading || !user?.id) return;
-
-    if (partner?.trial_started_at) {
-      setTrialInfo({
-        trialDays: partner.is_founder ? 90 : 60,
-        trialEndsAt: partner.trial_ends_at ?? undefined,
-        status: partner.status,
-      });
-    } else if (!activationCalledRef.current) {
-      activationCalledRef.current = true;
-      fetch('/api/partner/activation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
-            setTrialInfo({
-              trialDays: data.trial_days || 60,
-              trialEndsAt: data.trial_ends_at,
-              status: data.status,
-            });
-          }
-        })
-        .catch(() => {
-          toast.error("Activation de la période d'essai échouée.");
-        });
-    }
-  }, [user?.id, isAuthLoading, partner?.trial_started_at, partner?.trial_ends_at, partner?.is_founder, partner?.status, toast]);
-
-  const isPending = partner?.status === 'EN_ATTENTE';
-  const isSuspended = partner?.status === 'SUSPENDU';
-
-  const kpis = dashboardData?.kpis;
-
-  const handleOpenClosingReport = (eventId: string, title: string) => {
-    setSelectedClosingEventId(eventId);
-    setSelectedClosingEventTitle(title);
-    setIsClosingModalOpen(true);
-  };
-
-  const handleGlobalCsvExport = () => {
-    try {
-      setIsExportingGlobalCsv(true);
-      const url = '/api/partner/reports/accounting?format=csv';
-      const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.download = `EventVillage-Comptabilite-Globale-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success('Export comptable global en cours de téléchargement...');
-    } catch {
-      toast.error("Échec de l'export comptable.");
-    } finally {
-      setIsExportingGlobalCsv(false);
-    }
-  };
-
-  const statCards = [
-    {
-      label: 'Chiffre d’affaires Brut',
-      value: kpis ? `${kpis.grossRevenue.toLocaleString('fr-FR')} FCFA` : '0 FCFA',
-      sublabel: 'Volume total généré',
-      icon: TrendingUp,
-      accent: 'text-slate-900 dark:text-white',
-      bg: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-    },
-    {
-      label: 'Net Partenaire à Reverser',
-      value: kpis ? `${kpis.netRevenue.toLocaleString('fr-FR')} FCFA` : '0 FCFA',
-      sublabel: `Commissions EV : ${(kpis?.commissionAmount || 0).toLocaleString('fr-FR')} F`,
-      icon: DollarSign,
-      accent: 'text-[#FF5722]',
-      bg: 'bg-[#FF5722]/10 text-[#FF5722]',
-    },
-    {
-      label: 'Billets Vendus & Scans',
-      value: kpis ? `${kpis.ticketsSold} vendus` : '0 vendu',
-      sublabel: `${kpis?.ticketsCheckedIn || 0} entrées validées aux portes`,
-      icon: Users,
-      accent: 'text-emerald-600 dark:text-emerald-400',
-      bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    },
-    {
-      label: 'Solde Disponible Retrait',
-      value: kpis ? `${kpis.soldeDisponible.toLocaleString('fr-FR')} FCFA` : '0 FCFA',
-      sublabel: `Déjà retiré : ${(kpis?.totalWithdrawn || 0).toLocaleString('fr-FR')} F`,
-      icon: Wallet,
-      accent: 'text-indigo-600 dark:text-indigo-400',
-      bg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-    },
-  ];
-
-  return (
-    <div className="space-y-8 pb-16">
-      {/* 1. Header B2B & Actions Globales */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">
-              Portail Organisateur & Pilotage Financier
-            </span>
-            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/30">
-              <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-              <span>{connected ? 'Realtime Actif' : 'Connexion...'}</span>
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            {partner?.company_name || profile?.first_name || 'Espace Partenaire'}
-          </h1>
-        </div>
-
-        {/* Actions Rapides & Exports */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => loadDashboard(true)}
-            isLoading={isRefreshing}
-            leftIcon={<RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />}
-          >
-            Actualiser
-          </Button>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleGlobalCsvExport}
-            isLoading={isExportingGlobalCsv}
-            leftIcon={<FileSpreadsheet size={15} className="text-emerald-600" />}
-          >
-            Export Comptable Global
-          </Button>
-
-          <Link href="/partner/scan">
-            <Button variant="primary" size="sm" leftIcon={<QrCode size={16} />}>
-              Scanner Billets
-            </Button>
-          </Link>
-        </div>
-      </div>
-
-      {/* Bannière Période d'Essai Active */}
-      {trialInfo?.trialEndsAt && (
-        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold">
-            <ShieldCheck size={18} className="text-emerald-600 flex-shrink-0" />
-            <span>
-              Période d&apos;essai gratuite active ({trialInfo.trialDays} jours) jusqu&apos;au{' '}
-              {new Date(trialInfo.trialEndsAt).toLocaleDateString('fr-FR', {
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </span>
-          </div>
-          <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200">
-            Offre Fondateur / Lancement
-          </span>
-        </div>
-      )}
-
-      {/* Alerte si le statut partenaire est EN_ATTENTE */}
-      {isPending && (
-        <div className="p-5 rounded-3xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-4">
-          <Clock className="text-amber-600 flex-shrink-0 mt-0.5" size={24} />
-          <div className="space-y-1">
-            <h3 className="text-sm font-black text-amber-900 dark:text-amber-200">
-              Compte Partenaire en attente d&apos;approbation administrative
-            </h3>
-            <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-              Vos documents professionnels sont en cours de vérification. Vous recevrez une notification par SMS dès l&apos;activation définitive.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Alerte si le statut partenaire est SUSPENDU */}
-      {isSuspended && (
-        <div className="p-5 rounded-3xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-start gap-4">
-          <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={24} />
-          <div className="space-y-1">
-            <h3 className="text-sm font-black text-red-900 dark:text-red-200">
-              Compte Partenaire temporairement suspendu
-            </h3>
-            <p className="text-xs text-red-700 dark:text-red-400 leading-relaxed">
-              Votre compte professionnel a été suspendu par l&apos;administration Event Village. Veuillez contacter le support officiel.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Cartes KPIs / Statistiques Globales */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {isLoadingData ? (
-          <>
-            {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="h-2.5 w-28 bg-slate-100 dark:bg-zinc-800 rounded animate-pulse" />
-                  <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 animate-pulse" />
+        {
+            key: 'date',
+            header: 'Date et lieu',
+            render: (ev) => (
+                <div className="flex flex-col">
+                    <time dateTime={ev.startAt ?? undefined} className="text-sm text-fg">{formatDateTime(ev.startAt)}</time>
+                    <span className="text-sm text-fg-muted">{ev.city || ev.location || '—'}</span>
                 </div>
-                <div className="space-y-2">
-                  <div className="h-7 w-36 bg-slate-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
-                  <div className="h-2.5 w-24 bg-slate-100 dark:bg-zinc-800 rounded animate-pulse" />
+            ),
+        },
+        {
+            key: 'sold',
+            header: 'Vendus / capacité',
+            align: 'right',
+            render: (ev) => (
+                <div className="flex flex-col tabular-nums">
+                    <span className="font-semibold text-fg">{formatInteger(ev.ticketsSold)} / {formatInteger(ev.capacity)}</span>
+                    <span className="text-sm text-fg-muted">{formatInteger(ev.fillRatePercent)} % rempli</span>
                 </div>
-              </div>
-            ))}
-          </>
-        ) : (
-          <>
-            {statCards.map((stat, i) => {
-              const Icon = stat.icon;
-              return (
-                <div
-                  key={i}
-                  className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs hover:border-[#FF5722]/40 transition-all space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
-                      {stat.label}
-                    </span>
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${stat.bg}`}>
-                      <Icon size={16} />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className={`text-xl sm:text-2xl font-black tracking-tight ${stat.accent}`}>
-                      {stat.value}
-                    </div>
-                    <div className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
-                      {stat.sublabel}
-                    </div>
-                  </div>
+            ),
+        },
+        {
+            key: 'entries',
+            header: 'Entrées',
+            align: 'right',
+            render: (ev) => (
+                <div className="flex flex-col tabular-nums">
+                    <span className="font-semibold text-fg">{formatInteger(ev.ticketsCheckedIn)}</span>
+                    <span className="text-sm text-fg-muted">{formatInteger(ev.checkInRatePercent)} % des vendus</span>
                 </div>
-              );
-            })}
-          </>
-        )}
-      </div>
+            ),
+        },
+        {
+            key: 'gross',
+            header: 'Ventes en ligne',
+            align: 'right',
+            render: (ev) => <span className="font-semibold tabular-nums text-fg">{formatFcfa(ev.grossRevenue)}</span>,
+        },
+        {
+            key: 'net',
+            header: 'Net partenaire',
+            align: 'right',
+            render: (ev) => <span className="font-bold tabular-nums text-brand-fg">{formatFcfa(ev.netRevenue)}</span>,
+        },
+        {
+            key: 'actions',
+            header: 'Rapports',
+            align: 'right',
+            render: (ev) => (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button variant="secondary" size="sm" leftIcon={<FileText size={16} aria-hidden="true" />} onClick={() => setClosing({ id: ev.id, title: ev.title })}>
+                        Clôture
+                    </Button>
+                    <IconButton
+                        aria-label={`Télécharger le rapport PDF de ${ev.title}`}
+                        title="Rapport PDF"
+                        variant="secondary"
+                        onClick={() => openExport(`/api/partner/reports/closing/pdf?eventId=${encodeURIComponent(ev.id)}`)}
+                    >
+                        <Download size={18} />
+                    </IconButton>
+                    <IconButton
+                        aria-label={`Exporter les ventes de ${ev.title} en CSV`}
+                        title="Export CSV"
+                        variant="secondary"
+                        onClick={() => openExport(`/api/partner/reports/accounting?eventId=${encodeURIComponent(ev.id)}&format=csv`)}
+                    >
+                        <FileSpreadsheet size={18} />
+                    </IconButton>
+                </div>
+            ),
+        },
+    ];
 
-      {/* 3. Section Mes Événements & Rapports de Clôture */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <Layers size={18} className="text-[#FF5722]" />
-              Mes Événements & Billetterie
-            </h2>
-            <Badge variant="neutral" size="sm">
-              {dashboardData?.events.length || 0} événement(s)
-            </Badge>
-          </div>
-          <span className="text-xs text-slate-400 dark:text-zinc-500">
-            Suivi des ventes, taux de présence et bilans de clôture (Z)
-          </span>
-        </div>
+    const title = partner?.commercialName || partner?.companyName || 'Tableau de bord';
 
-        <div className="bg-white dark:bg-[#1E1E1E] rounded-3xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden shadow-xs">
-          {isLoadingData ? (
-            <div className="p-8 text-center text-xs text-slate-400 animate-pulse">
-              Chargement des événements...
-            </div>
-          ) : !dashboardData?.events || dashboardData.events.length === 0 ? (
-            <div className="p-8 text-center space-y-2">
-              <Calendar size={32} className="mx-auto text-slate-300 dark:text-zinc-600" />
-              <p className="text-xs font-bold text-slate-500 dark:text-zinc-400">
-                Aucun événement créé pour le moment.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/80 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300 font-bold border-b border-slate-200/80 dark:border-zinc-700/80">
-                    <th className="py-3 px-4">Événement</th>
-                    <th className="py-3 px-4">Date & Lieu</th>
-                    <th className="py-3 px-4 text-center">Vendus / Capacité</th>
-                    <th className="py-3 px-4 text-center">Entrées / Scan</th>
-                    <th className="py-3 px-4 text-right">CA Brut</th>
-                    <th className="py-3 px-4 text-right">Net Partenaire</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/80">
-                  {dashboardData.events.map((ev) => (
-                    <tr key={ev.id} className="hover:bg-slate-50/60 dark:hover:bg-zinc-800/40 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                        <div className="flex flex-col">
-                          <span className="truncate max-w-[220px]">{ev.title}</span>
-                          <span className="text-[10px] font-normal text-slate-400">{ev.status}</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-zinc-400">
-                        <div className="flex flex-col">
-                          <span>{new Date(ev.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à {ev.startTime}</span>
-                          <span className="text-[10px] text-slate-400">{ev.city}</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex flex-col items-center">
-                          <span className="font-bold text-slate-900 dark:text-white">
-                            {ev.ticketsSold} / {ev.capacity}
-                          </span>
-                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                            {ev.fillRatePercent}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex flex-col items-center">
-                          <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                            {ev.ticketsCheckedIn} scans
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {ev.checkInRatePercent}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-bold text-slate-900 dark:text-white font-mono">
-                        {ev.grossRevenue.toLocaleString('fr-FR')} F
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-black text-[#FF5722] font-mono">
-                        {ev.netRevenue.toLocaleString('fr-FR')} F
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
+    return (
+        <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 pb-24 sm:px-6 sm:space-y-8">
+            <PageHeader
+                eyebrow={<span className="text-sm font-medium text-fg-muted">Espace organisateur</span>}
+                title={title}
+                description="Ventes, entrées et solde de vos événements, mis à jour par le serveur."
+                actions={
+                    <>
+                        <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => handleOpenClosingReport(ev.id, ev.title)}
-                            leftIcon={<FileText size={13} />}
-                          >
-                            Rapport Z
-                          </Button>
-                          <a
-                            href={`/api/partner/reports/closing/pdf?eventId=${ev.id}`}
+                            onClick={handleRefresh}
+                            isLoading={refreshing}
+                            disabled={loading}
+                            leftIcon={<RefreshCw size={16} aria-hidden="true" />}
+                        >
+                            Actualiser
+                        </Button>
+                        <a
+                            href="/api/partner/reports/accounting?format=csv"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                            title="Télécharger PDF"
-                          >
-                            <Download size={13} />
-                          </a>
-                          <a
-                            href={`/api/partner/reports/accounting?eventId=${ev.id}&format=csv`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-emerald-600 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                            title="Export CSV"
-                          >
-                            <FileSpreadsheet size={13} />
-                          </a>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
+                            className={buttonClasses({ variant: 'secondary', size: 'sm', className: 'no-underline gap-1.5' })}
+                        >
+                            <FileSpreadsheet size={16} aria-hidden="true" />
+                            Export comptable
+                        </a>
+                        <LinkButton href="/partner/scan" size="sm" leftIcon={<QrCode size={16} />}>
+                            Scanner des billets
+                        </LinkButton>
+                    </>
+                }
+            />
 
-      {/* 4. Section Activité Récente & Commandes Realtime */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Timeline d'Activité Unifiée */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <Activity size={18} className="text-orange-500" />
-              Journal des Opérations
-            </h2>
-            <span className="text-xs text-slate-400">Ventes, Scans & Retraits</span>
-          </div>
-
-          <div className="bg-white dark:bg-[#1E1E1E] rounded-3xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden shadow-xs divide-y divide-slate-100 dark:divide-zinc-800/80">
-            {isLoadingData ? (
-              <div className="p-6 text-center text-xs text-slate-400 animate-pulse">
-                Chargement de l&apos;activité...
-              </div>
-            ) : !dashboardData?.recentActivity || dashboardData.recentActivity.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">
-                Aucune opération récente enregistrée.
-              </div>
+            {error && !dashboard ? (
+                <ErrorState
+                    title="Tableau de bord indisponible"
+                    description={`${error} Aucun chiffre n’est affiché tant que le serveur n’a pas répondu.`}
+                    onRetry={handleRefresh}
+                    isRetrying={refreshing || loading}
+                />
             ) : (
-              dashboardData.recentActivity.map((item) => (
-                <div key={item.id} className="p-3.5 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-zinc-800/40 transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-xs font-bold ${
-                      item.type === 'SALE'
-                        ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600'
-                        : item.type === 'CHECKIN'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600'
-                        : item.type === 'WITHDRAWAL'
-                        ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600'
-                        : 'bg-orange-50 dark:bg-orange-950/40 text-orange-600'
-                    }`}>
-                      {item.type === 'SALE' ? (
-                        <DollarSign size={14} />
-                      ) : item.type === 'CHECKIN' ? (
-                        <QrCode size={14} />
-                      ) : item.type === 'WITHDRAWAL' ? (
-                        <Wallet size={14} />
-                      ) : (
-                        <ShoppingBag size={14} />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {item.title}
-                      </p>
-                      <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="text-right flex-shrink-0">
-                    {item.amount !== undefined && item.amount > 0 && (
-                      <span className="text-xs font-black text-slate-900 dark:text-white block font-mono">
-                        {item.amount.toLocaleString('fr-FR')} F
-                      </span>
+                <>
+                    {error && dashboard && (
+                        <StatusBanner tone="danger" announce="alert" title="Actualisation impossible">
+                            {error} Les chiffres affichés sont ceux de la dernière lecture réussie.
+                        </StatusBanner>
                     )}
-                    <span className="text-[9px] text-slate-400">
-                      {new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
 
-        {/* Commandes Directes & Services (Realtime Supabase) */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <ShoppingBag size={18} className="text-emerald-500" />
-              Commandes & Services Live
-            </h2>
-            <Badge variant="brand" size="sm">
-              Realtime
-            </Badge>
-          </div>
+                    {/* Bandeaux du compte (statut servi par le serveur) */}
+                    {partner?.status === 'EN_ATTENTE' && (
+                        <StatusBanner tone="warning" title="Compte en cours de vérification" icon={<Clock size={20} />}>
+                            Vos pièces sont vérifiées par l’équipe Event Village. Vous recevrez un SMS dès la validation de votre compte ;
+                            vous pourrez alors créer et publier vos événements.
+                        </StatusBanner>
+                    )}
+                    {partner?.status === 'REJETE' && (
+                        <StatusBanner
+                            tone="danger"
+                            title="Demande de compte partenaire refusée"
+                            action={<LinkButton href="mailto:support@eventvillage.sn" variant="secondary" size="sm">Contacter le support</LinkButton>}
+                        >
+                            {partner.rejectionReason ? <>Motif : {partner.rejectionReason}</> : 'Aucun motif n’a été précisé.'}{' '}
+                            Contactez le support pour corriger votre dossier.
+                        </StatusBanner>
+                    )}
+                    {partner?.status === 'SUSPENDU' && (
+                        <StatusBanner tone="suspended" title="Compte partenaire suspendu">
+                            {partner.suspendedReason ? <>Motif : {partner.suspendedReason}. </> : null}
+                            Vos événements ne sont plus visibles du public. Contactez le support Event Village.
+                        </StatusBanner>
+                    )}
 
-          <div className="bg-white dark:bg-[#1E1E1E] rounded-3xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden shadow-xs divide-y divide-slate-100 dark:divide-zinc-800/80">
-            {liveOrders.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">
-                Aucune commande en direct pour le moment.
-              </div>
-            ) : (
-              liveOrders.slice(0, 6).map((order) => (
-                <div
-                  key={order.id}
-                  className="p-3.5 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-zinc-800/40 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 flex items-center justify-center flex-shrink-0">
-                      <ShoppingBag size={15} />
+                    {/* Période d'essai (durée et date de fin servies) */}
+                    {trial?.active && trial.ends_at && (
+                        <StatusBanner tone="success" title="Période d’essai gratuite en cours" icon={<ShieldCheck size={20} />}>
+                            {trial.days !== null ? `${formatInteger(trial.days)} jours offerts, ` : ''}
+                            jusqu’au <time dateTime={trial.ends_at}>{formatDate(trial.ends_at)}</time>.
+                        </StatusBanner>
+                    )}
+
+                    {/* Première utilisation (étapes cochées par le serveur) */}
+                    {onboarding?.visible && <FirstEventSteps onboarding={onboarding} />}
+
+                    {/* Indicateurs */}
+                    <section aria-labelledby="kpi-titre" className="space-y-3">
+                        <h2 id="kpi-titre" className="sr-only">Indicateurs</h2>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
+                            <KpiCard
+                                loading={loading || !kpis}
+                                label="Ventes en ligne"
+                                value={kpis ? formatFcfa(kpis.grossRevenue) : ''}
+                                hint="Prix des billets vendus en ligne, tous événements."
+                                tone="brand"
+                                icon={<TrendingUp size={18} />}
+                            />
+                            <KpiCard
+                                loading={loading || !kpis}
+                                label="Net partenaire"
+                                value={kpis ? formatFcfa(kpis.netRevenue) : ''}
+                                hint={kpis ? `Après ${formatFcfa(kpis.refundedAmount)} de remboursements.` : undefined}
+                                tone="success"
+                                icon={<Wallet size={18} />}
+                            />
+                            <KpiCard
+                                loading={loading || !kpis}
+                                label="Billets vendus"
+                                value={kpis ? formatInteger(kpis.ticketsSold) : ''}
+                                hint={kpis ? `${formatInteger(kpis.ticketsCheckedIn)} entrées validées aux portes.` : undefined}
+                                tone="info"
+                                icon={<Ticket size={18} />}
+                            />
+                            <KpiCard
+                                loading={loading || !kpis}
+                                label="Disponible au retrait"
+                                value={kpis ? formatFcfa(kpis.soldeDisponible) : ''}
+                                hint={kpis ? `Déjà versé : ${formatFcfa(kpis.totalWithdrawn)}.` : undefined}
+                                tone="neutral"
+                                icon={<CheckCircle2 size={18} />}
+                            />
+                        </div>
+                        {kpis && (
+                            <p className="text-sm text-fg-muted">
+                                Les ventes en espèces au guichet ({formatFcfa(kpis.cashSales)}) et les invitations n’alimentent pas le solde.{' '}
+                                <LinkButton href="/partner/finance" variant="ghost" size="sm" className="-ml-2 align-middle">Voir mes finances</LinkButton>
+                            </p>
+                        )}
+                    </section>
+
+                    {/* Événements */}
+                    <section aria-labelledby="evenements-titre" className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <h2 id="evenements-titre" className="flex items-center gap-2 text-lg font-bold text-fg">
+                                    <CalendarDays size={20} className="text-brand-fg" aria-hidden="true" />
+                                    Mes événements
+                                </h2>
+                                {kpis && (
+                                    <Badge variant="neutral" size="sm">
+                                        {formatInteger(kpis.totalEvents)} au total
+                                    </Badge>
+                                )}
+                            </div>
+                            <LinkButton href="/partner/events" variant="ghost" size="sm">Tous mes événements</LinkButton>
+                        </div>
+                        {loading || !dashboard ? (
+                            <div className="space-y-2" role="status" aria-busy="true">
+                                <span className="sr-only">Chargement des événements…</span>
+                                <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
+                                <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
+                            </div>
+                        ) : (
+                            <DataList
+                                items={dashboard.events}
+                                columns={eventColumns}
+                                getKey={(ev) => ev.id}
+                                caption="Ventes, entrées et rapports par événement"
+                                cardTitle={(ev) => ev.title}
+                                empty={
+                                    <EmptyState
+                                        title="Aucun événement pour le moment"
+                                        description="Créez votre premier événement : il restera en brouillon jusqu’à ce que vous le soumettiez à la validation."
+                                        actionLabel={partner?.status === 'VALIDE' ? 'Créer un événement' : undefined}
+                                        actionHref={partner?.status === 'VALIDE' ? '/partner/events/new' : undefined}
+                                        icon={<CalendarDays size={28} />}
+                                    />
+                                }
+                            />
+                        )}
+                    </section>
+
+                    {/* Activité récente et commandes en direct */}
+                    <div className={ordersOpen ? 'grid grid-cols-1 gap-6 lg:grid-cols-2' : 'grid grid-cols-1 gap-6'}>
+                        <section aria-labelledby="activite-titre" className="space-y-3">
+                            <h2 id="activite-titre" className="flex items-center gap-2 text-lg font-bold text-fg">
+                                <Activity size={20} className="text-brand-fg" aria-hidden="true" />
+                                Activité récente
+                            </h2>
+                            {loading || !dashboard ? (
+                                <div className="h-40 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" role="status" aria-busy="true">
+                                    <span className="sr-only">Chargement de l’activité…</span>
+                                </div>
+                            ) : dashboard.recentActivity.length === 0 ? (
+                                <EmptyState
+                                    title="Aucune opération récente"
+                                    description="Ventes, entrées validées et retraits apparaîtront ici."
+                                    icon={<Activity size={28} />}
+                                />
+                            ) : (
+                                <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                                    {dashboard.recentActivity.map((item) => {
+                                        const visual = ACTIVITY_ICONS[item.type];
+                                        const Icon = visual.icon;
+                                        return (
+                                            <li key={item.id} className="flex items-center justify-between gap-3 p-4">
+                                                <div className="flex min-w-0 items-center gap-3">
+                                                    <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${visual.className}`} aria-hidden="true">
+                                                        <Icon size={16} />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-semibold text-fg">{item.title}</p>
+                                                        <p className="truncate text-sm text-fg-muted">{item.description}</p>
+                                                    </div>
+                                                </div>
+                                                <time dateTime={item.createdAt} className="flex-shrink-0 text-caption text-fg-muted">
+                                                    {formatDateTime(item.createdAt)}
+                                                </time>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </section>
+
+                        {ordersOpen && (
+                            <section aria-labelledby="commandes-titre" className="space-y-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <h2 id="commandes-titre" className="flex items-center gap-2 text-lg font-bold text-fg">
+                                        <ShoppingBag size={20} className="text-brand-fg" aria-hidden="true" />
+                                        Commandes en direct
+                                    </h2>
+                                    <span className="text-sm text-fg-muted" role="status">{connected ? 'En direct' : 'Connexion…'}</span>
+                                </div>
+                                {liveOrders.length === 0 ? (
+                                    <EmptyState
+                                        title="Aucune commande en cours"
+                                        description="Les commandes de vos clients s’afficheront ici dès leur paiement."
+                                        icon={<ShoppingBag size={28} />}
+                                    />
+                                ) : (
+                                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                                        {liveOrders.slice(0, 6).map((order) => {
+                                            const st = ORDER_STATUS_LABELS[order.order_status] ?? { label: 'Statut inconnu', variant: 'neutral' as BadgeVariant };
+                                            return (
+                                                <li key={order.id} className="flex items-center justify-between gap-3 p-4">
+                                                    <div className="min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className="text-sm font-semibold text-fg">{order.order_number}</span>
+                                                            <Badge variant={st.variant} size="sm">{st.label}</Badge>
+                                                        </div>
+                                                        <p className="text-sm text-fg-muted">
+                                                            {DELIVERY_MODE_LABELS[order.delivery_mode] ?? 'Commande'} ·{' '}
+                                                            <time dateTime={order.created_at} className="text-sm">{formatDateTime(order.created_at)}</time>
+                                                        </p>
+                                                    </div>
+                                                    <span className="flex-shrink-0 text-sm font-bold tabular-nums text-fg">{formatFcfa(order.total_amount)}</span>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                                <LinkButton href="/partner/orders" variant="ghost" size="sm">Toutes les commandes</LinkButton>
+                            </section>
+                        )}
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-black text-slate-900 dark:text-white">
-                          {order.order_number}
-                        </span>
-                        <StatusBadge status={order.order_status} />
-                      </div>
-                      <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                        Mode : {order.delivery_mode} • {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-xs font-black text-slate-900 dark:text-white block font-mono">
-                      {order.total_amount.toLocaleString('fr-FR')} FCFA
-                    </span>
-                    <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 justify-end">
-                      <ShieldCheck size={10} /> SamirPay
-                    </span>
-                  </div>
-                </div>
-              ))
+                </>
             )}
-          </div>
-        </div>
-      </div>
 
-      {/* 5. Modale Interactive de Rapport de Clôture */}
-      <ClosingReportModal
-        isOpen={isClosingModalOpen}
-        onClose={() => setIsClosingModalOpen(false)}
-        eventId={selectedClosingEventId}
-        eventTitle={selectedClosingEventTitle}
-      />
-    </div>
-  );
+            {closing && (
+                <ClosingReportModal isOpen onClose={() => setClosing(null)} eventId={closing.id} eventTitle={closing.title} />
+            )}
+        </div>
+    );
 }
