@@ -10,6 +10,14 @@
  *  - inscription d'un numéro déjà inscrit → 409 sans SMS ;
  *  - hook SMS de Supabase Auth : un fragment du secret ne suffit plus ; une signature Standard
  *    Webhooks valide relaie le SMS, une signature à l'horodatage périmé (rejeu) est refusée.
+ * Lot 7 (7.0 d et D1, T9) :
+ *  - plafond global : la suite ne dépend plus des lignes écrites par d'autres suites le même jour UTC
+ *    (acces-limiteurs, notif-admins) : le compteur d'alerte sms_alert/global_cap du jour est remis à zéro en
+ *    base locale, la fenêtre de lecture commence au début du test (et non 10 min avant), et le destinataire
+ *    vérifié est un admin notifications.read créé par le test (sa clé ADMIN_SMS_CAP_GLOBAL:<jour>:<admin> ne
+ *    peut pas préexister) ;
+ *  - inscription « numéro d'abord » : un numéro déjà inscrit est refusé dès le démarrage
+ *    (POST /api/auth/register/start, 409 PHONE_ALREADY_REGISTERED), sans SMS ; rouge jusqu'à fix(7.3s).
  */
 import '../helpers/env';
 import { describe, test, before } from 'node:test';
@@ -23,11 +31,11 @@ import { getServiceRoleClient } from '../../lib/supabase/server';
 import { resetServerEnvCache } from '../../lib/env';
 import { loadFixtures } from '../helpers/fixtures';
 import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
-import { POST as registerClient } from '../../app/api/auth/register/route';
 import { POST as smsHook } from '../../app/api/auth/sms-hook/route';
 import { getFakes } from '../fakes';
-import { BASE_URL, jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
-import { flushNotifications, outboxRows } from './notif-helpers';
+import { BASE_URL, jsonRequest, randomSenegalPhone } from './helpers';
+import { flushNotifications, newAdmin, outboxRows } from './notif-helpers';
+import { registerClientFlow } from './terrain-helpers';
 
 const LIMITS = {
     SMS_OTP_PER_PHONE_15MIN: '2',
@@ -98,7 +106,14 @@ describe('Anti-abus SMS', () => {
     });
 
     test('plafond global quotidien atteint : refus propre, alerte journalisée, aucun SMS', async () => {
-        const fx = await loadFixtures();
+        // Lot 7 (T9) : suite autonome. Début du test (marge d'une seconde pour l'horloge de la base, même machine),
+        // admin neuf destinataire de l'alerte, compteur d'alerte du jour remis à zéro en base locale.
+        const startedAt = new Date(Date.now() - 1000).toISOString();
+        const recipient = await newAdmin('anti-abus-plafond', ['notifications.read']);
+        const dayStart = `${new Date().toISOString().slice(0, 10)}T00:00:00Z`;
+        const { error: resetErr } = await getServiceRoleClient().from('quota_counters').delete()
+            .eq('scope', 'sms_alert').eq('bucket', 'global_cap').gte('window_start', dayStart);
+        assert.equal(resetErr, null, `remise à zéro du compteur d'alerte du jour : ${resetErr?.message}`);
         const used = await globalCountToday();
         process.env.SMS_GLOBAL_DAILY_CAP = String(used + 1);
         resetServerEnvCache();
@@ -113,16 +128,20 @@ describe('Anti-abus SMS', () => {
             assert.equal(getFakes().sms.messagesTo(second).length, 0, 'aucun SMS au-delà du plafond');
 
             const service = getServiceRoleClient();
-            const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-            const { data: audit } = await service.from('audit_logs').select('id').eq('action', 'SMS_GLOBAL_DAILY_CAP_REACHED').gte('created_at', since);
-            assert.ok((audit || []).length >= 1, 'alerte « plafond SMS atteint » journalisée dans audit_logs');
+            const since = startedAt;
+            const { data: audit, error: auditErr } = await service.from('audit_logs').select('id').eq('action', 'SMS_GLOBAL_DAILY_CAP_REACHED').gte('created_at', since);
+            assert.equal(auditErr, null, `audit_logs : ${auditErr?.message}`);
+            assert.ok((audit || []).length >= 1, 'alerte « plafond SMS atteint » journalisée dans audit_logs pendant le test');
             // Lot 6 (6.1, J2.13) : l'alerte est mise en file par notification_admin_alert (ADMIN_SMS_CAP_GLOBAL,
-            // clé du jour UTC) ; l'envoyeur livre les lignes du SUPERADMIN avant la lecture (assertion inchangée).
+            // clé du jour UTC). Lot 7 (T9) : la ligne de l'admin neuf est exigée, puis livrée par l'envoyeur.
             const capDay = new Date().toISOString().slice(0, 10);
-            const queued = await outboxRows({ userId: fx.users.SUPERADMIN.id, keyPrefix: `ADMIN_SMS_CAP_GLOBAL:${capDay}:`, status: 'PENDING' });
-            if (queued.length > 0) await flushNotifications({ ids: queued.map((r) => r.id) });
-            const { data: notif } = await service.from('notifications').select('id, channel').eq('user_id', fx.users.SUPERADMIN.id).eq('type', 'SMS_DAILY_CAP_REACHED').gte('created_at', since);
-            assert.ok((notif || []).length >= 1, 'notification in-app aux superadmins');
+            const queued = await outboxRows({ userId: recipient.userId, keyPrefix: `ADMIN_SMS_CAP_GLOBAL:${capDay}:` });
+            assert.deepEqual(queued.map((r) => r.idempotency_key), [`ADMIN_SMS_CAP_GLOBAL:${capDay}:${recipient.userId}:IN_APP`],
+                'alerte du plafond mise en file pour l’admin notifications.read créé par le test (in-app seulement)');
+            await flushNotifications({ ids: queued.map((r) => r.id) });
+            const { data: notif, error: notifErr } = await service.from('notifications').select('id, channel').eq('user_id', recipient.userId).eq('type', 'SMS_DAILY_CAP_REACHED').gte('created_at', since);
+            assert.equal(notifErr, null, `notifications : ${notifErr?.message}`);
+            assert.equal((notif || []).length, 1, 'une notification in-app à l’admin notifications.read');
             assert.ok((notif || []).every((n) => n.channel !== 'SMS'), 'l’alerte ne part jamais par SMS');
         } finally {
             delete process.env.SMS_GLOBAL_DAILY_CAP;
@@ -157,11 +176,11 @@ describe('Anti-abus SMS', () => {
         const fx = await loadFixtures();
         const phone = fx.users.CLIENT_BIS.phone;
         const before = getFakes().sms.messagesTo(phone).length;
-        const res = await registerClient(jsonRequest('/api/auth/register', {
-            firstName: 'Double', lastName: 'Inscription', phone, email: randomEmail('double'),
-            password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD,
-        }, { 'x-forwarded-for': freshIp() }));
-        assert.equal(res.status, 409, `HTTP ${res.status} ${JSON.stringify(await res.json())}`);
+        // Lot 7 (D1, T9) : inscription « numéro d'abord » ; le refus tombe au démarrage, avant tout code.
+        const flow = await registerClientFlow({ phone, headers: { 'x-forwarded-for': freshIp() } }, { expectOk: false });
+        assert.equal(flow.start.status, 409, `HTTP ${flow.start.status} ${JSON.stringify(flow.start.body)}`);
+        assert.equal(flow.start.body.code, 'PHONE_ALREADY_REGISTERED', `code du refus : ${JSON.stringify(flow.start.body)}`);
+        assert.equal(flow.register, null, 'aucune inscription tentée après le refus');
         assert.equal(getFakes().sms.messagesTo(phone).length, before, 'aucun SMS envoyé à un numéro déjà inscrit');
     });
 
