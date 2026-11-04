@@ -12,6 +12,11 @@
  *    service, reversement 0, net EV = facial − agrégateur.
  * La salle est créée avec un acompte de 100 % (solde 0) : la règle acompte / solde n'est pas fixée par
  * le contrat B, le montant dû est alors le même quelle que soit la règle retenue.
+ * Lot 7 (T20, D55, D56) : /api/payments/create répond 404 pour une commande, une salle ou une table quand
+ * l'interrupteur du service est fermé (défaut) ; la création du paiement de ces trois cibles est donc faite
+ * sous withFeatureFlags (interrupteur du service ouvert, restauré ensuite). La confirmation (webhook) et la
+ * réconciliation (cron) restent hors interrupteur (routes « à ne pas couper ») : elles s'exécutent interrupteur
+ * fermé. L'abonnement n'est pas concerné. Rouge jusqu'à fix(7.0a) (clés features.* absentes).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -20,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { assertFinanceInvariants } from '../helpers/finance-invariants';
 import { getSetting, jsonRequest, newPartner, round2, type TestPartner } from './finance-helpers';
+import { withFeatureFlags, type FeatureFlag } from './terrain-helpers';
 import {
     cronRequest, deliverWebhook, importModule, initCalls, newBuyer, paymentById, providerSays, service,
     type Buyer, type PaymentRow,
@@ -122,10 +128,15 @@ async function createPlan(price: number): Promise<string> {
 
 // ── Paiement par la route ──────────────────────────────────────────────────
 
+/** Interrupteur du service de chaque cible (D55) ; l'abonnement n'en a pas. */
+const TARGET_FLAG: Record<Target, FeatureFlag | null> = { ORDER: 'orders', HALL_RESERVATION: 'halls', TABLE_RESERVATION: 'tables', SUBSCRIPTION: null };
+
 async function pay(payer: Buyer, targetType: Target, targetId: string): Promise<PaymentRow> {
-    const res = await createPaymentRoute(jsonRequest('/api/payments/create', 'POST', payer.accessToken, {
+    const create = () => createPaymentRoute(jsonRequest('/api/payments/create', 'POST', payer.accessToken, {
         targetType, targetId, operator: 'WAVE', payerPhone: payer.phone9,
     }));
+    const flag = TARGET_FLAG[targetType];
+    const res = flag ? await withFeatureFlags({ [flag]: true }, create) : await create();
     const body = (await res.json()) as Record<string, unknown>;
     assert.equal(res.status, 201, `création du paiement ${targetType} : HTTP ${res.status} ${JSON.stringify(body)}`);
     assert.equal(typeof body.payment_id, 'string', 'identifiant du paiement renvoyé');

@@ -101,8 +101,13 @@ describe('Contrôles avant débit', () => {
         resetServerEnvCache();
         try {
             const b = await newBuyer('quota');
+            // Lot 7 (T19, D4) : un second paiement en attente du même compte sur le même événement est refusé
+            // (409 PAYMENT_PENDING) ; le deuxième checkout vise donc un autre événement. Le quota est par compte,
+            // tous événements confondus, et contrôlé avant la création du paiement : le troisième reste un 429.
+            const second = await createSaleEvent('controles-quota', [{ name: 'Standard', price: 2000, total: 10 }]);
+            const targets: SaleEvent[] = [ev, second, ev];
             const statuses: number[] = [];
-            for (let i = 0; i < 3; i++) statuses.push((await checkout(b, cart(ev.eventId, [[ev.categories.Standard.id, 1]], b))).status);
+            for (const t of targets) statuses.push((await checkout(b, cart(t.eventId, [[t.categories.Standard.id, 1]], b))).status);
             assert.deepEqual(statuses, [200, 200, 429]);
         } finally {
             if (saved === undefined) delete process.env.CHECKOUT_PER_USER_15MIN;

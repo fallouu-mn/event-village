@@ -6,7 +6,9 @@
  * mémoire historique (globalThis.otpMemoryCache, s'il existe encore) est vidé entre l'émission
  * et la vérification.
  *  1. /api/auth/send-otp → otp_codes → /api/auth/verify-otp.
- *  2. /api/auth/register → otp_codes → /api/auth/verify-otp (lot 1B.7).
+ *  2. /api/auth/register/start → otp_codes → /api/auth/register (lot 1B.7 ; lot 7, T18, D1 : le code
+ *     d'inscription est vérifié et consommé par /api/auth/register avant la création du compte, plus par
+ *     /api/auth/verify-otp ; même preuve « vérifiable depuis une autre instance », rouge jusqu'à fix(7.3s)).
  *  3. /api/partner/register → otp_codes → /api/auth/verify-otp (lot 1B.7).
  */
 import '../helpers/env';
@@ -14,11 +16,11 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
-import { POST as registerClient } from '../../app/api/auth/register/route';
 import { POST as registerPartner } from '../../app/api/partner/register/route';
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { registerStart, registerSubmit } from './terrain-helpers';
 
 /** Code du dernier SMS contenant un code à 6 chiffres (l'inscription partenaire envoie ensuite un avis sans code). */
 function codeFromLastSms(phone: string): string {
@@ -72,20 +74,24 @@ describe('Parcours OTP serveur', () => {
         await verifyFromAnotherInstance(phone, code, await assertStoredUnverified(phone, code));
     });
 
-    test('inscription client → otp_codes → verify-otp depuis une autre instance', async () => {
+    test('inscription client (numéro d’abord) → otp_codes → /api/auth/register depuis une autre instance', async () => {
         const phone = randomSenegalPhone('77');
-        const res = await registerClient(jsonRequest('/api/auth/register', {
+        const start = await registerStart(phone);
+        assert.equal(start.status, 200, `démarrage de l'inscription : HTTP ${start.status} ${JSON.stringify(start.body)}`);
+        const code = codeFromLastSms(phone);
+        const storedId = await assertStoredUnverified(phone, code);
+        forgetProcessMemory();
+        const res = await registerSubmit({
+            phone,
+            code,
             firstName: 'Mariama',
             lastName: 'Otp',
-            phone,
             email: randomEmail('otp'),
             password: STRONG_PASSWORD,
-            confirmPassword: STRONG_PASSWORD,
-        }));
-        const body = await res.json();
-        assert.equal(res.status, 200, `inscription : HTTP ${res.status} ${JSON.stringify(body)}`);
-        const code = codeFromLastSms(phone);
-        await verifyFromAnotherInstance(phone, code, await assertStoredUnverified(phone, code));
+        });
+        assert.equal(res.status, 200, `inscription : HTTP ${res.status} ${JSON.stringify(res.body)}`);
+        const { data: after } = await getServiceRoleClient().from('otp_codes').select('verified').eq('id', storedId).single();
+        assert.equal(after?.verified, true, 'le code doit être marqué vérifié en base');
     });
 
     test('inscription partenaire → otp_codes → verify-otp depuis une autre instance', async () => {

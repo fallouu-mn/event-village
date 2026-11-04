@@ -1,6 +1,9 @@
 /**
  * Lot 1C.8 — l'email (Resend) est optionnel, le SMS (MTarget) obligatoire.
  * Ce processus de test retire RESEND_API_KEY (chaque suite a son propre processus).
+ * Lot 7 (T18, D1) : l'inscription client suit le contrat « numéro d'abord » (POST /api/auth/register/start,
+ * code lu dans le faux SMS, POST /api/auth/register) par registerClientFlow ; mêmes assertions (rouge jusqu'à
+ * fix(7.3s)).
  *  - Inscription client, inscription partenaire (avis aux admins) et achat de billet : aucune
  *    erreur, SMS envoyés (faux adaptateur), AUCUN email tenté.
  *  - Un seul avertissement « email désactivé » pour tout le processus.
@@ -12,7 +15,6 @@ import assert from 'node:assert/strict';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { getServerEnv, resetServerEnvCache } from '../../lib/env';
 import { bearer, loadFixtures, signInAs } from '../helpers/fixtures';
-import { POST as registerClient } from '../../app/api/auth/register/route';
 import { POST as registerPartner } from '../../app/api/partner/register/route';
 import { POST as checkout } from '../../app/api/checkout/route';
 import { POST as samirpayWebhook } from '../../app/api/webhooks/samirpay/route';
@@ -22,6 +24,7 @@ import { NextRequest } from 'next/server';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 import { advanceEventTo, posterUrl } from './cycle-helpers';
 import { flushNotifications, outboxRows } from './notif-helpers';
+import { registerClientFlow } from './terrain-helpers';
 
 const warnings: string[] = [];
 const originalWarn = console.warn;
@@ -62,11 +65,10 @@ after(() => {
 describe('Email optionnel, SMS obligatoire', () => {
     test('inscriptions et achat sans RESEND_API_KEY : SMS envoyés, aucun email tenté, un seul avertissement', async () => {
         const clientPhone = randomSenegalPhone('77');
-        const reg = await registerClient(jsonRequest('/api/auth/register', {
-            firstName: 'Sans', lastName: 'Email', phone: clientPhone, email: randomEmail('sans-email'),
-            password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD,
-        }));
-        assert.equal(reg.status, 200, `inscription client : HTTP ${reg.status} ${JSON.stringify(await reg.json())}`);
+        const reg = await registerClientFlow({
+            firstName: 'Sans', lastName: 'Email', phone: clientPhone, email: randomEmail('sans-email'), password: STRONG_PASSWORD,
+        }, { expectOk: false });
+        assert.equal(reg.register?.status, 200, `inscription client : démarrage HTTP ${reg.start.status} ${JSON.stringify(reg.start.body)}, inscription HTTP ${reg.register?.status} ${JSON.stringify(reg.register?.body)}`);
         assert.ok(getFakes().sms.messagesTo(clientPhone).length >= 1, 'SMS OTP envoyé au client');
 
         const partnerPhone = randomSenegalPhone('78');
