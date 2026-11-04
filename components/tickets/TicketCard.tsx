@@ -9,8 +9,17 @@
  *
  * Statut du billet : pastille et message lus dans TICKET_STATUS_META (lib/tickets/ticket-status.ts),
  * jamais la valeur brute de l'enum.
+ *
+ * Lot 7 (7.1, contrat 5.2) : billet disponible hors ligne.
+ *  - Indicateur `data-ev-offline-state` (OfflineStatusBadge) : « Disponible hors ligne » seulement quand le lot
+ *    de la version courante est enregistré ET la page hors ligne en cache (D35).
+ *  - Téléchargement à l'affichage quand le serveur dit le billet disponible (`offline` de /api/tickets),
+ *    dédoublonné avec la synchronisation (OfflineTicketsSync).
+ *  - Réseau coupé pendant l'affichage : le QR vient du lot local, au code de l'heure du serveur (écart mesuré),
+ *    renouvelé à chaque pas ; la règle liveCodeStale est conservée (jamais de QR figé).
+ *  - Chaque réponse réussie du live-code remesure l'écart d'horloge (server_time) et met le lot à jour.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -28,7 +37,7 @@ import {
   QrCode,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonClasses } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
@@ -37,6 +46,16 @@ import { TONE_SOFT } from '@/components/ui/tones';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { formatDateTime } from '@/lib/format';
 import { TICKET_STATUS_META, type TicketStatus } from '@/lib/tickets/ticket-status';
+import {
+  offlineIndicator,
+  offsetFromFetch,
+  pickOfflineCode,
+  type OfflineAvailability,
+  type OfflineLot,
+} from '@/lib/tickets/offline-clock';
+import { getOfflineLot, hasCachedOfflineShell, OFFLINE_SHELL_PATH, updateLotClock } from '@/lib/tickets/offline-store';
+import { ensureOfflineLot, OFFLINE_LOTS_CHANGED, requestOfflineShell } from '@/components/tickets/OfflineTicketsSync';
+import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBadge';
 
 export interface TicketCardProps {
   id: string;
@@ -58,6 +77,8 @@ export interface TicketCardProps {
     recipient: string;
     expires_at: string;
   } | null;
+  /** Lot 7 (7.1, contrat 3.2) : disponibilité hors ligne décidée par le serveur (GET /api/tickets). */
+  offline?: OfflineAvailability | null;
   onTransferClick?: () => void;
   onCancelTransferSuccess?: () => void;
   onOpenExplainer?: () => void;
@@ -71,6 +92,8 @@ interface LiveCode {
 }
 
 const OFFLINE_RETRY_MS = 5_000;
+/** Écart d'horloge remesuré par le live-code : le lot local n'est réécrit qu'au-delà de cette différence. */
+const CLOCK_RESYNC_THRESHOLD_MS = 2_000;
 
 /** Lecture tolérante d'un corps JSON d'erreur : le message du serveur, ou null (jamais d'exception). */
 async function readErrorMessage(res: Response, context: string): Promise<string | null> {
@@ -98,13 +121,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   usedAt,
   isTransferLocked = false,
   activeTransfer = null,
+  offline = null,
   onTransferClick,
   onCancelTransferSuccess,
   onOpenExplainer,
 }) => {
   const toast = useToast();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const accessToken = session?.access_token;
+  const userId = user?.id ?? null;
   const isActive = status === 'VALIDE';
   const meta = TICKET_STATUS_META[status];
 
@@ -116,6 +141,69 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState<boolean>(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
+
+  // Lot 7 (7.1) : lot de codes hors ligne enregistré sur ce téléphone
+  const offlineEligible = isActive && !isTransferLocked && Boolean(userId);
+  const [offlineLot, setOfflineLot] = useState<OfflineLot | null>(null);
+  const [shellCached, setShellCached] = useState<boolean>(false);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [offlineBusy, setOfflineBusy] = useState<boolean>(false);
+  const offlineLotRef = useRef<OfflineLot | null>(null);
+  offlineLotRef.current = offlineLot;
+  const refreshOfflineRef = useRef<() => Promise<void>>(async () => undefined);
+
+  const refreshOffline = useCallback(async () => {
+    if (!offlineEligible || !userId) {
+      setOfflineLot(null);
+      return;
+    }
+    try {
+      const [lot, shell] = await Promise.all([getOfflineLot(userId, id), hasCachedOfflineShell()]);
+      setOfflineLot(lot);
+      setShellCached(shell);
+    } catch (err) {
+      // Stockage indisponible (déjà journalisé par offline-store) : aucun lot, l'indicateur le dit.
+      console.warn(`[TicketCard] billet ${id} : lot hors ligne illisible`, err instanceof Error ? err.message : String(err));
+      setOfflineLot(null);
+    }
+  }, [offlineEligible, userId, id]);
+  refreshOfflineRef.current = refreshOffline;
+
+  // Lecture du lot local, puis téléchargement si le serveur dit le billet disponible et que le lot manque.
+  useEffect(() => {
+    if (!offlineEligible || !userId) {
+      setOfflineLot(null);
+      return;
+    }
+    let cancelled = false;
+    setIsOnline(navigator.onLine);
+    const run = async () => {
+      await refreshOffline();
+      if (cancelled || !offline?.available || !navigator.onLine) return;
+      setOfflineBusy(true);
+      try {
+        const outcome = await ensureOfflineLot(userId, id, offline);
+        if (cancelled) return;
+        if (outcome.kind === 'saved' || outcome.kind === 'fresh') await refreshOffline();
+        if (!(await hasCachedOfflineShell())) await requestOfflineShell();
+      } finally {
+        if (!cancelled) setOfflineBusy(false);
+      }
+    };
+    void run();
+    const onChanged = () => { void refreshOffline(); };
+    const onOnline = () => { setIsOnline(true); void run(); };
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener(OFFLINE_LOTS_CHANGED, onChanged);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(OFFLINE_LOTS_CHANGED, onChanged);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, [offlineEligible, userId, id, offline, refreshOffline]);
 
   useEffect(() => {
     if (!isActive || isTransferLocked || !id) {
@@ -131,13 +219,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
     const loadLiveCode = async () => {
       try {
+        const t0 = Date.now();
         const res = await fetch(`/api/tickets/${id}/live-code`, {
           cache: 'no-store',
           headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
         });
         if (cancelled) return;
         if (res.ok) {
-          const data = (await res.json()) as { payload?: unknown; expires_in?: unknown; step_seconds?: unknown };
+          const t1 = Date.now();
+          const data = (await res.json()) as { payload?: unknown; expires_in?: unknown; step_seconds?: unknown; server_time?: unknown };
           if (cancelled) return;
           if (typeof data.payload !== 'string' || !data.payload.startsWith('EVT1:')) {
             throw new Error('réponse du live-code sans payload');
@@ -147,6 +237,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           setLiveCode({ payload: data.payload, expiresAt: Date.now() + expiresInSeconds * 1000, stepMs: stepSeconds * 1000 });
           setIsOffline(false);
           setLiveCodeUnavailable(null);
+          resyncOfflineClock(data.server_time, t0, t1);
           // Nouveau code juste après le changement de pas annoncé par le serveur
           scheduleNext(expiresInSeconds * 1000 + 250);
           return;
@@ -172,24 +263,53 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       }
     };
 
+    /** Lot 7 (contrat 5.2) : écart d'horloge remesuré à chaque code reçu ; lot local réécrit s'il a changé. */
+    const resyncOfflineClock = (serverTime: unknown, t0: number, t1: number) => {
+      const lot = offlineLotRef.current;
+      if (!lot || !userId || typeof serverTime !== 'string') return;
+      let offsetMs: number;
+      try {
+        offsetMs = offsetFromFetch(serverTime, t0, t1);
+      } catch (err) {
+        console.warn('[TicketCard] écart d’horloge non mesurable :', err instanceof Error ? err.message : String(err));
+        return;
+      }
+      if (Math.abs(offsetMs - Number(lot.offsetMs)) < CLOCK_RESYNC_THRESHOLD_MS && t1 >= Number(lot.downloadedAtDevice)) return;
+      updateLotClock(userId, id, offsetMs, t1, Date.parse(serverTime))
+        .then(() => refreshOfflineRef.current())
+        .catch((err: unknown) => {
+          console.warn('[TicketCard] écart d’horloge non enregistré :', err instanceof Error ? err.message : String(err));
+        });
+    };
+
     void loadLiveCode();
     return () => {
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [id, isActive, isTransferLocked, accessToken]);
+  }, [id, isActive, isTransferLocked, accessToken, userId]);
 
-  // Horloge du compte à rebours (affichage seulement : le rafraîchissement suit expires_in)
+  // Horloge du compte à rebours (affichage seulement : le rafraîchissement suit expires_in) ; aussi pour le
+  // QR du lot local, renouvelé à chaque pas de l'heure du serveur.
+  const usesLocalLot = isOffline && Boolean(offlineLot) && offlineEligible;
   useEffect(() => {
-    if (!liveCode) return;
+    if (!liveCode && !usesLocalLot) return;
+    setClock(Date.now());
     const tick = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(tick);
-  }, [liveCode]);
+  }, [liveCode, usesLocalLot]);
 
   const secondsLeft = liveCode ? Math.max(0, Math.ceil((liveCode.expiresAt - clock) / 1000)) : 0;
   // Le serveur accepte le pas voisin : au-delà, le code est périmé et n'est plus affiché
   const liveCodeStale = liveCode ? clock > liveCode.expiresAt + liveCode.stepMs : true;
   const showQr = Boolean(liveCode) && !liveCodeStale;
+  // Sans code du serveur à jour (réseau coupé) : code du lot local pour l'heure du serveur, jamais figé
+  const localPick = !showQr && usesLocalLot && offlineLot ? pickOfflineCode(offlineLot, clock) : null;
+  const localCode = localPick && localPick.state === 'code' ? localPick : null;
+  const localSecondsLeft = localCode ? Math.max(1, Math.ceil(localCode.nextChangeInMs / 1000)) : 0;
+  const offlineState = offlineEligible
+    ? offlineIndicator({ lot: offlineLot, offline, shellCached, online: isOnline && !isOffline })
+    : null;
 
   const handleShareWhatsapp = () => {
     const link = `${window.location.origin}/events/${eventId}`;
@@ -382,11 +502,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               <div
                 className={cn(
                   'flex h-[178px] w-[178px] items-center justify-center rounded-2xl border border-border p-3',
-                  showQr ? 'bg-white' : 'bg-surface-sunken',
+                  showQr || localCode ? 'bg-white' : 'bg-surface-sunken',
                 )}
               >
                 {liveCode && showQr ? (
                   <QRCodeSVG value={liveCode.payload} size={152} level="M" includeMargin={false} title="QR d’entrée dynamique" />
+                ) : localCode ? (
+                  <span data-ev-qr-payload={localCode.payload} data-ev-qr-counter={localCode.counter} className="flex">
+                    <QRCodeSVG value={localCode.payload} size={152} level="M" includeMargin={false} title="QR d’entrée, billet enregistré sur ce téléphone" />
+                  </span>
                 ) : liveCodeUnavailable ? (
                   <p role="status" className="px-2 text-center text-sm font-medium text-fg">{liveCodeUnavailable}</p>
                 ) : isOffline ? (
@@ -413,12 +537,12 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                       aria-hidden="true"
                       className={cn('h-2 w-2 flex-shrink-0 rounded-full', isOffline ? 'bg-warning' : 'bg-success motion-safe:animate-pulse')}
                     />
-                    {isOffline ? 'Hors connexion' : 'Code renouvelé toutes les 20 s'}
+                    {localCode ? 'Hors connexion : billet enregistré' : isOffline ? 'Hors connexion' : 'Code renouvelé toutes les 20 s'}
                   </span>
-                  {showQr && (
+                  {(showQr || localCode) && (
                     <span className="font-mono text-sm font-bold tabular-nums text-brand-fg">
-                      <span aria-hidden="true">{secondsLeft} s</span>
-                      <span className="sr-only">Nouveau code dans {secondsLeft} secondes</span>
+                      <span aria-hidden="true">{showQr ? secondsLeft : localSecondsLeft} s</span>
+                      <span className="sr-only">Nouveau code dans {showQr ? secondsLeft : localSecondsLeft} secondes</span>
                     </span>
                   )}
                 </div>
@@ -431,15 +555,36 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   </div>
                 )}
                 <p className="text-center text-sm leading-snug text-fg-muted">
-                  {isOffline
-                    ? 'Le code s’affichera dès le retour du réseau. Une capture d’écran n’est pas acceptée.'
-                    : 'Une capture d’écran n’est pas acceptée au contrôle.'}
+                  {localCode
+                    ? 'Code calculé sur ce téléphone, renouvelé toutes les 20 s. Une capture d’écran n’est pas acceptée.'
+                    : isOffline
+                      ? 'Le code s’affichera dès le retour du réseau. Une capture d’écran n’est pas acceptée.'
+                      : 'Une capture d’écran n’est pas acceptée au contrôle.'}
                 </p>
                 <p className="flex items-start justify-center gap-1.5 text-center text-sm leading-snug text-fg-muted">
                   <IdCard size={16} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
                   <span>Sans téléphone : numéro du billet et pièce d’identité au contrôle.</span>
                 </p>
               </div>
+
+              {offlineState && (
+                <div className="mt-3 w-full space-y-2">
+                  <OfflineStatusBadge
+                    state={offlineState}
+                    availableFrom={offline?.available_from ?? null}
+                    busy={offlineState === 'missing' && offlineBusy}
+                  />
+                  {offlineState === 'available' && (
+                    <a
+                      href={`${OFFLINE_SHELL_PATH}?id=${encodeURIComponent(id)}`}
+                      className={buttonClasses({ variant: 'secondary', size: 'sm', fullWidth: true })}
+                    >
+                      <WifiOff size={16} aria-hidden="true" />
+                      Afficher ce billet hors ligne
+                    </a>
+                  )}
+                </div>
+              )}
 
               <p className="mt-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-success-fg">
                 <CheckCircle2 size={16} aria-hidden="true" />

@@ -6,6 +6,7 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
+import { OfflineTicketsSync } from '@/components/tickets/OfflineTicketsSync';
 
 // Plus Jakarta Sans auto-hébergée (police variable, sous-ensemble latin, graisses 200-800).
 // Source : @fontsource-variable/plus-jakarta-sans@5.3.0, licence SIL OFL 1.1 (app/fonts/OFL-PlusJakartaSans.txt).
@@ -20,20 +21,28 @@ const plusJakartaSans = localFont({
   fallback: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
 });
 
+// Lot 7 (7.0 e, D24) : la metadata est la seule source des balises d'icônes et d'application installable
+// (plus aucune balise <link rel="icon">, apple-touch-icon ni mobile-web-app-capable écrite à la main dans <head>).
 export const metadata: Metadata = {
   title: 'Event Village — Plateforme Événementielle, Ticketing & Réservations',
   description:
     'Découvrez les meilleurs événements, concerts, festivals, restaurants et salles au Sénégal. Réservation en ligne sécurisée avec SamirPay (Wave / Orange Money).',
   manifest: '/manifest.json',
   icons: {
-    icon: '/favicon.ico',
-    apple: '/icon-192x192.png',
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/branding/event-village-mark.svg', type: 'image/svg+xml' },
+    ],
+    // iPhone : icône opaque 180 × 180 (iOS remplit la transparence en noir), générée par scripts/generate-pwa-icons.mjs
+    apple: '/icons/apple-touch-icon.png',
   },
+  // iPhone : écran plein (apple-mobile-web-app-capable), titre sous l'icône, barre d'état sur fond clair
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'Event Village',
   },
+  // Android (Chrome) : seule déclaration de mobile-web-app-capable
   other: {
     'mobile-web-app-capable': 'yes',
   },
@@ -56,15 +65,13 @@ export default function RootLayout({
       <head>
         {/* Script bloquant anti-FOUC : applique le thème AVANT le premier paint */}
         <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('ev-theme');if(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark');}catch(e){}` }} />
-        <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="icon" href="/branding/event-village-mark.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/icon-192x192.png" />
-        <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className="min-h-screen antialiased font-sans" suppressHydrationWarning>
         <AuthProvider>
           <ThemeProvider>
             <ServiceWorkerRegister />
+            {/* Lot 7 (7.1) : billets hors ligne téléchargés dans leur fenêtre, purgés quand ils ne servent plus */}
+            <OfflineTicketsSync />
             <ToastProvider>
               <AppLayout>{children}</AppLayout>
             </ToastProvider>

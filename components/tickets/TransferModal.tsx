@@ -9,6 +9,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { formatDateTime } from '@/lib/format';
+import { deleteOfflineLots } from '@/lib/tickets/offline-store';
 
 /**
  * Transfert d'un billet (lot 6, contrat B5 et amendement 2 : vers un numéro de téléphone seulement).
@@ -19,6 +20,8 @@ import { formatDateTime } from '@/lib/format';
  *    connecte avec ce numéro (vérifié par un code) et accepte le billet dans l'onglet « Reçus ».
  *  - Le numéro est normalisé et validé par le serveur ; le navigateur ne fait qu'un contrôle de forme.
  *  - Modale partagée (components/ui/Modal : focus, Échap, Fermer de 44 px), tokens du système de design.
+ *  - Lot 7 (7.1) : au succès, le lot de codes hors ligne du billet est supprimé du téléphone (la version du
+ *    secret tournera à l'acceptation ; d'ici là, le billet verrouillé n'a plus de code d'entrée).
  */
 
 export interface TransferTicketData {
@@ -145,6 +148,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
       };
       setSuccess(result);
       toast.success(`Transfert lancé vers ${result.recipient}.`);
+      // Lot 7 (7.1, contrat 5.2) : le billet n'est plus présentable par ce téléphone, son lot hors ligne est supprimé.
+      deleteOfflineLots(ticket.id).catch((err: unknown) => {
+        console.warn('[TransferModal] lot hors ligne du billet non supprimé :', err instanceof Error ? err.message : String(err));
+      });
       onTransferSuccess(ticket.id);
     } catch (err) {
       console.error('[TransferModal] transfert injoignable :', err instanceof Error ? err.message : String(err));

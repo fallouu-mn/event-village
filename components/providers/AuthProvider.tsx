@@ -1,10 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { detachPushSubscription } from '@/lib/push/client';
+import { clearOfflineStore } from '@/lib/tickets/offline-store';
 
 export interface UserProfile {
     id: string;
@@ -53,18 +54,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
+    /** Lot 7 (7.1) : compte de la dernière session vue, pour purger le stockage hors ligne d'un autre compte. */
+    const lastUserIdRef = useRef<string | null>(null);
 
     /**
      * Lot 1B.1 — profil et rôles viennent uniquement du serveur (/api/auth/me : public.users et
      * public.user_roles). Jamais de user_metadata, modifiable par l'utilisateur. Si le serveur ne
      * répond pas, aucun rôle n'est accordé (profil null) et l'erreur est journalisée.
+     * Lot 7 (7.1) : sans réseau (navigator.onLine faux, billet hors ligne), /api/auth/me n'est pas appelé ;
+     * le profil est relu au retour du réseau.
      */
     const fetchUserProfile = useCallback(async (_userId: string, currentSession?: Session | null) => {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            console.warn('[AuthProvider] hors ligne : profil relu au retour du réseau');
+            return;
+        }
         try {
             const res = await fetch('/api/auth/me', {
                 headers: currentSession?.access_token ? { 'Authorization': `Bearer ${currentSession.access_token}` } : {}
             });
-            const data = await res.json().catch(() => null);
+            const data = await res.json().catch((err: unknown) => {
+                console.error(`[AuthProvider] /api/auth/me : réponse illisible (HTTP ${res.status})`, err);
+                return null;
+            });
             if (!res.ok || !data?.authenticated || !data?.profile) {
                 console.error(`[AuthProvider] /api/auth/me : HTTP ${res.status}`, data?.error ?? '');
                 setProfile(null);
@@ -91,6 +103,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event: string, newSession: any) => {
+                const nextUserId: string | null = newSession?.user?.id ?? null;
+                const previousUserId = lastUserIdRef.current;
+                // Lot 7 (7.1, contrat 5.2) : billets hors ligne effacés à la déconnexion et à la connexion d'un
+                // autre compte (téléphone partagé) ; clearOfflineStore ne lève jamais (échec journalisé).
+                if (event === 'SIGNED_OUT') {
+                    void clearOfflineStore();
+                } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
+                    void clearOfflineStore();
+                }
+                if (nextUserId) lastUserIdRef.current = nextUserId;
+                else if (event === 'SIGNED_OUT') lastUserIdRef.current = null;
                 setSession(newSession);
                 setUser(newSession?.user ?? null);
 
@@ -109,8 +132,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
     }, [fetchUserProfile]);
 
+    // Lot 7 (7.1) : profil non lu hors ligne, relu au retour du réseau.
+    useEffect(() => {
+        if (!user || profile) return;
+        const onOnline = () => { void fetchUserProfile(user.id, session); };
+        window.addEventListener('online', onOnline);
+        return () => window.removeEventListener('online', onOnline);
+    }, [user, profile, session, fetchUserProfile]);
+
     const signOut = async () => {
         try {
+            // Lot 7 (7.1) : billets hors ligne effacés avant la déconnexion (au cas où SIGNED_OUT n'arrive pas).
+            await clearOfflineStore();
             // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
             await detachPushSubscription();
             const supabase = getBrowserClient();

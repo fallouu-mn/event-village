@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { HelpCircle, RefreshCw, Sparkles, Ticket } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { HelpCircle, RefreshCw, Sparkles, Ticket, WifiOff } from 'lucide-react';
 import { TicketCard, type TicketCardProps } from '@/components/tickets/TicketCard';
-import { TransferModal, type TransferTicketData } from '@/components/tickets/TransferModal';
-import { TransferExplainerModal } from '@/components/tickets/TransferExplainerModal';
+import type { TransferTicketData } from '@/components/tickets/TransferModal';
 import { IncomingTransfers, readIncomingTransfers, type IncomingTransfersData } from '@/components/tickets/IncomingTransfers';
-import { Button } from '@/components/ui/Button';
+import { reconcileWithServerTickets } from '@/components/tickets/OfflineTicketsSync';
+import { Button, buttonClasses } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
@@ -16,6 +17,11 @@ import { TabPanel, useTabParam } from '@/components/ui/Tabs';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import type { OfflineAvailability } from '@/lib/tickets/offline-clock';
+
+// Lot 7 (7.5) : les modales ne sont chargées qu'à leur ouverture (poids JS de /tickets).
+const TransferModal = dynamic(() => import('@/components/tickets/TransferModal').then((m) => m.TransferModal), { ssr: false });
+const TransferExplainerModal = dynamic(() => import('@/components/tickets/TransferExplainerModal').then((m) => m.TransferExplainerModal), { ssr: false });
 
 /**
  * Mes billets (lot 5, tâche 5.13 ; contrats O3, O5, Q).
@@ -27,6 +33,10 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
  *    « Reçus » (lot 6, contrat B5 et amendement 2 : transferts entrants vers le numéro vérifié du compte,
  *    GET /api/tickets/transfers/incoming, acceptation par « Accepter le billet », confirmation du numéro par
  *    code SMS). Le SMS d'un transfert renvoie vers /tickets?tab=recus.
+ *  - Lot 7 (7.1, contrat 5.2) : chaque carte reçoit la disponibilité hors ligne du serveur (`offline`) ; après
+ *    chaque chargement réussi, les billets enregistrés sur le téléphone sont réconciliés avec la liste (billet
+ *    disparu, transféré ou d'une autre version : lot supprimé). Lien « Afficher mes billets hors ligne » en
+ *    navigation complète (<a href>, servie par le service worker sans réseau).
  */
 
 type TicketStatus = TicketCardProps['status'];
@@ -47,6 +57,7 @@ interface MyTicket {
   isUpcoming: boolean;
   isTransferLocked?: boolean;
   activeTransfer?: TicketCardProps['activeTransfer'];
+  offline?: OfflineAvailability | null;
 }
 
 const TABS = ['a-venir', 'tous', 'historique', 'recus'] as const;
@@ -154,6 +165,12 @@ export default function TicketsPage() {
 
   const refreshTickets = useCallback(() => load('silent'), [load]);
 
+  // Lot 7 (7.1) : réconciliation des billets enregistrés hors ligne après chaque chargement réussi.
+  useEffect(() => {
+    if (phase !== 'ready' || !userId) return;
+    void reconcileWithServerTickets(userId, tickets);
+  }, [phase, tickets, userId]);
+
   /** Billets reçus : erreur affichée dans l'onglet « Reçus », la liste précédente reste sinon. */
   const loadIncoming = useCallback(async (mode: 'initial' | 'silent') => {
     const result = await readIncomingTransfers();
@@ -243,6 +260,10 @@ export default function TicketsPage() {
         eyebrow={<LiveIndicator status={liveStatus} />}
         actions={(
           <>
+            <a href="/billet/hors-ligne" className={buttonClasses({ variant: 'secondary' })}>
+              <WifiOff size={18} aria-hidden="true" />
+              Afficher mes billets hors ligne
+            </a>
             <Button variant="secondary" onClick={() => setIsExplainerOpen(true)} leftIcon={<HelpCircle size={18} />}>
               Comment marche le transfert ?
             </Button>
@@ -320,6 +341,7 @@ export default function TicketsPage() {
                   usedAt={ticket.usedAt}
                   isTransferLocked={ticket.isTransferLocked}
                   activeTransfer={ticket.activeTransfer}
+                  offline={ticket.offline ?? null}
                   onTransferClick={() =>
                     setTransferTicket({
                       id: ticket.id,
@@ -350,18 +372,20 @@ export default function TicketsPage() {
         )}
       </TabPanel>
 
-      <TransferModal
-        isOpen={Boolean(transferTicket)}
-        onClose={() => setTransferTicket(null)}
-        ticket={transferTicket}
-        onTransferSuccess={() => void refreshTickets()}
-        onOpenExplainer={() => {
-          setTransferTicket(null);
-          setIsExplainerOpen(true);
-        }}
-      />
+      {transferTicket && (
+        <TransferModal
+          isOpen
+          onClose={() => setTransferTicket(null)}
+          ticket={transferTicket}
+          onTransferSuccess={() => void refreshTickets()}
+          onOpenExplainer={() => {
+            setTransferTicket(null);
+            setIsExplainerOpen(true);
+          }}
+        />
+      )}
 
-      <TransferExplainerModal isOpen={isExplainerOpen} onClose={() => setIsExplainerOpen(false)} />
+      {isExplainerOpen && <TransferExplainerModal isOpen onClose={() => setIsExplainerOpen(false)} />}
     </div>
   );
 }
