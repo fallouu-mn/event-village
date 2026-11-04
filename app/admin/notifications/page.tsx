@@ -181,6 +181,16 @@ function formatDay(day: string): string {
   return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
+/**
+ * Même règle que « SMS aujourd'hui » (serveur) : envoyés et à l'issue incertaine, peut-être facturés. Run 65 : le
+ * mois n'affichait que les envoyés et pouvait être inférieur au jour.
+ */
+function smsMonthHint(m: { month: string; uncertain: number; otp: number }): string {
+  const codes = m.otp === 1 ? '1 code de connexion' : `${formatInteger(m.otp)} codes de connexion`;
+  const uncertain = m.uncertain === 1 ? '1 à l’issue incertaine' : `${formatInteger(m.uncertain)} à l’issue incertaine`;
+  return `En ${formatMonth(m.month)}, dont ${codes} et ${uncertain} (peut-être facturés)`;
+}
+
 function formatMonth(month: string): string {
   const m = /^(\d{4})-(\d{2})$/.exec(month);
   if (!m) return 'ce mois-ci';
@@ -434,8 +444,8 @@ export default function AdminNotificationsPage() {
               />
               <KpiCard
                 label="SMS ce mois-ci"
-                value={formatInteger(stats.smsMonth.sent)}
-                hint={`Envoyés en ${formatMonth(stats.smsMonth.month)}, dont ${formatInteger(stats.smsMonth.otp)} codes ; et ${formatInteger(stats.smsMonth.uncertain)} à la remise incertaine, facturés par le fournisseur`}
+                value={formatInteger(stats.smsMonth.sent + stats.smsMonth.uncertain)}
+                hint={smsMonthHint(stats.smsMonth)}
                 tone="info"
                 icon={<BellRing size={20} aria-hidden="true" />}
               />
