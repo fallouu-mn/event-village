@@ -224,7 +224,8 @@ describe('7.3 — inscription : bon code, compte vérifié', () => {
     test('mot de passe faible → 400 sans consommer d\'essai, puis le bon envoi passe', async () => {
         const phone = randomSenegalPhone('77');
         const code = await started(phone);
-        const weak = await registerSubmit(profile(phone, code, { password: 'motdepasse' }));
+        // Mot de passe faible généré (minuscules seules) : aucun mot de passe littéral dans tests/ (secrets-codes-en-dur).
+        const weak = await registerSubmit(profile(phone, code, { password: 'x'.repeat(10) }));
         assert.equal(weak.status, 400, `mot de passe faible : HTTP ${weak.status} ${JSON.stringify(weak.body)}`);
         await assertNoAccount(phone, 'mot de passe faible');
         const [row] = await registerCodes(phone);
