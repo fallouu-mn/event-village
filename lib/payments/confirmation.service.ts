@@ -18,7 +18,8 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CashoutService } from './cashout.service';
 import { rpcWithRetry } from './rpc';
 
-export type ConfirmSource = 'WEBHOOK' | 'STATUS_POLL' | 'RECONCILIATION';
+/** Lot 7 (D4, contrat 3.5) : CLIENT_CANCEL = vérification chez SamirPay avant une annulation par le client. */
+export type ConfirmSource = 'WEBHOOK' | 'STATUS_POLL' | 'RECONCILIATION' | 'CLIENT_CANCEL';
 
 export interface PaymentRecord {
     id: string;
@@ -36,6 +37,7 @@ export interface PaymentRecord {
     table_reservation_id: string | null;
     subscription_plan_id: string | null;
     partner_id: string | null;
+    event_id: string | null;
     metadata: Record<string, unknown> | null;
 }
 

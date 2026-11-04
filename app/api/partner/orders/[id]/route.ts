@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { OrderService } from '@/lib/orders/order.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { guardFeature } from '@/lib/features/flags';
 
 export async function GET(
     request: NextRequest,
@@ -10,6 +11,9 @@ export async function GET(
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('orders', '/api/partner/orders/[id]');
+        if (closed) return closed;
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
@@ -50,6 +54,9 @@ export async function PATCH(
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('orders', '/api/partner/orders/[id]');
+        if (closed) return closed;
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });

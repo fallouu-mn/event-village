@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { HallService } from '@/lib/halls/hall.service';
+import { guardFeature } from '@/lib/features/flags';
 
 /**
  * POST /api/partner/halls/reservations/[id]/status
@@ -13,6 +14,9 @@ export async function POST(
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('halls', '/api/partner/halls/reservations/[id]/status');
+        if (closed) return closed;
         const user = activeSession.user;
         if (!user) {
             return NextResponse.json({ error: 'Non authentifié.' }, { status: 401 });

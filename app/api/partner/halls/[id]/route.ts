@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { HallService } from '@/lib/halls/hall.service';
+import { guardFeature } from '@/lib/features/flags';
 
 /**
  * GET /api/partner/halls/[id]
+ * Lot 7 (7.3, D56) : route de l'espace partenaire, session ACTIVE exigée comme les autres gestionnaires du
+ * fichier, puis interrupteur (404 si le service des salles est fermé).
  */
 export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const activeSession = await requireActiveSession(request);
+        if (activeSession.response) return activeSession.response;
+        const closed = await guardFeature('halls', '/api/partner/halls/[id]');
+        if (closed) return closed;
         const { id } = await params;
         const hall = await HallService.getHallById(id);
         return NextResponse.json({ success: true, hall });
@@ -31,6 +38,9 @@ export async function PUT(
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('halls', '/api/partner/halls/[id]');
+        if (closed) return closed;
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
@@ -59,6 +69,9 @@ export async function DELETE(
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('halls', '/api/partner/halls/[id]');
+        if (closed) return closed;
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });

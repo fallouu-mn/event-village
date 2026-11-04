@@ -3,9 +3,19 @@ import { requireActiveSession } from '@/lib/auth/session';
 import { startTicketCheckout } from '@/lib/payments/checkout.service';
 import { PaymentInputError, paymentService } from '@/lib/payments/payment.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { CreatePaymentSchema } from '@/lib/validations/payment';
+import { CreatePaymentSchema, type CreatePaymentInput } from '@/lib/validations/payment';
+import { guardFeature, type Feature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
+
+/** Lot 7 (7.3, D55) : interrupteur de chaque cible de service ; billets et abonnements hors interrupteur. */
+const SERVICE_FEATURE: Record<CreatePaymentInput['targetType'], Feature | null> = {
+    HALL_RESERVATION: 'halls',
+    TABLE_RESERVATION: 'tables',
+    ORDER: 'orders',
+    TICKET: null,
+    SUBSCRIPTION: null,
+};
 
 /**
  * POST /api/payments/create — paiement d'une cible : commande, réservation de salle ou de table,
@@ -32,6 +42,13 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
     }
     const input = parsed.data;
+    // Lot 7 (7.3, D56) : après la session, interrupteur selon la cible (404 si le service est fermé) ;
+    // billets et abonnements ne sont jamais concernés.
+    const feature = SERVICE_FEATURE[input.targetType];
+    if (feature) {
+        const closed = await guardFeature(feature, `POST /api/payments/create (${input.targetType})`);
+        if (closed) return closed;
+    }
     try {
         if (input.targetType === 'TICKET') {
             const { data: cat, error } = await getServiceRoleClient().from('ticket_categories').select('id, event_id').eq('id', input.targetId).maybeSingle();

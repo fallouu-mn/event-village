@@ -91,6 +91,48 @@ export function paymentView(p: Record<string, unknown>, extra: Record<string, un
     };
 }
 
+export const PAYMENT_PENDING_MESSAGE = 'Un paiement est déjà en attente pour cet événement.';
+
+/** Lot 7 (D4, contrat 3.5) : corps du refus 409 d'un second paiement en attente. */
+export function pendingPaymentRefusal(paymentId: string): Record<string, unknown> {
+    return { error: PAYMENT_PENDING_MESSAGE, code: 'PAYMENT_PENDING', payment_id: paymentId, status_page_url: statusPageUrl(paymentId) };
+}
+
+export interface PendingTicketPayment {
+    payment_id: string;
+    amount: number;
+    operator: string | null;
+    expires_at: string;
+    status_page_url: string;
+}
+
+/**
+ * Lot 7 (contrat 3.5, GET /api/checkout/pending) : paiement de billets PENDING non échu du compte pour cet
+ * événement (même règle que la garde de checkout_create_payment), ou null. Erreur de lecture levée.
+ */
+export async function findPendingTicketPayment(clientId: string, eventId: string): Promise<PendingTicketPayment | null> {
+    const { data, error } = await getServiceRoleClient()
+        .from('payments')
+        .select('id, amount, operator, held_expires_at')
+        .eq('client_id', clientId)
+        .eq('event_id', eventId)
+        .eq('payment_target', 'TICKET')
+        .eq('status', 'PENDING')
+        .gt('held_expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (error) throw new Error(`Lecture du paiement en attente impossible : ${error.message}`);
+    if (!data) return null;
+    return {
+        payment_id: String(data.id),
+        amount: Number(data.amount),
+        operator: (data.operator as string | null) ?? null,
+        expires_at: String(data.held_expires_at),
+        status_page_url: statusPageUrl(String(data.id)),
+    };
+}
+
 async function existingPayment(clientId: string, key: string): Promise<Record<string, unknown> | null> {
     const { data, error } = await getServiceRoleClient()
         .from('payments')
@@ -172,7 +214,7 @@ export async function startTicketCheckout(params: {
     // 5. Paiement + réservations, tout ou rien
     const ids = newIdentifiers();
     const token = randomBytes(32).toString('base64url');
-    const { data: created, error: createErr } = await rpcWithRetry<{ ok: boolean; duplicate?: boolean; payment_id?: string; problems?: SaleProblem[]; expires_at?: string; amount?: number }>('checkout_create_payment', {
+    const { data: created, error: createErr } = await rpcWithRetry<{ ok: boolean; duplicate?: boolean; code?: string; payment_id?: string; problems?: SaleProblem[]; expires_at?: string; amount?: number }>('checkout_create_payment', {
         p: {
             client_id: params.userId,
             event_id: input.eventId,
@@ -198,7 +240,15 @@ export async function startTicketCheckout(params: {
             const dup = await existingPayment(params.userId, key);
             if (dup) return { status: 200, body: paymentView(dup, { duplicate: true }) };
         }
-        return problemsOutcome(created?.problems ?? []);
+        // Lot 7 (D4, M6) : un paiement de billets est déjà en attente pour ce compte et cet événement ; rien
+        // n'est créé ni réservé, SamirPay n'est pas appelé, l'interface conduit vers le suivi du premier.
+        if (created?.code === 'PAYMENT_PENDING' && created.payment_id) {
+            return { status: 409, body: pendingPaymentRefusal(created.payment_id) };
+        }
+        if (!created?.problems?.length) {
+            throw new Error(`Création du paiement refusée sans motif exploitable : ${JSON.stringify(created).slice(0, 300)}`);
+        }
+        return problemsOutcome(created.problems);
     }
     const paymentId = created.payment_id!;
     const amount = Number(created.amount);

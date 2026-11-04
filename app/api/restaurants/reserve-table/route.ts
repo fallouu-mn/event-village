@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
+import { guardFeature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,9 @@ export async function POST(req: NextRequest) {
     try {
         const session = await requireActiveSession(req);
         if (session.response) return session.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('tables', 'POST /api/restaurants/reserve-table');
+        if (closed) return closed;
         const clientId = session.user.id;
         const supabase = getServiceRoleClient();
 

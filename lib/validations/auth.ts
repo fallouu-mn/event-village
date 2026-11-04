@@ -89,6 +89,34 @@ export const RegisterClientSchema = z.object({
 export type RegisterClientInput = z.infer<typeof RegisterClientSchema>;
 
 /**
+ * Lot 7 (7.3, D1, contrat 3.6) — inscription « numéro d'abord », étape 1 : le numéro seul
+ * (POST /api/auth/register/start : code REGISTER envoyé, aucun compte créé).
+ */
+export const RegisterStartSchema = z.object({
+    phone: SenegalesePhoneSchema,
+});
+
+export type RegisterStartInput = z.infer<typeof RegisterStartSchema>;
+
+/**
+ * Lot 7 (7.3, D1, contrat 3.6) — étape 2 : code reçu par SMS et profil (POST /api/auth/register). Le code
+ * est vérifié et consommé AVANT la création du compte. Aucune confirmation du mot de passe exigée (l'écran
+ * affiche le mot de passe sur demande). `code` est facultatif dans le schéma : son absence a son propre refus
+ * (REGISTRATION_CODE_REQUIRED), après la validation du reste du profil (aucun essai consommé).
+ */
+export const RegisterWithCodeSchema = z.object({
+    phone: SenegalesePhoneSchema,
+    code: z.string().trim().optional(),
+    firstName: z.string().trim().min(2, 'Le prénom doit contenir au moins 2 caractères').max(80, 'Le prénom est trop long'),
+    lastName: z.string().trim().min(2, 'Le nom doit contenir au moins 2 caractères').max(80, 'Le nom est trop long'),
+    email: z.string().trim().email('Adresse email invalide').optional().or(z.literal('')),
+    password: StrongPasswordSchema,
+    referralCode: z.string().trim().max(64, 'Code de parrainage invalide').optional(),
+});
+
+export type RegisterWithCodeInput = z.infer<typeof RegisterWithCodeSchema>;
+
+/**
  * Schéma de Vérification OTP
  */
 export const VerifyOtpSchema = z.object({

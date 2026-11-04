@@ -1,34 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireActiveSession } from '@/lib/auth/session';
+import { featureNotFound, featuresUnavailable, getFeatureFlags, type FeatureFlags } from '@/lib/features/flags';
+import { formatFcfa } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/orders
- * Récupère toutes les commandes, réservations de salles et de tables de l'utilisateur connecté
+ * Commandes de repas, réservations de salles et de tables du compte de la session.
+ * Lot 7 (7.3, D5) : le compte vient TOUJOURS de la session (requireActiveSession : Bearer ou cookies du
+ * navigateur) ; un paramètre ?userId= est ignoré (faille IDOR corrigée). Interrupteurs (D55, D56) : session
+ * d'abord, puis 404 quand les trois services sont fermés ; sinon seuls les services ouverts sont lus.
+ * Une erreur de lecture est une erreur serveur (aucune liste partielle présentée comme complète).
  */
 export async function GET(req: NextRequest) {
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
+    let flags: FeatureFlags;
+    try {
+        flags = await getFeatureFlags();
+    } catch (err) {
+        console.error('[API /api/orders]', err instanceof Error ? err.message : String(err));
+        return featuresUnavailable();
+    }
+    if (!flags.halls && !flags.tables && !flags.orders) return featureNotFound('orders');
     try {
         const supabase = getServiceRoleClient();
-        const authHeader = req.headers.get('authorization');
-        const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-        let userId: string | null = null;
-        if (token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            userId = user?.id || null;
-        }
-
-        const { searchParams } = new URL(req.url);
-        const queryUserId = searchParams.get('userId');
-        const effectiveUserId = userId || queryUserId;
-
-        if (!effectiveUserId) {
-            return NextResponse.json({ error: 'Connexion requise pour consulter vos commandes.' }, { status: 401 });
-        }
+        const effectiveUserId = session.user.id;
 
         // 1. Commandes Repas / Traiteur
-        const { data: orders } = await supabase
+        const { data: orders, error: ordersErr } = !flags.orders ? { data: [], error: null } : await supabase
             .from('orders')
             .select(`
                 id,
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
             .order('created_at', { ascending: false });
 
         // 2. Réservations de Salles
-        const { data: hallReservations } = await supabase
+        const { data: hallReservations, error: hallsErr } = !flags.halls ? { data: [], error: null } : await supabase
             .from('hall_reservations')
             .select(`
                 id,
@@ -69,7 +71,7 @@ export async function GET(req: NextRequest) {
             .order('created_at', { ascending: false });
 
         // 3. Réservations de Tables
-        const { data: tableReservations } = await supabase
+        const { data: tableReservations, error: tablesErr } = !flags.tables ? { data: [], error: null } : await supabase
             .from('table_reservations')
             .select(`
                 id,
@@ -86,6 +88,9 @@ export async function GET(req: NextRequest) {
             .eq('client_id', effectiveUserId)
             .order('created_at', { ascending: false });
 
+        const readErr = ordersErr ?? hallsErr ?? tablesErr;
+        if (readErr) throw new Error(`lecture des commandes et réservations de ${effectiveUserId} impossible : ${readErr.message}`);
+
         // Formatage unifié
         const unifiedList: any[] = [];
 
@@ -100,7 +105,7 @@ export async function GET(req: NextRequest) {
                 type: 'FOOD_ORDER',
                 title: `Commande Traiteur — ${o.partners?.commercial_name || o.partners?.company_name || 'Restaurant'} (${(o.order_items || []).length} article${(o.order_items || []).length > 1 ? 's' : ''})`,
                 itemCount: (o.order_items || []).length,
-                totalAmountFormatted: `${total.toLocaleString('fr-FR')} FCFA`,
+                totalAmountFormatted: formatFcfa(total),
                 status: o.order_status,
                 paymentStatus: o.payment_status,
                 paymentMethod: 'SamirPay (Wave / OM)',
@@ -121,7 +126,7 @@ export async function GET(req: NextRequest) {
                 type: 'HALL_RESERVATION',
                 title: `Location ${h.halls?.name || 'Salle de réception'} (${h.start_date})`,
                 itemCount: 1,
-                totalAmountFormatted: `${deposit.toLocaleString('fr-FR')} FCFA (Acompte)`,
+                totalAmountFormatted: `${formatFcfa(deposit)} (acompte)`,
                 status: h.status,
                 paymentStatus: h.payment_status,
                 paymentMethod: 'SamirPay (Wave / OM)',
@@ -142,7 +147,7 @@ export async function GET(req: NextRequest) {
                 type: 'TABLE_RESERVATION',
                 title: `Table ${t.partners?.commercial_name || t.partners?.company_name || 'Restaurant'} (${t.guest_count} pers. - ${t.reservation_time})`,
                 itemCount: t.guest_count,
-                totalAmountFormatted: deposit > 0 ? `${deposit.toLocaleString('fr-FR')} FCFA` : 'Sur place',
+                totalAmountFormatted: deposit > 0 ? formatFcfa(deposit) : 'Sur place',
                 status: t.status,
                 paymentStatus: t.payment_status,
                 paymentMethod: deposit > 0 ? 'SamirPay (Wave / OM)' : 'Sur place',
@@ -155,9 +160,9 @@ export async function GET(req: NextRequest) {
         // Tri par date de création décroissante
         unifiedList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        return NextResponse.json({ orders: unifiedList });
+        return NextResponse.json({ orders: unifiedList }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
-        console.error('[API /api/orders] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+        console.error('[API /api/orders] erreur interne :', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Commandes momentanément indisponibles.', code: 'ORDERS_UNAVAILABLE' }, { status: 500 });
     }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
+import { guardFeature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     try {
+        // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
+        const closed = await guardFeature('orders', 'GET /api/restaurants/[id]/menu');
+        if (closed) return closed;
         const partnerIdOrSlug = params.id;
         const supabase = getServiceRoleClient();
 

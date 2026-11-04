@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
+import { guardFeature } from '@/lib/features/flags';
 
 export async function GET(request: NextRequest) {
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('tables', '/api/partner/tables');
+        if (closed) return closed;
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Non autorise.' }, { status: 401 });
@@ -33,6 +37,9 @@ export async function POST(request: NextRequest) {
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
+        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
+        const closed = await guardFeature('tables', '/api/partner/tables');
+        if (closed) return closed;
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Seul un partenaire peut creer.' }, { status: 403 });

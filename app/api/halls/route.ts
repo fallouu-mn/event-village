@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { guardFeature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
     try {
+        // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
+        const closed = await guardFeature('halls', 'GET /api/halls');
+        if (closed) return closed;
         const supabase = getServiceRoleClient();
         const { searchParams } = new URL(req.url);
         const search = searchParams.get('q')?.trim().toLowerCase();
