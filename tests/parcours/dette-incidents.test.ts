@@ -117,12 +117,12 @@ function unknownPayload(): Row {
     return { eventId: ev.eventId, payload: `EVT1:${randomUUID()}:000000` };
 }
 
-/** POST /api/controller/scan avec un corps brut (illisible en JSON). */
+/** POST /api/controller/scan avec un corps brut (illisible en JSON) ; lot 7 (D39) : avec l'en-tête Idempotency-Key. */
 async function scanRaw(user: Buyer, raw: string): Promise<RouteResult> {
     const { POST } = await importModule(SCAN_ROUTE);
     return invoke(POST as Handler, new NextRequest(`${BASE_URL}/api/controller/scan`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${user.accessToken}` },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${user.accessToken}`, 'idempotency-key': randomUUID() },
         body: raw,
     }));
 }

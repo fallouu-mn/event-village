@@ -11,6 +11,7 @@
 import '../helpers/env';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
@@ -65,6 +66,11 @@ async function auditActions(objectId: string): Promise<string[]> {
     const { data, error } = await getServiceRoleClient().from('audit_logs').select('action').eq('object_id', objectId);
     assert.equal(error, null, `audit : ${error?.message}`);
     return (data || []).map((r) => r.action as string);
+}
+
+/** Lot 7 (D39) : POST /api/controller/scan exige l'en-tête Idempotency-Key ; une clé neuve par appel (lecture distincte). */
+function scanHeaders(token: string): Record<string, string> {
+    return { ...bearer(token), 'idempotency-key': randomUUID() };
 }
 
 function getRequest(pathname: string, headers: Record<string, string> = {}): NextRequest {
@@ -252,11 +258,11 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
         const manual = { eventId: ev!.id, manualTicketNumber: ticketNumber, identityVerified: true };
 
         const client = await signInAs('CLIENT_BIS');
-        const asClient = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(client.accessToken)));
+        const asClient = await scanTicket(jsonRequest('/api/controller/scan', manual, scanHeaders(client.accessToken)));
         assert.equal(asClient.status, 403, `CLIENT : HTTP ${asClient.status} ${JSON.stringify(await asClient.json()).slice(0, 300)}`);
 
         const partnerB = await signInAs('PARTNER_B');
-        const asOtherPartner = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(partnerB.accessToken)));
+        const asOtherPartner = await scanTicket(jsonRequest('/api/controller/scan', manual, scanHeaders(partnerB.accessToken)));
         assert.equal(asOtherPartner.status, 403, `partenaire B : HTTP ${asOtherPartner.status} ${JSON.stringify(await asOtherPartner.json()).slice(0, 300)}`);
 
         const { data: still } = await service.from('tickets').select('status').eq('ticket_number', ticketNumber).single();
@@ -264,7 +270,7 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
 
         const controller = await signInAs('CONTROLLER_A');
         try {
-            const asController = await scanTicket(jsonRequest('/api/controller/scan', manual, bearer(controller.accessToken)));
+            const asController = await scanTicket(jsonRequest('/api/controller/scan', manual, scanHeaders(controller.accessToken)));
             const body = await asController.json();
             assert.equal(asController.status, 200, `contrôleur affecté : HTTP ${asController.status} ${JSON.stringify(body).slice(0, 300)}`);
             assert.equal(body.result, 'valid');

@@ -13,6 +13,8 @@
  *    une seule caisse OUVERT par (scanneur, événement), même en concurrence ;
  *  - schéma : index unique partiel des caisses ouvertes, controller_shifts.event_id, tickets.order_id
  *    et payments.shift_id en ON DELETE RESTRICT (vérifié dans le catalogue de la base locale).
+ *  - lot 7 (T33, D39, D40) : le rejeu d'un encaissement par le même scanneur rend le verdict d'origine
+ *    (200 valid, replayed, même paiement) sans nouvelle ligne ni second scan accepté ; rouge jusqu'à fix(7.2s).
  * Routes et modules réécrits au lot 4 : importés dynamiquement (acces-helpers).
  * La suite crée son partenaire, ses événements (dans la fenêtre de scan), ses contrôleurs et son admin.
  */
@@ -107,6 +109,13 @@ async function orderRow(id: string): Promise<Record<string, unknown>> {
     return data as Record<string, unknown>;
 }
 
+/** Paiements rattachés à la caisse (identifiants triés), pour vérifier qu'un rejeu n'en crée aucun. */
+async function shiftPaymentIds(shiftId: string): Promise<string[]> {
+    const { data, error } = await service.from('payments').select('id').eq('shift_id', shiftId);
+    assert.equal(error, null, `paiements de la caisse : ${error?.message}`);
+    return (data ?? []).map((p) => String(p.id)).sort();
+}
+
 async function expectedCash(shiftId: string): Promise<number> {
     return Number((await shiftRow(shiftId)).expected_cash_total);
 }
@@ -161,12 +170,15 @@ describe('Encaissement espèces au scan', () => {
         const paymentIds = new Set<string>();
         let paid = 0;
         let lastScanId = '';
+        let lastTicketId = '';
+        let lastPaymentId = '';
 
         for (let i = 0; i < order.ticketIds.length; i++) {
             const ticketId = order.ticketIds[i];
             const label = `billet ${i + 1}/3`;
             const scanId = await scanCashRequired(ctrl, ev.eventId, ticketId, PRICE);
             lastScanId = scanId;
+            lastTicketId = ticketId;
             const res = await cashCheckin(ctrl, { scanId, eventId: ev.eventId });
             assert.equal(res.status, 200, `${label} : encaissement HTTP ${res.status} ${JSON.stringify(res.body)}`);
             assert.equal(res.body.result, 'valid', `${label} : encaissement accepté : ${JSON.stringify(res.body)}`);
@@ -179,6 +191,7 @@ describe('Encaissement espèces au scan', () => {
             const paymentId = t.payment_id as string;
             assert.ok(!paymentIds.has(paymentId), `${label} : un paiement par billet encaissé`);
             paymentIds.add(paymentId);
+            lastPaymentId = paymentId;
             assertOfflineCash(await paymentRow(paymentId), PRICE, shiftId, label);
             await assertNoLedgerEntry(paymentId, label);
 
@@ -200,8 +213,20 @@ describe('Encaissement espèces au scan', () => {
             assert.ok(audit.length > 0, `${label} : encaissement journalisé dans audit_logs`);
         }
 
+        // Lot 7 (T33, D39, D40) : l'encaissement est idempotent par sa clé naturelle scan_id ; rejoué par le même
+        // scanneur (réponse perdue), il rend le verdict d'origine (200 valid, replayed, même paiement), sans aucun
+        // effet. Le refus d'un rejeu par un AUTRE scanneur est prouvé par scan-idempotence.test.ts (cas 7).
+        const paymentsBefore = await shiftPaymentIds(shiftId);
+        assert.ok(paymentsBefore.includes(lastPaymentId), `paiements de la caisse lus avant le rejeu (dont ${lastPaymentId}) : ${JSON.stringify(paymentsBefore)}`);
         const replay = await cashCheckin(ctrl, { scanId: lastScanId, eventId: ev.eventId });
-        assertCashRefused(replay, 'rejeu d’un scan déjà consommé');
+        assert.equal(replay.status, 200, `rejeu par le même scanneur : 200 (jamais 409, D40) : HTTP ${replay.status} ${JSON.stringify(replay.body)}`);
+        assert.equal(replay.body.result, 'valid', `rejeu par le même scanneur : verdict d’origine valid : ${JSON.stringify(replay.body)}`);
+        assert.equal(replay.body.replayed, true, `rejeu par le même scanneur : replayed = true : ${JSON.stringify(replay.body)}`);
+        assert.equal(replay.body.payment_id, lastPaymentId, `rejeu : même payment_id que l’encaissement d’origine : ${JSON.stringify(replay.body)}`);
+        assert.equal(Number(replay.body.amount), PRICE, `rejeu : montant de l’encaissement d’origine : ${JSON.stringify(replay.body)}`);
+        assert.deepEqual(await shiftPaymentIds(shiftId), paymentsBefore, 'rejeu : aucune nouvelle ligne de paiement');
+        const lastScans = await scansOf(lastTicketId);
+        assert.equal(lastScans.filter((s) => s.accepted === true).length, 1, `rejeu : exactement un scan accepté pour le billet : ${JSON.stringify(lastScans)}`);
         assert.equal(await expectedCash(shiftId), startTotal + paid, 'rejeu : total attendu inchangé');
         assert.equal(Number((await orderRow(order.orderId)).paid_amount), paid, 'rejeu : commande inchangée');
         assert.deepEqual(await ledgerOf(partner.userId, 'ORGANISATEUR'), [], 'ventes espèces : aucun crédit au compte organisateur');
