@@ -48,9 +48,19 @@ jobs:
           version: 2.122.0
 
       - name: Démarrer Supabase local (services nécessaires aux tests uniquement)
+        # Lot 7 (runs 81 et 82) : le runner a refusé deux fois le port 54322 (« address already in use ») avant tout
+        # test. On journalise qui écoute sur les ports locaux, puis une seule nouvelle tentative après un arrêt propre.
         run: |
           set -o pipefail
-          supabase start -x studio,imgproxy,logflare,vector,edge-runtime 2>&1 | tee /tmp/supabase-start.log
+          echo "ports 54320-54329 avant démarrage :"; (sudo ss -ltnp | grep -E ':5432[0-9]\b' || echo "aucun")
+          if ! supabase start -x studio,imgproxy,logflare,vector,edge-runtime 2>&1 | tee /tmp/supabase-start.log; then
+            echo "::warning::supabase start a échoué ; ports, conteneurs, arrêt propre puis nouvelle tentative"
+            (sudo ss -ltnp | grep -E ':5432[0-9]\b' || echo "aucun port 5432x à l'écoute")
+            docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}'
+            supabase stop --no-backup 2>&1 | tee -a /tmp/supabase-start.log
+            sleep 15
+            supabase start -x studio,imgproxy,logflare,vector,edge-runtime 2>&1 | tee -a /tmp/supabase-start.log
+          fi
 
       - name: Appliquer toutes les migrations depuis zéro (supabase db reset)
         run: |
