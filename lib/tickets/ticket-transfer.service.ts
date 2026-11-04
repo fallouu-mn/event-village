@@ -141,6 +141,8 @@ const ACCEPT_REFUSALS: Record<string, { status: number; message: string }> = {
     SELF_TRANSFER: { status: 400, message: 'Vous êtes déjà le propriétaire de ce billet.' },
     OWNER_CHANGED: { status: 409, message: 'L’expéditeur n’est plus le propriétaire de ce billet.' },
     TICKET_NOT_TRANSFERABLE: { status: 409, message: 'Ce billet n’est plus transférable.' },
+    // Lot 7 (D20) : événement ni PUBLIE ni VALIDE (suspendu, annulé, terminé) au moment de l'acceptation
+    EVENT_NOT_ACTIVE: { status: 409, message: 'Cet événement n’accepte plus de transfert.' },
 };
 
 export class TicketTransferService {

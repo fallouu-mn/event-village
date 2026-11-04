@@ -18,7 +18,9 @@ fns AS (
        AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
 ),
 whitelist(name) AS (
-    VALUES ('is_admin'), ('is_superadmin'), ('is_controller'), ('has_role'), ('is_partner_owner'), ('auth_user_role')
+    -- Lot 7 (D21) : 7e aide RLS, ticket_category_private_read (politiques de ticket_categories sans lecture de users)
+    VALUES ('is_admin'), ('is_superadmin'), ('is_controller'), ('has_role'), ('is_partner_owner'), ('auth_user_role'),
+           ('ticket_category_private_read')
 ),
 checks(point, ok, detail) AS (
     -- 1A.1
@@ -65,7 +67,7 @@ checks(point, ok, detail) AS (
     SELECT '1A.3 aides RLS exécutables par anon et authenticated, STABLE, search_path fixé',
            (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist) AND anon_exec AND auth_exec AND provolatile IN ('s', 'i') AND config LIKE '%search_path=%')
              = (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist))
-           AND (SELECT COUNT(DISTINCT proname) FROM fns WHERE proname IN (SELECT name FROM whitelist)) = 6,
+           AND (SELECT COUNT(DISTINCT proname) FROM fns WHERE proname IN (SELECT name FROM whitelist)) = 7,
            (SELECT string_agg(proname || ':' || CASE WHEN anon_exec AND auth_exec THEN 'exec' ELSE 'NON-exec' END || ':' || provolatile::text, ', ') FROM fns WHERE proname IN (SELECT name FROM whitelist))
     UNION ALL
     SELECT '1A.3 RPC métier exécutables par service_role',

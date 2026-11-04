@@ -676,6 +676,11 @@ interface HardenedPolicy {
     authenticatedOnly: boolean;
     /** La condition doit aussi figurer dans WITH CHECK (politique FOR ALL). */
     withCheck?: boolean;
+    /**
+     * Lot 7 (tâche 7.0 c, D21, migration 20261105000003) : la condition P_ACTIF est portée par cette aide RLS
+     * SECURITY DEFINER, appelée par la politique ; c'est alors le corps de l'aide qui doit lire users.status.
+     */
+    viaHelper?: string;
 }
 
 /** Politiques du tableau A1 (dernières définitions), toutes réécrites avec P_ACTIF. */
@@ -688,8 +693,8 @@ const HARDENED: HardenedPolicy[] = [
     { table: 'event_status_history', policy: 'event_status_history_read', authenticatedOnly: true },
     { table: 'admin_signals', policy: 'admin_signals_admin_read', authenticatedOnly: true },
     { table: 'tickets', policy: 'tickets_read', authenticatedOnly: true },
-    { table: 'ticket_categories', policy: 'ticket_categories_read_public', authenticatedOnly: false },
-    { table: 'ticket_categories', policy: 'ticket_categories_admin_manage', authenticatedOnly: false, withCheck: true },
+    { table: 'ticket_categories', policy: 'ticket_categories_read_public', authenticatedOnly: false, viaHelper: 'ticket_category_private_read' },
+    { table: 'ticket_categories', policy: 'ticket_categories_admin_manage', authenticatedOnly: false, withCheck: true, viaHelper: 'ticket_category_private_read' },
     { table: 'notifications', policy: 'notifications_read_own', authenticatedOnly: true },
     { table: 'orders', policy: 'orders_read', authenticatedOnly: true },
 ];
@@ -710,6 +715,17 @@ describe('6.0 a — sonde pg_policies des tables publiées', () => {
         for (const r of rows) {
             console.log(`[TEMPS-REEL-6.0a] ${r.tablename}.${r.policyname} (${r.cmd}, ${r.roles.join(',')}) USING ${r.qual ?? '∅'}${r.with_check ? ` WITH CHECK ${r.with_check}` : ''}`);
         }
+        const helperNames = HARDENED.map((h) => h.viaHelper).filter((n): n is string => !!n).filter((n, i, all) => all.indexOf(n) === i);
+        const helpers = await inspect(async (db) => (await db.query<{ proname: string; prosrc: string }>(
+            `SELECT p.proname, p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = ANY($1::text[])`, [helperNames])).rows);
+        /** USING ou WITH CHECK : lecture directe du statut, ou appel de l'aide dont le corps lit le statut. */
+        const guarded = (h: HardenedPolicy, expr: string | null): boolean => {
+            if (readsAccountStatus(expr)) return true;
+            if (!h.viaHelper || !expr || !expr.includes(`${h.viaHelper}(`)) return false;
+            const bodies = helpers.filter((p) => p.proname === h.viaHelper);
+            return bodies.length === 1 && readsAccountStatus(bodies[0].prosrc);
+        };
         const problems: string[] = [];
         for (const h of HARDENED) {
             const row = rows.find((r) => r.tablename === h.table && r.policyname === h.policy);
@@ -717,8 +733,8 @@ describe('6.0 a — sonde pg_policies des tables publiées', () => {
                 problems.push(`${h.table}.${h.policy} : politique absente`);
                 continue;
             }
-            if (!readsAccountStatus(row.qual)) problems.push(`${h.table}.${h.policy} : USING ne lit pas le statut du compte`);
-            if (h.withCheck && !readsAccountStatus(row.with_check)) problems.push(`${h.table}.${h.policy} : WITH CHECK ne lit pas le statut du compte`);
+            if (!guarded(h, row.qual)) problems.push(`${h.table}.${h.policy} : USING ne lit pas le statut du compte${h.viaHelper ? ` (ni par ${h.viaHelper})` : ''}`);
+            if (h.withCheck && !guarded(h, row.with_check)) problems.push(`${h.table}.${h.policy} : WITH CHECK ne lit pas le statut du compte${h.viaHelper ? ` (ni par ${h.viaHelper})` : ''}`);
             if (h.authenticatedOnly && !(row.roles.length === 1 && row.roles[0] === 'authenticated')) {
                 problems.push(`${h.table}.${h.policy} : rôles ${row.roles.join(',')} (TO authenticated attendu)`);
             }

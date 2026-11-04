@@ -409,22 +409,45 @@ export class AdminService {
                 .eq('id', targetUserId);
         }
 
-        // 5. NETTOYAGE DES AFFECTATIONS (Droit à l'oubli opérationnel)
-        // Supprimer des équipes d'événements et des permissions (sans toucher aux shifts ni commandes)
+        // 5. NETTOYAGE DES AFFECTATIONS ET DES DROITS (Droit à l'oubli opérationnel)
+        // Supprimer des équipes d'événements, des rôles d'administration et des permissions (sans toucher
+        // aux shifts ni aux commandes). Lot 7 (D19) : admin_permissions par user_id (la colonne admin_id
+        // n'existe pas : rien n'était supprimé) ; ADMIN et SUPERADMIN retirés de user_roles, sinon is_admin()
+        // reste vrai côté RLS pendant la vie du jeton. Chaque retrait est une requête distincte : le refus
+        // du retrait de CONTROLEUR (caisse ouverte, EV409) n'empêche pas le retrait des droits d'administration.
         const cleanups = await Promise.all([
+            supabase.from('admin_permissions').delete().eq('user_id', targetUserId),
+            supabase.from('user_roles').delete().eq('user_id', targetUserId).in('role', ['ADMIN', 'SUPERADMIN']),
             supabase.from('event_controllers').delete().eq('user_id', targetUserId),
             supabase.from('user_roles').delete().eq('user_id', targetUserId).eq('role', 'CONTROLEUR'),
-            (supabase.from('admin_permissions') as any).delete().eq('admin_id', targetUserId),
             originalPhone
-                ? (supabase.from('otp_codes') as any)
+                ? supabase
+                    .from('otp_codes')
                     .delete()
                     .in('phone', [originalPhone, originalPhone.replace('+', ''), anonymizedPhone]) // lot 1C.1 : plus de filtre texte
                 : Promise.resolve({ error: null }),
         ]);
-        const cleanupLabels = ['event_controllers', 'user_roles CONTROLEUR', 'admin_permissions', 'otp_codes'];
+        const cleanupLabels = ['admin_permissions', 'user_roles ADMIN et SUPERADMIN', 'event_controllers', 'user_roles CONTROLEUR', 'otp_codes'];
+        const failedCleanups: string[] = [];
         cleanups.forEach((res: { error: { message: string } | null }, i: number) => {
-            if (res.error) console.error(`[AdminService.anonymizeUser] nettoyage ${cleanupLabels[i]} :`, res.error.message);
+            if (res.error) {
+                console.error(`[AdminService.anonymizeUser] nettoyage ${cleanupLabels[i]} :`, res.error.message);
+                failedCleanups.push(cleanupLabels[i]);
+            }
         });
+        // Lot 7 (D19) : l'échec d'un retrait est remonté (plus un simple journal). Le compte est déjà
+        // SUPPRIME et ses sessions révoquées ; l'anonymisation peut être relancée pour terminer le nettoyage.
+        if (failedCleanups.length > 0) {
+            await AdminService.logAudit({
+                userId: actor.id,
+                userRole: actor.role,
+                action: 'ANONYMIZE_USER_CLEANUP_FAILED',
+                objectType: 'users',
+                objectId: targetUserId,
+                metadata: { failed: failedCleanups },
+            });
+            throw new Error(`Anonymisation incomplète : retrait impossible (${failedCleanups.join(', ')}). Relancez l'anonymisation ; une caisse ouverte doit d'abord être clôturée.`);
+        }
 
         // 6. Journalisation d'audit inaltérable
         await AdminService.logAudit({

@@ -36,6 +36,8 @@ export const ADMIN_PERMISSIONS = [
     // Lot 6 (contrat L1) : supervision de la boîte d'envoi (lecture) et relance d'un envoi en échec
     'notifications.read',
     'notifications.write',
+    // Lot 7 (7.0 c, contrat 3.7) : lecture des écarts de caisse consolidés (GET /api/admin/shifts/audit)
+    'shifts.read',
 ] as const;
 
 export type AdminPermission = typeof ADMIN_PERMISSIONS[number];
@@ -96,7 +98,7 @@ export async function verifyAdminAuth(
         }
 
         // 2. Récupération du profil et des rôles depuis public.users + user_roles
-        const [{ data: userProfile, error: profileErr }, { data: userRolesData }] = await Promise.all([
+        const [{ data: userProfile, error: profileErr }, { data: userRolesData, error: rolesErr }] = await Promise.all([
             supabase
                 .from('users')
                 .select('id, email, phone, role, first_name, last_name, status')
@@ -108,22 +110,42 @@ export async function verifyAdminAuth(
                 .eq('user_id', userId),
         ]);
 
-        if (profileErr || !userProfile) {
+        if (profileErr) {
+            console.error(`[verifyAdminAuth] lecture du profil ${userId} impossible :`, profileErr.message);
+            return {
+                authorized: false,
+                errorResponse: NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'ADMIN_AUTH_UNAVAILABLE' }, { status: 503 }),
+            };
+        }
+        if (!userProfile) {
             return {
                 authorized: false,
                 errorResponse: NextResponse.json({ error: 'Profil utilisateur introuvable.' }, { status: 403 }),
             };
         }
-
-        const roles = (userRolesData && userRolesData.length > 0)
-            ? userRolesData.map(r => r.role as string)
-            : [userProfile.role as string];
-        const role = userProfile.role as UserRoleType;
-
-        if (userProfile.status === 'SUSPENDU') {
+        if (rolesErr) {
+            console.error(`[verifyAdminAuth] lecture des rôles de ${userId} impossible :`, rolesErr.message);
             return {
                 authorized: false,
-                errorResponse: NextResponse.json({ error: 'Compte suspendu.' }, { status: 403 }),
+                errorResponse: NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'ADMIN_AUTH_UNAVAILABLE' }, { status: 503 }),
+            };
+        }
+
+        // Lot 7 (D18, règle du lot 1B.8) : user_roles est la seule source des rôles, comme la RLS
+        // (is_admin()). Plus de repli sur le rôle legacy users.role quand user_roles est vide.
+        const roles = (userRolesData ?? []).map(r => r.role as string);
+        const role = userProfile.role as UserRoleType;
+
+        // Lot 7 (D18) : seul un compte ACTIF accède à l'administration (SUPPRIME, EN_ATTENTE et SUSPENDU
+        // refusés), même code que requireActiveSession (lib/auth/session.ts).
+        if (userProfile.status !== 'ACTIF') {
+            console.warn(`[verifyAdminAuth] accès refusé à ${req.nextUrl.pathname} : compte ${userId} au statut ${userProfile.status}`);
+            return {
+                authorized: false,
+                errorResponse: NextResponse.json(
+                    { error: 'Votre compte n\'est pas actif. Contactez le support.', code: 'ACCOUNT_NOT_ACTIVE' },
+                    { status: 403 }
+                ),
             };
         }
 
@@ -163,10 +185,17 @@ export async function verifyAdminAuth(
         if (roles.includes('SUPERADMIN')) {
             permissions = [...ADMIN_PERMISSIONS]; // Le Superadmin a toutes les permissions
         } else {
-            const { data: permsData } = await supabase
+            const { data: permsData, error: permsErr } = await supabase
                 .from('admin_permissions')
                 .select('permission')
                 .eq('user_id', userId);
+            if (permsErr) {
+                console.error(`[verifyAdminAuth] lecture des permissions de ${userId} impossible :`, permsErr.message);
+                return {
+                    authorized: false,
+                    errorResponse: NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'ADMIN_AUTH_UNAVAILABLE' }, { status: 503 }),
+                };
+            }
 
             permissions = permsData?.map((p) => p.permission) || [];
 
@@ -195,10 +224,10 @@ export async function verifyAdminAuth(
             permissions,
         };
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur de vérification de session';
+        console.error('[verifyAdminAuth] vérification impossible :', err instanceof Error ? err.message : err);
         return {
             authorized: false,
-            errorResponse: NextResponse.json({ error: msg }, { status: 500 }),
+            errorResponse: NextResponse.json({ error: 'Erreur de vérification de session.' }, { status: 500 }),
         };
     }
 }

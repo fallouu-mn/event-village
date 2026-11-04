@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
+import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { ShiftService } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
@@ -7,12 +7,13 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/admin/shifts/audit — vue consolidée (admin) des écarts de caisse constatés, tous partenaires
  * confondus, pour repérer les écarts récurrents d'un contrôleur.
+ * Lot 7 (7.0 c, contrat 3.7) : permission dédiée shifts.read (le SUPERADMIN a toutes les permissions) ;
+ * compte ACTIF exigé par verifyAdminAuth (D18).
  */
 export async function GET(req: NextRequest) {
-    const session = await requireActiveSession(req);
-    if (session.response) return session.response;
-    if (!serverIsAdmin(session.user)) {
-        return NextResponse.json({ error: 'Accès réservé aux administrateurs.', code: 'FORBIDDEN_ROLE' }, { status: 403 });
+    const auth = await verifyAdminAuth(req, { requiredPermission: 'shifts.read' });
+    if (!auth.authorized) {
+        return auth.errorResponse ?? NextResponse.json({ error: 'Accès réservé aux administrateurs.' }, { status: 403 });
     }
 
     try {
