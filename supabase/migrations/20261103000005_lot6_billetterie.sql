@@ -1711,6 +1711,14 @@ $$;
 -- MIGRATION, préférence activée et plage de silence vide (aucune des deux règles n'existait au lot 5).
 -- ============================================================================
 -- reprise:debut
+-- Rejouable : sans la table du lot 5 (déjà reprise puis supprimée par une application antérieure, même
+-- partielle, de cette migration), il n'y a rien à reprendre ; avec elle, ON CONFLICT écarte les doublons.
+-- (Projet de production, 03/11/2026 : une première application partielle avait déjà supprimé la table.)
+DO $$
+BEGIN
+IF to_regclass('public.event_change_notifications') IS NULL THEN
+    RETURN;
+END IF;
 INSERT INTO public.notification_outbox (
     idempotency_key, group_key, type, family, topic, channel, origin,
     recipient_user_id, event_id, template_data, status, reason, reason_detail,
@@ -1761,6 +1769,8 @@ SELECT 'EVENT_CHANGED:' || n.event_id::text || ':' || n.user_id::text || ':v' ||
   FROM public.event_change_notifications n
  ORDER BY n.created_at, n.id
 ON CONFLICT DO NOTHING;
+END;
+$$;
 -- reprise:fin
 
 DROP FUNCTION IF EXISTS public.event_change_notifications_claim(jsonb);
