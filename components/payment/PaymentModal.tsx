@@ -12,53 +12,81 @@
  *   suivi /paiement/<id> (status_page_url), qui sonde le statut jusqu'à l'échéance expires_at.
  * - Lot 3 : un panier de billets s'affiche avec le devis du serveur (POST /api/checkout/quote) :
  *   prix des billets, frais de service et total. Aucun frais n'est calculé dans le navigateur.
+ * - Lot 7 (7.3, E4) : système de design (tokens, 14 px au moins) ; pastilles des opérateurs sur les jetons
+ *   --op-wave et --op-orange-money (D59) ; montants par formatFcfa de lib/format (D60) ; un second paiement
+ *   refusé (409 PAYMENT_PENDING, D4) propose « Suivre le paiement » vers le paiement déjà en attente. Les
+ *   aides sans rendu vivent dans lib/payments/payment-client.ts (la page d'un événement charge la modale par
+ *   next/dynamic) ; elles restent réexportées ici pour les écrans qui les importaient depuis la modale.
  */
 
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AlertCircle, CheckCircle2, Clock, Loader2, LogIn, ShieldCheck, Smartphone, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { formatFcfa, formatTime } from '@/lib/format';
 import { normalizePayerPhone } from '@/lib/payments/payer-phone';
-import { OPERATOR_LABELS, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+import {
+  formatDelay,
+  formatLocalPhone,
+  isRecord,
+  isSamirPayOperator,
+  isUncertainOutcome,
+  nonEmptyString,
+  operatorLabel,
+  paymentStatusPath,
+  readJsonBody,
+  readPaymentError,
+  savePaymentHandoff,
+  toSafeExternalUrl,
+  useIdempotencyKey,
+  isMobileDevice,
+  type CheckoutItem,
+  type CheckoutQuote,
+  type PaymentRequestError,
+  type PaymentTargetType,
+} from '@/lib/payments/payment-client';
+import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+
+// Aides réexportées (écrans de retrait, administration, suivi du paiement) : même comportement qu'avant le
+// lot 7, sauf formatFcfa, désormais celui de lib/format (« F CFA », D60).
+export {
+  clearPaymentHandoff,
+  formatDelay,
+  formatLocalPhone,
+  isMobileDevice,
+  isSamirPayOperator,
+  isUncertainOutcome,
+  newIdempotencyKey,
+  operatorLabel,
+  readAmount,
+  readCheckoutQuote,
+  readJsonBody,
+  readPaymentError,
+  readPaymentHandoff,
+  savePaymentHandoff,
+  serverErrorMessage,
+  toSafeExternalUrl,
+  useIdempotencyKey,
+} from '@/lib/payments/payment-client';
+export type {
+  CheckoutItem,
+  CheckoutProblem,
+  CheckoutQuote,
+  CheckoutQuoteLine,
+  PaymentHandoff,
+  PaymentRequestError,
+  PaymentTargetType,
+} from '@/lib/payments/payment-client';
+export { formatFcfa };
 
 /* ──────────────────────────────── Types ──────────────────────────────── */
-
-export type PaymentTargetType = 'ORDER' | 'HALL_RESERVATION' | 'TABLE_RESERVATION' | 'TICKET' | 'SUBSCRIPTION';
-
-export interface CheckoutItem {
-  categoryId: string;
-  quantity: number;
-  /** Nom de la catégorie, affiché si le serveur signale un problème sur cette ligne (jamais envoyé). */
-  label?: string;
-}
-
-/** Ligne du devis serveur (POST /api/checkout/quote). */
-export interface CheckoutQuoteLine {
-  categoryId: string;
-  unitPrice: number;
-  quantity: number;
-  unitServiceFee: number;
-  lineFacial: number;
-  lineServiceFee: number;
-  lineTotal: number;
-}
-
-/** Devis serveur d'un panier de billets : montants affichés tels quels, jamais recalculés ici. */
-export interface CheckoutQuote {
-  lines: CheckoutQuoteLine[];
-  /** Somme des prix des billets. */
-  facialAmount: number;
-  /** Frais de service payés par l'acheteur. */
-  serviceFee: number;
-  /** Taux des frais de service (en %), pour information. */
-  serviceRatePercent: number | null;
-  /** Total à payer = montant demandé à l'opérateur. */
-  totalAmount: number;
-}
 
 interface PaymentModalBaseProps {
   isOpen: boolean;
@@ -97,31 +125,6 @@ interface CheckoutPaymentProps extends PaymentModalBaseProps {
 
 export type PaymentModalProps = TargetPaymentProps | CheckoutPaymentProps;
 
-export interface CheckoutProblem {
-  categoryId: string | null;
-  code: string;
-  message: string;
-}
-
-export interface PaymentRequestError {
-  /** Statut HTTP de la réponse, 0 si la requête n'a pas abouti (réseau). */
-  httpStatus: number;
-  code: string | null;
-  message: string;
-  problems: CheckoutProblem[];
-  retryAfterSeconds: number | null;
-}
-
-/** Liens de paiement transmis à la page de suivi (même onglet, sessionStorage). */
-export interface PaymentHandoff {
-  operator: SamirPayOperatorName | null;
-  deepLink: string | null;
-  paymentUrl: string | null;
-  qrCode: string | null;
-  /** Le lien de l'opérateur a été ouvert automatiquement après l'initiation. */
-  opened: boolean;
-}
-
 type Initiation =
   | { kind: 'free' }
   | {
@@ -144,232 +147,17 @@ interface RedirectState {
   expiresAt: string | null;
 }
 
-/* ─────────────────────────── Utilitaires partagés ─────────────────────────── */
-
-export function operatorLabel(operator: SamirPayOperatorName): string {
-  return OPERATOR_LABELS[operator];
-}
-
-export function isSamirPayOperator(value: unknown): value is SamirPayOperatorName {
-  return typeof value === 'string' && (SAMIRPAY_OPERATORS as readonly string[]).includes(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value : null;
-}
-
-/** Nombre lu dans une réponse JSON (nombre, ou chaîne numérique d'une colonne numeric) ; null sinon. */
-export function readAmount(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-/** Montant en FCFA au format français (séparateur de milliers, centimes seulement s'il y en a). */
-export function formatFcfa(amount: number): string {
-  return `${amount.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA`;
-}
-
-/** Devis renvoyé par POST /api/checkout/quote ; null s'il ne respecte pas le contrat. */
-export function readCheckoutQuote(body: unknown): CheckoutQuote | null {
-  const root = isRecord(body) && isRecord(body.quote) ? body.quote : body;
-  if (!isRecord(root) || !Array.isArray(root.lines)) return null;
-  const facialAmount = readAmount(root.facial_amount);
-  const serviceFee = readAmount(root.service_fee);
-  const totalAmount = readAmount(root.total_amount);
-  if (facialAmount === null || serviceFee === null || totalAmount === null) return null;
-  const lines: CheckoutQuoteLine[] = [];
-  for (const raw of root.lines) {
-    if (!isRecord(raw)) return null;
-    const categoryId = nonEmptyString(raw.category_id);
-    const unitPrice = readAmount(raw.unit_price);
-    const quantity = readAmount(raw.quantity);
-    const unitServiceFee = readAmount(raw.unit_service_fee);
-    const lineFacial = readAmount(raw.line_facial);
-    const lineServiceFee = readAmount(raw.line_service_fee);
-    const lineTotal = readAmount(raw.line_total);
-    if (!categoryId || unitPrice === null || quantity === null || unitServiceFee === null || lineFacial === null || lineServiceFee === null || lineTotal === null) {
-      return null;
-    }
-    lines.push({ categoryId, unitPrice, quantity, unitServiceFee, lineFacial, lineServiceFee, lineTotal });
-  }
-  return { lines, facialAmount, serviceFee, serviceRatePercent: readAmount(root.service_fee_rate), totalAmount };
-}
-
-/** Message d'erreur fourni par le serveur ({ error }), ou null s'il n'y en a pas. */
-export function serverErrorMessage(body: unknown): string | null {
-  return isRecord(body) ? nonEmptyString(body.error) : null;
-}
-
-/** Lit un corps JSON ; null si le corps est vide ou illisible (l'anomalie est journalisée). */
-export async function readJsonBody(res: Response, context: string): Promise<unknown> {
-  let text: string;
-  try {
-    text = await res.text();
-  } catch (err) {
-    console.error(`[${context}] lecture de la réponse impossible (HTTP ${res.status}) :`, err);
-    return null;
-  }
-  if (text.trim() === '') return null;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch (err) {
-    console.error(`[${context}] réponse non JSON (HTTP ${res.status}) :`, err);
-    return null;
-  }
-}
-
-/** UUID v4 tiré avec crypto.getRandomValues (disponible aussi hors contexte sécurisé). */
-export function newIdempotencyKey(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
+/* ─────────────────────────── Rendu des opérateurs ─────────────────────────── */
 
 /**
- * Clé d'idempotence d'une tentative : identique tant que la demande (empreinte) ne change pas et
- * qu'elle n'a pas été abandonnée par reset() ; une demande différente reçoit une nouvelle clé.
+ * Pastille de marque de chaque opérateur (partagée avec les écrans de retrait). Couleurs des jetons
+ * d'app/globals.css branchés dans tailwind.config.ts (fond --op-*, texte --on-op-*, contraste ≥ 4,5:1 vérifié
+ * par tests/parcours/client-interface.test.ts), jamais écrites en dur (D59).
  */
-export function useIdempotencyKey() {
-  const attemptRef = useRef<{ key: string; fingerprint: string } | null>(null);
-  const keyFor = useCallback((fingerprint: string): string => {
-    if (!attemptRef.current || attemptRef.current.fingerprint !== fingerprint) {
-      attemptRef.current = { key: newIdempotencyKey(), fingerprint };
-    }
-    return attemptRef.current.key;
-  }, []);
-  const reset = useCallback(() => {
-    attemptRef.current = null;
-  }, []);
-  return { keyFor, reset };
-}
-
-/**
- * Réponse dont le sort est incertain (réseau coupé, erreur interne, service indisponible) : la clé
- * est conservée pour qu'un nouvel essai retrouve le même paiement. 502 = refus ou panne de
- * l'opérateur, paiement déjà marqué échoué : nouvelle tentative, nouvelle clé.
- */
-export function isUncertainOutcome(httpStatus: number): boolean {
-  return httpStatus === 0 || (httpStatus >= 500 && httpStatus !== 502);
-}
-
-export function formatDelay(totalSeconds: number): string {
-  const seconds = Math.max(1, Math.ceil(totalSeconds));
-  if (seconds < 60) return `${seconds} s`;
-  if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`;
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.ceil((seconds % 3600) / 60);
-  return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
-}
-
-/** Erreur lisible à partir d'une réponse non 2xx de /api/checkout ou /api/payments/create. */
-export function readPaymentError(httpStatus: number, body: unknown): PaymentRequestError {
-  const record = isRecord(body) ? body : null;
-  const code = nonEmptyString(record?.code);
-  const serverMessage = serverErrorMessage(body);
-  const rawProblems = record?.problems;
-  const problems: CheckoutProblem[] = Array.isArray(rawProblems)
-    ? rawProblems.flatMap((p: unknown) => {
-        if (!isRecord(p)) return [];
-        const message = nonEmptyString(p.message);
-        return message
-          ? [{ categoryId: nonEmptyString(p.category_id), code: nonEmptyString(p.code) ?? 'SALE_CHECK_FAILED', message }]
-          : [];
-      })
-    : [];
-  const retry = record?.retryAfterSeconds;
-  const retryAfterSeconds = typeof retry === 'number' && Number.isFinite(retry) && retry > 0 ? Math.ceil(retry) : null;
-
-  let message: string;
-  if (httpStatus === 401) {
-    message = 'Votre session a expiré : reconnectez-vous pour continuer.';
-  } else if (httpStatus === 429) {
-    message = retryAfterSeconds
-      ? `Trop de tentatives d’achat. Réessayez dans ${formatDelay(retryAfterSeconds)}.`
-      : serverMessage ?? 'Trop de tentatives d’achat. Réessayez plus tard.';
-  } else {
-    message = serverMessage ?? `Le paiement n’a pas pu être lancé (erreur ${httpStatus}).`;
-  }
-  return { httpStatus, code, message, problems, retryAfterSeconds };
-}
-
-export function isMobileDevice(): boolean {
-  const ua = navigator.userAgent;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-}
-
-const BLOCKED_PROTOCOLS = new Set(['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:']);
-
-/** Lien d'opérateur utilisable (https ou schéma d'application) ; null si illisible ou dangereux. */
-export function toSafeExternalUrl(value: string | null): URL | null {
-  if (!value) return null;
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch (err) {
-    console.warn('[paiement] lien opérateur illisible, non utilisé :', value, err);
-    return null;
-  }
-  if (BLOCKED_PROTOCOLS.has(url.protocol)) {
-    console.warn(`[paiement] lien opérateur refusé (protocole ${url.protocol}).`);
-    return null;
-  }
-  return url;
-}
-
-const HANDOFF_PREFIX = 'event-village:paiement:';
-
-export function savePaymentHandoff(paymentId: string, handoff: PaymentHandoff): void {
-  try {
-    window.sessionStorage.setItem(HANDOFF_PREFIX + paymentId, JSON.stringify(handoff));
-  } catch (err) {
-    console.warn('[paiement] liens de paiement non mémorisés pour la page de suivi :', err);
-  }
-}
-
-export function readPaymentHandoff(paymentId: string): PaymentHandoff | null {
-  let raw: string | null;
-  try {
-    raw = window.sessionStorage.getItem(HANDOFF_PREFIX + paymentId);
-  } catch (err) {
-    console.warn('[paiement] liens de paiement illisibles :', err);
-    return null;
-  }
-  if (!raw) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    console.warn('[paiement] liens de paiement mémorisés corrompus :', err);
-    return null;
-  }
-  if (!isRecord(parsed)) return null;
-  return {
-    operator: isSamirPayOperator(parsed.operator) ? parsed.operator : null,
-    deepLink: nonEmptyString(parsed.deepLink),
-    paymentUrl: nonEmptyString(parsed.paymentUrl),
-    qrCode: nonEmptyString(parsed.qrCode),
-    opened: parsed.opened === true,
-  };
-}
-
-export function clearPaymentHandoff(paymentId: string): void {
-  try {
-    window.sessionStorage.removeItem(HANDOFF_PREFIX + paymentId);
-  } catch (err) {
-    console.warn('[paiement] nettoyage des liens de paiement impossible :', err);
-  }
-}
+export const OPERATOR_VISUALS: Record<SamirPayOperatorName, { mark: string; tile: string }> = {
+  WAVE: { mark: 'W', tile: 'bg-op-wave text-on-op-wave' },
+  ORANGE_MONEY: { mark: 'OM', tile: 'bg-op-orange-money text-on-op-orange-money' },
+};
 
 /* ─────────────────────────── Utilitaires internes ─────────────────────────── */
 
@@ -379,31 +167,12 @@ const FINISHED_FAILED: Record<string, string> = {
   EXPIRED: 'délai dépassé',
 };
 
-/** Pastille de marque de chaque opérateur (partagée avec les écrans de retrait). */
-export const OPERATOR_VISUALS: Record<SamirPayOperatorName, { mark: string; tile: string }> = {
-  WAVE: { mark: 'W', tile: 'bg-[#1DC8F2] text-slate-950' },
-  ORANGE_MONEY: { mark: 'OM', tile: 'bg-[#FF7900] text-white' },
-};
-
-/** Numéro à 9 chiffres affiché « 77 123 45 67 ». */
-export function formatLocalPhone(nineDigits: string): string {
-  return `${nineDigits.slice(0, 2)} ${nineDigits.slice(2, 5)} ${nineDigits.slice(5, 7)} ${nineDigits.slice(7)}`;
-}
-
-function formatClock(iso: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-}
-
 function readInitiation(body: unknown): Initiation | null {
   if (!isRecord(body)) return null;
   if (body.free === true) return { kind: 'free' };
   const paymentId = nonEmptyString(body.payment_id);
   const status = nonEmptyString(body.status);
   if (!paymentId || !status) return null;
-  const statusPage = nonEmptyString(body.status_page_url);
   return {
     kind: 'payment',
     paymentId,
@@ -414,7 +183,7 @@ function readInitiation(body: unknown): Initiation | null {
     qrCode: nonEmptyString(body.qr_code),
     expiresAt: nonEmptyString(body.expires_at),
     // status_page_url est de la forme /paiement/<id> : seul un chemin interne de suivi est accepté.
-    statusPagePath: statusPage && statusPage.startsWith('/paiement/') ? statusPage : `/paiement/${encodeURIComponent(paymentId)}`,
+    statusPagePath: paymentStatusPath(body.status_page_url, paymentId) ?? `/paiement/${encodeURIComponent(paymentId)}`,
   };
 }
 
@@ -440,6 +209,7 @@ function openOperatorLink(link: string): boolean {
 }
 
 function failureTitle(failure: PaymentRequestError): string {
+  if (failure.code === 'PAYMENT_PENDING') return 'Un paiement est déjà en attente';
   if (failure.httpStatus === 0) return 'Connexion impossible';
   if (failure.httpStatus === 401) return 'Session expirée';
   if (failure.httpStatus === 429) return 'Trop de tentatives';
@@ -451,7 +221,7 @@ function failureTitle(failure: PaymentRequestError): string {
 }
 
 function makeFailure(httpStatus: number, message: string): PaymentRequestError {
-  return { httpStatus, code: null, message, problems: [], retryAfterSeconds: null };
+  return { httpStatus, code: null, message, problems: [], retryAfterSeconds: null, pendingStatusPath: null };
 }
 
 /* ──────────────────────────────── Composant ──────────────────────────────── */
@@ -636,6 +406,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
       }
       if (error.code === 'OPERATOR_REQUIRED') setOperatorMissing(true);
       if (error.code === 'INVALID_PAYER_PHONE') setPhoneRejected(error.message);
+      if (error.code === 'PAYMENT_PENDING') {
+        // Second paiement refusé (D4) : le premier est toujours en cours, on le fait suivre au lieu d'en créer un.
+        console.warn('[PaymentModal] paiement déjà en attente pour cet événement :', error.pendingStatusPath);
+      }
       setFailure(
         error.code === 'PAYMENT_PROVIDER_REJECTED'
           ? {
@@ -717,59 +491,59 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
     ? `Continuer avec ${chosenLabel}`
     : 'Continuer vers le paiement';
 
-  const reservationClock = redirect ? formatClock(redirect.expiresAt) : null;
+  const reservationClock = redirect?.expiresAt ? formatTime(redirect.expiresAt) : null;
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
       title="Paiement sécurisé"
-      subtitle="Mobile Money · SamirPay"
+      subtitle="Mobile Money, par SamirPay"
       icon={<ShieldCheck size={18} />}
     >
       {redirect ? (
         /* ── Initiation réussie : ouverture de l'opérateur et renvoi vers le suivi ── */
-        <div className="flex flex-col items-center text-center gap-5 py-6" role="status" aria-live="polite">
+        <div className="flex flex-col items-center gap-5 py-6 text-center" role="status" aria-live="polite">
           <div className="relative flex items-center justify-center">
-            <span className="absolute w-16 h-16 rounded-full bg-[#FF5722]/20 animate-ping motion-reduce:animate-none" aria-hidden="true" />
-            <div className="relative w-16 h-16 rounded-full bg-orange-50 dark:bg-orange-950/50 border border-orange-200 dark:border-orange-900/50 flex items-center justify-center">
-              <Smartphone size={28} className="text-[#FF5722]" aria-hidden="true" />
+            <span className="absolute h-16 w-16 rounded-full bg-brand-decor/20 motion-safe:animate-ping" aria-hidden="true" />
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-border bg-brand-bg text-brand-fg">
+              <Smartphone size={28} aria-hidden="true" />
             </div>
           </div>
 
           <div className="space-y-1.5 px-2">
-            <h3 className="text-base font-black text-slate-900 dark:text-white">
+            <h3 className="text-base font-bold text-fg">
               {redirect.kind === 'settled'
                 ? 'Paiement déjà traité'
                 : redirect.opened
                 ? `${redirect.label} est ouvert`
                 : `Demande ${redirect.label} créée`}
             </h3>
-            <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
+            <p className="text-sm leading-relaxed text-fg-muted">
               {redirect.kind === 'settled'
                 ? 'Affichage du statut de ce paiement…'
                 : redirect.opened
                 ? `Validez ${payableText} dans ${redirect.label}, puis revenez ici : le suivi se met à jour tout seul.`
                 : `Sur la page de suivi, ouvrez ${redirect.label} ou scannez le QR code pour valider ${payableText}.`}
             </p>
-            {reservationClock && (
-              <p className="inline-flex items-center gap-1.5 pt-1 text-[11px] font-bold text-[#FF5722]">
-                <Clock size={12} aria-hidden="true" /> Réservation valable jusqu’à {reservationClock}
+            {reservationClock && redirect.expiresAt && (
+              <p className="inline-flex items-center gap-1.5 pt-1 text-sm font-semibold text-brand-fg">
+                <Clock size={16} aria-hidden="true" />
+                <span>
+                  Réservation valable jusqu’à <time dateTime={redirect.expiresAt}>{reservationClock}</time>
+                </span>
               </p>
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-zinc-500">
-            <Loader2 size={12} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <p className="flex items-center gap-2 text-sm text-fg-muted">
+            <Loader2 size={16} className="motion-safe:animate-spin" aria-hidden="true" />
             <span>Redirection vers le suivi du paiement…</span>
-          </div>
+          </p>
 
-          <Link
-            href={redirect.statusPath}
-            className="text-xs font-bold text-[#FF5722] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] rounded-md px-1"
-          >
+          <LinkButton href={redirect.statusPath} variant="secondary" size="sm">
             Suivre le paiement
-          </Link>
+          </LinkButton>
         </div>
       ) : (
         <form
@@ -782,50 +556,50 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
         >
           {/* Récapitulatif */}
           {props.checkoutItems !== undefined ? (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 space-y-3">
+            <div className="space-y-3 rounded-2xl border border-border bg-surface-sunken p-4">
               <div className="min-w-0">
-                <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider">Récapitulatif</span>
-                <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">{title}</p>
+                <p className="text-sm font-semibold text-fg-muted">Récapitulatif</p>
+                <p className="line-clamp-2 text-sm font-semibold leading-snug text-fg">{title}</p>
               </div>
               {quote ? (
-                <dl className="space-y-1.5 text-xs" aria-live="polite">
+                <dl className="space-y-1.5 text-sm" aria-live="polite">
                   <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-slate-500 dark:text-zinc-400">Prix des billets</dt>
-                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">{formatFcfa(quote.facialAmount)}</dd>
+                    <dt className="text-fg-muted">Prix des billets</dt>
+                    <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">{formatFcfa(quote.facialAmount)}</dd>
                   </div>
                   <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-slate-500 dark:text-zinc-400">
+                    <dt className="text-fg-muted">
                       Frais de service{quote.serviceRatePercent !== null && quote.serviceFee > 0 ? ` (${quote.serviceRatePercent.toLocaleString('fr-FR')} %)` : ''}
                     </dt>
-                    <dd className="font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">{formatFcfa(quote.serviceFee)}</dd>
+                    <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">{formatFcfa(quote.serviceFee)}</dd>
                   </div>
-                  <div className="flex items-baseline justify-between gap-3 pt-2 border-t border-slate-200 dark:border-zinc-800">
-                    <dt className="font-bold text-slate-700 dark:text-zinc-200">Total à payer</dt>
-                    <dd className="text-base font-black text-[#FF5722] tabular-nums whitespace-nowrap">{formatFcfa(quote.totalAmount)}</dd>
+                  <div className="flex items-baseline justify-between gap-3 border-t border-border pt-2">
+                    <dt className="font-semibold text-fg">Total à payer</dt>
+                    <dd className="whitespace-nowrap text-lg font-bold tabular-nums text-fg">{formatFcfa(quote.totalAmount)}</dd>
                   </div>
                 </dl>
               ) : (
                 <div className="space-y-2" role="status" aria-live="polite">
                   <span className="sr-only">Calcul du total en cours…</span>
-                  <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
-                  <div className="h-3 w-1/2 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
-                  <div className="h-5 w-1/3 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+                  <Skeleton className="h-4 w-2/3 rounded" />
+                  <Skeleton className="h-4 w-1/2 rounded" />
+                  <Skeleton className="h-6 w-1/3 rounded" />
                 </div>
               )}
             </div>
           ) : (
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 space-y-2">
+            <div className="space-y-2 rounded-2xl border border-border bg-surface-sunken p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider">Récapitulatif</span>
-                  <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">{title}</p>
+                  <p className="text-sm font-semibold text-fg-muted">Récapitulatif</p>
+                  <p className="line-clamp-2 text-sm font-semibold leading-snug text-fg">{title}</p>
                 </div>
-                <span className="shrink-0 text-sm sm:text-base font-black text-[#FF5722] px-3 py-1 rounded-xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/30 whitespace-nowrap tabular-nums">
+                <span className="shrink-0 whitespace-nowrap rounded-xl border border-border bg-surface px-3 py-1 text-base font-bold tabular-nums text-fg">
                   {props.amountFormatted}
                 </span>
               </div>
               {feesComputedLater && (
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
+                <p className="text-sm leading-relaxed text-fg-muted">
                   Montant hors frais de service : le total exact, frais de service compris, s’affiche sur la page de suivi du paiement.
                 </p>
               )}
@@ -834,59 +608,50 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
 
           {/* Erreur */}
           {failure && (
-            <div
-              role="alert"
-              className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40"
-            >
-              <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
-              <div className="flex-1 min-w-0 space-y-1.5">
-                <p className="text-xs font-bold text-red-800 dark:text-red-200">{failureTitle(failure)}</p>
+            <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-danger-border bg-danger-bg p-3.5 text-danger-fg">
+              <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="text-sm font-semibold">{failureTitle(failure)}</p>
                 {failure.problems.length > 0 ? (
                   <ul className="space-y-1">
                     {failure.problems.map((problem, index) => {
                       const label = categoryLabel(problem.categoryId);
                       return (
-                        <li
-                          key={`${problem.categoryId ?? 'panier'}-${problem.code}-${index}`}
-                          className="text-xs text-red-700 dark:text-red-300 leading-relaxed"
-                        >
-                          {label && <span className="font-bold">{label} : </span>}
+                        <li key={`${problem.categoryId ?? 'panier'}-${problem.code}-${index}`} className="text-sm leading-relaxed text-fg">
+                          {label && <span className="font-semibold">{label} : </span>}
                           {problem.message}
                         </li>
                       );
                     })}
                   </ul>
                 ) : (
-                  <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">{failure.message}</p>
+                  <p className="text-sm leading-relaxed text-fg">{failure.message}</p>
+                )}
+                {failure.pendingStatusPath && (
+                  <LinkButton href={failure.pendingStatusPath} variant="secondary" size="sm" leftIcon={<Clock size={16} />}>
+                    Suivre le paiement
+                  </LinkButton>
                 )}
                 {failure.httpStatus === 401 && (
-                  <Link
-                    href={`/login?redirect=${encodeURIComponent(pathname)}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-red-700 dark:text-red-300 underline underline-offset-2"
-                  >
-                    <LogIn size={13} aria-hidden="true" /> Se reconnecter
-                  </Link>
+                  <LinkButton href={`/login?redirect=${encodeURIComponent(pathname)}`} variant="secondary" size="sm" leftIcon={<LogIn size={16} />}>
+                    Se reconnecter
+                  </LinkButton>
                 )}
               </div>
               {failure.httpStatus !== 429 && (
-                <button
-                  type="button"
-                  onClick={() => setFailure(null)}
-                  aria-label="Masquer le message d’erreur"
-                  className="p-1 -m-1 rounded-lg text-red-400 hover:text-red-600 dark:hover:text-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                >
-                  <X size={14} aria-hidden="true" />
-                </button>
+                <IconButton aria-label="Masquer le message d’erreur" variant="danger" onClick={() => setFailure(null)} className="-m-1.5">
+                  <X size={18} />
+                </IconButton>
               )}
             </div>
           )}
 
           {/* Opérateur : choix explicite obligatoire */}
           <fieldset aria-describedby={operatorMissing ? operatorErrorId : undefined}>
-            <legend className="text-xs font-bold text-slate-700 dark:text-zinc-300 mb-2">
-              Moyen de paiement <span className="text-[#FF5722]" aria-hidden="true">*</span>
+            <legend className="mb-2 text-sm font-semibold text-fg">
+              Moyen de paiement <span className="text-brand-fg" aria-hidden="true">*</span>
             </legend>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {SAMIRPAY_OPERATORS.map((op, index) => {
                 const selected = operator === op;
                 const visual = OPERATOR_VISUALS[op];
@@ -903,31 +668,34 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                       className="peer sr-only"
                     />
                     <span
-                      className={`flex items-center gap-3 min-h-[64px] p-3 rounded-2xl border-2 transition-all duration-200 peer-focus-visible:ring-2 peer-focus-visible:ring-[#FF5722] peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-[#18181C] ${
+                      className={cn(
+                        'flex min-h-16 items-center gap-3 rounded-2xl border-2 p-3 transition-colors duration-200',
+                        'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface-raised',
                         selected
-                          ? 'border-[#FF5722] bg-[#FF5722]/5 dark:bg-[#FF5722]/10 shadow-sm'
+                          ? 'border-brand-fg bg-brand-bg'
                           : operatorMissing
-                          ? 'border-red-300 dark:border-red-900/60 bg-white dark:bg-zinc-900'
-                          : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700'
-                      }`}
+                          ? 'border-danger-border bg-surface'
+                          : 'border-border bg-surface hover:border-border-strong',
+                      )}
                     >
                       <span
                         aria-hidden="true"
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black tracking-tight shrink-0 ${visual.tile}`}
+                        className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold tracking-tight', visual.tile)}
                       >
                         {visual.mark}
                       </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-bold text-slate-900 dark:text-white truncate">{operatorLabel(op)}</span>
-                        <span className="block text-[11px] text-slate-500 dark:text-zinc-400">Mobile Money</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-fg">{operatorLabel(op)}</span>
+                        <span className="block text-sm text-fg-muted">Mobile Money</span>
                       </span>
                       <span
                         aria-hidden="true"
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                          selected ? 'border-[#FF5722] bg-[#FF5722]' : 'border-slate-300 dark:border-zinc-600'
-                        }`}
+                        className={cn(
+                          'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                          selected ? 'border-brand bg-brand' : 'border-border-strong',
+                        )}
                       >
-                        {selected && <span className="w-2 h-2 rounded-full bg-white" />}
+                        {selected && <span className="h-2 w-2 rounded-full bg-on-brand" />}
                       </span>
                     </span>
                   </label>
@@ -935,7 +703,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
               })}
             </div>
             {operatorMissing && (
-              <p id={operatorErrorId} className="mt-1.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+              <p id={operatorErrorId} className="mt-1.5 text-sm font-medium text-danger-fg">
                 Choisissez l’opérateur avec lequel vous allez payer.
               </p>
             )}
@@ -943,13 +711,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
 
           {/* Téléphone payeur */}
           <div>
-            <label htmlFor={phoneFieldId} className="text-xs font-bold text-slate-700 dark:text-zinc-300 block mb-1.5">
-              Numéro {chosenLabel ?? 'Mobile Money'} du payeur <span className="text-[#FF5722]" aria-hidden="true">*</span>
+            <label htmlFor={phoneFieldId} className="mb-1.5 block text-sm font-semibold text-fg">
+              Numéro {chosenLabel ?? 'Mobile Money'} du payeur <span className="text-brand-fg" aria-hidden="true">*</span>
             </label>
             <div className="relative">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-sm font-bold text-slate-400 dark:text-zinc-500"
+                className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-base font-semibold text-fg-muted"
               >
                 +221
               </span>
@@ -976,45 +744,36 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                   const normalized = normalizePayerPhone(phoneInput);
                   if (normalized) setPhoneInput(formatLocalPhone(normalized));
                 }}
-                className={`w-full h-12 pl-[3.75rem] pr-10 rounded-xl bg-slate-50 dark:bg-zinc-900 border text-base font-mono font-bold tracking-wide text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 transition-colors ${
-                  phoneError
-                    ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
-                    : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722] focus:ring-[#FF5722]/20'
-                }`}
+                className={cn(
+                  'h-12 w-full rounded-xl border bg-surface pl-[3.75rem] pr-10 font-mono text-base font-semibold tracking-wide text-fg transition-colors',
+                  'placeholder:text-fg-muted/70 focus:outline-none focus:ring-2 focus:ring-ring',
+                  phoneError ? 'border-danger' : 'border-border-strong',
+                )}
               />
               {payerPhone && !phoneRejected && (
-                <CheckCircle2
-                  size={18}
-                  aria-hidden="true"
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-emerald-500"
-                />
+                <CheckCircle2 size={18} aria-hidden="true" className="absolute right-3.5 top-1/2 -translate-y-1/2 text-success-fg" />
               )}
             </div>
-            <p
-              id={phoneHelpId}
-              className={`mt-1.5 text-[11px] leading-relaxed ${
-                phoneError ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-zinc-400'
-              }`}
-            >
+            <p id={phoneHelpId} className={cn('mt-1.5 text-sm leading-relaxed', phoneError ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
               {phoneError ?? phoneHelp}
             </p>
           </div>
 
           {/* Ce qui va se passer */}
           {(chosenLabel && payerPhone) || props.checkoutItems !== undefined ? (
-            <ul className="space-y-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
+            <ul className="space-y-1.5 text-sm text-fg-muted">
               {chosenLabel && payerPhone && (
                 <li className="flex items-start gap-2">
-                  <Smartphone size={13} className="text-[#FF5722] mt-px shrink-0" aria-hidden="true" />
+                  <Smartphone size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
                   <span>
                     Vous validerez ensuite le paiement dans {chosenLabel}, depuis le{' '}
-                    <span className="font-mono font-bold text-slate-700 dark:text-zinc-300">+221 {formatLocalPhone(payerPhone)}</span>.
+                    <span className="whitespace-nowrap font-mono font-semibold text-fg">+221 {formatLocalPhone(payerPhone)}</span>.
                   </span>
                 </li>
               )}
               {props.checkoutItems !== undefined && (
                 <li className="flex items-start gap-2">
-                  <Clock size={13} className="text-[#FF5722] mt-px shrink-0" aria-hidden="true" />
+                  <Clock size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
                   <span>Vos billets restent réservés pendant le paiement ; le temps restant s’affiche à l’étape suivante.</span>
                 </li>
               )}
@@ -1025,9 +784,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
             {ctaLabel}
           </Button>
 
-          <p className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 dark:text-zinc-500 text-center">
-            <ShieldCheck size={14} className="text-emerald-500 shrink-0" aria-hidden="true" />
-            <span>Paiement sécurisé via SamirPay. Votre code secret ne vous sera jamais demandé ici.</span>
+          <p className="flex items-center justify-center gap-1.5 text-center text-sm text-fg-muted">
+            <ShieldCheck size={16} className="shrink-0 text-success-fg" aria-hidden="true" />
+            <span>Paiement sécurisé par SamirPay. Votre code secret ne vous sera jamais demandé ici.</span>
           </p>
         </form>
       )}

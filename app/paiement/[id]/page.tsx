@@ -7,12 +7,21 @@
  * La page sonde la route de statut toutes les 3 s tant que le paiement est en attente (pause quand
  * l'onglet est masqué, reprise immédiate au retour de l'application de l'opérateur), affiche le temps
  * restant jusqu'à l'échéance de la réservation (expires_at), permet l'annulation tant que le paiement
- * est en attente et renvoie vers les billets une fois le paiement confirmé.
+ * est en attente et renvoie vers la bonne destination une fois le paiement confirmé.
+ *
+ * Lot 7 (7.3, E4 ; D58, D60, D62, contrat 3.5) :
+ *  - attente honnête (PaymentWaitingInfo) : ce que le client va recevoir, et ce qui se passe si la page se
+ *    ferme (achat enregistré, SMS au numéro masqué payer_phone_masked, billets dans Mes billets) ;
+ *  - succès : destination servie par la route (success_url : /tickets, /partner/subscription pour un
+ *    abonnement, jamais /orders pour lui) ; échec, annulation, échéance : « Réessayer le paiement » vers
+ *    retry_url (la page de l'événement préremplit le panier) ;
+ *  - annulation vérifiée chez SamirPay par le serveur : « vient d'être confirmé » (409), « vérification
+ *    impossible » (503) ;
+ *  - plus aucune bibliothèque d’animation (D77), système de design (tokens, 14 px au moins), montants par formatFcfa (D60).
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   AlertTriangle,
@@ -34,21 +43,29 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Badge, type BadgeVariant } from '@/components/ui/Badge';
+import { Button, buttonClasses } from '@/components/ui/Button';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/components/ui/cn';
+import { PaymentWaitingInfo, type PaymentWaitingItem } from '@/components/payment/PaymentWaitingInfo';
+import { formatFcfa, formatTime } from '@/lib/format';
 import {
   clearPaymentHandoff,
   isMobileDevice,
+  isRecord,
   isSamirPayOperator,
+  nonEmptyString,
   readAmount,
   readJsonBody,
   readPaymentHandoff,
+  serverErrorCode,
   serverErrorMessage,
   toSafeExternalUrl,
   type PaymentHandoff,
-} from '@/components/payment/PaymentModal';
+} from '@/lib/payments/payment-client';
 import { OPERATOR_LABELS } from '@/lib/samirpay/types';
 
 /* ──────────────────────────────── Réglages ──────────────────────────────── */
@@ -61,6 +78,8 @@ const BACKOFF_AFTER_FAILURES = 3;
 const GRACE_AFTER_EXPIRY_MS = 120_000;
 const SUCCESS_REDIRECT_SECONDS = 6;
 const PAYMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Destinations internes acceptées depuis la route (chemin commençant par « / », jamais « // »). */
+const INTERNAL_PATH = /^\/(?!\/)[^\s]*$/;
 
 /* ──────────────────────────────── Types ──────────────────────────────── */
 
@@ -73,11 +92,22 @@ interface PaymentStatusView {
   facialAmount: number | null;
   /** Frais de service payés par l'acheteur (service_fee) ; null si la route ne le fournit pas. */
   serviceFee: number | null;
-  currency: string;
   operator: string | null;
   /** Échéance de la réservation (expires_at), en millisecondes ; null si le paiement n'en a pas. */
   expiresAt: number | null;
   ticketIds: string[];
+  /** Cible du paiement (target_type) : TICKET, SUBSCRIPTION, ORDER… */
+  targetType: string | null;
+  event: { title: string; startAt: string | null } | null;
+  ticketCount: number;
+  items: PaymentWaitingItem[];
+  /** Numéro payeur masqué (payer_phone_masked), jamais le numéro en clair. */
+  payerPhoneMasked: string | null;
+  receiptChannels: string[];
+  /** Destination après confirmation (success_url) servie par la route. */
+  successUrl: string;
+  /** Reprise après un échec (retry_url) ; null si la cible n'en a pas. */
+  retryUrl: string | null;
 }
 
 type LoadState =
@@ -102,11 +132,7 @@ interface StatusMeta {
 /* ─────────────────────────────── Utilitaires ─────────────────────────────── */
 
 function operatorLabel(operator: string): string {
-  return isSamirPayOperator(operator) ? OPERATOR_LABELS[operator] : operator;
-}
-
-function formatAmount(amount: number, currency: string): string {
-  return `${amount.toLocaleString('fr-FR')} ${currency === 'XOF' ? 'FCFA' : currency}`;
+  return isSamirPayOperator(operator) ? OPERATOR_LABELS[operator] : 'Mobile Money';
 }
 
 function formatRemaining(ms: number): string {
@@ -118,18 +144,28 @@ function formatRemaining(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function formatClock(ms: number): string {
-  return new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function internalPath(value: unknown): string | null {
+  const path = nonEmptyString(value);
+  return path && INTERNAL_PATH.test(path) ? path : null;
+}
+
+function readItems(value: unknown): PaymentWaitingItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw: unknown) => {
+    if (!isRecord(raw)) return [];
+    const quantity = readAmount(raw.quantity);
+    if (quantity === null || quantity <= 0) return [];
+    return [{ categoryName: nonEmptyString(raw.category_name), quantity }];
+  });
 }
 
 /** Réponse de GET /api/payments/<id>/status ; null si elle ne respecte pas le contrat. */
 function parseStatusBody(body: unknown): PaymentStatusView | null {
-  if (typeof body !== 'object' || body === null) return null;
-  const b = body as Record<string, unknown>;
+  if (!isRecord(body)) return null;
+  const b = body;
   if (typeof b.payment_id !== 'string' || typeof b.status !== 'string') return null;
   if (typeof b.amount !== 'number' || !Number.isFinite(b.amount)) return null;
-  if (typeof b.currency !== 'string') return null;
-  if (b.operator !== null && typeof b.operator !== 'string') return null;
+  if (b.operator !== null && b.operator !== undefined && typeof b.operator !== 'string') return null;
   let expiresAt: number | null = null;
   if (b.expires_at !== null && b.expires_at !== undefined) {
     if (typeof b.expires_at !== 'string') return null;
@@ -138,22 +174,34 @@ function parseStatusBody(body: unknown): PaymentStatusView | null {
     expiresAt = parsed;
   }
   if (!Array.isArray(b.ticket_ids) || !b.ticket_ids.every((t) => typeof t === 'string')) return null;
+  const event = isRecord(b.event) && typeof b.event.title === 'string'
+    ? { title: b.event.title, startAt: nonEmptyString(b.event.start_at) }
+    : null;
+  const channels = Array.isArray(b.receipt_channels) ? b.receipt_channels.filter((c): c is string => typeof c === 'string') : [];
+  const targetType = nonEmptyString(b.target_type);
   return {
     paymentId: b.payment_id,
     status: b.status,
     amount: b.amount,
     facialAmount: readAmount(b.facial_amount),
     serviceFee: readAmount(b.service_fee),
-    currency: b.currency,
-    operator: b.operator,
+    operator: typeof b.operator === 'string' ? b.operator : null,
     expiresAt,
     ticketIds: b.ticket_ids as string[],
+    targetType,
+    event,
+    ticketCount: readAmount(b.ticket_count) ?? 0,
+    items: readItems(b.items),
+    payerPhoneMasked: nonEmptyString(b.payer_phone_masked),
+    receiptChannels: channels,
+    successUrl: internalPath(b.success_url) ?? (targetType === 'SUBSCRIPTION' ? '/partner/subscription' : '/tickets'),
+    retryUrl: internalPath(b.retry_url),
   };
 }
 
 function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: boolean }): StatusMeta {
   const label = p.operator ? operatorLabel(p.operator) : null;
-  const amount = formatAmount(p.amount, p.currency);
+  const amount = formatFcfa(p.amount);
   switch (p.status) {
     case 'PENDING':
       if (ctx.stale) {
@@ -193,10 +241,12 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         title: 'Paiement confirmé',
         description:
           n > 1
-            ? `Vos ${n} billets sont disponibles dans votre espace billets.`
+            ? `Vos ${n} billets sont disponibles dans Mes billets.`
             : n === 1
-            ? 'Votre billet est disponible dans votre espace billets.'
-            : 'Votre paiement est enregistré : retrouvez le détail dans vos commandes et réservations.',
+            ? 'Votre billet est disponible dans Mes billets.'
+            : p.targetType === 'SUBSCRIPTION'
+            ? 'Votre paiement est enregistré : votre abonnement est mis à jour.'
+            : 'Votre paiement est enregistré.',
         icon: CheckCircle2,
       };
     }
@@ -206,7 +256,7 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         chip: null,
         tone: 'failed',
         title: 'Le paiement n’a pas abouti',
-        description: `${label ?? 'L’opérateur'} n’a pas confirmé le paiement de ${amount}. Vous pouvez relancer un achat ; si votre compte a tout de même été débité, contactez le support avec la référence ci-dessous.`,
+        description: `${label ?? 'L’opérateur'} n’a pas confirmé le paiement de ${amount}. Vous pouvez réessayer ; si votre compte a tout de même été débité, contactez le support avec la référence ci-dessous.`,
         icon: XCircle,
       };
     case 'CANCELLED':
@@ -253,43 +303,28 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         chip: null,
         tone: 'unknown',
         title: 'Statut à vérifier',
-        description: `Statut reçu : ${p.status}. Si la situation persiste, contactez le support avec la référence ci-dessous.`,
+        description: 'Le statut de ce paiement n’a pas pu être interprété. Si la situation persiste, contactez le support avec la référence ci-dessous.',
         icon: AlertTriangle,
       };
   }
 }
 
-const TONE_STYLES: Record<Tone, { bar: string; circle: string; badge: string }> = {
-  pending: {
-    bar: 'bg-gradient-to-r from-amber-400 to-[#FF5722]',
-    circle: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400',
-    badge: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/50',
-  },
-  success: {
-    bar: 'bg-gradient-to-r from-emerald-400 to-emerald-600',
-    circle: 'bg-emerald-100 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400',
-    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/50',
-  },
-  failed: {
-    bar: 'bg-gradient-to-r from-red-400 to-red-600',
-    circle: 'bg-red-100 dark:bg-red-950/50 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400',
-    badge: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800/50',
-  },
-  refund: {
-    bar: 'bg-gradient-to-r from-sky-400 to-sky-600',
-    circle: 'bg-sky-100 dark:bg-sky-950/50 border-sky-200 dark:border-sky-900/50 text-sky-600 dark:text-sky-400',
-    badge: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800/50',
-  },
-  unknown: {
-    bar: 'bg-gradient-to-r from-slate-300 to-slate-500',
-    circle: 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300',
-    badge: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
-  },
+const TONE_STYLES: Record<Tone, { bar: string; circle: string; badge: BadgeVariant }> = {
+  pending: { bar: 'bg-warning', circle: 'border-warning-border bg-warning-bg text-warning-fg', badge: 'warning' },
+  success: { bar: 'bg-success', circle: 'border-success-border bg-success-bg text-success-fg', badge: 'success' },
+  failed: { bar: 'bg-danger', circle: 'border-danger-border bg-danger-bg text-danger-fg', badge: 'danger' },
+  refund: { bar: 'bg-info', circle: 'border-info-border bg-info-bg text-info-fg', badge: 'danger' },
+  unknown: { bar: 'bg-border-strong', circle: 'border-border bg-surface-sunken text-fg-muted', badge: 'neutral' },
 };
 
-const CARD = 'w-full max-w-md bg-white dark:bg-[#16161A] border border-slate-200/80 dark:border-zinc-800 rounded-3xl shadow-2xl';
-const OPERATOR_LINK =
-  'inline-flex w-full items-center justify-center gap-2.5 h-12 sm:h-13 px-6 rounded-2xl text-base font-bold tracking-tight transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#16161A]';
+const CARD = 'w-full max-w-md rounded-3xl border border-border bg-surface shadow-lg';
+
+/** Libellé du bouton de succès selon la destination servie par la route. */
+function successLabel(p: PaymentStatusView): string {
+  if (p.successUrl.startsWith('/tickets')) return 'Voir mes billets';
+  if (p.successUrl.startsWith('/partner/subscription')) return 'Voir mon abonnement';
+  return 'Voir mes commandes et réservations';
+}
 
 /* ─────────────────────────────── Hooks ─────────────────────────────── */
 
@@ -325,7 +360,7 @@ function usePaymentStatusPolling(id: string | null) {
       if (disposed || running) return;
       running = true;
       try {
-        const res = await fetch(`/api/payments/${id}/status`);
+        const res = await fetch(`/api/payments/${id}/status`, { cache: 'no-store' });
         const body = await readJsonBody(res, `paiement ${id} / statut`);
         if (disposed) return;
         if (res.status === 401) {
@@ -432,26 +467,21 @@ function StateCard({
 }) {
   const circle =
     tone === 'failed'
-      ? 'bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400'
+      ? 'bg-danger-bg text-danger-fg'
       : tone === 'pending'
-      ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400'
-      : 'bg-orange-50 dark:bg-orange-950/40 text-[#FF5722]';
+      ? 'bg-warning-bg text-warning-fg'
+      : 'bg-brand-bg text-brand-fg';
   return (
-    <motion.section
-      initial={{ opacity: 0, scale: 0.97, y: 12 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-      className={`${CARD} p-6 sm:p-8 text-center space-y-6`}
-    >
-      <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${circle}`}>
+    <section className={cn(CARD, 'space-y-6 p-6 text-center sm:p-8')}>
+      <div className={cn('mx-auto flex h-16 w-16 items-center justify-center rounded-full', circle)} aria-hidden="true">
         <Icon size={30} />
       </div>
       <div className="space-y-2">
-        <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">{title}</h1>
-        <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">{description}</p>
+        <h1 className="text-xl font-bold tracking-tight text-fg">{title}</h1>
+        <p className="text-sm leading-relaxed text-fg-muted">{description}</p>
       </div>
       {children && <div className="flex flex-col gap-2 pt-1">{children}</div>}
-    </motion.section>
+    </section>
   );
 }
 
@@ -466,41 +496,37 @@ function ProgressSteps({ done, label }: { done: boolean; label: string | null })
       {steps.map((step, index) => (
         <li
           key={step.title}
-          className="relative flex flex-col items-center gap-1.5 text-center px-1"
+          className="relative flex flex-col items-center gap-1.5 px-1 text-center"
           aria-current={step.state === 'active' ? 'step' : undefined}
         >
           {index > 0 && (
             <span
               aria-hidden="true"
-              className={`absolute top-3 right-1/2 w-full h-0.5 ${
-                step.state === 'todo' ? 'bg-slate-200 dark:bg-zinc-800' : 'bg-emerald-400 dark:bg-emerald-600'
-              }`}
+              className={cn('absolute right-1/2 top-3 h-0.5 w-full', step.state === 'todo' ? 'bg-border' : 'bg-success')}
             />
           )}
           <span
             aria-hidden="true"
-            className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center ${
+            className={cn(
+              'relative z-10 flex h-6 w-6 items-center justify-center rounded-full',
               step.state === 'done'
-                ? 'bg-emerald-500 text-white'
+                ? 'bg-success text-on-tone'
                 : step.state === 'active'
-                ? 'bg-amber-500 text-white ring-4 ring-amber-500/20'
-                : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500'
-            }`}
+                ? 'bg-warning text-on-tone ring-4 ring-warning/20'
+                : 'bg-surface-sunken text-fg-muted ring-1 ring-inset ring-border',
+            )}
           >
             {step.state === 'done' ? (
-              <Check size={13} strokeWidth={3} />
+              <Check size={14} strokeWidth={3} />
             ) : step.state === 'active' ? (
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse motion-reduce:animate-none" />
+              <span className="h-2 w-2 rounded-full bg-on-tone motion-safe:animate-pulse" />
             ) : (
-              <span className="w-1.5 h-1.5 rounded-full bg-current" />
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
             )}
           </span>
-          <span
-            className={`text-[10px] sm:text-[11px] font-bold leading-tight ${
-              step.state === 'todo' ? 'text-slate-400 dark:text-zinc-500' : 'text-slate-700 dark:text-zinc-300'
-            }`}
-          >
+          <span className={cn('text-sm font-semibold leading-tight', step.state === 'todo' ? 'text-fg-muted' : 'text-fg')}>
             {step.title}
+            <span className="sr-only">{step.state === 'done' ? ' : terminé' : step.state === 'active' ? ' : en cours' : ' : à venir'}</span>
           </span>
         </li>
       ))}
@@ -519,7 +545,7 @@ function PaymentQr({ value, label }: { value: string; label: string }) {
   if (image) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- QR de paiement en data URL généré à la volée : next/image inapplicable
-      <img src={image} alt={`QR code de paiement ${label}`} width={160} height={160} className="w-40 h-40 object-contain" />
+      <img src={image} alt={`QR code de paiement ${label}`} width={160} height={160} className="h-40 w-40 object-contain" />
     );
   }
   return <QRCodeSVG value={value} size={160} level="M" marginSize={0} title={`QR code de paiement ${label}`} />;
@@ -547,6 +573,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
   const remainingMs = expiresAt !== null ? expiresAt - now : null;
   const expired = remainingMs !== null && remainingMs <= 0;
   const hasTickets = payment?.status === 'SUCCESS' && payment.ticketIds.length > 0;
+  const successUrl = payment?.successUrl ?? '/tickets';
 
   // Liens de l'opérateur transmis par la modale (même onglet) et type d'appareil.
   useEffect(() => {
@@ -565,7 +592,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
     setWindowMs((prev) => prev ?? Math.max(1_000, expiresAt - Date.now()));
   }, [expiresAt]);
 
-  // Paiement confirmé avec billets : redirection automatique, annulable.
+  // Paiement confirmé avec billets : redirection automatique vers success_url, annulable.
   useEffect(() => {
     if (hasTickets) setRedirectIn(SUCCESS_REDIRECT_SECONDS);
   }, [hasTickets]);
@@ -573,12 +600,12 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
   useEffect(() => {
     if (redirectIn === null) return;
     if (redirectIn <= 0) {
-      router.push('/tickets');
+      router.push(successUrl);
       return;
     }
     const timer = setTimeout(() => setRedirectIn((s) => (s === null ? null : s - 1)), 1000);
     return () => clearTimeout(timer);
-  }, [redirectIn, router]);
+  }, [redirectIn, router, successUrl]);
 
   const handleCancel = async () => {
     if (!id || isCancelling) return;
@@ -586,17 +613,27 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
     try {
       const res = await fetch(`/api/payments/${id}/cancel`, { method: 'POST' });
       const body = await readJsonBody(res, `paiement ${id} / annulation`);
+      const code = serverErrorCode(body);
       if (res.ok) {
-        applyStatus('CANCELLED');
-        toast.success('Paiement annulé : la réservation a été libérée.');
+        const status = isRecord(body) ? nonEmptyString(body.status) : null;
+        applyStatus(status ?? 'CANCELLED');
+        toast.success(status && status !== 'CANCELLED' ? 'Ce paiement n’était plus en attente : voici son statut à jour.' : 'Paiement annulé : la réservation a été libérée.');
+        refresh();
+      } else if (res.status === 409 && code === 'PAYMENT_ALREADY_CONFIRMED') {
+        // SamirPay a confirmé le paiement juste avant l'annulation : les billets sont émis.
+        toast.success(serverErrorMessage(body) ?? 'Votre paiement vient d’être confirmé.');
         refresh();
       } else if (res.status === 409) {
-        toast.info('Ce paiement n’est plus en attente : voici son statut à jour.');
+        toast.info(serverErrorMessage(body) ?? 'Ce paiement n’est plus en attente : voici son statut à jour.');
         refresh();
+      } else if (res.status === 503) {
+        // Vérification chez SamirPay impossible : rien n'est annulé à l'aveugle (D4).
+        toast.error(serverErrorMessage(body) ?? 'Vérification impossible pour le moment : réessayez dans un instant.');
       } else if (res.status === 401) {
         toast.error('Votre session a expiré : reconnectez-vous pour annuler.');
         router.push(loginHref);
       } else {
+        console.error(`[paiement ${id}] annulation refusée (HTTP ${res.status}) :`, body);
         toast.error(serverErrorMessage(body) ?? `Annulation impossible (erreur ${res.status}). Réessayez.`);
       }
     } catch (err) {
@@ -616,22 +653,23 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
         icon={SearchX}
         tone="failed"
         title="Lien de paiement invalide"
-        description="Ce lien ne correspond à aucun paiement. Retrouvez vos achats dans votre espace billets."
+        description="Ce lien ne correspond à aucun paiement. Retrouvez vos achats dans Mes billets."
       >
-        <Button variant="primary" size="md" fullWidth onClick={() => router.push('/tickets')}>
+        <LinkButton href="/tickets" variant="primary" fullWidth>
           Voir mes billets
-        </Button>
-        <Button variant="secondary" size="md" fullWidth onClick={() => router.push('/explore')}>
+        </LinkButton>
+        <LinkButton href="/explore" variant="secondary" fullWidth>
           Explorer les événements
-        </Button>
+        </LinkButton>
       </StateCard>
     );
   } else if (load.kind === 'loading') {
     content = (
-      <div className={`${CARD} p-6 sm:p-8 space-y-5`} aria-busy="true" aria-label="Chargement du statut du paiement">
-        <Skeleton className="w-20 h-20 rounded-full mx-auto" />
-        <Skeleton className="h-5 w-24 rounded-lg mx-auto" />
-        <Skeleton className="h-7 w-3/4 rounded-lg mx-auto" />
+      <div className={cn(CARD, 'space-y-5 p-6 sm:p-8')} role="status" aria-busy="true">
+        <span className="sr-only">Chargement du statut du paiement…</span>
+        <Skeleton className="mx-auto h-20 w-20 rounded-full" />
+        <Skeleton className="mx-auto h-5 w-24 rounded-lg" />
+        <Skeleton className="mx-auto h-7 w-3/4 rounded-lg" />
         <Skeleton className="h-4 w-full rounded-lg" />
         <Skeleton className="h-16 w-full rounded-2xl" />
         <Skeleton className="h-12 w-full rounded-2xl" />
@@ -645,17 +683,17 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
         title="Connexion requise"
         description="Connectez-vous avec le compte qui a lancé ce paiement pour suivre son statut."
       >
-        <Button variant="primary" size="lg" fullWidth leftIcon={<LogIn size={16} />} onClick={() => router.push(loginHref)}>
+        <LinkButton href={loginHref} variant="primary" size="lg" fullWidth leftIcon={<LogIn size={16} />}>
           Se connecter
-        </Button>
+        </LinkButton>
       </StateCard>
     );
   } else if (load.kind === 'forbidden') {
     content = (
       <StateCard icon={AlertTriangle} tone="failed" title="Accès refusé" description={load.message}>
-        <Button variant="secondary" size="md" fullWidth onClick={() => router.push('/')}>
+        <LinkButton href="/" variant="secondary" fullWidth>
           Retour à l’accueil
-        </Button>
+        </LinkButton>
       </StateCard>
     );
   } else if (load.kind === 'not_found') {
@@ -666,12 +704,12 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
         title="Paiement introuvable"
         description="Ce paiement n’existe pas ou n’est pas associé à votre compte. Vérifiez que vous êtes connecté avec le bon compte."
       >
-        <Button variant="primary" size="md" fullWidth onClick={() => router.push('/tickets')}>
+        <LinkButton href="/tickets" variant="primary" fullWidth>
           Voir mes billets
-        </Button>
-        <Button variant="secondary" size="md" fullWidth onClick={() => router.push('/explore')}>
+        </LinkButton>
+        <LinkButton href="/explore" variant="secondary" fullWidth>
           Explorer les événements
-        </Button>
+        </LinkButton>
       </StateCard>
     );
   } else if (load.kind === 'error' || !payment) {
@@ -682,7 +720,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
         title="Statut momentanément indisponible"
         description={`${load.kind === 'error' ? load.message : 'Le statut du paiement n’a pas pu être lu.'} Nouvelle tentative automatique en cours…`}
       >
-        <Button variant="primary" size="md" fullWidth leftIcon={<RefreshCw size={16} />} onClick={refresh}>
+        <Button variant="primary" fullWidth leftIcon={<RefreshCw size={16} />} onClick={refresh}>
           Réessayer maintenant
         </Button>
       </StateCard>
@@ -699,94 +737,76 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
     const qrCode = handoff && !isMobile ? handoff.qrCode : null;
     const progress = remainingMs !== null && windowMs ? Math.min(1, Math.max(0, remainingMs / windowMs)) : 0;
     const showSteps = payment.status === 'PENDING' || payment.status === 'SUCCESS';
+    const canRetry = meta.tone === 'failed' && payment.retryUrl !== null;
 
     content = (
-      <motion.section
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className={`${CARD} overflow-hidden`}
-        aria-labelledby="payment-status-title"
-      >
-        <div className={`h-1.5 ${styles.bar} transition-colors`} aria-hidden="true" />
+      <section className={cn(CARD, 'overflow-hidden')} aria-labelledby="payment-status-title">
+        <div className={cn('h-1.5 transition-colors', styles.bar)} aria-hidden="true" />
 
-        <div className="p-6 sm:p-8 space-y-6">
+        <div className="space-y-6 p-6 sm:p-8">
           {/* État */}
-          <header className="text-center space-y-4">
-            <div className="relative mx-auto w-20 h-20">
+          <header className="space-y-4 text-center">
+            <div className="relative mx-auto h-20 w-20">
               {meta.tone === 'pending' && !stale && (
-                <span
-                  className="absolute inset-0 rounded-full bg-amber-400/25 animate-ping motion-reduce:animate-none"
-                  aria-hidden="true"
-                />
+                <span className="absolute inset-0 rounded-full bg-warning/25 motion-safe:animate-ping" aria-hidden="true" />
               )}
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={`${payment.status}-${meta.title}`}
-                  initial={{ scale: 0.6, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.6, opacity: 0 }}
-                  transition={{ type: 'spring', damping: 18, stiffness: 260 }}
-                  className={`relative w-20 h-20 rounded-full border flex items-center justify-center ${styles.circle}`}
-                >
-                  <StatusIcon size={36} aria-hidden="true" />
-                </motion.div>
-              </AnimatePresence>
+              <div className={cn('relative flex h-20 w-20 items-center justify-center rounded-full border', styles.circle)}>
+                <StatusIcon size={36} aria-hidden="true" />
+              </div>
             </div>
 
             <div role="status" aria-live="polite" aria-atomic="true" className="space-y-2">
-              <div className="flex items-center justify-center gap-2 flex-wrap">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border ${styles.badge}`}>
-                  {meta.badge}
-                </span>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Badge variant={styles.badge}>{meta.badge}</Badge>
                 {meta.chip && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800/50">
-                    <RotateCcw size={12} aria-hidden="true" /> {meta.chip}
-                  </span>
+                  <Badge variant="info" icon={<RotateCcw size={12} aria-hidden="true" />}>
+                    {meta.chip}
+                  </Badge>
                 )}
               </div>
-              <h1 id="payment-status-title" className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              <h1 id="payment-status-title" className="text-2xl font-bold tracking-tight text-fg">
                 {meta.title}
               </h1>
-              <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">{meta.description}</p>
+              <p className="text-sm leading-relaxed text-fg-muted">{meta.description}</p>
             </div>
           </header>
 
           {/* Connexion instable : le sondage continue */}
           {connectionIssue && (
-            <div
-              role="status"
-              className="flex items-center gap-2 p-3 rounded-2xl text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 text-amber-800 dark:text-amber-300"
-            >
-              <WifiOff size={15} className="shrink-0" aria-hidden="true" />
+            <p role="status" className="flex items-center gap-2 rounded-2xl border border-warning-border bg-warning-bg p-3 text-sm text-warning-fg">
+              <WifiOff size={16} className="shrink-0" aria-hidden="true" />
               <span>Connexion instable : nouvelle vérification automatique dans quelques secondes.</span>
-            </div>
+            </p>
           )}
 
           {showSteps && <ProgressSteps done={payment.status === 'SUCCESS'} label={label} />}
 
-          {/* Compte à rebours jusqu'à l'échéance de la réservation */}
+          {/* Compte à rebours jusqu'à l'échéance de la réservation (expires_at) */}
           {isPending && expiresAt !== null && remainingMs !== null && (
-            <div className="p-3.5 rounded-2xl bg-orange-50/80 dark:bg-orange-950/20 border border-orange-200/70 dark:border-orange-900/40">
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="flex items-center gap-2 text-slate-700 dark:text-zinc-300">
-                  <Clock size={16} className="text-[#FF5722] shrink-0" aria-hidden="true" />
+            <div className="rounded-2xl border border-border bg-surface-sunken p-3.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="flex items-center gap-2 text-fg">
+                  <Clock size={16} className="shrink-0 text-brand-fg" aria-hidden="true" />
                   {expired ? 'Délai écoulé' : 'Réservation valable encore'}
                 </span>
-                <span className="font-mono font-black text-[#FF5722] text-base tabular-nums">
+                <span className="font-mono text-base font-bold tabular-nums text-brand-fg">
                   {expired ? '00:00' : formatRemaining(remainingMs)}
                 </span>
               </div>
-              <div className="mt-2.5 h-1.5 rounded-full bg-orange-100 dark:bg-orange-950/60 overflow-hidden" aria-hidden="true">
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-brand-bg" aria-hidden="true">
                 <div
-                  className="h-full w-full origin-left rounded-full bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] transition-transform duration-1000 ease-linear motion-reduce:transition-none"
+                  className="h-full w-full origin-left rounded-full bg-brand transition-transform duration-1000 ease-linear motion-reduce:transition-none"
                   style={{ transform: `scaleX(${progress})` }}
                 />
               </div>
-              <p className="mt-2 text-[11px] text-slate-500 dark:text-zinc-400">
-                {expired
-                  ? 'Vérification du statut final auprès de l’opérateur…'
-                  : `Échéance à ${formatClock(expiresAt)} : passé ce délai, la réservation est libérée.`}
+              <p className="mt-2 text-sm text-fg-muted">
+                {expired ? (
+                  'Vérification du statut final auprès de l’opérateur…'
+                ) : (
+                  <>
+                    Échéance à <time dateTime={new Date(expiresAt).toISOString()}>{formatTime(expiresAt)}</time> : passé ce délai, la réservation est libérée.
+                  </>
+                )}
               </p>
             </div>
           )}
@@ -795,15 +815,16 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
           {isPending && !expired && (
             <div className="space-y-3">
               {qrCode && (
-                <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/80 flex flex-col sm:flex-row items-center gap-4">
-                  <div className="p-2.5 rounded-xl bg-white border border-slate-200 shrink-0">
+                <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface-sunken p-4 sm:flex-row">
+                  {/* Fond blanc dans les deux thèmes : un QR code se lit en sombre sur clair. */}
+                  <div className="shrink-0 rounded-xl border border-border bg-white p-2.5">
                     <PaymentQr value={qrCode} label={label ?? 'Mobile Money'} />
                   </div>
-                  <div className="text-center sm:text-left space-y-1">
-                    <p className="text-xs font-black text-slate-900 dark:text-white flex items-center justify-center sm:justify-start gap-1.5">
-                      <QrCode size={14} className="text-[#FF5722]" aria-hidden="true" /> Scannez avec {label ?? 'votre application'}
+                  <div className="space-y-1 text-center sm:text-left">
+                    <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-fg sm:justify-start">
+                      <QrCode size={16} className="text-brand-fg" aria-hidden="true" /> Scannez avec {label ?? 'votre application'}
                     </p>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
+                    <p className="text-sm leading-relaxed text-fg-muted">
                       Ouvrez {label ?? 'votre application Mobile Money'} sur votre téléphone, touchez « Scanner » puis visez ce code.
                     </p>
                   </div>
@@ -814,19 +835,15 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
                 <a
                   href={link.href}
                   {...(linkIsWeb ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                  className={`${OPERATOR_LINK} ${
-                    handoff?.opened || qrCode
-                      ? 'bg-slate-100 dark:bg-zinc-800/90 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-zinc-700/90 border border-slate-200/80 dark:border-zinc-700/80'
-                      : 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] hover:from-[#FF5722] hover:to-[#F02D58] text-white shadow-md shadow-[#FF5722]/25'
-                  }`}
+                  className={buttonClasses({ variant: handoff?.opened || qrCode ? 'secondary' : 'primary', size: 'lg', fullWidth: true, className: 'no-underline' })}
                 >
-                  <ExternalLink size={17} aria-hidden="true" />
-                  {handoff?.opened ? `Rouvrir ${label ?? 'l’application'}` : `Ouvrir ${label ?? 'l’application de paiement'}`}
+                  <ExternalLink size={18} aria-hidden="true" />
+                  <span>{handoff?.opened ? `Rouvrir ${label ?? 'l’application'}` : `Ouvrir ${label ?? 'l’application de paiement'}`}</span>
                 </a>
               ) : (
                 !qrCode && (
-                  <p className="flex items-start gap-2 p-3.5 rounded-2xl text-xs bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-400">
-                    <Smartphone size={15} className="text-[#FF5722] shrink-0 mt-px" aria-hidden="true" />
+                  <p className="flex items-start gap-2 rounded-2xl border border-border bg-surface-sunken p-3.5 text-sm text-fg-muted">
+                    <Smartphone size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
                     <span>Validez la demande dans {label ?? 'votre application Mobile Money'}, sur le téléphone du payeur.</span>
                   </p>
                 )
@@ -834,43 +851,56 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
             </div>
           )}
 
+          {/* Ce que le client va recevoir, et ce qui se passe si la page se ferme (D58) */}
+          {isPending && (
+            <PaymentWaitingInfo
+              targetType={payment.targetType}
+              event={payment.event}
+              ticketCount={payment.ticketCount}
+              items={payment.items}
+              payerPhoneMasked={payment.payerPhoneMasked}
+              receiptChannels={payment.receiptChannels}
+            />
+          )}
+
           {/* Détails */}
-          <dl className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 space-y-2.5 text-xs">
+          <dl className="space-y-2.5 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
             {payment.facialAmount !== null && (
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-slate-500 dark:text-zinc-400">Prix</dt>
-                <dd className="font-bold text-slate-900 dark:text-white tabular-nums">{formatAmount(payment.facialAmount, payment.currency)}</dd>
+                <dt className="text-fg-muted">Prix</dt>
+                <dd className="font-semibold tabular-nums text-fg">{formatFcfa(payment.facialAmount)}</dd>
               </div>
             )}
             {payment.serviceFee !== null && (
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-slate-500 dark:text-zinc-400">Frais de service</dt>
-                <dd className="font-bold text-slate-900 dark:text-white tabular-nums">{formatAmount(payment.serviceFee, payment.currency)}</dd>
+                <dt className="text-fg-muted">Frais de service</dt>
+                <dd className="font-semibold tabular-nums text-fg">{formatFcfa(payment.serviceFee)}</dd>
               </div>
             )}
             <div
-              className={`flex items-center justify-between gap-3 ${
-                payment.facialAmount !== null || payment.serviceFee !== null ? 'pt-2.5 border-t border-slate-200 dark:border-zinc-800' : ''
-              }`}
+              className={cn(
+                'flex items-center justify-between gap-3',
+                (payment.facialAmount !== null || payment.serviceFee !== null) && 'border-t border-border pt-2.5',
+              )}
             >
-              <dt className="font-bold text-slate-700 dark:text-zinc-200">{payment.status === 'SUCCESS' ? 'Total payé' : 'Total'}</dt>
-              <dd className="font-black text-slate-900 dark:text-white tabular-nums">{formatAmount(payment.amount, payment.currency)}</dd>
+              <dt className="font-semibold text-fg">{payment.status === 'SUCCESS' ? 'Total payé' : 'Total'}</dt>
+              <dd className="text-base font-bold tabular-nums text-fg">{formatFcfa(payment.amount)}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-slate-500 dark:text-zinc-400">Opérateur</dt>
-              <dd className="font-bold text-slate-900 dark:text-white">{label ?? 'Non renseigné'}</dd>
+              <dt className="text-fg-muted">Opérateur</dt>
+              <dd className="font-semibold text-fg">{label ?? 'Non renseigné'}</dd>
             </div>
             {payment.status === 'SUCCESS' && payment.ticketIds.length > 0 && (
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-slate-500 dark:text-zinc-400">Billets émis</dt>
-                <dd className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  <Ticket size={13} aria-hidden="true" /> {payment.ticketIds.length}
+                <dt className="text-fg-muted">Billets émis</dt>
+                <dd className="flex items-center gap-1 font-semibold text-success-fg">
+                  <Ticket size={16} aria-hidden="true" /> {payment.ticketIds.length}
                 </dd>
               </div>
             )}
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-slate-500 dark:text-zinc-400">Référence</dt>
-              <dd className="font-mono font-bold text-slate-900 dark:text-white">{payment.paymentId.slice(0, 8).toUpperCase()}</dd>
+              <dt className="text-fg-muted">Référence</dt>
+              <dd className="font-mono font-semibold text-fg">{payment.paymentId.slice(0, 8).toUpperCase()}</dd>
             </div>
           </dl>
 
@@ -885,69 +915,72 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
             {isPending && (
               <Button
                 variant="ghost"
-                size="md"
                 fullWidth
                 disabled={isCancelling}
                 onClick={() => setConfirmCancel(true)}
-                className="text-red-600 dark:text-red-400 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30 dark:hover:text-red-300 focus-visible:ring-red-500"
+                className="text-danger-fg hover:bg-danger-bg"
               >
                 Annuler le paiement
               </Button>
             )}
 
-            {payment.status === 'SUCCESS' &&
-              (hasTickets ? (
-                <>
-                  <Button variant="primary" size="lg" fullWidth rightIcon={<ArrowRight size={16} />} onClick={() => router.push('/tickets')}>
-                    Voir mes billets
-                  </Button>
-                  {redirectIn !== null && (
-                    <p className="text-[11px] text-center text-slate-500 dark:text-zinc-400">
-                      Redirection automatique dans {redirectIn} s ·{' '}
-                      <button
-                        type="button"
-                        onClick={() => setRedirectIn(null)}
-                        className="font-bold underline underline-offset-2 hover:text-slate-700 dark:hover:text-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] rounded"
-                      >
-                        Rester sur cette page
-                      </button>
-                    </p>
-                  )}
-                </>
-              ) : (
-                <Button variant="primary" size="lg" fullWidth rightIcon={<ArrowRight size={16} />} onClick={() => router.push('/orders')}>
-                  Voir mes commandes et réservations
-                </Button>
-              ))}
+            {payment.status === 'SUCCESS' && (
+              <>
+                <LinkButton href={successUrl} variant="primary" size="lg" fullWidth rightIcon={<ArrowRight size={16} />}>
+                  {successLabel(payment)}
+                </LinkButton>
+                {hasTickets && redirectIn !== null && (
+                  <p className="text-center text-sm text-fg-muted">
+                    Redirection automatique dans {redirectIn} s.{' '}
+                    <button
+                      type="button"
+                      onClick={() => setRedirectIn(null)}
+                      className="inline-flex min-h-11 items-center rounded-lg px-1 font-semibold text-brand-fg underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Rester sur cette page
+                    </button>
+                  </p>
+                )}
+              </>
+            )}
 
             {meta.tone === 'failed' || meta.tone === 'refund' ? (
               <>
-                <Button variant="primary" size="md" fullWidth onClick={() => router.push('/explore')}>
-                  Explorer les événements
-                </Button>
-                <Button variant="secondary" size="md" fullWidth onClick={() => router.push('/tickets')}>
-                  Mes billets
-                </Button>
+                {canRetry && payment.retryUrl && (
+                  <LinkButton href={payment.retryUrl} variant="primary" size="lg" fullWidth leftIcon={<RotateCcw size={16} />}>
+                    Réessayer le paiement
+                  </LinkButton>
+                )}
+                {payment.targetType === 'TICKET' || payment.targetType === null ? (
+                  <LinkButton href="/tickets" variant={canRetry ? 'secondary' : 'primary'} fullWidth>
+                    Mes billets
+                  </LinkButton>
+                ) : null}
+                {!canRetry && (
+                  <LinkButton href="/explore" variant="secondary" fullWidth>
+                    Explorer les événements
+                  </LinkButton>
+                )}
               </>
             ) : null}
 
             {meta.tone === 'unknown' && (
-              <Button variant="secondary" size="md" fullWidth leftIcon={<RefreshCw size={16} />} onClick={refresh}>
+              <Button variant="secondary" fullWidth leftIcon={<RefreshCw size={16} />} onClick={refresh}>
                 Actualiser le statut
               </Button>
             )}
           </div>
         </div>
-      </motion.section>
+      </section>
     );
   }
 
   return (
-    <MotionConfig reducedMotion="user">
-      <div className="min-h-[80vh] flex flex-col items-center justify-center gap-4 px-4 py-8 sm:py-12">
+    <>
+      <div className="flex min-h-[80vh] flex-col items-center justify-center gap-4 py-8 sm:py-12">
         {content}
-        <p className="flex items-center justify-center gap-1.5 max-w-md text-center text-[11px] text-slate-400 dark:text-zinc-500">
-          <ShieldCheck size={14} className="text-emerald-500 shrink-0" aria-hidden="true" />
+        <p className="flex max-w-md items-center justify-center gap-1.5 text-center text-sm text-fg-muted">
+          <ShieldCheck size={16} className="shrink-0 text-success-fg" aria-hidden="true" />
           <span>Ne communiquez jamais votre code secret : Event Village ne vous le demandera pas.</span>
         </p>
       </div>
@@ -959,12 +992,12 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
         }}
         onConfirm={() => void handleCancel()}
         title="Annuler ce paiement ?"
-        message="La demande sera abandonnée et la réservation libérée. Si vous avez déjà validé sur votre téléphone, le paiement sera tout de même pris en compte ou remboursé automatiquement."
+        message="Nous vérifions d’abord auprès de l’opérateur : si vous avez déjà validé sur votre téléphone, le paiement est confirmé et vos billets émis. Sinon, la demande est abandonnée et la réservation libérée."
         confirmLabel="Annuler le paiement"
         cancelLabel="Continuer le paiement"
         variant="danger"
         isLoading={isCancelling}
       />
-    </MotionConfig>
+    </>
   );
 }

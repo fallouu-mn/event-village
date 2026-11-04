@@ -78,6 +78,9 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
         // Boutons de zoom en français ; 44 px par la règle .leaflet-control-zoom de app/globals.css
         L.control.zoom({ zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière' }).addTo(map);
         L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
+        // Lot 7 (D74) : mention légale des tuiles (12 px de Leaflet) marquée comme légende pour le contrôle des
+        // captures (e2e/support/checks.ts, CAPTION_SELECTOR) ; elle reste lisible et n'est pas un contenu.
+        map.attributionControl?.getContainer()?.setAttribute('data-ev-caption', '');
 
         // Repère déplaçable à la souris ou au doigt, sans action au clavier dans Leaflet : il n'est pas
         // focalisable (keyboard: false), l'alternative au clavier est la saisie de la latitude et de la

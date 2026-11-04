@@ -42,6 +42,10 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
+
+/** Interrupteur SUPERADMIN d'un service (features.halls_enabled, features.tables_enabled, features.orders_enabled). */
+type FeatureKey = keyof ClientFeatureFlags;
 
 interface NavItem {
   name: string;
@@ -49,7 +53,27 @@ interface NavItem {
   short?: string;
   href: string;
   icon: LucideIcon;
+  /**
+   * Lot 7 (7.3, D55) : entrée d'un service soumis à un interrupteur. Une liste : visible si l'un au moins est
+   * ouvert (« Commandes » regroupe salles, tables et repas). Masquée tant que les interrupteurs ne sont pas lus.
+   */
+  feature?: FeatureKey | FeatureKey[];
 }
+
+/**
+ * Entrée visible selon les interrupteurs lus par GET /api/features (useFeatureFlags) : une entrée de service
+ * reste masquée tant que la réponse n'est pas arrivée (null), pour qu'aucune entrée n'apparaisse puis ne
+ * disparaisse ; la page et la route répondent de toute façon 404 quand l'interrupteur est fermé.
+ */
+function isFeatureVisible(item: NavItem, flags: ClientFeatureFlags | null): boolean {
+  if (!item.feature) return true;
+  if (!flags) return false;
+  const keys = Array.isArray(item.feature) ? item.feature : [item.feature];
+  return keys.some((key) => flags[key]);
+}
+
+/** Pages rendues sans la coquille de l'application : le billet hors ligne (D26) est une page autonome. */
+const BARE_ROUTES = new Set(['/billet/hors-ligne']);
 
 /** Libellé humain du rôle principal (jamais le code brut). */
 const ROLE_LABELS: Record<string, string> = {
@@ -76,6 +100,8 @@ function navLinkClass(active: boolean): string {
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
   const { user, profile, isAuthenticated, isLoading, signOut } = useAuth();
+  const featureFlags = useFeatureFlags();
+  const visibleItems = (items: NavItem[]): NavItem[] => items.filter((item) => isFeatureVisible(item, featureFlags));
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -97,30 +123,31 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const isControllerRoute = pathname.startsWith('/controller');
 
   // Navigation principale B2C
-  const navItems: NavItem[] = [
+  // Navigation principale B2C (« Commandes » : salles, tables et repas ; masquée si les trois sont fermés)
+  const navItems = visibleItems([
     { name: 'Accueil', href: '/', icon: Home },
     { name: 'Explorer', href: '/explore', icon: Compass },
     { name: 'Mes billets', short: 'Billets', href: '/tickets', icon: Ticket },
-    { name: 'Commandes', short: 'Achats', href: '/orders', icon: ShoppingBag },
+    { name: 'Commandes', short: 'Achats', href: '/orders', icon: ShoppingBag, feature: ['halls', 'tables', 'orders'] },
     { name: 'Portefeuille', short: 'Solde', href: '/wallet', icon: Wallet },
-  ];
+  ]);
 
   // Navigation Services
-  const serviceItems: NavItem[] = [
-    { name: 'Salles de fête', href: '/halls', icon: Building2 },
-    { name: 'Restaurants et tables', href: '/restaurants/rest-terrou-bi/tables', icon: Utensils },
-  ];
+  const serviceItems = visibleItems([
+    { name: 'Salles de fête', href: '/halls', icon: Building2, feature: 'halls' },
+    { name: 'Restaurants et tables', href: '/restaurants/rest-terrou-bi/tables', icon: Utensils, feature: 'tables' },
+  ]);
 
   // Navigation Partenaire complète
-  const partnerNavItems: NavItem[] = [
+  const partnerNavItems = visibleItems([
     { name: 'Tableau de bord', href: '/partner/dashboard', icon: LayoutDashboard },
     { name: 'Événements', href: '/partner/events', icon: Calendar },
-    { name: 'Produits et menu', href: '/partner/products', icon: ShoppingBag },
-    { name: 'Salles de fête', href: '/partner/halls', icon: Building2 },
-    { name: 'Tables', href: '/partner/tables', icon: Utensils },
-    { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag },
+    { name: 'Produits et menu', href: '/partner/products', icon: ShoppingBag, feature: 'orders' },
+    { name: 'Salles de fête', href: '/partner/halls', icon: Building2, feature: 'halls' },
+    { name: 'Tables', href: '/partner/tables', icon: Utensils, feature: 'tables' },
+    { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag, feature: 'orders' },
     { name: 'Équipe', href: '/partner/team', icon: Users },
-  ];
+  ]);
   const partnerSecondaryItems: NavItem[] = [
     { name: 'Finances', href: '/partner/finance', icon: DollarSign },
     { name: 'Statistiques', href: '/partner/stats', icon: Activity },
@@ -295,8 +322,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     </span>
   );
 
-  // Les routes /controller/* ont leur propre layout — ne pas injecter AppLayout
-  if (isControllerRoute) {
+  // Les routes /controller/* ont leur propre layout — ne pas injecter AppLayout. Le billet hors ligne
+  // (/billet/hors-ligne, D26) est rendu nu : page statique servie sans réseau, sans en-tête ni navigation.
+  if (isControllerRoute || BARE_ROUTES.has(pathname)) {
     return <>{children}</>;
   }
 
@@ -335,7 +363,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     return (
       <>
         {renderNavSection('Menu principal', navItems, onNavigate)}
-        {renderNavSection('Services et espaces', serviceItems, onNavigate)}
+        {serviceItems.length > 0 && renderNavSection('Services et espaces', serviceItems, onNavigate)}
         {proItems.length > 0 && renderNavSection('Espaces métier', proItems, onNavigate)}
       </>
     );

@@ -1,23 +1,31 @@
-import Link from 'next/link';
-import { Compass, ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Compass, Home } from 'lucide-react';
+import { LinkButton } from '@/components/ui/LinkButton';
 
+/**
+ * Page 404 (lot 7, 7.3, D55, D56) : rendue par notFound() des layouts de garde quand un service est fermé
+ * par son interrupteur (salles, tables, commandes), et pour toute adresse inconnue. Message neutre (le
+ * visiteur n'a pas à savoir qu'un service existe mais est fermé), deux sorties : l'accueil et le catalogue.
+ * Système de design : tokens, un seul <h1>, LinkButton (plus de <Link><Button> imbriqués).
+ */
 export default function NotFound() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6 space-y-4">
-      <div className="w-20 h-20 rounded-3xl bg-orange-50 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center border border-orange-200 dark:border-orange-900/30">
-        <Compass size={40} />
-      </div>
-      <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">404</h1>
-      <h2 className="text-lg font-bold text-slate-800 dark:text-zinc-200">Page introuvable</h2>
-      <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-sm">
-        La ressource que vous recherchez a été déplacée ou n&apos;existe plus.
+    <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center gap-4 px-2 py-10 text-center">
+      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+        <Compass size={32} />
+      </span>
+      <p className="text-sm font-semibold text-fg-muted">Erreur 404</p>
+      <h1 className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">Page introuvable</h1>
+      <p className="text-base leading-relaxed text-fg-muted">
+        Cette page n’existe pas ou n’est pas disponible. Vérifiez l’adresse, ou repartez de l’accueil.
       </p>
-      <Link href="/">
-        <Button variant="primary" size="md" leftIcon={<ArrowLeft size={16} />}>
-          Retour à l&apos;accueil
-        </Button>
-      </Link>
+      <div className="flex flex-wrap justify-center gap-3 pt-2">
+        <LinkButton href="/" leftIcon={<Home size={18} />}>
+          Retour à l’accueil
+        </LinkButton>
+        <LinkButton href="/explore" variant="secondary">
+          Voir les événements
+        </LinkButton>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -32,16 +32,19 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { StatusBanner, type StatusBannerTone } from '@/components/ui/StatusBanner';
 import { cn } from '@/components/ui/cn';
+import { PendingPaymentBanner } from '@/components/payment/PendingPaymentBanner';
 import {
-  PaymentModal,
+  isRecord,
   isUncertainOutcome,
+  nonEmptyString,
+  readAmount,
   readCheckoutQuote,
   readJsonBody,
   readPaymentError,
   serverErrorMessage,
   useIdempotencyKey,
   type CheckoutQuote,
-} from '@/components/payment/PaymentModal';
+} from '@/lib/payments/payment-client';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
@@ -50,8 +53,52 @@ import { formatDate, formatDateTime, formatFcfa } from '@/lib/format';
 
 const EventMap = dynamic(
   () => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })),
-  { ssr: false, loading: () => <div className="h-48 w-full rounded-2xl bg-surface-sunken motion-safe:animate-pulse" aria-hidden="true" /> },
+  { ssr: false, loading: () => <MapPlaceholder /> },
 );
+
+// Lot 7 (7.3, 7.5) : la modale de paiement (formulaire, opérateurs, Modal) n'est chargée qu'au premier
+// « Acheter » ; aucune valeur de son module n'est importée statiquement (aides dans lib/payments/payment-client).
+const PaymentModal = dynamic(
+  () => import('@/components/payment/PaymentModal').then((m) => ({ default: m.PaymentModal })),
+  { ssr: false },
+);
+
+function MapPlaceholder() {
+  return <div className="h-48 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:h-56" aria-hidden="true" />;
+}
+
+/**
+ * Carte du lieu chargée seulement quand son emplacement approche de l'écran (IntersectionObserver, marge de
+ * 200 px) : Leaflet et ses tuiles ne pèsent ni sur le premier affichage ni sur le réseau d'un visiteur qui ne
+ * descend pas jusqu'au lieu. Sans IntersectionObserver (navigateur ancien), la carte est chargée tout de suite.
+ */
+function EventMapWhenVisible(props: { latitude: number; longitude: number; venueName: string }) {
+  const holderRef = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible) return;
+    const node = holderRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  return <div ref={holderRef}>{visible ? <EventMap {...props} /> : <MapPlaceholder />}</div>;
+}
 
 /**
  * Page publique d'un événement (lot 5, tâches 5.3 et 5.13 ; contrats E, O1, O3, O5, Q).
@@ -64,6 +111,9 @@ const EventMap = dynamic(
  *  - Temps réel : public_event_state et public_category_stock de cet événement (filtre event_id) ;
  *    chaque signal recharge la fiche par le serveur, sans recharger la page.
  *  - Montants du panier : devis serveur (/api/checkout/quote), jamais calculés ici.
+ *  - Lot 7 (7.3, E4) : bandeau PendingPaymentBanner (paiement déjà en attente, GET /api/checkout/pending) ;
+ *    reprise du panier d'un paiement échoué (?reprise=<paiement>) ; PaymentModal et EventMap en next/dynamic,
+ *    la carte n'étant chargée qu'à l'approche de sa zone (IntersectionObserver).
  */
 
 type Availability = 'AVAILABLE' | 'LOW' | 'SOLD_OUT';
@@ -144,6 +194,21 @@ const PROGRAM_KIND_LABEL: Record<string, string> = {
 };
 
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
+const PAYMENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Lignes du panier d'un paiement à reprendre (« Réessayer le paiement », ?reprise=<paiement>) : champ items
+ * de GET /api/payments/<id>/status ; null si la réponse ne respecte pas le contrat.
+ */
+function readRetryItems(body: unknown): Array<{ categoryId: string; quantity: number }> | null {
+  if (!isRecord(body) || !Array.isArray(body.items)) return null;
+  return body.items.flatMap((raw: unknown) => {
+    if (!isRecord(raw)) return [];
+    const categoryId = nonEmptyString(raw.category_id);
+    const quantity = readAmount(raw.quantity);
+    return categoryId && quantity !== null && quantity > 0 ? [{ categoryId, quantity: Math.floor(quantity) }] : [];
+  });
+}
 
 /** Tranche de stock et état de la vente d'une formule, en mots (la couleur ne porte jamais seule le sens). */
 function availabilityOf(cat: PublicCategory): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } {
@@ -278,7 +343,7 @@ const AVAILABILITY_TEXT: Record<'success' | 'warning' | 'danger' | 'neutral', st
 export default function EventDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const toast = useToast();
-  const { isAuthenticated, session } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading, session } = useAuth();
   const eventId = params.id;
 
   const [event, setEvent] = useState<PublicEvent | null>(null);
@@ -287,6 +352,11 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  // La modale (module chargé à la demande) n'est montée qu'à la première ouverture.
+  const [paymentRequested, setPaymentRequested] = useState(false);
+  // Relecture du bandeau « paiement déjà en attente » (fermeture de la modale).
+  const [pendingRefresh, setPendingRefresh] = useState(0);
+  const repriseDoneRef = useRef(false);
   const [isClaimingFree, setIsClaimingFree] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
   // Clé d'idempotence du panier gratuit : conservée tant que le panier et l'issue incertaine ne changent pas.
@@ -372,6 +442,47 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       return changed ? next : prev;
     });
   }, [event]);
+
+  // « Réessayer le paiement » (/paiement/<id> → /events/<id>?reprise=<paiement>) : le panier du paiement échoué
+  // est prérempli, dans la limite de ce qui est encore achetable. Une seule fois par chargement de page.
+  useEffect(() => {
+    if (repriseDoneRef.current || phase !== 'ready' || !event || isAuthLoading) return;
+    repriseDoneRef.current = true;
+    const reprise = new URLSearchParams(window.location.search).get('reprise');
+    if (!reprise || !PAYMENT_ID_RE.test(reprise) || !isAuthenticated || !event.purchasable) return;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/payments/${reprise}/status`, { cache: 'no-store' });
+        const body = await readJsonBody(res, 'événement/reprise');
+        const items = res.ok ? readRetryItems(body) : null;
+        if (!items) {
+          console.error(`[événement] panier à reprendre illisible (HTTP ${res.status}) :`, body);
+          toast.error('Le panier précédent n’a pas pu être repris : choisissez à nouveau vos billets.');
+          return;
+        }
+        const next: Record<string, number> = {};
+        let reduced = false;
+        for (const item of items) {
+          const cat = event.categories.find((c) => c.id === item.categoryId);
+          const limit = cat && cat.isAvailable ? Math.max(0, Math.min(cat.maxPerOrder || 10, cat.remainingHint ?? Number.POSITIVE_INFINITY)) : 0;
+          const kept = Math.min(item.quantity, limit);
+          if (kept < item.quantity) reduced = true;
+          if (kept > 0) next[item.categoryId] = (next[item.categoryId] ?? 0) + kept;
+        }
+        if (Object.keys(next).length === 0) {
+          toast.error('Les billets de votre panier précédent ne sont plus disponibles.');
+          return;
+        }
+        setCart(next);
+        toast.info(reduced
+          ? 'Panier précédent repris en partie (places limitées) : vérifiez-le puis relancez le paiement.'
+          : 'Panier précédent repris : vérifiez-le puis relancez le paiement.');
+      } catch (err) {
+        console.error('[événement] reprise du panier impossible :', err instanceof Error ? err.message : String(err));
+        toast.error('Connexion impossible : le panier précédent n’a pas pu être repris.');
+      }
+    })();
+  }, [phase, event, isAuthLoading, isAuthenticated, toast]);
 
   const retry = async () => {
     setIsRetrying(true);
@@ -589,6 +700,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       toast.error(quoteError ?? 'Calcul du total en cours : patientez un instant.');
       return;
     }
+    setPaymentRequested(true);
     setIsPaymentOpen(true);
   };
 
@@ -659,6 +771,10 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
             </div>
           )}
         </StatusBanner>
+      )}
+
+      {isAuthenticated && (
+        <PendingPaymentBanner eventId={eventId} enabled={isAuthenticated} refreshKey={pendingRefresh} />
       )}
 
       {refreshError && (
@@ -751,7 +867,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
 
               {hasCoordinates && (
                 <>
-                  <EventMap latitude={event.latitude as number} longitude={event.longitude as number} venueName={event.venue} />
+                  <EventMapWhenVisible latitude={event.latitude as number} longitude={event.longitude as number} venueName={event.venue} />
                   <LinkButton
                     href={`https://www.google.com/maps/dir/?api=1&destination=${event.latitude},${event.longitude}`}
                     external
@@ -1015,18 +1131,23 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       )}
 
       {/* Paiement Mobile Money — panier complet (payants et gratuits) via /api/checkout */}
-      <PaymentModal
-        isOpen={isPaymentOpen && event.purchasable}
-        onClose={() => setIsPaymentOpen(false)}
-        eventId={eventId}
-        checkoutItems={cartItems.map((item) => ({ categoryId: item.id, quantity: item.qty, label: item.name }))}
-        quote={quote}
-        title={`${event.title} (${cartItems.map((item) => `${item.qty} × ${item.name}`).join(' + ')})`}
-        onPaymentSuccess={() => {
-          setIsPaymentOpen(false);
-          router.push('/tickets');
-        }}
-      />
+      {paymentRequested && (
+        <PaymentModal
+          isOpen={isPaymentOpen && event.purchasable}
+          onClose={() => {
+            setIsPaymentOpen(false);
+            setPendingRefresh((n) => n + 1);
+          }}
+          eventId={eventId}
+          checkoutItems={cartItems.map((item) => ({ categoryId: item.id, quantity: item.qty, label: item.name }))}
+          quote={quote}
+          title={`${event.title} (${cartItems.map((item) => `${item.qty} × ${item.name}`).join(' + ')})`}
+          onPaymentSuccess={() => {
+            setIsPaymentOpen(false);
+            router.push('/tickets');
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,19 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import {
-    UserPlus,
-    ShieldCheck,
-    RotateCcw,
-    CheckCircle2,
-    Eye,
-    EyeOff,
-} from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, LogIn, MessageSquareText, Pencil, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { TextInput } from '@/components/ui/Field';
 import { StatusBanner } from '@/components/ui/StatusBanner';
@@ -21,223 +14,216 @@ import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { getBrowserClient } from '@/lib/supabase/client';
-import { RegisterClientSchema, normalizePhoneNumber } from '@/lib/validations/auth';
+import { RegisterStartSchema, RegisterWithCodeSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
 
 /**
- * Inscription d'un client (lot 6, contrat A5 : écran sur le système de design, logique inchangée) :
- * validation RegisterClientSchema, POST /api/auth/register, code SMS (/api/auth/verify-otp), puis connexion
- * avec l'email réel ou l'email technique `<numéro>@eventvillage.sn`, et redirection selon le rôle.
+ * Inscription d'un client — lot 7 (7.3, D1, D61, contrat 3.6) : « numéro d'abord ».
+ *  1. Numéro : POST /api/auth/register/start envoie un code par SMS. Aucun compte n'est créé. Un numéro déjà
+ *     inscrit (409 PHONE_ALREADY_REGISTERED) propose « Recevoir un code de connexion » (connexion).
+ *  2. Code et profil : POST /api/auth/register vérifie et consomme le code AVANT de créer le compte (ACTIF,
+ *     numéro vérifié). Prénom, nom, mot de passe (bouton « Afficher ») ; email et parrainage sous « Plus
+ *     d'options ». Renvoi du code après le délai servi par le serveur (resend_after).
+ * Puis connexion par signInWithPassword (email réel, sinon email technique `<numéro>@eventvillage.sn`) et
+ * redirection vers ?redirect= (chemin interne seulement, jamais « //… »), conservé depuis la connexion.
+ * Plus d'écran « Compte activé » ni de vérification séparée par code : deux écrans au lieu de trois.
  */
 
+type Step = 'phone' | 'profile';
+
+/** Destination interne (?redirect=) : commence par « / », jamais « // » ni « /\ » (redirection ouverte). */
+function safeInternalPath(raw: string | null): string | null {
+    if (!raw) return null;
+    const value = raw.trim();
+    if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null;
+    return value;
+}
+
+interface ApiResult {
+    ok: boolean;
+    status: number;
+    body: Record<string, unknown> | null;
+}
+
+async function postJson(url: string, payload: unknown): Promise<ApiResult> {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    let body: Record<string, unknown> | null = null;
+    try {
+        const parsed: unknown = await res.json();
+        body = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    } catch (err) {
+        console.error(`[RegisterPage] ${url} : réponse illisible (HTTP ${res.status})`, err);
+    }
+    return { ok: res.ok, status: res.status, body };
+}
+
+function messageOf(result: ApiResult, fallback: string): string {
+    const error = result.body?.error;
+    return typeof error === 'string' && error.trim() !== '' ? error : fallback;
+}
+
+function codeOf(result: ApiResult): string | null {
+    const code = result.body?.code;
+    return typeof code === 'string' ? code : null;
+}
+
 export default function RegisterPage() {
-    const router = useRouter();
     const { refreshProfile } = useAuth();
 
-    // État du formulaire
+    const [step, setStep] = useState<Step>('phone');
+    const [phone, setPhone] = useState('');
+    const [confirmedPhone, setConfirmedPhone] = useState('');
+    const [otpCode, setOtpCode] = useState('');
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
-    const [phone, setPhone] = useState('');
-    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [referralCode, setReferralCode] = useState('');
-
-    // Workflow étape (1: Formulaire, 2: Vérification OTP, 3: Compte Activé)
-    const [step, setStep] = useState<1 | 2 | 3>(1);
-    const [otpCode, setOtpCode] = useState('');
-    const [countdown, setCountdown] = useState(60);
-
     const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [moreOptions, setMoreOptions] = useState(false);
+    const [email, setEmail] = useState('');
+    const [referralCode, setReferralCode] = useState('');
+    const [resendIn, setResendIn] = useState(0);
+    const [redirectTo, setRedirectTo] = useState<string | null>(null);
 
     const [isLoading, setIsLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [codeError, setCodeError] = useState<string | null>(null);
+    const [infoMessage, setInfoMessage] = useState<string | null>(null);
+    const [alreadyRegistered, setAlreadyRegistered] = useState(false);
+    const [signInFailed, setSignInFailed] = useState(false);
 
-    // Décompte pour renvoi OTP
+    const firstNameRef = useRef<HTMLInputElement | null>(null);
+
+    // ?redirect= conservé depuis la connexion (D61), lu dans le navigateur seulement.
     useEffect(() => {
-        if (step !== 2 || countdown <= 0) return;
-        const timer = setInterval(() => setCountdown((c) => c - 1), 1000);
-        return () => clearInterval(timer);
-    }, [step, countdown]);
+        setRedirectTo(safeInternalPath(new URLSearchParams(window.location.search).get('redirect')));
+    }, []);
 
-    // Étape 1 : Soumission du formulaire d'inscription
-    const handleRegisterSubmit = async (e: React.FormEvent) => {
+    // Décompte avant un nouveau code (délai servi par le serveur).
+    useEffect(() => {
+        if (resendIn <= 0) return;
+        const timer = setTimeout(() => setResendIn((s) => Math.max(0, s - 1)), 1000);
+        return () => clearTimeout(timer);
+    }, [resendIn]);
+
+    useEffect(() => {
+        if (step === 'profile') firstNameRef.current?.focus();
+    }, [step]);
+
+    const loginHref = redirectTo ? `/login?redirect=${encodeURIComponent(redirectTo)}` : '/login';
+
+    /** Étape 1 (et renvoi) : code d'inscription envoyé par SMS, aucun compte créé. */
+    const sendCode = async (mode: 'first' | 'resend') => {
+        setErrorMessage(null);
+        setCodeError(null);
+        setInfoMessage(null);
+        setAlreadyRegistered(false);
+
+        const target = mode === 'first' ? phone.trim() : confirmedPhone;
+        const parsed = RegisterStartSchema.safeParse({ phone: target });
+        if (!parsed.success) {
+            setErrorMessage(parsed.error.errors[0]?.message ?? 'Numéro de téléphone sénégalais invalide (ex : 77 123 45 67).');
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const result = await postJson('/api/auth/register/start', { phone: target });
+            if (!result.ok) {
+                if (codeOf(result) === 'PHONE_ALREADY_REGISTERED') {
+                    setAlreadyRegistered(true);
+                    setStep('phone');
+                }
+                setErrorMessage(messageOf(result, `Le code n’a pas pu être envoyé (erreur ${result.status}). Réessayez.`));
+                return;
+            }
+            const servedPhone = typeof result.body?.phone === 'string' ? result.body.phone : normalizePhoneNumber(target);
+            const resendAfter = typeof result.body?.resend_after === 'number' ? result.body.resend_after : 60;
+            setConfirmedPhone(servedPhone);
+            setResendIn(Math.max(0, Math.round(resendAfter)));
+            setOtpCode('');
+            setStep('profile');
+            setInfoMessage(mode === 'first' ? `Code envoyé par SMS au ${servedPhone}.` : `Nouveau code envoyé au ${servedPhone} : seul le dernier code reçu est valable.`);
+        } catch (err) {
+            console.error('[RegisterPage] envoi du code d’inscription impossible :', err);
+            setErrorMessage('Connexion impossible : le code n’a pas pu être envoyé. Vérifiez votre réseau puis réessayez.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    /** Étape 2 : le serveur vérifie et consomme le code, puis crée le compte ; ouverture de la session. */
+    const handleCreateAccount = async (e: React.FormEvent) => {
         e.preventDefault();
         setErrorMessage(null);
+        setCodeError(null);
+        setSignInFailed(false);
 
-        const parseResult = RegisterClientSchema.safeParse({
+        if (!/^\d{6}$/.test(otpCode)) {
+            setCodeError('Saisissez le code à 6 chiffres reçu par SMS.');
+            return;
+        }
+        const payload = {
+            phone: confirmedPhone,
+            code: otpCode,
             firstName: firstName.trim(),
             lastName: lastName.trim(),
-            phone: phone.trim(),
-            email: email.trim() || undefined,
             password,
-            confirmPassword,
+            email: email.trim() || undefined,
             referralCode: referralCode.trim() || undefined,
-        });
-
-        if (!parseResult.success) {
-            const firstError = parseResult.error.errors[0]?.message || 'Veuillez vérifier les informations saisies.';
-            setErrorMessage(firstError);
+        };
+        const parsed = RegisterWithCodeSchema.safeParse(payload);
+        if (!parsed.success) {
+            setErrorMessage(parsed.error.errors[0]?.message ?? 'Vérifiez les informations saisies.');
             return;
         }
 
         setIsLoading(true);
-        const normalizedPhone = normalizePhoneNumber(phone.trim());
-
         try {
-            // 1. Enregistrement sécurisé via l'API serveur Next.js
-            const registerRes = await fetch('/api/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    firstName: firstName.trim(),
-                    lastName: lastName.trim(),
-                    phone: phone.trim(),
-                    email: email.trim() || undefined,
-                    password,
-                    confirmPassword,
-                    referralCode: referralCode.trim() || undefined,
-                }),
-            });
-
-            const registerData = await registerRes.json();
-            if (!registerRes.ok) {
-                throw new Error(registerData.error || 'Erreur lors de la création du compte.');
+            const result = await postJson('/api/auth/register', payload);
+            if (!result.ok) {
+                const code = codeOf(result);
+                const message = messageOf(result, `Le compte n’a pas pu être créé (erreur ${result.status}).`);
+                if (code === 'INVALID_CODE' || code === 'CODE_EXPIRED' || code === 'TOO_MANY_ATTEMPTS' || code === 'REGISTRATION_CODE_REQUIRED') {
+                    setCodeError(code === 'TOO_MANY_ATTEMPTS' ? `${message} Demandez un nouveau code.` : message);
+                } else {
+                    if (code === 'ACCOUNT_ALREADY_EXISTS') setAlreadyRegistered(true);
+                    setErrorMessage(message);
+                }
+                return;
             }
 
-            // Passage à l'étape 2 : Vérification OTP
-            setStep(2);
-            setCountdown(60);
-            setSuccessMessage(`Code de confirmation envoyé par SMS au ${normalizedPhone}.`);
-        } catch (err: unknown) {
-            console.error('[RegisterPage] Erreur inscription:', err);
-            const msg = err instanceof Error ? err.message : 'Erreur lors de la création du compte.';
-            setErrorMessage(msg);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // Étape 2 : Vérification OTP et activation
-    const handleVerifyOtp = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setErrorMessage(null);
-
-        if (otpCode.length !== 6) {
-            setErrorMessage('Veuillez saisir le code à 6 chiffres reçu par SMS.');
-            return;
-        }
-
-        setIsLoading(true);
-        const supabase = getBrowserClient();
-        const normalizedPhone = normalizePhoneNumber(phone.trim());
-        const effectiveEmail = email.trim().toLowerCase() || `${normalizedPhone.replace('+', '')}@eventvillage.sn`;
-
-        try {
-            // 1. Validation de l'OTP auprès du service backend
-            const verifyRes = await fetch('/api/auth/verify-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: normalizedPhone, otpCode }),
-            });
-
-            const verifyJson = await verifyRes.json();
-            if (!verifyRes.ok) {
-                throw new Error(verifyJson.error || 'Code de vérification incorrect.');
-            }
-
-            // 2. Connexion active à la session Supabase
-            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-                email: effectiveEmail,
-                password,
-            });
-
+            // Compte créé (numéro vérifié) : ouverture de la session avec l'email du compte.
+            const accountEmail = typeof result.body?.email === 'string' && result.body.email
+                ? result.body.email
+                : (email.trim().toLowerCase() || `${confirmedPhone.replace('+', '')}@eventvillage.sn`);
+            const supabase = getBrowserClient();
+            const { error: signInError } = await supabase.auth.signInWithPassword({ email: accountEmail, password });
             if (signInError) {
-                console.warn('[Register] Connexion post-OTP:', signInError);
+                console.error('[RegisterPage] connexion après inscription impossible :', signInError.message);
+                setSignInFailed(true);
+                return;
             }
-
-            // Rafraîchir immédiatement le state utilisateur dans AuthProvider
             await refreshProfile();
-
-            // 3. Récupération du rôle réel de l'utilisateur pour le Smart Routing
-            //    (lot 1B.1 : profil en base uniquement, jamais user_metadata)
-            let userRole: string = 'CLIENT';
-            if (signInData?.user?.id) {
-                const { data: userProfile, error: profileErr } = await supabase
-                    .from('users')
-                    .select('role')
-                    .eq('id', signInData.user.id)
-                    .maybeSingle();
-                if (profileErr) console.error('[Register] lecture du profil pour la redirection :', profileErr.message);
-
-                userRole = (userProfile as { role?: string } | null)?.role || 'CLIENT';
-            }
-
-            // 4. Smart Routing post-inscription selon le rôle
-            let targetRoute = '/';
-            switch (userRole) {
-                case 'SUPERADMIN':
-                case 'ADMIN':
-                    targetRoute = '/admin';
-                    break;
-                case 'PARTENAIRE':
-                    targetRoute = '/partner';
-                    break;
-                case 'CONTROLEUR':
-                    targetRoute = '/controller/scanner';
-                    break;
-                case 'CLIENT':
-                default:
-                    targetRoute = '/';
-                    break;
-            }
-
-            setStep(3);
-            setTimeout(() => {
-                router.refresh();
-                window.location.href = targetRoute;
-            }, 1200);
-        } catch (err: unknown) {
-            console.error('[RegisterPage] Erreur validation OTP:', err);
-            const msg = err instanceof Error ? err.message : 'Échec de la validation.';
-            setErrorMessage(msg);
+            window.location.href = redirectTo ?? '/';
+        } catch (err) {
+            console.error('[RegisterPage] création du compte impossible :', err);
+            setErrorMessage('Connexion interrompue : votre compte n’a peut-être pas été créé. Réessayez, ou connectez-vous si vous avez déjà terminé.');
         } finally {
             setIsLoading(false);
         }
     };
 
-    // Renvoi du code OTP
-    const handleResendOtp = async () => {
+    const changePhone = () => {
+        setStep('phone');
+        setOtpCode('');
+        setCodeError(null);
         setErrorMessage(null);
-        setIsLoading(true);
-        const normalizedPhone = normalizePhoneNumber(phone.trim());
-
-        try {
-            const res = await fetch('/api/auth/send-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: normalizedPhone }),
-            });
-            const json = await res.json();
-            if (!res.ok) throw new Error(json.error || 'Impossible d\'envoyer le SMS');
-
-            setCountdown(60);
-            setSuccessMessage('Un nouveau code OTP a été envoyé par SMS.');
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Impossible de renvoyer le code.';
-            setErrorMessage(msg);
-        } finally {
-            setIsLoading(false);
-        }
+        setInfoMessage(null);
     };
-
-    const stepDescription = step === 1
-        ? 'Rejoignez Event Village pour réserver vos billets, tables et commandes.'
-        : step === 2
-            ? 'Confirmez votre numéro de téléphone par SMS pour sécuriser vos accès.'
-            : 'Bienvenue sur Event Village. Redirection en cours…';
 
     return (
         <div className="flex justify-center py-4 sm:py-8">
@@ -246,41 +232,145 @@ export default function RegisterPage() {
                     <Logo variant="full" />
                 </div>
                 <PageHeader
-                    eyebrow={<span className="text-sm font-semibold text-fg-muted">Étape {step} sur 3</span>}
-                    title={step === 1 ? 'Créer un compte' : step === 2 ? 'Vérification du téléphone' : 'Compte activé'}
-                    description={stepDescription}
+                    eyebrow={<span className="text-sm font-semibold text-fg-muted">{step === 'phone' ? 'Étape 1 sur 2 : votre numéro' : 'Étape 2 sur 2 : code et profil'}</span>}
+                    title="Créer un compte"
+                    description={step === 'phone'
+                        ? 'Commencez par votre numéro : nous vous envoyons un code par SMS pour le vérifier.'
+                        : 'Saisissez le code reçu, puis vos informations : votre compte est créé dès que le code est vérifié.'}
                     className="pb-0 sm:pb-0"
                 />
 
-                {/* Carte du formulaire */}
                 <div className="space-y-6 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-8">
-                    {/* Progression : informations, vérification, activation (décorative : l'étape est écrite au-dessus du titre) */}
+                    {/* Progression (décorative : l'étape est écrite au-dessus du titre) */}
                     <div aria-hidden="true" className="flex items-center justify-center gap-2">
-                        {([1, 2, 3] as const).map((s) => (
+                        {(['phone', 'profile'] as const).map((s) => (
                             <span
                                 key={s}
                                 className={cn(
                                     'h-2 rounded-full transition-colors duration-200',
-                                    s === 3 && step === 3 ? 'w-12 bg-success' : step >= s ? 'w-12 bg-brand' : 'w-4 bg-border',
+                                    s === step || (s === 'phone' && step === 'profile') ? 'w-12 bg-brand' : 'w-4 bg-border',
                                 )}
                             />
                         ))}
                     </div>
 
-                    {/* Messages d'erreur et de succès */}
                     {errorMessage && (
-                        <StatusBanner tone="danger" announce="alert" title={errorMessage} />
+                        <StatusBanner
+                            tone="danger"
+                            announce="alert"
+                            title={errorMessage}
+                            action={alreadyRegistered ? (
+                                <LinkButton href={loginHref} variant="secondary" size="sm" leftIcon={<LogIn size={16} />}>
+                                    Recevoir un code de connexion
+                                </LinkButton>
+                            ) : undefined}
+                        />
                     )}
 
-                    {successMessage && step !== 3 && (
-                        <StatusBanner tone="success" icon={<ShieldCheck size={20} />} title={successMessage} />
+                    {signInFailed && (
+                        <StatusBanner
+                            tone="success"
+                            title="Compte créé : connectez-vous pour continuer"
+                            action={(
+                                <LinkButton href={loginHref} variant="secondary" size="sm" leftIcon={<LogIn size={16} />}>
+                                    Se connecter
+                                </LinkButton>
+                            )}
+                        >
+                            Votre numéro est vérifié, mais la session n’a pas pu s’ouvrir automatiquement.
+                        </StatusBanner>
                     )}
 
-                    {/* ÉTAPE 1 : formulaire d'inscription */}
-                    {step === 1 && (
-                        <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                    {infoMessage && step === 'profile' && !signInFailed && (
+                        <StatusBanner tone="success" icon={<ShieldCheck size={20} />} title={infoMessage} />
+                    )}
+
+                    {/* ÉTAPE 1 : numéro */}
+                    {step === 'phone' && (
+                        <form
+                            noValidate
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                void sendCode('first');
+                            }}
+                            className="space-y-4"
+                        >
+                            <TextInput
+                                id="inscription-telephone"
+                                label="Numéro de téléphone (Sénégal)"
+                                type="tel"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                value={phone}
+                                onChange={(e) => {
+                                    setPhone(e.target.value);
+                                    setAlreadyRegistered(false);
+                                }}
+                                placeholder="77 123 45 67"
+                                hint="Mobile sénégalais : 70, 75, 76, 77 ou 78. Le code arrive par SMS sur ce numéro."
+                                required
+                            />
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                size="lg"
+                                fullWidth
+                                isLoading={isLoading}
+                                leftIcon={<MessageSquareText size={18} />}
+                            >
+                                Recevoir le code par SMS
+                            </Button>
+                        </form>
+                    )}
+
+                    {/* ÉTAPE 2 : code reçu et profil */}
+                    {step === 'profile' && (
+                        <form noValidate onSubmit={handleCreateAccount} className="space-y-5">
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-surface-sunken px-4 py-2">
+                                <p className="text-sm text-fg">
+                                    Numéro : <span className="whitespace-nowrap font-semibold tabular-nums">{confirmedPhone}</span>
+                                </p>
+                                <Button type="button" variant="ghost" size="sm" onClick={changePhone} disabled={isLoading} leftIcon={<Pencil size={16} />}>
+                                    Modifier le numéro
+                                </Button>
+                            </div>
+
+                            <fieldset className="space-y-3">
+                                <legend id="inscription-otp-titre" className="text-sm font-semibold text-fg">Code reçu par SMS</legend>
+                                <p id="inscription-otp-aide" className="text-sm text-fg-muted">
+                                    6 chiffres, envoyés au <span className="whitespace-nowrap tabular-nums">{confirmedPhone}</span>.
+                                </p>
+                                <OtpInput
+                                    value={otpCode}
+                                    onChange={(value) => {
+                                        setOtpCode(value);
+                                        setCodeError(null);
+                                    }}
+                                    disabled={isLoading}
+                                    hasError={Boolean(codeError)}
+                                    describedBy={codeError ? 'inscription-otp-aide inscription-otp-erreur' : 'inscription-otp-aide'}
+                                />
+                                {codeError && (
+                                    <p id="inscription-otp-erreur" role="alert" className="text-sm font-medium text-danger-fg">{codeError}</p>
+                                )}
+                                <div className="flex justify-end">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-brand-fg"
+                                        onClick={() => void sendCode('resend')}
+                                        disabled={resendIn > 0 || isLoading}
+                                        leftIcon={<RotateCcw size={16} />}
+                                    >
+                                        {resendIn > 0 ? `Nouveau code dans ${resendIn} s` : 'Recevoir un nouveau code'}
+                                    </Button>
+                                </div>
+                            </fieldset>
+
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <TextInput
+                                    ref={firstNameRef}
                                     id="inscription-prenom"
                                     label="Prénom"
                                     value={firstName}
@@ -300,30 +390,7 @@ export default function RegisterPage() {
                                 />
                             </div>
 
-                            <TextInput
-                                id="inscription-telephone"
-                                label="Numéro de téléphone (Sénégal)"
-                                type="tel"
-                                inputMode="tel"
-                                autoComplete="tel"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                placeholder="77 123 45 67 ou +221 78 987 65 43"
-                                hint="Format sénégalais : 77, 78, 76, 70 ou 75."
-                                required
-                            />
-
-                            <TextInput
-                                id="inscription-email"
-                                label="Adresse email (facultative)"
-                                type="email"
-                                autoComplete="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="client@domaine.com"
-                            />
-
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="space-y-3">
                                 <div className="relative">
                                     <TextInput
                                         id="inscription-mot-de-passe"
@@ -339,6 +406,7 @@ export default function RegisterPage() {
                                     <IconButton
                                         aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                                         aria-controls="inscription-mot-de-passe"
+                                        aria-pressed={showPassword}
                                         onClick={() => setShowPassword((v) => !v)}
                                         disabled={isLoading}
                                         className="absolute bottom-px right-px"
@@ -346,69 +414,43 @@ export default function RegisterPage() {
                                         {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                                     </IconButton>
                                 </div>
-
-                                <div className="relative">
-                                    <TextInput
-                                        id="inscription-confirmation"
-                                        label="Confirmer le mot de passe"
-                                        type={showConfirmPassword ? 'text' : 'password'}
-                                        value={confirmPassword}
-                                        onChange={(e) => setConfirmPassword(e.target.value)}
-                                        placeholder="Le même mot de passe"
-                                        autoComplete="new-password"
-                                        required
-                                        className="pr-14"
-                                    />
-                                    <IconButton
-                                        aria-label={showConfirmPassword ? 'Masquer la confirmation' : 'Afficher la confirmation'}
-                                        aria-controls="inscription-confirmation"
-                                        onClick={() => setShowConfirmPassword((v) => !v)}
-                                        disabled={isLoading}
-                                        className="absolute bottom-px right-px"
-                                    >
-                                        {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                                    </IconButton>
-                                </div>
+                                <PasswordStrengthChecklist password={password} id="inscription-mot-de-passe-criteres" />
                             </div>
 
-                            <PasswordStrengthChecklist password={password} />
-
-                            <TextInput
-                                id="inscription-parrainage"
-                                label="Code de parrainage (facultatif)"
-                                value={referralCode}
-                                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                                placeholder="ex : EV-AMB-1234"
-                                autoComplete="off"
-                            />
-
-                            <Button
-                                type="submit"
-                                variant="primary"
-                                size="lg"
-                                fullWidth
-                                isLoading={isLoading}
-                                leftIcon={<UserPlus size={18} />}
-                            >
-                                Continuer vers la vérification
-                            </Button>
-                        </form>
-                    )}
-
-                    {/* ÉTAPE 2 : code reçu par SMS */}
-                    {step === 2 && (
-                        <form onSubmit={handleVerifyOtp} className="space-y-6">
-                            <p id="inscription-otp-aide" className="text-center text-sm font-semibold text-fg">
-                                Code à 6 chiffres envoyé au <span className="whitespace-nowrap tabular-nums">{normalizePhoneNumber(phone)}</span>
-                            </p>
-
-                            <OtpInput
-                                value={otpCode}
-                                onChange={setOtpCode}
-                                disabled={isLoading}
-                                hasError={!!errorMessage}
-                                describedBy="inscription-otp-aide"
-                            />
+                            <div className="rounded-2xl border border-border">
+                                <button
+                                    type="button"
+                                    aria-expanded={moreOptions}
+                                    aria-controls="inscription-options"
+                                    onClick={() => setMoreOptions((v) => !v)}
+                                    className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl px-4 text-left text-sm font-semibold text-fg transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                >
+                                    <span>Plus d’options : email, code de parrainage</span>
+                                    <ChevronDown size={18} aria-hidden="true" className={cn('shrink-0 transition-transform motion-reduce:transition-none', moreOptions && 'rotate-180')} />
+                                </button>
+                                {moreOptions && (
+                                    <div id="inscription-options" className="space-y-4 border-t border-border p-4">
+                                        <TextInput
+                                            id="inscription-email"
+                                            label="Adresse email (facultative)"
+                                            type="email"
+                                            autoComplete="email"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="client@domaine.com"
+                                            hint="Pour recevoir vos confirmations d’achat par email."
+                                        />
+                                        <TextInput
+                                            id="inscription-parrainage"
+                                            label="Code de parrainage (facultatif)"
+                                            value={referralCode}
+                                            onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                                            placeholder="ex : EV-AMB-1234"
+                                            autoComplete="off"
+                                        />
+                                    </div>
+                                )}
+                            </div>
 
                             <Button
                                 type="submit"
@@ -417,58 +459,22 @@ export default function RegisterPage() {
                                 fullWidth
                                 isLoading={isLoading}
                                 disabled={otpCode.length !== 6}
-                                leftIcon={<ShieldCheck size={18} />}
+                                leftIcon={<UserPlus size={18} />}
                             >
-                                Valider mon inscription
+                                Créer mon compte
                             </Button>
-
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <Button type="button" variant="ghost" size="sm" onClick={() => setStep(1)}>
-                                    Modifier mes informations
-                                </Button>
-
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-brand-fg"
-                                    onClick={handleResendOtp}
-                                    disabled={countdown > 0 || isLoading}
-                                    leftIcon={<RotateCcw size={16} />}
-                                >
-                                    {countdown > 0 ? `Renvoyer (${countdown} s)` : 'Renvoyer le code SMS'}
-                                </Button>
-                            </div>
                         </form>
                     )}
 
-                    {/* ÉTAPE 3 : compte activé */}
-                    {step === 3 && (
-                        <div role="status" className="space-y-4 py-6 text-center">
-                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-2 border-success-border bg-success-bg text-success-fg" aria-hidden="true">
-                                <CheckCircle2 size={36} />
-                            </div>
-                            <h2 className="text-lg font-bold text-fg">
-                                Compte activé avec succès
-                            </h2>
-                            <p className="mx-auto max-w-xs text-sm text-fg-muted">
-                                Vous êtes désormais connecté à Event Village. Redirection automatique vers votre espace…
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Lien vers la connexion */}
-                    {step === 1 && (
-                        <p className="flex flex-wrap items-center justify-center gap-x-1.5 border-t border-border pt-4 text-sm text-fg-muted">
-                            <span>Déjà un compte ?</span>
-                            <Link
-                                href="/login"
-                                className="inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            >
-                                Se connecter
-                            </Link>
-                        </p>
-                    )}
+                    <p className="flex flex-wrap items-center justify-center gap-x-1.5 border-t border-border pt-4 text-sm text-fg-muted">
+                        <span>Déjà un compte ?</span>
+                        <Link
+                            href={loginHref}
+                            className="inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                            Se connecter
+                        </Link>
+                    </p>
                 </div>
             </div>
         </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import {
   Bell,
@@ -22,7 +22,7 @@ import { useTheme } from '@/components/providers/ThemeProvider';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/components/ui/cn';
@@ -88,7 +88,17 @@ function ShortcutBody({ title, description, icon: Icon, tone }: Omit<Shortcut, '
 
 export default function ProfilePage() {
   const { theme, setTheme } = useTheme();
-  const { profile, partner, isLoading, isAuthenticated, signOut } = useAuth();
+  const { profile, partner, isLoading, isAuthenticated, signOut, refreshProfile } = useAuth();
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  const retryProfile = async () => {
+    setIsRetrying(true);
+    try {
+      await refreshProfile();
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -101,7 +111,7 @@ export default function ProfilePage() {
     );
   }
 
-  if (!isAuthenticated || !profile) {
+  if (!isAuthenticated) {
     return (
       <div className="mx-auto max-w-lg pb-24 pt-6 lg:pb-12">
         <EmptyState
@@ -110,6 +120,20 @@ export default function ProfilePage() {
           description="Vos coordonnées, vos préférences de notification et vos accès aux espaces professionnels sont liés à votre compte."
           actionLabel="Se connecter"
           actionHref="/login?redirect=%2Fprofile"
+        />
+      </div>
+    );
+  }
+
+  // Lot 7 (7.3) : connecté mais profil illisible (/api/auth/me en échec) : ce n'est pas « non connecté ».
+  if (!profile) {
+    return (
+      <div className="mx-auto max-w-lg pb-24 pt-6 lg:pb-12">
+        <ErrorState
+          title="Votre profil n’a pas pu être chargé"
+          description="Vous êtes bien connecté, mais vos informations n’ont pas pu être lues. Vérifiez votre connexion, puis réessayez."
+          onRetry={() => void retryProfile()}
+          isRetrying={isRetrying}
         />
       </div>
     );

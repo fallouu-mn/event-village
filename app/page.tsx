@@ -25,6 +25,7 @@ import { cn } from '@/components/ui/cn';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
 import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
+import { useFeatureFlags } from '@/lib/features/client';
 
 /**
  * Accueil public (lot 5, tâches 5.3 et 5.13 ; contrats E, O3, O5, Q).
@@ -64,6 +65,10 @@ function CardSkeleton() {
 
 export default function HomePage() {
   const router = useRouter();
+  // Lot 7 (7.3, D55) : carte et lien « Salles » seulement si features.halls_enabled est ouvert (masqués tant
+  // que l'interrupteur n'est pas lu ; /halls répond 404 quand il est fermé).
+  const featureFlags = useFeatureFlags();
+  const hallsEnabled = featureFlags?.halls === true;
   const [events, setEvents] = useState<CatalogEvent[]>([]);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -279,7 +284,7 @@ export default function HomePage() {
       </section>
 
       {/* 3. Organisateurs et salles */}
-      <section aria-labelledby="organisateurs-titre" className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <section aria-labelledby="organisateurs-titre" className={cn('grid gap-5', hallsEnabled && 'lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]')}>
         <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-surface p-6 shadow-sm sm:p-10">
           <div className="pointer-events-none absolute -right-20 -top-20 -z-10 h-64 w-64 rounded-full bg-brand-decor/10 blur-3xl" aria-hidden="true" />
           <p className="text-sm font-semibold text-brand-fg">Espace organisateur</p>
@@ -301,20 +306,22 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="flex flex-col justify-between gap-6 rounded-3xl border border-border bg-surface-sunken p-6 sm:p-8">
-          <div>
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
-              <Building2 size={20} />
-            </span>
-            <h2 className="mt-4 text-xl font-bold tracking-tight text-fg">Une salle pour votre réception ?</h2>
-            <p className="mt-2 text-base leading-relaxed text-fg-muted">
-              Mariages, séminaires, galas : consultez les salles disponibles et réservez en ligne.
-            </p>
+        {hallsEnabled && (
+          <div className="flex flex-col justify-between gap-6 rounded-3xl border border-border bg-surface-sunken p-6 sm:p-8">
+            <div>
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                <Building2 size={20} />
+              </span>
+              <h2 className="mt-4 text-xl font-bold tracking-tight text-fg">Une salle pour votre réception ?</h2>
+              <p className="mt-2 text-base leading-relaxed text-fg-muted">
+                Mariages, séminaires, galas : consultez les salles disponibles et réservez en ligne.
+              </p>
+            </div>
+            <LinkButton href="/halls" variant="secondary" rightIcon={<ArrowRight size={16} />}>
+              Voir les salles
+            </LinkButton>
           </div>
-          <LinkButton href="/halls" variant="secondary" rightIcon={<ArrowRight size={16} />}>
-            Voir les salles
-          </LinkButton>
-        </div>
+        )}
       </section>
 
       {/* 4. Pied de page */}
@@ -323,7 +330,7 @@ export default function HomePage() {
           <div className="max-w-sm">
             <p className="text-base font-bold text-fg">Event Village</p>
             <p className="mt-1 text-sm leading-relaxed text-fg-muted">
-              Billetterie, salles et événements au Sénégal.
+              {hallsEnabled ? 'Billetterie, salles et événements au Sénégal.' : 'Billetterie et événements au Sénégal.'}
             </p>
           </div>
           <nav aria-label="Liens du pied de page">
@@ -331,7 +338,7 @@ export default function HomePage() {
               {[
                 { label: 'Explorer', href: '/explore' },
                 { label: 'Mes billets', href: '/tickets' },
-                { label: 'Salles', href: '/halls' },
+                ...(hallsEnabled ? [{ label: 'Salles', href: '/halls' }] : []),
                 { label: 'Devenir organisateur', href: '/partner/register' },
               ].map((link) => (
                 <li key={link.href}>

@@ -52,6 +52,9 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
         L.control.zoom({ zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière' }).addTo(map);
 
         L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
+        // Lot 7 (D74) : mention légale des tuiles (12 px de Leaflet) marquée comme légende pour le contrôle des
+        // captures (e2e/support/checks.ts, CAPTION_SELECTOR) ; elle reste lisible et n'est pas un contenu.
+        map.attributionControl?.getContainer()?.setAttribute('data-ev-caption', '');
 
         const marker = L.marker([latitude, longitude], {
             icon,
