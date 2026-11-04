@@ -14,6 +14,7 @@ import { OtpInput } from '@/components/auth/OtpInput';
 import { PasswordStrengthChecklist } from '@/components/auth/PasswordStrengthChecklist';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { PartnerActivityTypes, RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
+import { partnerActivityLabel } from '@/lib/partner/activity-labels';
 
 /**
  * Inscription d'un partenaire avec ses pièces (POST /api/partner/documents/upload, POST /api/partner/register, puis
@@ -41,17 +42,6 @@ interface UploadedDoc {
   expiresAt: number;
   fileKey: string;
 }
-
-const ACTIVITY_LABELS: Record<string, string> = {
-  ORGANISATEUR: 'Organisation d’événements et festivals',
-  SALLE: 'Salle de fête et de réception',
-  RESTAURANT: 'Restaurant',
-  TRAITEUR: 'Traiteur et buffet',
-  PRESTATAIRE: 'Prestataire (son, lumière, scène)',
-  PATISSERIE: 'Pâtisserie et desserts',
-  ETABLISSEMENT_ALIMENTAIRE: 'Établissement alimentaire',
-  AUTRE: 'Autre service événementiel',
-};
 
 const FIELD_IDS: Record<FieldName, string> = {
   companyName: 'partenaire-raison-sociale',
@@ -480,7 +470,7 @@ export default function PartnerRegisterPage() {
                         selected ? 'border-brand-fg bg-brand-bg text-fg' : 'border-border bg-surface-sunken text-fg hover:border-brand-fg',
                       )}
                     >
-                      <span>{ACTIVITY_LABELS[type] ?? 'Autre activité'}</span>
+                      <span>{partnerActivityLabel(type)}</span>
                       <span
                         aria-hidden="true"
                         className={cn('flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border', selected ? 'border-brand bg-brand text-on-brand' : 'border-border-strong bg-surface')}

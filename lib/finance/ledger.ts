@@ -29,6 +29,12 @@ export interface LedgerEntry {
     ticket_id: string | null;
     withdrawal_id: string | null;
     event_id: string | null;
+    /**
+     * Titre de l'événement de l'écriture (event_id), lu à part, ou null. L'écran l'affiche à la place de
+     * `description`, libellé comptable interne qui peut contenir une référence de transaction et un code
+     * technique (« Remboursement REFUND-… (EVENT_CANCELLATION_REFUND) », « Vente en ligne … (TICKET) »).
+     */
+    event_title: string | null;
     /** Lot 7 (7.4) : écriture pas encore disponible (available_at après l'heure du serveur à la lecture). */
     is_pending: boolean;
 }
@@ -67,10 +73,27 @@ export async function accountHistory(ownerId: string, kind: AccountKind, limit =
         .order('created_at', { ascending: false })
         .limit(limit);
     if (error) throw new Error(`Historique ${kind} indisponible : ${error.message}`);
+    const rows = data ?? [];
+    // Titres des événements (lecture séparée, comme withdrawalsOf) : l'écran nomme l'événement d'une vente ou
+    // d'un remboursement au lieu d'afficher le libellé comptable.
+    const eventIds = Array.from(new Set(rows.map((e) => e.event_id).filter((id): id is string => typeof id === 'string')));
+    const titles = new Map<string, string>();
+    if (eventIds.length > 0) {
+        const { data: events, error: eErr } = await getServiceRoleClient().from('events').select('id, title').in('id', eventIds);
+        if (eErr) throw new Error(`Événements de l'historique ${kind} indisponibles : ${eErr.message}`);
+        for (const ev of events ?? []) {
+            if (typeof ev.title === 'string' && ev.title.trim() !== '') titles.set(String(ev.id), ev.title);
+        }
+    }
     const now = Date.now();
-    return (data ?? []).map((e) => {
+    return rows.map((e) => {
         const at = Date.parse(String(e.available_at));
-        return { ...e, amount: Number(e.amount), is_pending: !Number.isNaN(at) && at > now };
+        return {
+            ...e,
+            amount: Number(e.amount),
+            event_title: e.event_id ? titles.get(String(e.event_id)) ?? null : null,
+            is_pending: !Number.isNaN(at) && at > now,
+        };
     }) as LedgerEntry[];
 }
 

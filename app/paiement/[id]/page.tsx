@@ -789,7 +789,9 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
                   <Clock size={16} className="shrink-0 text-brand-fg" aria-hidden="true" />
                   {expired ? 'Délai écoulé' : 'Réservation valable encore'}
                 </span>
-                <span className="font-mono text-base font-bold tabular-nums text-brand-fg">
+                {/* Police du système (pas de font-mono, absente du système de design) et sur une ligne :
+                    à 390 px, « 3 h 58 min » passait sur deux lignes (relecture du run 77) */}
+                <span className="whitespace-nowrap text-base font-bold tabular-nums text-brand-fg">
                   {expired ? '00:00' : formatRemaining(remainingMs)}
                 </span>
               </div>
@@ -900,7 +902,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
             )}
             <div className="flex items-center justify-between gap-3">
               <dt className="text-fg-muted">Référence</dt>
-              <dd className="font-mono font-semibold text-fg">{payment.paymentId.slice(0, 8).toUpperCase()}</dd>
+              <dd className="font-semibold tabular-nums tracking-wide text-fg">{payment.paymentId.slice(0, 8).toUpperCase()}</dd>
             </div>
           </dl>
 

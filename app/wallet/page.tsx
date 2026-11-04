@@ -535,7 +535,8 @@ export default function WalletPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-semibold">Disponible au retrait</span>
               {referral && (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-on-brand/30 bg-on-brand/15 px-3 py-1 text-sm font-semibold">
+                // Fond brand-hover (#9A3412, 7,31:1 avec le blanc) : un voile blanc sur brand ramenait le texte à 4,05:1
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-on-brand/30 bg-brand-hover px-3 py-1 text-sm font-semibold">
                   <Award size={16} aria-hidden="true" /> {referral.isAmbassador ? 'Ambassadeur' : 'Client standard'}
                 </span>
               )}

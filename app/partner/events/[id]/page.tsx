@@ -52,6 +52,9 @@ const TABS: TabItem[] = [
 ];
 const TABS_PREFIX = 'pilotage';
 
+/** Événement clos : « En direct » à côté du statut se lirait comme un second statut. */
+const CLOSED_STATUSES: ReadonlySet<string> = new Set(['ANNULE', 'TERMINE']);
+
 function actionIcon(to: string): React.ReactNode {
     if (to === 'EN_ATTENTE') return <Send size={18} />;
     if (to === 'PUBLIE') return <Upload size={18} />;
@@ -162,7 +165,10 @@ export default function PartnerEventPilotagePage() {
                 eyebrow={
                     <>
                         <StatusBadge domain="event" status={ov.status} />
-                        <LiveIndicator status={liveStatus} />
+                        {/* « Annulé » suivi de « En direct » en vert se lisait comme deux statuts contradictoires
+                            (relecture du run 77) : pour un événement clos, « En direct » n'est plus affiché ; le
+                            pilotage reste abonné, et « Connexion… » ou « Hors ligne » restent visibles. */}
+                        {!(CLOSED_STATUSES.has(ov.status) && liveStatus === 'live') && <LiveIndicator status={liveStatus} />}
                     </>
                 }
                 title={ev.title}

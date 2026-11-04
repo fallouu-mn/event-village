@@ -108,6 +108,14 @@ async function expectRetry(c: ScreenContext): Promise<void> {
     await expect(c.page.getByRole('button', { name: /réessayer/i })).toBeVisible();
 }
 
+/**
+ * Amène l'élément au milieu de la fenêtre avant la capture (prise à la taille de l'écran, pas en pleine page) :
+ * sans cela, un état placé sous la ligne de flottaison n'apparaît sur aucune image (relecture du run 77).
+ */
+async function revealCenter(target: Locator): Promise<void> {
+    await target.evaluate((el) => el.scrollIntoView({ block: 'center', inline: 'nearest' }));
+}
+
 async function expectHeading(page: Page, name: RegExp): Promise<void> {
     await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
 }
@@ -390,7 +398,12 @@ export const SCREENS: readonly Screen[] = [
     {
         id: 'admin-notifications-erreur', titre: 'Administration — supervision des notifications, état d’erreur', role: 'admin', needsIds: true,
         path: () => '/admin/notifications',
-        injectError: /\/api\/admin\/notifications(\?.*)?$/, ready: expectRetry,
+        injectError: /\/api\/admin\/notifications(\?.*)?$/,
+        // L'état d'erreur est sous les compteurs et les filtres : à 390 px, il était hors de l'image (run 77)
+        ready: async (c) => {
+            await expectRetry(c);
+            await revealCenter(c.page.getByRole('button', { name: /réessayer/i }));
+        },
     },
     // ── Contrôle d'accès ────────────────────────────────────────────────────
     // Lot 7 (D85, E3) : thème sombre forcé, 2 vues ; après « Commencer le contrôle » (l'écran de départ est
@@ -405,7 +418,10 @@ export const SCREENS: readonly Screen[] = [
         id: 'billet-hors-ligne-disponible', titre: 'Mes billets — billet disponible hors ligne (service worker actif)', role: 'client', needsIds: true,
         path: () => '/tickets', serviceWorkers: 'allow',
         ready: async ({ page }) => {
-            await expect(page.locator('[data-ev-offline-state="available"]').first()).toBeVisible({ timeout: 45_000 });
+            const state = page.locator('[data-ev-offline-state="available"]').first();
+            await expect(state).toBeVisible({ timeout: 45_000 });
+            // L'indicateur est sous l'affiche et le QR : sans défilement, aucune image ne le montrait (run 77)
+            await revealCenter(state);
         },
         masks: (page) => [page.getByRole('img', { name: /QR/i })],
     },
@@ -413,18 +429,24 @@ export const SCREENS: readonly Screen[] = [
         id: 'billet-hors-ligne-a-telecharger', titre: 'Mes billets — billet pas encore enregistré sur le téléphone (téléchargement en cours)', role: 'client', needsIds: true,
         path: () => '/tickets', holdRequests: [{ url: OFFLINE_CODES_URL, method: 'GET' }],
         ready: async ({ page }) => {
-            await expect(page.locator('[data-ev-offline-state="missing"]').first()).toBeVisible({ timeout: 30_000 });
+            const state = page.locator('[data-ev-offline-state="missing"]').first();
+            await expect(state).toBeVisible({ timeout: 30_000 });
+            await revealCenter(state); // même raison que billet-hors-ligne-disponible
         },
         masks: (page) => [page.getByRole('img', { name: /QR/i })],
     },
     {
         id: 'billet-hors-ligne-qr', titre: 'Billet hors ligne — QR affiché sans réseau (page servie par le service worker)', role: 'client', needsIds: true,
         path: () => '/tickets', serviceWorkers: 'allow',
+        // Billet de « ce soir » (contrôle déjà ouvert), pas celui de « la veille » : le seed ne modifie pas
+        // access.scan_window_before_hours, donc le lot téléchargé la veille commence à l'ouverture du contrôle
+        // (début − before_hours, D31) et la page affiche à juste titre « Le code d'entrée s'affichera ici à partir
+        // du … » sans QR (run 77). Le billet de « la veille » reste celui de billet-hors-ligne-sans-codes.
         ready: async (c) => {
-            await expect(offlineLink(c.page, ids(c.ids).tickets.clientVeille)).toBeVisible({ timeout: 45_000 });
+            await expect(offlineLink(c.page, ids(c.ids).tickets.clientValide)).toBeVisible({ timeout: 45_000 });
         },
         actions: async (c) => {
-            const id = ids(c.ids).tickets.clientVeille;
+            const id = ids(c.ids).tickets.clientValide;
             c.guard.freeze(); // passage hors ligne volontaire : la collecte d'erreurs s'arrête
             await c.context.setOffline(true);
             const res = await c.page.goto(`/billet/hors-ligne?id=${encodeURIComponent(id)}`);
@@ -526,7 +548,8 @@ export const SCREENS: readonly Screen[] = [
             await page.getByRole('button', { name: /^clôturer ma caisse$/i }).click();
             const dialog = page.getByRole('dialog', { name: /^clôturer ma caisse$/i });
             await expect(dialog).toBeVisible();
-            await dialog.getByLabel(/^espèces encaissées comptées/i).fill('8000');
+            // 43 000 pour 45 000 enregistrés : l'écart affiché (-2 000, réponse figée ci-dessus) tombe juste à l'écran
+            await dialog.getByLabel(/^espèces encaissées comptées/i).fill('43000');
             await dialog.getByRole('button', { name: /^clôturer la caisse$/i }).click();
             await expect(dialog.getByText(/^écart constaté par le serveur$/i)).toBeVisible();
             await expect(dialog.getByLabel(/^justification de l.écart/i)).toBeVisible();
@@ -564,7 +587,9 @@ export const SCREENS: readonly Screen[] = [
         path: (i) => `/events/${ids(i).events.ceSoir.id}`,
         actions: async ({ page }) => {
             await page.getByRole('button', { name: /^ajouter un billet standard/i }).click();
-            await page.getByRole('button', { name: /^acheter/i }).click();
+            // Bouton du panneau de billetterie (« Acheter 1 billet (…) ») : à 390 px la barre d'achat fixe du bas
+            // (lg:hidden) porte aussi « Acheter (…) », même action ; /^acheter/ visait les deux (run 77, mode strict).
+            await page.getByRole('button', { name: /^acheter \d+ billets? \(/i }).click();
             await expect(page.getByRole('dialog').or(page.getByRole('alertdialog'))).toBeVisible();
         },
     },

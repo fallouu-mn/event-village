@@ -138,10 +138,18 @@ function methodMatches(wanted: string | undefined, actual: string): boolean {
 async function markAllOnOneLine(page: Page): Promise<string | null> {
     const button = page.getByRole('button', { name: /^tout marquer comme lu$/i }).first();
     if (await button.count() === 0) return 'bouton « Tout marquer comme lu » absent de la cloche ouverte (notifications non lues attendues)';
+    // Lignes du LIBELLÉ seulement : les rectangles des nœuds texte. Un Range sur tout le contenu du bouton rend
+    // aussi la boîte de l'icône (svg de 16 px centré, haut à 2 px de celui de la ligne de texte de 20 px), comptée
+    // à tort comme une seconde ligne (run 77 : libellé sur une ligne à l'écran, « 2 lignes » relevées).
     const lines = await button.evaluate((el) => {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const tops = new Set(Array.from(range.getClientRects()).filter((r) => r.width > 0).map((r) => Math.round(r.top)));
+        const tops = new Set<number>();
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!node.textContent?.trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const r of Array.from(range.getClientRects())) if (r.width > 0) tops.add(Math.round(r.top));
+        }
         return tops.size;
     });
     return lines > 1 ? `« Tout marquer comme lu » sur ${lines} lignes à 390 px (une seule attendue, §4.6)` : null;

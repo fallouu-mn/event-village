@@ -414,10 +414,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     <article className="mx-auto flex w-full max-w-md flex-col" aria-label={`Billet pour ${eventTitle}`}>
       {/* 1. Carte billet */}
       <div className="relative w-full overflow-hidden rounded-3xl border border-border bg-surface shadow-md">
-        {/* Encoches de découpe, alignées sur la ligne pointillée (décor) */}
-        <span aria-hidden="true" className="absolute -left-3 top-44 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
-        <span aria-hidden="true" className="absolute -right-3 top-44 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
-
         {/* Visuel de l'événement */}
         <div className="relative h-44 w-full overflow-hidden bg-scrim">
           <Image
@@ -427,8 +423,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             className="object-cover"
             sizes="(max-width: 28rem) 100vw, 28rem"
           />
-          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-scrim/90 via-scrim/40 to-transparent" />
-
           <div className="absolute right-3 top-3 flex max-w-[70%] items-center gap-2">
             {isTransferLocked ? (
               <Badge variant="warning" icon={<Lock size={12} aria-hidden="true" />}>
@@ -439,13 +433,21 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             )}
           </div>
 
-          <div className="absolute bottom-3 left-4 right-4 text-on-tone">
-            <h2 className="text-lg font-bold leading-tight tracking-tight">{eventTitle}</h2>
-            {eventSubtitle && <p className="truncate text-sm font-medium text-on-tone/85">{eventSubtitle}</p>}
-          </div>
         </div>
 
-        <div aria-hidden="true" className="mx-5 mt-4 border-t-2 border-dashed border-border" />
+        {/* Titre sous l'affiche, jamais posé dessus : une affiche porte souvent son propre texte (titre, lieu),
+            que la surimpression rendait illisible et doublait (relecture du run 77, mes-billets). */}
+        <div className="px-5 pt-4">
+          <h2 className="text-lg font-bold leading-tight tracking-tight text-fg">{eventTitle}</h2>
+          {eventSubtitle && <p className="mt-0.5 truncate text-sm font-medium text-fg-muted">{eventSubtitle}</p>}
+        </div>
+
+        {/* Ligne de découpe et ses encoches (décor) */}
+        <div aria-hidden="true" className="relative mt-4">
+          <span className="absolute -left-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
+          <span className="absolute -right-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
+          <div className="mx-5 border-t-2 border-dashed border-border" />
+        </div>
 
         <div className="space-y-4 p-5">
           {/* Informations d'accès */}

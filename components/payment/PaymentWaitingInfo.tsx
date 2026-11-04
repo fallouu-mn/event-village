@@ -72,7 +72,7 @@ export function PaymentWaitingInfo({ targetType, event, ticketCount, items, paye
               <Ticket size={18} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
               <div className="min-w-0 text-sm text-fg">
                 <p className="font-semibold">
-                  {ticketCount > 1 ? `${ticketCount} billets` : '1 billet'}, avec leur QR code, dans Mes billets
+                  {ticketCount > 1 ? `${ticketCount} billets, avec leur QR code,` : '1 billet, avec son QR code,'} dans Mes billets
                 </p>
                 {lines.length > 0 && (
                   <ul className="mt-1 space-y-0.5 text-fg-muted">

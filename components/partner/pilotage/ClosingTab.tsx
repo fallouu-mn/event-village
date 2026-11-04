@@ -56,7 +56,7 @@ function ZCard({ z }: { z: ZReport }) {
                     <p className="mb-1 text-sm font-semibold text-fg">Par source</p>
                     <dl className="px-1">
                         {z.by_source.map((s) => (
-                            <DefinitionRow key={s.source} label={`${SOURCE_LABELS[s.source] ?? 'Autre source'} · ${formatInteger(s.count)} billet(s)`} value={formatFcfa(s.amount)} />
+                            <DefinitionRow key={s.source} label={`${SOURCE_LABELS[s.source] ?? 'Autre source'} · ${formatInteger(s.count)} billet${s.count > 1 ? 's' : ''}`} value={formatFcfa(s.amount)} />
                         ))}
                     </dl>
                 </div>
@@ -66,7 +66,7 @@ function ZCard({ z }: { z: ZReport }) {
                     <p className="mb-1 text-sm font-semibold text-fg">Par catégorie</p>
                     <dl className="px-1">
                         {z.by_category.map((c) => (
-                            <DefinitionRow key={c.category_id} label={`${c.name} · ${formatInteger(c.count)} billet(s)`} value={formatFcfa(c.amount)} />
+                            <DefinitionRow key={c.category_id} label={`${c.name} · ${formatInteger(c.count)} billet${c.count > 1 ? 's' : ''}`} value={formatFcfa(c.amount)} />
                         ))}
                     </dl>
                 </div>
@@ -216,7 +216,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                     />
                 ) : (
                     <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
-                        {absents.list_available ? 'Aucun absent : tous les billets valides ont été compostés.' : `${formatInteger(absents.count)} billet(s) valide(s) pas encore composté(s).`}
+                        {absents.list_available ? 'Aucun absent : tous les billets valides ont été compostés.' : (absents.count > 1 ? `${formatInteger(absents.count)} billets valides pas encore compostés.` : `${formatInteger(absents.count)} billet valide pas encore composté.`)}
                     </p>
                 )}
             </PilotageSection>

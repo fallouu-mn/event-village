@@ -110,7 +110,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
                 <PilotageSection title="Par point d’entrée">
                     <BarList
                         ariaLabel="Entrées par point d’entrée"
-                        unit="entrée(s)"
+                        unit={['entrée', 'entrées']}
                         max={maxEntryPoint}
                         emptyLabel="Aucune entrée pour le moment."
                         items={data.by_entry_point.map((e, i) => ({
@@ -124,7 +124,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
                 <PilotageSection title="Par catégorie">
                     <BarList
                         ariaLabel="Entrées par catégorie"
-                        unit="entrée(s)"
+                        unit={['entrée', 'entrées']}
                         max={maxCategory}
                         emptyLabel="Aucune catégorie."
                         items={data.by_category.map((c) => ({ key: c.category_id, label: c.name, value: c.accepted }))}
@@ -133,7 +133,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
                 <PilotageSection title="Flux par quart d’heure" description="Heure de Dakar.">
                     <BarList
                         ariaLabel="Entrées par quart d’heure"
-                        unit="entrée(s)"
+                        unit={['entrée', 'entrées']}
                         max={maxQuarter}
                         emptyLabel="Aucun passage pour le moment."
                         items={data.by_quarter.map((q) => {

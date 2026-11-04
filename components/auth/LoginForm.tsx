@@ -554,7 +554,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
                         placeholder="77 123 45 67 ou adresse email"
-                        hint="Le numéro sénégalais ou l'adresse email de votre compte."
+                        hint="Le numéro sénégalais ou l’adresse email de votre compte."
                     />
 
                     <div className="relative">

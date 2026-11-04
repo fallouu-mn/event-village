@@ -46,7 +46,8 @@ export interface BarItem {
 export function BarList({ items, max, unit, emptyLabel, ariaLabel }: {
     items: BarItem[];
     max: number;
-    unit: string;
+    /** Unité, ou [singulier, pluriel] pour accorder à la valeur (« 1 billet », « 2 billets », jamais « billet(s) »). */
+    unit: string | readonly [string, string];
     emptyLabel: string;
     ariaLabel: string;
 }) {
@@ -61,7 +62,7 @@ export function BarList({ items, max, unit, emptyLabel, ariaLabel }: {
                     <div className="flex items-baseline justify-between gap-3 text-sm">
                         <span className="min-w-0 break-words text-fg">{item.label}</span>
                         <span className="flex-shrink-0 font-semibold text-fg tabular-nums">
-                            {formatInteger(item.value)} {unit}
+                            {formatInteger(item.value)} {typeof unit === 'string' ? unit : unit[item.value > 1 ? 1 : 0]}
                             {item.detail && <span className="ml-2 font-normal text-fg-muted">{item.detail}</span>}
                         </span>
                     </div>

@@ -94,7 +94,10 @@ export default function OfflineTicketPage() {
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-fg">Billet hors ligne</h1>
           <p className="text-sm text-fg-muted">
-            Affiché sans réseau à partir du billet enregistré sur ce téléphone. Présentez le QR au contrôle.
+            {/* La page s'affiche aussi sans QR (aucun billet enregistré, codes pas encore ouverts) : « Présentez le QR au
+                contrôle » seul y était faux (relecture du run 77). */}
+            Le billet enregistré sur ce téléphone s’affiche ici, même sans réseau. Présentez son QR au contrôle dès qu’il
+            apparaît.
           </p>
         </div>
 
@@ -143,7 +146,7 @@ export default function OfflineTicketPage() {
                           <span className="block text-sm text-fg-muted">
                             <time dateTime={l.ticket.event_start_at}>{formatDateTime(l.ticket.event_start_at)}</time>
                             {' · '}
-                            <span className="font-mono tabular-nums">{l.ticket.ticket_number}</span>
+                            <span className="whitespace-nowrap font-mono tabular-nums">{l.ticket.ticket_number}</span>
                           </span>
                         </span>
                       </a>

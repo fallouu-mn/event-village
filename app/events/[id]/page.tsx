@@ -751,7 +751,10 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           Retour aux événements
         </LinkButton>
         <div className="flex items-center gap-2">
-          <LiveIndicator status={liveStatus} />
+          {/* Événement suspendu, annulé ou terminé : « En direct » (le canal temps réel) se lisait comme
+              « l'événement a lieu en ce moment » (relecture du run 77). La page reste abonnée ; seuls
+              « Connexion… » et « Hors ligne » restent affichés. */}
+          {!(event.banner && liveStatus === 'live') && <LiveIndicator status={liveStatus} />}
           <IconButton aria-label="Partager l’événement" variant="secondary" onClick={() => void share()}>
             <Share2 size={18} />
           </IconButton>

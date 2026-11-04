@@ -92,6 +92,15 @@ function titleOf(status: ScanResult, category: ScanCategory, amountDue?: number)
     }
 }
 
+/** Vrai si `message` redit le titre : identique, ou début du titre (aux espaces et à la ponctuation finale près). */
+function repeatsHeading(message: string, heading: string): boolean {
+    const norm = (v: string): string => v.trim().replace(/[\s.:;!]+$/, '').toLocaleLowerCase('fr-FR');
+    const m = norm(message);
+    const h = norm(heading);
+    if (m === h) return true;
+    return m.length > 0 && h.startsWith(m) && /^[\s:,–—-]/.test(h.slice(m.length));
+}
+
 export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     status,
     kind,
@@ -122,7 +131,9 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     const Icon = status === 'event_suspended' ? Ban : look.Icon;
     const heading = title ?? titleOf(status, cat, amountDue);
     const ticketLine = [category, ticketNumber].filter(Boolean).join(' · ');
-    const showMessage = Boolean(message) && message !== heading;
+    // Message masqué s'il redit le titre, y compris quand le titre le complète (« Encaissement requis : 5 000 F CFA »
+    // suivi de « Encaissement requis », relecture du run 77).
+    const showMessage = Boolean(message) && !repeatsHeading(message ?? '', heading);
     const usedLine = status === 'already_used' && checkedInAt
         ? (checkedInByMe ? `Déjà validé par vous à ${formatTime(checkedInAt)}` : `Entré à ${formatTime(checkedInAt)}`)
         : null;
@@ -185,7 +196,11 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             )}
 
             {dismissOnTap && (
-                <p className="text-base font-semibold">Touchez l’écran pour scanner le billet suivant</p>
+                // Retour automatique (consigne 7.2 : aucun clic nécessaire) : le toucher ne fait que l'avancer. « Touchez
+                // l'écran pour… » laissait croire qu'il fallait toucher ; gardé seulement sans retour automatique.
+                <p className="text-base font-semibold">
+                    {effectiveDuration > 0 ? 'Retour automatique au scan · touchez pour passer' : 'Touchez l’écran pour scanner le billet suivant'}
+                </p>
             )}
         </div>
     );

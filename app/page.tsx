@@ -145,7 +145,7 @@ export default function HomePage() {
               Découvrez, réservez et vivez les événements qui comptent.
             </h1>
             <p className="max-w-xl text-base leading-relaxed text-fg-muted sm:text-lg">
-              Concerts, festivals, soirées et rencontres : choisissez votre place, payez en quelques secondes et
+              Concerts, festivals, soirées et rencontres&nbsp;: choisissez votre place, payez en quelques secondes et
               présentez votre billet à l’entrée.
             </p>
 

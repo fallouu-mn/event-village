@@ -1,5 +1,5 @@
 import React from 'react';
-import { Armchair, Banknote, DoorOpen, Gift, Percent, RotateCcw, Smartphone, Ticket } from 'lucide-react';
+import { Armchair, Banknote, DoorOpen, Gift, Percent, RotateCcw, Smartphone, Tags, Ticket } from 'lucide-react';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { formatFcfa, formatInteger, formatPercent, formatDateTime } from '@/lib/format';
@@ -24,17 +24,28 @@ export function OverviewTab({ data }: { data: PilotageOverview }) {
 
             <PilotageSection title="Billetterie" description="Billets valides et utilisés, hors invitations.">
                 <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                    {/* Les ventes comptent toutes les catégories, y compris une catégorie désactivée après ses
+                        ventes, alors que la capacité ne compte que les catégories actives : « 82 sur 240 places »
+                        et « 178 restantes » ne tombaient pas juste (relecture du run 77). Le texte dit ce que
+                        chaque chiffre compte, sans suggérer une fraction. */}
                     <KpiCard
                         label="Billets vendus"
                         value={formatInteger(tickets.sold)}
-                        hint={`sur ${formatInteger(tickets.capacity)} places mises en vente`}
+                        hint="Toutes catégories, y compris désactivées"
                         tone="brand"
                         icon={<Ticket size={18} />}
                     />
                     <KpiCard
+                        label="Places en vente"
+                        value={formatInteger(tickets.capacity)}
+                        hint="Quotas des catégories actives"
+                        tone="neutral"
+                        icon={<Tags size={18} />}
+                    />
+                    <KpiCard
                         label="Places restantes"
                         value={formatInteger(tickets.remaining)}
-                        hint={`${formatInteger(tickets.in_payment)} en cours de paiement`}
+                        hint={`Dans les catégories actives, sans compter ${formatInteger(tickets.in_payment)} en cours de paiement`}
                         tone="neutral"
                         icon={<Armchair size={18} />}
                     />

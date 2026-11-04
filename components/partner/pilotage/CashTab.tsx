@@ -163,7 +163,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                         {data.by_controller.map((c) => (
                             <DefinitionRow
                                 key={c.controller_id}
-                                label={`${c.name || 'Compte sans nom'} · ${formatInteger(c.shifts)} caisse(s)${c.open_shifts > 0 ? ', dont une ouverte' : ''}`}
+                                label={`${c.name || 'Compte sans nom'} · ${formatInteger(c.shifts)} caisse${c.shifts > 1 ? 's' : ''}${c.open_shifts > 0 ? ', dont une ouverte' : ''}`}
                                 value={formatFcfa(c.cash_collected)}
                             />
                         ))}
@@ -191,7 +191,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 title={pinStep?.step === 'open_shifts' ? 'Des caisses sont ouvertes' : 'Générer un nouveau code PIN ?'}
                 message={
                     pinStep?.step === 'open_shifts'
-                        ? `${formatInteger(pinStep.count)} caisse(s) sont ouvertes : leurs contrôleurs devront utiliser le nouveau code pour clôturer.`
+                        ? (pinStep.count > 1
+                            ? `${formatInteger(pinStep.count)} caisses sont ouvertes : leurs contrôleurs devront utiliser le nouveau code pour clôturer.`
+                            : 'Une caisse est ouverte : son contrôleur devra utiliser le nouveau code pour clôturer.')
                         : 'L’ancien code cesse aussitôt d’être valable. Le nouveau code ne sera affiché qu’une seule fois.'
                 }
                 confirmLabel={pinStep?.step === 'open_shifts' ? 'Générer quand même' : 'Générer le code'}

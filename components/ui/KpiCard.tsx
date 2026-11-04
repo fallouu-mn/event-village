@@ -23,7 +23,8 @@ export const KpiCard: React.FC<KpiCardProps> = ({ label, value, hint, tone = 'ne
   return (
     <div className={cn('flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5', className)}>
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-sm font-medium leading-snug text-fg-muted">{label}</p>
+        {/* Césure : à 390 px, un mot long (« Encaissements ») débordait sous l'icône (relecture du run 77) */}
+        <p className="min-w-0 break-words text-sm font-medium leading-snug text-fg-muted hyphens-auto">{label}</p>
         {icon && (
           <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', TONE_ICON[tone])} aria-hidden="true">
             {icon}

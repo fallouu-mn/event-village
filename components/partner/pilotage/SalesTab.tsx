@@ -28,7 +28,9 @@ const COLUMNS: DataColumn<CategoryRow>[] = [
     { key: 'sold', header: 'Vendus', align: 'right', render: (c) => formatInteger(c.sold) },
     { key: 'in_payment', header: 'En cours de paiement', align: 'right', render: (c) => formatInteger(c.in_payment) },
     { key: 'invitations', header: 'Invitations', align: 'right', render: (c) => formatInteger(c.invitations) },
-    { key: 'remaining', header: 'Restants', align: 'right', render: (c) => `${formatInteger(c.remaining)} / ${formatInteger(c.total)}` },
+    // Catégorie inactive : plus aucune place en vente (remaining = 0 côté serveur). « 0 / 40 » contredisait la
+    // formule affichée au-dessus de la liste (relecture du run 77).
+    { key: 'remaining', header: 'Restants', align: 'right', render: (c) => (c.is_active ? `${formatInteger(c.remaining)} / ${formatInteger(c.total)}` : 'Vente fermée') },
     { key: 'revenue', header: 'Recettes en ligne', align: 'right', render: (c) => formatFcfa(c.revenue_online) },
 ];
 
@@ -52,7 +54,7 @@ export function SalesTab({ eventId, signal }: { eventId: string; signal: number 
 
     return (
         <div className="flex flex-col gap-6">
-            <PilotageSection title="Par catégorie" description="Restants = quota de la catégorie moins les ventes, les invitations et les paiements en cours.">
+            <PilotageSection title="Par catégorie" description="Restants = quota de la catégorie moins les ventes, les invitations et les paiements en cours. Une catégorie inactive n’a plus de place en vente.">
                 <DataList
                     items={data.by_category}
                     columns={COLUMNS}
@@ -66,7 +68,7 @@ export function SalesTab({ eventId, signal }: { eventId: string; signal: number 
             <PilotageSection title="Évolution jour par jour" description="Billets vendus chaque jour, à l’heure de Dakar.">
                 <BarList
                     ariaLabel="Ventes par jour"
-                    unit="billet(s)"
+                    unit={['billet', 'billets']}
                     max={maxDay}
                     emptyLabel="Aucune vente pour le moment."
                     items={data.by_day.map((d) => ({

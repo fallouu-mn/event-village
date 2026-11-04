@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
+import { PARTNER_ACTIVITY_LABELS } from '@/lib/partner/activity-labels';
 
 /**
  * Page professionnelle du partenaire (GET / PATCH /api/partner/profile). Lot 7 (7.0 f) : migrée sur le système de
@@ -27,16 +28,8 @@ const EMPTY_FORM: FormState = {
   company_name: '', commercial_name: '', description: '', address: '', city: '', phone: '', email: '', logo_url: '', cover_url: '',
 };
 
-const ACTIVITY_TYPES = [
-  { value: 'ORGANISATEUR', label: 'Organisateur d’événements' },
-  { value: 'SALLE', label: 'Salle de réception' },
-  { value: 'RESTAURANT', label: 'Restaurant' },
-  { value: 'TRAITEUR', label: 'Traiteur' },
-  { value: 'PRESTATAIRE', label: 'Prestataire de services' },
-  { value: 'PATISSERIE', label: 'Pâtisserie, boulangerie' },
-  { value: 'ETABLISSEMENT_ALIMENTAIRE', label: 'Établissement alimentaire' },
-  { value: 'AUTRE', label: 'Autre activité' },
-];
+// Mêmes libellés qu'à l'inscription (lib/partner/activity-labels.ts) : les deux listes divergeaient (run 77).
+const ACTIVITY_TYPES = Object.entries(PARTNER_ACTIVITY_LABELS).map(([value, label]) => ({ value, label }));
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);

@@ -39,7 +39,8 @@
  *    restaient « non identifiés » (5 SMS reçus pour 2 attendus au run 76) ;
  *  - 10 : chaque SMS reçu depuis le repère est identifié par jointure notification_outbox.provider_message_id =
  *    ticket du faux MTarget (type, événement, clé d'idempotence, statut), imprimé [FUMEE-SMS], et la liste exacte
- *    est exigée : PURCHASE_CONFIRMED, REMINDER_J1 et EVENT_CANCELLED de E2, une fois chacun, tous SENT, aucun SMS
+ *    est exigée : PURCHASE_CONFIRMED, REMINDER_J1, EVENT_CANCELLED et REFUND_PAID (remboursement automatique de
+ *    l'achat à l'annulation) de E2, une fois chacun, tous SENT, aucun SMS
  *    sans ligne, aucune clé en double (un doublon serait un défaut). Les comptes du lot 6 (j1 1, h3 0, annulation 1)
  *    restent vérifiés.
  * Fumée prolongée (étapes 11 à 16, tâche 7.7 « achat, téléchargement des codes la veille, passage hors ligne, scan
@@ -617,7 +618,13 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             const lines = identified.flatMap((d) => (d.line ? [d.line] : []));
             expect(lines.map((l) => `${l.type} ${l.event_id === e2Id ? 'E2' : l.event_id ?? 'sans événement'}`).sort(),
                 `SMS du client depuis le repère : ${JSON.stringify(lines.map((l) => ({ type: l.type, cle: l.idempotency_key })))}`)
-                .toEqual(['EVENT_CANCELLED E2', 'PURCHASE_CONFIRMED E2', 'REMINDER_J1 E2']);
+                // REFUND_PAID E2 : remboursement automatique de l'achat E2 à l'annulation (event_cancel →
+                // refund_request EVENT_CANCELLATION_REFUND, envoyé aussitôt par CashoutService.sendBatch ; avis mis en
+                // file par le trigger des cashouts au passage à CONFIRME, clé REFUND_PAID:<cashout>). Déjà relevé au
+                // lot 6 parmi les SMS non identifiés de la fumée (contrat du lot 7, dette : PURCHASE_CONFIRMED E2,
+                // PURCHASE_CONFIRMED E1, REFUND_PAID E2) ; oublié dans la liste exacte jusqu'au run 77.
+                // Unicité contrôlée juste après (aucune clé deux fois).
+                .toEqual(['EVENT_CANCELLED E2', 'PURCHASE_CONFIRMED E2', 'REFUND_PAID E2', 'REMINDER_J1 E2']);
             const keys = lines.map((l) => `${l.type} ${l.idempotency_key}`);
             expect(keys.filter((k, i) => keys.indexOf(k) !== i), 'aucun SMS envoyé deux fois pour la même clé (doublon = défaut)').toEqual([]);
             expect(lines.filter((l) => l.status !== 'SENT').map((l) => `${l.type} ${l.status}`), 'lignes des SMS reçus au statut SENT').toEqual([]);

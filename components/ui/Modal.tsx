@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useId, useRef } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from './cn';
 import { IconButton } from './IconButton';
@@ -70,6 +71,13 @@ function unlockScroll(): void {
   }
 }
 
+// Rendu côté client seulement : faux au rendu serveur et à l'hydratation, vrai ensuite (et aussitôt pour
+// une modale montée après l'hydratation), sans rendu supplémentaire.
+const noopSubscribe = (): (() => void) => () => {};
+function useIsClient(): boolean {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
+
 function focusableIn(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
     (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true' && el.offsetParent !== null,
@@ -80,6 +88,9 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
  * Modale accessible (contrat Q) : role dialog, aria-modal, aria-labelledby/-describedby, focus initial
  * dans la modale, piège de focus (Tab et Maj+Tab), focus restitué à l'élément d'origine, Escape (sauf
  * pendant une action), bouton Fermer de 44 px toujours présent, verrou de défilement compté.
+ * Rendue dans un portail sur document.body : un ancêtre transformé (`.ev-page-enter` de app/template.tsx,
+ * dans <main>) enfermait le voile `fixed inset-0` dans la colonne de contenu, sous l'en-tête collant et
+ * la barre du bas (captures aide-transfert et pilotage-annulation du run 77).
  */
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
@@ -103,6 +114,7 @@ export const Modal: React.FC<ModalProps> = ({
   const dialogRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(busy);
   const onCloseRef = useRef(onClose);
+  const isClient = useIsClient();
   busyRef.current = busy;
   onCloseRef.current = onClose;
 
@@ -111,7 +123,7 @@ export const Modal: React.FC<ModalProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!isOpen || !isClient) return undefined;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     openStack.push(uid);
     lockScroll();
@@ -165,11 +177,11 @@ export const Modal: React.FC<ModalProps> = ({
     };
     // initialFocusRef : lu à l'ouverture seulement
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, uid, requestClose]);
+  }, [isOpen, isClient, uid, requestClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !isClient) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4 md:p-6">
       <div
         className="absolute inset-0 bg-scrim/60 backdrop-blur-sm animate-in fade-in"
@@ -228,6 +240,7 @@ export const Modal: React.FC<ModalProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

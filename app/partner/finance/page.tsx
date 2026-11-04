@@ -73,6 +73,8 @@ interface HistoryEntry {
     availableAt: string | null;
     createdAt: string;
     description: string | null;
+    /** Titre de l'événement de l'écriture, servi par le serveur (event_title), ou null. */
+    eventTitle: string | null;
     /** Servi par le serveur (available_at après son horloge). */
     isPending: boolean;
 }
@@ -143,6 +145,7 @@ function parseAccount(body: unknown): AccountView | null {
                   availableAt: text(e.available_at),
                   createdAt,
                   description: text(e.description),
+                  eventTitle: text(e.event_title),
                   isPending: e.is_pending === true,
               }];
           })
@@ -216,6 +219,25 @@ const ENTRY_LABELS: Record<string, string> = {
     REGULARISATION: 'Régularisation',
     COMPENSATION_CREANCE: 'Compensation d’une créance',
 };
+
+/**
+ * Écritures dont le libellé comptable (finance_ledger.description) est interne : il porte une référence de
+ * transaction et un code technique (« Vente en ligne … (TICKET) », « Remboursement REFUND-… (EVENT_CANCELLATION_REFUND) »).
+ * La compensation d'une créance recopie le motif de la créance, c'est-à-dire ce même libellé de remboursement
+ * (« Compensation de créance : Remboursement REFUND-… (…) », fin_ledger_debit puis trigger de compensation).
+ * Il n'est jamais affiché ; l'écran nomme l'événement à la place.
+ */
+const INTERNAL_DESCRIPTION_TYPES = new Set(['VENTE', 'REMBOURSEMENT', 'COMPENSATION_CREANCE']);
+
+/**
+ * Ligne de détail d'une écriture : pour une écriture au libellé interne, l'événement s'il est connu, sinon rien ;
+ * pour les autres (retraits, commissions), le libellé rédigé pour le lecteur, sinon l'événement.
+ */
+function entryDetail(e: HistoryEntry): string | null {
+    const event = e.eventTitle ? `« ${e.eventTitle} »` : null;
+    if (INTERNAL_DESCRIPTION_TYPES.has(e.entryType)) return event;
+    return e.description ?? event;
+}
 
 const WITHDRAWAL_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
     PENDING: { label: 'En attente', variant: 'warning' },
@@ -826,6 +848,7 @@ export default function PartnerFinancePage() {
                         {account.history.map((e) => {
                             const credit = e.amount > 0;
                             const pendingCredit = credit && e.isPending;
+                            const detail = entryDetail(e);
                             return (
                                 <li key={e.id} className="flex items-center justify-between gap-3 px-4 py-3">
                                     <div className="flex min-w-0 items-start gap-3">
@@ -840,7 +863,7 @@ export default function PartnerFinancePage() {
                                                 {ENTRY_LABELS[e.entryType] ?? 'Opération du compte'}
                                                 <span className="sr-only">{credit ? ' (crédit)' : ' (débit)'}</span>
                                             </p>
-                                            {e.description && <p className="truncate text-sm text-fg-muted">{e.description}</p>}
+                                            {detail && <p className="truncate text-sm text-fg-muted">{detail}</p>}
                                             <p className="text-sm text-fg-muted">
                                                 <time dateTime={e.createdAt} className="text-sm">{formatDateTime(e.createdAt)}</time>
                                                 {pendingCredit && e.availableAt && (

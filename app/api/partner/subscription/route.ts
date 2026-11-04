@@ -19,6 +19,7 @@ const SUPPORT_LABELS: Record<string, string> = {
     STANDARD: 'Assistance standard',
     PRIORITY: 'Assistance prioritaire',
     DEDICATED: 'Interlocuteur dédié',
+    VIP: 'Assistance VIP',
 };
 
 interface PlanRow {
@@ -35,16 +36,26 @@ interface PlanRow {
  * Caractéristiques d'une offre avec leur libellé (D65). Seules les clés connues sont servies ; une clé
  * inconnue n'est jamais affichée brute. `commission_rate` n'est pas servi : Event Village ne prélève rien
  * sur l'organisateur (moteur financier unique, frais payés par l'acheteur), l'afficher serait faux.
+ * Une limite à -1 signifie « illimité » (offres de supabase/seed.sql) : elle était ignorée, si bien que l'offre
+ * la plus chère paraissait la plus pauvre (relecture du run 77, partenaire-abonnement). `custom_branding` n'est
+ * pas servi : aucune fonction de l'application ne le met en œuvre, l'annoncer serait faux.
  */
 function planFeatures(raw: unknown): Array<{ key: string; label: string }> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
     const f = raw as Record<string, unknown>;
     const out: Array<{ key: string; label: string }> = [];
-    const count = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null);
+    const UNLIMITED = 'illimité' as const;
+    const count = (v: unknown): number | typeof UNLIMITED | null => {
+        if (typeof v !== 'number' || !Number.isInteger(v)) return null;
+        if (v === -1) return UNLIMITED;
+        return v > 0 ? v : null;
+    };
     const events = count(f.max_events);
-    if (events !== null) out.push({ key: 'max_events', label: `Jusqu’à ${events} événement${events > 1 ? 's' : ''}` });
+    if (events === UNLIMITED) out.push({ key: 'max_events', label: 'Événements illimités' });
+    else if (events !== null) out.push({ key: 'max_events', label: `Jusqu’à ${events} événement${events > 1 ? 's' : ''}` });
     const products = count(f.max_products);
-    if (products !== null) out.push({ key: 'max_products', label: `Jusqu’à ${products} produit${products > 1 ? 's' : ''} au menu` });
+    if (products === UNLIMITED) out.push({ key: 'max_products', label: 'Produits illimités au menu' });
+    else if (products !== null) out.push({ key: 'max_products', label: `Jusqu’à ${products} produit${products > 1 ? 's' : ''} au menu` });
     if (typeof f.support === 'string' && SUPPORT_LABELS[f.support]) out.push({ key: 'support', label: SUPPORT_LABELS[f.support] });
     if (f.analytics === true) out.push({ key: 'analytics', label: 'Statistiques avancées' });
     return out;
