@@ -1,0 +1,209 @@
+TAP version 13
+# Subtest: 5.7 — GET /api/admin/events : filtres, recherche, pagination, compteurs
+    # Subtest: filtre par statut (les 7, ANNULE compris) avec q : exactement les événements de ce statut, total = vérité en base
+    ok 1 - filtre par statut (les 7, ANNULE compris) avec q : exactement les événements de ce statut, total = vérité en base
+      ---
+      duration_ms: 119.64755
+      type: 'test'
+      ...
+    # Subtest: sans statut : tous les statuts ; counts par statut = vérité en base, indépendants du filtre de statut
+    ok 2 - sans statut : tous les statuts ; counts par statut = vérité en base, indépendants du filtre de statut
+      ---
+      duration_ms: 41.246836
+      type: 'test'
+      ...
+    # Subtest: pagination : 20 par défaut, page 2 disjointe, réunion = vérité ; pageSize plafonné à 50
+    ok 3 - pagination : 20 par défaut, page 2 disjointe, réunion = vérité ; pageSize plafonné à 50
+      ---
+      duration_ms: 52.593949
+      type: 'test'
+      ...
+    # Subtest: recherche q : insensible à la casse ; % et _ pris à la lettre
+    ok 4 - recherche q : insensible à la casse ; % et _ pris à la lettre
+      ---
+      duration_ms: 40.549767
+      type: 'test'
+      ...
+    # Subtest: statut inconnu → 400 UNKNOWN_STATUS, message en français, aucune erreur Postgres
+    ok 5 - statut inconnu → 400 UNKNOWN_STATUS, message en français, aucune erreur Postgres
+      ---
+      duration_ms: 24.532179
+      type: 'test'
+      ...
+    # Subtest: droits : sans session 401 ; CLIENT, partenaire et ADMIN sans events.read 403 ; ADMIN events.read et SUPERADMIN 200
+    ok 6 - droits : sans session 401 ; CLIENT, partenaire et ADMIN sans events.read 403 ; ADMIN events.read et SUPERADMIN 200
+      ---
+      duration_ms: 48.358582
+      type: 'test'
+      ...
+    # Subtest: élément de liste : id, titre, statut, date, lieu et organisateur
+    ok 7 - élément de liste : id, titre, statut, date, lieu et organisateur
+      ---
+      duration_ms: 12.610154
+      type: 'test'
+      ...
+    1..7
+ok 1 - 5.7 — GET /api/admin/events : filtres, recherche, pagination, compteurs
+  ---
+  duration_ms: 1258.364435
+  type: 'suite'
+  ...
+# Subtest: 5.7 — GET /api/admin/events/[id] : fiche complète avant validation
+    # Subtest: affiche, dates, lieu, programme, catégories et prix (masquées et inactives comprises), organisateur et contact, historique, actions
+    ok 1 - affiche, dates, lieu, programme, catégories et prix (masquées et inactives comprises), organisateur et contact, historique, actions
+      ---
+      duration_ms: 41.564947
+      type: 'test'
+      ...
+    # Subtest: événement inconnu → 404 ; droits : 401 sans session, 403 CLIENT, partenaire propriétaire et ADMIN sans events.read
+    ok 2 - événement inconnu → 404 ; droits : 401 sans session, 403 CLIENT, partenaire propriétaire et ADMIN sans events.read
+      ---
+      duration_ms: 40.092208
+      type: 'test'
+      ...
+    1..2
+ok 2 - 5.7 — GET /api/admin/events/[id] : fiche complète avant validation
+  ---
+  duration_ms: 100.443147
+  type: 'suite'
+  ...
+# Subtest: 5.7 — actions admin par statut (transition D4, annulation D6)
+    # Subtest: valider : EN_ATTENTE → VALIDE, journalisé (ADMIN, acteur, canal TRANSITION)
+    ok 1 - valider : EN_ATTENTE → VALIDE, journalisé (ADMIN, acteur, canal TRANSITION)
+      ---
+      duration_ms: 32.208885
+      type: 'test'
+      ...
+    # Subtest: refuser : motif obligatoire (absent, vide ou < 3 caractères → REASON_REQUIRED, statut inchangé), puis refus motivé → BROUILLON
+    ok 2 - refuser : motif obligatoire (absent, vide ou < 3 caractères → REASON_REQUIRED, statut inchangé), puis refus motivé → BROUILLON
+      ---
+      duration_ms: 72.652671
+      type: 'test'
+      ...
+    # Subtest: suspendre (PUBLIE → SUSPENDU, motif obligatoire) puis réactiver (SUSPENDU → PUBLIE)
+    ok 3 - suspendre (PUBLIE → SUSPENDU, motif obligatoire) puis réactiver (SUSPENDU → PUBLIE)
+      ---
+      duration_ms: 59.249153
+      type: 'test'
+      ...
+    # Subtest: terminer : PUBLIE commencé → TERMINE (fin manuelle, canal TRANSITION)
+    ok 4 - terminer : PUBLIE commencé → TERMINE (fin manuelle, canal TRANSITION)
+      ---
+      duration_ms: 37.5398
+      type: 'test'
+      ...
+    # Subtest: annuler : POST /api/admin/events/[id]/cancel exige le titre retapé (TITLE_MISMATCH), puis ANNULE journalisé (canal CANCELLATION)
+    ok 5 - annuler : POST /api/admin/events/[id]/cancel exige le titre retapé (TITLE_MISMATCH), puis ANNULE journalisé (canal CANCELLATION)
+      ---
+      duration_ms: 54.405774
+      type: 'test'
+      ...
+    # Subtest: ADMIN avec events.read seul : 403 sur /transition, statut inchangé, aucune ligne d’historique
+    ok 6 - ADMIN avec events.read seul : 403 sur /transition, statut inchangé, aucune ligne d’historique
+      ---
+      duration_ms: 32.385573
+      type: 'test'
+      ...
+    # Subtest: refus explicites : statut inconnu 400 UNKNOWN_STATUS ; ANNULE par /transition CANCELLATION_REQUIRED ; hors table 409 TRANSITION_NOT_ALLOWED ; événement inconnu 404
+    ok 7 - refus explicites : statut inconnu 400 UNKNOWN_STATUS ; ANNULE par /transition CANCELLATION_REQUIRED ; hors table 409 TRANSITION_NOT_ALLOWED ; événement inconnu 404
+      ---
+      duration_ms: 48.133707
+      type: 'test'
+      ...
+    1..7
+ok 3 - 5.7 — actions admin par statut (transition D4, annulation D6)
+  ---
+  duration_ms: 336.935877
+  type: 'suite'
+  ...
+# Subtest: D5 — event_actions : actions exactes par statut et par rôle
+    # Subtest: partenaire propriétaire : soumettre, retirer, publier selon le statut ; can_edit et can_cancel
+    ok 1 - partenaire propriétaire : soumettre, retirer, publier selon le statut ; can_edit et can_cancel
+      ---
+      duration_ms: 16.738621
+      type: 'test'
+      ...
+    # Subtest: admin (SUPERADMIN et ADMIN) : valider, refuser, publier, suspendre, terminer, réactiver ; jamais can_edit
+    ok 2 - admin (SUPERADMIN et ADMIN) : valider, refuser, publier, suspendre, terminer, réactiver ; jamais can_edit
+      ---
+      duration_ms: 19.011378
+      type: 'test'
+      ...
+    # Subtest: partenaire tiers et client : aucune action, aucun droit, aucun motif
+    ok 3 - partenaire tiers et client : aucune action, aucun droit, aucun motif
+      ---
+      duration_ms: 22.486797
+      type: 'test'
+      ...
+    1..3
+ok 4 - D5 — event_actions : actions exactes par statut et par rôle
+  ---
+  duration_ms: 178.617765
+  type: 'suite'
+  ...
+# Subtest: 5.7 — motifs de refus et de suspension : persistés, rendus au partenaire, effacés quand le statut n’en découle plus
+    # Subtest: refus : motif dans l’historique et la fiche admin, rendu au propriétaire (pas au tiers), plus rendu après resoumission ou retrait ; le dernier refus fait foi
+    ok 1 - refus : motif dans l’historique et la fiche admin, rendu au propriétaire (pas au tiers), plus rendu après resoumission ou retrait ; le dernier refus fait foi
+      ---
+      duration_ms: 81.480417
+      type: 'test'
+      ...
+    # Subtest: suspension : motif rendu au propriétaire, effacé à la réactivation, le dernier motif fait foi
+    ok 2 - suspension : motif rendu au propriétaire, effacé à la réactivation, le dernier motif fait foi
+      ---
+      duration_ms: 80.214819
+      type: 'test'
+      ...
+    1..2
+ok 5 - 5.7 — motifs de refus et de suspension : persistés, rendus au partenaire, effacés quand le statut n’en découle plus
+  ---
+  duration_ms: 161.847146
+  type: 'suite'
+  ...
+# Subtest: 5.7 — écrans admin (contrôles statiques)
+    # Subtest: app/admin/events/page.tsx : StatusBadge, Tabs (par statut), Pagination ; lit /api/admin/events ; états chargement, vide, erreur avec « Réessayer »
+    ok 1 - app/admin/events/page.tsx : StatusBadge, Tabs (par statut), Pagination ; lit /api/admin/events ; états chargement, vide, erreur avec « Réessayer »
+      ---
+      duration_ms: 85.923986
+      type: 'test'
+      ...
+    # Subtest: app/admin/events/[id]/page.tsx : StatusBadge, ReasonDialog (refuser, suspendre), POST …/transition, historique, lien depuis la liste
+    ok 2 - app/admin/events/[id]/page.tsx : StatusBadge, ReasonDialog (refuser, suspendre), POST …/transition, historique, lien depuis la liste
+      ---
+      duration_ms: 35.318786
+      type: 'test'
+      ...
+    # Subtest: navigation admin : « Événements » → /admin/events dans le menu et dans la barre du bas ; aucune entrée en double
+    ok 3 - navigation admin : « Événements » → /admin/events dans le menu et dans la barre du bas ; aucune entrée en double
+      ---
+      duration_ms: 217.17565
+      type: 'test'
+      ...
+    # Subtest: app/admin/services/page.tsx n’écrit plus le statut d’un événement (PATCH table events retiré)
+    ok 4 - app/admin/services/page.tsx n’écrit plus le statut d’un événement (PATCH table events retiré)
+      ---
+      duration_ms: 5.52296
+      type: 'test'
+      ...
+    1..4
+ok 6 - 5.7 — écrans admin (contrôles statiques)
+  ---
+  duration_ms: 344.229827
+  type: 'suite'
+  ...
+[INVARIANT] admin-evenements — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] admin-evenements — purge des réservations échues : {"expired":0}
+[INVARIANT] admin-evenements — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] admin-evenements — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] admin-evenements — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] admin-evenements — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] admin-evenements — (j)(k)(l) : 0 violation(s)
+1..6
+# tests 25
+# suites 6
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2488.401769
