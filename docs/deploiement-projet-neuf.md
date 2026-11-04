@@ -1,6 +1,6 @@
 # Déploiement — montage du futur projet de production depuis zéro
 
-**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 6, notifications et planification indépendante de l'hébergeur). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi.
+**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 7, billet hors ligne, scanner, budget des SMS optionnels, interrupteurs des services). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet de production déjà monté (02/11) se met à jour par la section 3 bis.
 
 **Principe :** la production se fait sur un projet Supabase **neuf**. On n'y copie rien du projet de test : ni données, ni comptes, ni clés. Le schéma vient uniquement des migrations du dépôt.
 
@@ -33,25 +33,67 @@ supabase db push --dry-run     # relire la liste : toutes les migrations du dép
 supabase db push
 ```
 
-Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éditeur SQL : **toutes** les lignes doivent être `OK`. Sur un projet neuf, cette vérification doit passer sans appliquer `02-hotfix.sql` (la migration du lot 1A est déjà incluse).
+Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éditeur SQL : **toutes** les lignes doivent être `OK`. Sur un projet neuf, cette vérification doit passer sans appliquer `02-hotfix.sql` (la migration du lot 1A est déjà incluse). Depuis le lot 7, le script attend **7** aides RLS (la 7e est `ticket_category_private_read`, migration `20261105000003`) : exécuté avant les migrations du lot 7, il signale à tort la ligne « 1A.3 aides RLS exécutables par anon et authenticated, STABLE, search_path fixé ».
 
-Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7).
+Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7). Le lot 7 n'ajoute ni ne change aucune tâche planifiée.
+
+## 3 bis. Projet déjà en service : appliquer seulement les migrations du lot 7
+
+Cas du projet de production monté le 02/11 : les migrations jusqu'au lot 6 compris (`20261103000001` à `20261103000008`) y sont déjà appliquées. Elles sont **gelées** : aucune n'est modifiée dans le dépôt, et aucune ne doit être rejouée. Le lot 7 apporte sept migrations nouvelles, à appliquer dans cet ordre (l'ordre des noms, celui que suit `db push`).
+
+| Ordre | Migration | Ce qu'elle fait |
+|---|---|---|
+| 1 | `20261105000001_lot7_reglages.sql` | Crée les 5 réglages du lot (section 4 bis et 4 ter) : `notif.sms_optional_daily_cap` (700), `notif.free_ticket_reminder_sms` (`NEVER`), `features.halls_enabled`, `features.tables_enabled`, `features.orders_enabled` (`false`). Supprime `notif.sms_daily_alert` (suppression historisée dans `platform_settings_history`). Recrée `fin_setting_valid` et `finance_setting_set` avec ces clés. Un ADMIN ne peut pas écrire une clé `features.*` par l'API REST : seul un SUPERADMIN actif la change, par la page Réglages. |
+| 2 | `20261105000002_lot7_sms.sql` | Budget des SMS optionnels, appliqué au moment où l'envoyeur réserve une ligne de la boîte d'envoi (`notification_outbox_claim`), sous verrou, par jour de Dakar. Alerte des administrateurs à 80 % de ce budget, une fois par jour (`notification_daily_checks`). Prévision de la veille (`notification_reminders_schedule`) : si les rappels SMS prévus pour le lendemain dépassent le budget restant, alerte une fois par jour. Rappels sans SMS pour un porteur qui n'a que des billets gratuits ou des invitations, quand le réglage vaut `NEVER`. Nouveaux types `ADMIN_SMS_OPTIONAL_80` et `ADMIN_SMS_FORECAST`, signaux `SMS_OPTIONAL_80` et `SMS_FORECAST`. Statistiques de la page Notifications de l'administration (`admin_notifications_stats`). Lit les clés de la migration 1. |
+| 3 | `20261105000003_lot7_securite.sql` | Nouvelle aide RLS `ticket_category_private_read` : les politiques de `ticket_categories` ne lisent plus `public.users` sous le rôle du visiteur. `event_cancel` verrouille les transferts en attente et les billets de l'événement avant de prévenir les porteurs. `ticket_transfer_accept` et `ticket_transfer_claim` refusent un transfert sur un événement ni publié ni validé (`EVENT_NOT_ACTIVE`). Le type inutilisé `notification_channel_enum` est supprimé. |
+| 4 | `20261105000004_lot7_billet_hors_ligne.sql` | Historique des versions du secret des billets (`ticket_secret_versions`), avec une ligne de reprise (`BACKFILL`) pour **chaque billet existant**. Triggers sur `tickets` : la version avance d'une unité (avec un nouveau secret) au transfert, à l'annulation, au remboursement et à la régénération, et chaque avancée est historisée ; une version qui saute est refusée ; le passage de `VALIDE` à `UTILISE` ne la change pas. Les codes hors ligne d'une ancienne version sont alors refusés au scan. Journal des téléchargements de codes hors ligne (`ticket_offline_downloads`), sans aucun code ni secret. Fonctions `ticket_secret_rotate`, `ticket_offline_window`, `ticket_offline_grant`, `ticket_offline_info`. |
+| 5 | `20261105000005_lot7_scan.sql` | Colonnes `ticket_scans.secret_version` et `ticket_scans.client_key` (clé d'idempotence, unique par scanneur). `scan_log` change de signature. `ticket_scan` : une même clé rejouée rend le verdict d'origine sans nouvelle entrée ; la version du secret présentée est contrôlée sous le verrou du billet, et un QR sans version est refusé. `ticket_cash_checkin` : encaissement rejouable par le même contrôleur. Nouvelles fonctions `controller_scan_stats`, `ticket_manual_lookup`, `counter_sale_quote`. |
+| 6 | `20261105000006_lot7_client.sql` | `checkout_create_payment` refuse un second paiement de billets en attente, non échu, du même compte pour le même événement (`PAYMENT_PENDING`). Suppression des politiques d'insertion REST `hall_reservations_insert`, `table_reservations_insert`, `orders_insert` : ces écritures passent toutes par les routes serveur. |
+| 7 | `20261105000007_lot7_confirmation.sql` | `notif_ticket_lines` : catégories, quantités et 10 premiers numéros de billets, figés dans la confirmation au moment de l'achat. `payment_confirm`, `free_tickets_claim` et `ticket_transfer_accept` (dans sa version de la migration 3) les ajoutent aux données de `PURCHASE_CONFIRMED`, `FREE_TICKETS_CONFIRMED` et `TRANSFER_RECEIVED`. `TRANSFER_RECEIVED` reçoit le canal email. Dépend de la migration 3. |
+
+Toutes sont rejouables (gardes `IF [NOT] EXISTS`, `CREATE OR REPLACE`, `ON CONFLICT DO NOTHING`), sans `BEGIN` ni `COMMIT`. Chaque fonction créée ou recréée est `SECURITY DEFINER`, réservée au service_role, sauf l'aide RLS `ticket_category_private_read`.
+
+**Contrôle avant d'appliquer : aucune migration `20261103…` ne doit repartir.**
+
+1. Dans l'éditeur SQL du projet, relever l'historique :
+
+   ```sql
+   -- attendu : 8 lignes, 20261103000001 à 20261103000008
+   select version from supabase_migrations.schema_migrations where version like '20261103%' order by version;
+
+   -- attendu : aucune ligne avant le lot 7
+   select version from supabase_migrations.schema_migrations where version like '20261105%' order by version;
+   ```
+
+2. Depuis le poste de l'opérateur :
+
+   ```bash
+   supabase link --project-ref <ref-du-projet-de-production>
+   supabase migration list        # colonnes Local et Remote : 20261103000001 à …08 présents des deux côtés
+   supabase db push --dry-run     # doit lister exactement les 7 fichiers 20261105000001 à …07, dans cet ordre
+   ```
+
+3. **Si la liste du `--dry-run` contient autre chose** (une migration `20261103…` ou plus ancienne) : s'arrêter. L'historique du projet ne correspond pas aux migrations réellement appliquées. Ne pas ajouter `--include-all`, ne modifier aucune migration gelée, et ne pas lancer `supabase migration repair` sans avoir d'abord comparé le schéma réel à la migration en cause.
+
+4. Sinon, appliquer : `supabase db push`. Puis relancer la première requête : 8 lignes `20261103…` (inchangées) ; la seconde : 7 lignes `20261105…`. Enfin, exécuter `03-verification.sql` : tout `OK`.
+
+**Déployer l'application du lot 7 dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Après la migration 5, un QR doit porter la version de son secret : la route de scan du lot 6 ne l'envoie pas, et chacun de ses scans de QR serait refusé (« QR expiré »). Inversement, l'application du lot 7 appelle des fonctions qui n'existent qu'après les migrations (codes hors ligne, chiffres du contrôleur, saisie manuelle, devis du guichet).
 
 ## 4. Données de référence (sans données de test)
 
 - `supabase/seed.sql` n'est **pas** joué par `db push`. Les données de référence nécessaires au fonctionnement sont créées par les migrations :
-  - `platform_settings` : **33 clés** après le lot 6 (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, et les 9 réglages `notif.*` du lot 6, migration `20261103000003`) ;
+  - `platform_settings` : **37 clés** après le lot 7 (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
   - `referral_config` (4 barèmes) ;
-  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`.
+  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs) et `20261105000007` (email de `TRANSFER_RECEIVED`).
 
-  Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33.
+  Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33 ; après celles du lot 7, 37 (33 + 5 clés nouvelles − `notif.sms_daily_alert`).
 - `subscription_plans` n'est **pas** rempli par les migrations : ses lignes ne figurent que dans `supabase/seed.sql`, qui ne doit pas être joué en production. La table reste vide tant que le client n'a pas validé les formules et leurs tarifs (point de l'audit) ; elles seront alors créées par une migration dédiée.
 - **Ne jamais exécuter** `npm run seed:test` ni `tests/seed/seed-test.ts` contre ce projet : ce seed crée des comptes de test avec un mot de passe connu. Le garde-fou `tests/helpers/env.ts` refuse de toute façon une URL non locale.
 - Avant l'ouverture, vérifier et corriger les valeurs métier contradictoires relevées par l'audit (taux de parrainage `referral_config` de la migration `0011` contre CDC §95-§97, tarifs des packs) : traité dans un lot ultérieur, à valider avec le client.
 
-### 4 bis. Réglages des notifications (`notif.*`, lot 6)
+### 4 bis. Réglages des notifications (`notif.*`, lots 6 et 7)
 
-Créés par la migration `20261103000003` avec les valeurs ci-dessous. Comme `finance.*` et `access.*`, ils ne sont modifiables que par un SUPERADMIN actif, par `PUT /api/admin/finance-settings` (page **Réglages** de l'administration, section « Notifications ») : valeur validée en base, motif obligatoire, historique dans `platform_settings_history`.
+Créés par les migrations `20261103000003` (lot 6) et `20261105000001` (lot 7) avec les valeurs ci-dessous. Comme `finance.*` et `access.*`, ils ne sont modifiables que par un SUPERADMIN actif, par `PUT /api/admin/finance-settings` (page **Réglages** de l'administration, section « Notifications ») : valeur validée en base, motif obligatoire, historique dans `platform_settings_history`.
 
 | Clé | Défaut | Valeurs admises | Rôle |
 |---|---|---|---|
@@ -63,9 +105,24 @@ Créés par la migration `20261103000003` avec les valeurs ci-dessous. Comme `fi
 | `notif.h3_sms` | `IF_NO_PUSH` | idem | SMS du rappel avant le début |
 | `notif.sms_quiet_start` | `22` | entier de 0 à 23 | début de la plage sans SMS facultatif (heure de Dakar) |
 | `notif.sms_quiet_end` | `8` | entier de 0 à 23 | fin de la plage ; début = fin signifie aucune plage |
-| `notif.sms_daily_alert` | `2000` | entier de 1 à 1 000 000 | seuil d'alerte des SUPERADMIN sur le nombre de SMS du jour |
+| `notif.sms_optional_daily_cap` | `700` | entier de 0 à 1 000 000 | **lot 7** : nombre maximal de SMS optionnels envoyés par jour de Dakar (5.5) ; `0` : aucun SMS optionnel. Page : « Plafond quotidien des SMS optionnels » |
+| `notif.free_ticket_reminder_sms` | `NEVER` | `NEVER`, `SAME_AS_PAID` | **lot 7** : SMS des rappels (veille et avant le début) pour un porteur qui ne détient, pour cet événement, que des billets gratuits ou des invitations : jamais, ou comme un billet payant. Les rappels partent toujours dans l'application et en push ; la confirmation des billets gratuits garde son SMS. Page : « SMS des rappels pour les billets gratuits » |
 
-Une clé `notif.*` supprimée à la main fait échouer la planification des rappels (tâche `ev_reminders` en erreur 500, visible) ; l'envoyeur continue d'envoyer les messages indispensables et passe les seuls messages facultatifs en « Non envoyée », motif « Réglage des notifications manquant ».
+`notif.sms_daily_alert` (lot 6, seuil d'alerte sur le nombre de SMS du jour) est **supprimée** par la migration `20261105000001` : elle est remplacée par l'alerte à 80 % du budget des SMS optionnels (5.5). La clé n'est plus acceptée par la page ni par `finance_setting_set`.
+
+Une clé `notif.*` supprimée à la main fait échouer la planification des rappels (tâche `ev_reminders` en erreur 500, visible) ; l'envoyeur continue d'envoyer les messages indispensables et passe les seuls messages facultatifs en « Non envoyée », motif « Réglage des notifications manquant ». C'est aussi le cas de `notif.sms_optional_daily_cap` : sans elle, aucun SMS optionnel ne part, et l'envoyeur journalise « Réglage notif.sms_optional_daily_cap absent : les SMS optionnels ne partent pas. »
+
+### 4 ter. Interrupteurs des services (`features.*`, lot 7)
+
+Créés par la migration `20261105000001`, **tous à `false`** : la plateforme ouvre avec la billetterie seule. Modifiables par un SUPERADMIN actif seulement, page **Réglages**, section « Fonctionnalités » (même mécanisme que 4 bis : valeur validée, motif, historique). Un ADMIN ne peut pas les écrire, ni par la page ni par l'API REST.
+
+| Clé | Défaut | Ce qu'elle ouvre |
+|---|---|---|
+| `features.halls_enabled` | `false` | salles de fête : réservation par les clients, gestion par les partenaires |
+| `features.tables_enabled` | `false` | réservation de tables dans les restaurants |
+| `features.orders_enabled` | `false` | menus, produits et commandes de repas |
+
+Fermé, un service n'est ni visible ni utilisable : ses pages et ses routes répondent « page introuvable » (404) et ses entrées disparaissent de la navigation ; `/orders` répond 404 seulement quand les trois sont fermés. Aucun code ni aucune donnée n'est supprimé, et l'achat de billets n'est pas concerné. La page `/admin/services` de l'administration reste lisible. Une valeur absente ou illisible vaut `false` (avertissement dans les journaux du serveur).
 
 ## 5. Variables d'environnement de l'application
 
@@ -103,6 +160,16 @@ Une clé `notif.*` supprimée à la main fait échouer la planification des rapp
 | `PUSH_TEST_PER_USER_HOUR` | 5 | notifications d'essai par compte et par heure (bouton de la page des préférences) |
 | `PUSH_ENDPOINT_ALLOWED_ORIGINS` | liste intégrée | **ne pas renseigner en production** : remplace la liste blanche des services push (Google, Mozilla, Apple, Microsoft), qui protège le serveur contre les appels vers des adresses arbitraires ; réservée aux tests |
 
+### 5.3 bis Facultatives, nouvelles au lot 7
+
+Trois quotas en base, de même nature que ceux du lot 4 (chaque appel compte, fenêtres fixes ; au-delà : HTTP 429 avec `Retry-After` ; garde injoignable : HTTP 503). Ce ne sont pas des secrets. Aucune autre variable n'est ajoutée par le lot 7 (relevé de `lib/env.ts` et `.env.example`).
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `OFFLINE_CODES_PER_TICKET_HOUR` | 12 | téléchargements du lot de codes hors ligne d'un même billet par heure (`GET /api/tickets/[id]/offline-codes`). L'application ne retélécharge que si le lot manque, a expiré, a changé de version ou se termine dans moins de 24 h : 12 suffit largement à un usage normal |
+| `OFFLINE_CODES_PER_USER_HOUR` | 60 | même quota, par compte et par heure, tous billets confondus |
+| `SCAN_LOOKUP_PER_SCANNER_MIN` | 20 | vérifications de saisie manuelle par contrôleur et par minute (`POST /api/controller/scan/lookup`, premier temps de la saisie manuelle, guide `docs/guide-organisateur-entrees.md`) |
+
 ### 5.4 Facultatives existantes
 
 | Variable | Défaut | Rôle |
@@ -116,8 +183,8 @@ Une clé `notif.*` supprimée à la main fait échouer la planification des rapp
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_TILE_ATTRIBUTION` | OpenStreetMap | fournisseur de tuiles des cartes ; vérifier ses conditions d'usage avant l'ouverture |
 | `CLIENT_IP_SOURCE` | `x-forwarded-for` | garder `x-forwarded-for` uniquement derrière un hébergeur qui réécrit l'en-tête ; sinon `x-real-ip` ou `none` (pas de limite par IP) |
 | `PAYMENT_HOLD_MINUTES`, `CHECKOUT_PER_USER_15MIN`, `CHECKOUT_PER_USER_DAY`, `CLAIM_FREE_PER_USER_HOUR`, `PAYMENT_RECONCILE_MIN_AGE_MINUTES`, `PAYMENT_PENDING_MAX_AGE_MINUTES`, `PAYMENT_LATE_SUCCESS_WINDOW_HOURS`, `PAYMENT_RECONCILE_BATCH`, `STATUS_POLL_RECONCILE_SECONDS` | 15, 10, 50, 20, 2, 60, 48, 50, 5 | durée de réservation du stock, quotas d'achat par compte, fenêtres et taille de lot de la réconciliation, intervalle minimal des réconciliations demandées par la page de statut (lot 2) |
-| `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | 3, 10, 10, 30, 30, 1000 | à ajuster au budget SMS du client (5.5) ; `SMS_PER_PHONE_DAY` ne compte que les notifications (l'OTP a ses propres compteurs par numéro) ; le plafond global quotidien bloque tout SMS et alerte les SUPERADMIN |
-| `SMS_GLOBAL_OTP_RESERVED_PERCENT`, `SMS_PER_ACCOUNT_DAY` | 30, 30 | part du plafond global réservée à l'OTP (les autres SMS s'arrêtent à 100 − part %) ; SMS non OTP qu'un même compte connecté peut déclencher par jour |
+| `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | 3, 10, 10, 30, 30, 1000 | à ajuster au budget SMS du client (5.5) ; `SMS_PER_PHONE_DAY` ne compte que les notifications (l'OTP a ses propres compteurs par numéro) ; `SMS_GLOBAL_DAILY_CAP` est la protection anti-abus de dernier recours : depuis le lot 7, il ne s'applique plus aux SMS indispensables (5.5) ; atteint, il alerte les administrateurs |
+| `SMS_GLOBAL_OTP_RESERVED_PERCENT`, `SMS_PER_ACCOUNT_DAY` | 30, 30 | part du plafond global réservée à l'OTP (les autres SMS soumis au plafond s'arrêtent quand le compteur du jour atteint 100 − part %) ; SMS non OTP qu'un même compte connecté peut déclencher par jour |
 | `SCAN_PER_SCANNER_10S`, `CASH_COLLECT_PER_SCANNER_MIN`, `LIVE_CODE_PER_USER_MIN`, `RESOLVE_PHONE_PER_IP_HOUR`, `VERIFY_OTP_PER_PHONE_15MIN`, `CONTROLLER_SETUP_PER_PHONE_HOUR`, `PARTNER_REGISTER_PER_IP_HOUR`, `INVITE_PER_PARTNER_HOUR`, `INVITE_PER_PHONE_DAY`, `REGISSEUR_PIN_PER_SHIFT_15MIN` | 30, 20, 60, 30, 10, 10, 10, 20, 3, 5 | quotas en base (lot 4) : chaque tentative compte ; au-delà, HTTP 429 ; garde injoignable, HTTP 503 |
 | `WITHDRAWAL_REQUEST_PER_USER_HOUR`, `COUNTER_RECEIPT_PER_SHIFT_DAY`, `SCAN_INCIDENT_REPORT_PER_SCANNER_MIN`, `SCAN_INCIDENT_LOG_PER_SCANNER_MIN` | 10, 500, 10, 60 | demandes de retrait par compte et par heure, reçus SMS du guichet par caisse et par jour, incidents de scan déclarés et écrits par minute (lot 5) |
 | `DOCUMENT_UPLOADS_PER_IP_HOUR` | 20 | dépôts publics de pièces d'inscription partenaire, par IP et par heure |
@@ -131,11 +198,42 @@ Règles :
 - `SUPABASE_AUTH_HOOK_SECRET` ne sert plus qu'au hook SMS (lot 4 : QR dynamiques et PIN régisseur ont leurs clés dédiées `TICKET_TOTP_MASTER_KEY` et `REGISSEUR_PIN_KEY`) ; il doit être unique à la production ;
 - `OTP_HASH_SECRET`, `TICKET_TOTP_MASTER_KEY` et `REGISSEUR_PIN_KEY` sont trois secrets différents : le serveur refuse de démarrer si l'un d'eux reprend la valeur d'un autre ou d'une autre clé (service_role, hook, cron, SamirPay, clé privée VAPID).
 
-### 5.5 Plafond SMS à dimensionner avant l'ouverture
+### 5.5 Deux plafonds SMS différents : `notif.sms_optional_daily_cap` et `SMS_GLOBAL_DAILY_CAP`
 
-Avec les réglages par défaut, un billet vendu coûte : 1 SMS de confirmation par **commande** (payeur), 1 SMS de rappel la veille par compte porteur, et 1 SMS de rappel avant le début seulement si aucune notification push n'a été remise (aucun si ce rappel tombe dans la plage sans SMS, de 22 h à 8 h). Une commande d'un billet sans push coûte donc **3 SMS**, avec push **2** ; une commande de 4 billets gardés par l'acheteur, sans push, 0,75 SMS par billet. Un billet transféré ajoute 1 SMS (offre au destinataire). S'y ajoutent les messages occasionnels (annulation, remboursement versé, changement de date ou de lieu, premier billet vendu, catégorie épuisée, événement complet, écart de caisse, retrait) et les codes OTP.
+Depuis le lot 7, deux mécanismes distincts limitent les SMS. Ils n'ont ni le même but, ni le même périmètre, ni le même réglage.
 
-Le plafond par défaut (`SMS_GLOBAL_DAILY_CAP` = 1 000, dont 30 % réservés à l'OTP, soit **700 SMS hors OTP par jour**) est bas : un rappel de la veille pour un événement de plus de 700 porteurs le même jour serait en partie refusé (SMS marqués « Non envoyée », motif « Plafond quotidien de SMS atteint », sans relance ; notification in-app et push envoyées). Le seuil d'alerte `notif.sms_daily_alert` (2 000) ne peut pas être atteint avec ce plafond. À relever avec le client, d'après son budget MTarget, avant l'ouverture des ventes.
+| | `notif.sms_optional_daily_cap` | `SMS_GLOBAL_DAILY_CAP` |
+|---|---|---|
+| Nature | **budget** : ce que le client accepte de payer chaque jour en SMS facultatifs | **protection anti-abus de dernier recours** : borne dure contre un emballement (boucle, attaque sur les codes) |
+| Où le régler | réglage SUPERADMIN (`platform_settings`), page Réglages, section « Notifications » : effet immédiat, sans redéploiement, motif et historique | variable d'environnement de l'hébergeur : redéploiement |
+| Défaut | 700 par jour de Dakar | 1 000 par jour (minuit UTC, qui est minuit à Dakar), dont `SMS_GLOBAL_OTP_RESERVED_PERCENT` = 30 % réservés aux codes |
+| SMS concernés | les SMS **optionnels** de la boîte d'envoi seulement (famille `OPTIONAL` du registre) : rappel de la veille, rappel avant le début, rappel des contrôleurs, changement de date ou de lieu, premier billet vendu, catégorie épuisée, événement complet | les codes OTP, jusqu'au plafond entier ; les SMS optionnels, les invitations de contrôleurs et les envois directs sans famille, jusqu'à la part non OTP (70 %, soit 700 par défaut) |
+| SMS jamais concernés | les SMS indispensables (famille `ESSENTIAL` : confirmation d'achat et de billets gratuits, reçus du guichet, remboursement versé, annulation d'un événement, transferts, changement de mot de passe, statut des événements et des partenaires, début d'essai, affectation et activation des contrôleurs, écart de caisse, retraits), les codes OTP, les invitations | les SMS indispensables de la boîte d'envoi : **plus aucun plafond journalier global** ne les refuse |
+| Comment c'est compté | lignes SMS optionnelles réservées par l'envoyeur (en cours d'envoi, envoyées ou à l'issue incertaine) dans le jour de Dakar ; une tentative réservée compte même si l'envoi échoue ensuite | un compteur unique du jour, **partagé** par les codes OTP, les SMS optionnels, les invitations et les envois sans famille ; les SMS indispensables n'y entrent pas |
+| Au-delà | le SMS n'est pas envoyé : « Non envoyée », motif « Plafond journalier des SMS optionnels atteint », sans relance ; l'in-app et le push partent normalement | notification : « Non envoyée », motif « Plafond quotidien de SMS atteint » ; code OTP : demande refusée (HTTP 429) |
+| Alertes | à 80 % du budget : notification dans l'application et email (si le canal email est configuré) aux administrateurs ayant la permission `notifications.read`, et signal `SMS_OPTIONAL_80`, une fois par jour ; la veille : si les rappels SMS prévus pour le lendemain dépassent le budget restant de ce jour-là, notification aux mêmes administrateurs (nombre prévu, budget restant, plafond) et signal `SMS_FORECAST`, une fois par jour ; budget à 0 : aucune alerte | une fois par jour et par type (plafond entier, part non OTP), dans l'application, aux administrateurs `notifications.read` ; jamais par SMS |
+| Suivi | page **Notifications** de l'administration : carte « SMS optionnels aujourd'hui » (envoyés, plafond, seuil de 80 %) | même page, alertes |
+
+Les quotas anti-abus du lot 1C restent appliqués aux SMS indispensables comme aux autres : par destinataire (`SMS_PER_PHONE_DAY`) pour tout SMS hors OTP, par compte déclencheur (`SMS_PER_ACCOUNT_DAY`) quand un compte connecté provoque l'envoi, par caisse (`COUNTER_RECEIPT_PER_SHIFT_DAY`) pour les reçus du guichet ; les codes OTP gardent leurs propres compteurs par numéro et par IP, et leur réserve sur `SMS_GLOBAL_DAILY_CAP`.
+
+**Ordre des contrôles.** Le budget optionnel est vérifié en premier, au moment où l'envoyeur réserve la ligne (sous verrou, deux envoyeurs simultanés ne le dépassent pas) ; la garde anti-abus ne voit ensuite que les SMS admis par le budget. Le 701ᵉ rappel du jour est donc refusé avec le motif « Plafond journalier des SMS optionnels atteint », et une confirmation d'achat envoyée juste après part normalement.
+
+**Recouvrement avec les valeurs par défaut.** La part non OTP de la garde (700) est égale au budget optionnel (700), mais elle est comptée sur le compteur partagé : les codes OTP et les invitations de contrôleurs envoyés le même jour la consomment aussi. Un jour avec 150 codes de connexion et 20 invitations envoyés avant les rappels, les SMS optionnels seraient arrêtés par la garde au 531ᵉ (motif « Plafond quotidien de SMS atteint »), avant d'atteindre leur budget. Pour que le budget optionnel soit la vraie limite :
+
+`SMS_GLOBAL_DAILY_CAP` × (100 − `SMS_GLOBAL_OTP_RESERVED_PERCENT`) / 100 ≥ budget optionnel + invitations prévues + codes OTP prévus le même jour.
+
+Exemple : budget 700, 50 invitations et 300 codes un jour de grand événement, réserve de 30 % : `SMS_GLOBAL_DAILY_CAP` ≥ (700 + 50 + 300) / 0,7 = 1 500. Relever le budget optionnel sans relever `SMS_GLOBAL_DAILY_CAP` ne sert à rien au-delà de cette limite.
+
+**Coût par billet, réglages par défaut.** 1 SMS de confirmation par **commande** (au numéro du payeur), 1 SMS de rappel la veille par compte porteur et par événement, et 1 SMS de rappel avant le début seulement si aucune notification push n'a été remise (aucun si ce rappel tombe dans la plage sans SMS, de 22 h à 8 h). Une commande d'un billet sans push coûte donc **3 SMS**, avec push **2** ; une commande de 4 billets gardés par l'acheteur, sans push, 0,75 SMS par billet. Un porteur qui n'a que des billets gratuits ou des invitations pour l'événement ne reçoit que la confirmation (**1 SMS**) tant que `notif.free_ticket_reminder_sms` vaut `NEVER`. Au-delà de 700 SMS optionnels le même jour, les rappels suivants partent sans SMS. Un billet transféré ajoute 1 SMS (au destinataire). S'y ajoutent les messages occasionnels (annulation, remboursement versé, changement de date ou de lieu, premier billet vendu, catégorie épuisée, événement complet, écart de caisse, retrait) et les codes OTP.
+
+Avant l'ouverture des ventes, fixer avec le client, d'après son budget MTarget : le budget optionnel quotidien, puis `SMS_GLOBAL_DAILY_CAP` selon la règle ci-dessus.
+
+### 5.6 Exigences de l'hébergeur ajoutées par le lot 7
+
+- **HTTPS obligatoire** (déjà exigé par `NEXT_PUBLIC_APP_URL`) : les navigateurs n'enregistrent un service worker et n'ouvrent la caméra que sur une origine sécurisée. Sans HTTPS, ni billet hors ligne, ni scanner.
+- **Service worker** : `public/sw.js`, servi à la racine (`/sw.js`, portée `/`). Il ne met en cache que la page `/billet/hors-ligne`, ses fichiers statiques et les icônes, jamais une réponse de `/api/` (cache `ev-hors-ligne-lot7-1` ; les anciens caches `event-village-*` sont supprimés à l'activation). C'est un changement par rapport au lot 6, où le service worker ne mettait rien en cache.
+- **Compression des réponses** : le lot de codes hors ligne d'un billet (48 h au plus) reste sous 40 Ko une fois compressé en gzip (contrôlé par `tests/parcours/hors-ligne-codes.test.ts`). Le serveur Next compresse ses réponses (`compress: true` dans `next.config.mjs`) ; derrière un proxy ou un CDN, vérifier que la compression des réponses `/api/` est gardée (lot 8, au choix de l'hébergeur).
+- **Images** : `sharp` 0.33.5 est une dépendance figée de l'application (optimisation des images par Next.js) ; `package-lock.json` contient ses binaires Linux x64. Installer par `npm ci` sur la plate-forme de l'hébergeur ; `.npmrc` garde `legacy-peer-deps=true`.
 
 ## 6. Paiements SamirPay (lot 2)
 
@@ -282,12 +380,15 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - `supabase/hotfix/2026-10-31-lot1a/04-smoke-test.md` contre le projet de production : résultats « attendu après ».
 - Tâches planifiées : les 9 tâches actives, réponses 200 dans `net._http_response` (7.2, étape 5).
 - Parcours manuels : inscription client avec OTP, inscription partenaire puis validation par l'administration, création d'un événement, achat d'un billet en paiement réel de faible montant (SMS de confirmation et notification dans la cloche dans la minute), scan par un contrôleur ; si les clés VAPID sont posées, activation du push et bouton d'essai.
+- Lot 7 : `select count(*) from platform_settings;` donne 37, et les trois `features.*` valent `false` (`select key, value from platform_settings where key like 'features.%';`) ; `/halls` répond « page introuvable ». Sur un téléphone Android et un iPhone, installer l'application (`docs/installer-application.md`), ouvrir le billet de l'essai la veille avec du réseau, passer en mode avion, l'afficher par « Afficher mes billets hors ligne » : le QR change toutes les 20 secondes et le contrôleur, en ligne, le valide. Au scanner : un résultat plein écran par cas, une vibration sur Android, aucun son ; mode avion sur le téléphone du contrôleur : bandeau « Hors ligne : aucune entrée ne peut être validée » (`docs/guide-organisateur-entrees.md`).
 - Surveillance : journaux de l'hébergeur, **Logs > API** de Supabase et page **Notifications** de l'administration (SMS à l'issue incertaine, échecs) pendant les premiers jours.
 
 ## 10. Points ouverts d'exploitation
 
 - Hébergeur de l'application à choisir ; la planification par la base (section 7) ne dépend pas de ce choix.
-- Plafond SMS à relever avec le client avant l'ouverture des ventes (5.5).
+- Budget des SMS optionnels et `SMS_GLOBAL_DAILY_CAP` à fixer avec le client avant l'ouverture des ventes (5.5).
 - SMS à l'issue incertaine (délai MTarget dépassé) : jamais renvoyés automatiquement ; leur vérification se fait auprès de MTarget, par l'opérateur (procédure à convenir avec le fournisseur).
 - Email : compte Resend du client et domaine d'envoi vérifié à configurer ; d'ici là, le canal email reste désactivé.
-- Hors ligne du billet : le service worker du lot 6 ne met plus rien en cache ; le mode hors ligne est prévu au lot 7.
+- Interrupteurs `features.*` : à ouvrir seulement quand le client aura validé les frais des salles, des tables et des commandes (4 ter).
+- Compression des réponses `/api/` gardée par l'hébergeur ou son proxy, nécessaire au lot de codes hors ligne (5.6) : à vérifier au lot 8.
+- Billet hors ligne sur iPhone : stockage de l'application installée séparé de celui de Safari, aucune vibration au scanner ; aucun test automatisé ne couvre l'iPhone (`docs/installer-application.md`).
