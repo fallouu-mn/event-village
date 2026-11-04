@@ -1,9 +1,12 @@
 /**
  * Lot 6, tâche 6.2 — service worker, enregistrement et client push (contrat F4 « Client », F5 ; décision 3 ;
  * S2 « Canaux »).
- *  - public/sw.js exécuté dans node:vm avec un faux `self` : aucun écouteur `fetch`, ni cache ni
- *    importScripts ; install → skipWaiting ; activate → suppression des seuls caches `event-village-*`
- *    puis clients.claim() ; push : JSON {title, body, url, tag} → showNotification exact (icône et badge
+ *  - public/sw.js exécuté dans node:vm avec un faux `self` : aucun importScripts ; install → skipWaiting,
+ *    installation qui ne rejette jamais ; activate → suppression des seuls caches `event-village-*` (le cache
+ *    du lot 7, `ev-hors-ligne-*`, a un autre préfixe) puis clients.claim() ; lot 7 (T12) : l'écouteur `fetch`
+ *    existe, l'API n'est jamais interceptée, la liste blanche complète est vérifiée par
+ *    tests/parcours/hors-ligne-service-worker.test.ts (contrat 5.3, décision 4 du lot 6 renversée) ;
+ *    push : JSON {title, body, url, tag} → showNotification exact (icône et badge
  *    /icon-192x192.png), charge illisible ou absente → notification générique ; notificationclick :
  *    lien interne ouvert ou onglet existant (focus + navigate), lien externe, `//hôte` ou `javascript:` →
  *    /notifications ; pushsubscriptionchange : réabonnement avec la clé de GET /api/push/config puis
@@ -167,24 +170,36 @@ function keyBytes(k: unknown): string {
 
 // ── public/sw.js ───────────────────────────────────────────────────────────
 
-describe('6.2 public/sw.js remplacé : sans cache ni fetch, push et clics (contrat F5, décision 3)', () => {
-    test('aucun écouteur fetch, aucun cache ni importScripts ; écouteurs install, activate, push, notificationclick, pushsubscriptionchange', () => {
+describe('6.2 public/sw.js : push et clics (contrat F5, décision 3) ; lot 7 : cache du billet hors ligne en liste blanche', () => {
+    test('écouteurs install, activate, fetch (liste blanche du lot 7), push, notificationclick, pushsubscriptionchange ; aucun importScripts ; l’API n’est jamais interceptée', async () => {
         const h = loadServiceWorker();
-        assert.equal((h.listeners.get('fetch') ?? []).length, 0, 'aucun gestionnaire fetch : le réseau n’est jamais intercepté');
-        for (const type of ['install', 'activate', 'push', 'notificationclick', 'pushsubscriptionchange']) {
+        for (const type of ['install', 'activate', 'fetch', 'push', 'notificationclick', 'pushsubscriptionchange']) {
             assert.equal((h.listeners.get(type) ?? []).length, 1, `écouteur ${type}`);
         }
         const src = fs.readFileSync(SW_FILE, 'utf8');
         assert.doesNotMatch(src, /importScripts\s*\(/, 'aucun importScripts');
-        assert.doesNotMatch(src, /caches\.open\s*\(|\.addAll\s*\(|\.put\s*\(|respondWith\s*\(/, 'aucune mise en cache ni réponse interceptée');
         assert.match(src, /event-village-v1/, 'l’ancien cache est nommé pour être supprimé (tests/e2e-scenarios.test.ts:171-173 reste vrai)');
+        // Lot 7 (T12) : « aucun cache ni réponse interceptée » devient la liste blanche du contrat 5.3, vérifiée cas par cas
+        // dans tests/parcours/hors-ligne-service-worker.test.ts ; ici, l'API du push reste servie par le réseau.
+        for (const url of [`${ORIGIN}/api/push/config`, `${ORIGIN}/api/push/subscriptions`, `${ORIGIN}/api/auth/me`]) {
+            const intercepted: unknown[] = [];
+            await h.fire('fetch', {
+                request: { url, method: 'GET', mode: 'cors', headers: new Headers(), destination: '' },
+                clientId: '', preloadResponse: Promise.resolve(undefined),
+                respondWith: (r: unknown) => { intercepted.push(r); },
+            });
+            assert.deepEqual(intercepted, [], `${url} : aucune réponse interceptée (le réseau n’est jamais servi pour /api/)`);
+        }
+        assert.deepEqual(h.fetchCalls, [], 'le service worker ne refait aucune requête /api/');
     });
 
-    test('install : skipWaiting ; activate : supprime les seuls caches event-village-* puis clients.claim()', async () => {
+    test('install : skipWaiting, installation qui ne rejette jamais ; activate : supprime les seuls caches event-village-* puis clients.claim()', async () => {
         const h = loadServiceWorker({ cacheKeys: ['event-village-v1', 'event-village-runtime', 'autre-application', 'workbox-precache'] });
-        await h.fire('install', {});
+        const installed = await h.fire('install', {});
         assert.equal(h.skipWaiting, 1, 'skipWaiting à l’installation');
-        assert.equal(h.cacheOpened, 0, 'aucun cache ouvert à l’installation');
+        // Lot 7 (T12) : « aucun cache ouvert à l'installation » devient « l'installation ne rejette jamais » : la pré-mise en
+        // cache de la page hors ligne échoue ici (faux fetch qui lève) et doit être rattrapée, sinon le push serait perdu.
+        assert.deepEqual(installed.filter((s) => s.status === 'rejected'), [], 'installation sans rejet, même si la pré-mise en cache échoue');
         const settled = await h.fire('activate', {});
         assert.deepEqual(settled.filter((s) => s.status === 'rejected'), [], 'activation sans erreur');
         assert.deepEqual([...h.deleted].sort(), ['event-village-runtime', 'event-village-v1'], 'caches event-village-* supprimés, les autres laissés');
