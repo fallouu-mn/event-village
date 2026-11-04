@@ -385,7 +385,10 @@ BEGIN
         'ok', true,
         'days', v_days,
         'by_day', v_by_day,
-        'sms_month', jsonb_build_object('month', to_char(v_month, 'YYYY-MM'), 'sent', v_m_sent, 'uncertain', v_m_unc, 'otp', v_m_otp),
+        -- total = même règle que sms_today (envoyés et à l'issue incertaine, peut-être facturés) : la page
+        -- l'affiche tel quel, sans addition dans le navigateur (relecture des captures du run 65).
+        'sms_month', jsonb_build_object('month', to_char(v_month, 'YYYY-MM'), 'sent', v_m_sent, 'uncertain', v_m_unc, 'otp', v_m_otp,
+                                        'total', v_m_sent + v_m_unc),
         'sms_today', v_today_n,
         'threshold', public.notif_setting_int('notif.sms_daily_alert')
     );

@@ -73,7 +73,7 @@ interface DayRow {
 interface StatsBody {
   days: number;
   byDay: DayRow[];
-  smsMonth: { month: string; sent: number; uncertain: number; otp: number };
+  smsMonth: { month: string; sent: number; uncertain: number; otp: number; total: number };
   smsToday: number;
   threshold: number | null;
 }
@@ -167,7 +167,7 @@ function parseStats(body: unknown): StatsBody | null {
   return {
     days: num(body.days),
     byDay,
-    smsMonth: { month: str(m.month) ?? '', sent: num(m.sent), uncertain: num(m.uncertain), otp: num(m.otp) },
+    smsMonth: { month: str(m.month) ?? '', sent: num(m.sent), uncertain: num(m.uncertain), otp: num(m.otp), total: num(m.total) },
     smsToday: num(body.sms_today),
     threshold: typeof body.threshold === 'number' ? body.threshold : null,
   };
@@ -182,8 +182,8 @@ function formatDay(day: string): string {
 }
 
 /**
- * Même règle que « SMS aujourd'hui » (serveur) : envoyés et à l'issue incertaine, peut-être facturés. Run 65 : le
- * mois n'affichait que les envoyés et pouvait être inférieur au jour.
+ * Le total vient du serveur (sms_month.total, même règle que « SMS aujourd'hui » : envoyés et à l'issue incertaine,
+ * peut-être facturés). Run 65 : le mois n'affichait que les envoyés et pouvait être inférieur au jour.
  */
 function smsMonthHint(m: { month: string; uncertain: number; otp: number }): string {
   const codes = m.otp === 1 ? '1 code de connexion' : `${formatInteger(m.otp)} codes de connexion`;
@@ -444,7 +444,7 @@ export default function AdminNotificationsPage() {
               />
               <KpiCard
                 label="SMS ce mois-ci"
-                value={formatInteger(stats.smsMonth.sent + stats.smsMonth.uncertain)}
+                value={formatInteger(stats.smsMonth.total)}
                 hint={smsMonthHint(stats.smsMonth)}
                 tone="info"
                 icon={<BellRing size={20} aria-hidden="true" />}
