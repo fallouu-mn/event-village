@@ -1,0 +1,145 @@
+TAP version 13
+[requireActiveSession] accès refusé à /api/tickets/1178545f-6ec5-4b64-9950-2599cd6cc323/offline-codes : compte 6e44653d-334f-4970-b711-a2803b362151 au statut SUSPENDU
+[offline-codes] billet 3f9e4066-4171-4922-8bb8-958f4895f0ff introuvable ou d'un autre porteur (compte 4104dc90-5238-458e-b408-eff23ec4e170) : 404
+[offline-codes] billet 7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01 introuvable ou d'un autre porteur (compte 4104dc90-5238-458e-b408-eff23ec4e170) : 404
+[offline-codes] identifiant non UUID demandé par le compte 4104dc90-5238-458e-b408-eff23ec4e170 : 404
+# Subtest: 7.1 GET /api/tickets/[id]/offline-codes : accès
+    # Subtest: 1. 401 sans session ; 403 compte SUSPENDU ; 404 même corps pour le billet d’un autre, un UUID inconnu et un id non UUID
+    ok 1 - 1. 401 sans session ; 403 compte SUSPENDU ; 404 même corps pour le billet d’un autre, un UUID inconnu et un id non UUID
+      ---
+      duration_ms: 1057.232195
+      type: 'test'
+      ...
+[offline-codes] billet 4f5589a4-8163-4883-bfc9-d4bb47572a23 (compte 4b63701a-c186-41a1-9450-c78a1f355b04) refusé : TICKET_NOT_VALID
+[offline-codes] billet a871f2d4-df26-45c0-90d1-aeced2bddec4 (compte fbae7d27-4ee8-4f2c-81cd-3dd0a3978125) refusé : TICKET_NOT_VALID
+[offline-codes] billet f65bb7de-2cfd-4659-8631-84ed7d93d0bd (compte c8e4c778-2737-4834-acd5-ffeeabc518aa) refusé : EVENT_NOT_PUBLISHED
+[offline-codes] billet 2a434bc8-da01-44c1-ac14-11e48260514f (compte 114ff445-77b9-4946-9ea8-e900abdda527) refusé : EVENT_NOT_PUBLISHED
+[offline-codes] billet e58f1660-d73a-44f6-a45c-8c67d11c2d92 (compte 63295ae2-befa-4bd7-b206-18fdc72ee628) refusé : TRANSFER_PENDING
+    # Subtest: 2. 409 TICKET_NOT_VALID (UTILISE, ANNULE), EVENT_NOT_PUBLISHED (SUSPENDU, TERMINE), TRANSFER_PENDING
+    ok 2 - 2. 409 TICKET_NOT_VALID (UTILISE, ANNULE), EVENT_NOT_PUBLISHED (SUSPENDU, TERMINE), TRANSFER_PENDING
+      ---
+      duration_ms: 2314.406516
+      type: 'test'
+      ...
+    1..2
+ok 1 - 7.1 GET /api/tickets/[id]/offline-codes : accès
+  ---
+  duration_ms: 3372.603509
+  type: 'suite'
+  ...
+[offline-codes] billet c31076ca-d916-4a29-ba1a-b18d9fcd858a (compte ea69b75c-58fb-483a-950c-b56109ed1c26) refusé : OFFLINE_WINDOW_CLOSED
+[offline-codes] billet 1c6cfc17-558b-4105-9672-d2f768012a46 (compte e1f85977-fdc1-4f6d-90e2-e49090d52d25) refusé : OFFLINE_WINDOW_CLOSED
+# Subtest: 7.1 Fenêtre de téléchargement [début − 24 h ; fin + access.scan_window_after_hours]
+    # Subtest: 3. début dans 23,9 h → 200 ; dans 24,1 h → 409 OFFLINE_WINDOW_CLOSED avec available_from ; fin passée, after = 0 → 409 (témoin after = 6 : 200)
+    ok 1 - 3. début dans 23,9 h → 200 ; dans 24,1 h → 409 OFFLINE_WINDOW_CLOSED avec available_from ; fin passée, after = 0 → 409 (témoin after = 6 : 200)
+      ---
+      duration_ms: 1172.427352
+      type: 'test'
+      ...
+    # Subtest: 4. bornes à la seconde (ticket_offline_grant, p.now) : début − 24 h − 1 s refusé, début − 24 h admis, fin + after admis, + 1 s refusé ; now passé → INVALID_NOW
+    ok 2 - 4. bornes à la seconde (ticket_offline_grant, p.now) : début − 24 h − 1 s refusé, début − 24 h admis, fin + after admis, + 1 s refusé ; now passé → INVALID_NOW
+      ---
+      duration_ms: 387.557917
+      type: 'test'
+      ...
+    1..2
+ok 2 - 7.1 Fenêtre de téléchargement [début − 24 h ; fin + access.scan_window_after_hours]
+  ---
+  duration_ms: 1560.202282
+  type: 'suite'
+  ...
+# Subtest: 7.1 Contenu du lot (contrat 3.1)
+    # Subtest: 5. format compact, champs dérivés, 30 codes au hasard égaux au code calculé ; le code courant est accepté au scan
+    ok 1 - 5. format compact, champs dérivés, 30 codes au hasard égaux au code calculé ; le code courant est accepté au scan
+      ---
+      duration_ms: 564.216732
+      type: 'test'
+      ...
+    # Subtest: 6. aucun secret dans la réponse ; Cache-Control: no-store
+    ok 2 - 6. aucun secret dans la réponse ; Cache-Control: no-store
+      ---
+      duration_ms: 375.718624
+      type: 'test'
+      ...
+[HORS-LIGNE-TAILLE] 3 jours, before = after = 48 h : 8640 codes, 52629 octets bruts, 25663 octets gzip (niveau 6)
+[HORS-LIGNE-TAILLE] soirée de 4 h, réglages courants : 2162 codes, 13715 octets bruts, 6750 octets gzip (niveau 6)
+    # Subtest: 7. taille : 3 jours avec before = after = 48 → 8 640 codes, lot glissant incomplet, gzip < 40 000 octets ; soirée par défaut complète
+    ok 3 - 7. taille : 3 jours avec before = after = 48 → 8 640 codes, lot glissant incomplet, gzip < 40 000 octets ; soirée par défaut complète
+      ---
+      duration_ms: 800.186062
+      type: 'test'
+      ...
+    1..3
+ok 3 - 7.1 Contenu du lot (contrat 3.1)
+  ---
+  duration_ms: 1740.466111
+  type: 'suite'
+  ...
+[offline-codes] quota offline_codes_ticket atteint pour le billet a79c2f45-5bb9-43c0-886b-6fbeffca95c7 (compte cd836d00-9632-4113-8a2a-3c92e1e134c8) : 429
+[offline-codes] quota offline_codes_user atteint pour le billet 5299faa1-2cf2-4585-9151-c0ea59396ad1 (compte e0ddcfef-425a-476d-a550-09081ce7d177) : 429
+# Subtest: 7.1 Quotas et journal des téléchargements
+    # Subtest: 8. quota par billet puis par compte (3 par heure) : 4ᵉ → 429 RATE_LIMITED + Retry-After, refus non journalisé
+    ok 1 - 8. quota par billet puis par compte (3 par heure) : 4ᵉ → 429 RATE_LIMITED + Retry-After, refus non journalisé
+      ---
+      duration_ms: 954.480522
+      type: 'test'
+      ...
+[offline-codes] billet 7bb59cea-10b9-4edd-936a-968d07242ea8 introuvable ou d'un autre porteur (compte 222060d3-1bd4-489e-b79f-ec1c7daf08b6) : 404
+[offline-codes] billet 7bb59cea-10b9-4edd-936a-968d07242ea8 (compte efd83c91-0125-4cbb-b0ab-bc03b3c1fda6) refusé : TRANSFER_PENDING
+    # Subtest: 9. une ligne par 200 avec l’instantané de décision, aucune pour 404 et 409 ; aucune colonne ne contient un code servi
+    ok 2 - 9. une ligne par 200 avec l’instantané de décision, aucune pour 404 et 409 ; aucune colonne ne contient un code servi
+      ---
+      duration_ms: 732.367544
+      type: 'test'
+      ...
+    1..2
+ok 4 - 7.1 Quotas et journal des téléchargements
+  ---
+  duration_ms: 1687.19408
+  type: 'suite'
+  ...
+# Subtest: 7.1 Contrôles statiques, liste des billets, RLS
+    # Subtest: 10. statique : la route ne lit ni paramètre ni en-tête d’heure ; issueOfflineCodes({ ticketId, userId }) seulement ; aucun now transmis
+    ok 1 - 10. statique : la route ne lit ni paramètre ni en-tête d’heure ; issueOfflineCodes({ ticketId, userId }) seulement ; aucun now transmis
+      ---
+      duration_ms: 1.144764
+      type: 'test'
+      ...
+    # Subtest: 11. GET /api/tickets : champ offline par billet (dans la fenêtre, pas encore ouverte, transfert en attente)
+    ok 2 - 11. GET /api/tickets : champ offline par billet (dans la fenêtre, pas encore ouverte, transfert en attente)
+      ---
+      duration_ms: 962.975678
+      type: 'test'
+      ...
+    # Subtest: 12. ticket_secret_versions et ticket_offline_downloads : RLS activée, aucune politique, aucun accès anon ni authenticated (clé anon)
+    ok 3 - 12. ticket_secret_versions et ticket_offline_downloads : RLS activée, aucune politique, aucun accès anon ni authenticated (clé anon)
+      ---
+      duration_ms: 458.096223
+      type: 'test'
+      ...
+    1..3
+ok 5 - 7.1 Contrôles statiques, liste des billets, RLS
+  ---
+  duration_ms: 1422.428611
+  type: 'suite'
+  ...
+[INVARIANT] hors-ligne-codes — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] hors-ligne-codes — purge des réservations échues : {"expired":0}
+[INVARIANT] hors-ligne-codes — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] hors-ligne-codes — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] hors-ligne-codes — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] hors-ligne-codes — cron events_finish_overdue : 1 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] hors-ligne-codes — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] hors-ligne-codes — envoyeur : 997 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] hors-ligne-codes — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] hors-ligne-codes — (p)(q) : 0 violation(s)
+1..5
+# tests 12
+# suites 5
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11047.117982

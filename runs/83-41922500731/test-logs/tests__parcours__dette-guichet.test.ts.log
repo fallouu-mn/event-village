@@ -1,0 +1,91 @@
+TAP version 13
+# Subtest: C7 — schéma du billet sans compte
+    # Subtest: tickets.user_id et payments.client_id nullables sous CHECK ; tickets.sale_channel ; ticket_scans.method COUNTER
+    ok 1 - tickets.user_id et payments.client_id nullables sous CHECK ; tickets.sale_channel ; ticket_scans.method COUNTER
+      ---
+      duration_ms: 26.737323
+      type: 'test'
+      ...
+    1..1
+ok 1 - C7 — schéma du billet sans compte
+  ---
+  duration_ms: 481.042413
+  type: 'suite'
+  ...
+# Subtest: C7 — vente au guichet = entrée immédiate
+    # Subtest: Idempotency-Key absente → 400, rien vendu
+    ok 1 - Idempotency-Key absente → 400, rien vendu
+      ---
+      duration_ms: 32.190503
+      type: 'test'
+      ...
+    # Subtest: vente sans numéro : billets UTILISE, une ligne ticket_scans COUNTER acceptée par billet, paiement hors plateforme sans client, caisse créditée, même transaction
+    ok 2 - vente sans numéro : billets UTILISE, une ligne ticket_scans COUNTER acceptée par billet, paiement hors plateforme sans client, caisse créditée, même transaction
+      ---
+      duration_ms: 47.344019
+      type: 'test'
+      ...
+    # Subtest: numéro d’un compte existant : billet sans compte (aucun rattachement), payer_phone renseigné
+    ok 3 - numéro d’un compte existant : billet sans compte (aucun rattachement), payer_phone renseigné
+      ---
+      duration_ms: 178.92449
+      type: 'test'
+      ...
+    # Subtest: numéro du vendeur : jamais porteur
+    ok 4 - numéro du vendeur : jamais porteur
+      ---
+      duration_ms: 28.791516
+      type: 'test'
+      ...
+    # Subtest: même Idempotency-Key rejouée : même vente, aucun billet ni paiement en double, caisse créditée une fois
+    ok 5 - même Idempotency-Key rejouée : même vente, aucun billet ni paiement en double, caisse créditée une fois
+      ---
+      duration_ms: 49.260133
+      type: 'test'
+      ...
+    # Subtest: reçu SMS : numéro fourni → reçu en file (receipt_queued), SMS remis par l’envoyeur ; échec du SMS → vente conservée, ligne relancée
+    ok 6 - reçu SMS : numéro fourni → reçu en file (receipt_queued), SMS remis par l’envoyeur ; échec du SMS → vente conservée, ligne relancée
+      ---
+      duration_ms: 161.730867
+      type: 'test'
+      ...
+    # Subtest: un nouveau scan d’un billet vendu au guichet → already_used, toujours une seule entrée acceptée
+    ok 7 - un nouveau scan d’un billet vendu au guichet → already_used, toujours une seule entrée acceptée
+      ---
+      duration_ms: 63.703155
+      type: 'test'
+      ...
+    # Subtest: garde-fou : le partenaire propriétaire ne vend pas au guichet (NOT_ASSIGNED), rien vendu
+    ok 8 - garde-fou : le partenaire propriétaire ne vend pas au guichet (NOT_ASSIGNED), rien vendu
+      ---
+      duration_ms: 27.833891
+      type: 'test'
+      ...
+    # Subtest: garde-fou : invariants (g)(h)(i) vrais sur les billets, la caisse et les paiements de la suite
+    ok 9 - garde-fou : invariants (g)(h)(i) vrais sur les billets, la caisse et les paiements de la suite
+      ---
+      duration_ms: 23.007101
+      type: 'test'
+      ...
+    1..9
+ok 2 - C7 — vente au guichet = entrée immédiate
+  ---
+  duration_ms: 613.927525
+  type: 'suite'
+  ...
+[INVARIANT] dette-guichet — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] dette-guichet — purge des réservations échues : {"expired":0}
+[INVARIANT] dette-guichet — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] dette-guichet — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] dette-guichet — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] dette-guichet — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] dette-guichet — (j)(k)(l) : 0 violation(s)
+1..2
+# tests 10
+# suites 2
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1267.491646
