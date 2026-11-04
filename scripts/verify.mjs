@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * `npm run verify` — typecheck → lint → test → build, dans cet ordre, arrêt à la première erreur.
+ * `npm run verify` — typecheck → lint → test → build → js-budget, dans cet ordre, arrêt à la première erreur.
+ *
+ * Lot 7 (7.5) : `js-budget` (scripts/js-budget.mjs) mesure, juste après `next build`, le poids gzip du
+ * JavaScript du premier chargement, layout racine compris, pour l'accueil, la page événement, Mes billets,
+ * le scanner et le billet hors ligne ; il écrit .verify/js-budget.tsv et échoue au-dessus des budgets de
+ * scripts/js-budget.json (mesure seule tant que ce fichier est absent ou vide).
  *
  * L'environnement de `.env.test` est chargé AVANT chaque étape (sans écraser les
  * variables déjà présentes dans le shell). Comme Next.js ne remplace jamais une
@@ -79,6 +84,7 @@ const steps = [
     ['lint', 'npm run lint'],
     ['test', 'npm run test'],
     ['build', 'npm run build'],
+    ['js-budget', 'node scripts/js-budget.mjs'],
 ];
 
 const started = Date.now();
