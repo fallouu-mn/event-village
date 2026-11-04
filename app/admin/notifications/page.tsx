@@ -12,7 +12,7 @@ import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pagination } from '@/components/ui/Pagination';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StatusBadge, type StatusCatalog } from '@/components/ui/StatusBadge';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
@@ -20,6 +20,8 @@ import { formatDateTime, formatInteger } from '@/lib/format';
 import {
   OUTBOX_CHANNELS,
   OUTBOX_STATUSES,
+  OUTBOX_STATUS_LABELS,
+  OUTBOX_STATUS_TONES,
   OUTBOX_TYPE_LABELS,
   outboxChannelLabel,
   outboxReasonLabel,
@@ -89,6 +91,8 @@ type Fetched<T> = { ok: true; data: T } | { ok: false; status: number; message: 
 
 const PAGE_SIZE = 20;
 const STATUS_TABS = ['tous', ...OUTBOX_STATUSES] as const;
+/** Lot 7 (7.5) : libellés et tons du badge de statut, passés par l'écran (StatusBadge n'importe plus outbox-labels). */
+const OUTBOX_STATUS_CATALOG: StatusCatalog = { labels: OUTBOX_STATUS_LABELS, tones: OUTBOX_STATUS_TONES };
 type StatusTab = typeof STATUS_TABS[number];
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
 const FORBIDDEN_MESSAGE = "Vous n'avez pas la permission de consulter les notifications.";
@@ -365,7 +369,7 @@ export default function AdminNotificationsPage() {
     },
     { key: 'canal', header: 'Canal', render: (n) => outboxChannelLabel(n.channel) },
     { key: 'destinataire', header: 'Destinataire', render: (n) => <span className="break-words">{n.recipient_masked}</span> },
-    { key: 'statut', header: 'Statut', render: (n) => <StatusBadge domain="notification" status={n.status} size="sm" /> },
+    { key: 'statut', header: 'Statut', render: (n) => <StatusBadge domain="notification" catalog={OUTBOX_STATUS_CATALOG} status={n.status} size="sm" /> },
     { key: 'motif', header: 'Motif', render: (n) => outboxReasonLabel(n.reason) ?? '—' },
     {
       key: 'detail',
@@ -383,7 +387,7 @@ export default function AdminNotificationsPage() {
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 font-semibold text-fg">{outboxTypeLabel(n.type)}</p>
-        <StatusBadge domain="notification" status={n.status} size="sm" />
+        <StatusBadge domain="notification" catalog={OUTBOX_STATUS_CATALOG} status={n.status} size="sm" />
       </div>
       {n.event_title && <p className="text-fg-muted">{n.event_title}</p>}
       <p className="text-fg">

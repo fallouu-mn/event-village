@@ -1,8 +1,12 @@
 'use client';
 
 /**
- * Lot 7, tâche 7.1 (contrat 5.2, D29 à D31, D35, D37) — synchronisation des billets hors ligne, montée une
- * fois dans app/layout.tsx (rendu nul).
+ * Lot 7, tâche 7.1 (contrat 5.2, D29 à D31, D35, D37) — synchronisation des billets hors ligne (rendu nul).
+ *
+ * Lot 7, tâche 7.5 : ce module n'est plus importé par app/layout.tsx. Le composant OfflineTicketsSync est
+ * monté une fois par components/providers/AuthProvider.tsx, qui le charge à la demande (import()) pour un
+ * compte client seulement. Les autres exports (ensureOfflineLot, reconcileWithServerTickets, événement
+ * OFFLINE_LOTS_CHANGED) restent importés directement par Mes billets et la carte billet.
  *
  *  - Une fois par onglet à l'ouverture, puis à chaque retour du réseau (`online`), pour un compte client :
  *    lecture de /api/tickets (le champ `offline` du serveur décide de la fenêtre, le navigateur ne calcule

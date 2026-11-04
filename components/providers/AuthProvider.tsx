@@ -7,6 +7,62 @@ import { useRouter } from 'next/navigation';
 import { detachPushSubscription } from '@/lib/push/client';
 import { clearOfflineStore } from '@/lib/tickets/offline-store';
 
+/**
+ * Lot 7 (7.5) — synchronisation des billets hors ligne chargée à la demande.
+ *
+ * components/tickets/OfflineTicketsSync.tsx (et lib/tickets/offline-clock.ts) n'est plus dans le JavaScript
+ * de chaque page : son module n'est demandé qu'une fois la session connue et le rôle CLIENT lu sur le
+ * serveur. Le visiteur, le partenaire et le contrôleur (scanner) ne le téléchargent jamais. Sur Mes billets,
+ * qui l'importe déjà, le chargement est immédiat.
+ *
+ * Un échec du chargement (réseau coupé à ce moment-là) est journalisé ; le module est redemandé au retour du
+ * réseau (`online`) ou au prochain montage. La purge à la déconnexion n'en dépend pas : clearOfflineStore
+ * reste importé ici et appelé dans signOut et sur SIGNED_OUT.
+ */
+type OfflineSyncComponent = React.ComponentType;
+let offlineSyncModule: Promise<OfflineSyncComponent> | null = null;
+
+function loadOfflineTicketsSync(): Promise<OfflineSyncComponent> {
+    if (!offlineSyncModule) {
+        offlineSyncModule = import('@/components/tickets/OfflineTicketsSync')
+            .then((m) => m.OfflineTicketsSync)
+            .catch((err: unknown) => {
+                offlineSyncModule = null; // nouvel essai possible au prochain appel ; l'erreur remonte à l'appelant
+                throw err;
+            });
+    }
+    return offlineSyncModule;
+}
+
+function LazyOfflineTicketsSync() {
+    const [Sync, setSync] = useState<OfflineSyncComponent | null>(null);
+
+    useEffect(() => {
+        if (Sync) return;
+        let active = true;
+        const load = () => {
+            loadOfflineTicketsSync()
+                .then((component) => {
+                    if (active) setSync(() => component);
+                })
+                .catch((err: unknown) => {
+                    console.error(
+                        '[AuthProvider] synchronisation des billets hors ligne non chargée (nouvel essai au retour du réseau) :',
+                        err instanceof Error ? err.message : String(err),
+                    );
+                });
+        };
+        load();
+        window.addEventListener('online', load);
+        return () => {
+            active = false;
+            window.removeEventListener('online', load);
+        };
+    }, [Sync]);
+
+    return Sync ? <Sync /> : null;
+}
+
 export interface UserProfile {
     id: string;
     first_name: string;
@@ -169,6 +225,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return roles.some(r => profile.roles.includes(r));
     }, [profile]);
 
+    // Lot 7 (7.5) : billets hors ligne synchronisés seulement pour un compte client (module chargé à la demande).
+    const syncOfflineTickets = !isLoading && !!user && hasRole('CLIENT');
+
     return (
         <AuthContext.Provider
             value={{
@@ -184,6 +243,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 hasAnyRole,
             }}
         >
+            {syncOfflineTickets && <LazyOfflineTicketsSync />}
             {children}
         </AuthContext.Provider>
     );

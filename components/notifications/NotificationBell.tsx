@@ -20,13 +20,50 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { Badge } from '@/components/ui/Badge';
 import { IconButton } from '@/components/ui/IconButton';
 import { cn } from '@/components/ui/cn';
 import { TONE_ICON, type Tone } from '@/components/ui/tones';
-import { formatShortDate, toDate } from '@/lib/format';
 import { internalActionUrl } from '@/lib/notifications/action-url';
-import { notificationTypeMeta, type NotificationCategory } from '@/lib/notifications/notification-types';
+import type { NotificationCategory } from '@/lib/notifications/notification-types';
+
+/**
+ * Lot 7 (7.5) — ce que seul le panneau utilise (libellés des types, pastille, dates) n'est plus dans le
+ * JavaScript de chaque page : chargé au survol ou au focus de la cloche, et au plus tard à l'ouverture.
+ * Le bouton, le compteur des non lues et le temps réel restent chargés avec la page.
+ */
+type NotificationTypesModule = typeof import('@/lib/notifications/notification-types');
+type BadgeModule = typeof import('@/components/ui/Badge');
+type FormatModule = typeof import('@/lib/format');
+
+interface PanelKit {
+    notificationTypeMeta: NotificationTypesModule['notificationTypeMeta'];
+    Badge: BadgeModule['Badge'];
+    formatShortDate: FormatModule['formatShortDate'];
+    toDate: FormatModule['toDate'];
+}
+
+let panelKitModule: Promise<PanelKit> | null = null;
+
+function loadPanelKit(): Promise<PanelKit> {
+    if (!panelKitModule) {
+        panelKitModule = Promise.all([
+            import('@/lib/notifications/notification-types'),
+            import('@/components/ui/Badge'),
+            import('@/lib/format'),
+        ])
+            .then(([types, badge, format]) => ({
+                notificationTypeMeta: types.notificationTypeMeta,
+                Badge: badge.Badge,
+                formatShortDate: format.formatShortDate,
+                toDate: format.toDate,
+            }))
+            .catch((err: unknown) => {
+                panelKitModule = null; // nouvel essai possible ; l'erreur remonte à l'appelant
+                throw err;
+            });
+    }
+    return panelKitModule;
+}
 
 /** Notification telle que la renvoie GET /api/notifications (lot 6, contrat N2). */
 export interface InAppNotification {
@@ -62,7 +99,8 @@ function badgeText(count: number): string {
 }
 
 /** Date relative courte : « À l’instant », « Il y a 5 min », « Hier »… puis la date à Dakar. Date illisible : « — ». */
-function formatRelativeTime(isoDate: string): string {
+function formatRelativeTime(kit: PanelKit, isoDate: string): string {
+    const { formatShortDate, toDate } = kit;
     const date = toDate(isoDate);
     if (!date) return formatShortDate(null);
     const diffMs = Date.now() - date.getTime();
@@ -119,6 +157,8 @@ export function NotificationBell() {
     const [isMarkingAll, setIsMarkingAll] = useState<boolean>(false);
     const [filter, setFilter] = useState<BellFilter>('ALL');
     const [loadError, setLoadError] = useState<boolean>(false);
+    const [kit, setKit] = useState<PanelKit | null>(null);
+    const [kitError, setKitError] = useState<boolean>(false);
     const filterRef = useRef<BellFilter>('ALL');
     const requestSeq = useRef(0);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -200,6 +240,20 @@ export function NotificationBell() {
         enabled: isUserLoggedIn && !!user?.id,
     });
 
+    /** Lot 7 (7.5) : charge le contenu du panneau (survol, focus, ouverture) ; un échec est journalisé et affiché. */
+    const loadPanel = useCallback(() => {
+        if (kit) return;
+        loadPanelKit()
+            .then((loaded) => {
+                setKit(loaded);
+                setKitError(false);
+            })
+            .catch((err: unknown) => {
+                console.error('[NotificationBell] chargement du panneau des notifications impossible :', err instanceof Error ? err.message : String(err));
+                setKitError(true);
+            });
+    }, [kit]);
+
     const changeFilter = (next: BellFilter) => {
         if (next === filterRef.current) return;
         filterRef.current = next;
@@ -278,8 +332,13 @@ export function NotificationBell() {
                         return;
                     }
                     setIsOpen(!isOpen);
-                    if (!isOpen) void fetchNotifications();
+                    if (!isOpen) {
+                        loadPanel();
+                        void fetchNotifications();
+                    }
                 }}
+                onPointerEnter={isUserLoggedIn ? loadPanel : undefined}
+                onFocus={isUserLoggedIn ? loadPanel : undefined}
                 className={cn(
                     'relative inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-sunken text-fg',
                     'transition-colors duration-200 hover:text-brand-fg',
@@ -356,10 +415,24 @@ export function NotificationBell() {
                                     Billets, rappels, remboursements et changements d’événement s’afficheront ici.
                                 </p>
                             </div>
+                        ) : !kit ? (
+                            kitError ? (
+                                <div role="alert" className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                                    <p className="text-sm font-semibold text-fg">La liste des notifications ne peut pas s’afficher pour le moment.</p>
+                                    <p className="text-sm text-fg-muted">Vérifiez votre connexion, puis réessayez.</p>
+                                    <button type="button" onClick={loadPanel} className={filterClass(false)}>
+                                        Réessayer
+                                    </button>
+                                </div>
+                            ) : (
+                                <p role="status" className="px-4 py-10 text-center text-sm text-fg-muted">
+                                    Chargement des notifications…
+                                </p>
+                            )
                         ) : (
                             <ul className="divide-y divide-border">
                                 {notifications.map((notif) => {
-                                    const meta = notificationTypeMeta(notif.type);
+                                    const meta = kit.notificationTypeMeta(notif.type);
                                     const { icon: Icon, tone } = CATEGORY_ICON[meta.category];
                                     const showTypeLabel = meta.label.trim().toLowerCase() !== notif.title.trim().toLowerCase();
                                     return (
@@ -379,12 +452,12 @@ export function NotificationBell() {
                                                             {notif.title}
                                                         </span>
                                                         <time dateTime={notif.createdAt} className="flex-shrink-0 whitespace-nowrap text-caption text-fg-muted">
-                                                            {formatRelativeTime(notif.createdAt)}
+                                                            {formatRelativeTime(kit, notif.createdAt)}
                                                         </time>
                                                     </span>
                                                     {showTypeLabel && (
                                                         <span>
-                                                            <Badge variant="neutral" size="sm">{meta.label}</Badge>
+                                                            <kit.Badge variant="neutral" size="sm">{meta.label}</kit.Badge>
                                                         </span>
                                                     )}
                                                     {notif.content && notif.content !== notif.title && (

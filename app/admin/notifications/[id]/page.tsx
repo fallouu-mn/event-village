@@ -8,11 +8,13 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StatusBadge, type StatusCatalog } from '@/components/ui/StatusBadge';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatInteger } from '@/lib/format';
 import {
+  OUTBOX_STATUS_LABELS,
+  OUTBOX_STATUS_TONES,
   outboxChannelLabel,
   outboxReasonLabel,
   outboxStatusLabel,
@@ -32,6 +34,9 @@ import {
  */
 
 type Row = Record<string, unknown>;
+
+/** Lot 7 (7.5) : libellés et tons du badge de statut, passés par l'écran (StatusBadge n'importe plus outbox-labels). */
+const OUTBOX_STATUS_CATALOG: StatusCatalog = { labels: OUTBOX_STATUS_LABELS, tones: OUTBOX_STATUS_TONES };
 
 interface Recipient {
   displayName: string | null;
@@ -432,7 +437,7 @@ export default function AdminNotificationDetailPage() {
       <PageHeader
         title={outboxTypeLabel(item.type)}
         description={`${outboxChannelLabel(item.channel)} · créée le ${formatDateTime(item.createdAt)}`}
-        eyebrow={<StatusBadge domain="notification" status={item.status} />}
+        eyebrow={<StatusBadge domain="notification" catalog={OUTBOX_STATUS_CATALOG} status={item.status} />}
         back={back}
         actions={canRetry && (
           <Button variant="primary" onClick={() => { setRelaunchError(null); setConfirmOpen(true); }} leftIcon={<RotateCcw size={18} aria-hidden="true" />}>
@@ -461,7 +466,7 @@ export default function AdminNotificationDetailPage() {
         <dl className="space-y-3">
           <Info label="Type">{outboxTypeLabel(item.type)}</Info>
           <Info label="Canal">{outboxChannelLabel(item.channel)}</Info>
-          <Info label="Statut"><StatusBadge domain="notification" status={item.status} size="sm" /></Info>
+          <Info label="Statut"><StatusBadge domain="notification" catalog={OUTBOX_STATUS_CATALOG} status={item.status} size="sm" /></Info>
           {item.reason && <Info label="Motif">{outboxReasonLabel(item.reason)}</Info>}
           {item.reasonDetail && <Info label="Précision">{humanDetail(item.reasonDetail)}</Info>}
           {item.family && <Info label="Famille">{FAMILY_LABELS[item.family] ?? 'Famille non répertoriée'}</Info>}
