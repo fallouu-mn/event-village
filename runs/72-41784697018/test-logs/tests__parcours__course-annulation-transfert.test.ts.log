@@ -1,0 +1,166 @@
+TAP version 13
+# Subtest: 7.0 c — course event_cancel / ticket_transfer_accept (deux et trois connexions)
+    # Subtest: 1. A accepte sans COMMIT, B annule et attend ; après le COMMIT de A, le destinataire reçoit EVENT_CANCELLED, l’expéditeur non
+    ok 1 - 1. A accepte sans COMMIT, B annule et attend ; après le COMMIT de A, le destinataire reçoit EVENT_CANCELLED, l’expéditeur non
+      ---
+      duration_ms: 388.712796
+      type: 'test'
+      ...
+    # Subtest: 2. ordre inverse : B tient event_cancel sans COMMIT, A attend ; après le COMMIT de B, A est refusé et le porteur ne change pas
+    ok 2 - 2. ordre inverse : B tient event_cancel sans COMMIT, A attend ; après le COMMIT de B, A est refusé et le porteur ne change pas
+      ---
+      duration_ms: 344.212913
+      type: 'test'
+      ...
+    # Subtest: 3. course au milieu de event_cancel (C tient les catégories, B annule, A accepte) : aucun interblocage, A refusé, billet à l’expéditeur
+    not ok 3 - 3. course au milieu de event_cancel (C tient les catégories, B annule, A accepte) : aucun interblocage, A refusé, billet à l’expéditeur
+      ---
+      duration_ms: 1385.735779
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:3:4746'
+      failureType: 'testCodeFailure'
+      error: |-
+        interblocage (40P01) entre event_cancel et ticket_transfer_accept :
+        A (acceptation) : erreur 40P01 deadlock detected
+        + actual - expected
+        
+        + [
+        +   'A (acceptation) : erreur 40P01 deadlock detected'
+        + ]
+        - []
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+        0: 'A (acceptation) : erreur 40P01 deadlock detected'
+      operator: 'deepStrictEqual'
+      stack: |-
+        assertNoDeadlock (/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:158:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:257:13)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 1 - 7.0 c — course event_cancel / ticket_transfer_accept (deux et trois connexions)
+  ---
+  duration_ms: 2268.481416
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:3:1041'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 7.0 c — ticket_transfer_claim et ticket_transfer_accept contrôlent le statut de l’événement (D20)
+    # Subtest: 4. événement ANNULE puis SUSPENDU (transaction annulée) → EVENT_NOT_ACTIVE ; témoin PUBLIE → réclamation réussie
+    not ok 1 - 4. événement ANNULE puis SUSPENDU (transaction annulée) → EVENT_NOT_ACTIVE ; témoin PUBLIE → réclamation réussie
+      ---
+      duration_ms: 350.967606
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:3:7527'
+      failureType: 'testCodeFailure'
+      error: |-
+        ticket_transfer_claim sur un événement ANNULE : {"ok":true,"ticket_id":"4493db03-127a-4474-af21-36f8f0633a37","ticket_number":"TCK-20261104-63CC64CB1A","previous_owner":"0a13f1a3-601c-499a-a1c9-9aec90c95af0"}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:311:24)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 2 - 7.0 c — ticket_transfer_claim et ticket_transfer_accept contrôlent le statut de l’événement (D20)
+  ---
+  duration_ms: 351.127287
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:3:7377'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] course-annulation-transfert — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] course-annulation-transfert — purge des réservations échues : {"expired":0}
+[INVARIANT] course-annulation-transfert — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] course-annulation-transfert — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] course-annulation-transfert — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] course-annulation-transfert — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] course-annulation-transfert — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] course-annulation-transfert — envoyeur : 128 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] course-annulation-transfert — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] course-annulation-transfert — schéma du lot 7 incomplet : 7 objet(s) manquant(s)
+[INVARIANT-TERRAIN]   table public.ticket_secret_versions absente — historique des versions du secret (contrat M4.1, migration 20261105000004)
+[INVARIANT-TERRAIN]   table public.ticket_offline_downloads absente — journal des téléchargements hors ligne (contrat M4.5, migration 20261105000004)
+[INVARIANT-TERRAIN]   colonne public.ticket_scans.secret_version absente — contrat M5.1, migration 20261105000005
+[INVARIANT-TERRAIN]   colonne public.ticket_scans.client_key absente — contrat M5.1, migration 20261105000005
+[INVARIANT-TERRAIN]   trigger trg_tickets_secret_issue absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)
+[INVARIANT-TERRAIN]   trigger trg_tickets_secret_guard absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)
+[INVARIANT-TERRAIN]   trigger trg_tickets_secret_log absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)
+not ok 3 - /home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts
+  ---
+  duration_ms: 265.678874
+  location: '/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:2:1735'
+  failureType: 'hookFailed'
+  error: |-
+    schéma du lot 7 incomplet (course-annulation-transfert) : invariants (p)(q) impossibles à vérifier :
+    table public.ticket_secret_versions absente — historique des versions du secret (contrat M4.1, migration 20261105000004)
+    table public.ticket_offline_downloads absente — journal des téléchargements hors ligne (contrat M4.5, migration 20261105000004)
+    colonne public.ticket_scans.secret_version absente — contrat M5.1, migration 20261105000005
+    colonne public.ticket_scans.client_key absente — contrat M5.1, migration 20261105000005
+    trigger trg_tickets_secret_issue absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)
+    trigger trg_tickets_secret_guard absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)
+    trigger trg_tickets_secret_log absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)
+    + actual - expected
+    
+    + [
+    +   'table public.ticket_secret_versions absente — historique des versions du secret (contrat M4.1, migration 20261105000004)',
+    +   'table public.ticket_offline_downloads absente — journal des téléchargements hors ligne (contrat M4.5, migration 20261105000004)',
+    +   'colonne public.ticket_scans.secret_version absente — contrat M5.1, migration 20261105000005',
+    +   'colonne public.ticket_scans.client_key absente — contrat M5.1, migration 20261105000005',
+    +   'trigger trg_tickets_secret_issue absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)',
+    +   'trigger trg_tickets_secret_guard absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)',
+    +   'trigger trg_tickets_secret_log absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: 'table public.ticket_secret_versions absente — historique des versions du secret (contrat M4.1, migration 20261105000004)'
+    1: 'table public.ticket_offline_downloads absente — journal des téléchargements hors ligne (contrat M4.5, migration 20261105000004)'
+    2: 'colonne public.ticket_scans.secret_version absente — contrat M5.1, migration 20261105000005'
+    3: 'colonne public.ticket_scans.client_key absente — contrat M5.1, migration 20261105000005'
+    4: 'trigger trg_tickets_secret_issue absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)'
+    5: 'trigger trg_tickets_secret_guard absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)'
+    6: 'trigger trg_tickets_secret_log absent de public.tickets — rotation de la version du secret (contrat M4.3, migration 20261105000004)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertTerrainSchema (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:132:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertTerrainInvariants (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:152:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/course-annulation-transfert.test.ts:68:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..2
+# tests 4
+# suites 2
+# pass 2
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2894.023161

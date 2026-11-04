@@ -1,0 +1,142 @@
+TAP version 13
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+# Subtest: 6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amendement 2)
+    # Subtest: numéro vérifié : réponse QUEUED sans jeton ni lien, TRANSFER_OFFERED par SMS au numéro et in-app + push au compte ; SMS exact sans lien de réclamation
+    ok 1 - numéro vérifié : réponse QUEUED sans jeton ni lien, TRANSFER_OFFERED par SMS au numéro et in-app + push au compte ; SMS exact sans lien de réclamation
+      ---
+      duration_ms: 185.838993
+      type: 'test'
+      ...
+    # Subtest: numéro sans vérification : SMS au numéro seulement (aucune in-app à un compte non prouvé)
+    ok 2 - numéro sans vérification : SMS au numéro seulement (aucune in-app à un compte non prouvé)
+      ---
+      duration_ms: 121.245387
+      type: 'test'
+      ...
+    # Subtest: cible email : 400 RECIPIENT_PHONE_REQUIRED, aucun transfert, billet libre
+    ok 3 - cible email : 400 RECIPIENT_PHONE_REQUIRED, aucun transfert, billet libre
+      ---
+      duration_ms: 117.561456
+      type: 'test'
+      ...
+    1..3
+ok 1 - 6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amendement 2)
+  ---
+  duration_ms: 740.394134
+  type: 'suite'
+  ...
+# Subtest: 6.7 Transfert — liste entrante (B3 ticket_transfers_incoming, B4)
+    # Subtest: vérifié → l’élément ; non vérifié → phoneVerificationRequired sans détail ; autre compte → rien ; ancien transfert vers un email → rien
+    ok 1 - vérifié → l’élément ; non vérifié → phoneVerificationRequired sans détail ; autre compte → rien ; ancien transfert vers un email → rien
+      ---
+      duration_ms: 473.318481
+      type: 'test'
+      ...
+    1..1
+ok 2 - 6.7 Transfert — liste entrante (B3 ticket_transfers_incoming, B4)
+  ---
+  duration_ms: 473.445823
+  type: 'suite'
+  ...
+# Subtest: 6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_accept, B4)
+    # Subtest: destinataire vérifié : 200, billet transféré, identité du billet renouvelée, TRANSFER_CLAIMED_SENDER et TRANSFER_RECEIVED (in-app, push, email du destinataire, aucun SMS) ; second appel 409
+    not ok 1 - destinataire vérifié : 200, billet transféré, identité du billet renouvelée, TRANSFER_CLAIMED_SENDER et TRANSFER_RECEIVED (in-app, push, email du destinataire, aucun SMS) ; second appel 409
+      ---
+      duration_ms: 140.890278
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:2:15746'
+      failureType: 'testCodeFailure'
+      error: |-
+        destinataire prévenu (in-app, push, email ; D91) : ["PUSH","IN_APP"]
+        + actual - expected
+        
+          [
+        -   'EMAIL',
+            'IN_APP',
+            'PUSH'
+          ]
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        0: 'EMAIL'
+        1: 'IN_APP'
+        2: 'PUSH'
+      actual:
+        0: 'IN_APP'
+        1: 'PUSH'
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:322:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: refus : 404 identique (inconnu, transfert d’un autre, ancien transfert vers un email), 403 PHONE_NOT_VERIFIED, 410 TRANSFER_EXPIRED, 400 SELF_TRANSFER ; billet inchangé
+    ok 2 - refus : 404 identique (inconnu, transfert d’un autre, ancien transfert vers un email), 403 PHONE_NOT_VERIFIED, 410 TRANSFER_EXPIRED, 400 SELF_TRANSFER ; billet inchangé
+      ---
+      duration_ms: 489.40306
+      type: 'test'
+      ...
+    1..2
+not ok 3 - 6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_accept, B4)
+  ---
+  duration_ms: 630.561402
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/notif-transferts.test.ts:2:15632'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 6.7 Transfert — ancien lien /tickets/claim/<jeton> retiré (B4, décision 37)
+    # Subtest: GET et POST → 410 CLAIM_LINK_RETIRED, même réponse pour un vrai et un faux jeton ; POST sans session → 401 ; transfert intact
+    ok 1 - GET et POST → 410 CLAIM_LINK_RETIRED, même réponse pour un vrai et un faux jeton ; POST sans session → 401 ; transfert intact
+      ---
+      duration_ms: 124.616012
+      type: 'test'
+      ...
+    # Subtest: contrôle statique : la route retirée ne lit pas la base ; la page est une redirection serveur vers /tickets?tab=recus
+    ok 2 - contrôle statique : la route retirée ne lit pas la base ; la page est une redirection serveur vers /tickets?tab=recus
+      ---
+      duration_ms: 0.532573
+      type: 'test'
+      ...
+    1..2
+ok 4 - 6.7 Transfert — ancien lien /tickets/claim/<jeton> retiré (B4, décision 37)
+  ---
+  duration_ms: 125.387346
+  type: 'suite'
+  ...
+# Subtest: 6.7 Transfert — verify-otp pose phone_verified_at (B1)
+    # Subtest: code de connexion vérifié : phone_verified_at posé une fois (conservé ensuite) ; le transfert qui attendait devient visible
+    ok 1 - code de connexion vérifié : phone_verified_at posé une fois (conservé ensuite) ; le transfert qui attendait devient visible
+      ---
+      duration_ms: 176.844307
+      type: 'test'
+      ...
+    1..1
+ok 5 - 6.7 Transfert — verify-otp pose phone_verified_at (B1)
+  ---
+  duration_ms: 176.97254
+  type: 'suite'
+  ...
+[INVARIANT] notif-transferts — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] notif-transferts — purge des réservations échues : {"expired":0}
+[INVARIANT] notif-transferts — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] notif-transferts — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] notif-transferts — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] notif-transferts — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] notif-transferts — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] notif-transferts — envoyeur : 75 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] notif-transferts — (m)(n)(o) : 0 violation(s)
+1..5
+# tests 9
+# suites 5
+# pass 8
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2427.673918
