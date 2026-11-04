@@ -47,12 +47,31 @@ const LOCKOUT_DURATION_SECONDS = 60;
 const STORAGE_KEY_LOCKOUT = 'ev_login_lockout_until';
 const STORAGE_KEY_ATTEMPTS = 'ev_login_failed_attempts';
 
+/** Codes ?error= posés par le middleware, la réinitialisation du mot de passe ou l'activation d'un contrôleur. */
 const ERROR_MESSAGES: Record<string, string> = {
     unauthorized_admin: 'Accès restreint aux Administrateurs et Superadministrateurs.',
     unauthorized_partner: 'Accès restreint aux Partenaires professionnels validés.',
     unauthorized_scanner: 'Accès restreint aux Contrôleurs autorisés.',
+    unauthorized_controller: 'Accès réservé aux contrôleurs.',
     account_deactivated: 'Votre compte contrôleur a été désactivé ou révoqué par l\'organisateur.',
+    session_expired: 'Le lien a expiré : demandez un nouveau code.',
 };
+
+/** Codes ?message= (information, pas une erreur) posés par l'activation d'un contrôleur. */
+const INFO_MESSAGES: Record<string, string> = {
+    account_activated: 'Compte activé avec succès. Connectez-vous avec votre mot de passe.',
+    already_configured: 'Ce compte est déjà activé : connectez-vous.',
+};
+
+/** Codes ?reset= posés par app/reset-password après la pose du nouveau mot de passe. */
+const RESET_MESSAGES: Record<string, string> = {
+    success: 'Mot de passe modifié : connectez-vous avec le nouveau.',
+};
+
+/** Destination transmise à l'inscription (D61) : chemin interne seulement (« / » au début, pas « // »), hors accueil. */
+function isForwardableRedirect(redirectUrl: string): boolean {
+    return redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') && redirectUrl !== '/';
+}
 
 /** Stockage du navigateur indisponible (navigation privée, quota) : le verrou local est un confort, on le signale. */
 function storageWarning(action: string, err: unknown): void {
@@ -67,11 +86,13 @@ export interface LoginFormProps {
     redirectUrl: string;
     /** Code d'erreur de l'URL (?error=) posé par le middleware ou l'activation d'un contrôleur. */
     errorParam: string | null;
-    /** Message de l'URL (?message=), par exemple account_activated. */
+    /** Message de l'URL (?message=) : account_activated, already_configured. */
     messageParam: string | null;
+    /** Issue d'une réinitialisation du mot de passe (?reset=success). */
+    resetParam: string | null;
 }
 
-export function LoginForm({ redirectUrl, errorParam, messageParam }: LoginFormProps) {
+export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }: LoginFormProps) {
     const router = useRouter();
     const { refreshProfile } = useAuth();
 
@@ -201,15 +222,14 @@ export function LoginForm({ redirectUrl, errorParam, messageParam }: LoginFormPr
         setLockoutRemaining(0);
     }, []);
 
-    // Paramètres de l'URL (?error=, ?message=account_activated) lus par la page serveur
+    // Paramètres de l'URL (?error=, ?message=, ?reset=) lus par la page serveur ; un code inconnu n'affiche rien.
     useEffect(() => {
         const known = errorParam ? ERROR_MESSAGES[errorParam] : undefined;
         if (known) setErrorMessage(known);
 
-        if (messageParam === 'account_activated') {
-            setSuccessMessage('Compte activé avec succès. Connectez-vous avec votre mot de passe.');
-        }
-    }, [errorParam, messageParam]);
+        const info = (resetParam ? RESET_MESSAGES[resetParam] : undefined) ?? (messageParam ? INFO_MESSAGES[messageParam] : undefined);
+        if (info) setSuccessMessage(info);
+    }, [errorParam, messageParam, resetParam]);
 
     // Décompte pour le renvoi du code
     useEffect(() => {
@@ -666,7 +686,10 @@ export function LoginForm({ redirectUrl, errorParam, messageParam }: LoginFormPr
             <div className="space-y-3 border-t border-border pt-4">
                 <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-sm text-fg-muted">
                     <span>Pas encore de compte ?</span>
-                    <Link href="/register" className={TEXT_LINK}>
+                    <Link
+                        href={isForwardableRedirect(redirectUrl) ? `/register?redirect=${encodeURIComponent(redirectUrl)}` : '/register'}
+                        className={TEXT_LINK}
+                    >
                         Créer un compte client
                     </Link>
                 </p>

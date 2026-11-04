@@ -1,302 +1,362 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import {
-    ArrowLeft, User, Phone, ShieldCheck, Calendar,
-    MapPin, KeyRound, Eye, EyeOff, CheckCircle2, Loader2,
-    Banknote, AlertCircle, Bell,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useId, useState } from 'react';
+import { Banknote, Bell, Calendar, Check, Eye, EyeOff, KeyRound, MapPin, Phone, ShieldCheck, X } from 'lucide-react';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { TextInput } from '@/components/ui/Field';
+import { IconButton } from '@/components/ui/IconButton';
 import { LinkButton } from '@/components/ui/LinkButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/components/ui/cn';
+import { formatDate, formatEventDateTime } from '@/lib/format';
+
+/**
+ * Profil du contrôleur (GET / PATCH /api/controller/profile). Lot 7 (7.0 f) : migré sur le système de design ;
+ * erreur de chargement en ErrorState (plus de page vide après un simple toast) ; dates à Dakar (lib/format) ;
+ * D67 : règle du mot de passe affichée telle que le serveur l'applique (8 caractères, une majuscule, une minuscule,
+ * un chiffre), sans le caractère spécial de la liste du client. Thème sombre forcé par app/controller/layout.tsx.
+ */
 
 interface Assignment {
     id: string;
-    can_accept_cash: boolean;
-    created_at: string;
-    events: {
-        id: string;
-        title: string;
-        date: string;
-        location: string;
-        status: string;
-    } | null;
+    canAcceptCash: boolean;
+    title: string;
+    startDate: string | null;
+    startTime: string | null;
+    location: string | null;
 }
 
 interface ControllerProfile {
-    id: string;
-    first_name: string;
-    last_name: string;
+    firstName: string;
+    lastName: string;
     phone: string;
-    role: string;
-    status: string;
-    created_at: string;
+    createdAt: string | null;
+}
+
+const PASSWORD_RULES: Array<{ key: string; label: string; test: (p: string) => boolean }> = [
+    { key: 'length', label: 'Au moins 8 caractères', test: (p) => p.length >= 8 },
+    { key: 'upper', label: 'Une majuscule (A-Z)', test: (p) => /[A-Z]/.test(p) },
+    { key: 'lower', label: 'Une minuscule (a-z)', test: (p) => /[a-z]/.test(p) },
+    { key: 'digit', label: 'Un chiffre (0-9)', test: (p) => /\d/.test(p) },
+];
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function strOrNull(v: unknown): string | null {
+    return typeof v === 'string' && v ? v : null;
+}
+
+function parseProfile(body: unknown): { profile: ControllerProfile; assignments: Assignment[] } | null {
+    if (!isRecord(body) || !isRecord(body.profile)) return null;
+    const p = body.profile;
+    const assignments: Assignment[] = Array.isArray(body.assignments)
+        ? body.assignments.flatMap((raw: unknown) => {
+            if (!isRecord(raw) || typeof raw.id !== 'string') return [];
+            const ev = isRecord(raw.events) ? raw.events : null;
+            return [{
+                id: raw.id,
+                canAcceptCash: raw.can_accept_cash === true,
+                title: strOrNull(ev?.title) ?? 'Événement sans titre',
+                startDate: strOrNull(ev?.start_date) ?? strOrNull(ev?.date),
+                startTime: strOrNull(ev?.start_time),
+                location: strOrNull(ev?.location),
+            }];
+        })
+        : [];
+    return {
+        profile: {
+            firstName: strOrNull(p.first_name) ?? '',
+            lastName: strOrNull(p.last_name) ?? '',
+            phone: strOrNull(p.phone) ?? '',
+            createdAt: strOrNull(p.created_at),
+        },
+        assignments,
+    };
+}
+
+/** « +221771234567 » → « 77 123 45 67 » (affichage seulement). */
+function displayPhone(phone: string): string {
+    const local = phone.replace(/^\+?221/, '');
+    return /^\d{9}$/.test(local) ? local.replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4') : phone || '—';
+}
+
+async function readJson(res: Response, what: string): Promise<unknown> {
+    try {
+        return await res.json();
+    } catch (err) {
+        console.error(`[profil contrôleur] ${what} : réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
+        return null;
+    }
 }
 
 export default function ControllerProfilePage() {
     const toast = useToast();
+    const uid = useId();
 
-    const [profile, setProfile] = useState<ControllerProfile | null>(null);
-    const [assignments, setAssignments] = useState<Assignment[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState<{ profile: ControllerProfile; assignments: Assignment[] } | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Changement mot de passe
-    const [currentPwd, setCurrentPwd]   = useState('');
-    const [newPwd, setNewPwd]           = useState('');
-    const [confirmPwd, setConfirmPwd]   = useState('');
-    const [showPwd, setShowPwd]         = useState(false);
-    const [saving, setSaving]           = useState(false);
-    const [pwdError, setPwdError]       = useState('');
+    const [currentPwd, setCurrentPwd] = useState('');
+    const [newPwd, setNewPwd] = useState('');
+    const [confirmPwd, setConfirmPwd] = useState('');
+    const [showPwd, setShowPwd] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [pwdError, setPwdError] = useState<string | null>(null);
+
+    const load = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const res = await fetch('/api/controller/profile', { cache: 'no-store' });
+            const body = await readJson(res, 'lecture');
+            if (!res.ok) {
+                setLoadError(isRecord(body) && typeof body.error === 'string' && res.status < 500 ? body.error : `Profil indisponible (erreur ${res.status}).`);
+                return;
+            }
+            const parsed = parseProfile(body);
+            if (!parsed) {
+                console.error('[profil contrôleur] réponse inattendue :', body);
+                setLoadError('Réponse inattendue du serveur.');
+                return;
+            }
+            setData(parsed);
+            setLoadError(null);
+        } catch (err) {
+            console.error('[profil contrôleur] lecture injoignable :', err instanceof Error ? err.message : String(err));
+            setLoadError('Connexion impossible : vérifiez votre réseau, puis réessayez.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
-        fetch('/api/controller/profile')
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    setProfile(data.profile);
-                    setAssignments(data.assignments ?? []);
-                }
-            })
-            .catch(() => toast.error('Impossible de charger le profil.'))
-            .finally(() => setLoading(false));
-    }, [toast]);
+        void load();
+    }, [load]);
+
+    const rules = PASSWORD_RULES.map((r) => ({ ...r, passed: r.test(newPwd) }));
+    const mismatch = confirmPwd.length > 0 && newPwd !== confirmPwd;
 
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
-        setPwdError('');
-
+        setPwdError(null);
+        if (!currentPwd) {
+            setPwdError('Saisissez votre mot de passe actuel.');
+            return;
+        }
+        if (!rules.every((r) => r.passed)) {
+            setPwdError('Le nouveau mot de passe doit comporter au moins 8 caractères, une majuscule, une minuscule et un chiffre.');
+            return;
+        }
         if (newPwd !== confirmPwd) {
             setPwdError('Les mots de passe ne correspondent pas.');
             return;
         }
-        if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(newPwd)) {
-            setPwdError('Majuscule, minuscule, chiffre, 8+ caractères requis.');
-            return;
-        }
-
         setSaving(true);
         try {
-            const res  = await fetch('/api/controller/profile', {
-                method:  'PATCH',
+            const res = await fetch('/api/controller/profile', {
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ current_password: currentPwd, new_password: newPwd }),
+                body: JSON.stringify({ current_password: currentPwd, new_password: newPwd }),
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour.');
-            toast.success('Mot de passe mis à jour avec succès.');
+            const body = await readJson(res, 'changement du mot de passe');
+            if (!res.ok) {
+                setPwdError(isRecord(body) && typeof body.error === 'string' && body.error ? body.error : `Mot de passe non modifié (erreur ${res.status}).`);
+                return;
+            }
+            toast.success('Mot de passe modifié.');
             setCurrentPwd('');
             setNewPwd('');
             setConfirmPwd('');
-        } catch (err: unknown) {
-            setPwdError(err instanceof Error ? err.message : 'Erreur inattendue.');
+        } catch (err) {
+            console.error('[profil contrôleur] changement injoignable :', err instanceof Error ? err.message : String(err));
+            setPwdError('Connexion impossible : le mot de passe n’a peut-être pas été modifié. Réessayez avec le réseau.');
         } finally {
             setSaving(false);
         }
     };
 
-    const displayName = profile
-        ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Contrôleur'
-        : '';
+    const header = (
+        <PageHeader
+            title="Mon profil"
+            description="Vos informations, vos événements et la sécurité du compte."
+            back={{ href: '/controller/scanner', label: 'Scanner' }}
+        />
+    );
 
-    const displayPhone = profile?.phone?.replace(/^\+221/, '').replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4') ?? '';
-
-    if (loading) {
+    if (!data) {
         return (
-            <div className="flex justify-center py-20">
-                <Loader2 size={28} className="animate-spin text-slate-400" />
+            <div className="space-y-6 pb-24">
+                {header}
+                {loadError ? (
+                    <ErrorState title="Profil indisponible" description={loadError} onRetry={() => void load()} isRetrying={isLoading} />
+                ) : (
+                    <div className="space-y-3" aria-busy="true">
+                        <span className="sr-only">Chargement du profil…</span>
+                        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
+                    </div>
+                )}
             </div>
         );
     }
 
+    const { profile, assignments } = data;
+    const displayName = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || 'Contrôleur';
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 pb-24">
+            {header}
 
-            {/* Header */}
-            <div className="flex items-center gap-3">
-                <Link
-                    href="/controller/scanner"
-                    aria-label="Retour au scanner"
-                    className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                    <ArrowLeft size={20} className="text-slate-600 dark:text-zinc-400" />
-                </Link>
-                <div>
-                    <h1 className="text-base font-black text-slate-900 dark:text-white">Mon Profil</h1>
-                    <p className="text-xs text-slate-500 dark:text-zinc-400">Informations et sécurité</p>
-                </div>
-            </div>
-
-            {/* Identité */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4">
+            <section aria-labelledby={`${uid}-identite`} className="space-y-3 rounded-2xl border border-border bg-surface p-4">
                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-[#FF5722]/10 border border-[#FF5722]/20 flex items-center justify-center shrink-0">
-                        <span className="text-lg font-black text-[#FF5722]">
-                            {displayName[0]?.toUpperCase() ?? 'C'}
-                        </span>
-                    </div>
-                    <div>
-                        <p className="text-sm font-black text-slate-900 dark:text-white">{displayName}</p>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#FF5722]/10 text-[#FF5722] border border-[#FF5722]/20">
-                            <ShieldCheck size={10} /> Contrôleur
-                        </span>
+                    <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-lg font-bold text-brand-fg" aria-hidden="true">
+                        {displayName[0]?.toUpperCase() ?? 'C'}
+                    </span>
+                    <div className="min-w-0 space-y-1">
+                        <h2 id={`${uid}-identite`} className="break-words text-base font-semibold text-fg">{displayName}</h2>
+                        <Badge variant="brand" size="sm" icon={<ShieldCheck size={12} aria-hidden="true" />}>Contrôleur</Badge>
                     </div>
                 </div>
-
-                <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-zinc-400">
-                    <Phone size={13} className="text-slate-400" />
-                    <span className="font-mono font-bold">{displayPhone || '—'}</span>
-                </div>
-
-                {profile?.created_at && (
-                    <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-zinc-500">
-                        <Calendar size={13} />
-                        <span>Membre depuis {new Date(profile.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-                    </div>
+                <p className="flex items-center gap-2 text-sm text-fg">
+                    <Phone size={16} className="text-fg-muted" aria-hidden="true" />
+                    <span className="sr-only">Téléphone :</span>
+                    <span className="font-semibold tabular-nums">{displayPhone(profile.phone)}</span>
+                </p>
+                {profile.createdAt && (
+                    <p className="flex items-center gap-2 text-sm text-fg-muted">
+                        <Calendar size={16} aria-hidden="true" />
+                        <span>Compte créé le <time dateTime={profile.createdAt}>{formatDate(profile.createdAt)}</time></span>
+                    </p>
                 )}
-            </div>
+            </section>
 
-            {/* Lot 6 (contrat H4) : accès aux préférences de notification du compte (lien seulement, page non migrée) */}
             <LinkButton href="/profile/notifications" variant="secondary" fullWidth leftIcon={<Bell size={18} aria-hidden="true" />}>
                 Préférences de notification
             </LinkButton>
 
-            {/* Événements assignés */}
-            <div className="space-y-3">
-                <h2 className="text-xs font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
-                    Mes événements ({assignments.length})
+            <section aria-labelledby={`${uid}-evenements`} className="space-y-3">
+                <h2 id={`${uid}-evenements`} className="text-lg font-semibold text-fg">
+                    {assignments.length === 1 ? 'Mon événement' : `Mes événements (${assignments.length})`}
+                </h2>
+                {assignments.length === 0 ? (
+                    <EmptyState
+                        icon={<Calendar size={28} />}
+                        title="Aucun événement assigné"
+                        description="Votre organisateur vous affecte à un événement depuis son équipe. Il apparaîtra ici."
+                        className="my-0"
+                    />
+                ) : (
+                    <ul className="space-y-3">
+                        {assignments.map((a) => (
+                            <li key={a.id} className="space-y-2 rounded-2xl border border-border bg-surface p-4">
+                                <p className="break-words text-base font-semibold text-fg">{a.title}</p>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-muted">
+                                    {a.startDate && (
+                                        <span className="flex items-center gap-1.5">
+                                            <Calendar size={16} aria-hidden="true" />
+                                            {formatEventDateTime(a.startDate, a.startTime)}
+                                        </span>
+                                    )}
+                                    {a.location && (
+                                        <span className="flex items-center gap-1.5">
+                                            <MapPin size={16} aria-hidden="true" />
+                                            {a.location}
+                                        </span>
+                                    )}
+                                </div>
+                                <Badge variant={a.canAcceptCash ? 'success' : 'neutral'} size="sm" icon={<Banknote size={12} aria-hidden="true" />}>
+                                    {a.canAcceptCash ? 'Encaissement autorisé' : 'Sans encaissement'}
+                                </Badge>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
+
+            <section aria-labelledby={`${uid}-securite`} className="space-y-4 rounded-2xl border border-border bg-surface p-4">
+                <h2 id={`${uid}-securite`} className="flex items-center gap-2 text-lg font-semibold text-fg">
+                    <KeyRound size={20} className="text-brand-fg" aria-hidden="true" />
+                    Changer le mot de passe
                 </h2>
 
-                {assignments.length === 0 ? (
-                    <div className="text-center py-8 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
-                        <p className="text-xs text-slate-400 dark:text-zinc-500">Aucun événement assigné.</p>
-                    </div>
-                ) : (
-                    assignments.map(a => (
-                        <div
-                            key={a.id}
-                            className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm space-y-1.5"
-                        >
-                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                                {a.events?.title ?? 'Événement'}
-                            </p>
-                            <div className="flex items-center gap-3 flex-wrap">
-                                {a.events?.date && (
-                                    <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                                        <Calendar size={10} />
-                                        {new Date(a.events.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                    </span>
-                                )}
-                                {a.events?.location && (
-                                    <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                                        <MapPin size={10} />
-                                        {a.events.location}
-                                    </span>
-                                )}
-                                {a.can_accept_cash ? (
-                                    <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                        <Banknote size={10} /> Encaissement autorisé
-                                    </span>
-                                ) : (
-                                    <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                                        <AlertCircle size={10} /> Sans encaissement
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-
-            {/* Changement mot de passe */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4">
-                <div className="flex items-center gap-2">
-                    <KeyRound size={15} className="text-[#FF5722]" />
-                    <h2 className="text-sm font-bold text-slate-900 dark:text-white">Changer le mot de passe</h2>
-                </div>
-
                 {pwdError && (
-                    <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/30">
-                        <p className="text-xs text-red-600 dark:text-red-400">{pwdError}</p>
-                    </div>
+                    <StatusBanner tone="danger" announce="alert" title="Mot de passe non modifié">
+                        {pwdError}
+                    </StatusBanner>
                 )}
 
-                <form onSubmit={handleChangePassword} className="space-y-3">
-                    {/* Mot de passe actuel */}
-                    <div>
-                        <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block mb-1">
-                            Mot de passe actuel
-                        </label>
-                        <div className="relative">
-                            <input
-                                type={showPwd ? 'text' : 'password'}
-                                value={currentPwd}
-                                onChange={e => { setCurrentPwd(e.target.value); setPwdError(''); }}
-                                placeholder="••••••••"
-                                required
-                                className="w-full h-11 pl-3 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-xs focus:outline-none focus:border-[#FF5722]"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPwd(!showPwd)}
-                                aria-label={showPwd ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
-                            >
-                                {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Nouveau mot de passe */}
-                    <div>
-                        <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block mb-1">
-                            Nouveau mot de passe
-                        </label>
-                        <input
+                <form onSubmit={handleChangePassword} noValidate className="space-y-4">
+                    <div className="flex items-start gap-2">
+                        <TextInput
+                            label="Mot de passe actuel"
                             type={showPwd ? 'text' : 'password'}
-                            value={newPwd}
-                            onChange={e => { setNewPwd(e.target.value); setPwdError(''); }}
-                            placeholder="Majuscule, minuscule, chiffre, 8+ car."
+                            autoComplete="current-password"
                             required
-                            minLength={8}
-                            className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-xs focus:outline-none focus:border-[#FF5722]"
+                            value={currentPwd}
+                            onChange={(e) => setCurrentPwd(e.target.value)}
+                            fieldClassName="min-w-0 flex-1"
                         />
+                        <IconButton
+                            aria-label={showPwd ? 'Masquer les mots de passe' : 'Afficher les mots de passe'}
+                            aria-pressed={showPwd}
+                            variant="ghost"
+                            onClick={() => setShowPwd((v) => !v)}
+                            className="mt-7"
+                        >
+                            {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </IconButton>
                     </div>
 
-                    {/* Confirmation */}
-                    <div>
-                        <label className="text-xs font-bold text-slate-600 dark:text-zinc-400 block mb-1">
-                            Confirmer le nouveau mot de passe
-                        </label>
-                        <input
-                            type={showPwd ? 'text' : 'password'}
-                            value={confirmPwd}
-                            onChange={e => { setConfirmPwd(e.target.value); setPwdError(''); }}
-                            placeholder="Répétez le nouveau mot de passe"
-                            required
-                            className={`w-full h-11 px-3 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-xs focus:outline-none ${
-                                confirmPwd && newPwd !== confirmPwd
-                                    ? 'border-red-400 focus:border-red-500'
-                                    : 'border-slate-200 dark:border-zinc-700 focus:border-[#FF5722]'
-                            }`}
-                        />
-                        {confirmPwd && newPwd !== confirmPwd && (
-                            <p className="text-[11px] text-red-500 mt-1">Les mots de passe ne correspondent pas.</p>
-                        )}
-                    </div>
+                    <TextInput
+                        label="Nouveau mot de passe"
+                        type={showPwd ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        required
+                        value={newPwd}
+                        onChange={(e) => setNewPwd(e.target.value)}
+                        hint="8 caractères au moins, avec une majuscule, une minuscule et un chiffre."
+                    />
+                    <ul className="space-y-1.5 rounded-2xl border border-border bg-surface-sunken p-3" aria-label="Règles du mot de passe">
+                        {rules.map((r) => (
+                            <li key={r.key} className="flex items-center gap-2 text-sm">
+                                <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                        'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border',
+                                        r.passed ? 'border-success bg-success text-on-tone' : 'border-border bg-surface text-fg-muted',
+                                    )}
+                                >
+                                    {r.passed ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />}
+                                </span>
+                                <span className={r.passed ? 'font-medium text-success-fg' : 'text-fg-muted'}>
+                                    {r.label}
+                                    <span className="sr-only">{r.passed ? ' : respecté' : ' : manquant'}</span>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
 
-                    <Button
-                        variant="primary"
-                        fullWidth
-                        size="lg"
-                        isLoading={saving}
-                        disabled={!currentPwd || !newPwd || newPwd !== confirmPwd}
-                        leftIcon={<CheckCircle2 size={15} />}
-                    >
-                        Mettre à jour le mot de passe
+                    <TextInput
+                        label="Confirmer le nouveau mot de passe"
+                        type={showPwd ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        required
+                        value={confirmPwd}
+                        onChange={(e) => setConfirmPwd(e.target.value)}
+                        error={mismatch ? 'Les mots de passe ne correspondent pas.' : undefined}
+                    />
+
+                    <Button type="submit" variant="primary" size="lg" fullWidth isLoading={saving}>
+                        Modifier le mot de passe
                     </Button>
                 </form>
-            </div>
+            </section>
         </div>
     );
 }

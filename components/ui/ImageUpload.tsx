@@ -25,9 +25,12 @@ const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 /**
- * Dépôt d'une image publique (affiche, salle, produit) — lot 5 (contrat Q, DoD 7) : libellé lié au champ
- * fichier (htmlFor/id), champ atteignable au clavier (zone de dépôt focalisable), aide et erreur reliées par
- * aria-describedby, état d'envoi annoncé, erreur réseau ou serveur toujours affichée.
+ * Dépôt d'une image publique (affiche, salle, produit, logo) — lot 5 (contrat Q, DoD 7) : champ atteignable au
+ * clavier (zone de dépôt focalisable), aide et erreur reliées par aria-describedby, état d'envoi annoncé, erreur
+ * réseau ou serveur toujours affichée.
+ * Lot 7 (7.0 f) : le titre est un <span id> qui nomme le champ fichier par aria-labelledby. Ce n'est plus un
+ * <label htmlFor> : il ouvrait le sélecteur sur toute la largeur (environ 20 px de haut). Les seules zones qui
+ * ouvrent le sélecteur sont le bouton « Remplacer l'image » (44 px) et la zone de dépôt.
  */
 export const ImageUpload: React.FC<ImageUploadProps> = ({
     value,
@@ -45,6 +48,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
     const hintId = `${inputId}-aide`;
     const errorId = `${inputId}-erreur`;
     const statusId = `${inputId}-etat`;
+    const titleId = `${inputId}-titre`;
 
     const [isUploading, setIsUploading] = useState(false);
     const [dragOver, setDragOver] = useState(false);
@@ -73,7 +77,8 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
             let data: { success?: boolean; url?: string; error?: string } = {};
             try {
                 data = await res.json();
-            } catch {
+            } catch (parseErr) {
+                console.error(`[ImageUpload] réponse illisible du dépôt (HTTP ${res.status}) :`, parseErr instanceof Error ? parseErr.message : String(parseErr));
                 data = {};
             }
             if (res.ok && data.success && typeof data.url === 'string') {
@@ -81,7 +86,8 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
             } else {
                 setUploadError(data.error || 'Le dépôt de l’image a échoué. Réessayez.');
             }
-        } catch {
+        } catch (err) {
+            console.error('[ImageUpload] dépôt injoignable :', err instanceof Error ? err.message : String(err));
             setUploadError('Connexion impossible : l’image n’a pas été envoyée. Vérifiez votre réseau, puis réessayez.');
         } finally {
             setIsUploading(false);
@@ -108,7 +114,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
 
     return (
         <div className={cn('flex flex-col gap-1.5', className)}>
-            <label htmlFor={inputId} className="text-sm font-semibold text-fg">
+            <span id={titleId} className="text-sm font-semibold text-fg">
                 {label}
                 {required && (
                     <>
@@ -116,7 +122,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
                         <span className="sr-only"> (obligatoire)</span>
                     </>
                 )}
-            </label>
+            </span>
 
             <input
                 id={inputId}
@@ -124,6 +130,8 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
                 accept={ACCEPTED_TYPES.join(',')}
                 onChange={handleFileChange}
                 disabled={isUploading}
+                aria-labelledby={titleId}
+                aria-required={required || undefined}
                 aria-describedby={describedBy || undefined}
                 aria-invalid={shownError ? true : undefined}
                 className="peer sr-only"

@@ -303,32 +303,33 @@ export function NotificationBell() {
                     aria-labelledby={titleId}
                     className="fixed inset-x-3 top-16 z-50 flex max-h-[80vh] flex-col overflow-hidden rounded-2xl border border-border bg-surface-raised text-fg shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96"
                 >
-                    <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
+                    <div className={cn('flex items-center justify-between gap-2 px-4 py-2', unreadCount > 0 ? 'pb-0' : 'border-b border-border')}>
                         <h2 id={titleId} className="text-base font-semibold text-fg">Notifications</h2>
-                        <div className="flex items-center gap-1">
-                            {unreadCount > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={handleMarkAllAsRead}
-                                    disabled={isMarkingAll}
-                                    aria-busy={isMarkingAll || undefined}
-                                    className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <CheckCheck size={16} aria-hidden="true" />
-                                    Tout marquer comme lu
-                                </button>
-                            )}
-                            <IconButton
-                                aria-label="Fermer les notifications"
-                                onClick={() => {
-                                    setIsOpen(false);
-                                    bellRef.current?.focus();
-                                }}
-                            >
-                                <X size={18} />
-                            </IconButton>
-                        </div>
+                        <IconButton
+                            aria-label="Fermer les notifications"
+                            onClick={() => {
+                                setIsOpen(false);
+                                bellRef.current?.focus();
+                            }}
+                        >
+                            <X size={18} />
+                        </IconButton>
                     </div>
+                    {/* Lot 7 (D68) : sur sa propre ligne, sous le titre ; à 390 px le libellé ne passe plus à la ligne. */}
+                    {unreadCount > 0 && (
+                        <div className="flex border-b border-border px-2 pb-1">
+                            <button
+                                type="button"
+                                onClick={handleMarkAllAsRead}
+                                disabled={isMarkingAll}
+                                aria-busy={isMarkingAll || undefined}
+                                className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <CheckCheck size={16} aria-hidden="true" />
+                                Tout marquer comme lu
+                            </button>
+                        </div>
+                    )}
 
                     <div className="flex gap-2 border-b border-border px-3 py-1.5" role="group" aria-label="Filtrer les notifications">
                         <button type="button" aria-pressed={filter === 'ALL'} onClick={() => changeFilter('ALL')} className={filterClass(filter === 'ALL')}>

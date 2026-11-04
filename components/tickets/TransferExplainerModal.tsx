@@ -1,254 +1,140 @@
 'use client';
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  ShieldCheck,
-  Smartphone,
-  QrCode,
-  ArrowRightLeft,
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  Clock,
-  Sparkles,
-  FileText,
-  UserCheck,
-  Send,
-  X,
-} from 'lucide-react';
+import React from 'react';
+import { AlertTriangle, ArrowRightLeft, CheckCircle2, ChevronDown, Send, Smartphone, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+
+/**
+ * Aide au transfert d'un billet (écran Mes billets). Lot 7 (7.0 f) : rendue par Modal (titre lié, Escape, piège de
+ * focus, bouton Fermer de 44 px), sans framer-motion ; jetons du système de design, 14 px au moins.
+ * Questions fréquentes en <details>/<summary> natifs : ouverture au clavier et annoncée sans script, aucune
+ * animation de hauteur (seule la flèche tourne, et seulement sans « réduire les animations »).
+ * Contenu exact : le PDF n'a pas de QR et ne permet pas d'entrer (lib/tickets/ticket-pdf.service.ts) ; le code
+ * change toutes les 20 s (lib/security/totp.ts, TOTP_STEP_SECONDS) ; un transfert attend 48 h
+ * (lib/tickets/ticket-transfer.service.ts) ; un transfert accepté change le secret du billet (lot 7, 7.1).
+ */
 
 interface TransferExplainerModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({
-  isOpen,
-  onClose,
-}) => {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
+const STEPS: Array<{ title: string; text: string; icon: React.ReactNode }> = [
+  {
+    title: 'Indiquez le destinataire',
+    text: 'Saisissez son numéro de téléphone. Le transfert est gratuit.',
+    icon: <Smartphone size={18} aria-hidden="true" />,
+  },
+  {
+    title: 'Il est prévenu par SMS',
+    text: 'Votre proche reçoit un SMS. Il se connecte avec ce numéro et accepte le billet dans « Mes billets » sous 48 heures.',
+    icon: <Send size={18} aria-hidden="true" />,
+  },
+  {
+    title: 'Le billet est à lui',
+    text: 'Le billet passe sur son compte avec un nouveau code d’entrée. L’ancien code ne fonctionne plus.',
+    icon: <UserCheck size={18} aria-hidden="true" />,
+  },
+];
 
-  if (!isOpen) return null;
+const FAQS: Array<{ q: string; a: string }> = [
+  {
+    q: 'Mon proche doit-il avoir un compte pour recevoir le billet ?',
+    a: 'Oui. Le compte est gratuit et se crée en quelques instants avec le numéro auquel vous envoyez le billet, confirmé par un code SMS. Lui seul peut ensuite présenter ce billet.',
+  },
+  {
+    q: 'Pourquoi une capture d’écran ne fonctionne-t-elle pas ?',
+    a: 'Le code d’entrée change toutes les 20 secondes. Une capture garde un code figé, refusé par les contrôleurs à l’entrée.',
+  },
+  {
+    q: 'Que se passe-t-il si le destinataire n’accepte pas le billet ?',
+    a: 'Le transfert reste en attente pendant 48 heures. Sans réponse dans ce délai, le billet revient dans vos billets sans aucune action de votre part.',
+  },
+  {
+    q: 'Puis-je annuler le transfert si je me suis trompé de numéro ?',
+    a: 'Oui. Tant que le destinataire n’a pas accepté le billet, touchez « Annuler le transfert » sur la carte du billet. Le billet vous revient aussitôt.',
+  },
+  {
+    q: 'Puis-je télécharger le billet en PDF et l’imprimer ?',
+    a: 'Le PDF n’est pas un billet d’entrée : il ne contient pas de QR. À l’entrée, ouvrez le billet dans l’application ; il reste disponible sans réseau si vous l’avez ouvert avant d’arriver.',
+  },
+];
 
-  const faqs = [
-    {
-      q: 'Mon proche doit-il avoir un compte pour recevoir le billet ?',
-      a: 'Oui, la création de compte est instantanée et 100% gratuite, avec le numéro de téléphone auquel vous envoyez le billet, confirmé par un code SMS. Cela garantit qu\'il est le seul propriétaire légitime du billet et que son QR code lui appartient.',
-    },
-    {
-      q: 'Pourquoi une capture d\'écran (screenshot) ne marche pas ?',
-      a: 'Pour protéger les festivaliers contre les duplications et le marché noir, nos billets utilisent un QR Code dynamique qui change automatiquement toutes les 20 secondes. Une capture figée sera refusée par les scanners officiels aux portes.',
-    },
-    {
-      q: 'Que se passe-t-il si le destinataire ne réclame pas le billet ?',
-      a: 'Le transfert reste en attente pendant 48 heures. Si le destinataire ne l\'accepte pas dans ce délai, le billet revient automatiquement dans votre portefeuille sans aucune action de votre part.',
-    },
-    {
-      q: 'Puis-je annuler le transfert si je me suis trompé de numéro ?',
-      a: 'Absolument ! Tant que le destinataire n\'a pas cliqué sur "Accepter le billet", vous pouvez cliquer sur "Annuler le transfert" dans votre portefeuille. Le billet est immédiatement déverrouillé.',
-    },
-    {
-      q: 'Puis-je exporter le billet en PDF et l\'imprimer ?',
-      a: 'Oui, le bouton "PDF" génère un document officiel imprimable doté d\'une signature cryptographique de secours valide pour un scan unique aux entrées.',
-    },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* Backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-slate-950/70 backdrop-blur-md"
-        onClick={onClose}
-      />
-
-      {/* Modal Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 40, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 40, scale: 0.96 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="relative z-10 w-full max-w-2xl bg-white dark:bg-[#16161A] border border-slate-200/80 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90dvh] flex flex-col overflow-hidden text-left"
-      >
-        {/* Header Pinned */}
-        <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between bg-gradient-to-r from-orange-50/70 via-white to-orange-50/30 dark:from-orange-950/20 dark:via-[#16161A] dark:to-transparent">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#FF6A3D] to-[#FF3D68] text-white flex items-center justify-center shadow-md shadow-[#FF5722]/30 flex-shrink-0">
-              <ArrowRightLeft size={20} className="stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-                  Comment marche le transfert ?
-                </h3>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50">
-                  <ShieldCheck size={11} /> 100% Officiel
+export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({ isOpen, onClose }) => (
+  <Modal
+    isOpen={isOpen}
+    onClose={onClose}
+    title="Comment fonctionne le transfert ?"
+    subtitle="Donnez un billet à un proche en trois étapes."
+    icon={<ArrowRightLeft size={20} />}
+    maxWidth="2xl"
+    footer={(
+      <Button variant="primary" onClick={onClose} fullWidth className="sm:w-auto">
+        J’ai compris
+      </Button>
+    )}
+  >
+    <div className="space-y-6 text-sm text-fg">
+      <section aria-labelledby="transfert-etapes" className="space-y-3">
+        <h3 id="transfert-etapes" className="text-sm font-semibold text-fg-muted">Les trois étapes</h3>
+        <ol className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {STEPS.map((step, index) => (
+            <li key={step.title} className="flex flex-col gap-2 rounded-2xl border border-border bg-surface-sunken p-4">
+              <div className="flex items-center justify-between">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-bg text-sm font-bold text-brand-fg" aria-hidden="true">
+                  {index + 1}
                 </span>
+                <span className="text-brand-fg">{step.icon}</span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                Transférez vos billets à vos proches en 3 étapes sécurisées.
+              <p className="font-semibold text-fg">
+                <span className="sr-only">{`Étape ${index + 1} : `}</span>
+                {step.title}
               </p>
-            </div>
+              <p className="leading-relaxed text-fg-muted">{step.text}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section aria-labelledby="transfert-pourquoi" className="space-y-3">
+        <h3 id="transfert-pourquoi" className="text-sm font-semibold text-fg-muted">Pourquoi passer par le transfert</h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5 rounded-2xl border border-danger-border bg-danger-bg p-4">
+            <p className="flex items-center gap-2 font-semibold text-danger-fg">
+              <AlertTriangle size={16} aria-hidden="true" />
+              Capture d’écran : refusée
+            </p>
+            <p className="leading-relaxed text-fg">
+              Le code change toutes les 20 secondes : une capture est refusée à l’entrée.
+            </p>
           </div>
-
-          <button
-            onClick={onClose}
-            aria-label="Fermer"
-            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white flex items-center justify-center transition-colors"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Scrollable Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 text-slate-800 dark:text-zinc-200 text-xs sm:text-sm">
-          {/* Les 3 Étapes Clés */}
-          <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-3">
-              Le parcours en 3 étapes simples
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Étape 1 */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 relative overflow-hidden flex flex-col justify-between space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="w-6 h-6 rounded-full bg-[#FF5722]/10 text-[#FF5722] text-xs font-black flex items-center justify-center">
-                    1
-                  </span>
-                  <Smartphone size={18} className="text-[#FF5722]" />
-                </div>
-                <div>
-                  <h5 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                    Indiquez le destinataire
-                  </h5>
-                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                    Saisissez son numéro de téléphone. Aucun frais ne s&apos;applique.
-                  </p>
-                </div>
-              </div>
-
-              {/* Étape 2 */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 relative overflow-hidden flex flex-col justify-between space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="w-6 h-6 rounded-full bg-[#FF5722]/10 text-[#FF5722] text-xs font-black flex items-center justify-center">
-                    2
-                  </span>
-                  <Send size={18} className="text-[#FF5722]" />
-                </div>
-                <div>
-                  <h5 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                    Prévenu par SMS
-                  </h5>
-                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                    Votre proche reçoit un SMS. Il se connecte avec ce numéro et accepte le billet dans « Mes billets » sous 48 heures.
-                  </p>
-                </div>
-              </div>
-
-              {/* Étape 3 */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 relative overflow-hidden flex flex-col justify-between space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-black flex items-center justify-center">
-                    3
-                  </span>
-                  <UserCheck size={18} className="text-emerald-500" />
-                </div>
-                <div>
-                  <h5 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                    Réclamation en 1 clic
-                  </h5>
-                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                    Le billet est transféré sur son compte avec un nouveau QR code exclusif.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Comparatif Anti-Fraude : Capture vs Transfert Officiel */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-zinc-950 text-white border border-slate-800 space-y-3">
-            <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-              <Sparkles size={14} />
-              <span>Pourquoi le transfert officiel est obligatoire ?</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div className="p-3 rounded-xl bg-red-950/40 border border-red-900/50 space-y-1.5">
-                <div className="flex items-center gap-2 text-red-400 font-bold text-xs">
-                  <AlertTriangle size={15} />
-                  <span>Capture d&apos;écran (Interdit)</span>
-                </div>
-                <p className="text-[11px] text-zinc-300 leading-relaxed">
-                  Le QR code tourne toutes les 20s. Une capture d&apos;écran est <strong className="text-red-300">invalide et refusée</strong> à l&apos;entrée par les agents de sécurité.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-900/50 space-y-1.5">
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                  <CheckCircle2 size={15} />
-                  <span>Transfert Officiel (Garanti)</span>
-                </div>
-                <p className="text-[11px] text-zinc-300 leading-relaxed">
-                  Votre proche dispose de son propre QR code vivant et synchronisé. Entrée fluide et sereine garantie.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Foire Aux Questions (Accordéon) */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-1">
-              Questions Fréquentes
-            </h4>
-            <div className="space-y-2">
-              {faqs.map((faq, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 overflow-hidden"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-                    className="w-full p-3.5 flex items-center justify-between text-left text-xs sm:text-sm font-bold text-slate-900 dark:text-white hover:bg-slate-100/50 dark:hover:bg-zinc-800/50 transition-colors"
-                  >
-                    <span>{faq.q}</span>
-                    <ChevronDown
-                      size={16}
-                      className={`text-slate-400 transition-transform duration-200 flex-shrink-0 ml-2 ${
-                        openFaq === idx ? 'rotate-180 text-[#FF5722]' : ''
-                      }`}
-                    />
-                  </button>
-                  <AnimatePresence>
-                    {openFaq === idx && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <div className="px-3.5 pb-3.5 text-[11px] sm:text-xs text-slate-600 dark:text-zinc-400 leading-relaxed border-t border-slate-100 dark:border-zinc-800/60 pt-2">
-                          {faq.a}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              ))}
-            </div>
+          <div className="space-y-1.5 rounded-2xl border border-success-border bg-success-bg p-4">
+            <p className="flex items-center gap-2 font-semibold text-success-fg">
+              <CheckCircle2 size={16} aria-hidden="true" />
+              Transfert : accepté
+            </p>
+            <p className="leading-relaxed text-fg">
+              Votre proche présente son propre billet, à son nom de compte, depuis son téléphone.
+            </p>
           </div>
         </div>
+      </section>
 
-        {/* Footer Pinned */}
-        <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/80 dark:bg-[#16161A] flex items-center justify-end">
-          <Button variant="primary" size="md" onClick={onClose} fullWidth className="sm:w-auto">
-            J&apos;ai compris, c&apos;est clair !
-          </Button>
+      <section aria-labelledby="transfert-questions" className="space-y-2">
+        <h3 id="transfert-questions" className="text-sm font-semibold text-fg-muted">Questions fréquentes</h3>
+        <div className="space-y-2">
+          {FAQS.map((faq) => (
+            <details key={faq.q} className="group overflow-hidden rounded-2xl border border-border bg-surface">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold text-fg transition-colors duration-200 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                <span>{faq.q}</span>
+                <ChevronDown size={18} className="flex-shrink-0 text-fg-muted motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180" aria-hidden="true" />
+              </summary>
+              <p className="border-t border-border px-4 py-3 leading-relaxed text-fg-muted">{faq.a}</p>
+            </details>
+          ))}
         </div>
-      </motion.div>
+      </section>
     </div>
-  );
-};
+  </Modal>
+);

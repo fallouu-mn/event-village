@@ -1,22 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import {
-  ChevronLeft,
-  Radio,
-  Send,
-  Users,
-  ShieldCheck,
-  RefreshCw,
-  AlertCircle,
-  CheckCircle2,
-  AlertTriangle,
-  MessageSquare,
-  Clock,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useId, useState } from 'react';
+import { FilePenLine, Info, MessageSquare, RefreshCw, Save } from 'lucide-react';
+import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { Select, TextInput, Textarea } from '@/components/ui/Field';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
+import { formatDateTime, formatInteger } from '@/lib/format';
+
+/**
+ * Campagnes de communication (admin, permission communications.manage). Lot 7 (7.0 f, D71) : page migrée sur le
+ * système de design et rendue honnête. La route enregistre toujours la campagne en brouillon et n'envoie rien
+ * (décision 43 du lot 6, `sendingDisabled: true`) : la page ne demande plus d'envoi immédiat, dit « Brouillon
+ * enregistré », n'affiche ni statut ni audience bruts, ni nombre « livrés ». Erreur de chargement : ErrorState.
+ */
 
 interface CampaignItem {
   id: string;
@@ -27,47 +28,142 @@ interface CampaignItem {
   channels: string[];
   status: string;
   recipient_count: number;
-  delivered_count: number;
   created_at: string;
-  sent_at?: string;
+}
+
+const DRAFT_SAVED = 'Brouillon enregistré : l’envoi immédiat est désactivé.';
+
+const SENDER_OPTIONS = [
+  { value: 'Event Village Info', label: 'Event Village Info (actualités et événements)' },
+  { value: 'Event Village Sénégal', label: 'Event Village Sénégal (annonces nationales)' },
+  { value: 'Support Officiel', label: 'Support officiel (transactions et sécurité)' },
+];
+
+const AUDIENCE_LABELS: Record<string, string> = {
+  ALL_CLIENTS: 'Tous les clients inscrits',
+  ALL_PARTNERS: 'Tous les partenaires',
+  AMBASSADORS: 'Ambassadeurs seulement',
+  RESTAURANTS: 'Restaurants',
+  ORGANISATEURS: 'Organisateurs',
+};
+const AUDIENCE_OPTIONS = ['ALL_CLIENTS', 'ALL_PARTNERS', 'AMBASSADORS'].map((value) => ({ value, label: AUDIENCE_LABELS[value] }));
+
+const CHANNEL_LABELS: Record<string, string> = { SMS: 'SMS', EMAIL: 'Email' };
+
+const STATUS_META: Record<string, { label: string; variant: BadgeVariant }> = {
+  DRAFT: { label: 'Brouillon', variant: 'neutral' },
+  SCHEDULED: { label: 'Programmée', variant: 'info' },
+  SENDING: { label: 'Envoi en cours', variant: 'info' },
+  SENT: { label: 'Envoyée', variant: 'success' },
+  FAILED: { label: 'En échec', variant: 'danger' },
+};
+
+function audienceLabel(value: string): string {
+  return AUDIENCE_LABELS[value] ?? 'Audience non répertoriée';
+}
+
+function statusMeta(value: string): { label: string; variant: BadgeVariant } {
+  return STATUS_META[value] ?? { label: 'État non répertorié', variant: 'neutral' };
+}
+
+function channelsLabel(channels: string[] | null | undefined): string {
+  const labels = (channels ?? []).map((c) => CHANNEL_LABELS[c] ?? 'Canal non répertorié');
+  return labels.length > 0 ? labels.join(', ') : 'Aucun canal';
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function parseCampaigns(body: unknown): CampaignItem[] | null {
+  if (!isRecord(body) || !Array.isArray(body.campaigns)) return null;
+  return body.campaigns.flatMap((raw: unknown) => {
+    if (!isRecord(raw) || typeof raw.id !== 'string') return [];
+    return [{
+      id: raw.id,
+      title: typeof raw.title === 'string' ? raw.title : '',
+      message: typeof raw.message === 'string' ? raw.message : '',
+      sender_profile: typeof raw.sender_profile === 'string' ? raw.sender_profile : '',
+      target_audience: typeof raw.target_audience === 'string' ? raw.target_audience : '',
+      channels: Array.isArray(raw.channels) ? raw.channels.filter((c): c is string => typeof c === 'string') : [],
+      status: typeof raw.status === 'string' ? raw.status : '',
+      recipient_count: typeof raw.recipient_count === 'number' ? raw.recipient_count : 0,
+      created_at: typeof raw.created_at === 'string' ? raw.created_at : '',
+    }];
+  });
+}
+
+async function readJson(res: Response, what: string): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch (err) {
+    console.error(`[Campagnes] ${what} : réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
+    return null;
+  }
 }
 
 export default function AdminCommunicationsPage() {
   const toast = useToast();
-  const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
+  const formId = useId();
+  const [campaigns, setCampaigns] = useState<CampaignItem[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSending, setIsSending] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSaved, setLastSaved] = useState<{ title: string; recipients: number } | null>(null);
 
-  // Formulaire Campagne
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [senderProfile, setSenderProfile] = useState('Event Village Info');
+  const [senderProfile, setSenderProfile] = useState(SENDER_OPTIONS[0].value);
   const [targetAudience, setTargetAudience] = useState('ALL_CLIENTS');
   const [selectedChannels, setSelectedChannels] = useState<string[]>(['SMS']);
 
   const fetchCampaigns = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/admin/communications');
-      const data = await res.json();
-      if (res.ok && data.campaigns) {
-        setCampaigns(data.campaigns);
+      const res = await fetch('/api/admin/communications', { cache: 'no-store' });
+      const body = await readJson(res, 'historique');
+      if (!res.ok) {
+        const serverMessage = isRecord(body) && typeof body.error === 'string' && res.status < 500 ? body.error : null;
+        setLoadError(serverMessage ?? `Historique indisponible (erreur ${res.status}).`);
+        return;
       }
+      const parsed = parseCampaigns(body);
+      if (!parsed) {
+        console.error('[Campagnes] historique : réponse inattendue', body);
+        setLoadError('Réponse inattendue du serveur.');
+        return;
+      }
+      setCampaigns(parsed);
+      setLoadError(null);
     } catch (err) {
-      console.error('[AdminCommunications] Erreur chargement:', err);
+      console.error('[Campagnes] historique injoignable :', err instanceof Error ? err.message : String(err));
+      setLoadError('Connexion impossible : vérifiez votre réseau, puis réessayez.');
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchCampaigns();
+    void fetchCampaigns();
   }, [fetchCampaigns]);
 
-  const handleSendCampaign = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSending(true);
+  const toggleChannel = (channel: string, checked: boolean) => {
+    setSelectedChannels((prev) => (checked ? Array.from(new Set([...prev, channel])) : prev.filter((c) => c !== channel)));
+  };
 
+  const handleSaveDraft = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaveError(null);
+    if (title.trim().length === 0 || message.trim().length === 0) {
+      setSaveError('Indiquez un titre et un message.');
+      return;
+    }
+    if (selectedChannels.length === 0) {
+      setSaveError('Choisissez au moins un canal.');
+      return;
+    }
+    setIsSaving(true);
     try {
       const res = await fetch('/api/admin/communications', {
         method: 'POST',
@@ -78,245 +174,200 @@ export default function AdminCommunicationsPage() {
           senderProfile,
           targetAudience,
           channels: selectedChannels,
-          sendNow: true,
         }),
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'envoi.');
-
-      toast.success(`La campagne « ${title} » a été diffusée avec succès auprès de ${data.deliveredCount || data.recipientCount} destinataires.`);
+      const body = await readJson(res, 'enregistrement');
+      if (!res.ok) {
+        const serverMessage = isRecord(body) && typeof body.error === 'string' && res.status < 500 ? body.error : null;
+        setSaveError(serverMessage ?? `Brouillon non enregistré (erreur ${res.status}).`);
+        return;
+      }
+      const recipients = isRecord(body) && typeof body.recipientCount === 'number' ? body.recipientCount : 0;
+      setLastSaved({ title: title.trim(), recipients });
+      toast.success(DRAFT_SAVED);
       setTitle('');
       setMessage('');
       await fetchCampaigns();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la diffusion.';
-      toast.error(msg);
+    } catch (err) {
+      console.error('[Campagnes] enregistrement injoignable :', err instanceof Error ? err.message : String(err));
+      setSaveError('Connexion impossible : le brouillon n’a peut-être pas été enregistré. Actualisez l’historique avant de réessayer.');
     } finally {
-      setIsSending(false);
-    }
-  };
-
-  const formatDate = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      return d.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return iso;
+      setIsSaving(false);
     }
   };
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/dashboard"
-            className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+    <div className="space-y-6 pb-24 lg:pb-12">
+      <PageHeader
+        title="Campagnes de communication"
+        description="Préparez un message pour les clients ou les partenaires. Les campagnes sont enregistrées en brouillon : aucun envoi ne part de cette page."
+        back={{ href: '/admin/dashboard', label: 'Administration' }}
+        actions={(
+          <Button
+            variant="secondary"
+            onClick={() => void fetchCampaigns()}
+            isLoading={isLoading && campaigns !== null}
+            disabled={isLoading}
+            leftIcon={<RefreshCw size={18} aria-hidden="true" />}
           >
-            <ChevronLeft size={20} />
-          </Link>
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
-              Console Superadmin HQ
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Diffusion & Campagnes de Communication (§121-§126)
-            </h1>
-          </div>
-        </div>
+            Actualiser
+          </Button>
+        )}
+      />
 
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => fetchCampaigns()}
-          disabled={isLoading}
-          className="flex items-center gap-1.5"
-        >
-          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-          <span>Actualiser</span>
-        </Button>
-      </div>
+      <StatusBanner tone="info" icon={<Info size={20} aria-hidden="true" />} title="Envoi des campagnes désactivé">
+        L’envoi aux destinataires sera ouvert avec le lot des communications (préférences et désabonnement). En attendant, chaque campagne reste un brouillon.
+      </StatusBanner>
 
-      {/* Formulaire de Nouvelle Campagne */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
-        <div className="flex items-center gap-2.5 border-b border-slate-200 dark:border-zinc-800 pb-3">
-          <Radio size={20} className="text-[#FF5722]" />
-          <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
-            Diffuser une Nouvelle Communication
-          </h2>
-        </div>
+      <section aria-labelledby={`${formId}-titre`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+        <h2 id={`${formId}-titre`} className="flex items-center gap-2 text-lg font-semibold text-fg">
+          <FilePenLine size={20} className="text-brand-fg" aria-hidden="true" />
+          Nouveau brouillon
+        </h2>
 
-        <form onSubmit={handleSendCampaign} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">
-                Titre de la Campagne
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: Soirée de Gala ou Mise à jour de sécurité"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white text-xs"
-              />
-            </div>
+        {lastSaved && (
+          <StatusBanner tone="success" title={DRAFT_SAVED}>
+            {`« ${lastSaved.title} » : ${formatInteger(lastSaved.recipients)} destinataire${lastSaved.recipients > 1 ? 's' : ''} ciblé${lastSaved.recipients > 1 ? 's' : ''}, aucun message envoyé.`}
+          </StatusBanner>
+        )}
 
-            <div>
-              <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">
-                Profil Expéditeur Officiel (§125)
-              </label>
-              <select
-                value={senderProfile}
-                onChange={(e) => setSenderProfile(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 font-bold text-xs"
-              >
-                <option value="Event Village Info">Event Village Info (Actualités & Événements)</option>
-                <option value="Event Village Sénégal">Event Village Sénégal (Annonces Nationales)</option>
-                <option value="Support Officiel">Support Officiel (Transactions & Sécurité)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">
-                Ciblage / Audience (§122)
-              </label>
-              <select
-                value={targetAudience}
-                onChange={(e) => setTargetAudience(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 font-bold text-xs"
-              >
-                <option value="ALL_CLIENTS">Tous les Clients Inscrits</option>
-                <option value="ALL_PARTNERS">Tous les Partenaires Professionnels</option>
-                <option value="AMBASSADORS">Ambassadeurs VIP Uniquement</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">
-                Canaux de Diffusion
-              </label>
-              <div className="flex items-center gap-3 pt-1">
-                <label className="flex items-center gap-1.5 cursor-pointer font-bold">
-                  <input
-                    type="checkbox"
-                    checked={selectedChannels.includes('SMS')}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedChannels([...selectedChannels, 'SMS']);
-                      else setSelectedChannels(selectedChannels.filter((c) => c !== 'SMS'));
-                    }}
-                    className="rounded text-[#FF5722]"
-                  />
-                  <span>SMS (MTarget)</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer font-bold">
-                  <input
-                    type="checkbox"
-                    checked={selectedChannels.includes('EMAIL')}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedChannels([...selectedChannels, 'EMAIL']);
-                      else setSelectedChannels(selectedChannels.filter((c) => c !== 'EMAIL'));
-                    }}
-                    className="rounded text-[#FF5722]"
-                  />
-                  <span>Email</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">
-              Contenu du Message (Modération automatique active)
-            </label>
-            <textarea
+        <form onSubmit={handleSaveDraft} noValidate className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <TextInput
+              label="Titre"
               required
-              rows={4}
-              placeholder="Rédigez votre message ici. Tout contenu offensant sera automatiquement bloqué."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="w-full p-3 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-[#FF5722]"
+              maxLength={120}
+              placeholder="Ex : soirée de gala, information de sécurité"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <Select
+              label="Expéditeur"
+              value={senderProfile}
+              onChange={(e) => setSenderProfile(e.target.value)}
+              options={SENDER_OPTIONS}
             />
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              disabled={isSending}
-              leftIcon={<Send size={14} />}
-            >
-              <span>Diffuser la Campagne</span>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Select
+              label="Destinataires"
+              value={targetAudience}
+              onChange={(e) => setTargetAudience(e.target.value)}
+              options={AUDIENCE_OPTIONS}
+            />
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-semibold text-fg">Canaux</legend>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(CHANNEL_LABELS).map(([value, label]) => (
+                  <label
+                    key={value}
+                    className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-surface-sunken px-3 text-sm font-semibold text-fg"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedChannels.includes(value)}
+                      onChange={(e) => toggleChannel(value, e.target.checked)}
+                      className="h-5 w-5 rounded accent-brand"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+
+          <Textarea
+            label="Message"
+            required
+            rows={4}
+            maxLength={1000}
+            showCount
+            hint="Les termes offensants sont refusés par une modération automatique."
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+          />
+
+          {saveError && (
+            <StatusBanner tone="danger" announce="alert" title="Brouillon non enregistré">
+              {saveError}
+            </StatusBanner>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button type="submit" variant="primary" isLoading={isSaving} leftIcon={<Save size={18} aria-hidden="true" />}>
+              Enregistrer le brouillon
             </Button>
           </div>
         </form>
-      </div>
+      </section>
 
-      {/* Historique des Campagnes */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-4">
-        <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
-          Historique des Diffusions
-        </h2>
+      <section aria-labelledby={`${formId}-historique`} className="space-y-3">
+        <h2 id={`${formId}-historique`} className="text-lg font-semibold text-fg">Campagnes enregistrées</h2>
 
-        {isLoading ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
-            <p className="text-xs">Chargement des campagnes...</p>
-          </div>
-        ) : campaigns.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <MessageSquare size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" />
-            <p className="text-xs font-bold">Aucune campagne diffusée pour le moment.</p>
+        {loadError && campaigns === null ? (
+          <ErrorState title="Historique indisponible" description={loadError} onRetry={() => void fetchCampaigns()} isRetrying={isLoading} />
+        ) : campaigns === null ? (
+          <div className="space-y-3" aria-busy="true">
+            <span className="sr-only">Chargement des campagnes…</span>
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
           </div>
         ) : (
-          <div className="space-y-3">
-            {campaigns.map((camp) => (
-              <div
-                key={camp.id}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200/80 dark:border-zinc-800/80 space-y-2 text-xs"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-black text-slate-900 dark:text-white">{camp.title}</h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/40 text-[#FF5722]">
-                      {camp.sender_profile}
-                    </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
-                      {camp.target_audience}
-                    </span>
-                  </div>
-
-                  <span className="text-slate-400 font-mono text-[11px]">
-                    {formatDate(camp.created_at)}
-                  </span>
-                </div>
-
-                <p className="text-slate-700 dark:text-zinc-300 bg-white dark:bg-zinc-800/80 p-3 rounded-xl border border-slate-200/60 dark:border-zinc-700/60">
-                  {camp.message}
-                </p>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-500">
-                  <span className="font-bold text-emerald-600">
-                    Statut : {camp.status} ({camp.delivered_count || camp.recipient_count} livrés)
-                  </span>
-                  <span>Canaux : {camp.channels?.join(', ')}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <>
+            {loadError && (
+              <StatusBanner tone="danger" announce="alert" title="Historique non actualisé">
+                {loadError} La liste affichée est celle du dernier chargement.
+              </StatusBanner>
+            )}
+            {campaigns.length === 0 ? (
+              <EmptyState
+                icon={<MessageSquare size={28} />}
+                title="Aucune campagne"
+                description="Les brouillons que vous enregistrez apparaissent ici."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {campaigns.map((camp) => {
+                  const meta = statusMeta(camp.status);
+                  return (
+                    <li key={camp.id} className="space-y-3 rounded-2xl border border-border bg-surface p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 space-y-1">
+                          <h3 className="break-words text-base font-semibold text-fg">{camp.title}</h3>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={meta.variant} size="sm">{meta.label}</Badge>
+                            <Badge variant="brand" size="sm">{camp.sender_profile || 'Expéditeur non indiqué'}</Badge>
+                          </div>
+                        </div>
+                        <time dateTime={camp.created_at || undefined} className="text-sm tabular-nums text-fg-muted">
+                          {formatDateTime(camp.created_at)}
+                        </time>
+                      </div>
+                      <p className="whitespace-pre-line break-words rounded-xl border border-border bg-surface-sunken p-3 text-sm leading-relaxed text-fg">
+                        {camp.message}
+                      </p>
+                      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+                        <div>
+                          <dt className="text-fg-muted">Destinataires</dt>
+                          <dd className="font-semibold text-fg">{audienceLabel(camp.target_audience)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-fg-muted">Personnes ciblées</dt>
+                          <dd className="font-semibold tabular-nums text-fg">{formatInteger(camp.recipient_count)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-fg-muted">Canaux</dt>
+                          <dd className="font-semibold text-fg">{channelsLabel(camp.channels)}</dd>
+                        </div>
+                      </dl>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
-      </div>
+      </section>
     </div>
   );
 }

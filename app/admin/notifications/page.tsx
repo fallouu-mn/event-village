@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BellRing, ChevronRight, MessageSquareText, RefreshCw, Search, ShieldOff } from 'lucide-react';
+import { BellRing, ChevronRight, Gauge, MessageSquareText, RefreshCw, Search, ShieldOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
@@ -32,11 +32,13 @@ import {
  * Supervision des notifications (lot 6, contrats L2 à L4).
  *  - Liste : GET /api/admin/notifications (filtres statut, canal, type, période, recherche ; 20 par page),
  *    destinataire masqué par le serveur ; compteurs par statut servis par le serveur (onglets).
- *  - Compteurs : GET /api/admin/notifications/stats (SMS du jour et seuil d'alerte, SMS du mois, par jour et
- *    par canal) ; aucun chiffre n'est calculé dans le navigateur.
+ *  - Compteurs : GET /api/admin/notifications/stats (SMS du jour, SMS du mois, par jour et par canal ; lot 7,
+ *    7.0 a : SMS optionnels du jour, plafond quotidien et seuil d'alerte à 80 % du plafond) ; aucun chiffre n'est
+ *    calculé dans le navigateur, seules les comparaisons aux valeurs servies choisissent le ton.
  *  - Libellés humains (lib/notifications/outbox-labels.ts) : aucun code de statut, de canal, de type ni de motif.
  *  - Accès : permission notifications.read ; un 403 donne un état « Accès refusé » distinct de l'erreur.
- *  - En direct : un signal admin d'échec d'envoi ou de volume de SMS recharge la liste et les compteurs.
+ *  - En direct : un signal admin d'échec d'envoi ou de volume de SMS recharge la liste et les compteurs (filtre
+ *    figé par tests/parcours/notif-interface.test.ts ; les alertes du lot 7 sont aussi des lignes de la liste).
  *  - « Relancer » n'est jamais proposé ici : seulement sur le détail d'une notification en échec.
  */
 
@@ -75,7 +77,12 @@ interface StatsBody {
   byDay: DayRow[];
   smsMonth: { month: string; sent: number; uncertain: number; otp: number; total: number };
   smsToday: number;
+  /** Seuil de l'alerte : 80 % du plafond des SMS optionnels (null si le plafond est absent ou vaut 0). */
   threshold: number | null;
+  /** Plafond quotidien des SMS optionnels (notif.sms_optional_daily_cap), null s'il est absent. */
+  optionalCap: number | null;
+  /** SMS optionnels réservés aujourd'hui (jour de Dakar), même compteur que le plafond. */
+  optionalToday: number;
 }
 
 type Fetched<T> = { ok: true; data: T } | { ok: false; status: number; message: string };
@@ -170,6 +177,8 @@ function parseStats(body: unknown): StatsBody | null {
     smsMonth: { month: str(m.month) ?? '', sent: num(m.sent), uncertain: num(m.uncertain), otp: num(m.otp), total: num(m.total) },
     smsToday: num(body.sms_today),
     threshold: typeof body.threshold === 'number' ? body.threshold : null,
+    optionalCap: typeof body.optional_cap === 'number' ? body.optional_cap : null,
+    optionalToday: num(body.optional_today),
   };
 }
 
@@ -196,6 +205,23 @@ function formatMonth(month: string): string {
   if (!m) return 'ce mois-ci';
   const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 15));
   return date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** Aide de la carte des SMS optionnels : plafond, seuil d'alerte et conséquence, en texte (pas seulement en couleur). */
+function optionalHint(stats: StatsBody): string {
+  if (stats.optionalCap === null) return 'Plafond non réglé : les SMS optionnels ne partent pas.';
+  if (stats.optionalCap === 0) return 'Plafond à 0 : aucun SMS optionnel n’est envoyé.';
+  const cap = `Plafond : ${formatInteger(stats.optionalCap)} par jour`;
+  if (stats.optionalToday >= stats.optionalCap) return `${cap}. Plafond atteint : rappels et annonces partent sans SMS.`;
+  if (stats.threshold !== null && stats.optionalToday >= stats.threshold) return `${cap}. Seuil d’alerte de ${formatInteger(stats.threshold)} atteint.`;
+  return stats.threshold !== null ? `${cap}, alerte à ${formatInteger(stats.threshold)}.` : `${cap}.`;
+}
+
+function optionalTone(stats: StatsBody): 'danger' | 'warning' | 'neutral' {
+  if (stats.optionalCap === null || stats.optionalCap === 0) return 'warning';
+  if (stats.optionalToday >= stats.optionalCap) return 'danger';
+  if (stats.threshold !== null && stats.optionalToday >= stats.threshold) return 'warning';
+  return 'neutral';
 }
 
 function ListSkeleton() {
@@ -432,15 +458,22 @@ export default function AdminNotificationsPage() {
             {statsError}
           </StatusBanner>
         )}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {stats ? (
             <>
               <KpiCard
                 label="SMS aujourd'hui"
                 value={formatInteger(stats.smsToday)}
-                hint={stats.threshold !== null ? `Seuil d’alerte : ${formatInteger(stats.threshold)} par jour` : 'Seuil d’alerte non réglé'}
-                tone={stats.threshold !== null && stats.smsToday >= stats.threshold ? 'warning' : 'neutral'}
+                hint="Tous les SMS du jour, indispensables, optionnels et codes de connexion."
+                tone="neutral"
                 icon={<MessageSquareText size={20} aria-hidden="true" />}
+              />
+              <KpiCard
+                label="SMS optionnels aujourd'hui"
+                value={formatInteger(stats.optionalToday)}
+                hint={optionalHint(stats)}
+                tone={optionalTone(stats)}
+                icon={<Gauge size={20} aria-hidden="true" />}
               />
               <KpiCard
                 label="SMS ce mois-ci"
@@ -452,6 +485,7 @@ export default function AdminNotificationsPage() {
             </>
           ) : statsError ? null : (
             <>
+              <KpiCardSkeleton />
               <KpiCardSkeleton />
               <KpiCardSkeleton />
             </>

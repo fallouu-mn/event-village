@@ -1,666 +1,568 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import {
-    Briefcase,
-    Building2,
-    Upload,
-    FileText,
-    CheckCircle2,
-    AlertCircle,
-    User,
-    Phone,
-    Mail,
-    Lock,
-    MapPin,
-    ArrowRight,
-    Sparkles,
-    Shield,
-    Clock,
-} from 'lucide-react';
-import { Logo } from '@/components/ui/Logo';
-import { Button } from '@/components/ui/Button';
+import React, { useEffect, useRef, useState } from 'react';
+import { Briefcase, Building2, Check, CheckCircle2, Clock, FileText, LogOut, MailCheck, RotateCcw, Shield, Upload, User } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
-import { RegisterPartnerSchema, PartnerActivityTypes, normalizePhoneNumber } from '@/lib/validations/auth';
+import { Button } from '@/components/ui/Button';
+import { TextInput, Textarea } from '@/components/ui/Field';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { Logo } from '@/components/ui/Logo';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
+import { OtpInput } from '@/components/auth/OtpInput';
+import { PasswordStrengthChecklist } from '@/components/auth/PasswordStrengthChecklist';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { PartnerActivityTypes, RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
+
+/**
+ * Inscription d'un partenaire avec ses pièces (POST /api/partner/documents/upload, POST /api/partner/register, puis
+ * vérification du numéro par /api/auth/verify-otp). Lot 7 (7.0 f) :
+ *  - D63 : ouverte par un compte déjà connecté, la page explique qu'elle crée un compte professionnel distinct (avec
+ *    un autre numéro) et propose la déconnexion ; aucune conversion du compte connecté ;
+ *  - D64 : tout le formulaire est validé par le schéma partagé (RegisterPartnerSchema sans les jetons) AVANT le
+ *    moindre téléversement ; les jetons de dépôt sont réutilisés d'une tentative à l'autre tant qu'ils ne sont pas
+ *    expirés et que le fichier est le même ; code SMS saisi par OtpInput, renvoi avec décompte ;
+ *  - erreurs : récapitulatif en tête (focalisé, liens vers les champs) et message sous chaque champ ; libellés liés ;
+ *    LinkButton au lieu de <Link><Button>.
+ */
+
+type FieldName =
+  | 'companyName' | 'commercialName' | 'description' | 'address' | 'city' | 'activities'
+  | 'firstName' | 'lastName' | 'phone' | 'email' | 'password' | 'confirmPassword' | 'ninea' | 'rccm'
+  | 'idCard' | 'businessDoc';
+
+type FieldErrors = Partial<Record<FieldName, string>>;
+
+type DocType = 'id_card' | 'business_doc';
+
+interface UploadedDoc {
+  token: string;
+  expiresAt: number;
+  fileKey: string;
+}
 
 const ACTIVITY_LABELS: Record<string, string> = {
-    RESTAURANT: 'Restaurant & Gastronomie',
-    TRAITEUR: 'Service Traiteur & Buffet',
-    SALLE: 'Salle de Fête & Réception',
-    ORGANISATEUR: 'Organisateur d’Événements / Festivals',
-    PRESTATAIRE: 'Prestataire Scénique / Son & Lumière',
-    PATISSERIE: 'Pâtisserie & Desserts',
-    ETABLISSEMENT_ALIMENTAIRE: 'Établissement Alimentaire',
-    AUTRE: 'Autre Service Événementiel',
+  ORGANISATEUR: 'Organisation d’événements et festivals',
+  SALLE: 'Salle de fête et de réception',
+  RESTAURANT: 'Restaurant',
+  TRAITEUR: 'Traiteur et buffet',
+  PRESTATAIRE: 'Prestataire (son, lumière, scène)',
+  PATISSERIE: 'Pâtisserie et desserts',
+  ETABLISSEMENT_ALIMENTAIRE: 'Établissement alimentaire',
+  AUTRE: 'Autre service événementiel',
 };
 
+const FIELD_IDS: Record<FieldName, string> = {
+  companyName: 'partenaire-raison-sociale',
+  commercialName: 'partenaire-enseigne',
+  description: 'partenaire-description',
+  address: 'partenaire-adresse',
+  city: 'partenaire-ville',
+  activities: 'partenaire-activites',
+  firstName: 'partenaire-prenom',
+  lastName: 'partenaire-nom',
+  phone: 'partenaire-telephone',
+  email: 'partenaire-email',
+  password: 'partenaire-mot-de-passe',
+  confirmPassword: 'partenaire-confirmation',
+  ninea: 'partenaire-ninea',
+  rccm: 'partenaire-rccm',
+  idCard: 'partenaire-piece-identite',
+  businessDoc: 'partenaire-document-entreprise',
+};
+
+const FIELD_ORDER = Object.keys(FIELD_IDS) as FieldName[];
+
+/** Schéma partagé sans les jetons de dépôt : contrôlé avant tout téléversement (D64). */
+const FormSchema = RegisterPartnerSchema.innerType().omit({ idCardUploadToken: true, businessDocUploadToken: true });
+
+const RESEND_DELAY_SECONDS = 60;
+/** Marge avant l'expiration d'un jeton : en deçà, la pièce est déposée à nouveau. */
+const TOKEN_MARGIN_MS = 2 * 60 * 1000;
+const ACCEPTED_DOCS = 'application/pdf,image/jpeg,image/png,image/webp';
+
+function fileKeyOf(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+async function readJson(res: Response, what: string): Promise<Record<string, unknown>> {
+  try {
+    const body: unknown = await res.json();
+    return typeof body === 'object' && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  } catch (err) {
+    console.error(`[inscription partenaire] ${what} : réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
+    return {};
+  }
+}
+
+function errorText(body: Record<string, unknown>, fallback: string): string {
+  return typeof body.error === 'string' && body.error ? body.error : fallback;
+}
+
 export default function PartnerRegisterPage() {
-    const router = useRouter();
+  const { isAuthenticated, signOut } = useAuth();
 
-    // Données Entreprise
-    const [companyName, setCompanyName] = useState('');
-    const [commercialName, setCommercialName] = useState('');
-    const [description, setDescription] = useState('');
-    const [address, setAddress] = useState('');
-    const [city, setCity] = useState('Dakar');
-    const [selectedActivities, setSelectedActivities] = useState<string[]>(['ORGANISATEUR']);
-    const [ninea, setNinea] = useState('');
-    const [rccm, setRccm] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [commercialName, setCommercialName] = useState('');
+  const [description, setDescription] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('Dakar');
+  const [activities, setActivities] = useState<string[]>(['ORGANISATEUR']);
+  const [ninea, setNinea] = useState('');
+  const [rccm, setRccm] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [idCardFile, setIdCardFile] = useState<File | null>(null);
+  const [businessDocFile, setBusinessDocFile] = useState<File | null>(null);
+  const uploaded = useRef<Partial<Record<DocType, UploadedDoc>>>({});
 
-    // Données Gérant
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
-    const [phone, setPhone] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
 
-    // Fichiers
-    const [idCardFile, setIdCardFile] = useState<File | null>(null);
-    const [businessDocFile, setBusinessDocFile] = useState<File | null>(null);
+  const [otpPhone, setOtpPhone] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpInfo, setOtpInfo] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [isSuccess, setIsSuccess] = useState(false);
 
-    // OTP verification
-    const [otpStep, setOtpStep] = useState(false);
-    const [otpPhone, setOtpPhone] = useState('');
-    const [otpCode, setOtpCode] = useState('');
-    const [otpLoading, setOtpLoading] = useState(false);
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setInterval(() => setCountdown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [countdown]);
 
-    // État de soumission
-    const [isSuccess, setIsSuccess] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const toggleActivity = (type: string) => {
+    setActivities((prev) => (prev.includes(type) ? prev.filter((a) => a !== type) : [...prev, type]));
+    setFieldErrors((prev) => ({ ...prev, activities: undefined }));
+  };
 
-    const toggleActivity = (type: string) => {
-        if (selectedActivities.includes(type)) {
-            if (selectedActivities.length > 1) {
-                setSelectedActivities(selectedActivities.filter((a) => a !== type));
-            }
-        } else {
-            setSelectedActivities([...selectedActivities, type]);
-        }
+  const clearError = (field: FieldName) => setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+
+  const showErrors = (errors: FieldErrors, message: string) => {
+    setFieldErrors(errors);
+    setFormError(message);
+    requestAnimationFrame(() => summaryRef.current?.focus());
+  };
+
+  /** Dépose une pièce, ou réutilise le jeton d'une tentative précédente pour le même fichier (D64). */
+  const uploadDocument = async (file: File, docType: DocType): Promise<string> => {
+    const key = fileKeyOf(file);
+    const previous = uploaded.current[docType];
+    if (previous && previous.fileKey === key && previous.expiresAt - Date.now() > TOKEN_MARGIN_MS) return previous.token;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('docType', docType);
+    const res = await fetch('/api/partner/documents/upload', { method: 'POST', body: formData });
+    const body = await readJson(res, `dépôt ${docType}`);
+    if (!res.ok || typeof body.uploadToken !== 'string') {
+      const what = docType === 'id_card' ? 'la pièce d’identité' : 'le document d’entreprise';
+      throw new Error(errorText(body, `Dépôt de ${what} impossible. Réessayez.`));
+    }
+    const expiresAt = typeof body.expiresAt === 'string' ? Date.parse(body.expiresAt) : Number.NaN;
+    uploaded.current[docType] = { token: body.uploadToken, expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0, fileKey: key };
+    return body.uploadToken;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setFormError(null);
+
+    const values = {
+      companyName: companyName.trim(),
+      commercialName: commercialName.trim() || undefined,
+      description: description.trim(),
+      address: address.trim(),
+      city: city.trim(),
+      activities,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      phone: phone.trim(),
+      email: email.trim().toLowerCase(),
+      password,
+      confirmPassword,
+      ninea: ninea.trim() || undefined,
+      rccm: rccm.trim() || undefined,
     };
 
-    const handlePartnerSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setErrorMessage(null);
+    // 1. Tout le formulaire, pièces comprises, avant le moindre envoi.
+    const errors: FieldErrors = {};
+    const parsed = FormSchema.safeParse(values);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === 'string' && field in FIELD_IDS && !errors[field as FieldName]) errors[field as FieldName] = issue.message;
+      }
+    }
+    if (password && confirmPassword && password !== confirmPassword) errors.confirmPassword = 'Les mots de passe ne correspondent pas.';
+    if (!idCardFile) errors.idCard = 'Joignez la pièce d’identité du gérant (CNI ou passeport).';
+    if (!businessDocFile) errors.businessDoc = 'Joignez le document de l’entreprise (RCCM ou NINEA).';
+    if (Object.values(errors).some(Boolean)) {
+      showErrors(errors, 'Le dossier n’est pas complet : corrigez les champs signalés.');
+      return;
+    }
+    setFieldErrors({});
 
-        // 1. Vérification préalable de la présence des deux documents obligatoires
-        if (!idCardFile) {
-            setErrorMessage("La pièce d'identité du gérant (CNI ou Passeport) est obligatoire pour valider votre dossier.");
-            return;
+    setIsSubmitting(true);
+    try {
+      // 2. Pièces : un dépôt par fichier, réutilisé tant que son jeton est valable.
+      setProgress('Envoi de la pièce d’identité…');
+      const idCardUploadToken = await uploadDocument(idCardFile as File, 'id_card');
+      setProgress('Envoi du document d’entreprise…');
+      const businessDocUploadToken = await uploadDocument(businessDocFile as File, 'business_doc');
+
+      // 3. Dossier.
+      setProgress('Enregistrement du dossier…');
+      const normalizedPhone = normalizePhoneNumber(values.phone);
+      const res = await fetch('/api/partner/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...values, phone: normalizedPhone, idCardUploadToken, businessDocUploadToken }),
+      });
+      const body = await readJson(res, 'inscription');
+      if (!res.ok) {
+        if (body.code === 'INVALID_DOCUMENT_UPLOAD') {
+          uploaded.current = {};
+          showErrors({}, errorText(body, 'Pièces justificatives expirées : elles seront déposées à nouveau au prochain envoi.'));
+          return;
         }
-        if (!businessDocFile) {
-            setErrorMessage("Le document officiel d'entreprise (Extrait RCCM ou Attestation NINEA) est obligatoire.");
-            return;
-        }
+        showErrors({}, errorText(body, `Dossier non enregistré (erreur ${res.status}). Réessayez.`));
+        return;
+      }
+      setOtpPhone(typeof body.phone === 'string' ? body.phone : normalizedPhone);
+      setCountdown(RESEND_DELAY_SECONDS);
+    } catch (err) {
+      console.error('[inscription partenaire] envoi du dossier :', err instanceof Error ? err.message : String(err));
+      showErrors({}, err instanceof TypeError
+        ? 'Connexion impossible : vérifiez votre réseau, puis réessayez. Les pièces déjà déposées ne seront pas renvoyées.'
+        : err instanceof Error ? err.message : 'Dossier non enregistré. Réessayez.');
+    } finally {
+      setProgress(null);
+      setIsSubmitting(false);
+    }
+  };
 
-        setIsLoading(true);
-        const normalizedPhone = normalizePhoneNumber(phone.trim());
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpPhone) return;
+    setOtpError(null);
+    setOtpInfo(null);
+    if (otpCode.length !== 6) {
+      setOtpError('Saisissez les 6 chiffres du code reçu par SMS.');
+      return;
+    }
+    setIsVerifying(true);
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: otpPhone, otpCode }),
+      });
+      const body = await readJson(res, 'vérification du code');
+      if (!res.ok) {
+        setOtpError(errorText(body, 'Code incorrect. Vérifiez-le ou demandez un nouveau code.'));
+        return;
+      }
+      setIsSuccess(true);
+    } catch (err) {
+      console.error('[inscription partenaire] vérification injoignable :', err instanceof Error ? err.message : String(err));
+      setOtpError('Connexion impossible : vérifiez votre réseau, puis réessayez.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
-        try {
-            // 2. Upload sécurisé de la pièce d'identité du gérant dans le bucket privé
-            const idCardFormData = new FormData();
-            idCardFormData.append('file', idCardFile);
-            idCardFormData.append('docType', 'id_card');
+  const handleResend = async () => {
+    if (!otpPhone || countdown > 0) return;
+    setOtpError(null);
+    setOtpInfo(null);
+    setIsResending(true);
+    try {
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: otpPhone, purpose: 'REGISTER' }),
+      });
+      const body = await readJson(res, 'renvoi du code');
+      if (!res.ok) {
+        setOtpError(errorText(body, `Nouveau code non envoyé (erreur ${res.status}). Réessayez plus tard.`));
+        if (typeof body.remainingSeconds === 'number' && body.remainingSeconds > 0) setCountdown(Math.ceil(body.remainingSeconds));
+        return;
+      }
+      setOtpCode('');
+      setOtpInfo('Nouveau code envoyé par SMS. L’ancien ne fonctionne plus.');
+      setCountdown(RESEND_DELAY_SECONDS);
+    } catch (err) {
+      console.error('[inscription partenaire] renvoi injoignable :', err instanceof Error ? err.message : String(err));
+      setOtpError('Connexion impossible : vérifiez votre réseau, puis réessayez.');
+    } finally {
+      setIsResending(false);
+    }
+  };
 
-            const idCardRes = await fetch('/api/partner/documents/upload', {
-                method: 'POST',
-                body: idCardFormData,
-            });
-            const idCardData = await idCardRes.json();
-            if (!idCardRes.ok || !idCardData.success || !idCardData.uploadToken) {
-                throw new Error(idCardData.error || "Échec du téléversement de la pièce d'identité du gérant.");
-            }
-            // Lot 1C.2 : la pièce est rattachée à l'inscription par son jeton de dépôt
-            const idCardUploadToken = idCardData.uploadToken as string;
-
-            // 3. Upload sécurisé du document d'entreprise dans le bucket privé
-            const busFormData = new FormData();
-            busFormData.append('file', businessDocFile);
-            busFormData.append('docType', 'business_doc');
-
-            const busRes = await fetch('/api/partner/documents/upload', {
-                method: 'POST',
-                body: busFormData,
-            });
-            const busData = await busRes.json();
-            if (!busRes.ok || !busData.success || !busData.uploadToken) {
-                throw new Error(busData.error || "Échec du téléversement du document d'immatriculation d'entreprise.");
-            }
-            const businessDocUploadToken = busData.uploadToken as string;
-
-            // 4. Validation Zod stricte incluant les URLs des justificatifs obligatoires
-            const parseResult = RegisterPartnerSchema.safeParse({
-                companyName: companyName.trim(),
-                commercialName: commercialName.trim() || undefined,
-                description: description.trim(),
-                address: address.trim(),
-                city: city.trim(),
-                activities: selectedActivities,
-                firstName: firstName.trim(),
-                lastName: lastName.trim(),
-                phone: phone.trim(),
-                email: email.trim().toLowerCase(),
-                password,
-                confirmPassword,
-                ninea: ninea.trim() || undefined,
-                rccm: rccm.trim() || undefined,
-                idCardUploadToken,
-                businessDocUploadToken,
-            });
-
-            if (!parseResult.success) {
-                setErrorMessage(parseResult.error.errors[0]?.message || 'Veuillez vérifier les informations du formulaire.');
-                setIsLoading(false);
-                return;
-            }
-
-            // 5. Appel de la route API serveur d'inscription partenaire
-            const res = await fetch('/api/partner/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    companyName: companyName.trim(),
-                    commercialName: commercialName.trim() || undefined,
-                    description: description.trim(),
-                    address: address.trim(),
-                    city: city.trim(),
-                    activities: selectedActivities,
-                    firstName: firstName.trim(),
-                    lastName: lastName.trim(),
-                    phone: normalizedPhone,
-                    email: email.trim().toLowerCase(),
-                    password,
-                    confirmPassword,
-                    ninea: ninea.trim() || undefined,
-                    rccm: rccm.trim() || undefined,
-                    idCardUploadToken,
-                    businessDocUploadToken,
-                }),
-            });
-
-            let data: any = {};
-            const textResponse = await res.text();
-            try {
-                data = JSON.parse(textResponse);
-            } catch {
-                throw new Error('Une erreur de communication avec le serveur est survenue. Veuillez réessayer.');
-            }
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Erreur lors de l\'enregistrement de votre candidature.');
-            }
-
-            setOtpPhone(data.phone || normalizedPhone);
-            setOtpStep(true);
-        } catch (err: unknown) {
-            console.error('[PartnerRegister] Erreur onboarding:', err);
-            const msg = err instanceof Error ? err.message : 'Erreur lors de l\'inscription partenaire.';
-            setErrorMessage(msg);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleOtpVerify = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setErrorMessage(null);
-        setOtpLoading(true);
-        try {
-            const res = await fetch('/api/auth/verify-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: otpPhone, otpCode }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data.error || 'Code de vérification incorrect.');
-            }
-            setIsSuccess(true);
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Erreur de vérification OTP.';
-            setErrorMessage(msg);
-        } finally {
-            setOtpLoading(false);
-        }
-    };
-
+  const fileField = (field: 'idCard' | 'businessDoc', label: string, hint: string, file: File | null, setFile: (f: File | null) => void) => {
+    const id = FIELD_IDS[field];
+    const error = fieldErrors[field];
     return (
-        <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto space-y-8 pb-24">
-            {/* Header */}
-            <div className="text-center space-y-3">
-                <div className="flex justify-center mb-2">
-                    <Logo variant="full" />
-                </div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] text-xs font-black">
-                    <Briefcase size={14} />
-                    <span>Espace Professionnel & Partenaires B2B</span>
-                </div>
-                <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                    Devenez Partenaire Event Village
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 max-w-xl mx-auto">
-                    Publiez vos événements, louez vos salles de réception, recevez des réservations de tables et vendez vos menus en direct avec reversements garantis par SamirPay.
-                </p>
-            </div>
-
-            {/* Carte Formulaire */}
-            <div className="p-6 sm:p-10 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-8">
-                {errorMessage && (
-                    <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs flex items-start gap-3">
-                        <AlertCircle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
-                        <div>
-                            <span className="font-bold block">Impossible de valider votre dossier :</span>
-                            <span>{errorMessage}</span>
-                        </div>
-                    </div>
-                )}
-
-                {otpStep && !isSuccess ? (
-                    <div className="py-10 space-y-6">
-                        <div className="text-center space-y-3">
-                            <div className="w-16 h-16 rounded-2xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto">
-                                <Phone size={32} />
-                            </div>
-                            <h2 className="text-xl font-black text-slate-900 dark:text-white">
-                                Vérification de votre numéro
-                            </h2>
-                            <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-sm mx-auto">
-                                Un code de vérification à 6 chiffres a été envoyé au <strong className="text-slate-900 dark:text-white">{otpPhone}</strong>. Saisissez-le ci-dessous.
-                            </p>
-                        </div>
-                        <form onSubmit={handleOtpVerify} className="max-w-xs mx-auto space-y-4">
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                maxLength={6}
-                                value={otpCode}
-                                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                placeholder="000000"
-                                required
-                                autoFocus
-                                className="w-full px-4 py-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-center text-2xl font-black tracking-[0.5em] text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                            />
-                            <Button
-                                type="submit"
-                                variant="primary"
-                                size="lg"
-                                fullWidth
-                                isLoading={otpLoading}
-                                leftIcon={<CheckCircle2 size={18} />}
-                            >
-                                Vérifier le code SMS
-                            </Button>
-                            <p className="text-[10px] text-center text-slate-400 dark:text-zinc-500">
-                                Code valable 10 minutes. Si vous ne l&apos;avez pas reçu, vérifiez votre numéro.
-                            </p>
-                        </form>
-                    </div>
-                ) : !isSuccess ? (
-                    <form onSubmit={handlePartnerSubmit} className="space-y-8">
-                        {/* 1. Informations sur l'Établissement / Entreprise */}
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-3">
-                                <Building2 size={20} className="text-[#FF5722]" />
-                                <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                    1. Structure & Activités Événementielles
-                                </h2>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Raison Sociale / Nom Légal *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={companyName}
-                                        onChange={(e) => setCompanyName(e.target.value)}
-                                        placeholder="ex: Terrou-Bi Hospitality SARL"
-                                        required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Nom Commercial / Enseigne
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={commercialName}
-                                        onChange={(e) => setCommercialName(e.target.value)}
-                                        placeholder="ex: Terrou-Bi Dakar"
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Multi-activités */}
-                            <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-2">
-                                    Types d&apos;activités proposées (Sélectionnez une ou plusieurs) *
-                                </label>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                    {PartnerActivityTypes.map((type) => {
-                                        const isSelected = selectedActivities.includes(type);
-                                        return (
-                                            <div
-                                                key={type}
-                                                onClick={() => toggleActivity(type)}
-                                                className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${
-                                                    isSelected
-                                                        ? 'border-[#FF5722] bg-[#FF5722]/5 shadow-xs'
-                                                        : 'border-slate-200 dark:border-zinc-800 hover:border-slate-300'
-                                                }`}
-                                            >
-                                                <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">
-                                                    {ACTIVITY_LABELS[type] || type}
-                                                </span>
-                                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-[#FF5722] bg-[#FF5722]' : 'border-slate-300 dark:border-zinc-700'}`}>
-                                                    {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                    Description & Présentation de votre établissement *
-                                </label>
-                                <textarea
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    rows={3}
-                                    placeholder="Présentez votre établissement, vos capacités d'accueil ou vos prestations événementielles..."
-                                    required
-                                    className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div className="sm:col-span-2">
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Adresse de l&apos;Établissement *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={address}
-                                            onChange={(e) => setAddress(e.target.value)}
-                                            placeholder="Boulevard Martin Luther King, Dakar"
-                                            required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                        />
-                                        <MapPin size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Ville *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={city}
-                                        onChange={(e) => setCity(e.target.value)}
-                                        placeholder="Dakar"
-                                        required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 2. Données du Gérant / Compte Professionnel */}
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-3">
-                                <User size={20} className="text-[#FF5722]" />
-                                <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                    2. Représentant Légal & Accès Compte
-                                </h2>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Prénom du Responsable *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={firstName}
-                                        onChange={(e) => setFirstName(e.target.value)}
-                                        placeholder="Amadou"
-                                        required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Nom du Responsable *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={lastName}
-                                        onChange={(e) => setLastName(e.target.value)}
-                                        placeholder="Sow"
-                                        required
-                                        className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Téléphone Professionnel (Sénégal) *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="tel"
-                                            value={phone}
-                                            onChange={(e) => setPhone(e.target.value)}
-                                            placeholder="77 800 00 00"
-                                            required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                        />
-                                        <Phone size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Email Professionnel *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="email"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="direction@etablissement.sn"
-                                            required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                        />
-                                        <Mail size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Mot de passe *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="password"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            placeholder="Min. 8 car., 1 Maj, 1 chiffre, 1 spécial"
-                                            required
-                                            className={`w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border text-xs font-semibold text-slate-900 dark:text-white focus:outline-none transition-all ${
-                                                password.length > 0 && allPasswordCriteriaMet(password)
-                                                    ? 'border-emerald-500 focus:border-emerald-500'
-                                                    : password.length > 0
-                                                    ? 'border-amber-400 focus:border-amber-400'
-                                                    : 'border-slate-200 dark:border-zinc-800 focus:border-[#FF5722]'
-                                            }`}
-                                        />
-                                        <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block mb-1.5">
-                                        Confirmer le mot de passe *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="password"
-                                            value={confirmPassword}
-                                            onChange={(e) => setConfirmPassword(e.target.value)}
-                                            placeholder="••••••••"
-                                            required
-                                            className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                                        />
-                                        <Lock size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <PasswordStrengthChecklist password={password} />
-                        </div>
-
-                        {/* 3. Justificatifs & Documents Légaux (Upload privé) */}
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
-                                <div className="flex items-center gap-2">
-                                    <Shield size={20} className="text-[#FF5722]" />
-                                    <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                        3. Documents Professionnels (Bucket Privé Sécurisé)
-                                    </h2>
-                                </div>
-                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400">
-                                    Obligatoire
-                                </span>
-                            </div>
-
-                            <p className="text-xs text-slate-500 dark:text-zinc-400">
-                                Conformément à la réglementation sénégalaise et au protocole de sécurité Event Village, le dépôt de ces deux pièces est obligatoire pour l&apos;audit et la validation de votre compte.
-                            </p>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className={`p-4 rounded-2xl border border-dashed transition-colors space-y-2.5 ${
-                                    idCardFile
-                                        ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20'
-                                        : 'border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900/50 hover:border-[#FF5722]'
-                                }`}>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                                            Pièce d&apos;Identité du Gérant *
-                                        </span>
-                                        <span className="text-[10px] text-slate-400">CNI ou Passeport</span>
-                                    </div>
-                                    <input
-                                        type="file"
-                                        required
-                                        accept="image/*,application/pdf"
-                                        onChange={(e) => setIdCardFile(e.target.files?.[0] || null)}
-                                        className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF5722] file:text-white cursor-pointer"
-                                    />
-                                    {idCardFile ? (
-                                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                                            <CheckCircle2 size={12} /> Document sélectionné : {idCardFile.name}
-                                        </span>
-                                    ) : (
-                                        <span className="text-[10px] text-red-500 font-medium block">
-                                            * Fichier requis (PDF, JPEG, PNG - Max 10 Mo)
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className={`p-4 rounded-2xl border border-dashed transition-colors space-y-2.5 ${
-                                    businessDocFile
-                                        ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20'
-                                        : 'border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900/50 hover:border-[#FF5722]'
-                                }`}>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                                            Document d&apos;Entreprise (RCCM / NINEA) *
-                                        </span>
-                                        <span className="text-[10px] text-slate-400">Extrait officiel</span>
-                                    </div>
-                                    <input
-                                        type="file"
-                                        required
-                                        accept="image/*,application/pdf"
-                                        onChange={(e) => setBusinessDocFile(e.target.files?.[0] || null)}
-                                        className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#FF5722] file:text-white cursor-pointer"
-                                    />
-                                    {businessDocFile ? (
-                                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                                            <CheckCircle2 size={12} /> Document sélectionné : {businessDocFile.name}
-                                        </span>
-                                    ) : (
-                                        <span className="text-[10px] text-red-500 font-medium block">
-                                            * Fichier requis (PDF, JPEG, PNG - Max 10 Mo)
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        <Button
-                            type="submit"
-                            variant="primary"
-                            size="lg"
-                            fullWidth
-                            isLoading={isLoading}
-                            leftIcon={<Upload size={18} />}
-                        >
-                            Soumettre mon dossier d&apos;inscription Partenaire
-                        </Button>
-                    </form>
-                ) : (
-                    /* Écran de confirmation de soumission */
-                    <div className="py-10 text-center space-y-6">
-                        <div className="w-20 h-20 rounded-3xl bg-orange-100 dark:bg-orange-950/40 text-[#FF5722] flex items-center justify-center mx-auto border-2 border-orange-500 shadow-md">
-                            <Clock size={44} className="animate-pulse" />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Badge variant="warning" size="md">
-                                Statut : EN ATTENTE DE VALIDATION
-                            </Badge>
-                            <h2 className="text-2xl font-black text-slate-900 dark:text-white">
-                                Votre dossier Partenaire a été reçu avec succès !
-                            </h2>
-                            <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 max-w-md mx-auto leading-relaxed">
-                                Conformément au protocole de sécurité Event Village, votre dossier et vos documents d&apos;entreprise sont en cours d&apos;examen par l&apos;équipe administrative.
-                            </p>
-                        </div>
-
-                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs text-slate-600 dark:text-zinc-400 max-w-md mx-auto text-left space-y-1.5">
-                            <span className="font-bold text-slate-900 dark:text-white block">Prochaines étapes :</span>
-                            <p>1. Vérification administrative des pièces déposées sous 24 à 48 heures.</p>
-                            <p>2. Réception d&apos;une notification SMS / Email dès l&apos;approbation de votre compte.</p>
-                            <p>3. Déblocage complet de l&apos;Espace Partenaire B2B et publication de vos offres.</p>
-                        </div>
-
-                        <Link href="/login">
-                            <Button variant="primary" size="md">
-                                Retour à l&apos;écran de connexion
-                            </Button>
-                        </Link>
-                    </div>
-                )}
-            </div>
-        </div>
+      <div className={cn('space-y-2 rounded-2xl border border-dashed p-4', file ? 'border-success-border bg-success-bg' : 'border-border-strong bg-surface-sunken', error && 'border-danger')}>
+        <label htmlFor={id} className="block text-sm font-semibold text-fg">
+          {label}
+          <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+          <span className="sr-only"> (obligatoire)</span>
+        </label>
+        <p id={`${id}-aide`} className="text-sm text-fg-muted">{hint}</p>
+        <input
+          id={id}
+          type="file"
+          accept={ACCEPTED_DOCS}
+          aria-describedby={`${id}-aide${error ? ` ${id}-erreur` : ''}`}
+          aria-invalid={error ? true : undefined}
+          onChange={(e) => {
+            setFile(e.target.files?.[0] ?? null);
+            clearError(field);
+          }}
+          className="block w-full text-sm text-fg file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-brand file:px-4 file:text-sm file:font-semibold file:text-on-brand"
+        />
+        {file && (
+          <p className="flex items-center gap-1.5 text-sm font-medium text-success-fg">
+            <CheckCircle2 size={16} aria-hidden="true" />
+            <span className="break-all">{`Fichier choisi : ${file.name}`}</span>
+          </p>
+        )}
+        {error && <p id={`${id}-erreur`} className="text-sm font-medium text-danger-fg">{error}</p>}
+      </div>
     );
+  };
+
+  const errorList = FIELD_ORDER.filter((f) => fieldErrors[f]);
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 py-4 pb-24 sm:py-8">
+      <div className="flex justify-center">
+        <Logo variant="full" />
+      </div>
+      <PageHeader
+        eyebrow={<Badge variant="brand" icon={<Briefcase size={14} aria-hidden="true" />}>Espace professionnel</Badge>}
+        title="Devenir partenaire Event Village"
+        description="Publiez vos événements et vendez vos billets en ligne, avec des reversements par SamirPay. Votre dossier est vérifié par notre équipe avant l’ouverture de votre espace."
+      />
+
+      {isAuthenticated && !otpPhone && !isSuccess ? (
+        <section aria-labelledby="partenaire-connecte" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+          <h2 id="partenaire-connecte" className="text-lg font-semibold text-fg">Vous êtes déjà connecté</h2>
+          <p className="text-base leading-relaxed text-fg-muted">
+            Ce formulaire crée un compte professionnel distinct, avec un autre numéro de téléphone. Votre compte actuel n’est pas transformé en compte partenaire.
+          </p>
+          <p className="text-base leading-relaxed text-fg-muted">
+            Pour inscrire votre structure, déconnectez-vous, puis revenez sur cette page avec le numéro professionnel.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="primary" leftIcon={<LogOut size={18} aria-hidden="true" />} onClick={() => void signOut()}>
+              Se déconnecter
+            </Button>
+            <LinkButton href="/" variant="secondary">Retour à l’accueil</LinkButton>
+          </div>
+        </section>
+      ) : isSuccess ? (
+        <section aria-labelledby="partenaire-recu" className="space-y-5 rounded-2xl border border-border bg-surface p-4 text-center sm:p-8" role="status">
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-warning-bg text-warning-fg" aria-hidden="true">
+            <Clock size={32} />
+          </span>
+          <Badge variant="warning">En attente de validation</Badge>
+          <h2 id="partenaire-recu" className="text-2xl font-bold text-fg">Dossier reçu</h2>
+          <p className="mx-auto max-w-md text-base leading-relaxed text-fg-muted">
+            Votre numéro est vérifié. Notre équipe examine votre dossier et vos pièces.
+          </p>
+          <ol className="mx-auto max-w-md space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-left text-sm text-fg">
+            <li>1. Vérification des pièces, en général sous 24 à 48 heures.</li>
+            <li>2. Un SMS ou un email vous prévient dès la validation de votre compte.</li>
+            <li>3. Vous vous connectez à votre espace et publiez votre premier événement.</li>
+          </ol>
+          <LinkButton href="/login" variant="primary">Aller à la connexion</LinkButton>
+        </section>
+      ) : otpPhone ? (
+        <section aria-labelledby="partenaire-code" className="space-y-5 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+          <div className="space-y-2 text-center">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+              <MailCheck size={28} />
+            </span>
+            <h2 id="partenaire-code" className="text-xl font-bold text-fg">Vérifiez votre numéro</h2>
+            <p className="text-base text-fg-muted">
+              Un code à 6 chiffres a été envoyé par SMS au <strong className="font-semibold tabular-nums text-fg">{otpPhone}</strong>. Il est valable 10 minutes.
+            </p>
+          </div>
+          <form onSubmit={handleVerify} noValidate className="mx-auto max-w-sm space-y-4">
+            {otpError && (
+              <StatusBanner tone="danger" announce="alert" title="Code non accepté">{otpError}</StatusBanner>
+            )}
+            {otpInfo && <StatusBanner tone="success" title={otpInfo} />}
+            <div role="group" aria-labelledby="partenaire-code-libelle" className="space-y-1.5">
+              <p id="partenaire-code-libelle" className="text-sm font-semibold text-fg">Code reçu par SMS</p>
+              <OtpInput value={otpCode} onChange={setOtpCode} disabled={isVerifying} hasError={Boolean(otpError)} />
+            </div>
+            <Button type="submit" variant="primary" size="lg" fullWidth isLoading={isVerifying} leftIcon={<Check size={18} aria-hidden="true" />}>
+              Vérifier le code
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              fullWidth
+              onClick={() => void handleResend()}
+              isLoading={isResending}
+              disabled={countdown > 0 || isVerifying}
+              leftIcon={<RotateCcw size={16} aria-hidden="true" />}
+            >
+              {countdown > 0 ? `Renvoyer le code (${countdown} s)` : 'Renvoyer le code'}
+            </Button>
+          </form>
+        </section>
+      ) : (
+        <form onSubmit={handleSubmit} noValidate className="space-y-6">
+          {formError && (
+            <div ref={summaryRef} tabIndex={-1} role="alert" aria-labelledby="partenaire-erreurs" className="space-y-2 rounded-2xl border border-danger-border bg-danger-bg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <h2 id="partenaire-erreurs" className="text-base font-semibold text-danger-fg">{formError}</h2>
+              {errorList.length > 0 && (
+                <ul className="list-disc space-y-1 pl-5 text-sm text-fg">
+                  {errorList.map((f) => (
+                    <li key={f}>
+                      <a href={`#${FIELD_IDS[f]}`} className="inline-flex min-h-11 items-center font-semibold text-danger-fg underline underline-offset-4">
+                        {fieldErrors[f]}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <section aria-labelledby="partenaire-structure" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+            <h2 id="partenaire-structure" className="flex items-center gap-2 text-lg font-semibold text-fg">
+              <Building2 size={20} className="text-brand-fg" aria-hidden="true" />
+              1. Votre structure
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextInput id={FIELD_IDS.companyName} label="Raison sociale" required autoComplete="organization" placeholder="Terrou-Bi Hospitality SARL"
+                value={companyName} onChange={(e) => { setCompanyName(e.target.value); clearError('companyName'); }} error={fieldErrors.companyName} />
+              <TextInput id={FIELD_IDS.commercialName} label="Nom commercial (enseigne)" placeholder="Terrou-Bi Dakar"
+                value={commercialName} onChange={(e) => { setCommercialName(e.target.value); clearError('commercialName'); }} error={fieldErrors.commercialName} />
+            </div>
+
+            <fieldset className="space-y-2">
+              <legend id={FIELD_IDS.activities} tabIndex={-1} className="text-sm font-semibold text-fg">
+                Activités proposées
+                <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+                <span className="sr-only"> (obligatoire)</span>
+              </legend>
+              <p className="text-sm text-fg-muted">Touchez une ou plusieurs activités.</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {PartnerActivityTypes.map((type) => {
+                  const selected = activities.includes(type);
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => toggleActivity(type)}
+                      className={cn(
+                        'flex min-h-11 items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        selected ? 'border-brand-fg bg-brand-bg text-fg' : 'border-border bg-surface-sunken text-fg hover:border-brand-fg',
+                      )}
+                    >
+                      <span>{ACTIVITY_LABELS[type] ?? 'Autre activité'}</span>
+                      <span
+                        aria-hidden="true"
+                        className={cn('flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border', selected ? 'border-brand bg-brand text-on-brand' : 'border-border-strong bg-surface')}
+                      >
+                        {selected && <Check size={12} strokeWidth={3} />}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {fieldErrors.activities && <p className="text-sm font-medium text-danger-fg">{fieldErrors.activities}</p>}
+            </fieldset>
+
+            <Textarea id={FIELD_IDS.description} label="Présentation de votre structure" required rows={3} maxLength={2000} showCount
+              hint="10 caractères au moins : capacité d’accueil, prestations, spécialités."
+              value={description} onChange={(e) => { setDescription(e.target.value); clearError('description'); }} error={fieldErrors.description} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <TextInput id={FIELD_IDS.address} label="Adresse" required autoComplete="street-address" placeholder="Boulevard Martin Luther King"
+                fieldClassName="sm:col-span-2" value={address} onChange={(e) => { setAddress(e.target.value); clearError('address'); }} error={fieldErrors.address} />
+              <TextInput id={FIELD_IDS.city} label="Ville" required autoComplete="address-level2" placeholder="Dakar"
+                value={city} onChange={(e) => { setCity(e.target.value); clearError('city'); }} error={fieldErrors.city} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextInput id={FIELD_IDS.ninea} label="NINEA (facultatif)" value={ninea} onChange={(e) => { setNinea(e.target.value); clearError('ninea'); }} error={fieldErrors.ninea} />
+              <TextInput id={FIELD_IDS.rccm} label="RCCM (facultatif)" value={rccm} onChange={(e) => { setRccm(e.target.value); clearError('rccm'); }} error={fieldErrors.rccm} />
+            </div>
+          </section>
+
+          <section aria-labelledby="partenaire-gerant" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+            <h2 id="partenaire-gerant" className="flex items-center gap-2 text-lg font-semibold text-fg">
+              <User size={20} className="text-brand-fg" aria-hidden="true" />
+              2. Le gérant et le compte
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextInput id={FIELD_IDS.firstName} label="Prénom" required autoComplete="given-name" value={firstName}
+                onChange={(e) => { setFirstName(e.target.value); clearError('firstName'); }} error={fieldErrors.firstName} />
+              <TextInput id={FIELD_IDS.lastName} label="Nom" required autoComplete="family-name" value={lastName}
+                onChange={(e) => { setLastName(e.target.value); clearError('lastName'); }} error={fieldErrors.lastName} />
+              <TextInput id={FIELD_IDS.phone} label="Téléphone professionnel" type="tel" inputMode="tel" required autoComplete="tel" placeholder="77 800 00 00"
+                hint="Le code de vérification est envoyé à ce numéro. Il ne doit pas déjà servir à un compte."
+                value={phone} onChange={(e) => { setPhone(e.target.value); clearError('phone'); }} error={fieldErrors.phone} className="tabular-nums" />
+              <TextInput id={FIELD_IDS.email} label="Email professionnel" type="email" required autoComplete="email" placeholder="direction@etablissement.sn"
+                value={email} onChange={(e) => { setEmail(e.target.value); clearError('email'); }} error={fieldErrors.email} />
+              <TextInput id={FIELD_IDS.password} label="Mot de passe" type="password" required autoComplete="new-password" value={password}
+                onChange={(e) => { setPassword(e.target.value); clearError('password'); }} error={fieldErrors.password} />
+              <TextInput id={FIELD_IDS.confirmPassword} label="Confirmer le mot de passe" type="password" required autoComplete="new-password" value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); clearError('confirmPassword'); }} error={fieldErrors.confirmPassword} />
+            </div>
+            <PasswordStrengthChecklist password={password} />
+          </section>
+
+          <section aria-labelledby="partenaire-pieces" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+            <h2 id="partenaire-pieces" className="flex items-center gap-2 text-lg font-semibold text-fg">
+              <Shield size={20} className="text-brand-fg" aria-hidden="true" />
+              3. Pièces justificatives
+            </h2>
+            <p className="text-sm leading-relaxed text-fg-muted">
+              Les deux pièces sont obligatoires. Elles sont rangées dans un espace privé, lues seulement par l’équipe qui valide votre dossier. PDF, JPEG, PNG ou WebP, 10 Mo au plus.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {fileField('idCard', 'Pièce d’identité du gérant', 'CNI ou passeport en cours de validité.', idCardFile, setIdCardFile)}
+              {fileField('businessDoc', 'Document de l’entreprise', 'Extrait RCCM ou attestation NINEA.', businessDocFile, setBusinessDocFile)}
+            </div>
+          </section>
+
+          {progress && (
+            <p role="status" className="flex items-center gap-2 text-sm text-fg-muted">
+              <FileText size={16} aria-hidden="true" />
+              {progress}
+            </p>
+          )}
+
+          <Button type="submit" variant="primary" size="lg" fullWidth isLoading={isSubmitting} leftIcon={<Upload size={18} aria-hidden="true" />}>
+            Envoyer mon dossier
+          </Button>
+
+          <div className="flex flex-wrap items-center justify-center gap-x-2 text-sm text-fg-muted">
+            <span>Déjà partenaire ?</span>
+            <LinkButton href="/login" variant="ghost" size="sm">Se connecter</LinkButton>
+          </div>
+        </form>
+      )}
+    </div>
+  );
 }
