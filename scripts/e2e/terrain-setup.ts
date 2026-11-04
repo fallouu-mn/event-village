@@ -4,7 +4,8 @@
  * processus » échoue en CI à cause de l'alias @/, PROUVÉ run 71 ; même modèle que scripts/e2e/clock-run.ts) :
  *
  *   node --import tsx scripts/e2e/terrain-setup.ts prepare --label <texte> --holder client|client-bis \
- *        --tickets <1..20> [--start-in-hours <h>] [--before-hours <0..48>]
+ *        --tickets <0..20> [--price <0..1000000>] [--start-in-hours <h>] [--before-hours <0..48>]
+ *   node --import tsx scripts/e2e/terrain-setup.ts verify-phone --holder client|client-bis
  *   node --import tsx scripts/e2e/terrain-setup.ts restore-setting --key <clé access.*> --value <JSON>
  *   node --import tsx scripts/e2e/terrain-setup.ts scans --ticket <uuid>
  *   node --import tsx scripts/e2e/terrain-setup.ts payload --ticket <uuid> [--not-code <6 chiffres>]
@@ -16,6 +17,11 @@
  *   porteur ; en dernier, `access.scan_window_before_hours` posé par finance_setting_set (SUPERADMIN) si
  *   --before-hours est donné, avec la valeur d'avant dans la réponse : l'appelant la remet par
  *   `restore-setting` dans un finally. Aucune heure simulée : tout est placé par rapport à l'heure réelle.
+ *   Lot 7 (vague F, fumée prolongée, contrat 11.4 étape 11) : `--price` > 0 crée une catégorie PAYANTE
+ *   (« Entrée générale ») sans émettre de billet (`--tickets 0`) : les billets sont achetés par l'interface.
+ * verify-phone : numéro du compte du porteur marqué vérifié (users.phone_verified_at, comme le seed de démonstration
+ *   pour son client) s'il ne l'est pas : un transfert vers ce numéro est alors visible dans « Reçus » (lot 6,
+ *   amendement 2). Préparation de données de la fumée prolongée (étape 15), jamais une route de l'application.
  * scans : lignes ticket_scans du billet et état du billet, lus par le service_role.
  * payload : QR dynamique du pas COURANT d'un billet quel que soit son statut (run 72 : la route live-code du
  *   porteur refuse un billet UTILISE par un 409, aujourd'hui comme après le lot ; la relecture d'un billet
@@ -50,7 +56,8 @@ type HolderKey = keyof typeof HOLDERS;
 
 function usage(message: string): never {
     process.stderr.write(
-        `${TAG} ${message}\nUsage : terrain-setup.ts prepare --label <texte> --holder client|client-bis --tickets <1..20> [--start-in-hours <h>] [--before-hours <0..48>]\n`
+        `${TAG} ${message}\nUsage : terrain-setup.ts prepare --label <texte> --holder client|client-bis --tickets <0..20> [--price <0..1000000>] [--start-in-hours <h>] [--before-hours <0..48>]\n`
+        + '        terrain-setup.ts verify-phone --holder client|client-bis\n'
         + '        terrain-setup.ts restore-setting --key <access.*> --value <JSON>\n'
         + '        terrain-setup.ts scans --ticket <uuid>\n'
         + '        terrain-setup.ts payload --ticket <uuid> [--not-code <6 chiffres>]\n',
@@ -140,7 +147,10 @@ async function prepare(flags: Map<string, string>): Promise<PrepareReport> {
     const holderRaw = flags.get('holder') ?? '';
     if (!(holderRaw in HOLDERS)) usage(`--holder : client ou client-bis, reçu « ${holderRaw} »`);
     const holder = holderRaw as HolderKey;
-    const count = intFlag(flags, 'tickets', 1, 20, null);
+    const count = intFlag(flags, 'tickets', 0, 20, null);
+    const price = intFlag(flags, 'price', 0, 1_000_000, 0);
+    if (price > 0 && count !== 0) usage('--price > 0 : catégorie payante, --tickets 0 attendu (billets achetés par l’interface)');
+    if (price === 0 && count === 0) usage('--tickets 0 seulement avec --price > 0');
     const startInHours = intFlag(flags, 'start-in-hours', 1, 47, 20);
     const beforeHours = flags.has('before-hours') ? intFlag(flags, 'before-hours', 0, 48, null) : null;
 
@@ -167,8 +177,11 @@ async function prepare(flags: Map<string, string>): Promise<PrepareReport> {
         startDate: s.date, startTime: s.time, endDate: e.date, endTime: e.time,
         location: 'Esplanade des Parcelles Assainies', city: 'Dakar', capacity: 100,
         imageUrl: await partnerPosterUrl(partnerId),
-        // Limite par compte portée au nombre de billets émis (free_tickets_claim la contrôle par porteur)
-        category: { name: 'Entrée libre', price: 0, total: 50, maxPerOrder: Math.max(10, count) },
+        // Limite par compte portée au nombre de billets émis (free_tickets_claim la contrôle par porteur) ;
+        // lot 7 (fumée prolongée) : catégorie payante sans billet émis, achetée par l'interface
+        category: price > 0
+            ? { name: 'Entrée générale', price, total: 50, maxPerOrder: 10 }
+            : { name: 'Entrée libre', price: 0, total: 50, maxPerOrder: Math.max(10, count) },
     });
 
     const { data: cats, error: catErr } = await serviceClient().from('ticket_categories').select('id').eq('event_id', eventId);
@@ -180,22 +193,25 @@ async function prepare(flags: Map<string, string>): Promise<PrepareReport> {
         .upsert({ event_id: eventId, user_id: controllerUserId, can_accept_cash: false, created_by: partnerUserId }, { onConflict: 'event_id,user_id' });
     if (assignErr) throw new Error(`${TAG} affectation du contrôleur A à ${eventId} : ${assignErr.message}`);
 
-    const { data: claim, error: claimErr } = await serviceClient().rpc('free_tickets_claim', {
-        p_user_id: holderUserId, p_event_id: eventId, p_items: [{ category_id: categoryId, quantity: count }],
-    });
-    if (claimErr) throw new Error(`${TAG} free_tickets_claim : ${claimErr.code ?? ''} ${claimErr.message}`);
-    const claimed = claim as { ok?: boolean; ticket_ids?: string[] } | null;
-    if (claimed?.ok !== true || !Array.isArray(claimed.ticket_ids) || claimed.ticket_ids.length !== count) {
-        throw new Error(`${TAG} free_tickets_claim refusé ou incomplet (${count} attendus) : ${JSON.stringify(claim)}`);
+    const tickets: PreparedTicket[] = [];
+    if (count > 0) {
+        const { data: claim, error: claimErr } = await serviceClient().rpc('free_tickets_claim', {
+            p_user_id: holderUserId, p_event_id: eventId, p_items: [{ category_id: categoryId, quantity: count }],
+        });
+        if (claimErr) throw new Error(`${TAG} free_tickets_claim : ${claimErr.code ?? ''} ${claimErr.message}`);
+        const claimed = claim as { ok?: boolean; ticket_ids?: string[] } | null;
+        if (claimed?.ok !== true || !Array.isArray(claimed.ticket_ids) || claimed.ticket_ids.length !== count) {
+            throw new Error(`${TAG} free_tickets_claim refusé ou incomplet (${count} attendus) : ${JSON.stringify(claim)}`);
+        }
+        const { data: rows, error: tErr } = await serviceClient().from('tickets').select('id, ticket_number, status').in('id', claimed.ticket_ids);
+        if (tErr) throw new Error(`${TAG} lecture des billets émis : ${tErr.message}`);
+        const byId = new Map((rows ?? []).map((r) => [String(r.id), r]));
+        for (const id of claimed.ticket_ids) {
+            const row = byId.get(id);
+            if (!row || row.status !== 'VALIDE' || !row.ticket_number) throw new Error(`${TAG} billet ${id} absent ou non VALIDE : ${JSON.stringify(row ?? null)}`);
+            tickets.push({ id, number: String(row.ticket_number) });
+        }
     }
-    const { data: rows, error: tErr } = await serviceClient().from('tickets').select('id, ticket_number, status').in('id', claimed.ticket_ids);
-    if (tErr) throw new Error(`${TAG} lecture des billets émis : ${tErr.message}`);
-    const byId = new Map((rows ?? []).map((r) => [String(r.id), r]));
-    const tickets: PreparedTicket[] = claimed.ticket_ids.map((id) => {
-        const row = byId.get(id);
-        if (!row || row.status !== 'VALIDE' || !row.ticket_number) throw new Error(`${TAG} billet ${id} absent ou non VALIDE : ${JSON.stringify(row ?? null)}`);
-        return { id, number: String(row.ticket_number) };
-    });
 
     const { data: ev, error: evErr } = await serviceClient().from('events').select('status').eq('id', eventId).maybeSingle();
     if (evErr) throw new Error(`${TAG} statut de ${eventId} : ${evErr.message}`);
@@ -228,6 +244,22 @@ async function restoreSetting(flags: Map<string, string>): Promise<{ key: string
     const now = await readSetting(key);
     if (JSON.stringify(now) !== JSON.stringify(value)) throw new Error(`${TAG} ${key} vaut ${JSON.stringify(now)} après restauration, attendu ${JSON.stringify(value)}`);
     return { key, restored: now };
+}
+
+/** Numéro du porteur marqué vérifié s'il ne l'est pas (lot 7, fumée prolongée : destinataire d'un transfert). */
+async function verifyPhone(flags: Map<string, string>): Promise<{ userId: string; phone: string; verifiedAt: string; changed: boolean }> {
+    const holderRaw = flags.get('holder') ?? '';
+    if (!(holderRaw in HOLDERS)) usage(`--holder : client ou client-bis, reçu « ${holderRaw} »`);
+    const holder = HOLDERS[holderRaw as HolderKey];
+    const userId = await userIdByEmail(holder.email);
+    const { data, error } = await serviceClient().from('users').select('phone, phone_verified_at').eq('id', userId).maybeSingle();
+    if (error) throw new Error(`${TAG} compte ${holder.email} : ${error.message}`);
+    if (!data) throw new Error(`${TAG} compte ${holder.email} introuvable`);
+    if (data.phone_verified_at) return { userId, phone: String(data.phone), verifiedAt: String(data.phone_verified_at), changed: false };
+    const at = new Date().toISOString();
+    const { error: upErr } = await serviceClient().from('users').update({ phone_verified_at: at }).eq('id', userId);
+    if (upErr) throw new Error(`${TAG} numéro vérifié de ${holder.email} : ${upErr.message}`);
+    return { userId, phone: String(data.phone), verifiedAt: at, changed: true };
 }
 
 interface ScanRow { result: string; accepted: boolean; method: string; scanner_id: string; created_at: string }
@@ -305,13 +337,14 @@ async function payload(flags: Map<string, string>): Promise<PayloadReport> {
 
 async function main(): Promise<void> {
     const [command, ...rest] = process.argv.slice(2);
-    if (command !== 'prepare' && command !== 'restore-setting' && command !== 'scans' && command !== 'payload') usage(`commande inconnue : ${command ?? '(aucune)'}`);
+    if (command !== 'prepare' && command !== 'restore-setting' && command !== 'scans' && command !== 'payload' && command !== 'verify-phone') usage(`commande inconnue : ${command ?? '(aucune)'}`);
     const flags = parseFlags(rest);
     e2eConfig();
     if (process.env.EV_INTEGRATIONS) usage('EV_INTEGRATIONS est défini : le projet terrain utilise les vrais adaptateurs pointés sur les faux services.');
     const report = command === 'prepare' ? await prepare(flags)
         : command === 'restore-setting' ? await restoreSetting(flags)
         : command === 'scans' ? await scans(flags)
+        : command === 'verify-phone' ? await verifyPhone(flags)
         : await payload(flags);
     process.stdout.write(`${JSON.stringify(report)}\n`);
 }

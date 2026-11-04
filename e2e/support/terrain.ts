@@ -68,8 +68,9 @@ function runSetup<T>(args: string[]): T {
  * Événement à ≈ 20 h (heure réelle), billets gratuits du porteur, contrôleur A affecté, et
  * `access.scan_window_before_hours = 24` (D6) : l'appelant DOIT appeler `restoreTerrainSetting` dans un finally.
  */
-export function prepareTerrainEvent(label: string, holder: 'client' | 'client-bis', tickets: number): TerrainEvent {
-    const ev = runSetup<TerrainEvent>(['prepare', '--label', label, '--holder', holder, '--tickets', String(tickets), '--start-in-hours', '20', '--before-hours', '24']);
+export function prepareTerrainEvent(label: string, holder: 'client' | 'client-bis', tickets: number, opts: { priceFcfa?: number } = {}): TerrainEvent {
+    const price = opts.priceFcfa !== undefined ? ['--price', String(opts.priceFcfa)] : [];
+    const ev = runSetup<TerrainEvent>(['prepare', '--label', label, '--holder', holder, '--tickets', String(tickets), ...price, '--start-in-hours', '20', '--before-hours', '24']);
     console.log(`[e2e][terrain] ${label} : événement ${ev.eventId} (début ${ev.startAt}), ${ev.tickets.length} billet(s) gratuit(s) de ${holder}, `
         + `${ev.setting ? `${ev.setting.key} ${JSON.stringify(ev.setting.previous)} → ${JSON.stringify(ev.setting.applied)}` : 'aucun réglage posé'}`);
     return ev;
@@ -80,6 +81,11 @@ export function restoreTerrainSetting(ev: TerrainEvent | null): void {
     if (!ev?.setting) return;
     runSetup<{ key: string; restored: unknown }>(['restore-setting', '--key', ev.setting.key, '--value', JSON.stringify(ev.setting.previous)]);
     console.log(`[e2e][terrain] ${ev.setting.key} remis à ${JSON.stringify(ev.setting.previous)}`);
+}
+
+/** Lot 7 (fumée prolongée) : numéro du porteur marqué vérifié (destinataire d'un transfert, onglet « Reçus »). */
+export function verifyHolderPhone(holder: 'client' | 'client-bis'): { userId: string; phone: string; verifiedAt: string; changed: boolean } {
+    return runSetup<{ userId: string; phone: string; verifiedAt: string; changed: boolean }>(['verify-phone', '--holder', holder]);
 }
 
 export function ticketScans(ticketId: string): TicketScans {
@@ -457,36 +463,25 @@ function escapeRe(s: string): string {
 }
 
 /**
- * Ouvre /controller/scanner, choisit l'événement (sélecteur d'événement de l'écran du lot 6, ou écran
- * « Commencer le contrôle » du lot 7, D49), passe en mode caméra et attend un flux vidéo en lecture.
+ * Ouvre /controller/scanner sur l'écran « Commencer le contrôle » (ScannerStartScreen, D49, écran committé par
+ * fix(7.2e)) : bouton radio de l'événement (nom accessible = titre, date, lieu), puis « Commencer le contrôle »,
+ * mode caméra (aria-pressed), titre de l'événement dans la barre d'état, flux vidéo en lecture. Les replis du lot 6
+ * (liste déroulante, bouton d'événement) sont retirés : l'écran réel est exigé.
  */
 export async function openScanner(page: Page, eventTitle: string): Promise<void> {
     await page.goto('/controller/scanner');
-    const titleRe = new RegExp(escapeRe(eventTitle));
-    const select = page.locator('select').filter({ has: page.locator('option', { hasText: eventTitle }) });
-    const radio = page.getByRole('radio', { name: titleRe });
-    const eventButton = page.getByRole('button', { name: titleRe });
-    const start = page.getByRole('button', { name: /commencer le contr[ôo]le/i });
-    const heading = page.getByRole('heading', { name: titleRe });
-    await expect(select.or(radio).or(eventButton).or(start).or(heading).first(),
-        `scanner : l'événement « ${eventTitle} » n'est proposé ni dans le sélecteur ni sur l'écran de départ`).toBeVisible({ timeout: 45_000 });
-    const usesSelect = await select.count() > 0;
-    if (usesSelect) {
-        const value = await select.first().locator('option', { hasText: eventTitle }).first().getAttribute('value');
-        expect(value, `option de l'événement « ${eventTitle} »`).toBeTruthy();
-        await select.first().selectOption(value as string);
-        await expect(select.first(), `scanner : événement « ${eventTitle} » sélectionné`).toHaveValue(value as string);
-    } else if (await radio.count() > 0) {
-        await radio.first().check();
-    } else if (await eventButton.count() > 0 && !(await heading.count())) {
-        await eventButton.first().click();
-    }
-    if (await start.count() > 0 && await start.first().isVisible()) await start.first().click();
+    await expect(page.getByRole('heading', { level: 1, name: /^commencer le contr[ôo]le$/i }),
+        'scanner : écran « Commencer le contrôle » (D49)').toBeVisible({ timeout: 45_000 });
+    const radio = page.getByRole('radio', { name: new RegExp(escapeRe(eventTitle)) });
+    await expect(radio, `scanner : l'événement « ${eventTitle} » est proposé sur l'écran de départ`).toHaveCount(1, { timeout: 45_000 });
+    await radio.check();
+    await expect(radio, `scanner : événement « ${eventTitle} » choisi`).toBeChecked();
+    await page.getByRole('button', { name: /^commencer le contr[ôo]le$/i }).click();
     const camera = page.getByRole('button', { name: /^caméra$/i });
-    if (await camera.count() > 0 && (await camera.first().getAttribute('aria-pressed')) !== 'true') await camera.first().click();
-    if (!usesSelect) {
-        await expect(page.getByText(eventTitle).filter({ visible: true }).first(), `scanner : événement « ${eventTitle} » affiché`).toBeVisible();
-    }
+    await expect(camera, 'scanner : bascule « Caméra / Saisie manuelle » affichée après le départ').toBeVisible({ timeout: 30_000 });
+    if ((await camera.getAttribute('aria-pressed')) !== 'true') await camera.click();
+    await expect(camera, 'scanner : mode caméra').toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText(eventTitle).filter({ visible: true }).first(), `scanner : événement « ${eventTitle} » affiché`).toBeVisible();
     await page.waitForFunction(() => Array.from(document.querySelectorAll('video')).some((v) => v.readyState >= 2), null, { timeout: 30_000 })
         .catch((err: unknown) => {
             throw new Error(`scanner : aucun flux vidéo en lecture après le choix de l'événement (${err instanceof Error ? err.message.split('\n')[0] : String(err)})`);

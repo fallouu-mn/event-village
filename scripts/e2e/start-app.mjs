@@ -13,7 +13,10 @@
  *    .env.production, .env) neutralisées si .env.e2e ne les définit pas (même règle que
  *    scripts/verify.mjs) : aucune valeur du projet distant n'entre dans le serveur ;
  *  - build présent, et sans URL Supabase hébergée figée dans les bundles du navigateur
- *    (un build fait avec .env.local viserait le projet distant).
+ *    (un build fait avec .env.local viserait le projet distant) ;
+ *  - lot 7 (tâche 7.5, contrat 11.1) : sharp chargeable avant le démarrage (optimisation des images en
+ *    production), puis échec immédiat si la sortie de `next start` (journal next-start.log) contient
+ *    « sharp-missing-in-production » : le serveur est arrêté et le script sort en code 1.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -56,6 +59,15 @@ for (const file of jsFiles(staticDir)) {
 }
 if (!localSeen) fail(TAG, `le build ne contient pas l'URL Supabase locale ${localSupabase} : il n'a pas été fait avec l'environnement de test.`);
 
+// Lot 7 (7.5) : sharp installé et chargeable (binaire de la plateforme), sinon Next optimise sans lui et avertit
+const SHARP_MISSING = 'sharp-missing-in-production';
+try {
+    const sharp = (await import('sharp')).default;
+    console.log(`[${TAG}] sharp ${sharp.versions?.sharp ?? '?'} chargé (libvips ${sharp.versions?.vips ?? '?'})`);
+} catch (err) {
+    fail(TAG, `sharp introuvable ou non chargeable (${err instanceof Error ? err.message.split('\n')[0] : String(err)}) : Next signalerait ${SHARP_MISSING} ; npm ci doit installer sharp et son binaire (package.json, fix(7.5)).`);
+}
+
 const env = { ...process.env, NEXT_TELEMETRY_DISABLED: '1', HOSTNAME: '127.0.0.1', PORT: String(port) };
 delete env.EV_INTEGRATIONS;
 delete env.NODE_ENV;
@@ -75,9 +87,27 @@ if (neutralized.length > 0) console.log(`[${TAG}] ${neutralized.length} clé(s) 
 const require = createRequire(import.meta.url);
 const nextBin = require.resolve('next/dist/bin/next');
 console.log(`[${TAG}] next start -H 127.0.0.1 -p ${port} (build ${fs.readFileSync(buildId, 'utf8').trim()})`);
-const child = spawn(process.execPath, [nextBin, 'start', '-H', '127.0.0.1', '-p', String(port)], { cwd: ROOT, env, stdio: 'inherit' });
+const child = spawn(process.execPath, [nextBin, 'start', '-H', '127.0.0.1', '-p', String(port)], { cwd: ROOT, env, stdio: ['inherit', 'pipe', 'pipe'] });
+let sharpMissing = false;
+/** Sortie de next start recopiée telle quelle (next-start.log) ; « sharp-missing-in-production » arrête le serveur. */
+function watch(stream, out) {
+    let pending = '';
+    stream.on('data', (chunk) => {
+        out.write(chunk);
+        pending += chunk.toString('utf8');
+        const lines = pending.split(/\r?\n/);
+        pending = lines.pop() ?? '';
+        if (!sharpMissing && lines.some((l) => l.includes(SHARP_MISSING))) {
+            sharpMissing = true;
+            console.error(`[${TAG}] ÉCHEC : la sortie de next start contient « ${SHARP_MISSING} » (sharp absent en production, tâche 7.5) : arrêt du serveur.`);
+            child.kill('SIGTERM');
+        }
+    });
+}
+watch(child.stdout, process.stdout);
+watch(child.stderr, process.stderr);
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));
 child.on('exit', (code, signal) => {
     console.log(`[${TAG}] next start terminé (${signal ?? `code ${code}`})`);
-    process.exit(code ?? 1);
+    process.exit(sharpMissing ? 1 : (code ?? 1));
 });

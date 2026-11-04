@@ -19,6 +19,18 @@
  *  - RAW_ENUM_VALUES reçoit les codes du lot 6 (statuts et canaux de la boîte d'envoi, politiques SMS,
  *    motif QUIET_HOURS, sujets des préférences), pas « SMS » ni « EMAIL », mots légitimes ;
  *  - metrics donne, par capture, les nombres de chaque règle (tableau « écran × règle » du rapport).
+ *
+ * Lot 7 (contrat 11.2, D73, T23 ; tâche 7.5 « aucune règle axe en échec ; cibles de 44 px ; textes de contenu
+ * ≥ 14 px » ; modification signalée, plus stricte) :
+ *  - deviennent BLOQUANTS : toute règle axe en échec (étiquettes inchangées wcag2a/aa/21a/21aa/22aa), toute cible
+ *    interactive < 44 px (mêmes exceptions qu'avant : lien dans une phrase, zone d'un libellé), tout texte < 14 px
+ *    HORS exemption (CAPTION_SELECTOR) ; les textes < 14 px admis restent un avertissement ;
+ *  - écrans du scanner (plein écran [data-scan-state="result"]) : contraste du titre du résultat sur son fond
+ *    calculé par getComputedStyle, ≥ 7:1, bloquant (axe color-contrast-enhanced n'exige que 4,5:1 pour un grand
+ *    texte : discovery-7-tests.md §3.5) ;
+ *  - RAW_ENUM_VALUES reçoit les codes du lot 7 (PAYMENT_PENDING, OFFLINE_WINDOW_CLOSED, TRANSFER_PENDING,
+ *    SMS_OPTIONAL_CAP, FREE_TICKETS_ONLY, MONTHLY, DRAFT ; REJETE y était déjà).
+ * Les avertissements bruts (nombres, détail axe, textes hors exemption) restent écrits dans index.txt.
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -49,7 +61,12 @@ export const RAW_ENUM_VALUES: readonly string[] = [
     // boîte d'envoi (lot 6, C2 et C4), canaux, politiques SMS des rappels (I1), sujets des préférences (C5)
     'SENDING', 'SENT', 'SKIPPED', 'UNCERTAIN', 'IN_APP', 'PUSH', 'ALWAYS', 'IF_NO_PUSH', 'NEVER', 'QUIET_HOURS',
     'REMINDERS', 'EVENT_UPDATES', 'PRO_ACTIVITY',
+    // lot 7 (contrat 11.2) : paiement en attente, billet hors ligne, plafond SMS, gratuits, offres partenaire
+    'PAYMENT_PENDING', 'OFFLINE_WINDOW_CLOSED', 'TRANSFER_PENDING', 'SMS_OPTIONAL_CAP', 'FREE_TICKETS_ONLY', 'MONTHLY', 'DRAFT',
 ];
+
+/** Lot 7 (D73) : contraste minimal du titre du résultat plein écran du scanner sur son fond. */
+export const SCAN_RESULT_MIN_CONTRAST = 7;
 
 /** Ancêtres qui font d'un texte < 14 px une mention ou une légende admise (contrat A6). */
 export const CAPTION_SELECTOR = 'small, time, figcaption, caption, legend, svg text, [data-ev-caption]';
@@ -73,6 +90,8 @@ export interface PageCheckMetrics {
     axeViolations: number;
     /** Règles axe en échec et nombre de nœuds de chacune. */
     axeRules: Array<{ id: string; impact: string; nodes: number }>;
+    /** Lot 7 : contraste du titre du plein écran du scanner (null : aucun plein écran affiché). */
+    scanContrast?: number | null;
 }
 
 export interface PageCheckResult {
@@ -86,6 +105,8 @@ export interface PageCheckResult {
 }
 
 interface DomReport {
+    /** Lot 7 : plein écran du scanner (titre, couleurs calculées), null s'il n'est pas affiché. */
+    scanResult: { result: string; title: string; fg: string; bg: string } | null;
     scrollWidth: number;
     viewportWidth: number;
     sectionSigns: string[];
@@ -208,7 +229,20 @@ function inspectDom(arg: { enums: string[]; captionSelector: string }): DomRepor
             smallTargets.push({ tag: el.tagName.toLowerCase(), name: label.trim().replace(/\s+/g, ' ').slice(0, 40), w: Math.round(r.width), h: Math.round(r.height) });
         }
     }
+    // Lot 7 (D73) : plein écran du scanner — titre (premier paragraphe) et fond calculés du conteneur
+    let scanResult: DomReport['scanResult'] = null;
+    const overlay = document.querySelector('[data-scan-state="result"]');
+    if (overlay && isVisible(overlay)) {
+        const heading = overlay.querySelector('p');
+        scanResult = {
+            result: overlay.getAttribute('data-scan-result') ?? '',
+            title: (heading?.textContent ?? '').trim().slice(0, 80),
+            fg: getComputedStyle(heading ?? overlay).color,
+            bg: getComputedStyle(overlay).backgroundColor,
+        };
+    }
     return {
+        scanResult,
         scrollWidth: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0),
         viewportWidth: window.innerWidth,
         sectionSigns,
@@ -216,6 +250,30 @@ function inspectDom(arg: { enums: string[]; captionSelector: string }): DomRepor
         smallTargets,
         smallTexts,
     };
+}
+
+/** Couleur CSS calculée « rgb(r, g, b) » ou « rgba(r, g, b, a) » ; null si illisible ou transparente. */
+export function parseRgb(css: string): { r: number; g: number; b: number } | null {
+    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(css.trim());
+    if (!m) return null;
+    if (m[4] !== undefined) {
+        const alpha = m[4].endsWith('%') ? Number(m[4].slice(0, -1)) / 100 : Number(m[4]);
+        if (!(alpha >= 0.999)) return null;
+    }
+    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+}
+
+/** Rapport de contraste WCAG 2.x de deux couleurs opaques. */
+export function contrastRatio(a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }): number {
+    const lum = (c: { r: number; g: number; b: number }) => {
+        const ch = [c.r, c.g, c.b].map((v) => {
+            const x = v / 255;
+            return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+    };
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
 }
 
 /** Extrait sur une ligne, tronqué à `max` caractères. */
@@ -247,7 +305,21 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
         blocking.push(`valeur technique affichée : ${summarize(dom.enumHits, (h) => h.value, 10)} — ex. ${dom.enumHits.slice(0, 3).map((h) => h.sample).join(' ; ')}`);
     }
     if (dom.smallTargets.length > 0) {
-        warnings.push(`${dom.smallTargets.length} cible(s) < 44 px : ${summarize(dom.smallTargets, (t) => `${t.tag} « ${t.name || 'sans nom'} » ${t.w}×${t.h}`, 8)}`);
+        // Lot 7 (D73) : bloquant (7.5 « cibles de 44 px »)
+        blocking.push(`${dom.smallTargets.length} cible(s) < 44 px : ${summarize(dom.smallTargets, (t) => `${t.tag} « ${t.name || 'sans nom'} » ${t.w}×${t.h}`, 8)}`);
+    }
+    let scanContrast: number | null = null;
+    if (dom.scanResult) {
+        const fg = parseRgb(dom.scanResult.fg);
+        const bg = parseRgb(dom.scanResult.bg);
+        if (!fg || !bg) {
+            blocking.push(`plein écran du scanner (${dom.scanResult.result}) : couleurs illisibles ou transparentes (texte ${dom.scanResult.fg}, fond ${dom.scanResult.bg}), contraste ≥ ${SCAN_RESULT_MIN_CONTRAST}:1 invérifiable`);
+        } else {
+            scanContrast = Math.round(contrastRatio(fg, bg) * 100) / 100;
+            const line = `plein écran du scanner (${dom.scanResult.result}, « ${dom.scanResult.title} ») : contraste ${scanContrast}:1 (texte ${dom.scanResult.fg}, fond ${dom.scanResult.bg})`;
+            if (scanContrast < SCAN_RESULT_MIN_CONTRAST) blocking.push(`${line} < ${SCAN_RESULT_MIN_CONTRAST}:1`);
+            else warnings.push(`${line} ≥ ${SCAN_RESULT_MIN_CONTRAST}:1 (contrôle bloquant satisfait)`);
+        }
     }
     if (dom.smallTexts.length > 0) {
         const bySize = summarize(dom.smallTexts, (t) => `${t.size} px`, 6);
@@ -261,6 +333,10 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
         warnings.push(`textes < 14 px classés : ${dom.smallTexts.length} brut(s), ${admitted.length} admis${admitted.length > 0 ? ` [${admittedWhy}]` : ''}, ${outside.length} hors exemption`);
     }
     const smallTextDetails = outside.map((t) => `${t.size} px | ${t.selector} | « ${oneLine(t.sample, 60)} »`);
+    if (outside.length > 0) {
+        // Lot 7 (D73) : bloquant (7.5 « textes de contenu ≥ 14 px ») ; les mentions et légendes admises restent tolérées
+        blocking.push(`${outside.length} texte(s) < 14 px hors exemption (mentions et légendes admises exclues) : ${outside.slice(0, 5).map((t) => `${t.size} px « ${oneLine(t.sample, 40)} » (${t.selector})`).join(' ; ')}`);
+    }
     let axeViolations = 0;
     const axeDetails: string[] = [];
     const axeRules: PageCheckMetrics['axeRules'] = [];
@@ -269,7 +345,8 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
         axeViolations = results.violations.length;
         for (const v of results.violations) {
             axeRules.push({ id: v.id, impact: v.impact ?? 'inconnu', nodes: v.nodes.length });
-            warnings.push(`axe-core ${v.id} (${v.impact ?? 'impact inconnu'}, ${v.nodes.length} nœud(s)) : ${v.help}`);
+            // Lot 7 (D73) : bloquant (7.5 « aucune règle axe en échec ») ; le détail des nœuds reste dans index.txt
+            blocking.push(`axe-core ${v.id} (${v.impact ?? 'impact inconnu'}, ${v.nodes.length} nœud(s)) : ${v.help}`);
             v.nodes.slice(0, AXE_NODES_PER_RULE).forEach((node, i) => {
                 const target = node.target.map((t) => (Array.isArray(t) ? t.join(' >>> ') : String(t))).join(' ; ');
                 const summary = node.failureSummary ? oneLine(node.failureSummary, AXE_SUMMARY_MAX) : '(sans résumé)';
@@ -291,6 +368,7 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
             smallTextsOutside: outside.length,
             axeViolations,
             axeRules,
+            scanContrast,
         },
     };
 }

@@ -7,6 +7,8 @@
  * textes < 14 px bruts, admis et hors exemption, règles axe), une colonne par vue et par thème ; chaque
  * capture liste ensuite TOUS ses textes hors exemption. Le même tableau, une ligne par capture, est écrit
  * dans .e2e-captures/captures/avertissements.tsv (publié avec les captures sur ci-results).
+ * Lot 7 (D73) : les cibles < 44 px, les textes < 14 px hors exemption et les règles axe sont devenus bloquants
+ * (checks.ts) ; le tableau garde leurs nombres par vue. Une vue non capturée pour un écran (champ `views`) vaut « — ».
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -105,13 +107,14 @@ export default async function buildIndex(): Promise<void> {
     const outsideTotal = records.reduce((n, r) => n + (r.metrics?.smallTextsOutside ?? 0), 0);
     const prefetchTotal = records.reduce((n, r) => n + r.warnings.filter((w) => w.startsWith('préchargement Next abandonné')).length, 0);
     const header = [
-        'EVENT VILLAGE — CAPTURES D’ÉCRAN (lot 5, tâche 5.1 ; lot 6, tâche 6.12)',
+        'EVENT VILLAGE — CAPTURES D’ÉCRAN (lot 5, tâche 5.1 ; lot 6, tâche 6.12 ; lot 7, tâche 7.7)',
         `généré le      : ${new Date().toISOString()}`,
         process.env.GITHUB_RUN_NUMBER ? `run CI         : ${process.env.GITHUB_RUN_NUMBER}-${process.env.GITHUB_RUN_ID ?? ''} (${process.env.GITHUB_SHA ?? ''})` : 'run CI         : exécution locale',
         'format         : <écran>__<mobile|ordinateur>__<clair|sombre>.png — mobile 390×844 DPR 2, ordinateur 1440×900 DPR 1',
         `captures       : ${records.filter((r) => r.captured).length} / ${records.length} tentative(s)`,
         `en échec       : ${failed.length} (contrôles bloquants ou erreur)`,
-        `avertissements : ${warned.length} capture(s) concernée(s) (cibles < 44 px, textes < 14 px, axe-core)`,
+        `avertissements : ${warned.length} capture(s) concernée(s) (lot 7 : cibles < 44 px, textes < 14 px hors exemption et axe-core sont bloquants)`,
+        'emails         : captures email-<id>__<390|600>__<clair|sombre>.png et résumé emails.txt (projet emails, tâche 7.9)',
         `textes < 14 px : ${outsideTotal} hors exemption au total (détail sous chaque capture ; tableau : avertissements.tsv)`,
         `préchargements : ${prefetchTotal} préchargement(s) Next abandonné(s), non bloquants, listés sous chaque capture (network.ts, lot 6)`,
         'Relecture humaine obligatoire : un écran n’est terminé qu’une fois sa capture relue (rapport du lot, section 3).',

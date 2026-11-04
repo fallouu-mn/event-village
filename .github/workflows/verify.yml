@@ -20,7 +20,10 @@ jobs:
   verify:
     name: typecheck · lint · tests (Supabase local) · build
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Lot 7 (A2, contrat 11.7) : 90 min pour le run « avant » (captures à 15 s d'attente), remis à 60 en vague F
+    # (fix(7.7)) : attente des captures plafonnée à 3 s (D84) ; durée mesurée runs 72 à 74 : 43 à 46 min dont
+    # 24 min de captures ; estimation après D84 : ≈ 40 min (job_elapsed_s de run.txt fait foi au run suivant)
+    timeout-minutes: 60
 
     steps:
       # Lot 7 (contrat 11.7) : durée du job (délai de 60 min), écrite dans run.txt sur ci-results
@@ -221,6 +224,15 @@ jobs:
           set -o pipefail
           npm run e2e 2>&1 | tee /tmp/e2e.log
 
+      # Lot 7 (7.5, contrat 11.1) : sharp absent en production = échec (start-app.mjs arrête aussi le serveur)
+      - name: "E2E : sharp présent en production (next-start.log sans sharp-missing-in-production)"
+        if: ${{ !cancelled() && steps.e2e-start.outcome == 'success' }}
+        run: |
+          if grep -n "sharp-missing-in-production" /tmp/next-start.log; then
+            echo "::error title=sharp::next start signale sharp-missing-in-production (tâche 7.5)"; exit 1
+          fi
+          echo "next-start.log : aucune mention sharp-missing-in-production"
+
       - name: Journal du conteneur Supabase Auth (diagnostic en cas d'échec)
         if: failure()
         run: |
@@ -271,6 +283,12 @@ jobs:
           # Lot 7 (contrat 9 et 11.6) : mesures (poids JavaScript post-build, scan, performance, durée des phases e2e),
           # sous le régime des journaux conservés (pas de rotation)
           if [ -f "$GITHUB_WORKSPACE/.verify/js-budget.tsv" ]; then cp "$GITHUB_WORKSPACE/.verify/js-budget.tsv" "$RUN_DIR/js-budget.tsv"; fi
+          # Lot 7 (7.9, contrat 19.9) : emails rendus (HTML et texte), relus avec leurs captures
+          if [ -d "$GITHUB_WORKSPACE/.e2e-captures/emails" ]; then
+            mkdir -p "$RUN_DIR/emails"
+            find "$GITHUB_WORKSPACE/.e2e-captures/emails" -maxdepth 1 -type f \( -name '*.html' -o -name '*.txt' \) -exec cp {} "$RUN_DIR/emails/" \;
+            echo "emails publiés : $(find "$RUN_DIR/emails" -type f | wc -l) fichier(s)"
+          fi
           if [ -d "$GITHUB_WORKSPACE/.e2e-captures/perf" ]; then
             mkdir -p "$RUN_DIR/perf"
             find "$GITHUB_WORKSPACE/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' \) -exec cp {} "$RUN_DIR/perf/" \;

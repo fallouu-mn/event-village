@@ -31,6 +31,33 @@
  * Plages de silence : aucun réglage modifié. Le J-1 est envoyé à l'heure simulée de la veille (heure
  * réglée, 10 h par défaut), hors plage (vérifié avant l'envoi, échec explicite sinon) ; l'avis
  * d'annulation est indispensable (jamais soumis à la plage).
+ *
+ * Lot 7 (contrat 11.4, D81 ; commit fix(7.7)) — étapes 8 et 10 adaptées (signalé) :
+ *  - 8 : avant le repère, la boîte d'envoi de E1 est vidée (envoyeur à l'heure réelle, onlyEventIds = E1 et tout
+ *    autre événement qui garde une ligne SMS en attente pour le client, sauf E2) ; les SMS ainsi partis sont
+ *    identifiés et imprimés ([FUMEE-SMS] avant le repère). Au lot 6, ces SMS arrivaient après le repère et
+ *    restaient « non identifiés » (5 SMS reçus pour 2 attendus au run 76) ;
+ *  - 10 : chaque SMS reçu depuis le repère est identifié par jointure notification_outbox.provider_message_id =
+ *    ticket du faux MTarget (type, événement, clé d'idempotence, statut), imprimé [FUMEE-SMS], et la liste exacte
+ *    est exigée : PURCHASE_CONFIRMED, REMINDER_J1 et EVENT_CANCELLED de E2, une fois chacun, tous SENT, aucun SMS
+ *    sans ligne, aucune clé en double (un doublon serait un défaut). Les comptes du lot 6 (j1 1, h3 0, annulation 1)
+ *    restent vérifiés.
+ * Fumée prolongée (étapes 11 à 16, tâche 7.7 « achat, téléchargement des codes la veille, passage hors ligne, scan
+ * accepté, transfert puis ancien code refusé ») :
+ * 11. scripts/e2e/terrain-setup.ts : `access.scan_window_before_hours = 24` (remis dans un finally), événement E3 du
+ *     partenaire A à ≈ 20 h de l'heure réelle, catégorie payante, publié, contrôleur A affecté ;
+ * 12. le client achète 2 billets de E3 par l'interface (parcours de l'étape 4), puis ouvre /tickets dans un contexte
+ *     où le service worker est autorisé : « Disponible hors ligne » sur les deux cartes ; lot du 2e billet lu dans
+ *     IndexedDB (event-village-offline, magasin lots) ;
+ * 13. hors ligne, /billet/hors-ligne?id=<billet 1> servi par le service worker, QR affiché, data-ev-qr-counter qui
+ *     change au bout de ≈ 21 s RÉELLES (expect.poll, aucune horloge simulée), aucune requête en échec ni erreur de
+ *     console depuis le passage hors ligne ;
+ * 14. contrôleur A en ligne (autre contexte, sonde du projet terrain) : payload lu sur la page hors ligne du client
+ *     → « valid » ;
+ * 15. transfert du billet 2 vers le second client par l'interface, acceptation par le destinataire (numéro marqué
+ *     vérifié par terrain-setup.ts), puis code du pas courant calculé depuis l'ANCIEN lot (étape 12) → « qr_expired » ;
+ * 16. caches du client : exactement « ev-hors-ligne-lot7-1 », aucune URL /api/ ni _rsc ; aucune réponse /api/
+ *     servie par le service worker ; hors ligne, fetch de /api/tickets/<id>/offline-codes rejeté ; réglage remis.
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect, openRoleContext } from './support/fixtures';
@@ -40,11 +67,17 @@ import { fakeScanMode, installFakeCamera } from './support/fake-camera';
 import { PageGuard } from './support/network';
 import { posterHtml, POSTER_SIZE } from './support/poster';
 import type { SimulatedClock } from './support/clock';
-import { createPublishedEvent, eventImageUrl, outboxOfEvent, sendingOfEvent, serviceClient, userIdByEmail, type OutboxLine } from './support/service';
+import {
+    createPublishedEvent, eventImageUrl, outboxByProviderIds, outboxOfEvent, pendingSmsEventsOf, sendingOfEvent, serviceClient, ticketNumbers,
+    userIdByEmail, type OutboxLine, type SentSmsLine,
+} from './support/service';
+import {
+    installScanProbe, openScanner, prepareTerrainEvent, presentPayload, restoreTerrainSetting, verifyHolderPhone, type TerrainEvent,
+} from './support/terrain';
 import { FIXTURE_USERS } from '../tests/helpers/fixture-data';
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(12 * 60_000);
+test.setTimeout(20 * 60_000);
 
 function escapeRe(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -156,10 +189,15 @@ function brief(rows: OutboxLine[]): string {
     return JSON.stringify(rows.map((r) => ({ type: r.type, channel: r.channel, status: r.status, reason: r.reason, user: r.recipient_user_id })));
 }
 
-/** Achat d'un billet par l'interface, comme à l'étape 4, depuis la page publique de l'événement. */
-async function buyThroughUi(client: Page, eventId: string, category: string): Promise<string> {
+/**
+ * Achat par l'interface, comme à l'étape 4, depuis la page publique de l'événement ; renvoie tous les billets émis
+ * (lot 7 : `quantity` billets de la catégorie, pour la fumée prolongée).
+ */
+async function buyThroughUi(client: Page, eventId: string, category: string, quantity = 1): Promise<string[]> {
     await client.goto(`/events/${eventId}`);
-    await client.getByRole('button', { name: new RegExp(`ajouter un billet ${escapeRe(category)}`, 'i') }).click();
+    for (let i = 0; i < quantity; i++) {
+        await client.getByRole('button', { name: new RegExp(`ajouter un billet ${escapeRe(category)}`, 'i') }).click();
+    }
     await client.getByRole('button', { name: /^acheter/i }).click();
     const dialog = client.getByRole('dialog').or(client.getByRole('alertdialog'));
     await expect(dialog).toBeVisible();
@@ -181,8 +219,63 @@ async function buyThroughUi(client: Page, eventId: string, category: string): Pr
     expect(done.json.webhookStatus, `réponse du webhook réel : ${JSON.stringify(done.json)}`).toBe(200);
     const status = (await (await succeeded).json()) as { ticket_ids: string[] };
     await expect(client.getByText('Paiement confirmé')).toBeVisible({ timeout: 45_000 });
-    return status.ticket_ids[0];
+    expect(status.ticket_ids.length, `billets émis par l’achat de ${quantity} billet(s)`).toBe(quantity);
+    return status.ticket_ids;
 }
+
+// ── Lot 7 (D81, fumée prolongée) : outils des étapes 8, 10 et 11 à 16 ───────
+
+interface IdentifiedSms { sms: FakeSms; line: SentSmsLine | null }
+
+/** SMS du faux MTarget identifiés par la boîte d'envoi (provider_message_id = ticket), imprimés [FUMEE-SMS]. */
+async function identifySms(label: string, received: FakeSms[], names: Record<string, string>): Promise<IdentifiedSms[]> {
+    const lines = await outboxByProviderIds(received.map((m) => m.ticket));
+    const byTicket = new Map(lines.map((l) => [l.provider_message_id, l]));
+    const out = received.map((sms) => ({ sms, line: byTicket.get(sms.ticket) ?? null }));
+    console.log(`[FUMEE-SMS] ${label} : ${out.length} SMS`);
+    for (const { sms, line } of out) {
+        console.log(line
+            ? `[FUMEE-SMS]   ${line.type} · ${line.event_id ? names[line.event_id] ?? `événement ${line.event_id}` : 'sans événement'} · clé ${line.idempotency_key} · ${line.status} · ticket ${sms.ticket} · ${sms.receivedAt}`
+            : `[FUMEE-SMS]   NON IDENTIFIÉ · ticket ${sms.ticket} · ${sms.receivedAt} · « ${sms.message.slice(0, 80)} »`);
+    }
+    return out;
+}
+
+/** Lot hors ligne d'un billet lu dans IndexedDB (lib/tickets/offline-store.ts : base event-village-offline, magasin lots). */
+interface StoredLot { ticket_id: string; secret_version: number; prefix: string; step_seconds: number; digits: number; first_counter: number; count: number; codes: string }
+
+async function readStoredLots(page: Page, ticketId: string): Promise<StoredLot[]> {
+    return page.evaluate(async (id) => {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+            const r = indexedDB.open('event-village-offline');
+            r.onsuccess = () => resolve(r.result);
+            r.onerror = () => reject(r.error ?? new Error('ouverture de event-village-offline impossible'));
+        });
+        try {
+            if (!db.objectStoreNames.contains('lots')) return [];
+            return await new Promise<StoredLot[]>((resolve, reject) => {
+                const q = db.transaction('lots', 'readonly').objectStore('lots').index('ticketId').getAll(id);
+                q.onsuccess = () => resolve((q.result as Array<{ lot: StoredLot }>).map((r) => r.lot));
+                q.onerror = () => reject(q.error ?? new Error('lecture du magasin lots impossible'));
+            });
+        } finally {
+            db.close();
+        }
+    }, ticketId);
+}
+
+/** Payload du pas courant calculé depuis un lot (même règle que pickOfflineCode, heure du serveur local ≈ Date.now()). */
+function payloadFromLot(lot: StoredLot, at = Date.now()): { payload: string; counter: number } {
+    const counter = Math.floor(at / (Number(lot.step_seconds) * 1000));
+    const index = counter - Number(lot.first_counter);
+    if (index < 0 || index >= Number(lot.count)) throw new Error(`pas ${counter} hors du lot du billet ${lot.ticket_id} (premier ${lot.first_counter}, ${lot.count} codes)`);
+    const digits = Number(lot.digits);
+    const code = lot.codes.substr(index * digits, digits);
+    if (!/^\d+$/.test(code)) throw new Error(`code illisible dans le lot du billet ${lot.ticket_id} (pas ${counter})`);
+    return { payload: `${lot.prefix}:${lot.ticket_id}:${code}`, counter };
+}
+
+const OFFLINE_CACHE = 'ev-hors-ligne-lot7-1';
 
 /** Cloche ouverte sur « Mes billets » ; renvoie le panneau (région « Notifications »). */
 async function openBell(client: Page): Promise<Locator> {
@@ -208,14 +301,18 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
 
     const contexts: BrowserContext[] = [];
     const guards: Array<{ role: string; guard: PageGuard }> = [];
-    async function pageAs(role: 'fumee-organisateur' | 'fumee-superadmin' | 'fumee-client', withCamera = false): Promise<Page> {
-        const context = await openRoleContext(browser, testInfo, role);
+    type FumeeRole = 'fumee-organisateur' | 'fumee-superadmin' | 'fumee-client' | 'fumee-client-bis' | 'fumee-controleur';
+    async function pageAs(role: FumeeRole, withCamera = false, opts: { serviceWorkers?: 'allow'; scanProbe?: boolean } = {}): Promise<Page> {
+        const context = await openRoleContext(browser, testInfo, role, role === 'fumee-controleur' ? 'sombre' : 'clair',
+            opts.serviceWorkers ? { serviceWorkers: opts.serviceWorkers } : {});
         if (withCamera) await context.addInitScript(installFakeCamera, { mode: fakeScanMode() });
+        if (opts.scanProbe) await context.addInitScript(installScanProbe);
         contexts.push(context);
         const page = await context.newPage();
         guards.push({ role, guard: new PageGuard(page) });
         return page;
     }
+    let e3: TerrainEvent | null = null;
 
     try {
         const partner = await pageAs('fumee-organisateur', true);
@@ -390,7 +487,7 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
                 category: { name: e2Category, price: 5000, total: 50 },
             });
             e2Event.event_id = e2Id;
-            const ticket = await buyThroughUi(client, e2Id, e2Category);
+            const [ticket] = await buyThroughUi(client, e2Id, e2Category);
             expect(ticket, 'billet de E2, lu dans la réponse de statut du paiement').toMatch(/^[0-9a-f-]{36}$/);
         });
 
@@ -409,6 +506,14 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             if (inQuietHours(j1Hour, quietStart, quietEnd)) {
                 throw new Error(`rappel J-1 à ${j1Hour} h dans la plage de silence ${quietStart} h - ${quietEnd} h : la fumée ne modifie pas les réglages (contrat P3), relevez notif.reminder_j1_hour`);
             }
+            // Lot 7 (D81) : boîte d'E1 vidée AVANT le repère (et toute autre ligne SMS en attente du client, hors E2),
+            // à l'heure réelle ; les SMS partis sont identifiés, ils ne se mêlent plus au décompte de l'étape 10
+            const drainEvents = Array.from(new Set([eventId, ...(await pendingSmsEventsOf(clientUserId, clientPhone))])).filter((id) => id !== e2Id);
+            const beforeDrain = new Set((await fakeSmsTo(clientPhone)).map((m) => m.ticket));
+            const drainReport = await c.dispatch(new Date(), drainEvents);
+            console.log(`[e2e][fumée] boîte vidée avant le repère (événements ${drainEvents.join(', ')}) : ${JSON.stringify(drainReport)}`);
+            const drained = await identifySms('avant le repère (boîte de E1 vidée)', smsSince(await fakeSmsTo(clientPhone), beforeDrain), { [eventId]: 'E1', [e2Id]: 'E2' });
+            expect(drained.filter((d) => d.line === null).map((d) => d.sms.ticket), 'SMS partis au vidage de la boîte de E1, tous identifiés').toEqual([]);
             smsMark = new Set((await fakeSmsTo(clientPhone)).map((m) => m.ticket));
 
             const veille = new Date(`${dakarDayFrom(e2StartAt, -1)}T${String(j1Hour).padStart(2, '0')}:00:30.000Z`);
@@ -505,10 +610,154 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             };
             console.log(`[e2e][fumée] SMS du client depuis l’étape 8 : ${received.length} (${JSON.stringify(counts)})`);
             expect(counts, `SMS du client depuis l’étape 8 : ${JSON.stringify(received.map((m) => m.message))}`).toEqual({ j1: 1, h3: 0, annulation: 1 });
+            // Lot 7 (D81) : liste exacte, par jointure provider_message_id = ticket du faux MTarget
+            const identified = await identifySms('depuis le repère de l’étape 8', received, { [eventId]: 'E1', [e2Id]: 'E2' });
+            expect(identified.filter((d) => d.line === null).map((d) => `${d.sms.ticket} « ${d.sms.message.slice(0, 60)} »`),
+                'chaque SMS reçu depuis le repère a sa ligne dans la boîte d’envoi (provider_message_id)').toEqual([]);
+            const lines = identified.flatMap((d) => (d.line ? [d.line] : []));
+            expect(lines.map((l) => `${l.type} ${l.event_id === e2Id ? 'E2' : l.event_id ?? 'sans événement'}`).sort(),
+                `SMS du client depuis le repère : ${JSON.stringify(lines.map((l) => ({ type: l.type, cle: l.idempotency_key })))}`)
+                .toEqual(['EVENT_CANCELLED E2', 'PURCHASE_CONFIRMED E2', 'REMINDER_J1 E2']);
+            const keys = lines.map((l) => `${l.type} ${l.idempotency_key}`);
+            expect(keys.filter((k, i) => keys.indexOf(k) !== i), 'aucun SMS envoyé deux fois pour la même clé (doublon = défaut)').toEqual([]);
+            expect(lines.filter((l) => l.status !== 'SENT').map((l) => `${l.type} ${l.status}`), 'lignes des SMS reçus au statut SENT').toEqual([]);
             const sending = await sendingOfEvent(e2Id);
             expect(sending, `lignes de E2 encore SENDING : ${brief(sending)}`).toEqual([]);
         });
+
+        // ── Lot 7 (contrat 11.4) : étapes 11 à 16 ───────────────────────────
+        const e3Category = 'Entrée générale';
+        let e3Tickets: string[] = [];
+        let e3Numbers: string[] = [];
+        let oldLot: StoredLot | null = null;
+        let swClient: Page | null = null;
+        let controller: Page | null = null;
+        const swApiResponses: string[] = [];
+
+        await test.step('11. événement E3 à ≈ 20 h (partenaire A, catégorie payante), contrôleur A affecté, fenêtre de scan à 24 h', async () => {
+            e3 = prepareTerrainEvent('fumee prolongee', 'client', 0, { priceFcfa: 5000 });
+            expect(e3.tickets, 'aucun billet émis par la préparation (achat par l’interface)').toEqual([]);
+        });
+
+        await test.step('12. achat de 2 billets de E3 par l’interface, puis Mes billets avec le service worker : disponibles hors ligne', async () => {
+            if (!e3) throw new Error('événement E3 absent (étape 11 non aboutie)');
+            e3Tickets = await buyThroughUi(client, e3.eventId, e3Category, 2);
+            e3Numbers = await ticketNumbers(e3Tickets);
+            const page = await pageAs('fumee-client', false, { serviceWorkers: 'allow' });
+            swClient = page;
+            page.context().on('response', (r) => {
+                try {
+                    if (r.fromServiceWorker() && new URL(r.url()).pathname.startsWith('/api/')) swApiResponses.push(`${r.status()} ${r.url()}`);
+                } catch (err) {
+                    swApiResponses.push(`URL illisible (${err instanceof Error ? err.message : String(err)})`);
+                }
+            });
+            await page.goto('/tickets');
+            for (const number of e3Numbers) {
+                const card = page.locator('li, article').filter({ hasText: number }).last();
+                await expect(card, `carte du billet ${number} dans Mes billets`).toBeVisible({ timeout: 45_000 });
+                await expect(card.locator('[data-ev-offline-state]'), `billet ${number} : « Disponible hors ligne » (téléchargement automatique la veille)`)
+                    .toHaveAttribute('data-ev-offline-state', 'available', { timeout: 60_000 });
+            }
+            const lots = await readStoredLots(page, e3Tickets[1]);
+            expect(lots.length, `lot du 2e billet dans IndexedDB : ${lots.length} lot(s)`).toBe(1);
+            oldLot = lots[0];
+            console.log(`[e2e][fumée] lot hors ligne du billet ${e3Numbers[1]} : version ${oldLot.secret_version}, ${oldLot.count} codes de ${oldLot.step_seconds} s à partir du pas ${oldLot.first_counter}`);
+        });
+
+        await test.step('13. hors ligne : page du billet servie par le service worker, QR qui change au bout de ≈ 21 s réelles', async () => {
+            const page = swClient;
+            if (!page) throw new Error('contexte du client avec service worker absent (étape 12 non aboutie)');
+            const failed: string[] = [];
+            const consoleErrors: string[] = [];
+            await page.context().setOffline(true);
+            page.on('requestfailed', (r) => failed.push(`${r.method()} ${r.url()} : ${r.failure()?.errorText ?? 'échec'}`));
+            page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 200)); });
+            const res = await page.goto(`/billet/hors-ligne?id=${encodeURIComponent(e3Tickets[0])}`);
+            expect(res?.fromServiceWorker(), '/billet/hors-ligne hors ligne : réponse servie par le service worker').toBe(true);
+            const qr = page.locator('[data-ev-qr-payload]');
+            await expect(qr, 'QR du billet 1 affiché hors ligne').toBeVisible({ timeout: 20_000 });
+            const first = await qr.getAttribute('data-ev-qr-counter');
+            expect(first, 'pas du QR affiché (data-ev-qr-counter)').toMatch(/^\d+$/);
+            await expect.poll(async () => qr.getAttribute('data-ev-qr-counter'), {
+                message: 'le QR hors ligne change de pas au bout de ≈ 21 s réelles', timeout: 35_000, intervals: [1_000],
+            }).not.toBe(first);
+            expect(failed, 'aucune requête en échec sur la page hors ligne').toEqual([]);
+            expect(consoleErrors, 'aucune erreur de console sur la page hors ligne').toEqual([]);
+        });
+
+        await test.step('14. contrôleur A en ligne : QR lu sur le téléphone hors ligne du client → entrée validée', async () => {
+            if (!e3 || !swClient) throw new Error('étapes 11 à 13 non abouties');
+            const clientPage: Page = swClient;
+            controller = await pageAs('fumee-controleur', false, { scanProbe: true });
+            await openScanner(controller, e3.title);
+            const payload = String(await clientPage.locator('[data-ev-qr-payload]').getAttribute('data-ev-qr-payload'));
+            expect(payload, 'payload affiché hors ligne : <préfixe>:<billet 1>:<6 chiffres>').toMatch(new RegExp(`:${e3Tickets[0]}:\\d{6}$`));
+            await presentPayload(controller, payload, 'billet 1 présenté hors ligne');
+            await expect(controller.locator('[data-scan-result="valid"]').first(), 'billet 1 hors ligne : « valid »').toBeVisible();
+        });
+
+        await test.step('15. transfert du billet 2 au second client, acceptation, puis ancien code présenté → refusé (qr_expired)', async () => {
+            if (!e3 || !oldLot || !controller) throw new Error('étapes 11 à 14 non abouties');
+            const lot: StoredLot = oldLot;
+            const ctl: Page = controller;
+            const recipient = verifyHolderPhone('client-bis');
+            console.log(`[e2e][fumée] numéro du second client ${recipient.changed ? 'marqué vérifié' : 'déjà vérifié'} (${recipient.verifiedAt})`);
+            await client.goto('/tickets');
+            const card = client.locator('li, article').filter({ hasText: e3Numbers[1] }).last();
+            await card.getByRole('button', { name: /^transférer$/i }).click();
+            const dialog = client.getByRole('dialog', { name: /^transférer ce billet$/i });
+            await expect(dialog).toBeVisible();
+            await dialog.getByLabel(/^numéro de téléphone du destinataire/i).fill(FIXTURE_USERS.CLIENT_BIS.phone.replace(/^\+221/, ''));
+            const sent = client.waitForResponse((r) => new URL(r.url()).pathname === `/api/tickets/${e3Tickets[1]}/transfer` && r.request().method() === 'POST');
+            await dialog.getByRole('button', { name: /^envoyer le billet$/i }).click();
+            const sentRes = await sent;
+            expect(sentRes.status(), `transfert du billet 2 : ${(await sentRes.text()).slice(0, 300)}`).toBe(200);
+            await dialog.getByRole('button', { name: /^terminer$/i }).click();
+
+            const bis = await pageAs('fumee-client-bis');
+            await bis.goto('/tickets?tab=recus');
+            const offer = bis.locator('li, article, section').filter({ hasText: e3.title }).filter({ has: bis.getByRole('button', { name: /^accepter le billet$/i }) }).last();
+            await offer.getByRole('button', { name: /^accepter le billet$/i }).click();
+            const confirm = bis.getByRole('dialog').or(bis.getByRole('alertdialog'));
+            await expect(confirm).toBeVisible();
+            const claimed = bis.waitForResponse((r) => /^\/api\/tickets\/transfers\/[^/]+\/claim$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST');
+            await confirm.getByRole('button', { name: /^accepter le billet$/i }).click();
+            const claimRes = await claimed;
+            expect(claimRes.status(), `acceptation du transfert : ${(await claimRes.text()).slice(0, 300)}`).toBe(200);
+
+            const old = payloadFromLot(lot);
+            console.log(`[e2e][fumée] ancien code du billet ${e3Numbers[1]} (version ${lot.secret_version}, pas ${old.counter}) présenté au contrôleur`);
+            await presentPayload(ctl, old.payload, 'ancien code du billet 2 après le transfert');
+            await expect(ctl.locator('[data-scan-result="qr_expired"]').first(), 'ancien code après le transfert : « qr_expired » (D3)').toBeVisible();
+        });
+
+        await test.step('16. caches du client : coquille hors ligne seulement, rien de /api/ ; route des codes jamais servie hors ligne', async () => {
+            const page = swClient;
+            if (!page) throw new Error('contexte du client avec service worker absent');
+            const keys = await page.evaluate(async () => (await caches.keys()).sort());
+            expect(keys, `caches du client : seul ${OFFLINE_CACHE} attendu`).toEqual([OFFLINE_CACHE]);
+            const urls = await page.evaluate(async (name) => (await (await caches.open(name)).keys()).map((r) => r.url), OFFLINE_CACHE);
+            const forbidden = urls.filter((u) => {
+                const url = new URL(u);
+                return url.pathname.startsWith('/api/') || url.searchParams.has('_rsc');
+            });
+            expect(forbidden, `aucune URL /api/ ni _rsc dans ${OFFLINE_CACHE} (${urls.length} entrée(s))`).toEqual([]);
+            expect(swApiResponses, 'aucune réponse /api/ servie par le service worker').toEqual([]);
+            await page.context().setOffline(true);
+            const outcome = await page.evaluate(async (id) => {
+                try {
+                    const r = await fetch(`/api/tickets/${id}/offline-codes`, { cache: 'no-store' });
+                    return `servi (HTTP ${r.status})`;
+                } catch (err) {
+                    return `rejeté (${err instanceof Error ? err.message : String(err)})`;
+                }
+            }, e3Tickets[0]);
+            expect(outcome, 'hors ligne, la route des codes n’est jamais servie depuis un cache').toMatch(/^rejeté/);
+        });
     } finally {
+        // Lot 7 (étape 11) : réglage access.scan_window_before_hours remis, même après un échec
+        if (e3) restoreTerrainSetting(e3);
         const notices = guards.flatMap(({ role, guard }) => guard.nonBlockingIssues().map((i) => `${role} : ${i}`));
         if (notices.length > 0) console.log(`[e2e][fumée] avertissements non bloquants du navigateur :\n${notices.join('\n')}`);
         const issues = guards.flatMap(({ role, guard }) => guard.blockingIssues().map((i) => `${role} : ${i}`));

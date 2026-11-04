@@ -9,6 +9,9 @@
  *   4. terrain   (projet terrain)  → billet hors ligne, scanner ; .e2e-captures/perf/scan.tsv
  *   5. pwa       (projet pwa)      → application installable (Chromium complet, contexte persistant)
  *   6. perf      (projet perf)     → .e2e-captures/perf/perf.tsv et perf.txt
+ * Lot 7 (tâche 7.9, contrat 19.9) : phase « emails » (projet emails, un worker) juste après les captures :
+ *   emails rendus par scripts/e2e/render-emails.ts → .e2e-captures/emails/*.html|txt,
+ *   captures email-<id>__<largeur>__<thème>.png et emails.txt dans .e2e-captures/captures/.
  * La durée de chaque phase est imprimée et écrite dans .e2e-captures/perf/phases.tsv (budget du job, 11.7).
  * Prérequis vérifiés avant tout : .env.e2e local, application et faux services joignables.
  * Code de sortie : 0 si toutes les phases réussissent, 1 sinon (résumé imprimé à la fin).
@@ -63,13 +66,14 @@ if (extra.length > 0) process.exit(playwright('manuel', extra));
 
 // Captures et mesures d'une exécution précédente : retirées pour que l'index et les tableaux de mesure
 // (lot 7 : perf.tsv et perf.txt reçoivent des lignes ajoutées) ne mélangent pas deux runs
-for (const dir of ['captures', 'results', 'perf']) {
+for (const dir of ['captures', 'results', 'perf', 'emails']) {
     fs.rmSync(path.join(ROOT, '.e2e-captures', dir), { recursive: true, force: true });
 }
 
 const phases = [
     ['connexion', ['--project=setup']],
     ['captures', ['--project=mobile', '--project=desktop']],
+    ['emails', ['--project=emails', '--workers=1']],
     ['fumee', ['--project=fumee']],
     ['terrain', ['--project=terrain', '--workers=1']],
     ['pwa', ['--project=pwa', '--workers=1']],

@@ -25,8 +25,10 @@
  * route, la mesure est seulement imprimée (mesure « avant », commit test(e2e)[7]).
  * Ce qui avertit ([PERF-AVERTISSEMENT]) : premier affichage utile médian > 3 s, LCP médian > 4 s.
  *
- * Les marqueurs suivent le balisage actuel des écrans (lot 6) et celui annoncé par le contrat (écran
- * « Commencer le contrôle ») ; un marqueur introuvable fait échouer le passage avec la liste des sélecteurs.
+ * Marqueurs (vague F, fix(7.7)) : balisage des écrans committés du lot 7. Scanner : écran « Commencer le contrôle »
+ * (ScannerStartScreen, D49) : bouton radio d'un événement à contrôler ou bouton « Commencer le contrôle » ; les
+ * identifiants du lot 6 (#scanner-event-title, #scanner-event-select) n'existent plus et sont retirés. Un marqueur
+ * introuvable fait échouer le passage avec la liste des sélecteurs.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -71,7 +73,7 @@ const SCREENS: Screen[] = [
     },
     {
         id: 'scanner', libelle: 'Scanner', role: 'controleur', path: () => '/controller/scanner', budgetRoute: '/controller/scanner',
-        selectors: ['#scanner-event-title', '#scanner-event-select', '[data-ev-scanner-start]'], buttonTexts: ['commencer le contrôle'], camera: true,
+        selectors: ['fieldset input[type="radio"]'], buttonTexts: ['commencer le contrôle'], camera: true,
     },
 ];
 

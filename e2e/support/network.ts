@@ -105,9 +105,33 @@ export class PageGuard {
     private frozen = false;
     private allowFailures: RegExp[] = [];
     private ignoreConsole = false;
+    /** Lot 7 (D84) : requêtes /api/ de l'application en cours, et heure (Node) du dernier changement. */
+    private readonly apiInFlight = new Set<Request>();
+    private apiChangedAt = Date.now();
 
     constructor(private readonly page: Page) {
         const context = page.context();
+        // Lot 7 (D84) : compteur des requêtes /api/ de l'application (hôte autorisé), pour l'attente des captures
+        const isAppApi = (request: Request): boolean => {
+            try {
+                const u = new URL(request.url());
+                const state = states.get(context);
+                return u.pathname.startsWith('/api/') && (!state || state.allowedHosts.has(u.host));
+            } catch (err) {
+                console.warn(`[e2e] URL de requête illisible : ${err instanceof Error ? err.message : String(err)}`);
+                return false;
+            }
+        };
+        const settled = (request: Request): void => {
+            if (this.apiInFlight.delete(request)) this.apiChangedAt = Date.now();
+        };
+        page.on('request', (request) => {
+            if (!isAppApi(request)) return;
+            this.apiInFlight.add(request);
+            this.apiChangedAt = Date.now();
+        });
+        page.on('requestfinished', settled);
+        page.on('requestfailed', settled);
         page.on('console', (msg) => {
             if (this.frozen || this.ignoreConsole || msg.type() !== 'error') return;
             const location = msg.location().url;
@@ -160,6 +184,17 @@ export class PageGuard {
 
     freeze(): void {
         this.frozen = true;
+    }
+
+    /**
+     * Lot 7 (D84) : requêtes /api/ en cours et durée (ms) depuis le dernier départ ou la dernière fin d'une requête
+     * /api/ de l'application. Une requête retenue volontairement (route jamais servie) reste « en cours ».
+     */
+    apiActivity(): { inFlight: string[]; quietForMs: number } {
+        return {
+            inFlight: Array.from(this.apiInFlight, (r) => `${r.method()} ${shortUrl(r.url())}`),
+            quietForMs: Date.now() - this.apiChangedAt,
+        };
     }
 
     private isAllowedFailure(url: string): boolean {

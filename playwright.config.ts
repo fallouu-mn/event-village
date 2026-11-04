@@ -12,6 +12,9 @@
  *    lancé avec --workers=1) ; un test en échec n'empêche pas les suivants (aucun mode « serial »).
  *  - pwa (e2e/installable.spec.ts) : vue mobile, sans état de connexion (aucune dépendance au setup).
  *  - perf (e2e/perf.spec.ts) : vue mobile, animations non réduites (mesure réaliste), --workers=1.
+ *  - emails (e2e/emails.spec.ts, tâche 7.9, contrat 19.9) : emails de confirmation rendus par
+ *    scripts/e2e/render-emails.ts et affichés par page.setContent, sans session ni serveur d'application,
+ *    réseau refusé ; phase « emails » de run-e2e.mjs, juste après les captures.
  */
 import { defineConfig } from '@playwright/test';
 import { APP_URL, e2eConfig } from './e2e/support/env';
@@ -55,5 +58,6 @@ export default defineConfig({
         { name: 'terrain', testMatch: /terrain\.spec\.ts$/, use: MOBILE, fullyParallel: false },
         { name: 'pwa', testMatch: /installable\.spec\.ts$/, use: MOBILE, fullyParallel: false },
         { name: 'perf', testMatch: /perf\.spec\.ts$/, use: { ...MOBILE, reducedMotion: 'no-preference' }, fullyParallel: false },
+        { name: 'emails', testMatch: /emails\.spec\.ts$/, fullyParallel: false },
     ],
 });

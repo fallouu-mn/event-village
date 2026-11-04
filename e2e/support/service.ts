@@ -131,3 +131,55 @@ export async function eventImageUrl(eventId: string): Promise<string> {
     if (!url) throw new Error(`[e2e] événement ${eventId} sans affiche`);
     return url;
 }
+
+// ── Lot 7 (D81, fumée prolongée) : identification des SMS du faux MTarget par la boîte d'envoi ─────────────
+
+/** Ligne de notification_outbox jointe à un SMS du faux MTarget (provider_message_id = ticket du faux MTarget). */
+export interface SentSmsLine {
+    id: string;
+    idempotency_key: string;
+    type: string;
+    status: string;
+    event_id: string | null;
+    recipient_user_id: string | null;
+    recipient_phone: string | null;
+    provider_message_id: string;
+}
+
+/** Lignes de la boîte d'envoi dont provider_message_id est l'un des tickets donnés (par paquets de 50). */
+export async function outboxByProviderIds(ids: readonly string[]): Promise<SentSmsLine[]> {
+    const out: SentSmsLine[] = [];
+    for (let i = 0; i < ids.length; i += 50) {
+        const chunk = ids.slice(i, i + 50);
+        const { data, error } = await serviceClient().from('notification_outbox')
+            .select('id, idempotency_key, type, status, event_id, recipient_user_id, recipient_phone, provider_message_id')
+            .eq('channel', 'SMS').in('provider_message_id', chunk);
+        if (error) throw new Error(`[e2e] lecture de notification_outbox par provider_message_id : ${error.message}`);
+        out.push(...((data ?? []) as SentSmsLine[]));
+    }
+    return out;
+}
+
+/** Événements des lignes SMS encore PENDING d'un destinataire (compte ou numéro), hors lignes sans événement. */
+export async function pendingSmsEventsOf(userId: string, phone: string): Promise<string[]> {
+    const events = new Set<string>();
+    for (const [column, value] of [['recipient_user_id', userId], ['recipient_phone', phone]] as const) {
+        const { data, error } = await serviceClient().from('notification_outbox').select('event_id')
+            .eq('channel', 'SMS').eq('status', 'PENDING').eq(column, value).not('event_id', 'is', null);
+        if (error) throw new Error(`[e2e] lignes SMS en attente (${column}) : ${error.message}`);
+        for (const r of data ?? []) events.add(String(r.event_id));
+    }
+    return Array.from(events).sort();
+}
+
+/** Numéro de chaque billet (tickets.ticket_number), dans l'ordre des identifiants donnés. */
+export async function ticketNumbers(ticketIds: readonly string[]): Promise<string[]> {
+    const { data, error } = await serviceClient().from('tickets').select('id, ticket_number').in('id', [...ticketIds]);
+    if (error) throw new Error(`[e2e] numéros des billets : ${error.message}`);
+    const byId = new Map((data ?? []).map((r) => [String(r.id), String(r.ticket_number)]));
+    return ticketIds.map((id) => {
+        const n = byId.get(id);
+        if (!n) throw new Error(`[e2e] billet ${id} introuvable`);
+        return n;
+    });
+}

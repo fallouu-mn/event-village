@@ -2,7 +2,9 @@
  * Lot 5.1 — comptes utilisés par Playwright et leur état de connexion (storageState dans `.auth/`).
  *  - comptes de démonstration (seed:demo) : captures d'écran ;
  *  - comptes du seed de test (seed:test) : test de fumée, indépendant des données de démonstration ;
- *    lot 7 (D80) : second client et contrôleur A, pour le projet terrain et la fumée prolongée.
+ *    lot 7 (D80) : second client et contrôleur A, pour le projet terrain et la fumée prolongée ;
+ *  - lot 7 (vague F, E5) : partenaire « premiers pas » du seed de démonstration (VALIDE, aucun événement), pour
+ *    la capture de la première utilisation.
  * Le mot de passe vient des constantes de fixtures (aucun mot de passe littéral, cf.
  * tests/schema/secrets-codes-en-dur.test.ts).
  */
@@ -16,7 +18,7 @@ export { TEST_PASSWORD };
 export const AUTH_DIR = path.resolve(process.cwd(), '.auth');
 
 export type RoleKey =
-    | 'organisateur' | 'admin' | 'client' | 'controleur'
+    | 'organisateur' | 'admin' | 'client' | 'controleur' | 'partenaire-premiers-pas'
     | 'fumee-organisateur' | 'fumee-superadmin' | 'fumee-client'
     | 'fumee-client-bis' | 'fumee-controleur';
 
@@ -38,6 +40,7 @@ export const ROLES: readonly RoleSpec[] = [
     { key: 'admin', libelle: 'administrateur (démonstration, events.read et events.write)', source: 'demonstration', arrivee: /\/admin(\/|$)/, email: demoEmail('admin') },
     { key: 'client', libelle: 'client (démonstration)', source: 'demonstration', arrivee: /^\/$/, email: demoEmail('client') },
     { key: 'controleur', libelle: 'contrôleur (démonstration)', source: 'demonstration', arrivee: /\/controller\/scanner/, email: demoEmail('controleur') },
+    { key: 'partenaire-premiers-pas', libelle: 'partenaire « premiers pas » (démonstration, aucun événement)', source: 'demonstration', arrivee: /\/partner(\/|$)/, email: demoEmail('partenaireNeuf') },
     { key: 'fumee-organisateur', libelle: 'organisateur A (seed de test)', source: 'fixtures', arrivee: /\/partner(\/|$)/, email: () => FIXTURE_USERS.PARTNER_A.email },
     { key: 'fumee-superadmin', libelle: 'superadmin (seed de test)', source: 'fixtures', arrivee: /\/admin(\/|$)/, email: () => FIXTURE_USERS.SUPERADMIN.email },
     { key: 'fumee-client', libelle: 'client (seed de test)', source: 'fixtures', arrivee: /^\/$/, email: () => FIXTURE_USERS.CLIENT.email },

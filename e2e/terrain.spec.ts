@@ -18,6 +18,14 @@
  * « serial » : un test rouge n'empêche pas les suivants, ni la mesure du scan (écrite avant ses assertions).
  * Les erreurs du navigateur sont imprimées et jointes au rapport, sans bloquer (aucun contrôle de ce type
  * n'est demandé par le contrat pour ce projet).
+ *
+ * Vague F (fix(7.7)) : marques et sélecteurs des écrans committés. Scanner (E3, fix(7.2e)) : écran « Commencer le
+ * contrôle » seul (openScanner, support/terrain.ts : bouton radio de l'événement, plus de repli du lot 6),
+ * `data-scan-state` = pending | slow (calque d'envoi), result (plein écran), offline (bandeau) ;
+ * `data-scan-result` porté par le seul plein écran ; marques ev-scan:read, ev-scan:pending, ev-scan:result.
+ * Billet hors ligne (E2, fix(7.1e)) : `data-ev-offline-state` de OfflineStatusBadge sur la carte (available,
+ * missing, not_yet, offline_missing, expired), `data-ev-qr-payload` et `data-ev-qr-counter` de la page hors ligne.
+ * Les assertions et les seuils sont inchangés.
  */
 import type { Browser, BrowserContext, Locator, Page, TestInfo } from '@playwright/test';
 import { test, expect, openRoleContext } from './support/fixtures';
