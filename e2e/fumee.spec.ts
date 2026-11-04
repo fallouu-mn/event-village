@@ -64,7 +64,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect, openRoleContext } from './support/fixtures';
 import { fumeePayerPhone } from './support/accounts';
 import { APP_URL, e2eConfig } from './support/env';
-import { fakeScanMode, installFakeCamera } from './support/fake-camera';
+import { cameraDiagSnapshot, describeCameraScan, fakeScanMode, installCameraDiagnostics, installFakeCamera } from './support/fake-camera';
 import { PageGuard } from './support/network';
 import { posterHtml, POSTER_SIZE } from './support/poster';
 import type { SimulatedClock } from './support/clock';
@@ -306,7 +306,10 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
     async function pageAs(role: FumeeRole, withCamera = false, opts: { serviceWorkers?: 'allow'; scanProbe?: boolean } = {}): Promise<Page> {
         const context = await openRoleContext(browser, testInfo, role, role === 'fumee-controleur' ? 'sombre' : 'clair',
             opts.serviceWorkers ? { serviceWorkers: opts.serviceWorkers } : {});
-        if (withCamera) await context.addInitScript(installFakeCamera, { mode: fakeScanMode() });
+        if (withCamera) {
+            await context.addInitScript(installFakeCamera, { mode: fakeScanMode() });
+            await context.addInitScript(installCameraDiagnostics);
+        }
         if (opts.scanProbe) await context.addInitScript(installScanProbe);
         contexts.push(context);
         const page = await context.newPage();
@@ -317,6 +320,12 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
 
     try {
         const partner = await pageAs('fumee-organisateur', true);
+        // Diagnostic de l'étape 5 (run 80) : messages du scanner (lectures écartées, envois, caméra)
+        const scanConsole: string[] = [];
+        partner.on('console', (msg) => {
+            const text = msg.text();
+            if (/^\[(camera|partner\/scan|scan)\]/.test(text)) scanConsole.push(`${msg.type()} ${text.slice(0, 200)}`);
+        });
 
         await test.step('1. le partenaire crée l’événement (début dans 2 h)', async () => {
             await partner.goto('/partner/events/new');
@@ -436,13 +445,24 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             const qr = ticketCard.getByRole('img', { name: /QR d.entrée dynamique/i });
             await expect(qr).toBeVisible();
             const png = await qr.screenshot();
+            const before = await cameraDiagSnapshot(partner);
             await partner.evaluate(async ({ dataUrl, p }) => {
                 const cam = (window as unknown as { __evFakeCamera?: { show: (d: string) => Promise<void>; setPayload: (x: string) => void } }).__evFakeCamera;
                 if (!cam) throw new Error('caméra simulée absente de la page');
                 cam.setPayload(p);
                 await cam.show(dataUrl);
             }, { dataUrl: `data:image/png;base64,${png.toString('base64')}`, p: payload });
-            await expect(partner.getByText('Entrée validée').first()).toBeVisible({ timeout: 40_000 });
+            try {
+                await expect(partner.getByText('Entrée validée').first()).toBeVisible({ timeout: 40_000 });
+            } catch (err) {
+                // Run 80 : QR présenté, aucun résultat. Le diagnostic dit si la boucle tournait (images analysées),
+                // si une lecture est partie (POST) et dans quel état était l'écran ; QR présenté et image vidéo joints.
+                await testInfo.attach('qr-presente.png', { body: png, contentType: 'image/png' });
+                const detail = await describeCameraScan(partner, before, scanConsole, testInfo)
+                    .catch((e: unknown) => `diagnostic caméra impossible : ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+                console.log(`[e2e][fumée] étape 5, payload attendu « ${payload} » ; ${detail}`);
+                throw new Error(`${err instanceof Error ? err.message : String(err)}\n${detail}`);
+            }
         });
 
         await test.step('6. la page de pilotage montre 1 vendu et 1 entrée', async () => {

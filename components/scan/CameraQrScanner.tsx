@@ -14,7 +14,11 @@
  *    avalait chaque lecture en silence) ;
  *  - toute lecture écartée laisse une trace (console) ; la page trace celles qu'elle ignore.
  * Après une lecture acceptée par la page, la boucle s'arrête jusqu'à la reprise (`paused` repasse à faux).
- * Décodage : BarcodeDetector natif, sinon ZXing image par image (même boucle, même arrêt).
+ * Décodage : BarcodeDetector natif, sinon décodeur logiciel image par image (même boucle, même arrêt) : ZXing et
+ * jsQR en alternance, une image sur deux chacun (jsQR chargé à la demande sans retarder la caméra). Run 80 (fumée, étape 5) : ZXing (@zxing/library 0.23, comme
+ * 0.21.3 et 0.22.0) ne lit pas certains QR de billet pourtant valides, quelle que soit l'image (≈ 8 % des QR
+ * dynamiques sur l'image de la caméra simulée, ≈ 5 % sur des QR parfaits) ; jsQR les lit tous sur les mêmes
+ * images. Le décodeur actif est exposé par `data-scan-decoder` (native, zxing+jsqr, zxing).
  * Caméra libérée (getTracks().stop()) en arrière-plan (visibilitychange) et après 3 min sans lecture
  * (veille, réveil par un toucher). Aucune vibration ici (D50 : seul le verdict vibre), aucun son.
  * Fonds opaques (jetons --scan-tech-*), ligne de visée fixe, aucune animation.
@@ -54,9 +58,23 @@ type Phase = 'starting' | 'live' | 'error' | 'asleep' | 'background';
 
 interface NativeDetector { detect(source: HTMLVideoElement): Promise<Array<{ rawValue?: string }>> }
 interface ZxingReader { decodeFromCanvas(canvas: HTMLCanvasElement): { getText(): string } }
+type JsQrDecode = (data: Uint8ClampedArray, width: number, height: number, options?: { inversionAttempts?: 'dontInvert' }) => { data?: string } | null;
 type Decoder =
   | { kind: 'native'; detector: NativeDetector }
-  | { kind: 'zxing'; reader: ZxingReader; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D };
+  | { kind: 'zxing'; reader: ZxingReader; jsqr: JsQrDecode | null; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; frame: number };
+
+/** jsQR, chargé avec ZXing ; null s'il ne charge pas (ZXing seul, tracé). */
+async function loadJsQr(): Promise<JsQrDecode | null> {
+  try {
+    const mod = (await import('jsqr')) as unknown as { default?: unknown };
+    const fn = typeof mod.default === 'function' ? mod.default : mod;
+    if (typeof fn !== 'function') throw new Error('module jsqr sans fonction de décodage');
+    return fn as JsQrDecode;
+  } catch (err) {
+    console.warn('[camera] décodeur jsQR indisponible : ZXing seul', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
 
 function stopTracks(stream: MediaStream | null): void {
   if (!stream) return;
@@ -114,6 +132,8 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   const [cameraCount, setCameraCount] = useState(0);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  /** Décodeur actif (attribut data-scan-decoder : diagnostic des tests de bout en bout). */
+  const [decoderKind, setDecoderKind] = useState<'native' | 'zxing+jsqr' | 'zxing' | null>(null);
 
   onScanRef.current = onScan;
   idleMsRef.current = idleTimeoutMs;
@@ -178,6 +198,14 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
       decoder.canvas.width = Math.round(w * scale);
       decoder.canvas.height = Math.round(h * scale);
       decoder.ctx.drawImage(video, 0, 0, decoder.canvas.width, decoder.canvas.height);
+      decoder.frame += 1;
+      if (decoder.jsqr && decoder.frame % 2 === 0) {
+        // Une image sur deux : jsQR, qui lit les QR valides que ZXing rate (run 80) ; même coût par image
+        const image = decoder.ctx.getImageData(0, 0, decoder.canvas.width, decoder.canvas.height);
+        const found = decoder.jsqr(image.data, image.width, image.height, { inversionAttempts: 'dontInvert' });
+        const text = typeof found?.data === 'string' ? found.data.trim() : '';
+        return text !== '' ? text : null;
+      }
       try {
         const text = decoder.reader.decodeFromCanvas(decoder.canvas).getText();
         return text && text.trim() !== '' ? text.trim() : null;
@@ -271,14 +299,24 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
     const Native = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => NativeDetector }).BarcodeDetector;
     if (mode === 'native' && typeof Native === 'function') {
       decoderRef.current = { kind: 'native', detector: new Native({ formats: ['qr_code'] }) };
+      setDecoderKind('native');
       return decoderRef.current;
     }
+    // jsQR (≈ 47 Ko gzip) se charge en parallèle sans retarder la caméra : ZXing lit seul jusqu'à son arrivée
+    const jsqrLoading = loadJsQr();
     const { BrowserQRCodeReader } = await import('@zxing/browser');
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) throw new Error('canvas 2D indisponible pour le décodeur logiciel');
-    decoderRef.current = { kind: 'zxing', reader: new BrowserQRCodeReader() as unknown as ZxingReader, canvas, ctx };
-    return decoderRef.current;
+    const decoder: Extract<Decoder, { kind: 'zxing' }> = { kind: 'zxing', reader: new BrowserQRCodeReader() as unknown as ZxingReader, jsqr: null, canvas, ctx, frame: 0 };
+    decoderRef.current = decoder;
+    setDecoderKind('zxing');
+    void jsqrLoading.then((jsqr) => {
+      if (!jsqr || decoderRef.current !== decoder) return;
+      decoder.jsqr = jsqr;
+      setDecoderKind('zxing+jsqr');
+    });
+    return decoder;
   }, []);
   ensureDecoderRef.current = ensureDecoder;
 
@@ -419,7 +457,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   const live = phase === 'live';
 
   return (
-    <div className={cn('flex flex-col gap-3', className)}>
+    <div className={cn('flex flex-col gap-3', className)} data-scan-decoder={decoderKind ?? undefined}>
       <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl border-2 border-border-strong bg-scan-tech-bg">
         <video ref={videoRef} autoPlay playsInline muted aria-label="Image de la caméra" className="h-full w-full object-cover" />
 
