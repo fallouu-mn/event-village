@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
-import { checkStoredOtp, consumeStoredOtp, otpFailureMessage } from '@/lib/auth/otp-store';
+import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
@@ -55,9 +55,13 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        // 1. Lot 1B.7 : vérification en base uniquement (le code est consommé en fin de parcours).
-        //    Le code lui-même n'accepte que 5 essais (OTP_MAX_ATTEMPTS, lib/auth/otp-store.ts).
-        const otpCheck = await checkStoredOtp(normalizedPhone, otp_code, 'CONTROLLER_SETUP');
+        // 1. Lot 7 (D22) : le code est vérifié ET consommé en une seule transaction (otp_check, verrou de la
+        //    ligne du code), avant toute autre étape et avant la pose du mot de passe. Deux activations
+        //    simultanées avec le même code : une seule obtient le code, l'autre reçoit un refus (le code
+        //    n'est plus en attente). Le code n'accepte que 5 essais (OTP_MAX_ATTEMPTS, lib/auth/otp-store.ts).
+        //    Un échec après ce point laisse le code consommé : une nouvelle invitation émet un nouveau code
+        //    tant que le compte est temporaire (app/api/partner/team/invite/route.ts).
+        const otpCheck = await verifyStoredOtp(normalizedPhone, otp_code, 'CONTROLLER_SETUP');
         if (!otpCheck.ok) {
             const { message, status } = otpFailureMessage(otpCheck.reason);
             return NextResponse.json({ error: message }, { status });
@@ -83,12 +87,16 @@ export async function POST(req: NextRequest) {
         }
 
         // Vérifier qu'il existe au moins une assignation contrôleur pour ce compte.
-        const { data: assignment } = await supabase
+        const { data: assignment, error: assignmentErr } = await supabase
             .from('event_controllers')
             .select('id')
             .eq('user_id', profile.id)
             .limit(1)
             .maybeSingle();
+        if (assignmentErr) {
+            console.error('[controller/setup] lecture des affectations :', assignmentErr.message);
+            return NextResponse.json({ error: 'Recherche de l’invitation impossible. Réessayez.' }, { status: 500 });
+        }
 
         if (!assignment) {
             return NextResponse.json({ error: 'Aucune invitation contrôleur trouvée pour ce numéro.' }, { status: 404 });
@@ -99,6 +107,7 @@ export async function POST(req: NextRequest) {
         const authUser = authUserData?.user;
 
         if (authUserErr || !authUser) {
+            if (authUserErr) console.error('[controller/setup] getUserById :', authUserErr.message);
             return NextResponse.json({ error: 'Compte d\'authentification introuvable.' }, { status: 404 });
         }
 
@@ -115,10 +124,14 @@ export async function POST(req: NextRequest) {
         }
 
         // MULTI-RÔLE : s'assurer que CONTROLEUR est dans user_roles (sans écraser les autres rôles)
-        const { data: existingRoles } = await supabase
+        const { data: existingRoles, error: rolesErr } = await supabase
             .from('user_roles')
             .select('role')
             .eq('user_id', profile.id);
+        if (rolesErr) {
+            console.error('[controller/setup] lecture des rôles :', rolesErr.message);
+            return NextResponse.json({ error: 'Erreur de configuration du compte.' }, { status: 500 });
+        }
         const hasControllerRole = (existingRoles || []).some(r => r.role === 'CONTROLEUR');
         if (!hasControllerRole) {
             const { error: roleError } = await addUserRole(profile.id, 'CONTROLEUR');
@@ -138,14 +151,14 @@ export async function POST(req: NextRequest) {
         });
 
         if (pwdErr) {
-            console.error('[controller/setup] updateUserById:', pwdErr.message);
-            return NextResponse.json({ error: 'Impossible de définir le mot de passe.' }, { status: 500 });
+            console.error(`[controller/setup] updateUserById (code ${otpCheck.id} déjà consommé) :`, pwdErr.message);
+            return NextResponse.json({
+                error: 'Impossible de définir le mot de passe. Demandez une nouvelle invitation à votre organisateur.',
+                code: 'PASSWORD_SET_FAILED',
+            }, { status: 500 });
         }
 
-        // 4. Consommer l'OTP (en base)
-        if (!(await consumeStoredOtp(otpCheck.id))) {
-            console.warn(`[controller/setup] code OTP ${otpCheck.id} déjà consommé par une requête concurrente`);
-        }
+        // 4. Code déjà consommé à l'étape 1 (lot 7, D22).
 
         // 4 bis. Lot 6 (B1) : le code reçu par SMS prouve la possession du numéro. Première date
         //        conservée (aucune écriture si elle est déjà posée) ; une erreur n'est jamais avalée.

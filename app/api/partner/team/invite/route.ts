@@ -136,6 +136,8 @@ export async function POST(req: NextRequest) {
         // 2. Trouver ou créer le compte contrôleur
         let controllerUserId: string;
         let isNewUser = false;
+        // Lot 7 (D22) : compte existant encore temporaire (créé par une invitation, jamais activé)
+        let isPendingActivation = false;
 
         // Lot 1C.1 : égalité exacte sur les deux formes stockées du même numéro (+221… et 221…)
         const { data: matches, error: lookupErr } = await supabase
@@ -169,11 +171,24 @@ export async function POST(req: NextRequest) {
             }
             controllerUserId = existingProfile.id;
 
+            // Lot 7 (D22) : un compte créé par une invitation et jamais activé (aucun mot de passe choisi)
+            // reçoit un nouveau code d'activation ; un compte établi garde ses identifiants (lot 1C.1).
+            const { data: existingAuth, error: existingAuthErr } = await supabase.auth.admin.getUserById(existingProfile.id);
+            if (existingAuthErr || !existingAuth?.user) {
+                console.error('[invite-controller] lecture du compte d’authentification :', existingAuthErr?.message ?? 'compte absent');
+                return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+            }
+            isPendingActivation = existingAuth.user.user_metadata?.is_temporary_controller_account === true;
+
             // Vérifier si l'utilisateur possède déjà le rôle CONTROLEUR via user_roles
-            const { data: existingRoles } = await supabase
+            const { data: existingRoles, error: existingRolesErr } = await supabase
                 .from('user_roles')
                 .select('role')
                 .eq('user_id', existingProfile.id);
+            if (existingRolesErr) {
+                console.error('[invite-controller] lecture des rôles :', existingRolesErr.message);
+                return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+            }
             const currentRoles = (existingRoles || []).map(r => r.role as string);
             const alreadyController =
                 currentRoles.includes('CONTROLEUR') ||
@@ -353,14 +368,16 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 4. Code d'activation (24 h) : seulement pour un compte créé par cette invitation. Un compte
-        //    existant garde ses identifiants ; aucun code n'est émis sur son numéro (lot 1C.1 :
-        //    un code émis remplaçait le code en attente du titulaire).
+        // 4. Code d'activation (24 h) : pour un compte créé par cette invitation et, depuis le lot 7 (D22),
+        //    pour un compte encore temporaire (jamais activé) dont le code a pu expirer, être épuisé ou être
+        //    consommé par une activation échouée. Un compte établi garde ses identifiants ; aucun code n'est
+        //    émis sur son numéro (lot 1C.1 : un code émis remplaçait le code en attente du titulaire).
+        const issueActivationCode = isNewUser || isPendingActivation;
         const otpCode   = randomInt(100000, 1000000).toString();
         const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
         let otpId: string | null = null;
-        if (isNewUser) {
+        if (issueActivationCode) {
             // Lot 1B.7 : code d'activation en base uniquement (vérifié par /api/controller/setup).
             try {
                 otpId = await storeOtp(normalizedPhone, otpCode, new Date(expiresAt), 'CONTROLLER_SETUP');
@@ -368,17 +385,31 @@ export async function POST(req: NextRequest) {
                 console.error('[invite-controller]', storeErr instanceof Error ? storeErr.message : storeErr);
                 return NextResponse.json({ error: 'Impossible de préparer le code d\'activation. Réessayez.' }, { status: 500 });
             }
+            // Lot 7 (D22) : les codes précédents encore en attente pour ce numéro sont échus tout de suite ;
+            // seul le dernier code envoyé active le compte, quel que soit l'ordre des essais.
+            const { error: supersedeErr } = await supabase
+                .from('otp_codes')
+                .update({ expires_at: new Date().toISOString() })
+                .eq('phone', normalizedPhone)
+                .eq('purpose', 'CONTROLLER_SETUP')
+                .eq('verified', false)
+                .neq('id', otpId);
+            if (supersedeErr) {
+                console.error('[invite-controller] codes d’activation précédents non échus :', supersedeErr.message);
+                return NextResponse.json({ error: 'Impossible de préparer le code d\'activation. Réessayez.' }, { status: 500 });
+            }
         }
 
         const baseUrl   = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
         const setupLink = `${baseUrl}/controller/setup?phone=${encodeURIComponent(normalizedPhone)}`;
 
-        // Lot 6 (E7) : seul le nouveau compte reçoit un SMS synchrone (code d'activation et lien),
-        // journalisé dans la boîte d'envoi sans le code ni le lien. Un compte existant n'a plus de SMS
-        // direct : ses affectations sont annoncées par la boîte d'envoi (trigger, J2.4).
+        // Lot 6 (E7) : seul un compte à activer (nouveau ou, depuis le lot 7, encore temporaire) reçoit un
+        // SMS synchrone (code d'activation et lien), journalisé dans la boîte d'envoi sans le code ni le lien.
+        // Un compte établi n'a pas de SMS direct : ses affectations sont annoncées par la boîte d'envoi
+        // (trigger, J2.4).
         let smsSent = false;
         let smsRefusal: string | null = null;
-        if (isNewUser) {
+        if (issueActivationCode) {
             try {
                 const smsRes = await mTargetService.sendControllerInvite(
                     normalizedPhone,
@@ -406,7 +437,7 @@ export async function POST(req: NextRequest) {
                 ? `Contrôleur assigné avec succès ${msgSuffix}.`
                 : `Droits mis à jour ${msgSuffix}.`;
         // Lot 4.8 : le partenaire sait si le SMS est parti (refus de la garde anti-abus compris).
-        const actionMsg = !isNewUser
+        const actionMsg = !issueActivationCode
             ? `${baseMsg} Le contrôleur est prévenu dans l'application et par SMS.`
             : smsSent
                 ? `${baseMsg} SMS avec code d'activation envoyé.`
