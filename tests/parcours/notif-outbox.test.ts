@@ -90,7 +90,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('TRANSFER_CANCELLED', [S, I, P], 'CLIENT', 'B'),
     ess('TRANSFER_EXPIRED', [I, P], 'CLIENT', 'B'),
     ess('TRANSFER_CLAIMED_SENDER', [I, P], 'CLIENT', 'B'),
-    ess('TRANSFER_RECEIVED', [I, P], 'CLIENT', 'B'),
+    ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B'), // lot 7, tâche 7.9 (D91, migration 20261105000007)
     ess('TICKET_SCANNED', [I, P], 'CLIENT', 'B'),
     ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A'),
     opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P], 'CLIENT'),

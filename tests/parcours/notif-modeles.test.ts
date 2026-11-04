@@ -20,6 +20,11 @@
  *    (translittération, espaces repliés, troncature avec « ... »).
  * Le calcul GSM-7 / UCS-2 est fait ICI (table GSM 03.38 de base et extension), jamais par le module testé.
  *
+ * Lot 7, tâche 7.0 a (T34) : types ADMIN_SMS_OPTIONAL_80 et ADMIN_SMS_FORECAST ajoutés à la table attendue.
+ * Lot 7, tâche 7.9 (T25 à T27) : TRANSFER_RECEIVED reçoit l'email (D91) ; les emails de PURCHASE_CONFIRMED,
+ * FREE_TICKETS_CONFIRMED et TRANSFER_RECEIVED ont le bouton « Voir mes billets » et les phrases obligatoires
+ * (D93, exception nommée de la règle générique) ; contenu in-app de TRANSFER_RECEIVED avec le numéro (D94).
+ *
  * Noms de variables fixés par ce test là où le contrat se tait (G2 « Données », placeholders de G4) :
  * title, location, city, start_at, event_id ; ticket_count, service_fee, total (achat, billets gratuits) ;
  * amount, reference (guichet, retraits, remboursements) ; operator (code WAVE | ORANGE_MONEY, affiché
@@ -193,7 +198,8 @@ const EXPECTED: ExpectedType[] = [
     ess('TRANSFER_CANCELLED', [S, I, P], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Transfert annulé'),
     ess('TRANSFER_EXPIRED', [I, P], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Transfert expiré'),
     ess('TRANSFER_CLAIMED_SENDER', [I, P], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=historique'], 'Billet accepté'),
-    ess('TRANSFER_RECEIVED', [I, P], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Billet reçu'),
+    // Lot 7, tâche 7.9 (D91) : TRANSFER_RECEIVED reçoit l'email (billet reçu par transfert, nouveau numéro).
+    ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Billet reçu'),
     ess('TICKET_SCANNED', [I, P], 'CLIENT', 'B', 'TICKET_SCANNED', ['/tickets?tab=historique'], 'Entrée validée'),
     ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', ['/tickets'], 'Événement annulé'),
     opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement suspendu'),
@@ -247,15 +253,15 @@ const EXPECTED: ExpectedType[] = [
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Volume de SMS élevé', 'notifications.read'),
     ess('ADMIN_SMS_CAP_GLOBAL', [I], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Plafond de SMS atteint', 'notifications.read'),
     ess('ADMIN_SMS_CAP_NON_OTP', [I], 'ADMIN', 'B', 'SMS_NON_OTP_SHARE_REACHED', ['/admin/notifications'], 'Quota de SMS hors code atteint', 'notifications.read'),
+    // Lot 7, tâche 7.0 a (contrat 4.1, M2.1, D15) : alerte à 80 % du plafond optionnel et prévision de la veille.
+    ess('ADMIN_SMS_OPTIONAL_80', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'SMS optionnels : 80 % du plafond', 'notifications.read'),
+    ess('ADMIN_SMS_FORECAST', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Budget SMS de demain insuffisant', 'notifications.read'),
     sync('OTP_LOGIN'),
     sync('OTP_REGISTER'),
     sync('OTP_PASSWORD_RESET'),
     sync('OTP_WITHDRAWAL'),
     sync('OTP_AUTH_HOOK'),
     sync('CONTROLLER_INVITE'),
-    // Lot 7, tâche 7.0 a (contrat 4.1, M2.1, D15) : alerte à 80 % du plafond optionnel et prévision de la veille.
-    ess('ADMIN_SMS_OPTIONAL_80', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'SMS optionnels : 80 % du plafond', 'notifications.read'),
-    ess('ADMIN_SMS_FORECAST', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Budget SMS de demain insuffisant', 'notifications.read'),
 ];
 
 const EXPECTED_BY_TYPE = new Map(EXPECTED.map((e) => [e.type, e]));
@@ -272,6 +278,17 @@ const IN_APP_WITH_TITLE = new Set([
     'CANCEL_REFUNDS_BLOCKED', 'CONTROLLER_ASSIGNED', 'CONTROLLER_UNASSIGNED', 'CONTROLLER_REMINDER', 'ADMIN_EVENT_SUBMITTED',
     'PROMOTION_DECIDED',
 ]);
+
+/**
+ * Lot 7, tâche 7.9 (D93, contrat 19.4) : confirmations dont l'email a son propre contenu ; bouton « Voir mes
+ * billets » au lieu de « Ouvrir Event Village », et les trois phrases (P1, P2 de la consigne, P3 de D99).
+ */
+const CONFIRMATION_EMAIL_TYPES = new Set(['PURCHASE_CONFIRMED', 'FREE_TICKETS_CONFIRMED', 'TRANSFER_RECEIVED']);
+const CONFIRMATION_PHRASES = [
+    'Votre billet s\'affiche dans l\'application, rubrique Mes billets. Son QR code change toutes les 20 secondes : une capture d\'écran ne sera pas acceptée à l\'entrée.',
+    'Ouvrez votre billet avec du réseau avant d\'arriver : il restera disponible même sans connexion.',
+    'En cas de problème à l\'entrée, présentez le numéro de votre billet et une pièce d\'identité : le contrôleur peut l\'enregistrer à la main.',
+] as const;
 
 // ── Contexte et données ────────────────────────────────────────────────────
 
@@ -524,19 +541,24 @@ describe('6.3 Catalogue : in-app, push et email (contrat G4, F3)', () => {
     });
 
     test('contenus in-app exacts pour des valeurs courtes (G4)', async () => {
-        const cases: Array<[string, Data, string, string]> = [
+        // Cinquième élément facultatif : clés retirées du sample (variables facultatives absentes).
+        const cases: Array<[string, Data, string, string, string[]?]> = [
             ['TICKET_SCANNED', SHORT_EVENT, 'Entrée validée', 'Votre billet pour « Gala Dakar » a été contrôlé à l\'entrée.'],
-            ['TRANSFER_RECEIVED', SHORT_EVENT, 'Billet reçu', 'Le billet pour « Gala Dakar » est ajouté à vos billets.'],
+            // Lot 7, tâche 7.9 (D94, contrat 19.4) : numéro du billet reçu et date ; sans numéro (ligne d'avant la
+            // migration 20261105000007), texte du lot 6.
+            ['TRANSFER_RECEIVED', { ...SHORT_EVENT, ticket_number: 'TCK-20261114-4F7A8E162D' }, 'Billet reçu',
+                'Le billet TCK-20261114-4F7A8E162D pour « Gala Dakar » du sam. 14 nov. 2026 à 20:00 est ajouté à Mes billets.'],
+            ['TRANSFER_RECEIVED', SHORT_EVENT, 'Billet reçu', 'Le billet pour « Gala Dakar » est ajouté à vos billets.', ['ticket_number', 'category']],
             ['TRANSFER_CLAIMED_SENDER', SHORT_EVENT, 'Billet accepté', 'Votre billet pour « Gala Dakar » a été accepté par son destinataire.'],
             ['FIRST_TICKET_SOLD', SHORT_EVENT, 'Premier billet vendu', 'Le premier billet de « Gala Dakar » est vendu.'],
             ['EVENT_SOLD_OUT', SHORT_EVENT, 'Événement complet', 'Toutes les catégories de « Gala Dakar » sont vendues.'],
             ['PASSWORD_CHANGED', {}, 'Mot de passe modifié', 'Le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.'],
             ['CONTROLLER_ACTIVATED', {}, 'Compte activé', 'Votre compte est activé : vous pouvez scanner les billets.'],
         ];
-        for (const [type, over, title, content] of cases) {
+        for (const [type, over, title, content, drop] of cases) {
             const e = await entry(type);
-            const r = e.inApp!(dataFrom(e.sample, over));
-            assert.deepEqual({ title: norm(r.title), content: norm(r.content) }, { title, content }, `${type} : in-app`);
+            const r = e.inApp!(dataFrom(e.sample, over, drop ?? []));
+            assert.deepEqual({ title: norm(r.title), content: norm(r.content) }, { title, content }, `${type} : in-app${drop ? ` (sans ${drop.join(', ')})` : ''}`);
         }
     });
 
@@ -571,7 +593,14 @@ describe('6.3 Catalogue : in-app, push et email (contrat G4, F3)', () => {
             const link = e.link(e.sample);
             if (norm(mail.subject) !== `${norm(inApp.title)} — Event Village`) issues.push(`${exp.type} : sujet « ${mail.subject} »`);
             if (!norm(mail.text).includes(norm(inApp.content))) issues.push(`${exp.type} : la version texte ne contient pas le contenu in-app`);
-            if (!mail.html.includes('Ouvrir Event Village')) issues.push(`${exp.type} : bouton « Ouvrir Event Village » absent`);
+            if (CONFIRMATION_EMAIL_TYPES.has(exp.type)) {
+                // Lot 7, tâche 7.9 (D93) : exception nommée, vérifiée en détail par confirmation-achat.test.ts.
+                if (!mail.html.includes('Voir mes billets')) issues.push(`${exp.type} : bouton « Voir mes billets » absent (D93)`);
+                if (mail.html.includes('Ouvrir Event Village')) issues.push(`${exp.type} : bouton « Ouvrir Event Village » au lieu de « Voir mes billets » (D93)`);
+                for (const phrase of CONFIRMATION_PHRASES) {
+                    if (!norm(mail.text).includes(phrase)) issues.push(`${exp.type} : phrase obligatoire absente de la version texte : « ${phrase} »`);
+                }
+            } else if (!mail.html.includes('Ouvrir Event Village')) issues.push(`${exp.type} : bouton « Ouvrir Event Village » absent`);
             if (!mail.html.includes(`href="${APP_URL}${link.replace(/&/g, '&amp;')}"`) && !mail.html.includes(`href="${APP_URL}${link}"`)) {
                 issues.push(`${exp.type} : bouton sans lien ${APP_URL}${link}`);
             }

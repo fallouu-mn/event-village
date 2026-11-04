@@ -460,7 +460,8 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
         assert.ok(mail.html.includes('&amp; Cie'), '« & » échappé');
         assert.ok(mail.text && norm(mail.text).includes(hostile), 'version texte avec la valeur telle quelle');
         assert.ok(mail.html.includes(`href="${APP_URL}/tickets"`), `bouton vers ${APP_URL}/tickets`);
-        assert.ok(mail.html.includes('Ouvrir Event Village'), 'libellé du bouton');
+        // Lot 7, tâche 7.9 (D93) : la confirmation d'achat mène à Mes billets par « Voir mes billets ».
+        assert.ok(mail.html.includes('Voir mes billets'), 'libellé du bouton (« Voir mes billets », D93)');
         assert.equal(header(mail.headers, 'List-Unsubscribe'), undefined, 'pas de List-Unsubscribe sur un message indispensable');
         assert.ok(!/Ne plus recevoir/.test(`${mail.text ?? ''} ${mail.html}`), 'pas de pied de désabonnement sur un message indispensable');
         assert.equal(mail.idempotencyKey, row.idempotency_key, 'clé d’idempotence transmise au fournisseur (en-tête Idempotency-Key chez Resend)');

@@ -11,7 +11,7 @@
  *     autre compte → rien ; ancien transfert PENDING vers un email → rien.
  *  3. Acceptation (POST /api/tickets/transfers/[id]/claim) : 200, billet au destinataire, identité du
  *     billet renouvelée (numéro, QR, secret TOTP, security_version + 1), TRANSFER_CLAIMED_SENDER et
- *     TRANSFER_RECEIVED (in-app et push, aucun SMS) ; refus 404 TRANSFER_NOT_FOUND identique pour un
+ *     TRANSFER_RECEIVED (in-app, push et, lot 7 tâche 7.9 D91, email ; aucun SMS) ; refus 404 TRANSFER_NOT_FOUND identique pour un
  *     identifiant inconnu, le transfert d'un autre et un ancien transfert vers un email ; 403
  *     PHONE_NOT_VERIFIED ; 409 TRANSFER_NOT_PENDING ; 410 TRANSFER_EXPIRED ; 400 SELF_TRANSFER.
  *  4. Ancienne route /api/tickets/claim/[token] : GET et POST → 410 CLAIM_LINK_RETIRED, réponse identique
@@ -289,7 +289,7 @@ describe('6.7 Transfert — liste entrante (B3 ticket_transfers_incoming, B4)', 
 // ── 3. Acceptation ─────────────────────────────────────────────────────────
 
 describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_accept, B4)', () => {
-    test('destinataire vérifié : 200, billet transféré, identité du billet renouvelée, TRANSFER_CLAIMED_SENDER et TRANSFER_RECEIVED (in-app, push, aucun SMS) ; second appel 409', async () => {
+    test('destinataire vérifié : 200, billet transféré, identité du billet renouvelée, TRANSFER_CLAIMED_SENDER et TRANSFER_RECEIVED (in-app, push, email du destinataire, aucun SMS) ; second appel 409', async () => {
         const to = await verifiedRecipient('accepte');
         const ticketId = takeTicket();
         const { id } = await initiateOk(owner, ticketId, to.phoneE164);
@@ -318,7 +318,8 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
         assert.deepEqual(channelsOf(sender), ['IN_APP', 'PUSH'], `expéditeur prévenu (in-app, push ; aucun SMS, décision 15) : ${JSON.stringify(sender.map((r) => r.channel))}`);
         assert.ok(sender.every((r) => r.recipient_user_id === owner.userId), 'à l’expéditeur');
         const received = await outboxRows({ type: 'TRANSFER_RECEIVED', keyPrefix: `TRANSFER_RECEIVED:${id}:` });
-        assert.deepEqual(channelsOf(received), ['IN_APP', 'PUSH'], `destinataire prévenu (in-app, push) : ${JSON.stringify(received.map((r) => r.channel))}`);
+        // Lot 7, tâche 7.9 (D91) : le destinataire reçoit aussi l'email de confirmation (nouveau numéro du billet).
+        assert.deepEqual(channelsOf(received), ['EMAIL', 'IN_APP', 'PUSH'], `destinataire prévenu (in-app, push, email ; D91) : ${JSON.stringify(received.map((r) => r.channel))}`);
         assert.ok(received.every((r) => r.recipient_user_id === to.userId), 'au destinataire');
         const mark = smsMark(owner.phoneE164);
         const markTo = smsMark(to.phoneE164);
