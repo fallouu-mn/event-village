@@ -20,10 +20,29 @@ const PUBLIC_PREFIXES = [
     '/icon-512x512.png',
     '/manifest.json',
     '/sw.js',
+    // Lot 7 (7.0 e, D24) : icônes de l'application installable (maskable, apple-touch), servies sans session
+    '/icons/',
+    // Lot 7 (7.1, D26) : coquille statique du billet hors ligne, sans donnée personnelle ni session (le
+    // service worker la met en cache : elle ne doit jamais être une redirection d'authentification)
+    '/billet/hors-ligne',
 ];
 
 const PUBLIC_API_EXACT = [
     '/api/controller/setup',
+    // Lot 7 (7.3, contrat 3.4, D11) : interrupteurs publics, puis liste publique des salles ; chaque route
+    // contrôle elle-même son interrupteur (404 s'il est fermé)
+    '/api/features',
+    '/api/halls',
+];
+
+/**
+ * Lot 7 (7.3, D11) : lectures publiques des salles, tables et menus (GET seulement côté route, chaque route
+ * contrôle son interrupteur). Motifs ancrés : /api/halls/reserve et /api/restaurants/reserve-table restent
+ * protégés.
+ */
+const PUBLIC_API_PATTERNS: readonly RegExp[] = [
+    /^\/api\/halls\/[0-9a-f-]{36}$/,
+    /^\/api\/restaurants\/[^/]+\/(tables|menu)$/,
 ];
 
 const PUBLIC_EXACT_ROUTES = [
@@ -60,6 +79,9 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
     if (PUBLIC_API_EXACT.includes(pathname)) {
+        return NextResponse.next();
+    }
+    if (PUBLIC_API_PATTERNS.some((pattern) => pattern.test(pathname))) {
         return NextResponse.next();
     }
 
