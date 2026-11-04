@@ -10,7 +10,9 @@
  *  - in-app, push, email : variables NON tronquées, dates et montants de lib/format.ts (heure de Dakar,
  *    insécable U+00A0) ; push = titre in-app et contenu in-app tronqué à 160 caractères ; email = sujet
  *    « {titre} — Event Village », contenu in-app échappé, bouton « Ouvrir Event Village », pied de
- *    désabonnement pour les seules familles optionnelles ;
+ *    désabonnement pour les seules familles optionnelles ; lot 7 (7.9, D93) : PURCHASE_CONFIRMED,
+ *    FREE_TICKETS_CONFIRMED et TRANSFER_RECEIVED ajoutent leurs blocs (faits, numéros figés à l'émission,
+ *    phrases obligatoires) et le bouton « Voir mes billets » ;
  *  - SMS : préfixe « Event Village : », texte fixe en GSM-7 de base, variables saisies par smsVar
  *    (translittérées, tronquées), dates et montants de sms-format.ts : un SMS GSM-7 (≤ 160) avec les
  *    valeurs maximales réalistes et une URL de 27 caractères (contrat G3) ; lien = NEXT_PUBLIC_APP_URL +
@@ -26,7 +28,7 @@ import { internalActionUrl } from './action-url';
 import type {
     AdminPermission, Audience, Channel, Family, NotificationType, SuspendedPolicy, SyncType, TemplateData, Topic,
 } from './catalog-types';
-import { emailHeaders, emailLayout } from './email-layout';
+import { emailHeaders, emailLayout, type EmailFact, type EmailList } from './email-layout';
 import { smsAmount, smsDateTime, smsSegments, smsShortDateTime, smsTime, smsVar, type SmsMeasure } from './sms-format';
 
 export type { Channel, NotificationType, SyncType, TemplateData } from './catalog-types';
@@ -231,7 +233,21 @@ interface Spec<D> {
     sms?: (d: D, ctx: RenderContext) => string;
     /** Push propre au type (PUSH_TEST) ; sinon titre et contenu in-app. */
     push?: (d: D) => { title: string; body: string };
+    /**
+     * Lot 7 (7.9, D93) : blocs propres de l'email (faits, liste, encadré, bouton, note), ajoutés après le contenu
+     * in-app ; sans eux, l'email générique (contenu in-app, bouton « Ouvrir Event Village »).
+     */
+    emailBlocks?: (d: D) => EmailBlocks;
     sample: D;
+}
+
+/** Lot 7 (7.9) : blocs propres d'un email ; le bouton mène toujours au lien du type. */
+interface EmailBlocks {
+    facts?: readonly EmailFact[];
+    list?: EmailList;
+    notice?: readonly string[];
+    ctaLabel: string;
+    footnote?: string;
 }
 
 const PUSH_BODY_MAX = 160;
@@ -278,11 +294,16 @@ function define<T extends NotificationType>(type: T, spec: Spec<TemplateData[T]>
     if (has('EMAIL')) {
         tpl.email = (d, ctx) => {
             const r = spec.inApp!(d);
+            const blocks = spec.emailBlocks ? spec.emailBlocks(d) : null;
             const { html, text: plain } = emailLayout({
                 appUrl: ctx.appUrl,
                 heading: r.title,
                 paragraphs: [r.content],
-                cta: { label: 'Ouvrir Event Village', path: spec.link!(d) },
+                facts: blocks?.facts,
+                list: blocks?.list,
+                notice: blocks?.notice,
+                cta: { label: blocks?.ctaLabel ?? 'Ouvrir Event Village', path: spec.link!(d) },
+                footnote: blocks?.footnote,
                 unsubscribeTopic: family === 'OPTIONAL' ? topic : null,
             });
             return { subject: `${r.title} — Event Village`, html, text: plain };
@@ -416,6 +437,75 @@ function mainAssignment(d: object): MainAssignment {
     throw new TemplateDataError('title');
 }
 
+// ── Confirmations d'achat, de billets gratuits et de billet reçu (lot 7, tâche 7.9) ──
+
+/**
+ * Phrases de la consigne 7.9, mot pour mot (apostrophe droite, D99) : P1 et P2 dans l'encadré, P3 sous le
+ * bouton. Seule P1 parle du QR code : aucun QR, code, secret ni lien de réclamation dans ces emails.
+ */
+const TICKET_IN_APP_NOTICE = [
+    'Votre billet s\'affiche dans l\'application, rubrique Mes billets. Son QR code change toutes les 20 secondes : une capture d\'écran ne sera pas acceptée à l\'entrée.',
+    'Ouvrez votre billet avec du réseau avant d\'arriver : il restera disponible même sans connexion.',
+] as const;
+const MANUAL_ENTRY_FOOTNOTE = 'En cas de problème à l\'entrée, présentez le numéro de votre billet et une pièce d\'identité : le contrôleur peut l\'enregistrer à la main.';
+const TICKETS_BUTTON = 'Voir mes billets';
+/** Numéros listés au plus (D89) ; la migration 20261105000007 n'en stocke pas davantage. */
+const TICKET_NUMBERS_SHOWN = 10;
+
+/** Catégories et quantités figées à l'émission ; null pour une ligne d'avant la migration 07 (D90). */
+function categoryLines(d: object): Array<{ name: string; quantity: number }> | null {
+    const v = field(d, 'categories');
+    if (v === undefined || v === null) return null;
+    if (!Array.isArray(v)) throw new TemplateDataError('categories', 'n’est pas une liste');
+    const lines = v.map((c, i) => {
+        if (!c || typeof c !== 'object' || Array.isArray(c)) throw new TemplateDataError(`categories[${i}]`, 'n’est pas une catégorie');
+        return { name: text(c, 'name'), quantity: count(c, 'quantity') };
+    });
+    return lines.length > 0 ? lines : null;
+}
+
+/** Numéros figés à l'émission (10 au plus) ; liste vide pour une ligne d'avant la migration 07 (D90). */
+function ticketNumbers(d: object): string[] {
+    const v = field(d, 'ticket_numbers');
+    if (v === undefined || v === null) return [];
+    if (!Array.isArray(v) || v.some((x) => typeof x !== 'string' || x.trim() === '')) throw new TemplateDataError('ticket_numbers', 'n’est pas une liste de numéros');
+    return (v as string[]).map((x) => x.trim());
+}
+
+/** Événement, date et heure de Dakar, lieu et ville (chacun seulement s'il est connu). */
+function eventFacts(d: object): EmailFact[] {
+    const facts: EmailFact[] = [
+        { label: 'Événement', value: text(d, 'title') },
+        { label: 'Date', value: formatDateTime(iso(d, 'start_at')) },
+    ];
+    const place = [optText(d, 'location'), optText(d, 'city')].filter((v): v is string => v !== null).join(', ');
+    if (place) facts.push({ label: 'Lieu', value: place });
+    return facts;
+}
+
+/** « 2 × VIP » par catégorie ; sans le détail (ligne d'avant la migration 07), le nombre de billets. */
+function ticketsFact(d: object, label: string, one: string, many: string): EmailFact {
+    const lines = categoryLines(d);
+    return { label, value: lines ? lines.map((c) => `${c.quantity} × ${c.name}`) : plural(count(d, 'ticket_count'), one, many) };
+}
+
+/** Les 10 premiers numéros, puis « et N autres » (singulier « et 1 autre ») ; rien sans numéro. */
+function ticketNumbersList(d: object): EmailList | undefined {
+    const numbers = ticketNumbers(d);
+    if (numbers.length === 0) return undefined;
+    const shown = numbers.slice(0, TICKET_NUMBERS_SHOWN);
+    const rest = Math.max(count(d, 'ticket_count'), numbers.length) - shown.length;
+    return {
+        title: shown.length > 1 || rest > 0 ? 'Numéros de billets' : 'Numéro du billet',
+        items: shown,
+        more: rest > 0 ? `et ${rest} ${rest > 1 ? 'autres' : 'autre'}` : undefined,
+    };
+}
+
+function confirmationBlocks(facts: EmailFact[], list?: EmailList): EmailBlocks {
+    return { facts, list, notice: TICKET_IN_APP_NOTICE, ctaLabel: TICKETS_BUTTON, footnote: MANUAL_ENTRY_FOOTNOTE };
+}
+
 // ── Le catalogue ───────────────────────────────────────────────────────────
 
 const CATALOG = {
@@ -426,18 +516,40 @@ const CATALOG = {
             title: 'Achat confirmé',
             content: `${plural(count(d, 'ticket_count'), 'billet', 'billets')} pour ${q(text(d, 'title'))} le ${formatDateTime(iso(d, 'start_at'))}. Total payé : ${money(d, 'total')}. Vos billets sont dans Mes billets.`,
         }),
-        sms: (d, ctx) => `${SMS_PREFIX}achat confirmé, ${plural(count(d, 'ticket_count'), 'billet', 'billets')} ${smsVar(text(d, 'title'), 20)}. Frais de service ${smsAmount(num(d, 'service_fee'))}, total payé ${smsAmount(num(d, 'total'))}. ${appLink(ctx, '/tickets')}`,
-        sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, ticket_count: 2, service_fee: 100, total: 10_100 },
+        // Lot 7 (7.9, D95) : titre ramené de 20 à 19 septets, pour un segment au pire cas (999 billets, frais
+        // 999 999 F, total 9 999 999 F, URL de 27 caractères : 160 septets) ; aucun numéro ni mention ajoutée.
+        sms: (d, ctx) => `${SMS_PREFIX}achat confirmé, ${plural(count(d, 'ticket_count'), 'billet', 'billets')} ${smsVar(text(d, 'title'), 19)}. Frais de service ${smsAmount(num(d, 'service_fee'))}, total payé ${smsAmount(num(d, 'total'))}. ${appLink(ctx, '/tickets')}`,
+        // Lot 7 (7.9, contrat 19.4) : événement, date, lieu, billets par catégorie, montant payé, numéros, P1 à P3.
+        emailBlocks: (d) => confirmationBlocks([
+            ...eventFacts(d),
+            ticketsFact(d, 'Billets', 'billet', 'billets'),
+            { label: 'Montant payé', value: `${money(d, 'total')}, dont frais de service ${money(d, 'service_fee')}` },
+        ], ticketNumbersList(d)),
+        sample: {
+            ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, ticket_count: 2, service_fee: 100, total: 10_100,
+            categories: [{ name: 'Standard', quantity: 1 }, { name: 'VIP', quantity: 1 }],
+            ticket_numbers: ['TCK-20261104-3F9A1C7E2B', 'TCK-20261104-8D2E6B4A1F'],
+        },
     }),
     FREE_TICKETS_CONFIRMED: define('FREE_TICKETS_CONFIRMED', {
         label: 'Billets gratuits confirmés', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
         link: () => '/tickets',
         inApp: (d) => ({
             title: 'Billets confirmés',
-            content: `${plural(count(d, 'ticket_count'), 'billet gratuit', 'billets gratuits')} pour ${q(text(d, 'title'))} le ${formatDateTime(iso(d, 'start_at'))}.`,
+            // Lot 7 (7.9, D94) : lien vers Mes billets ajouté au texte.
+            content: `${plural(count(d, 'ticket_count'), 'billet gratuit', 'billets gratuits')} pour ${q(text(d, 'title'))} le ${formatDateTime(iso(d, 'start_at'))}. Vos billets sont dans Mes billets.`,
         }),
         sms: (d, ctx) => `${SMS_PREFIX}${plural(count(d, 'ticket_count'), 'billet gratuit', 'billets gratuits')} pour ${smsVar(text(d, 'title'), 30)} le ${smsDateTime(iso(d, 'start_at'))}. Vos billets : ${appLink(ctx, '/tickets')}`,
-        sample: { ...SAMPLE_EVENT, ticket_count: 2, ticket_id: SAMPLE_ID.ticket },
+        // Lot 7 (7.9, contrat 19.4) : mêmes blocs que l'achat, sans montant.
+        emailBlocks: (d) => confirmationBlocks([
+            ...eventFacts(d),
+            ticketsFact(d, 'Billets gratuits', 'billet gratuit', 'billets gratuits'),
+        ], ticketNumbersList(d)),
+        sample: {
+            ...SAMPLE_EVENT, ticket_count: 2, ticket_id: SAMPLE_ID.ticket,
+            categories: [{ name: 'Entree libre', quantity: 1 }, { name: 'Invitation', quantity: 1 }],
+            ticket_numbers: ['TCK-20261104-5B7D9F1A3C', 'TCK-20261104-6C8E0A2B4D'],
+        },
     }),
     COUNTER_RECEIPT: define('COUNTER_RECEIPT', {
         label: 'Reçu de vente au guichet', channels: ['SMS'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null, link: null,
@@ -473,11 +585,30 @@ const CATALOG = {
         inApp: (d) => ({ title: 'Billet accepté', content: `Votre billet pour ${q(text(d, 'title'))} a été accepté par son destinataire.` }),
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
+    // Lot 7 (7.9, D88, D91, D94) : canal EMAIL ajouté (registre : migration 20261105000007) ; NOUVEAU numéro du
+    // billet (le transfert le renouvelle) et date dans l'in-app ; sans numéro (ligne d'avant la migration), texte du
+    // lot 6. Aucun montant ni prix.
     TRANSFER_RECEIVED: define('TRANSFER_RECEIVED', {
-        label: 'Billet reçu', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        label: 'Billet reçu', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
         link: () => '/tickets',
-        inApp: (d) => ({ title: 'Billet reçu', content: `Le billet pour ${q(text(d, 'title'))} est ajouté à vos billets.` }),
-        sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
+        inApp: (d) => {
+            const number = optText(d, 'ticket_number');
+            return {
+                title: 'Billet reçu',
+                content: number
+                    ? `Le billet ${number} pour ${q(text(d, 'title'))} du ${formatDateTime(iso(d, 'start_at'))} est ajouté à Mes billets.`
+                    : `Le billet pour ${q(text(d, 'title'))} est ajouté à vos billets.`,
+            };
+        },
+        emailBlocks: (d) => {
+            const facts = eventFacts(d);
+            const category = optText(d, 'category');
+            const number = optText(d, 'ticket_number');
+            if (category) facts.push({ label: 'Catégorie', value: category });
+            if (number) facts.push({ label: 'Numéro du billet', value: number });
+            return confirmationBlocks(facts);
+        },
+        sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket, ticket_number: 'TCK-20261104-9E4B1C7A2F', category: 'VIP' },
     }),
     TICKET_SCANNED: define('TICKET_SCANNED', {
         label: 'Entrée validée', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_SCANNED',

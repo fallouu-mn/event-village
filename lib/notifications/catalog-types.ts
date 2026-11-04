@@ -13,6 +13,8 @@
  * start_date / end_date (réservation de salle), recipient_role (CLIENT | PARTNER), status (promotion),
  * failed_type / channel / attempts (envoi en échec), day / count / threshold (volume de SMS), cap / limit
  * (plafond), entry_type / debt (créance).
+ * Lot 7 (7.9) : categories / ticket_numbers (confirmations d'achat et de billets gratuits), ticket_number /
+ * category (billet reçu par transfert).
  *
  * Jamais de code, de jeton, de QR ni de secret dans ces données (contrainte notification_outbox_no_secret_chk).
  */
@@ -50,15 +52,29 @@ export interface MoneyData { cashout_id: string; amount: number; operator: Opera
 
 export interface ControllerEventRef { event_id: string; title: string; start_at: string }
 
+/** Lot 7 (7.9, D87, D89) : une ligne « quantité × catégorie » d'une confirmation. */
+export interface TicketCategoryLine { name: string; quantity: number }
+
+/**
+ * Lot 7 (7.9, D87 à D90) : détail d'une confirmation, figé à l'émission par notif_ticket_lines (migration
+ * 20261105000007) : catégories et quantités dans l'ordre du nom, 10 premiers numéros dans l'ordre (catégorie,
+ * numéro). Facultatifs : une ligne mise en file avant cette migration ne les a pas, l'email se rend sans eux.
+ */
+export interface TicketLinesData { categories?: TicketCategoryLine[]; ticket_numbers?: string[] }
+
 export interface TemplateData {
-    PURCHASE_CONFIRMED: EventData & { payment_id: string; ticket_count: number; service_fee: number; total: number };
-    FREE_TICKETS_CONFIRMED: EventData & { ticket_count: number; ticket_id?: string };
+    PURCHASE_CONFIRMED: EventData & { payment_id: string; ticket_count: number; service_fee: number; total: number } & TicketLinesData;
+    FREE_TICKETS_CONFIRMED: EventData & { ticket_count: number; ticket_id?: string } & TicketLinesData;
     COUNTER_RECEIPT: EventData & { payment_id: string; ticket_count: number; amount: number; reference: string };
     TRANSFER_OFFERED: EventData & { transfer_id: string; ticket_id: string; expires_at: string; recipient_kind?: string };
     TRANSFER_CANCELLED: EventData & { transfer_id: string; ticket_id: string };
     TRANSFER_EXPIRED: EventData & { transfer_id: string; ticket_id: string };
     TRANSFER_CLAIMED_SENDER: EventData & { transfer_id: string; ticket_id: string };
-    TRANSFER_RECEIVED: EventData & { transfer_id: string; ticket_id: string };
+    /**
+     * Lot 7 (7.9, D88, D91) : `ticket_number` = NOUVEAU numéro du billet (le transfert le renouvelle), `category` =
+     * nom de sa catégorie. Facultatifs : une ligne mise en file avant la migration 20261105000007 ne les a pas.
+     */
+    TRANSFER_RECEIVED: EventData & { transfer_id: string; ticket_id: string; ticket_number?: string; category?: string };
     TICKET_SCANNED: EventData & { ticket_id: string };
     EVENT_CANCELLED: EventData & { public_notice?: string | null; refund_mode: 'AUTO' | 'ORGANIZER' | 'NONE' };
     EVENT_SUSPENDED_HOLDER: EventData;
