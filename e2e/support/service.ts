@@ -57,7 +57,8 @@ export interface PublishedEventInput {
     capacity: number;
     /** Affiche déjà déposée par le partenaire (chemin vérifié par event_poster_path_ok). */
     imageUrl: string;
-    category: { name: string; price: number; total: number };
+    /** maxPerOrder : limite par compte (défaut 10 ; contrainte 1 à 50). */
+    category: { name: string; price: number; total: number; maxPerOrder?: number };
 }
 
 /** Événement créé par event_create au nom du partenaire, soumis, validé par le SUPERADMIN puis publié. */
@@ -77,7 +78,7 @@ export async function createPublishedEvent(input: PublishedEventInput): Promise<
             capacity: input.capacity,
             image_url: input.imageUrl,
         },
-        ticket_categories: [{ name: input.category.name, price: input.category.price, total_quantity: input.category.total, max_per_order: 10 }],
+        ticket_categories: [{ name: input.category.name, price: input.category.price, total_quantity: input.category.total, max_per_order: input.category.maxPerOrder ?? 10 }],
     });
     const eventId = String(created.event_id ?? '');
     if (!/^[0-9a-f-]{36}$/.test(eventId)) throw new Error(`[e2e] event_create : identifiant absent (${JSON.stringify(created)})`);

@@ -27,7 +27,7 @@ import { PageGuard } from './support/network';
 import {
     codeOf, computedPayload, describeProbe, fmtMs, forgedPayload, installScanProbe, livePayload, median, openScanner, percentile,
     prepareTerrainEvent, presentPayload, presentPayloadNoResult, probeTracks, probeVibrations, restoreTerrainSetting, scanMarks,
-    ticketScans, writePerfFile, type ProbeRecord, type TerrainEvent,
+    ticketScans, appendPerfFile, writePerfFile, type ProbeRecord, type TerrainEvent,
 } from './support/terrain';
 
 const OFFLINE_PATH = '/billet/hors-ligne';
@@ -251,7 +251,93 @@ test('3. réponse du scan perdue : relance automatique avec la même clé, une s
 
 // ── 4. Mesure du scan : réseau normal, 3G, puis hors ligne ─────────────────
 
-interface ScanRow { reseau: 'normal' | '3G'; attendu: 'valid' | 'already_used'; ticket: string; record: ProbeRecord }
+type Reseau = 'normal' | '3G';
+interface ScanRow { reseau: Reseau; attendu: 'valid' | 'already_used'; ticket: string; record: ProbeRecord }
+interface MeasuredRow extends ScanRow {
+    sondeAttente: number | null;
+    sondeResultat: number | null;
+    /** Depuis la lecture envoyée par l'écran (dernière lecture avant le POST) : diffère si l'écran a ignoré une lecture. */
+    sondeResultatEnvoyee: number | null;
+    marqueAttente: number | null;
+    marqueResultat: number | null;
+}
+
+/** Billets neufs par réseau (série 1), puis relectures « déjà utilisé » par réseau (série 2, D41 : autre pas). */
+const SCAN_NEW_PER_NETWORK = 10;
+const SCAN_USED_PER_NETWORK = 5;
+const SCAN_SOURCES = [
+    ['marques', 'attente', (m: MeasuredRow) => m.marqueAttente],
+    ['marques', 'resultat', (m: MeasuredRow) => m.marqueResultat],
+    ['sonde', 'attente', (m: MeasuredRow) => m.sondeAttente],
+    ['sonde', 'resultat', (m: MeasuredRow) => m.sondeResultat],
+    ['sonde-lecture-envoyee', 'resultat', (m: MeasuredRow) => m.sondeResultatEnvoyee],
+] as const;
+const SCAN_DETAIL_HEADER = 'reseau\tattendu\tobtenu_sonde\tbillet\tlectures\tpost\tsonde_attente_ms\tsonde_resultat_ms\tsonde_resultat_lecture_envoyee_ms\tmarque_attente_ms\tmarque_resultat_ms';
+
+interface ScanStat { n: number; med: number | null; p95: number | null; min: number | null; max: number | null }
+
+function scanStats(measured: MeasuredRow[]): Record<string, ScanStat> {
+    const out: Record<string, ScanStat> = {};
+    for (const reseau of ['normal', '3G'] as const) {
+        for (const [source, mesure, pick] of SCAN_SOURCES) {
+            const values = measured.filter((m) => m.reseau === reseau).map(pick).filter((v): v is number => v !== null);
+            out[`${reseau}:${source}:${mesure}`] = {
+                n: values.length, med: median(values), p95: percentile(values, 95),
+                min: values.length ? Math.min(...values) : null, max: values.length ? Math.max(...values) : null,
+            };
+        }
+    }
+    return out;
+}
+
+/** scan.tsv réécrit après chaque lecture : un échec plus loin garde les mesures déjà prises. */
+function writeScanSummary(measured: MeasuredRow[]): string {
+    const st = scanStats(measured);
+    const lines = ['reseau\tsource\tmesure\tn\tmediane_ms\tp95_ms\tmin_ms\tmax_ms'];
+    for (const reseau of ['normal', '3G'] as const) {
+        for (const [source, mesure] of SCAN_SOURCES) {
+            const v = st[`${reseau}:${source}:${mesure}`];
+            lines.push([reseau, source, mesure, v.n, fmtMs(v.med), fmtMs(v.p95), fmtMs(v.min), fmtMs(v.max)].join('\t'));
+        }
+    }
+    return writePerfFile('scan.tsv', lines.join('\n'));
+}
+
+/**
+ * Mesure d'une lecture, prise juste après son résultat : marques de l'application posées depuis la présentation
+ * (aucune lecture suivante n'est encore présentée) et sonde ; ligne ajoutée à scan-lectures.tsv, scan.tsv réécrit.
+ */
+async function measureRow(page: Page, row: ScanRow, measured: MeasuredRow[]): Promise<MeasuredRow> {
+    const lo = row.record.armedAt;
+    const since = async () => (await scanMarks(page)).filter((m) => m.startTime >= lo).sort((a, b) => a.startTime - b.startTime);
+    let marks = await since();
+    // Marque de résultat posée après l'affichage relevé par la sonde : relue pendant 1 s au plus (aucune attente sans marque de lecture)
+    for (let i = 0; i < 5; i++) {
+        const r = marks.find((m) => m.name === 'ev-scan:read');
+        if (!r || marks.some((m) => m.name === 'ev-scan:result' && m.startTime >= r.startTime)) break;
+        await page.waitForTimeout(200);
+        marks = await since();
+    }
+    const read = marks.find((m) => m.name === 'ev-scan:read') ?? null;
+    const pending = read ? marks.find((m) => m.name === 'ev-scan:pending' && m.startTime >= read.startTime) ?? null : null;
+    const result = read ? marks.find((m) => m.name === 'ev-scan:result' && m.startTime >= read.startTime) ?? null : null;
+    const p = row.record;
+    const m: MeasuredRow = {
+        ...row,
+        sondeAttente: p.readAt !== null && p.pendingAt !== null ? p.pendingAt - p.readAt : null,
+        sondeResultat: p.readAt !== null && p.resultAt !== null ? p.resultAt - p.readAt : null,
+        sondeResultatEnvoyee: p.lastReadAt !== null && p.resultAt !== null ? p.resultAt - p.lastReadAt : null,
+        marqueAttente: read && pending ? pending.startTime - read.startTime : null,
+        marqueResultat: read && result ? result.startTime - read.startTime : null,
+    };
+    measured.push(m);
+    appendPerfFile('scan-lectures.tsv', SCAN_DETAIL_HEADER, [[m.reseau, m.attendu, m.record.result ?? '', m.ticket, m.record.reads, m.record.postAt !== null ? 'oui' : 'non',
+        fmtMs(m.sondeAttente), fmtMs(m.sondeResultat), fmtMs(m.sondeResultatEnvoyee), fmtMs(m.marqueAttente), fmtMs(m.marqueResultat)].join('\t')]);
+    writeScanSummary(measured);
+    console.log(`[SCAN-MESURE] ${m.reseau} ${m.attendu} ${m.ticket} : obtenu « ${m.record.result ?? '—'} », lectures ${m.record.reads}, `
+        + `sonde résultat − lecture ${fmtMs(m.sondeResultat)} ms, marques attente ${fmtMs(m.marqueAttente)} ms / résultat ${fmtMs(m.marqueResultat)} ms`);
+    return m;
+}
 
 /**
  * QR du pas courant d'un billet DÉJÀ COMPOSTÉ, d'un autre pas que `used` (anti-doublon D41). La route live-code
@@ -265,113 +351,76 @@ function freshPayload(ticketId: string, used: string): string {
     return out.payload;
 }
 
-test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lecture hors ligne', async ({ browser }, testInfo) => {
-    test.setTimeout(12 * 60_000);
+test('4. mesure du scan : billets neufs en réseau normal puis en 3G, relectures « déjà utilisé », puis une lecture hors ligne', async ({ browser }, testInfo) => {
+    test.setTimeout(15 * 60_000);
     const s = new Session(browser, testInfo);
     let ev: TerrainEvent | null = null;
     try {
-        ev = prepareTerrainEvent('mesure du scan', 'client-bis', 10);
+        ev = prepareTerrainEvent('mesure du scan', 'client-bis', 2 * SCAN_NEW_PER_NETWORK);
         const holder = await s.holder('fumee-client-bis');
         const ctl = await s.open('fumee-controleur', { probe: true });
         await openScanner(ctl.page, ev.title);
+        writePerfFile('scan-lectures.tsv', SCAN_DETAIL_HEADER); // en-tête seul : les lignes sont ajoutées au fil des lectures
+        const fileSummary = writeScanSummary([]);
+        console.log(`[SCAN-MESURE] réseau 3G (D83) : latence ${NET_3G.latency} ms, ${NET_3G.downloadThroughput * 8 / 1000} kbit/s descendant, `
+            + `${NET_3G.uploadThroughput * 8 / 1000} kbit/s montant ; tableaux tenus à jour lecture par lecture dans ${fileSummary} et scan-lectures.tsv`);
 
-        const rows: ScanRow[] = [];
-        const series: Array<{ reseau: 'normal' | '3G'; tickets: typeof ev.tickets }> = [
-            { reseau: 'normal', tickets: ev.tickets.slice(0, 5) },
-            { reseau: '3G', tickets: ev.tickets.slice(5, 10) },
-        ];
-        let cdp: Awaited<ReturnType<BrowserContext['newCDPSession']>> | null = null;
-        for (const serie of series) {
-            if (serie.reseau === '3G') {
-                // Bridage par CDP après le chargement (D83) ; jamais combiné à setOffline
-                cdp = await ctl.context.newCDPSession(ctl.page);
-                await cdp.send('Network.enable');
-                await cdp.send('Network.emulateNetworkConditions', cdpNetworkConditions(NET_3G));
-            }
-            const used = new Map<string, string>();
-            for (const t of serie.tickets) {
+        // Bridage par CDP après le chargement (D83) ; jamais combiné à setOffline
+        const cdp = await ctl.context.newCDPSession(ctl.page);
+        await cdp.send('Network.enable');
+        const setNetwork = async (reseau: Reseau): Promise<void> => {
+            await cdp.send('Network.emulateNetworkConditions', reseau === '3G' ? cdpNetworkConditions(NET_3G) : CDP_NO_THROTTLING);
+        };
+        const measured: MeasuredRow[] = [];
+        const series: Record<Reseau, typeof ev.tickets> = {
+            normal: ev.tickets.slice(0, SCAN_NEW_PER_NETWORK),
+            '3G': ev.tickets.slice(SCAN_NEW_PER_NETWORK, 2 * SCAN_NEW_PER_NETWORK),
+        };
+        const used = new Map<string, string>();
+
+        // Série 1 : billets neufs, réseau normal puis 3G (mesures écrites avant toute relecture)
+        for (const reseau of ['normal', '3G'] as const) {
+            await setNetwork(reseau);
+            for (const t of series[reseau]) {
                 const payload = await livePayload(holder, t.id);
                 used.set(t.id, payload);
-                const { record } = await presentPayload(ctl.page, payload, `${serie.reseau} : billet neuf ${t.number}`);
-                rows.push({ reseau: serie.reseau, attendu: 'valid', ticket: t.number, record });
+                const { record } = await presentPayload(ctl.page, payload, `${reseau} : billet neuf ${t.number}`);
+                await measureRow(ctl.page, { reseau, attendu: 'valid', ticket: t.number, record }, measured);
             }
-            for (const t of serie.tickets) {
+        }
+        // Série 2 : relectures « déjà utilisé », exigées (un POST et l'affichage already_used), réseau normal puis 3G
+        for (const reseau of ['normal', '3G'] as const) {
+            await setNetwork(reseau);
+            for (const t of series[reseau].slice(0, SCAN_USED_PER_NETWORK)) {
                 const payload = freshPayload(t.id, used.get(t.id) as string);
-                const { record } = await presentPayload(ctl.page, payload, `${serie.reseau} : billet déjà utilisé ${t.number}`);
-                rows.push({ reseau: serie.reseau, attendu: 'already_used', ticket: t.number, record });
+                const { index, record } = await presentPayload(ctl.page, payload, `${reseau} : billet déjà utilisé ${t.number}`);
+                const m = await measureRow(ctl.page, { reseau, attendu: 'already_used', ticket: t.number, record }, measured);
+                expect.soft(m.record.postAt, `${reseau} : relecture du billet déjà utilisé ${t.number} envoyée au serveur (POST) — ${await describeProbe(ctl.page, index)}`).not.toBeNull();
             }
         }
-        if (cdp) {
-            await cdp.send('Network.emulateNetworkConditions', CDP_NO_THROTTLING);
-            await cdp.detach();
-        }
+        await setNetwork('normal');
+        await cdp.detach();
 
-        // Marques de l'application, rattachées à chaque lecture (entre sa présentation et la suivante)
-        const marks = (await scanMarks(ctl.page)).sort((a, b) => a.startTime - b.startTime);
-        const armed = rows.map((r) => r.record.armedAt);
-        const measured = rows.map((r, i) => {
-            const lo = armed[i];
-            const hi = i + 1 < armed.length ? armed[i + 1] : Number.POSITIVE_INFINITY;
-            const read = marks.find((m) => m.name === 'ev-scan:read' && m.startTime >= lo && m.startTime < hi) ?? null;
-            const pending = read ? marks.find((m) => m.name === 'ev-scan:pending' && m.startTime >= read.startTime && m.startTime < hi) ?? null : null;
-            const result = read ? marks.find((m) => m.name === 'ev-scan:result' && m.startTime >= read.startTime && m.startTime < hi) ?? null : null;
-            const p = r.record;
-            return {
-                ...r,
-                sondeAttente: p.readAt !== null && p.pendingAt !== null ? p.pendingAt - p.readAt : null,
-                sondeResultat: p.readAt !== null && p.resultAt !== null ? p.resultAt - p.readAt : null,
-                // Depuis la lecture envoyée par l'écran (dernière lecture avant le POST) : diffère de la précédente
-                // seulement si l'écran a ignoré une lecture (lectures > 1)
-                sondeResultatEnvoyee: p.lastReadAt !== null && p.resultAt !== null ? p.resultAt - p.lastReadAt : null,
-                marqueAttente: read && pending ? pending.startTime - read.startTime : null,
-                marqueResultat: read && result ? result.startTime - read.startTime : null,
-            };
-        });
+        const results = scanStats(measured);
         const ignored = measured.filter((m) => m.record.reads > 1);
         console.log(`[SCAN-MESURE] lectures ignorées par l'écran (QR relu au moins une fois avant l'envoi) : ${ignored.length} sur ${measured.length}`
             + `${ignored.length ? ` (${ignored.map((m) => `${m.reseau} ${m.ticket} : ${m.record.reads} lectures`).join(', ')})` : ''}`);
-
-        const summary: string[] = ['reseau\tsource\tmesure\tn\tmediane_ms\tp95_ms\tmin_ms\tmax_ms'];
-        const stat = (reseau: 'normal' | '3G', pick: (m: typeof measured[number]) => number | null) => {
-            const values = measured.filter((m) => m.reseau === reseau).map(pick).filter((v): v is number => v !== null);
-            return { n: values.length, med: median(values), p95: percentile(values, 95), min: values.length ? Math.min(...values) : null, max: values.length ? Math.max(...values) : null };
-        };
-        const results: Record<string, ReturnType<typeof stat>> = {};
-        for (const reseau of ['normal', '3G'] as const) {
-            for (const [source, mesure, pick] of [
-                ['marques', 'attente', (m: typeof measured[number]) => m.marqueAttente],
-                ['marques', 'resultat', (m: typeof measured[number]) => m.marqueResultat],
-                ['sonde', 'attente', (m: typeof measured[number]) => m.sondeAttente],
-                ['sonde', 'resultat', (m: typeof measured[number]) => m.sondeResultat],
-                ['sonde-lecture-envoyee', 'resultat', (m: typeof measured[number]) => m.sondeResultatEnvoyee],
-            ] as const) {
-                const st = stat(reseau, pick);
-                results[`${reseau}:${source}:${mesure}`] = st;
-                summary.push([reseau, source, mesure, st.n, fmtMs(st.med), fmtMs(st.p95), fmtMs(st.min), fmtMs(st.max)].join('\t'));
-                console.log(`[SCAN-MESURE] ${reseau} ${source} ${mesure === 'attente' ? 'attente − lecture' : 'résultat − lecture'} : n=${st.n} médiane=${fmtMs(st.med)} ms p95=${fmtMs(st.p95)} ms (min ${fmtMs(st.min)}, max ${fmtMs(st.max)})`);
-            }
+        for (const [key, st] of Object.entries(results)) {
+            console.log(`[SCAN-MESURE] ${key} : n=${st.n} médiane=${fmtMs(st.med)} ms p95=${fmtMs(st.p95)} ms (min ${fmtMs(st.min)}, max ${fmtMs(st.max)})`);
         }
-        const detail = ['reseau\tattendu\tobtenu_sonde\tbillet\tlectures\tsonde_attente_ms\tsonde_resultat_ms\tsonde_resultat_lecture_envoyee_ms\tmarque_attente_ms\tmarque_resultat_ms',
-            ...measured.map((m) => [m.reseau, m.attendu, m.record.result ?? '', m.ticket, m.record.reads, fmtMs(m.sondeAttente), fmtMs(m.sondeResultat),
-                fmtMs(m.sondeResultatEnvoyee), fmtMs(m.marqueAttente), fmtMs(m.marqueResultat)].join('\t'))];
-        const fileSummary = writePerfFile('scan.tsv', summary.join('\n'));
-        writePerfFile('scan-lectures.tsv', detail.join('\n'));
         await testInfo.attach('scan.tsv', { path: fileSummary, contentType: 'text/tab-separated-values' });
-        console.log(`[SCAN-MESURE] réseau 3G (D83) : latence ${NET_3G.latency} ms, ${NET_3G.downloadThroughput * 8 / 1000} kbit/s descendant, ${NET_3G.uploadThroughput * 8 / 1000} kbit/s montant ; tableaux écrits dans ${fileSummary} et scan-lectures.tsv`);
         const probe3g = results['3G:sonde:resultat'];
         if (probe3g.med !== null && probe3g.med < NET_3G.latency) {
             console.log(`[SCAN-MESURE] AVERTISSEMENT : médiane 3G résultat − lecture (sonde) ${fmtMs(probe3g.med)} ms < latence simulée ${NET_3G.latency} ms : bridage CDP peut-être non appliqué`);
         }
         for (const key of ['normal:marques:attente', 'normal:marques:resultat', '3G:marques:attente', '3G:marques:resultat']) {
-            const st = results[key];
-            console.log(`[SCAN-MESURE] AVERTISSEMENT (non bloquant) ${key} p95=${fmtMs(st.p95)} ms`);
+            console.log(`[SCAN-MESURE] AVERTISSEMENT (non bloquant) ${key} p95=${fmtMs(results[key].p95)} ms`);
         }
 
         // Hors ligne : une lecture → état « Hors ligne », aucune vibration (D47)
         await ctl.context.setOffline(true);
         ctl.guard.freeze();
-        // Billet 1 composté : code calculé (la route live-code le refuse) ; un autre pas que sa relecture n'est pas
-        // exigé (aucun envoi attendu hors ligne)
+        // Billet 1 composté : code calculé (la route live-code le refuse) ; aucun envoi attendu hors ligne
         const offline = await presentPayloadNoResult(ctl.page, computedPayload(ev.tickets[0].id).payload, 'lecture hors ligne');
         await expect.soft(ctl.page.locator('[data-scan-state="offline"]').first(), 'lecture hors ligne : état data-scan-state="offline"').toBeAttached({ timeout: 10_000 });
         const offlineVibrations = (await probeVibrations(ctl.page)).filter((v) => offline.record.readAt !== null && v.at >= offline.record.readAt);
@@ -383,9 +432,10 @@ test('4. mesure du scan : 10 lectures en réseau normal, 10 en 3G, puis une lect
             expect.soft(m.record.result, `${m.reseau} billet ${m.ticket} : résultat affiché`).toBe(m.attendu);
         }
         for (const reseau of ['normal', '3G'] as const) {
+            const expected = measured.filter((m) => m.reseau === reseau).length;
             for (const mesure of ['attente', 'resultat'] as const) {
                 expect.soft(results[`${reseau}:marques:${mesure}`].n,
-                    `${reseau} : marques performance.mark('ev-scan:read' et 'ev-scan:${mesure === 'attente' ? 'pending' : 'result'}') pour chacune des 10 lectures (contrat 6.1, cas 5)`).toBe(10);
+                    `${reseau} : marques performance.mark('ev-scan:read' et 'ev-scan:${mesure === 'attente' ? 'pending' : 'result'}') pour chacune des ${expected} lectures (contrat 6.1, cas 5)`).toBe(expected);
             }
             const att = results[`${reseau}:marques:attente`].med;
             expect.soft(att !== null && att <= 300, `${reseau} : médiane attente − lecture ≤ 300 ms (mesurée : ${fmtMs(att)} ms)`).toBe(true);

@@ -4,7 +4,7 @@
  * processus » échoue en CI à cause de l'alias @/, PROUVÉ run 71 ; même modèle que scripts/e2e/clock-run.ts) :
  *
  *   node --import tsx scripts/e2e/terrain-setup.ts prepare --label <texte> --holder client|client-bis \
- *        --tickets <1..10> [--start-in-hours <h>] [--before-hours <0..48>]
+ *        --tickets <1..20> [--start-in-hours <h>] [--before-hours <0..48>]
  *   node --import tsx scripts/e2e/terrain-setup.ts restore-setting --key <clé access.*> --value <JSON>
  *   node --import tsx scripts/e2e/terrain-setup.ts scans --ticket <uuid>
  *   node --import tsx scripts/e2e/terrain-setup.ts payload --ticket <uuid> [--not-code <6 chiffres>]
@@ -50,7 +50,7 @@ type HolderKey = keyof typeof HOLDERS;
 
 function usage(message: string): never {
     process.stderr.write(
-        `${TAG} ${message}\nUsage : terrain-setup.ts prepare --label <texte> --holder client|client-bis --tickets <1..10> [--start-in-hours <h>] [--before-hours <0..48>]\n`
+        `${TAG} ${message}\nUsage : terrain-setup.ts prepare --label <texte> --holder client|client-bis --tickets <1..20> [--start-in-hours <h>] [--before-hours <0..48>]\n`
         + '        terrain-setup.ts restore-setting --key <access.*> --value <JSON>\n'
         + '        terrain-setup.ts scans --ticket <uuid>\n'
         + '        terrain-setup.ts payload --ticket <uuid> [--not-code <6 chiffres>]\n',
@@ -140,7 +140,7 @@ async function prepare(flags: Map<string, string>): Promise<PrepareReport> {
     const holderRaw = flags.get('holder') ?? '';
     if (!(holderRaw in HOLDERS)) usage(`--holder : client ou client-bis, reçu « ${holderRaw} »`);
     const holder = holderRaw as HolderKey;
-    const count = intFlag(flags, 'tickets', 1, 10, null);
+    const count = intFlag(flags, 'tickets', 1, 20, null);
     const startInHours = intFlag(flags, 'start-in-hours', 1, 47, 20);
     const beforeHours = flags.has('before-hours') ? intFlag(flags, 'before-hours', 0, 48, null) : null;
 
@@ -167,7 +167,8 @@ async function prepare(flags: Map<string, string>): Promise<PrepareReport> {
         startDate: s.date, startTime: s.time, endDate: e.date, endTime: e.time,
         location: 'Esplanade des Parcelles Assainies', city: 'Dakar', capacity: 100,
         imageUrl: await partnerPosterUrl(partnerId),
-        category: { name: 'Entrée libre', price: 0, total: 50 },
+        // Limite par compte portée au nombre de billets émis (free_tickets_claim la contrôle par porteur)
+        category: { name: 'Entrée libre', price: 0, total: 50, maxPerOrder: Math.max(10, count) },
     });
 
     const { data: cats, error: catErr } = await serviceClient().from('ticket_categories').select('id').eq('event_id', eventId);
