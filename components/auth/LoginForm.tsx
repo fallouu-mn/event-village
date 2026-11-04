@@ -533,7 +533,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam }: LoginFormPr
                         disabled={inputsDisabled}
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
-                        placeholder="ex: 77 123 45 67 ou client@email.com"
+                        placeholder="77 123 45 67 ou adresse email"
                         hint="Le numéro sénégalais ou l'adresse email de votre compte."
                     />
 
