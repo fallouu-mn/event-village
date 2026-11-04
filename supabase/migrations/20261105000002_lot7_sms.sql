@@ -21,6 +21,9 @@
 --  6. notification_daily_checks : recopie ; le seuil notif.sms_daily_alert est remplacé par l'alerte à 80 %
 --     du budget optionnel (ceil(0,8 × plafond)), une fois par jour ; plafond 0 : aucune alerte (D15).
 --  7. notification_reminders_schedule : recopie de 20261103000004_lot6_rappels.sql, plus :
+--       - 7.0 b : J-1 et H-3 d'un porteur qui ne détient, pour l'événement, que des billets gratuits (prix 0,
+--         canal FREE ou INVITATION) : SMS SKIPPED FREE_TICKETS_ONLY à la planification quand
+--         notif.free_ticket_reminder_sms = NEVER ; template_data.free_only décrit le porteur (D17) ;
 --       - 7.0 a : prévision de la veille (D16) : rappels SMS prévus pour le lendemain (jour de Dakar), comptés au
 --         pire (IF_NO_PUSH compté), hors porteurs sans SMS ; au-delà du budget restant du lendemain :
 --         ADMIN_SMS_FORECAST aux admins notifications.read et signal SMS_FORECAST, une fois par jour.
@@ -546,6 +549,7 @@ DECLARE
     v_h3_sms     text;
     v_cap        integer;
     v_free       text;
+    v_free_only  boolean;
     e            record;
     h            record;
     c            record;
@@ -643,14 +647,20 @@ BEGIN
                                           AND x.to_user_id = t.user_id AND x.claimed_at > v_due)
                      ORDER BY t.user_id
                 LOOP
+                    -- Lot 7 (7.0 b, D17) : porteur qui ne détient, pour l'événement, que des billets gratuits.
+                    v_free_only := NOT EXISTS (
+                        SELECT 1 FROM public.tickets t
+                         WHERE t.event_id = e.id AND t.user_id = h.user_id AND t.status::text = 'VALIDE'
+                           AND NOT ((t.price = 0 OR t.sale_channel IN ('FREE', 'INVITATION')) IS TRUE));
                     n_j1 := n_j1 + public.notif_enqueue(jsonb_build_object(
                         'type', 'REMINDER_J1',
                         'key', 'REMINDER_J1:' || e.id || ':' || h.user_id || ':' || v_start_key,
                         'user_id', h.user_id,
                         'event_id', e.id,
                         'due_at', v_due,
-                        'data', v_base || jsonb_build_object('sms_policy', v_j1_sms),
-                        'skip', CASE WHEN v_j1_sms = 'NEVER' THEN jsonb_build_object('SMS', 'SMS_POLICY_NEVER') END,
+                        'data', v_base || jsonb_build_object('sms_policy', v_j1_sms, 'free_only', v_free_only),
+                        'skip', CASE WHEN v_j1_sms = 'NEVER' THEN jsonb_build_object('SMS', 'SMS_POLICY_NEVER')
+                                     WHEN v_free = 'NEVER' AND v_free_only THEN jsonb_build_object('SMS', 'FREE_TICKETS_ONLY') END,
                         'now', v_now));
                 END LOOP;
             END IF;
@@ -671,14 +681,20 @@ BEGIN
                                           AND x.to_user_id = t.user_id AND x.claimed_at > v_due)
                      ORDER BY t.user_id
                 LOOP
+                    -- Lot 7 (7.0 b, D17) : même règle que le J-1.
+                    v_free_only := NOT EXISTS (
+                        SELECT 1 FROM public.tickets t
+                         WHERE t.event_id = e.id AND t.user_id = h.user_id AND t.status::text = 'VALIDE'
+                           AND NOT ((t.price = 0 OR t.sale_channel IN ('FREE', 'INVITATION')) IS TRUE));
                     n_h3 := n_h3 + public.notif_enqueue(jsonb_build_object(
                         'type', 'REMINDER_H3',
                         'key', 'REMINDER_H3:' || e.id || ':' || h.user_id || ':' || v_start_key,
                         'user_id', h.user_id,
                         'event_id', e.id,
                         'due_at', v_due,
-                        'data', v_base || jsonb_build_object('sms_policy', v_h3_sms),
-                        'skip', CASE WHEN v_h3_sms = 'NEVER' THEN jsonb_build_object('SMS', 'SMS_POLICY_NEVER') END,
+                        'data', v_base || jsonb_build_object('sms_policy', v_h3_sms, 'free_only', v_free_only),
+                        'skip', CASE WHEN v_h3_sms = 'NEVER' THEN jsonb_build_object('SMS', 'SMS_POLICY_NEVER')
+                                     WHEN v_free = 'NEVER' AND v_free_only THEN jsonb_build_object('SMS', 'FREE_TICKETS_ONLY') END,
                         'now', v_now));
                 END LOOP;
             END IF;
