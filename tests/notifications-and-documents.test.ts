@@ -76,15 +76,13 @@ test('3. NOTIFICATION BELL NAVBAR : Composant interactif connecté avec badge dy
         'NotificationBell doit permettre de tout marquer comme lu'
     );
 
-    // Vérifier l'intégration dans AppLayout ou AppLayoutHeader
+    // Vérifier l'intégration dans AppLayout (lot 7, 7.0 f : AppLayoutHeader.tsx, jamais importé, est supprimé ;
+    // le cas lit seulement le layout réellement rendu).
     const appLayoutPath = path.resolve(process.cwd(), 'components/layout/AppLayout.tsx');
-    const headerPath = path.resolve(process.cwd(), 'components/layout/AppLayoutHeader.tsx');
-    const layoutContent = fs.existsSync(headerPath)
-        ? fs.readFileSync(headerPath, 'utf8')
-        : fs.readFileSync(appLayoutPath, 'utf8');
+    const layoutContent = fs.readFileSync(appLayoutPath, 'utf8');
     assert.ok(
         layoutContent.includes('<NotificationBell />'),
-        'AppLayout ou AppLayoutHeader doit intégrer le composant <NotificationBell />'
+        'AppLayout doit intégrer le composant <NotificationBell />'
     );
 });
 
