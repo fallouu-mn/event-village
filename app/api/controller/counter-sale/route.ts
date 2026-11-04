@@ -2,11 +2,76 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { rpcWithRetry } from '@/lib/payments/rpc';
+import { getServiceRoleClient } from '@/lib/supabase/server';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
 
 export const dynamic = 'force-dynamic';
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,100}$/;
+const EventId = z.string().uuid();
+const COUNTER_SALE_KEY = 'access.counter_sale_enabled';
+
+/**
+ * GET /api/controller/counter-sale?event_id=… — ce que l'écran du guichet doit savoir, servi par le serveur
+ * (lot 7, D53, contrat 3.3) : `enabled` (réglage access.counter_sale_enabled), `can_accept_cash` (permission
+ * espèces de l'affectation), `open_shift` (caisse OUVERT du contrôleur, ou null) et les catégories vendables
+ * (actives) avec leur prix et leur disponibilité (total − vendus − réservés). Contrôleur non affecté à
+ * l'événement : 403 NOT_ASSIGNED (comme la vente). Aucun total n'est calculé dans le navigateur : le devis
+ * passe par POST /api/controller/counter-sale/quote.
+ */
+export async function GET(req: NextRequest) {
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
+    const params = new URL(req.url).searchParams;
+    const parsed = EventId.safeParse(params.get('event_id') ?? params.get('eventId'));
+    if (!parsed.success) {
+        return NextResponse.json({ error: 'event_id requis (identifiant d’événement).', code: 'INVALID_EVENT' }, { status: 400 });
+    }
+    const eventId = parsed.data;
+    const supabase = getServiceRoleClient();
+    try {
+        const [assignment, setting, shift, categories] = await Promise.all([
+            supabase.from('event_controllers').select('can_accept_cash').eq('event_id', eventId).eq('user_id', session.user.id).maybeSingle(),
+            supabase.from('platform_settings').select('value').eq('key', COUNTER_SALE_KEY).maybeSingle(),
+            supabase.from('controller_shifts').select('id, opened_at, opening_float_amount, expected_cash_total')
+                .eq('controller_id', session.user.id).eq('event_id', eventId).eq('status', 'OUVERT').maybeSingle(),
+            supabase.from('ticket_categories').select('id, name, price, total_quantity, sold_quantity, held_quantity')
+                .eq('event_id', eventId).eq('is_active', true).order('price', { ascending: true }).order('name', { ascending: true }),
+        ]);
+        if (assignment.error) throw new Error(`affectation : ${assignment.error.message}`);
+        if (setting.error) throw new Error(`réglage ${COUNTER_SALE_KEY} : ${setting.error.message}`);
+        if (shift.error) throw new Error(`caisse ouverte : ${shift.error.message}`);
+        if (categories.error) throw new Error(`catégories : ${categories.error.message}`);
+        if (!assignment.data) {
+            return NextResponse.json({ error: 'Vente réservée au contrôleur affecté à l’événement.', code: 'NOT_ASSIGNED' }, { status: 403 });
+        }
+        const enabled = (setting.data?.value as { value?: unknown } | null | undefined)?.value;
+        if (typeof enabled !== 'boolean') {
+            throw new Error(`réglage ${COUNTER_SALE_KEY} absent ou non booléen : ${JSON.stringify(setting.data?.value ?? null)}`);
+        }
+        const open = shift.data;
+        return NextResponse.json({
+            enabled,
+            can_accept_cash: assignment.data.can_accept_cash === true,
+            open_shift: open ? {
+                id: open.id,
+                opened_at: open.opened_at,
+                opening_float_amount: Number(open.opening_float_amount),
+                expected_cash_total: Number(open.expected_cash_total),
+                expected_cash_in_drawer: Number(open.opening_float_amount) + Number(open.expected_cash_total),
+            } : null,
+            categories: (categories.data ?? []).map((c) => ({
+                id: c.id,
+                name: c.name,
+                price: Number(c.price),
+                available: Math.max(0, Number(c.total_quantity) - Number(c.sold_quantity) - Number(c.held_quantity ?? 0)),
+            })),
+        }, { headers: { 'Cache-Control': 'no-store' } });
+    } catch (err) {
+        console.error('[API /api/controller/counter-sale GET] erreur :', err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Lecture du guichet momentanément impossible.', code: 'COUNTER_SALE_READ_FAILED' }, { status: 500 });
+    }
+}
 
 const BodySchema = z.object({
     eventId: z.string().uuid(),

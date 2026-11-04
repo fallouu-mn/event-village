@@ -4,9 +4,24 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/controller/assignments
-// Retourne tous les événements auxquels le contrôleur connecté est assigné
-// avec les statistiques du jour (billets scannés / total)
+const COUNTER_SALE_KEY = 'access.counter_sale_enabled';
+
+/** Réglage SUPERADMIN du guichet (platform_settings) ; absent ou non booléen : erreur explicite. */
+async function readCounterSaleEnabled(): Promise<boolean> {
+    const { data, error } = await getServiceRoleClient().from('platform_settings').select('value').eq('key', COUNTER_SALE_KEY).maybeSingle();
+    if (error) throw new Error(`lecture du réglage ${COUNTER_SALE_KEY} : ${error.message}`);
+    const value = (data?.value as { value?: unknown } | null | undefined)?.value;
+    if (typeof value !== 'boolean') throw new Error(`réglage ${COUNTER_SALE_KEY} absent ou non booléen : ${JSON.stringify(data?.value ?? null)}`);
+    return value;
+}
+
+/**
+ * GET /api/controller/assignments — événements auxquels le contrôleur connecté est affecté, avec leurs
+ * compteurs. Lot 7 (D42, D53, contrat 3.3) : chaque affectation porte son point d'entrée (`entry_point`) et
+ * `counter_sale_enabled` (réglage access.counter_sale_enabled) ; « Arrivées » (`stats.scanned_today`, nom
+ * gardé) = toutes les entrées de l'événement, plus coupées à minuit UTC (un concert de 22 h à 3 h gardait
+ * son compteur jusqu'à minuit seulement).
+ */
 export async function GET(req: NextRequest) {
     try {
         const user = await getServerSessionUser(req);
@@ -23,6 +38,7 @@ export async function GET(req: NextRequest) {
             .select(`
                 id,
                 can_accept_cash,
+                entry_point,
                 events (
                     id,
                     title,
@@ -41,8 +57,9 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Impossible de charger vos assignations.' }, { status: 500 });
         }
 
-        // Statistiques du jour pour chaque événement assigné
-        const today = new Date().toISOString().split('T')[0];
+        const counterSaleEnabled = await readCounterSaleEnabled();
+
+        // Compteurs de chaque événement affecté (lus par le serveur, toute la durée de l'événement)
         const enriched = await Promise.all(
             (assignments ?? []).map(async (a: any) => {
                 const eventId = a.events?.id;
@@ -51,40 +68,47 @@ export async function GET(req: NextRequest) {
                     date: a.events.start_date,
                     cover_image_url: a.events.image_url,
                 } : null;
+                const base = {
+                    ...a,
+                    entry_point: typeof a.entry_point === 'string' && a.entry_point.trim() !== '' ? a.entry_point : null,
+                    counter_sale_enabled: counterSaleEnabled,
+                    events: formattedEvent,
+                };
 
-                if (!eventId) return { ...a, events: formattedEvent, stats: { scanned_today: 0, total_tickets: 0 } };
+                if (!eventId) return { ...base, stats: { scanned_today: 0, total_tickets: 0 } };
 
-                const [{ count: scannedToday }, { count: totalTickets }] = await Promise.all([
+                const [arrivals, total] = await Promise.all([
                     supabase
                         .from('tickets')
                         .select('id', { count: 'exact', head: true })
                         .eq('event_id', eventId)
-                        .eq('status', 'UTILISE')
-                        .gte('checked_in_at', `${today}T00:00:00`),
+                        .eq('status', 'UTILISE'),
                     supabase
                         .from('tickets')
                         .select('id', { count: 'exact', head: true })
                         .eq('event_id', eventId)
                         .in('status', ['VALIDE', 'UTILISE']),
                 ]);
+                if (arrivals.error) throw new Error(`arrivées de l'événement ${eventId} : ${arrivals.error.message}`);
+                if (total.error) throw new Error(`billets de l'événement ${eventId} : ${total.error.message}`);
 
                 return {
-                    ...a,
-                    events: formattedEvent,
+                    ...base,
                     stats: {
-                        scanned_today: scannedToday ?? 0,
-                        total_tickets: totalTickets ?? 0,
+                        scanned_today: arrivals.count ?? 0,
+                        total_tickets: total.count ?? 0,
                     },
                 };
             })
         );
 
         // Récupérer le nom du contrôleur
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
             .from('users')
             .select('first_name, last_name')
             .eq('id', user.id)
             .maybeSingle();
+        if (profileError) throw new Error(`profil du contrôleur : ${profileError.message}`);
 
         return NextResponse.json({
             success: true,
@@ -94,7 +118,7 @@ export async function GET(req: NextRequest) {
                 first_name: profile?.first_name ?? '',
                 last_name: profile?.last_name ?? '',
             },
-        });
+        }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
         console.error('[API /api/controller/assignments]', err instanceof Error ? err.message : err);
         return NextResponse.json({ error: 'Erreur interne.' }, { status: 500 });

@@ -21,15 +21,23 @@ const ManualSchema = z.object({
 });
 const CashSchema = z.object({ scanId: z.string().uuid(), eventId: z.string().uuid() });
 
+/** Lot 7 (D39, contrat 3.3) : clé d'idempotence d'une lecture, même motif que la vente au guichet. */
+const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,100}$/;
+
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
-type Rpc = Record<string, unknown> & { result?: string; http?: number; code?: string };
+type Rpc = Record<string, unknown> & { result?: string; http?: number; code?: string; replayed?: unknown };
 
-/** Réponse d'un résultat de scan (HTTP 200) : résultat de l'union partagée, jamais d'erreur technique déguisée. */
+/**
+ * Réponse d'un résultat de scan (HTTP 200) : résultat de l'union partagée, jamais d'erreur technique déguisée.
+ * `replayed` est toujours un booléen (vrai seulement pour le rejeu d'une clé déjà traitée, D40).
+ */
 function scanResponse(data: Rpc): NextResponse {
     const result = data.result;
     if (!isScanResult(result)) throw new Error(`résultat de scan inconnu : ${JSON.stringify(data)}`);
-    return NextResponse.json({ ...data, result, message: SCAN_RESULT_LABELS[result as ScanResult] }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(
+        { ...data, result, replayed: data.replayed === true, message: SCAN_RESULT_LABELS[result as ScanResult] },
+        { headers: { 'Cache-Control': 'no-store' } });
 }
 
 /**
@@ -76,7 +84,11 @@ async function serverError(userId: string, eventId: string | null, message: stri
  * Saisie manuelle : `{ eventId, manualTicketNumber, identityVerified }` (périmètre réglé, pièce
  * d'identité vérifiée obligatoire). Toute la décision est prise en base par ticket_scan, sous verrou,
  * dans l'ordre : droit sur l'événement (sinon 403 sans aucune donnée), billet de l'événement, code
- * dynamique, statut et fenêtre de l'événement, statut du billet, paiement, compostage.
+ * dynamique et version du secret, statut et fenêtre de l'événement, statut du billet, paiement, compostage.
+ * Lot 7 (D39, D40, contrat 3.3) : en-tête Idempotency-Key obligatoire (une clé par lecture) ; la même clé
+ * rejouée par le même scanneur rend le verdict d'origine (`replayed: true`), sans nouvelle ligne, même si
+ * le code a expiré entre-temps. La version du secret lue ici sans verrou est recontrôlée par ticket_scan
+ * sous le verrou du billet : une rotation validée entre les deux donne un refus (invariant (p)).
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -88,6 +100,10 @@ export async function POST(req: NextRequest) {
     const limited = await scanQuota(user.id, read?.eventId ?? null, 'scan', 'scan_scanner', 10, env.SCAN_PER_SCANNER_10S);
     if (limited) return limited;
     if (!read) return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
+    const clientKey = req.headers.get('idempotency-key')?.trim() ?? '';
+    if (!IDEMPOTENCY_KEY.test(clientKey)) {
+        return NextResponse.json({ error: 'Clé d’idempotence manquante ou invalide.', code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });
+    }
     const body = read.body;
     const camera = CameraSchema.safeParse(body);
     const manual = camera.success ? null : ManualSchema.safeParse(body);
@@ -95,7 +111,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Scan invalide : eventId et payload (ou manualTicketNumber) requis.' }, { status: 400 });
     }
 
-    const p: Record<string, unknown> = { scanner_id: user.id };
+    const p: Record<string, unknown> = { scanner_id: user.id, client_key: clientKey };
     try {
         if (camera.success) {
             p.event_id = camera.data.eventId;
@@ -106,9 +122,12 @@ export async function POST(req: NextRequest) {
                 p.pre_result = 'dynamic_qr_required';
             } else {
                 p.ticket_id = parsed.ticketId;
-                const { data: t, error } = await getServiceRoleClient().from('tickets').select('id, totp_secret').eq('id', parsed.ticketId).maybeSingle();
+                const { data: t, error } = await getServiceRoleClient().from('tickets')
+                    .select('id, totp_secret, security_version').eq('id', parsed.ticketId).maybeSingle();
                 if (error) throw new Error(`lecture du billet : ${error.message}`);
                 p.totp_ok = t ? verifyTicketCode(t.id as string, String(t.totp_secret), parsed.code) : false;
+                // Version du secret avec lequel le code a été vérifié : recontrôlée sous verrou par ticket_scan
+                if (t) p.secret_version = Number(t.security_version);
             }
         } else {
             const m = manual!.data!;
@@ -123,6 +142,9 @@ export async function POST(req: NextRequest) {
         if (data.http === 403) {
             return NextResponse.json({ error: 'Vous n’êtes pas autorisé à contrôler cet événement.', code: data.code }, { status: 403 });
         }
+        if (data.http === 400) {
+            return NextResponse.json({ error: 'Clé d’idempotence manquante ou invalide.', code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });
+        }
         // Lot 6 (J1.4) : l'avis « entrée validée » au porteur est mis en file par le trigger
         // trg_tickets_scanned_notify, dans la transaction du compostage.
         return scanResponse(data);
@@ -136,6 +158,9 @@ export async function POST(req: NextRequest) {
  * PUT /api/controller/scan — encaissement espèces d'un billet « à régler sur place » puis compostage,
  * tout ou rien (ticket_cash_checkin) : `{ scanId, eventId }` d'un scan cash_required de moins de
  * 5 minutes ; caisse ouverte obligatoire pour tous les rôles ; montant = prix facial du billet.
+ * Lot 7 (D40) : idempotent par sa clé naturelle scanId ; rejoué par le même scanneur après un encaissement
+ * fait, il rend le verdict d'origine (200 `valid`, `replayed: true`, même paiement), sans aucune écriture.
+ * Version du secret changée depuis le scan : 409 CASH_QR_OUTDATED (statut d'annulation dit avant la version).
  */
 export async function PUT(req: NextRequest) {
     const session = await requireActiveSession(req);
