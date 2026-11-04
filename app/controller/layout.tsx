@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { User, LogOut, ArrowLeft } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -16,10 +16,15 @@ import { detachPushSubscription } from '@/lib/push/client';
  * En-tête de l'espace contrôleur (relecture des captures du run 50) : tokens du système de design, cibles
  * de 44 px, logo partagé (l'ancien texte #FF5722 en 12 px donnait 3,16:1), lien du profil nommé même
  * sous 640 px (axe link-name : seule l'icône restait visible), tient à 390 px.
+ * Lot 7 (D45) : thème sombre forcé sur tout l'espace contrôleur (classe `dark` et color-scheme sombre sur la
+ * racine, sans bascule) : écran lisible de nuit, batterie ménagée. Sur l'écran de scan, la déconnexion est
+ * portée par l'en-tête compact du scanner (un seul bouton de déconnexion par écran).
  */
 export default function ControllerLayout({ children }: { children: React.ReactNode }) {
     const { profile } = useAuth();
     const router = useRouter();
+    const pathname = usePathname();
+    const onScanner = pathname?.startsWith('/controller/scanner') ?? false;
     const [showLogout, setShowLogout] = useState(false);
 
     const handleLogout = async () => {
@@ -38,7 +43,7 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
         : '';
 
     return (
-        <div className="min-h-screen bg-surface-sunken text-fg">
+        <div className="dark min-h-screen bg-surface-sunken text-fg" style={{ colorScheme: 'dark' }}>
             <header className="flex min-h-14 items-center justify-between gap-2 border-b border-border bg-surface px-4 py-1.5">
                 <div className="flex min-w-0 items-center gap-2">
                     <Link
@@ -67,13 +72,15 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                         </Link>
                     )}
 
-                    <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => setShowLogout(true)}>
-                        <LogOut size={18} />
-                    </IconButton>
+                    {!onScanner && (
+                        <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => setShowLogout(true)}>
+                            <LogOut size={18} />
+                        </IconButton>
+                    )}
                 </div>
             </header>
 
-            <main className="mx-auto max-w-2xl px-4 py-6">
+            <main className={onScanner ? 'mx-auto max-w-2xl px-4 py-3' : 'mx-auto max-w-2xl px-4 py-6'}>
                 {children}
             </main>
 

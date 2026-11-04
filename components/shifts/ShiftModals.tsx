@@ -1,115 +1,46 @@
 'use client';
 
-import React, { useState } from 'react';
-import {
-    Banknote, Lock, ShieldCheck, AlertCircle,
-    CheckCircle2, Printer, X, Loader2, Coins, Receipt, Clock
-} from 'lucide-react';
+/**
+ * Caisse du contrôleur : ouverture, clôture (Z de caisse) et récapitulatif imprimable (lot 4.5, migrés au
+ * lot 7, tâche 7.2 ; décision D46). Alignés sur le serveur :
+ *  - PIN du régisseur facultatif à l'ouverture (saisi, il est vérifié par le serveur) ; à la clôture, il
+ *    n'est demandé que si le serveur constate un écart (refus JUSTIFICATION_REQUIRED ou PIN_REQUIRED) ;
+ *  - fonds de caisse, espèces encaissées, total attendu en caisse et écart viennent du serveur : aucun
+ *    calcul dans le navigateur ;
+ *  - montants entiers de francs, sans pas imposé (2 750 F est accepté), formatés par lib/format.
+ * Sur Modal et Field (système de design) ; chargés à la demande (next/dynamic) par le scanner.
+ */
+import React, { useEffect, useId, useState } from 'react';
+import { Banknote, Printer, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Shift, ShiftSummary } from '@/lib/shifts/shift.service';
+import { Modal } from '@/components/ui/Modal';
+import { Field, TextInput, Textarea } from '@/components/ui/Field';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { formatDateTime, formatFcfa } from '@/lib/format';
+import type { Shift, ShiftSummary } from '@/lib/shifts/shift.service';
+import type { ServedShift } from '@/components/scan/ScannerShiftBanner';
 
-// ──────────────────────────────────────────────────────────
-// 1. BANNIÈRE D'ÉTAT DE CAISSE (CONTRÔLEUR SCANNER)
-// ──────────────────────────────────────────────────────────
-
-interface ShiftStatusBannerProps {
-    canAcceptCash: boolean;
-    activeShift: Shift | null;
-    onOpenShiftClick: () => void;
-    onCloseShiftClick: () => void;
+/** Montant saisi : entier de francs ≥ 0 (espaces de lecture admis) ; null si illisible. */
+function parseAmount(raw: string): number | null {
+    const compact = raw.replace(/[\s  ]/g, '');
+    if (!/^\d{1,9}$/.test(compact)) return null;
+    return Number(compact);
 }
 
-export function ShiftStatusBanner({
-    canAcceptCash,
-    activeShift,
-    onOpenShiftClick,
-    onCloseShiftClick,
-}: ShiftStatusBannerProps) {
-    if (!canAcceptCash) return null;
-
-    if (activeShift) {
-        const totalInHandExpected = (Number(activeShift.opening_float_amount) || 0) + (Number(activeShift.expected_cash_total) || 0);
-
-        return (
-            <div className="p-3 sm:p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-slate-900 dark:text-white shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                    <div className="p-2 rounded-xl bg-emerald-500 text-white shrink-0 mt-0.5 sm:mt-0">
-                        <Banknote size={18} />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                                Caisse Ouverte
-                            </span>
-                            <span className="text-xs text-slate-500 dark:text-zinc-400">
-                                Début : {new Date(activeShift.opened_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
-                            <span className="text-slate-600 dark:text-zinc-300">
-                                Fond : <strong className="text-slate-900 dark:text-white font-mono">{Number(activeShift.opening_float_amount).toLocaleString('fr-FR')} F</strong>
-                            </span>
-                            <span className="text-slate-400">•</span>
-                            <span className="text-slate-600 dark:text-zinc-300">
-                                Encaissé : <strong className="text-emerald-600 dark:text-emerald-400 font-mono">+{Number(activeShift.expected_cash_total).toLocaleString('fr-FR')} F</strong>
-                            </span>
-                            <span className="text-slate-400">•</span>
-                            <span className="text-slate-700 dark:text-zinc-200 font-bold">
-                                Total attendu : <strong className="font-mono text-slate-900 dark:text-white">{totalInHandExpected.toLocaleString('fr-FR')} FCFA</strong>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={onCloseShiftClick}
-                    className="w-full sm:w-auto shrink-0 border-emerald-600 text-emerald-700 hover:bg-emerald-600 hover:text-white dark:border-emerald-500 dark:text-emerald-400 dark:hover:bg-emerald-500 dark:hover:text-black font-bold text-xs"
-                >
-                    <Receipt size={14} className="mr-1.5" /> Clôturer (Z de Caisse)
-                </Button>
-            </div>
-        );
+async function readJson(res: Response, what: string): Promise<Record<string, unknown>> {
+    try {
+        return (await res.json()) as Record<string, unknown>;
+    } catch (err) {
+        console.warn(`[caisse] ${what} : réponse HTTP ${res.status} illisible`, err instanceof Error ? err.message : String(err));
+        return {};
     }
-
-    return (
-        <div className="p-3 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-slate-900 dark:text-white shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-                <div className="p-2 rounded-xl bg-amber-500 text-white shrink-0 mt-0.5 sm:mt-0">
-                    <Coins size={18} />
-                </div>
-                <div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                            Caisse Fermée
-                        </span>
-                        <span className="text-xs text-amber-700 dark:text-amber-300 font-medium">
-                            Encaissement espèces bloqué
-                        </span>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1 max-w-xl">
-                        Vous devez ouvrir votre session de caisse avec le régisseur avant d&apos;encaisser des billets physiques à l&apos;entrée.
-                    </p>
-                </div>
-            </div>
-
-            <Button
-                type="button"
-                size="sm"
-                onClick={onOpenShiftClick}
-                className="w-full sm:w-auto shrink-0 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm"
-            >
-                <Lock size={14} className="mr-1.5" /> Ouvrir ma caisse
-            </Button>
-        </div>
-    );
 }
 
-// ──────────────────────────────────────────────────────────
-// 2. MODAL D'OUVERTURE DE SHIFT
-// ──────────────────────────────────────────────────────────
+function errorText(body: Record<string, unknown>, fallback: string): string {
+    return typeof body.error === 'string' && body.error.trim() !== '' ? body.error : fallback;
+}
+
+// ── Ouverture ─────────────────────────────────────────────────────────────
 
 interface OpenShiftModalProps {
     isOpen: boolean;
@@ -119,355 +50,264 @@ interface OpenShiftModalProps {
     onShiftOpened: (shift: Shift) => void;
 }
 
-export function OpenShiftModal({
-    isOpen,
-    onClose,
-    eventId,
-    eventTitle,
-    onShiftOpened,
-}: OpenShiftModalProps) {
-    const [openingFloat, setOpeningFloat] = useState('0');
+export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOpened }: OpenShiftModalProps) {
+    const floatId = useId();
+    const pinId = useId();
+    const [openingFloat, setOpeningFloat] = useState('');
     const [regisseurPin, setRegisseurPin] = useState('');
-    const [loading, setLoading]           = useState(false);
-    const [error, setError]               = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [floatError, setFloatError] = useState('');
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        if (!isOpen) return;
+        setOpeningFloat('');
+        setRegisseurPin('');
+        setError('');
+        setFloatError('');
+    }, [isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        const amount = openingFloat.trim() === '' ? 0 : parseAmount(openingFloat);
+        if (amount === null) {
+            setFloatError('Saisissez un montant entier en francs, sans virgule (par exemple 2 750).');
+            return;
+        }
+        setFloatError('');
         setLoading(true);
-
         try {
+            const pin = regisseurPin.trim();
             const res = await fetch('/api/controller/shifts/open', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    event_id: eventId,
-                    opening_float_amount: Number(openingFloat) || 0,
-                    regisseur_pin: regisseurPin.trim(),
-                }),
+                body: JSON.stringify({ eventId, openingFloat: amount, ...(pin ? { regisseurPin: pin } : {}) }),
             });
-
-            const data = await res.json();
-            if (!res.ok || !data.success) {
-                setError(data.error || 'Erreur lors de l\'ouverture de caisse.');
+            const data = await readJson(res, 'ouverture');
+            if (!res.ok || data.success !== true || !data.shift) {
+                setError(errorText(data, 'La caisse n’a pas pu être ouverte.'));
                 return;
             }
-
-            onShiftOpened(data.shift);
+            onShiftOpened(data.shift as Shift);
             onClose();
-        } catch {
-            setError('Erreur réseau lors de la communication serveur.');
+        } catch (err) {
+            console.warn('[caisse] ouverture : réseau indisponible', err instanceof Error ? err.message : String(err));
+            setError('Réseau indisponible : la caisse n’est pas ouverte. Réessayez.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-zinc-800 space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-zinc-800">
-                    <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-xl bg-amber-500 text-white">
-                            <Banknote size={18} />
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-black text-slate-900 dark:text-white">Ouvrir la Session de Caisse</h3>
-                            <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate max-w-[240px]">{eventTitle || 'Événement'}</p>
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
-                    >
-                        <X size={18} />
-                    </button>
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            busy={loading}
+            title="Ouvrir ma caisse"
+            subtitle={eventTitle}
+            icon={<Banknote size={20} />}
+            maxWidth="md"
+        >
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+                {error && <StatusBanner tone="danger" title="Ouverture refusée" announce="alert">{error}</StatusBanner>}
+                <TextInput
+                    id={floatId}
+                    label="Fonds de caisse remis par le régisseur (F CFA)"
+                    hint="Montant en espèces remis pour rendre la monnaie. 0 si aucun fonds n’est remis."
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={openingFloat}
+                    onChange={(e) => setOpeningFloat(e.target.value)}
+                    placeholder="0"
+                    error={floatError || undefined}
+                    className="tabular-nums"
+                />
+                <TextInput
+                    id={pinId}
+                    label="Code PIN du régisseur (facultatif)"
+                    hint="Facultatif à l’ouverture. Saisi, il est vérifié et l’ouverture est marquée confirmée par le régisseur."
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={8}
+                    value={regisseurPin}
+                    onChange={(e) => setRegisseurPin(e.target.value)}
+                />
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Annuler</Button>
+                    <Button type="submit" variant="primary" isLoading={loading}>Ouvrir la caisse</Button>
                 </div>
-
-                {error && (
-                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-start gap-2">
-                        <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                        <span>{error}</span>
-                    </div>
-                )}
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
-                            Fond de caisse initial remis par le régisseur (FCFA)
-                        </label>
-                        <div className="relative">
-                            <input
-                                type="number"
-                                min="0"
-                                step="500"
-                                value={openingFloat}
-                                onChange={(e) => setOpeningFloat(e.target.value)}
-                                placeholder="0"
-                                required
-                                className="w-full pl-3 pr-16 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-sm font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">FCFA</span>
-                        </div>
-                        <p className="text-[11px] text-slate-400 mt-1">Montant physique remis en espèces pour démarrer votre caisse.</p>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
-                            Code PIN Régisseur (4 à 6 chiffres)
-                        </label>
-                        <input
-                            type="password"
-                            maxLength={6}
-                            value={regisseurPin}
-                            onChange={(e) => setRegisseurPin(e.target.value)}
-                            placeholder="••••••"
-                            required
-                            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-base font-mono tracking-widest text-center text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                        />
-                        <p className="text-[11px] text-slate-400 mt-1">Demandez au régisseur présent sur site de composer son code PIN.</p>
-                    </div>
-
-                    <div className="pt-2 flex items-center justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
-                            Annuler
-                        </Button>
-                        <Button type="submit" disabled={loading} className="bg-amber-500 hover:bg-amber-600 text-white font-bold">
-                            {loading ? <Loader2 size={16} className="animate-spin" /> : 'Confirmer l\'ouverture'}
-                        </Button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            </form>
+        </Modal>
     );
 }
 
-// ──────────────────────────────────────────────────────────
-// 3. MODAL DE CLÔTURE & GESTION D'ÉCART (Z DE CAISSE)
-// ──────────────────────────────────────────────────────────
+// ── Clôture (Z de caisse) ─────────────────────────────────────────────────
 
 interface CloseShiftModalProps {
     isOpen: boolean;
     onClose: () => void;
-    shift: Shift;
+    shift: ServedShift;
     onShiftClosed: (summary: ShiftSummary) => void;
 }
 
-export function CloseShiftModal({
-    isOpen,
-    onClose,
-    shift,
-    onShiftClosed,
-}: CloseShiftModalProps) {
-    const [declaredCash, setDeclaredCash]               = useState('');
-    const [justification, setJustification]             = useState('');
-    const [regisseurPin, setRegisseurPin]               = useState('');
-    const [loading, setLoading]                         = useState(false);
-    const [error, setError]                             = useState('');
+export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: CloseShiftModalProps) {
+    const countId = useId();
+    const justificationId = useId();
+    const pinId = useId();
+    const [counted, setCounted] = useState('');
+    const [justification, setJustification] = useState('');
+    const [regisseurPin, setRegisseurPin] = useState('');
+    /** Écart constaté par le serveur : justification et PIN du régisseur demandés. */
+    const [cosign, setCosign] = useState<{ discrepancy: number | null } | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [fieldError, setFieldError] = useState('');
 
-    if (!isOpen) return null;
-
-    const expectedCash = Number(shift.expected_cash_total) || 0;
-    const openingFloat = Number(shift.opening_float_amount) || 0;
-    const totalPhysicalExpected = expectedCash + openingFloat;
-
-    const declaredNum = declaredCash.trim() === '' ? null : Number(declaredCash);
-    // L'écart se calcule sur les espèces perçues (declared - expected)
-    const discrepancy = declaredNum !== null ? declaredNum - expectedCash : null;
+    useEffect(() => {
+        if (!isOpen) return;
+        setCounted('');
+        setJustification('');
+        setRegisseurPin('');
+        setCosign(null);
+        setError('');
+        setFieldError('');
+    }, [isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
-
-        if (declaredNum === null) {
-            setError('Veuillez saisir le montant total compté.');
+        const declared = parseAmount(counted);
+        if (declared === null) {
+            setFieldError('Saisissez le montant compté, en francs entiers, sans virgule.');
             return;
         }
-
-        if (discrepancy !== 0 && !justification.trim()) {
-            setError('Une justification textuelle est strictement obligatoire en cas d\'écart de caisse.');
-            return;
-        }
-
-        if (!regisseurPin.trim()) {
-            setError('Le code PIN régisseur est obligatoire pour co-signer la clôture.');
-            return;
-        }
-
+        setFieldError('');
         setLoading(true);
-
         try {
             const res = await fetch('/api/controller/shifts/close', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    shift_id: shift.id,
-                    declared_cash_total: declaredNum,
-                    discrepancy_justification: justification.trim() || undefined,
-                    regisseur_pin: regisseurPin.trim(),
+                    shiftId: shift.id,
+                    declaredCashTotal: declared,
+                    ...(cosign ? { justification: justification.trim(), regisseurPin: regisseurPin.trim() } : {}),
                 }),
             });
-
-            const data = await res.json();
-            if (!res.ok || !data.success) {
-                setError(data.error || 'Erreur lors de la clôture de caisse.');
+            const data = await readJson(res, 'clôture');
+            if (res.ok && data.success === true && data.summary) {
+                onShiftClosed(data.summary as ShiftSummary);
+                onClose();
                 return;
             }
-
-            onShiftClosed(data.summary);
-            onClose();
-        } catch {
-            setError('Erreur réseau lors de la communication serveur.');
+            const code = typeof data.code === 'string' ? data.code : '';
+            if (code === 'JUSTIFICATION_REQUIRED' || code === 'PIN_REQUIRED') {
+                const served = Number(data.discrepancy);
+                setCosign({ discrepancy: Number.isFinite(served) ? served : null });
+                setError(cosign ? errorText(data, 'Justification ou code PIN manquant.') : '');
+                return;
+            }
+            setError(errorText(data, 'La caisse n’a pas pu être clôturée.'));
+        } catch (err) {
+            console.warn('[caisse] clôture : réseau indisponible', err instanceof Error ? err.message : String(err));
+            setError('Réseau indisponible : la caisse n’est pas clôturée. Réessayez.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-            <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-zinc-800 space-y-4 my-8">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-zinc-800">
-                    <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-xl bg-[#FF5722] text-white">
-                            <Receipt size={18} />
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-black text-slate-900 dark:text-white">Clôture de Caisse (Z)</h3>
-                            <p className="text-[11px] text-slate-500 dark:text-zinc-400">Décompte physique contradictoire</p>
-                        </div>
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            busy={loading}
+            title="Clôturer ma caisse"
+            subtitle="Décompte des espèces avec le régisseur"
+            icon={<Receipt size={20} />}
+            maxWidth="md"
+        >
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+                <dl className="flex flex-col gap-1.5 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+                    <div className="flex justify-between gap-3">
+                        <dt className="text-fg-muted">Fonds de caisse</dt>
+                        <dd className="font-semibold text-fg tabular-nums">{formatFcfa(Number(shift.opening_float_amount))}</dd>
                     </div>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
-                    >
-                        <X size={18} />
-                    </button>
-                </div>
+                    <div className="flex justify-between gap-3">
+                        <dt className="text-fg-muted">Espèces encaissées (enregistrées)</dt>
+                        <dd className="font-semibold text-fg tabular-nums">{formatFcfa(Number(shift.expected_cash_total))}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3 border-t border-border pt-1.5">
+                        <dt className="font-semibold text-fg">Total attendu en caisse</dt>
+                        <dd className="font-bold text-fg tabular-nums">{formatFcfa(shift.expected_cash_in_drawer ?? null)}</dd>
+                    </div>
+                </dl>
 
-                {/* Rappel des montants calculés */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/80 dark:border-zinc-700/60 space-y-1.5 text-xs">
-                    <div className="flex justify-between text-slate-500 dark:text-zinc-400">
-                        <span>Fond de caisse initial :</span>
-                        <span className="font-mono font-bold text-slate-700 dark:text-zinc-200">{openingFloat.toLocaleString('fr-FR')} FCFA</span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 dark:text-zinc-400">
-                        <span>Total encaissements (attendu) :</span>
-                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">+{expectedCash.toLocaleString('fr-FR')} FCFA</span>
-                    </div>
-                    <div className="pt-1.5 border-t border-slate-200 dark:border-zinc-700 flex justify-between font-bold text-slate-900 dark:text-white">
-                        <span>Espèces totales à rendre au régisseur :</span>
-                        <span className="font-mono text-sm text-[#FF5722]">{totalPhysicalExpected.toLocaleString('fr-FR')} FCFA</span>
-                    </div>
-                </div>
+                {error && <StatusBanner tone="danger" title="Clôture refusée" announce="alert">{error}</StatusBanner>}
 
-                {error && (
-                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-start gap-2">
-                        <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                        <span>{error}</span>
-                    </div>
+                <TextInput
+                    id={countId}
+                    label="Espèces encaissées comptées, hors fonds de caisse (F CFA)"
+                    hint="Comptez les espèces avec le régisseur, mettez de côté le fonds de caisse, puis saisissez le reste."
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={counted}
+                    onChange={(e) => { setCounted(e.target.value); setCosign(null); }}
+                    error={fieldError || undefined}
+                    required
+                    className="tabular-nums"
+                />
+
+                {cosign && (
+                    <>
+                        <StatusBanner tone="warning" title="Écart constaté par le serveur" announce="alert">
+                            {cosign.discrepancy !== null
+                                ? `Écart de ${formatFcfa(cosign.discrepancy)} avec les encaissements enregistrés. `
+                                : 'Le montant compté ne correspond pas aux encaissements enregistrés. '}
+                            Justifiez l’écart ; le régisseur co-signe la clôture avec son code PIN.
+                        </StatusBanner>
+                        <Textarea
+                            id={justificationId}
+                            label="Justification de l’écart"
+                            hint="10 caractères au moins (par exemple : monnaie rendue en trop à un spectateur)."
+                            rows={3}
+                            maxLength={1000}
+                            value={justification}
+                            onChange={(e) => setJustification(e.target.value)}
+                            required
+                        />
+                        <Field label="Code PIN du régisseur" hint="Le régisseur saisit lui-même son code." required id={pinId}>
+                            {(control) => (
+                                <input
+                                    id={control.id}
+                                    aria-describedby={control['aria-describedby']}
+                                    aria-invalid={control['aria-invalid']}
+                                    aria-required={control['aria-required']}
+                                    type="password"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    maxLength={8}
+                                    value={regisseurPin}
+                                    onChange={(e) => setRegisseurPin(e.target.value)}
+                                    className="min-h-11 w-full rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-center text-base tracking-widest text-fg focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                />
+                            )}
+                        </Field>
+                    </>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Montant compté */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
-                            Montant des encaissements compté en main (hors fond)
-                        </label>
-                        <div className="relative">
-                            <input
-                                type="number"
-                                min="0"
-                                step="100"
-                                value={declaredCash}
-                                onChange={(e) => setDeclaredCash(e.target.value)}
-                                placeholder={expectedCash.toString()}
-                                required
-                                className="w-full pl-3 pr-16 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-sm font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">FCFA</span>
-                        </div>
-                    </div>
-
-                    {/* Affichage de l'écart */}
-                    {discrepancy !== null && (
-                        <div className={`p-3 rounded-xl border text-xs font-bold ${
-                            discrepancy === 0
-                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                                : discrepancy < 0
-                                    ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
-                                    : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
-                        }`}>
-                            <div className="flex items-center justify-between">
-                                <span>Écart de caisse :</span>
-                                <span className="text-sm font-mono font-black">
-                                    {discrepancy > 0 ? `+${discrepancy.toLocaleString('fr-FR')}` : discrepancy.toLocaleString('fr-FR')} FCFA
-                                </span>
-                            </div>
-                            <p className="text-[10px] font-normal mt-0.5 opacity-80">
-                                {discrepancy === 0
-                                    ? 'Comptabilité parfaite : le montant déclaré correspond exactement au montant attendu.'
-                                    : discrepancy < 0
-                                        ? `Déficit constaté de ${Math.abs(discrepancy).toLocaleString('fr-FR')} FCFA. Une justification est obligatoire.`
-                                        : `Excédent constaté de +${discrepancy.toLocaleString('fr-FR')} FCFA. Une justification est obligatoire.`
-                                }
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Justification si écart != 0 */}
-                    {discrepancy !== null && discrepancy !== 0 && (
-                        <div>
-                            <label className="block text-xs font-bold text-red-600 dark:text-red-400 mb-1">
-                                Justification de l&apos;écart (obligatoire) *
-                            </label>
-                            <textarea
-                                value={justification}
-                                onChange={(e) => setJustification(e.target.value)}
-                                rows={2}
-                                placeholder="Ex: Rendu de monnaie manquant, billet non rendu, pourboire client..."
-                                required
-                                className="w-full p-2.5 rounded-xl border border-red-300 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500"
-                            />
-                        </div>
-                    )}
-
-                    {/* Code PIN régisseur co-signataire */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1">
-                            Co-signature : Code PIN Régisseur
-                        </label>
-                        <input
-                            type="password"
-                            maxLength={6}
-                            value={regisseurPin}
-                            onChange={(e) => setRegisseurPin(e.target.value)}
-                            placeholder="••••••"
-                            required
-                            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-base font-mono tracking-widest text-center text-slate-900 dark:text-white focus:outline-none focus:border-[#FF5722]"
-                        />
-                        <p className="text-[11px] text-slate-400 mt-1">Le régisseur valide le décompte et signe la clôture avec son code secret.</p>
-                    </div>
-
-                    <div className="pt-2 flex items-center justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
-                            Annuler
-                        </Button>
-                        <Button type="submit" disabled={loading} className="bg-[#FF5722] hover:bg-[#E64A19] text-white font-bold">
-                            {loading ? <Loader2 size={16} className="animate-spin" /> : 'Valider & Clôturer'}
-                        </Button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Annuler</Button>
+                    <Button type="submit" variant="primary" isLoading={loading}>
+                        {cosign ? 'Clôturer avec l’écart' : 'Clôturer la caisse'}
+                    </Button>
+                </div>
+            </form>
+        </Modal>
     );
 }
 
-// ──────────────────────────────────────────────────────────
-// 4. MODAL TICKET Z DE CAISSE (RÉCAPITULATIF IMPRIMABLE)
-// ──────────────────────────────────────────────────────────
+// ── Z de caisse (récapitulatif imprimable) ────────────────────────────────
 
 interface ZSummaryModalProps {
     isOpen: boolean;
@@ -475,112 +315,51 @@ interface ZSummaryModalProps {
     summary: ShiftSummary | null;
 }
 
-export function ZSummaryModal({
-    isOpen,
-    onClose,
-    summary,
-}: ZSummaryModalProps) {
-    if (!isOpen || !summary) return null;
-
-    const handlePrint = () => {
-        window.print();
-    };
+export function ZSummaryModal({ isOpen, onClose, summary }: ZSummaryModalProps) {
+    if (!summary) return null;
+    const discrepancy = summary.discrepancy_amount;
+    const rows: Array<[string, string]> = [
+        ['Événement', summary.event_title],
+        ['Contrôleur', summary.controller_name],
+        ['Ouverture', formatDateTime(summary.opened_at)],
+        ['Clôture', summary.closed_at ? formatDateTime(summary.closed_at) : 'En cours'],
+        ['Fonds de caisse', formatFcfa(summary.opening_float_amount)],
+        ['Encaissements enregistrés', formatFcfa(summary.expected_cash_total)],
+        ['Encaissements comptés', formatFcfa(summary.declared_cash_total)],
+        ['Écart', discrepancy === null ? 'Aucun' : discrepancy === 0 ? 'Aucun écart' : formatFcfa(discrepancy)],
+    ];
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs overflow-y-auto">
-            <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-zinc-800 space-y-4 my-8 print:m-0 print:p-0 print:border-none print:shadow-none">
-                
-                {/* En-tête modal (masqué à l'impression) */}
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-zinc-800 print:hidden">
-                    <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-xl bg-emerald-500 text-white">
-                            <CheckCircle2 size={18} />
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-black text-slate-900 dark:text-white">Ticket Z de Caisse Validé</h3>
-                            <p className="text-[11px] text-slate-500 dark:text-zinc-400">Session clôturée avec succès</p>
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
-                    >
-                        <X size={18} />
-                    </button>
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Caisse clôturée"
+            subtitle="Z de caisse"
+            icon={<Receipt size={20} />}
+            maxWidth="md"
+            footer={(
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end print:hidden">
+                    <Button variant="secondary" onClick={() => window.print()} leftIcon={<Printer size={18} />}>Imprimer le Z</Button>
+                    <Button variant="primary" onClick={onClose}>Terminé</Button>
                 </div>
-
-                {/* ── Ticket Thermique imprimable ── */}
-                <div className="p-5 rounded-2xl bg-slate-50 dark:bg-zinc-950 border-2 border-dashed border-slate-300 dark:border-zinc-700 font-mono text-xs text-slate-800 dark:text-zinc-200 space-y-3 print:bg-white print:text-black print:border-black">
-                    <div className="text-center pb-3 border-b border-slate-300 dark:border-zinc-700 print:border-black">
-                        <p className="font-black text-sm uppercase tracking-wider">EVENT VILLAGE</p>
-                        <p className="text-[11px] font-bold text-slate-500 dark:text-zinc-400 uppercase">TICKET Z DE CAISSE</p>
-                        <p className="text-[10px] text-slate-400 mt-1">{summary.event_title}</p>
+            )}
+        >
+            <dl className="flex flex-col gap-1.5 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+                {rows.map(([label, value]) => (
+                    <div key={label} className="flex justify-between gap-3">
+                        <dt className="text-fg-muted">{label}</dt>
+                        <dd className="text-right font-semibold text-fg tabular-nums">{value}</dd>
                     </div>
-
-                    <div className="space-y-1 text-[11px]">
-                        <div className="flex justify-between">
-                            <span>Réf Session :</span>
-                            <span className="font-bold">{summary.shift_id.slice(0, 8)}...</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>Contrôleur :</span>
-                            <span className="font-bold">{summary.controller_name}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>Ouverture :</span>
-                            <span>{new Date(summary.opened_at).toLocaleString('fr-FR')}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>Clôture :</span>
-                            <span>{summary.closed_at ? new Date(summary.closed_at).toLocaleString('fr-FR') : 'En cours'}</span>
-                        </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-300 dark:border-zinc-700 print:border-black space-y-1 text-[11px]">
-                        <div className="flex justify-between">
-                            <span>Fond initial :</span>
-                            <span className="font-bold">{summary.opening_float_amount.toLocaleString('fr-FR')} FCFA</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>Total attendu :</span>
-                            <span className="font-bold">{summary.expected_cash_total.toLocaleString('fr-FR')} FCFA</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span>Total déclaré :</span>
-                            <span className="font-bold">{(summary.declared_cash_total ?? 0).toLocaleString('fr-FR')} FCFA</span>
-                        </div>
-                        <div className="pt-1 border-t border-slate-300 dark:border-zinc-700 print:border-black flex justify-between font-black text-xs">
-                            <span>Écart constaté :</span>
-                            <span className={summary.discrepancy_amount && summary.discrepancy_amount !== 0 ? 'text-red-600' : 'text-emerald-600'}>
-                                {summary.discrepancy_amount && summary.discrepancy_amount > 0 ? `+${summary.discrepancy_amount}` : summary.discrepancy_amount ?? 0} FCFA
-                            </span>
-                        </div>
-                    </div>
-
-                    {summary.discrepancy_justification && (
-                        <div className="pt-2 border-t border-slate-300 dark:border-zinc-700 print:border-black text-[10px]">
-                            <p className="font-bold text-slate-600 dark:text-zinc-400">Justification écart :</p>
-                            <p className="italic text-slate-700 dark:text-zinc-300">&ldquo;{summary.discrepancy_justification}&rdquo;</p>
-                        </div>
-                    )}
-
-                    <div className="pt-3 border-t border-slate-300 dark:border-zinc-700 print:border-black text-center text-[10px] text-slate-400 dark:text-zinc-500">
-                        <p className="font-bold text-slate-600 dark:text-zinc-400">✓ Visa Régisseur Confirmé (Code PIN)</p>
-                        <p className="text-[9px] mt-0.5">Certifié conforme par Event Village Engine</p>
-                    </div>
-                </div>
-
-                {/* Actions (masquées à l'impression) */}
-                <div className="flex items-center justify-end gap-2 pt-2 print:hidden">
-                    <Button type="button" variant="outline" onClick={handlePrint} className="font-bold text-xs">
-                        <Printer size={14} className="mr-1.5" /> Imprimer le Z
-                    </Button>
-                    <Button type="button" onClick={onClose} className="bg-[#FF5722] hover:bg-[#E64A19] text-white font-bold text-xs">
-                        Terminé
-                    </Button>
-                </div>
-            </div>
-        </div>
+                ))}
+            </dl>
+            {summary.discrepancy_justification && (
+                <p className="mt-3 text-sm text-fg">
+                    <span className="font-semibold">Justification : </span>{summary.discrepancy_justification}
+                </p>
+            )}
+            <p className="mt-3 text-sm text-fg-muted">
+                {summary.closing_confirmed_by_pin ? 'Clôture co-signée par le code PIN du régisseur.' : 'Clôture sans co-signature (aucun écart).'}
+            </p>
+        </Modal>
     );
 }

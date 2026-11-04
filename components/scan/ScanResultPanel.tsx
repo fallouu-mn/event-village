@@ -5,16 +5,16 @@
  * Chaque résultat combine une icône, un titre et un texte (jamais la couleur seule). Annoncée aux
  * lecteurs d'écran (role alert pour un refus ou un incident, status pour une entrée validée). Un
  * incident technique est signalé comme tel : le billet n'est pas en cause.
+ * Lot 7 (D52) : aucun son, plus de bouton « Répéter en wolof ».
  */
 import React from 'react';
 import {
-    AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ServerCrash, ShieldAlert, Volume2, WifiOff, XCircle,
+    AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ServerCrash, ShieldAlert, WifiOff, XCircle,
     type LucideIcon,
 } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
 import { cn } from '@/components/ui/cn';
 import { formatFcfa } from '@/lib/format';
-import { isTechnicalOutcome, titleFor, toneFor, wolofTypeFor, type ScanOutcome, type ScanTone } from './scan-client';
+import { isTechnicalOutcome, titleFor, toneFor, type ScanOutcome, type ScanTone } from './scan-client';
 
 /** Tons du résultat sur les tokens sémantiques (contrat Q) : fond doux, bordure et titre du ton, texte courant. */
 const TONE_CLASSES: Record<ScanTone, { box: string; title: string; body: string; icon: string }> = {
@@ -26,7 +26,7 @@ const TONE_CLASSES: Record<ScanTone, { box: string; title: string; body: string;
 };
 
 function iconFor(outcome: ScanOutcome): LucideIcon {
-    if (outcome.failure === 'network') return WifiOff;
+    if (outcome.failure === 'network' || outcome.failure === 'timeout' || outcome.failure === 'offline') return WifiOff;
     if (outcome.failure === 'auth' || outcome.failure === 'forbidden') return ShieldAlert;
     if (isTechnicalOutcome(outcome)) return ServerCrash;
     switch (outcome.result) {
@@ -52,13 +52,11 @@ export interface ScanResultPanelProps {
     outcome: ScanOutcome;
     /** Titre imposé (ex. « Encaissement non enregistré »), sinon le libellé du résultat. */
     title?: string;
-    /** Bouton « Répéter en wolof » (refus du billet uniquement). */
-    onRepeatWolof?: () => void;
     /** Actions explicites sous le résultat (encaissement, réessai, abandon). */
     children?: React.ReactNode;
 }
 
-export function ScanResultPanel({ outcome, title, onRepeatWolof, children }: ScanResultPanelProps) {
+export function ScanResultPanel({ outcome, title, children }: ScanResultPanelProps) {
     const tone = toneFor(outcome);
     const classes = TONE_CLASSES[tone];
     const Icon = iconFor(outcome);
@@ -66,7 +64,6 @@ export function ScanResultPanel({ outcome, title, onRepeatWolof, children }: Sca
     const heading = title ?? titleFor(outcome);
     const ticket = outcome.ticket;
     const showMessage = outcome.message && outcome.message !== heading;
-    const canRepeatWolof = Boolean(onRepeatWolof && wolofTypeFor(outcome));
 
     return (
         <div
@@ -102,12 +99,6 @@ export function ScanResultPanel({ outcome, title, onRepeatWolof, children }: Sca
                     )}
                 </div>
             </div>
-
-            {canRepeatWolof && (
-                <Button variant="secondary" fullWidth onClick={onRepeatWolof} leftIcon={<Volume2 size={18} />}>
-                    Répéter en wolof pour le spectateur
-                </Button>
-            )}
 
             {children}
         </div>

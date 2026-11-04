@@ -7,6 +7,8 @@
  *    bouton de clôture (Z de caisse) ;
  *  - caisse fermée : encaissement espèces bloqué, bouton « Ouvrir ma caisse ».
  * Les montants viennent de la session de caisse renvoyée par le serveur ; formats de lib/format.
+ * Lot 7 (D46) : le total attendu en caisse (fonds + encaissé) est servi par le serveur
+ * (`expected_cash_in_drawer` de GET /api/controller/shifts/active) ; le navigateur n'additionne rien.
  */
 import React from 'react';
 import { Banknote, Coins, Lock, Receipt } from 'lucide-react';
@@ -14,9 +16,12 @@ import { Button } from '@/components/ui/Button';
 import { formatFcfa, formatTime, toDakarDateTimeLocal } from '@/lib/format';
 import type { Shift } from '@/lib/shifts/shift.service';
 
+/** Caisse ouverte telle que la sert GET /api/controller/shifts/active (total attendu calculé par le serveur). */
+export type ServedShift = Shift & { expected_cash_in_drawer?: number | null };
+
 export interface ScannerShiftBannerProps {
     canAcceptCash: boolean;
-    activeShift: Shift | null;
+    activeShift: ServedShift | null;
     onOpenShiftClick: () => void;
     onCloseShiftClick: () => void;
 }
@@ -25,8 +30,9 @@ export function ScannerShiftBanner({ canAcceptCash, activeShift, onOpenShiftClic
     if (!canAcceptCash) return null;
 
     if (activeShift) {
-        const openingFloat = Number(activeShift.opening_float_amount) || 0;
-        const collected = Number(activeShift.expected_cash_total) || 0;
+        const openingFloat = Number(activeShift.opening_float_amount);
+        const collected = Number(activeShift.expected_cash_total);
+        const inDrawer = activeShift.expected_cash_in_drawer ?? null;
         return (
             <section
                 aria-labelledby="scanner-caisse-titre"
@@ -54,7 +60,7 @@ export function ScannerShiftBanner({ canAcceptCash, activeShift, onOpenShiftClic
                             </div>
                             <div className="flex items-baseline justify-between gap-3 min-[420px]:col-span-2 min-[420px]:justify-start">
                                 <dt className="font-semibold text-fg">Total attendu en caisse</dt>
-                                <dd className="font-bold text-fg tabular-nums">{formatFcfa(openingFloat + collected)}</dd>
+                                <dd className="font-bold text-fg tabular-nums">{formatFcfa(inDrawer)}</dd>
                             </div>
                         </dl>
                     </div>

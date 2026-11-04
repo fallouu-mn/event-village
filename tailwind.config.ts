@@ -74,6 +74,26 @@ const config: Config = {
         warning: statusTone('warning'),
         danger: statusTone('danger'),
         info: statusTone('info'),
+        // Lot 7 (7.2, D51) : résultat plein écran du scanner (bg-scan-accept-bg, text-scan-accept-fg…)
+        scan: {
+          'accept-bg': tone('scan-accept-bg'),
+          'accept-fg': tone('scan-accept-fg'),
+          'used-bg': tone('scan-used-bg'),
+          'used-fg': tone('scan-used-fg'),
+          'refuse-bg': tone('scan-refuse-bg'),
+          'refuse-fg': tone('scan-refuse-fg'),
+          'cash-bg': tone('scan-cash-bg'),
+          'cash-fg': tone('scan-cash-fg'),
+          'window-bg': tone('scan-window-bg'),
+          'window-fg': tone('scan-window-fg'),
+          'tech-bg': tone('scan-tech-bg'),
+          'tech-fg': tone('scan-tech-fg'),
+        },
+        // Lot 7 (D59) : opérateurs de paiement (bg-op-wave text-on-op-wave, bg-op-orange-money text-on-op-orange-money)
+        'op-wave': tone('op-wave'),
+        'on-op-wave': tone('on-op-wave'),
+        'op-orange-money': tone('op-orange-money'),
+        'on-op-orange-money': tone('on-op-orange-money'),
         // Surfaces Dark Mode & SaaS Enterprise (historique, écrans non migrés)
         dark: {
           bg: '#0F0F11',

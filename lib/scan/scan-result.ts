@@ -61,6 +61,40 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     server_error: 'Erreur serveur : réessayez',
 };
 
+// ── Lot 7 (7.2, contrat 6.2) — catégories du résultat plein écran ─────────
+
+/**
+ * Catégorie d'affichage d'un résultat : fond plein écran (jetons --scan-*), titre et vibration (D50).
+ * Un incident technique (« technique ») n'est jamais un verdict sur le billet : écran neutre, aucune
+ * vibration, jamais compté comme refus (D47).
+ */
+export type ScanCategory = 'accepte' | 'deja_utilise' | 'refuse' | 'a_encaisser' | 'hors_fenetre' | 'evenement_annule' | 'technique';
+
+export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
+    valid: 'accepte',
+    already_used: 'deja_utilise',
+    invalid: 'refuse',
+    cancelled: 'refuse',
+    refunded: 'refuse',
+    wrong_event: 'refuse',
+    dynamic_qr_required: 'refuse',
+    manual_entry_refused: 'refuse',
+    payment_required: 'refuse',
+    qr_expired: 'refuse',
+    cash_required: 'a_encaisser',
+    event_not_open: 'hors_fenetre',
+    event_ended: 'hors_fenetre',
+    event_cancelled: 'evenement_annule',
+    event_suspended: 'evenement_annule',
+    rate_limited: 'technique',
+    network_error: 'technique',
+    server_error: 'technique',
+};
+
+export function scanCategoryOf(result: ScanResult): ScanCategory {
+    return SCAN_RESULT_CATEGORY[result];
+}
+
 // ── Lot 5 (contrat B) — refus « forbidden » et méthodes de scan ────────────
 
 /**

@@ -1,24 +1,32 @@
 'use client';
 
 /**
- * Scanner du contrôleur (lot 4) — voie unique /api/controller/scan.
- *  - Caméra : QR dynamique EVT1 uniquement ; saisie manuelle distincte avec pièce d'identité vérifiée.
- *  - Statut HTTP lu (components/scan/scan-client) : 401 → connexion ; 403, 429, 5xx et réseau sont des
- *    incidents techniques (carte neutre, ni voix wolof, ni compteur de refus).
- *  - cash_required : caméra et saisie en pause jusqu'à la décision ; un refus du serveur à
- *    l'encaissement reste affiché avec des actions explicites (ouvrir la caisse, réessayer, abandonner).
- *  - Statistiques lues sur le serveur (/api/controller/assignments), jamais incrémentées à la main.
- * Lot 5 (contrat Q, relecture des captures du run 50) : écran sur le système de design (tokens, plus de
- * couleurs codées ni de chasse fixe, libellés en casse de phrase, cibles de 44 px, montants et heures de
- * lib/format) ; comportement du lot 4 inchangé. Le flash plein écran (CombatFlashOverlay) garde ses
- * couleurs de haute visibilité, imposées par tests/scanner-combat-ui.test.ts.
+ * Scanner du contrôleur — voie unique /api/controller/scan (lot 4), refondu au lot 7 (tâche 7.2, contrat 6.2 ;
+ * décisions D39 à D54, amendement A6).
+ *
+ * Parcours (390 × 844, une main) : écran « Commencer le contrôle » (événement, porte ; le premier toucher
+ * autorise la vibration), puis en-tête compact (événement, « Porte A : 312 entrées », réseau), caméra en
+ * haut, bascule « Caméra / Saisie manuelle », onglets Guichet et Caisse si l'affectation permet les espèces,
+ * historique repliable.
+ *
+ * Une lecture : « Envoi… » au rendu suivant, « Réseau lent » après 1,5 s (nouvel essai automatique, même clé
+ * d'idempotence), puis résultat plein écran (jetons --scan-*), une vibration distincte par catégorie (aucune
+ * pour un incident technique), aucun son, et retour automatique au scan (délai réglable sur l'appareil pour
+ * une entrée validée ; 3 s pour un refus ; l'encaissement attend une action). Hors ligne : bandeau
+ * permanent, jamais de validation. Statut HTTP lu (components/scan/scan-client) : 401 renvoie à la connexion ;
+ * 403, 429, 5xx, délai et réseau sont des incidents techniques (écran neutre, jamais un refus).
+ *
+ * Aucune lecture n'est ignorée sans trace : la caméra lit `onScan` par une ref (plus de boucle orpheline,
+ * A6), la page n'ignore une lecture que si un scan est déjà en cours ou si c'est le même QR qu'une entrée
+ * validée il y a moins de 20 s (D41), et elle le dit (console et message à l'écran).
+ * Chiffres (porte, entrées, refus, historique) lus sur /api/controller/scans, jamais comptés ici (D42).
+ * Marques de mesure : ev-scan:read (lecture envoyée), ev-scan:pending (« Envoi… » affiché),
+ * ev-scan:result (résultat affiché).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import {
-    ArrowLeft, Banknote, Calendar, Camera, Keyboard, Loader2, LogOut, MapPin, PauseCircle, ScanLine,
-    ShieldAlert, Ticket, Users, Volume2, VolumeX,
-} from 'lucide-react';
+import { Banknote, Calendar, Camera, Keyboard, Loader2, LogOut, Settings2 } from 'lucide-react';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { detachPushSubscription } from '@/lib/push/client';
 import { Button } from '@/components/ui/Button';
@@ -26,45 +34,80 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { Select } from '@/components/ui/Field';
 import { LinkButton } from '@/components/ui/LinkButton';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import { CameraQrScanner } from '@/components/scan/CameraQrScanner';
+import { TabPanel, Tabs } from '@/components/ui/Tabs';
+import { CameraQrScanner, type CameraReadVerdict } from '@/components/scan/CameraQrScanner';
 import { CombatFlashOverlay } from '@/components/scan/CombatFlashOverlay';
 import { ManualEntryForm } from '@/components/scan/ManualEntryForm';
-import { ScanResultPanel } from '@/components/scan/ScanResultPanel';
-import { ScannerShiftBanner } from '@/components/scan/ScannerShiftBanner';
+import { ScannerShiftBanner, type ServedShift } from '@/components/scan/ScannerShiftBanner';
+import { ScanStatusBar } from '@/components/scan/ScanStatusBar';
+import { ScanHistoryList, type ServedRefusal, type ServedScan } from '@/components/scan/ScanHistoryList';
+import { ScannerStartScreen, type StartChoice } from '@/components/scan/ScannerStartScreen';
 import {
-    combatTypeFor, confirmCashCheckin, isTechnicalOutcome, isTicketRefusal, postScan, titleFor, wolofTypeFor,
+    categoryFor, confirmCashCheckin, isTechnicalOutcome, postScan, SCAN_INCIDENTS_ENDPOINT, titleFor,
     type ScanOutcome, type ScanRequest,
 } from '@/components/scan/scan-client';
 import { EVENT_STATUS_META, isEventEligibleForController, isEventStatus } from '@/lib/events/event-status';
-import { formatFcfa, formatInteger, formatTime } from '@/lib/format';
-import { OpenShiftModal, CloseShiftModal, ZSummaryModal } from '@/components/shifts/ShiftModals';
-import type { Shift, ShiftSummary } from '@/lib/shifts/shift.service';
-import { triggerCombatSensoryFeedback, type CombatFeedbackType } from '@/lib/hardware/feedback';
-import { playWolofAudio, repeatLastWolofAudio, stopWolofAudio, isWolofMuted, toggleWolofMuted } from '@/lib/hardware/wolof-audio';
+import { formatEventDateTime, formatFcfa, formatTime } from '@/lib/format';
+import { triggerHapticFeedback } from '@/lib/hardware/feedback';
+import type { ShiftSummary } from '@/lib/shifts/shift.service';
+
+// Caisse et guichet chargés à la demande : ni la caisse ni le guichet ne pèsent sur l'ouverture du scanner
+const OpenShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.OpenShiftModal), { ssr: false });
+const CloseShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CloseShiftModal), { ssr: false });
+const ZSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.ZSummaryModal), { ssr: false });
+const CounterSalePanel = dynamic(() => import('@/components/scan/CounterSalePanel').then((m) => m.CounterSalePanel), {
+    ssr: false,
+    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du guichet…</p>,
+});
 
 // ── Types ─────────────────────────────────────────────────────────
 
-interface EventStats { scanned_today: number; total_tickets: number; }
-
 interface EventInfo {
-    id: string; title: string; date: string; location: string;
-    status: string; cover_image_url?: string;
+    id: string; title: string; date?: string; start_time?: string | null; location?: string;
+    status: string;
 }
 
 interface Assignment {
-    id: string; can_accept_cash: boolean;
-    events: EventInfo; stats: EventStats;
+    id: string;
+    can_accept_cash: boolean;
+    entry_point: string | null;
+    counter_sale_enabled: boolean;
+    events: EventInfo;
+}
+
+interface ScanStats {
+    doorLabel: string;
+    doorEntries: number;
+    myEntries: number;
+    myRefusals: number;
+    refusalsByResult: ServedRefusal[];
+    recent: ServedScan[];
 }
 
 type InputMode = 'camera' | 'manual';
+type Stage = 'idle' | 'pending' | 'slow' | 'result';
+type Area = 'controle' | 'guichet' | 'caisse';
 
-interface HistoryEntry { key: string; at: string; outcome: ScanOutcome }
+interface Shown { id: number; outcome: ScanOutcome; payload: string | null }
 
-const FEEDBACK_DISPLAY_MS = 3500;
-const STATS_REFRESH_DEBOUNCE_MS = 800;
+interface DeviceIncident { eventId: string; kind: 'NETWORK' | 'TIMEOUT'; at: string }
+
 const SCANNER_PATH = '/controller/scanner';
+/** « Réseau lent » après 1,5 s sans réponse (contrat 6.2). */
+const SLOW_AFTER_MS = 1500;
+/** Même QR qu'une entrée validée : ignoré pendant 20 s (D41). */
+const DUPLICATE_VALID_MS = 20_000;
+/** Retour automatique : refus, hors fenêtre et incident technique (D44). */
+const REFUSAL_RETURN_MS = 3000;
+/** Retour automatique d'une entrée validée : choix de l'appareil (D44). */
+const ACCEPT_RETURN_CHOICES = [1000, 1500, 2000, 3000] as const;
+const DEFAULT_ACCEPT_RETURN_MS = 1500;
+const AUTO_RETURN_KEY = 'ev_scanner_auto_return_ms';
+/** Compteurs relus après un scan (regroupe les rafales) ; temps réel : 5 s (contrat 6.2). */
+const STATS_AFTER_SCAN_MS = 800;
+const STATS_AFTER_REALTIME_MS = 5000;
+const MAX_INCIDENTS_PER_REPORT = 20;
 
 /** Libellé (EVENT_STATUS_META) d'un événement fermé au contrôle : terminé, suspendu ou annulé ; null sinon. */
 function closedStatusLabel(status?: string): string | null {
@@ -72,247 +115,402 @@ function closedStatusLabel(status?: string): string | null {
     return isEventStatus(status) ? EVENT_STATUS_META[status].label : null;
 }
 
-// ── Composant Principal ──────────────────────────────────────────
+function readAutoReturn(): number {
+    try {
+        const raw = Number(window.localStorage.getItem(AUTO_RETURN_KEY));
+        return (ACCEPT_RETURN_CHOICES as readonly number[]).includes(raw) ? raw : DEFAULT_ACCEPT_RETURN_MS;
+    } catch (err) {
+        console.warn('[scanner] préférence de retour automatique illisible (valeur par défaut) :', err instanceof Error ? err.message : String(err));
+        return DEFAULT_ACCEPT_RETURN_MS;
+    }
+}
+
+function mark(name: 'ev-scan:read' | 'ev-scan:pending' | 'ev-scan:result'): void {
+    try {
+        performance.mark(name);
+    } catch (err) {
+        console.warn(`[scanner] marque ${name} non posée :`, err instanceof Error ? err.message : String(err));
+    }
+}
+
+function toNumber(v: unknown): number {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+}
+
+// ── Composant principal ──────────────────────────────────────────
 
 export default function ControllerScannerPage() {
     const router = useRouter();
 
-    // Données
-    const [assignments, setAssignments]       = useState<Assignment[]>([]);
-    const [loading, setLoading]               = useState(true);
-    const [error, setError]                   = useState('');
-    const [selected, setSelected]             = useState<Assignment | null>(null);
+    // Affectations
+    const [assignments, setAssignments] = useState<Assignment[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [started, setStarted] = useState(false);
     const [controllerName, setControllerName] = useState('');
-    const [refusedCountMap, setRefusedCountMap] = useState<Record<string, number>>({});
 
-    // Scanner
-    const [inputMode, setInputMode]           = useState<InputMode>('camera');
-    const [isVerifying, setIsVerifying]       = useState(false);
-    const [feedback, setFeedback]             = useState<ScanOutcome | null>(null);
-    const [cashError, setCashError]           = useState<ScanOutcome | null>(null);
+    // Scan
+    const [inputMode, setInputMode] = useState<InputMode>('camera');
+    const [area, setArea] = useState<Area>('controle');
+    const [stage, setStage] = useState<Stage>('idle');
+    const [attempt, setAttempt] = useState(1);
+    const [shown, setShown] = useState<Shown | null>(null);
     const [cashConfirming, setCashConfirming] = useState(false);
-    const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [cashError, setCashError] = useState<ScanOutcome | null>(null);
+    const [ignoredNotice, setIgnoredNotice] = useState<string | null>(null);
+    const [online, setOnline] = useState(true);
+    const [autoReturnMs, setAutoReturnMs] = useState(DEFAULT_ACCEPT_RETURN_MS);
 
-    // Mute Audio Wolof
-    const [isMuted, setIsMuted] = useState(false);
+    // Chiffres servis par le serveur
+    const [stats, setStats] = useState<ScanStats | null>(null);
+    const [statsError, setStatsError] = useState<string | null>(null);
 
-    // Flash plein écran (haute visibilité foule / nuit)
-    const [combatFlash, setCombatFlash] = useState<{
-        status: CombatFeedbackType;
-        message?: string;
-        holderName?: string;
-        category?: string;
-        ticketNumber?: string;
-        durationMs?: number;
-    } | null>(null);
-
-    const [scanHistory, setScanHistory] = useState<HistoryEntry[]>([]);
+    // Caisse
+    const [activeShift, setActiveShift] = useState<ServedShift | null>(null);
+    const [showOpenShift, setShowOpenShift] = useState(false);
+    const [showCloseShift, setShowCloseShift] = useState(false);
+    const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-    // Sessions de caisse
-    const [activeShift, setActiveShift]               = useState<Shift | null>(null);
-    const [showOpenShiftModal, setShowOpenShiftModal]   = useState(false);
-    const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
-    const [showZSummaryModal, setShowZSummaryModal]     = useState(false);
-    const [zSummary, setZSummary]                       = useState<ShiftSummary | null>(null);
+    const selected = assignments.find((a) => a.id === selectedId) ?? null;
+    const eventId = selected?.events?.id ?? null;
 
-    /** Encaissement espèces en attente de décision : caméra et saisie en pause. */
-    const cashPending = feedback?.result === 'cash_required';
-
-    useEffect(() => {
-        setIsMuted(isWolofMuted());
-    }, []);
-
-    const handleToggleMute = useCallback(() => {
-        setIsMuted(toggleWolofMuted());
-    }, []);
-
-    const handleRepeatWolof = useCallback(async () => {
-        const wolof = feedback ? wolofTypeFor(feedback) : null;
-        await repeatLastWolofAudio('wolof', wolof ?? undefined);
-    }, [feedback]);
+    const eventIdRef = useRef<string | null>(null);
+    eventIdRef.current = started ? eventId : null;
+    /** Un scan est envoyé ou son résultat est affiché : toute lecture est écartée (avec trace). */
+    const busyRef = useRef(false);
+    const lastValidRef = useRef<{ payload: string; at: number } | null>(null);
+    const ignoredTraceRef = useRef<{ payload: string; at: number } | null>(null);
+    const seqRef = useRef(0);
+    const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const incidentsRef = useRef<DeviceIncident[]>([]);
+    const flushingRef = useRef(false);
 
     /** Session expirée (HTTP 401) : retour à la connexion, jamais un « billet invalide ». */
-    const redirectIfSessionExpired = useCallback((outcome: ScanOutcome): boolean => {
+    const redirectIfSessionExpired = useCallback((outcome: { httpStatus: number | null }): boolean => {
         if (outcome.httpStatus !== 401) return false;
         router.replace(`/login?redirect=${encodeURIComponent(SCANNER_PATH)}`);
         return true;
     }, [router]);
 
-    const fetchActiveShift = useCallback(async (eventId: string) => {
+    const goToLogin = useCallback(() => {
+        router.replace(`/login?redirect=${encodeURIComponent(SCANNER_PATH)}`);
+    }, [router]);
+
+    // ── Démarrage : préférence orpheline de l'audio retirée (D52), préférence de retour, réseau ──
+    useEffect(() => {
         try {
-            const res = await fetch(`/api/controller/shifts/active?event_id=${eventId}`, { cache: 'no-store' });
+            window.localStorage.removeItem('event_village_wolof_muted');
+        } catch (err) {
+            console.warn('[scanner] préférence audio du lot 4 non retirée :', err instanceof Error ? err.message : String(err));
+        }
+        setAutoReturnMs(readAutoReturn());
+        setOnline(navigator.onLine !== false);
+    }, []);
+
+    // ── Affectations ──
+    const fetchAssignments = useCallback(async () => {
+        try {
+            const res = await fetch('/api/controller/assignments', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+            if (res.status === 401) {
+                goToLogin();
+                return;
+            }
             const data = await res.json();
-            if (res.ok && data.success) setActiveShift(data.shift || null);
-            else console.warn('[scanner] caisse active illisible :', res.status, data?.error);
+            if (!res.ok || !data.success) {
+                setLoadError(data.error || 'Impossible de charger les événements.');
+                return;
+            }
+            const list: Assignment[] = ((data.assignments ?? []) as Array<Record<string, unknown>>).map((a) => ({
+                id: String(a.id),
+                can_accept_cash: a.can_accept_cash === true,
+                entry_point: typeof a.entry_point === 'string' && a.entry_point.trim() !== '' ? a.entry_point : null,
+                counter_sale_enabled: a.counter_sale_enabled === true,
+                events: (a.events ?? {}) as EventInfo,
+            }));
+            // Événements ouverts au contrôle d'abord, puis par date
+            list.sort((x, y) => Number(isEventEligibleForController(y.events?.status)) - Number(isEventEligibleForController(x.events?.status))
+                || String(x.events?.date ?? '').localeCompare(String(y.events?.date ?? '')));
+            setAssignments(list);
+            if (data.controller) {
+                const name = [data.controller.first_name, data.controller.last_name].filter(Boolean).join(' ');
+                setControllerName(name);
+            }
+            setSelectedId((current) => (current && list.some((a) => a.id === current) ? current
+                : (list.find((a) => isEventEligibleForController(a.events?.status)) ?? list[0])?.id ?? null));
+            setLoadError('');
+        } catch (err) {
+            console.warn('[scanner] affectations : réseau indisponible', err instanceof Error ? err.message : String(err));
+            setLoadError('Réseau indisponible : vos événements n’ont pas pu être chargés.');
+        } finally {
+            setLoading(false);
+        }
+    }, [goToLogin]);
+
+    useEffect(() => { void fetchAssignments(); }, [fetchAssignments]);
+
+    // ── Chiffres du contrôleur (serveur) ──
+    const fetchStats = useCallback(async () => {
+        const id = eventIdRef.current;
+        if (!id) return;
+        try {
+            const res = await fetch(`/api/controller/scans?event_id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+            if (res.status === 401) {
+                goToLogin();
+                return;
+            }
+            const data = await res.json();
+            if (id !== eventIdRef.current) return;
+            if (!res.ok) {
+                setStatsError(typeof data.error === 'string' ? data.error : 'Vos chiffres n’ont pas pu être lus.');
+                return;
+            }
+            setStats({
+                doorLabel: String(data.door_label ?? 'Vos entrées'),
+                doorEntries: toNumber(data.door_entries),
+                myEntries: toNumber(data.my_entries),
+                myRefusals: toNumber(data.my_refusals),
+                refusalsByResult: Array.isArray(data.refusals_by_result) ? data.refusals_by_result : [],
+                recent: Array.isArray(data.recent) ? data.recent : [],
+            });
+            setStatsError(null);
+        } catch (err) {
+            console.warn('[scanner] chiffres du contrôle : réseau indisponible', err instanceof Error ? err.message : String(err));
+            if (id === eventIdRef.current) setStatsError('Réseau indisponible : chiffres non actualisés.');
+        }
+    }, [goToLogin]);
+
+    const scheduleStats = useCallback((delayMs: number) => {
+        if (statsTimerRef.current) {
+            if (delayMs >= STATS_AFTER_REALTIME_MS) return; // une relecture est déjà prévue
+            clearTimeout(statsTimerRef.current);
+        }
+        statsTimerRef.current = setTimeout(() => {
+            statsTimerRef.current = null;
+            void fetchStats();
+        }, delayMs);
+    }, [fetchStats]);
+
+    const fetchActiveShift = useCallback(async () => {
+        const id = eventIdRef.current;
+        if (!id) return;
+        try {
+            const res = await fetch(`/api/controller/shifts/active?event_id=${encodeURIComponent(id)}`, { cache: 'no-store' });
+            const data = await res.json();
+            if (id !== eventIdRef.current) return;
+            if (res.ok && data.success) {
+                setActiveShift(data.shift ? { ...data.shift, expected_cash_in_drawer: data.expected_cash_in_drawer ?? data.shift.expected_cash_in_drawer ?? null } : null);
+            } else {
+                console.warn('[scanner] caisse active illisible :', res.status, data?.error);
+            }
         } catch (err) {
             console.warn('[scanner] caisse active : réseau indisponible', err instanceof Error ? err.message : String(err));
         }
     }, []);
 
-    // ── Assignations, état du contrôleur et statistiques (serveur) ──
-    const fetchAssignments = useCallback(async () => {
+    // ── Incidents réseau de l'appareil, déclarés en lot au retour du réseau (D54) ──
+    const flushIncidents = useCallback(async () => {
+        const first = incidentsRef.current[0];
+        if (!first || flushingRef.current || navigator.onLine === false) return;
+        const batch = incidentsRef.current.filter((i) => i.eventId === first.eventId).slice(0, MAX_INCIDENTS_PER_REPORT);
+        flushingRef.current = true;
         try {
-            const res = await fetch('/api/controller/assignments', {
-                cache: 'no-store',
-                headers: { 'Cache-Control': 'no-cache' },
+            const res = await fetch(SCAN_INCIDENTS_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ eventId: first.eventId, incidents: batch.map(({ kind, at }) => ({ kind, at })) }),
             });
-            if (res.status === 401) {
-                router.replace(`/login?redirect=${encodeURIComponent(SCANNER_PATH)}`);
-                return;
-            }
-            const data = await res.json();
-            if (data.success) {
-                const list: Assignment[] = data.assignments ?? [];
-                setAssignments(list);
-                if (data.controller) {
-                    const name = [data.controller.first_name, data.controller.last_name].filter(Boolean).join(' ');
-                    setControllerName(name || 'Contrôleur');
-                }
-                setSelected(current => {
-                    if (list.length === 0) return null;
-                    if (!current) return list.find(a => a.events?.status !== 'TERMINE') || list[0];
-                    return list.find(a => a.events?.id === current.events?.id)
-                        || list.find(a => a.events?.status !== 'TERMINE')
-                        || list[0];
-                });
-                setError('');
+            if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 429)) {
+                if (!res.ok) console.warn(`[scanner] incidents refusés par le serveur (HTTP ${res.status}) : abandonnés`);
+                incidentsRef.current = incidentsRef.current.filter((i) => !batch.includes(i));
             } else {
-                setError(data.error || 'Impossible de charger les événements.');
+                console.warn(`[scanner] incidents non déclarés (HTTP ${res.status}) : nouvel essai au prochain retour du réseau`);
             }
         } catch (err) {
-            console.warn('[scanner] assignations : réseau indisponible', err instanceof Error ? err.message : String(err));
-            setError('Erreur réseau.');
+            console.warn('[scanner] incidents non déclarés (réseau) : nouvel essai plus tard', err instanceof Error ? err.message : String(err));
         } finally {
-            setLoading(false);
+            flushingRef.current = false;
         }
-    }, [router]);
-
-    /** Rafraîchit les compteurs depuis le serveur (regroupe les rafales de scans et d'événements Realtime). */
-    const scheduleStatsRefresh = useCallback(() => {
-        if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
-        statsTimerRef.current = setTimeout(() => { void fetchAssignments(); }, STATS_REFRESH_DEBOUNCE_MS);
-    }, [fetchAssignments]);
+    }, []);
 
     useEffect(() => {
-        void fetchAssignments();
-    }, [fetchAssignments]);
+        const goOnline = () => {
+            setOnline(true);
+            void flushIncidents();
+            void fetchStats();
+        };
+        const goOffline = () => setOnline(false);
+        window.addEventListener('online', goOnline);
+        window.addEventListener('offline', goOffline);
+        return () => {
+            window.removeEventListener('online', goOnline);
+            window.removeEventListener('offline', goOffline);
+        };
+    }, [fetchStats, flushIncidents]);
 
+    // ── Événement contrôlé : chiffres, caisse, temps réel (billets compostés, anti-rebond 5 s) ──
     useEffect(() => {
-        if (selected?.events?.id && selected?.can_accept_cash) void fetchActiveShift(selected.events.id);
+        if (!started || !eventId) return;
+        setStats(null);
+        setStatsError(null);
+        void fetchStats();
+        if (selected?.can_accept_cash) void fetchActiveShift();
         else setActiveShift(null);
-    }, [selected?.events?.id, selected?.can_accept_cash, fetchActiveShift]);
-
-    // Lot 5 (contrat O3) : plus d'abonnement à event_controllers, events ni users, absents de la publication
-    // supabase_realtime (aucun message n'arrivait). Le serveur reste la source de vérité : chaque scan vérifie
-    // l'affectation, le statut de l'événement et celui du compte, et les affectations sont relues à chaque
-    // billet composté (compteurs ci-dessous).
-
-    // ── Realtime : billets compostés de l'événement (toutes portes) → compteurs serveur ──
-    useEffect(() => {
-        if (!selected?.events?.id) return;
-        const eventId = selected.events.id;
         const supabase = getBrowserClient();
         const channel = supabase
             .channel(`scanner-tickets-live-${eventId}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tickets', filter: `event_id=eq.${eventId}` },
                 (payload: { new: Record<string, unknown> }) => {
-                    if ((payload.new as { status?: string })?.status === 'UTILISE') scheduleStatsRefresh();
+                    if ((payload.new as { status?: string })?.status === 'UTILISE') scheduleStats(STATS_AFTER_REALTIME_MS);
                 })
             .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, [selected?.events?.id, scheduleStatsRefresh]);
+        return () => { void supabase.removeChannel(channel); };
+    }, [started, eventId, selected?.can_accept_cash, fetchStats, fetchActiveShift, scheduleStats]);
 
     useEffect(() => () => {
-        if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-        if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
-        stopWolofAudio();
+        for (const t of [slowTimerRef, noticeTimerRef, statsTimerRef]) if (t.current) clearTimeout(t.current);
     }, []);
 
-    // ── Retour du scan : flash, voix, carte, historique, compteur de refus ──
-    const presentOutcome = useCallback((outcome: ScanOutcome, eventId: string | undefined) => {
+    // ── Marques de mesure : « Envoi… » et résultat affichés ──
+    useEffect(() => {
+        if (stage === 'pending') mark('ev-scan:pending');
+    }, [stage]);
+    useEffect(() => {
+        if (shown) mark('ev-scan:result');
+    }, [shown]);
+
+    // ── Résultat : vibration, plein écran, compteurs ──
+    const presentOutcome = useCallback((outcome: ScanOutcome, payload: string | null) => {
+        if (slowTimerRef.current) {
+            clearTimeout(slowTimerRef.current);
+            slowTimerRef.current = null;
+        }
         const technical = isTechnicalOutcome(outcome);
-        const combatType = combatTypeFor(outcome);
-
-        // Incident technique : aucun signal de rejet (ni son, ni vibration, ni voix)
-        if (!technical) triggerCombatSensoryFeedback(combatType);
-        const wolof = wolofTypeFor(outcome);
-        if (wolof) {
-            playWolofAudio(wolof).catch((err: unknown) => console.warn('[scanner] voix wolof indisponible', err instanceof Error ? err.message : String(err)));
+        // Une vibration par résultat, aucune pour un incident technique (D47, D50)
+        triggerHapticFeedback(categoryFor(outcome));
+        if (outcome.result === 'valid' && !technical && payload) lastValidRef.current = { payload, at: Date.now() };
+        const id = eventIdRef.current;
+        if (id && (outcome.failure === 'network' || outcome.failure === 'offline' || outcome.failure === 'timeout')) {
+            const incident: DeviceIncident = { eventId: id, kind: outcome.failure === 'timeout' ? 'TIMEOUT' : 'NETWORK', at: new Date().toISOString() };
+            incidentsRef.current = [...incidentsRef.current, incident].slice(-100);
         }
-
-        setCombatFlash({
-            status: combatType,
-            message: technical ? `${titleFor(outcome)} — ${outcome.message}` : outcome.message,
-            holderName: outcome.ticket?.holder,
-            category: outcome.ticket?.category,
-            ticketNumber: outcome.ticket?.ticket_number,
-            durationMs: combatType === 'valid' ? 1000 : 3500,
-        });
-
-        setFeedback(outcome);
-        setScanHistory(prev => [{ key: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString(), outcome }, ...prev].slice(0, 15));
-
-        // Compteur « billets refusés » : refus du billet seulement (jamais un incident technique)
-        if (eventId && isTicketRefusal(outcome)) {
-            setRefusedCountMap(prev => ({ ...prev, [eventId]: (prev[eventId] ?? 0) + 1 }));
+        busyRef.current = true;
+        seqRef.current += 1;
+        setShown({ id: seqRef.current, outcome, payload });
+        setStage('result');
+        if (!technical) {
+            scheduleStats(STATS_AFTER_SCAN_MS);
+            if (incidentsRef.current.length > 0) void flushIncidents();
         }
+    }, [flushIncidents, scheduleStats]);
 
-        if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-        // Un encaissement en attente et un incident technique restent affichés jusqu'à l'action suivante
-        if (outcome.result !== 'cash_required' && !technical) {
-            feedbackTimerRef.current = setTimeout(() => setFeedback(null), FEEDBACK_DISPLAY_MS);
+    const dismissResult = useCallback(() => {
+        setShown(null);
+        setCashError(null);
+        setStage('idle');
+        busyRef.current = false;
+    }, []);
+
+    /** Envoi d'un scan (caméra ou saisie manuelle) : « Envoi… », « Réseau lent », puis résultat. */
+    const runScan = useCallback(async (request: ScanRequest, payload: string | null, key?: string) => {
+        busyRef.current = true;
+        setCashError(null);
+        setShown(null);
+        setAttempt(1);
+        setStage('pending');
+        if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+        slowTimerRef.current = setTimeout(() => {
+            slowTimerRef.current = null;
+            setStage((s) => (s === 'pending' ? 'slow' : s));
+        }, SLOW_AFTER_MS);
+        const outcome = await postScan(request, { key, onAttempt: setAttempt });
+        if (redirectIfSessionExpired(outcome)) {
+            if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+            busyRef.current = false;
+            setStage('idle');
+            return;
+        }
+        presentOutcome(outcome, payload);
+    }, [presentOutcome, redirectIfSessionExpired]);
+
+    const runScanRef = useRef(runScan);
+    runScanRef.current = runScan;
+
+    /** Lecture ignorée : toujours tracée (console, au plus une fois par QR et par 5 s) et dite à l'écran. */
+    const traceIgnored = useCallback((payload: string, reason: string, notice: string | null) => {
+        const now = Date.now();
+        const last = ignoredTraceRef.current;
+        if (!last || last.payload !== payload || now - last.at > 5000) {
+            ignoredTraceRef.current = { payload, at: now };
+            console.info(`[scanner] lecture ignorée : ${reason}`);
+        }
+        if (notice) {
+            setIgnoredNotice(notice);
+            if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+            noticeTimerRef.current = setTimeout(() => setIgnoredNotice(null), 3000);
         }
     }, []);
 
-    // ── Scan (caméra ou saisie manuelle) ──
-    const runScan = useCallback(async (request: ScanRequest) => {
-        if (cashPending) return;
-        if (isVerifying) return;
-        setIsVerifying(true);
-        setCashError(null);
-        try {
-            const outcome = await postScan(request);
-            if (redirectIfSessionExpired(outcome)) return;
-            presentOutcome(outcome, request.eventId);
-            if (outcome.result === 'valid') scheduleStatsRefresh();
-        } finally {
-            setIsVerifying(false);
-        }
-    }, [cashPending, isVerifying, redirectIfSessionExpired, presentOutcome, scheduleStatsRefresh]);
-
-    const handleCameraScan = useCallback((code: string) => {
-        const eventId = selected?.events?.id;
+    /** Lecture de la caméra (stable : la caméra la lit par une ref, aucune fermeture périmée). */
+    const handleCameraRead = useCallback((code: string): CameraReadVerdict => {
         const payload = code.trim();
-        if (!eventId || !payload) return;
-        void runScan({ eventId, payload });
-    }, [selected?.events?.id, runScan]);
+        const id = eventIdRef.current;
+        if (!payload) return 'ignored';
+        if (!id) {
+            traceIgnored(payload, 'aucun événement choisi', null);
+            return 'ignored';
+        }
+        if (busyRef.current) {
+            traceIgnored(payload, 'un scan est déjà en cours ou affiché', null);
+            return 'ignored';
+        }
+        const last = lastValidRef.current;
+        if (last && last.payload === payload && Date.now() - last.at < DUPLICATE_VALID_MS) {
+            traceIgnored(payload, `même QR que l’entrée validée à ${formatTime(last.at)} (anti-doublon de 20 s)`,
+                `Même billet que l’entrée validée à ${formatTime(last.at)} : présentez le billet suivant.`);
+            return 'ignored';
+        }
+        mark('ev-scan:read');
+        void runScanRef.current({ eventId: id, payload }, payload);
+        return 'accepted';
+    }, [traceIgnored]);
 
-    const handleManualScan = useCallback(async (manualTicketNumber: string, identityVerified: boolean) => {
-        const eventId = selected?.events?.id;
-        if (!eventId) return;
-        await runScan({ eventId, manualTicketNumber, identityVerified });
-    }, [selected?.events?.id, runScan]);
+    const handleManualValidate = useCallback(async (manualTicketNumber: string, key: string) => {
+        const id = eventIdRef.current;
+        if (!id || busyRef.current) {
+            console.info('[scanner] validation manuelle ignorée : un scan est déjà en cours ou affiché');
+            return;
+        }
+        mark('ev-scan:read');
+        await runScanRef.current({ eventId: id, manualTicketNumber, identityVerified: true }, null, key);
+    }, []);
 
-    // ── Encaissement espèces (PUT, tout ou rien côté serveur) ──
+    // ── Encaissement espèces (PUT, tout ou rien côté serveur, idempotent) ──
     const handleConfirmCash = async () => {
-        const eventId = selected?.events?.id;
-        if (!feedback?.scanId || !eventId) return;
-        if (selected?.can_accept_cash && !activeShift) {
-            // La carte d'encaissement reste affichée : l'encaissement reprend une fois la caisse ouverte
-            setShowOpenShiftModal(true);
+        const id = eventIdRef.current;
+        const pending = shown?.outcome;
+        if (!pending?.scanId || !id) return;
+        if (!activeShift) {
+            // L'écran d'encaissement reste affiché : l'encaissement reprend une fois la caisse ouverte
+            setShowOpenShift(true);
             return;
         }
         setCashConfirming(true);
         try {
-            const outcome = await confirmCashCheckin(feedback.scanId, eventId);
+            const outcome = await confirmCashCheckin(pending.scanId, id);
             if (redirectIfSessionExpired(outcome)) return;
             if (outcome.result === 'valid' && !outcome.failure) {
                 setCashError(null);
-                presentOutcome({ ...outcome, ticket: feedback.ticket, message: outcome.amount !== undefined ? `Encaissé : ${formatFcfa(outcome.amount)}. Entrée validée.` : outcome.message }, eventId);
-                if (selected?.can_accept_cash) void fetchActiveShift(eventId);
-                scheduleStatsRefresh();
+                presentOutcome({
+                    ...outcome,
+                    ticket: pending.ticket,
+                    message: outcome.amount !== undefined ? `Encaissé : ${formatFcfa(outcome.amount)}. Entrée validée.` : outcome.message,
+                }, shown?.payload ?? null);
+                void fetchActiveShift();
             } else {
                 // Refus du serveur : rien n'est encaissé ni composté ; l'écran reste jusqu'à une action explicite
                 setCashError(outcome);
@@ -320,12 +518,6 @@ export default function ControllerScannerPage() {
         } finally {
             setCashConfirming(false);
         }
-    };
-
-    /** Abandon de l'encaissement : le spectateur n'entre pas, le scan reprend. */
-    const handleAbandonCash = () => {
-        setCashError(null);
-        setFeedback(null);
     };
 
     const handleLogout = async () => {
@@ -337,13 +529,45 @@ export default function ControllerScannerPage() {
         router.push('/login');
     };
 
-    const selectEvent = (a: Assignment) => {
-        setSelected(a);
-        setFeedback(null);
-        setCashError(null);
+    const changeAutoReturn = (value: number) => {
+        setAutoReturnMs(value);
+        try {
+            window.localStorage.setItem(AUTO_RETURN_KEY, String(value));
+        } catch (err) {
+            console.warn('[scanner] préférence de retour automatique non enregistrée :', err instanceof Error ? err.message : String(err));
+        }
     };
 
-    // ── Rendu : chargement / erreur / aucune affectation ──
+    const backToStart = () => {
+        dismissResult();
+        lastValidRef.current = null;
+        setStarted(false);
+        setArea('controle');
+        setStats(null);
+        void fetchAssignments();
+    };
+
+    const logoutDialog = (
+        <ConfirmDialog
+            isOpen={showLogoutConfirm}
+            onClose={() => setShowLogoutConfirm(false)}
+            onConfirm={handleLogout}
+            title="Se déconnecter ?"
+            message="Vous serez déconnecté de tous vos appareils. Vous devrez vous reconnecter pour accéder au scanner."
+            confirmLabel="Déconnexion"
+            variant="danger"
+        />
+    );
+
+    const logoutButton = (
+        <div className="flex justify-center pt-2">
+            <Button variant="ghost" leftIcon={<LogOut size={18} />} onClick={() => setShowLogoutConfirm(true)}>
+                Se déconnecter
+            </Button>
+        </div>
+    );
+
+    // ── Rendu : chargement, erreur, aucune affectation, écran de départ ──
 
     if (loading) {
         return (
@@ -354,13 +578,17 @@ export default function ControllerScannerPage() {
         );
     }
 
-    if (error) {
+    if (loadError) {
         return (
-            <ErrorState
-                title="Vos événements n’ont pas pu être chargés"
-                description={error}
-                onRetry={() => { setLoading(true); void fetchAssignments(); }}
-            />
+            <>
+                <ErrorState
+                    title="Vos événements n’ont pas pu être chargés"
+                    description={loadError}
+                    onRetry={() => { setLoading(true); void fetchAssignments(); }}
+                />
+                {logoutButton}
+                {logoutDialog}
+            </>
         );
     }
 
@@ -372,344 +600,298 @@ export default function ControllerScannerPage() {
                         <Calendar size={28} />
                     </span>
                     <div className="flex flex-col gap-1">
-                        <h2 className="text-lg font-semibold text-fg">Aucun événement assigné</h2>
+                        <h1 className="text-lg font-semibold text-fg">Aucun événement assigné</h1>
                         <p className="mx-auto max-w-sm text-sm leading-relaxed text-fg-muted">
                             Vous serez informé lorsqu’un nouvel événement vous sera assigné.
                         </p>
                     </div>
-                    <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-                        <LinkButton href="/" variant="secondary" leftIcon={<ArrowLeft size={18} />}>
-                            Retour à l’accueil
-                        </LinkButton>
-                        <Button variant="ghost" leftIcon={<LogOut size={18} />} onClick={() => setShowLogoutConfirm(true)}>
-                            Se déconnecter
-                        </Button>
-                    </div>
+                    <LinkButton href="/" variant="secondary">Retour à l’accueil</LinkButton>
                 </div>
-                <ConfirmDialog
-                    isOpen={showLogoutConfirm}
-                    onClose={() => setShowLogoutConfirm(false)}
-                    onConfirm={handleLogout}
-                    title="Se déconnecter ?"
-                    message="Vous serez déconnecté de tous vos appareils. Vous devrez vous reconnecter pour accéder au scanner."
-                    confirmLabel="Déconnexion"
-                    variant="danger"
-                />
+                {logoutButton}
+                {logoutDialog}
             </>
         );
     }
 
-    const currentRefused = selected?.events?.id ? (refusedCountMap[selected.events.id] ?? 0) : 0;
-    const eventStatus = selected?.events?.status;
-    const eventStatusLabel = closedStatusLabel(eventStatus);
-    const scanDisabled = cashPending || isVerifying;
-    const arrivals = selected?.stats?.scanned_today ?? 0;
-    const validTickets = selected?.stats?.total_tickets ?? 0;
-
-    return (
-        <div className="flex flex-col gap-4">
-            <CombatFlashOverlay
-                status={combatFlash?.status ?? null}
-                message={combatFlash?.message}
-                holderName={combatFlash?.holderName}
-                category={combatFlash?.category}
-                ticketNumber={combatFlash?.ticketNumber}
-                durationMs={combatFlash?.durationMs}
-                onDismiss={() => setCombatFlash(null)}
-                onRepeatWolof={handleRepeatWolof}
-            />
-
-            {/* Rôle et voix wolof (le retour à l'espace client est dans l'en-tête de l'espace contrôleur) */}
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-3 py-2">
-                <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-fg">
-                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-brand-bg text-brand-fg" aria-hidden="true">
-                        <ScanLine size={16} />
-                    </span>
-                    <span className="truncate">{controllerName ? `Contrôleur · ${controllerName}` : 'Contrôleur'}</span>
-                </span>
-                <Button
-                    variant="secondary"
-                    onClick={handleToggleMute}
-                    data-testid="toggle-wolof-mute-btn"
-                    aria-pressed={!isMuted}
-                    leftIcon={isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                    className={isMuted ? undefined : 'border-success-border bg-success-bg text-success-fg hover:bg-success-bg'}
-                >
-                    <span className="sr-only">Voix wolof : </span>
-                    {isMuted ? 'Son coupé' : 'Son activé'}
-                </Button>
-            </div>
-
-            {/* Sélecteur d'événement */}
-            {assignments.length > 1 && (
-                <Select
-                    id="scanner-event-select"
-                    label={`Mes événements (${formatInteger(assignments.length)})`}
-                    value={selected?.id ?? ''}
-                    onChange={(e) => {
-                        const found = assignments.find(a => a.id === e.target.value);
-                        if (found) selectEvent(found);
-                    }}
-                    disabled={cashPending}
-                    hint={cashPending ? 'Tranchez d’abord l’encaissement en cours pour changer d’événement.' : undefined}
-                    options={assignments.map(a => {
-                        const label = closedStatusLabel(a.events?.status);
-                        return { value: a.id, label: `${a.events?.title || 'Événement sans titre'}${label ? ` · ${label}` : ''}` };
-                    })}
+    if (!started || !selected) {
+        const choices: StartChoice[] = assignments.map((a) => ({
+            id: a.id,
+            title: a.events?.title || 'Événement sans titre',
+            dateLabel: formatEventDateTime(a.events?.date ?? null, a.events?.start_time ?? null),
+            location: a.events?.location ?? null,
+            closedLabel: closedStatusLabel(a.events?.status),
+            entryPoint: a.entry_point,
+        }));
+        return (
+            <>
+                <ScannerStartScreen
+                    choices={choices}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    onStart={() => { lastValidRef.current = null; setStarted(true); }}
+                    controllerName={controllerName || undefined}
                 />
+                {logoutButton}
+                {logoutDialog}
+            </>
+        );
+    }
+
+    // ── Rendu : contrôle en cours ──
+
+    const eventStatus = selected.events?.status;
+    const eligible = isEventEligibleForController(eventStatus);
+    const canCash = selected.can_accept_cash;
+    const showCounter = canCash && selected.counter_sale_enabled;
+    const outcome = shown?.outcome ?? null;
+    const cashPending = outcome?.result === 'cash_required' && !isTechnicalOutcome(outcome);
+    const modalOpen = showOpenShift || showCloseShift || zSummary !== null;
+    // Hors ligne, la caméra continue de lire : chaque lecture affiche « Hors ligne : rien n'est validé »
+    const cameraPaused = stage !== 'idle' || modalOpen;
+    const tabs = [
+        { id: 'controle', label: 'Contrôle' },
+        ...(showCounter ? [{ id: 'guichet', label: 'Guichet' }] : []),
+        ...(canCash ? [{ id: 'caisse', label: 'Caisse' }] : []),
+    ];
+    const currentArea: Area = tabs.some((t) => t.id === area) ? area : 'controle';
+
+    const pendingLayer = stage === 'pending' || stage === 'slow' ? (
+        <div data-scan-state={stage} role="status" aria-live="polite"
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
+            <Loader2 size={40} aria-hidden="true" className="motion-safe:animate-spin" />
+            <p className="text-2xl font-bold">{stage === 'pending' ? 'Envoi…' : 'Réseau lent'}</p>
+            {stage === 'slow' && (
+                <p className="max-w-xs text-base font-semibold">
+                    Ne refaites pas scanner : nouvel essai automatique{attempt > 1 ? ` (essai ${attempt} sur 3)` : ''}.
+                </p>
             )}
+        </div>
+    ) : null;
 
-            {selected && (
+    const control = (
+        <div className="flex flex-col gap-3">
+            {!eligible ? (
+                <StatusBanner
+                    tone={eventStatus === 'SUSPENDU' || eventStatus === 'ANNULE' ? 'danger' : 'warning'}
+                    title={eventStatus === 'SUSPENDU' ? 'Événement suspendu'
+                        : eventStatus === 'TERMINE' ? 'Événement terminé'
+                        : eventStatus === 'ANNULE' ? 'Événement annulé'
+                        : 'Événement non publié'}
+                >
+                    {eventStatus === 'SUSPENDU' ? 'Les contrôles d’accès sont suspendus sur cet événement.'
+                        : eventStatus === 'TERMINE' ? 'Les scans ne sont plus autorisés sur cet événement.'
+                        : eventStatus === 'ANNULE' ? 'Événement annulé : aucune entrée n’est possible, les billets sont remboursés.'
+                        : 'Le contrôle ouvrira quand l’événement sera publié.'}
+                </StatusBanner>
+            ) : (
                 <>
-                    {/* En-tête de l'événement */}
-                    <section aria-labelledby="scanner-event-title" className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <h2 id="scanner-event-title" className="min-w-0 break-words text-base font-semibold text-fg">{selected.events?.title}</h2>
-                            {eventStatusLabel && <StatusBadge domain="event" status={eventStatus} />}
-                        </div>
-                        {(selected.events?.location || selected.can_accept_cash) && (
-                            <div className="flex flex-col gap-1 text-sm sm:flex-row sm:flex-wrap sm:gap-x-4">
-                                {selected.events?.location && (
-                                    <span className="inline-flex items-start gap-1.5 text-fg-muted">
-                                        <MapPin size={16} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
-                                        <span className="min-w-0 break-words">{selected.events.location}</span>
-                                    </span>
-                                )}
-                                {selected.can_accept_cash && (
-                                    <span className="inline-flex items-center gap-1.5 font-semibold text-success-fg">
-                                        <Banknote size={16} aria-hidden="true" className="flex-shrink-0" />
-                                        Encaissement en espèces autorisé
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                    </section>
-
-                    {/* Statistiques (serveur) */}
-                    <section aria-label="Statistiques du contrôle" className="grid grid-cols-3 gap-2 sm:gap-3">
-                        <div className="flex min-w-0 flex-col items-center gap-1 rounded-2xl border border-border bg-surface p-3 text-center">
-                            <Ticket size={20} aria-hidden="true" className="text-success-fg" />
-                            <span className="text-2xl font-bold leading-none text-fg tabular-nums">{formatInteger(validTickets)}</span>
-                            <span className="text-sm leading-snug text-fg-muted">Billets valides</span>
-                        </div>
-                        <div className="flex min-w-0 flex-col items-center gap-1 rounded-2xl border border-border bg-surface p-3 text-center">
-                            <Users size={20} aria-hidden="true" className="text-brand-fg" />
-                            <span className="text-2xl font-bold leading-none text-fg tabular-nums">{formatInteger(arrivals)}</span>
-                            <span className="text-sm leading-snug text-fg-muted">Arrivées</span>
-                        </div>
-                        <div className="flex min-w-0 flex-col items-center gap-1 rounded-2xl border border-border bg-surface p-3 text-center">
-                            <ShieldAlert size={20} aria-hidden="true" className="text-danger-fg" />
-                            <span className="text-2xl font-bold leading-none text-fg tabular-nums">{formatInteger(currentRefused)}</span>
-                            <span className="text-sm leading-snug text-fg-muted">Billets refusés</span>
-                        </div>
-                        <p className="sr-only" role="status" aria-atomic="true">
-                            {`${formatInteger(arrivals)} arrivées, ${formatInteger(currentRefused)} billets refusés`}
-                        </p>
-                    </section>
-
-                    {selected.can_accept_cash && (
-                        <ScannerShiftBanner
-                            canAcceptCash={selected.can_accept_cash}
-                            activeShift={activeShift}
-                            onOpenShiftClick={() => setShowOpenShiftModal(true)}
-                            onCloseShiftClick={() => setShowCloseShiftModal(true)}
+                    {/* Caméra gardée ouverte mais en pause pendant un encaissement (décision attendue) */}
+                    {inputMode === 'camera' && (
+                        <CameraQrScanner
+                            onScan={handleCameraRead}
+                            paused={cameraPaused || cashPending}
+                            onSwitchToManual={() => setInputMode('manual')}
+                            overlay={pendingLayer}
                         />
                     )}
+                    {inputMode === 'manual' && (
+                        <div className="relative flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
+                            {pendingLayer && <div className="relative min-h-40 overflow-hidden rounded-2xl">{pendingLayer}</div>}
+                            <ManualEntryForm
+                                eventId={selected.events.id}
+                                onValidate={handleManualValidate}
+                                isSubmitting={stage === 'pending' || stage === 'slow'}
+                                disabled={cashPending || !online}
+                                disabledReason={!online ? 'Hors ligne : la saisie manuelle reprendra au retour du réseau.' : 'Saisie en pause : tranchez d’abord l’encaissement en cours.'}
+                                onSessionExpired={goToLogin}
+                            />
+                        </div>
+                    )}
 
-                    {!isEventEligibleForController(eventStatus) ? (
-                        <StatusBanner
-                            tone={eventStatus === 'SUSPENDU' || eventStatus === 'ANNULE' ? 'danger' : 'warning'}
-                            title={eventStatus === 'SUSPENDU' ? 'Événement suspendu'
-                                : eventStatus === 'TERMINE' ? 'Événement terminé'
-                                : eventStatus === 'ANNULE' ? 'Événement annulé'
-                                : 'Événement non publié'}
+                    {ignoredNotice && (
+                        <p role="status" className="rounded-xl border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-fg">
+                            {ignoredNotice}
+                        </p>
+                    )}
+
+                    {/* Mode : caméra ou saisie manuelle */}
+                    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Mode de contrôle">
+                        <Button
+                            variant={inputMode === 'camera' ? 'primary' : 'secondary'}
+                            size="lg"
+                            className="gap-2 whitespace-nowrap px-4 text-sm"
+                            aria-pressed={inputMode === 'camera'}
+                            onClick={() => setInputMode('camera')}
+                            leftIcon={<Camera size={18} />}
                         >
-                            {eventStatus === 'SUSPENDU' ? 'Les contrôles d’accès sont suspendus sur cet événement.'
-                                : eventStatus === 'TERMINE' ? 'Les scans ne sont plus autorisés sur cet événement.'
-                                : eventStatus === 'ANNULE' ? 'Événement annulé : aucune entrée n’est possible, les billets sont remboursés.'
-                                : 'Le contrôle ouvrira quand l’événement sera publié.'}
-                        </StatusBanner>
-                    ) : (
-                        <>
-                            {/* Encaissement espèces en attente ou refusé par le serveur */}
-                            {cashPending && feedback && (
-                                cashError ? (
-                                    <ScanResultPanel outcome={cashError} title="Encaissement non enregistré">
-                                        <p className="text-sm font-semibold text-fg">
-                                            Rien n’a été encaissé ni validé. Ne laissez pas entrer le spectateur tant que l’encaissement n’est pas confirmé.
-                                        </p>
-                                        <div className="grid gap-2 sm:grid-cols-3">
-                                            {cashError.code === 'CASH_NO_OPEN_SHIFT' && (
-                                                <Button variant="primary" size="lg" onClick={() => setShowOpenShiftModal(true)}>
-                                                    Ouvrir ma caisse
-                                                </Button>
-                                            )}
-                                            {cashError.code !== 'CASH_SCAN_EXPIRED' && (
-                                                <Button variant="secondary" size="lg" isLoading={cashConfirming} onClick={handleConfirmCash}>
-                                                    Réessayer l’encaissement
-                                                </Button>
-                                            )}
-                                            <Button variant="outline" size="lg" onClick={handleAbandonCash}>
-                                                {cashError.code === 'CASH_SCAN_EXPIRED' ? 'Fermer et rescanner le billet' : 'Abandonner (pas d’entrée)'}
-                                            </Button>
-                                        </div>
-                                    </ScanResultPanel>
-                                ) : (
-                                    <ScanResultPanel outcome={feedback}>
-                                        {selected.can_accept_cash ? (
-                                            <div className="grid gap-2 sm:grid-cols-2">
-                                                <Button variant="primary" size="lg" isLoading={cashConfirming} onClick={handleConfirmCash} leftIcon={<Banknote size={18} />}>
-                                                    {feedback.amountDue !== undefined ? `J’ai reçu ${formatFcfa(feedback.amountDue)} : valider l’entrée` : 'J’ai reçu les espèces : valider l’entrée'}
-                                                </Button>
-                                                <Button variant="outline" size="lg" onClick={handleAbandonCash} disabled={cashConfirming}>
-                                                    Annuler (le spectateur ne paie pas)
-                                                </Button>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <p className="text-sm font-semibold text-fg">
-                                                    Vous n’êtes pas habilité à encaisser : orientez le spectateur vers la caisse de l’événement.
-                                                </p>
-                                                <Button variant="outline" size="lg" fullWidth onClick={handleAbandonCash}>
-                                                    Fermer et reprendre le scan
-                                                </Button>
-                                            </>
-                                        )}
-                                    </ScanResultPanel>
-                                )
-                            )}
-
-                            {/* Résultat du dernier scan */}
-                            {feedback && !cashPending && (
-                                <ScanResultPanel outcome={feedback} onRepeatWolof={handleRepeatWolof} />
-                            )}
-
-                            {/* Mode : caméra ou saisie manuelle */}
-                            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Mode de contrôle">
-                                <Button
-                                    variant={inputMode === 'camera' ? 'primary' : 'secondary'}
-                                    size="lg"
-                                    className="gap-2 whitespace-nowrap px-4 text-sm"
-                                    aria-pressed={inputMode === 'camera'}
-                                    onClick={() => { setInputMode('camera'); if (!cashPending) setFeedback(null); }}
-                                    leftIcon={<Camera size={18} />}
-                                >
-                                    Caméra
-                                </Button>
-                                <Button
-                                    variant={inputMode === 'manual' ? 'primary' : 'secondary'}
-                                    size="lg"
-                                    className="gap-2 whitespace-nowrap px-4 text-sm"
-                                    aria-pressed={inputMode === 'manual'}
-                                    onClick={() => { setInputMode('manual'); if (!cashPending) setFeedback(null); }}
-                                    leftIcon={<Keyboard size={18} />}
-                                >
-                                    Saisie manuelle
-                                </Button>
-                            </div>
-
-                            {inputMode === 'camera' && !cashPending && (
-                                <div className="overflow-hidden rounded-2xl">
-                                    <CameraQrScanner
-                                        onScan={handleCameraScan}
-                                        isVerifying={scanDisabled}
-                                        onSwitchToManual={() => setInputMode('manual')}
-                                        autoResumeDelayMs={2500}
-                                    />
-                                </div>
-                            )}
-                            {inputMode === 'camera' && cashPending && (
-                                <StatusBanner tone="info" title="Caméra en pause" icon={<PauseCircle size={20} />}>
-                                    Confirmez ou annulez l’encaissement en cours avant de scanner le billet suivant.
-                                </StatusBanner>
-                            )}
-
-                            {inputMode === 'manual' && (
-                                <div className="rounded-2xl border border-border bg-surface p-4">
-                                    <ManualEntryForm
-                                        onSubmit={handleManualScan}
-                                        isSubmitting={isVerifying}
-                                        disabled={cashPending}
-                                        disabledReason="Saisie en pause : tranchez d’abord l’encaissement en cours."
-                                    />
-                                </div>
-                            )}
-                        </>
-                    )}
-
-                    {/* Historique de la session */}
-                    {scanHistory.length > 0 && (
-                        <section className="flex flex-col gap-2" aria-labelledby="scanner-history-title">
-                            <h3 id="scanner-history-title" className="text-base font-semibold text-fg">
-                                Derniers scans
-                            </h3>
-                            <ul className="flex flex-col gap-1.5">
-                                {scanHistory.slice(0, 8).map(({ key, at, outcome }) => {
-                                    const technical = isTechnicalOutcome(outcome);
-                                    const dot = technical ? 'bg-fg-muted'
-                                        : outcome.result === 'valid' ? 'bg-success'
-                                        : isTicketRefusal(outcome) ? 'bg-danger'
-                                        : 'bg-warning';
-                                    return (
-                                        <li key={key} className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2">
-                                            <span aria-hidden="true" className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${dot}`} />
-                                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
-                                                {titleFor(outcome)}{outcome.ticket?.ticket_number ? ` · ${outcome.ticket.ticket_number}` : ''}
-                                            </span>
-                                            <time dateTime={at} className="flex-shrink-0 text-sm text-fg-muted tabular-nums">
-                                                {formatTime(at)}
-                                            </time>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </section>
-                    )}
-
-                    <div className="flex justify-center pb-8 pt-2">
-                        <Button variant="ghost" leftIcon={<LogOut size={18} />} onClick={() => setShowLogoutConfirm(true)} className="text-fg-muted hover:text-danger-fg">
-                            Se déconnecter
+                            Caméra
+                        </Button>
+                        <Button
+                            variant={inputMode === 'manual' ? 'primary' : 'secondary'}
+                            size="lg"
+                            className="gap-2 whitespace-nowrap px-4 text-sm"
+                            aria-pressed={inputMode === 'manual'}
+                            onClick={() => setInputMode('manual')}
+                            leftIcon={<Keyboard size={18} />}
+                        >
+                            Saisie manuelle
                         </Button>
                     </div>
-
-                    <OpenShiftModal
-                        isOpen={showOpenShiftModal}
-                        onClose={() => setShowOpenShiftModal(false)}
-                        eventId={selected.events.id}
-                        eventTitle={selected.events.title}
-                        onShiftOpened={(shift) => setActiveShift(shift)}
-                    />
-
-                    {activeShift && (
-                        <CloseShiftModal
-                            isOpen={showCloseShiftModal}
-                            onClose={() => setShowCloseShiftModal(false)}
-                            shift={activeShift}
-                            onShiftClosed={(summary) => {
-                                setActiveShift(null);
-                                setZSummary(summary);
-                                setShowZSummaryModal(true);
-                            }}
-                        />
-                    )}
-
-                    <ZSummaryModal
-                        isOpen={showZSummaryModal}
-                        onClose={() => setShowZSummaryModal(false)}
-                        summary={zSummary}
-                    />
                 </>
             )}
 
-            <ConfirmDialog
-                isOpen={showLogoutConfirm}
-                onClose={() => setShowLogoutConfirm(false)}
-                onConfirm={handleLogout}
-                title="Se déconnecter ?"
-                message="Vous serez déconnecté de tous vos appareils. Vous devrez vous reconnecter pour accéder au scanner."
-                confirmLabel="Déconnexion"
-                variant="danger"
+            <ScanHistoryList
+                recent={stats?.recent ?? []}
+                myEntries={stats?.myEntries ?? null}
+                myRefusals={stats?.myRefusals ?? null}
+                refusalsByResult={stats?.refusalsByResult ?? []}
+                loading={stats === null}
+                error={statsError}
             />
+
+            <details className="rounded-2xl border border-border bg-surface">
+                <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-4 text-base font-semibold text-fg">
+                    <Settings2 size={18} aria-hidden="true" className="text-fg-muted" />
+                    Réglages de cet appareil
+                </summary>
+                <div className="px-4 pb-4">
+                    <Select
+                        id="scanner-auto-return"
+                        label="Retour au scan après une entrée validée"
+                        hint="Un refus reste affiché 3 secondes ; un encaissement attend votre décision. Touchez l’écran pour revenir tout de suite."
+                        value={String(autoReturnMs)}
+                        onChange={(e) => changeAutoReturn(Number(e.target.value))}
+                        options={ACCEPT_RETURN_CHOICES.map((ms) => ({ value: String(ms), label: `${String(ms / 1000).replace('.', ',')} s` }))}
+                    />
+                </div>
+            </details>
+        </div>
+    );
+
+    const cashArea = (
+        <div className="flex flex-col gap-3">
+            <ScannerShiftBanner
+                canAcceptCash={canCash}
+                activeShift={activeShift}
+                onOpenShiftClick={() => setShowOpenShift(true)}
+                onCloseShiftClick={() => setShowCloseShift(true)}
+            />
+        </div>
+    );
+
+    // Durée du plein écran : entrée validée = préférence de l'appareil ; encaissement = attend une action
+    const overlayDuration = !outcome ? 0
+        : cashPending ? 0
+        : outcome.result === 'valid' && !isTechnicalOutcome(outcome) ? autoReturnMs
+        : REFUSAL_RETURN_MS;
+    const recentByMe = outcome?.result === 'already_used' && outcome.ticket?.checked_in_by_me === true && outcome.ticket.checked_in_at
+        ? Date.now() - Date.parse(outcome.ticket.checked_in_at) < 30_000 : false;
+
+    return (
+        <div className="flex flex-col gap-3">
+            <ScanStatusBar
+                eventTitle={selected.events?.title || 'Événement sans titre'}
+                doorLabel={stats?.doorLabel ?? null}
+                doorEntries={stats?.doorEntries ?? null}
+                online={online}
+                statsStale={statsError !== null && stats !== null}
+                onChangeEvent={backToStart}
+                onLogout={() => setShowLogoutConfirm(true)}
+            />
+
+            {!online && (
+                <div data-scan-state="offline">
+                    <StatusBanner tone="danger" title="Hors ligne : aucune entrée ne peut être validée" announce="alert">
+                        Faites patienter, passez sur le routeur de secours, puis reprenez.
+                    </StatusBanner>
+                </div>
+            )}
+
+            {tabs.length > 1 ? (
+                <>
+                    <Tabs tabs={tabs} value={currentArea} onChange={(id) => setArea(id as Area)} ariaLabel="Espace du contrôleur" idPrefix="scanner" />
+                    <TabPanel idPrefix="scanner" tabIdValue={currentArea}>
+                        {currentArea === 'controle' && control}
+                        {currentArea === 'guichet' && (
+                            <CounterSalePanel
+                                eventId={selected.events.id}
+                                onOpenShift={() => setShowOpenShift(true)}
+                                onSold={() => { void fetchActiveShift(); scheduleStats(STATS_AFTER_SCAN_MS); }}
+                                onSessionExpired={goToLogin}
+                            />
+                        )}
+                        {currentArea === 'caisse' && cashArea}
+                    </TabPanel>
+                </>
+            ) : control}
+
+            {/* Résultat plein écran : un seul à la fois, neuf à chaque scan */}
+            {outcome && (
+                <CombatFlashOverlay
+                    key={shown?.id}
+                    status={outcome.result}
+                    kind={categoryFor(outcome)}
+                    title={isTechnicalOutcome(outcome) ? titleFor(outcome) : undefined}
+                    message={outcome.message}
+                    holderName={outcome.ticket?.holder}
+                    category={outcome.ticket?.category}
+                    ticketNumber={outcome.ticket?.ticket_number}
+                    checkedInAt={outcome.ticket?.checked_in_at ?? null}
+                    checkedInByMe={recentByMe}
+                    amountDue={outcome.amountDue}
+                    durationMs={overlayDuration}
+                    onDismiss={dismissResult}
+                >
+                    {cashPending ? (
+                        canCash ? (
+                            <>
+                                {cashError && (
+                                    <StatusBanner tone="danger" title="Encaissement non enregistré" announce="alert">
+                                        {titleFor(cashError)}. Rien n’a été encaissé ni validé : ne laissez pas entrer le spectateur.
+                                    </StatusBanner>
+                                )}
+                                <Button variant="primary" size="lg" fullWidth isLoading={cashConfirming} onClick={() => void handleConfirmCash()} leftIcon={<Banknote size={18} />}>
+                                    {!activeShift ? 'Ouvrir ma caisse pour encaisser'
+                                        : outcome.amountDue !== undefined ? `J’ai reçu ${formatFcfa(outcome.amountDue)} : valider l’entrée` : 'J’ai reçu les espèces : valider l’entrée'}
+                                </Button>
+                                <Button variant="secondary" size="lg" fullWidth onClick={dismissResult} disabled={cashConfirming}>
+                                    Annuler : le spectateur ne paie pas
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-lg font-semibold">Vous n’êtes pas habilité à encaisser : orientez le spectateur vers la caisse de l’événement.</p>
+                                <Button variant="secondary" size="lg" fullWidth onClick={dismissResult}>Fermer et reprendre le scan</Button>
+                            </>
+                        )
+                    ) : undefined}
+                </CombatFlashOverlay>
+            )}
+
+            {canCash && (
+                <OpenShiftModal
+                    isOpen={showOpenShift}
+                    onClose={() => setShowOpenShift(false)}
+                    eventId={selected.events.id}
+                    eventTitle={selected.events.title}
+                    onShiftOpened={() => { void fetchActiveShift(); }}
+                />
+            )}
+            {canCash && activeShift && (
+                <CloseShiftModal
+                    isOpen={showCloseShift}
+                    onClose={() => setShowCloseShift(false)}
+                    shift={activeShift}
+                    onShiftClosed={(summary) => {
+                        setActiveShift(null);
+                        setZSummary(summary);
+                    }}
+                />
+            )}
+            {zSummary && (
+                <ZSummaryModal isOpen={zSummary !== null} onClose={() => setZSummary(null)} summary={zSummary} />
+            )}
+            {logoutDialog}
         </div>
     );
 }

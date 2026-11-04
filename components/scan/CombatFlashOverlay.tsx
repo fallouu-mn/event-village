@@ -1,279 +1,192 @@
 'use client';
 
+/**
+ * Résultat plein écran du scanner (lot 7, tâche 7.2, contrat 6.2 ; décisions D41, D44, D47, D51).
+ *
+ * Lisible du coin de l'œil, de nuit comme en plein soleil : fond plein et texte sur les seuls jetons
+ * --scan-* (texte ≥ 7:1, mêmes valeurs en clair et en sombre), icône d'au moins 96 px, titre d'au moins
+ * 40 px sur mobile, jamais la couleur seule (icône et titre distincts par catégorie). Aucun flou, aucune
+ * ombre portée, aucun zoom, aucun texte atténué, aucun son.
+ *
+ *  | catégorie         | fond              | résultats                                               |
+ *  | accepte           | scan-accept       | valid                                                   |
+ *  | deja_utilise      | scan-used         | already_used                                            |
+ *  | refuse            | scan-refuse       | invalid, cancelled, refunded, wrong_event, qr_expired…  |
+ *  | a_encaisser       | scan-cash         | cash_required (attend une action : enfants)             |
+ *  | hors_fenetre      | scan-window       | event_not_open, event_ended                             |
+ *  | evenement_annule  | scan-refuse       | event_cancelled, event_suspended (icône distincte)      |
+ *  | technique         | scan-tech         | rate_limited, network_error, server_error, hors ligne   |
+ *
+ * Un seul role="alert". Un toucher ferme tout de suite (sauf encaissement, qui attend une action) ;
+ * sinon retour automatique après `durationMs`. Le conteneur porte data-scan-result (résultat) et
+ * data-scan-state="result" (mesures et tests de bout en bout).
+ *
+ * Ce n'est pas une modale : il ne piège pas le focus et ne bloque pas la caméra au-delà de son délai.
+ * La position plein écran (fixed inset-0) est voulue : elle est imposée par tests/scanner-combat-ui.test.ts, et ce
+ * fichier est l'exception nommée de la règle « modale écrite à la main » de tests/parcours/design-systeme.test.ts.
+ */
 import React, { useEffect } from 'react';
 import {
-    CheckCircle2,
-    XCircle,
-    AlertTriangle,
-    Clock,
-    Banknote,
-    WifiOff,
-    Volume2,
+    Ban, Banknote, CalendarX2, CheckCircle2, Clock, OctagonX, RotateCcw, WifiOff, type LucideIcon,
 } from 'lucide-react';
-import type { CombatFeedbackType } from '@/lib/hardware/feedback';
-import { hasWolofAudio, normalizeWolofAudioType, WOLOF_AUDIO_MESSAGES } from '@/lib/hardware/wolof-audio';
+import { cn } from '@/components/ui/cn';
+import { formatFcfa, formatTime } from '@/lib/format';
+import { isScanResult, SCAN_RESULT_LABELS, scanCategoryOf, type ScanCategory, type ScanResult } from '@/lib/scan/scan-result';
 
 export interface CombatFlashOverlayProps {
-    status: CombatFeedbackType | null;
+    /** Résultat affiché (null : rien). */
+    status: ScanResult | null;
+    /** Catégorie d'affichage imposée (un incident technique renvoyé en 4xx garde « technique »). */
+    kind?: ScanCategory;
+    /** Titre imposé (sinon : titre de la catégorie). */
+    title?: string;
     message?: string;
     holderName?: string;
+    /** Catégorie du billet (« VIP »), affichée sous le nom. */
     category?: string;
     ticketNumber?: string;
+    /** Heure de compostage (already_used : « Entré à HH:MM »). */
+    checkedInAt?: string | null;
+    /** Billet composté par ce scanneur il y a moins de 30 s (D41). */
+    checkedInByMe?: boolean;
+    /** Montant à encaisser (cash_required). */
+    amountDue?: number;
+    /** Retour automatique (ms) ; 0 ou absent avec des enfants : attend une action. */
     durationMs?: number;
     onDismiss?: () => void;
-    onRepeatWolof?: () => void;
-    showRepeatWolof?: boolean;
+    /** Actions (encaissement) : le toucher de l'écran ne ferme plus. */
+    children?: React.ReactNode;
 }
 
-/**
- * Configuration visuelle des statuts de combat (couleurs, titres et icônes)
- */
-export function getCombatFlashConfig(status: CombatFeedbackType | null) {
-    if (!status) return null;
+interface Look {
+    surface: string;
+    Icon: LucideIcon;
+    title: string;
+}
 
+/** Fond (jeton --scan-*), icône et titre par catégorie. */
+const LOOKS: Record<ScanCategory, Look> = {
+    accepte: { surface: 'bg-scan-accept-bg text-scan-accept-fg', Icon: CheckCircle2, title: 'Entrée validée' },
+    deja_utilise: { surface: 'bg-scan-used-bg text-scan-used-fg', Icon: RotateCcw, title: 'Billet déjà utilisé' },
+    refuse: { surface: 'bg-scan-refuse-bg text-scan-refuse-fg', Icon: OctagonX, title: 'Entrée refusée' },
+    a_encaisser: { surface: 'bg-scan-cash-bg text-scan-cash-fg', Icon: Banknote, title: 'Encaissement requis' },
+    hors_fenetre: { surface: 'bg-scan-window-bg text-scan-window-fg', Icon: Clock, title: 'Contrôle fermé' },
+    evenement_annule: { surface: 'bg-scan-refuse-bg text-scan-refuse-fg', Icon: CalendarX2, title: 'Événement annulé' },
+    technique: { surface: 'bg-scan-tech-bg text-scan-tech-fg', Icon: WifiOff, title: 'Vérification impossible' },
+};
+
+/** Titre précis d'un résultat (libellé du contrat), sinon celui de la catégorie. */
+function titleOf(status: ScanResult, category: ScanCategory, amountDue?: number): string {
     switch (status) {
-        case 'valid':
-            return {
-                bgClass: 'bg-emerald-600',
-                title: 'ACCÈS AUTORISÉ',
-                Icon: CheckCircle2,
-            };
-        case 'already_used':
-            return {
-                bgClass: 'bg-red-600',
-                title: 'BILLET DÉJÀ UTILISÉ',
-                Icon: XCircle,
-            };
-        case 'invalid':
-            return {
-                bgClass: 'bg-red-600',
-                title: 'BILLET INVALIDE',
-                Icon: XCircle,
-            };
-        case 'wrong_event':
-            return {
-                bgClass: 'bg-amber-600',
-                title: 'MAUVAIS ÉVÉNEMENT',
-                Icon: AlertTriangle,
-            };
-        case 'qr_expired':
-            return {
-                bgClass: 'bg-amber-500',
-                title: 'QR CODE EXPIRÉ',
-                Icon: Clock,
-            };
         case 'cash_required':
-            return {
-                bgClass: 'bg-blue-600',
-                title: 'ENCAISSEMENT ESPÈCES',
-                Icon: Banknote,
-            };
-        case 'network_error':
-            return {
-                bgClass: 'bg-slate-700',
-                title: 'VÉRIFICATION IMPOSSIBLE',
-                Icon: WifiOff,
-            };
-        case 'alert':
-            return {
-                bgClass: 'bg-amber-500',
-                title: 'ATTENTION',
-                Icon: AlertTriangle,
-            };
-        case 'reject':
+            return amountDue !== undefined ? `Encaissement requis : ${formatFcfa(amountDue)}` : LOOKS.a_encaisser.title;
+        case 'event_suspended':
+            return 'Événement suspendu';
+        case 'event_cancelled':
+            return 'Événement annulé';
+        case 'valid':
+        case 'already_used':
+            return LOOKS[category].title;
         default:
-            return {
-                bgClass: 'bg-red-600',
-                title: 'ACCÈS REFUSÉ',
-                Icon: XCircle,
-            };
+            return category === 'technique' ? LOOKS.technique.title : SCAN_RESULT_LABELS[status];
     }
 }
 
-/**
- * Overlay de Flash Plein Écran Haute Visibilité (Combat UX)
- * Permet au contrôleur d'identifier le résultat du scan du coin de l'œil,
- * même dans la pénombre ou sous 110 dB de musique forte.
- */
 export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     status,
+    kind,
+    title,
     message,
     holderName,
     category,
     ticketNumber,
+    checkedInAt,
+    checkedInByMe,
+    amountDue,
     durationMs,
     onDismiss,
-    onRepeatWolof,
-    showRepeatWolof,
+    children,
 }) => {
-    // Calcul de la durée par défaut : rapide pour succès (1000ms), étendu pour litiges avec bouton répéter (3500ms)
-    const effectiveDuration = durationMs !== undefined
-        ? durationMs
-        : (status === 'valid' ? 1000 : 3500);
+    const waitsForAction = Boolean(children);
+    const effectiveDuration = durationMs ?? (waitsForAction ? 0 : status === 'valid' ? 1500 : 3000);
 
     useEffect(() => {
-        if (!status) return;
-
-        const timer = setTimeout(() => {
-            if (onDismiss) onDismiss();
-        }, effectiveDuration);
-
+        if (!status || effectiveDuration <= 0 || !onDismiss) return;
+        const timer = setTimeout(onDismiss, effectiveDuration);
         return () => clearTimeout(timer);
     }, [status, effectiveDuration, onDismiss]);
 
-    const config = getCombatFlashConfig(status);
-    if (!config) return null;
-    const { bgClass, title, Icon } = config;
+    if (!status || !isScanResult(status)) return null;
+    const cat = kind ?? scanCategoryOf(status);
+    const look = LOOKS[cat];
+    const Icon = status === 'event_suspended' ? Ban : look.Icon;
+    const heading = title ?? titleOf(status, cat, amountDue);
+    const ticketLine = [category, ticketNumber].filter(Boolean).join(' · ');
+    const showMessage = Boolean(message) && message !== heading;
+    const usedLine = status === 'already_used' && checkedInAt
+        ? (checkedInByMe ? `Déjà validé par vous à ${formatTime(checkedInAt)}` : `Entré à ${formatTime(checkedInAt)}`)
+        : null;
 
-    const wolofType = normalizeWolofAudioType(status);
-    const hasWolofMessage = showRepeatWolof ?? (hasWolofAudio(status) && Boolean(onRepeatWolof));
-    const wolofTranscription = wolofType ? WOLOF_AUDIO_MESSAGES[wolofType]?.wolof : null;
+    const dismissOnTap = !waitsForAction && onDismiss ? onDismiss : undefined;
 
     return (
         <div
             data-testid="combat-flash-overlay"
-            data-combat-status={status}
-            onClick={onDismiss}
-            className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-4 sm:p-6 text-white text-center cursor-pointer select-none ${bgClass} animate-in fade-in zoom-in-95 duration-100 overflow-y-auto`}
+            data-scan-result={status}
+            data-scan-state="result"
+            data-scan-category={cat}
+            onClick={dismissOnTap}
+            className={cn(
+                'fixed inset-0 z-50 flex select-none flex-col items-center justify-center gap-4 overflow-y-auto p-6 text-center',
+                dismissOnTap && 'cursor-pointer',
+                look.surface,
+            )}
             role="alert"
             aria-live="assertive"
+            aria-atomic="true"
         >
-            {/* Icône Gigantesque */}
-            <div className="mb-3 sm:mb-4 drop-shadow-md">
-                <Icon size={84} strokeWidth={2.5} className="mx-auto sm:w-24 sm:h-24" />
-            </div>
+            <Icon aria-hidden="true" strokeWidth={2.5} className="h-24 w-24 flex-shrink-0 sm:h-32 sm:w-32" />
 
-            {/* Titre Haute Visibilité */}
-            <div className="inline-block px-4 sm:px-5 py-1 sm:py-1.5 rounded-full bg-white/20 backdrop-blur-xs text-xs sm:text-base font-black tracking-widest uppercase mb-3">
-                {title}
-            </div>
-
-            {/* Nom du Porteur en taille MAXIMALE pour SUCCÈS */}
-            {status === 'valid' && (
-                <div className="space-y-2 max-w-4xl px-2">
-                    <h1
-                        data-testid="combat-holder-name"
-                        className="text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tight drop-shadow-xl break-words leading-none"
-                    >
-                        {holderName || 'PORTEUR VALIDÉ'}
-                    </h1>
-                    {(category || ticketNumber) && (
-                        <p className="text-lg sm:text-2xl font-bold font-mono opacity-95 tracking-wide pt-2">
-                            {[category, ticketNumber].filter(Boolean).join(' — ')}
-                        </p>
-                    )}
-                </div>
-            )}
-
-            {/* Messages de Rejet / Doublon / Invalide */}
-            {(status === 'already_used' || status === 'invalid' || status === 'reject') && (
-                <div className="space-y-3 max-w-3xl px-2">
-                    <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight drop-shadow-xl leading-tight">
-                        {message || (status === 'already_used' ? 'BILLET DÉJÀ UTILISÉ' : 'BILLET REFUSÉ')}
-                    </h1>
-                    {ticketNumber && (
-                        <p className="text-base sm:text-xl font-mono opacity-90">
-                            Billet : {ticketNumber}
-                        </p>
-                    )}
-                </div>
-            )}
-
-            {/* Message Mauvais Événement */}
-            {status === 'wrong_event' && (
-                <div className="space-y-3 max-w-3xl px-2">
-                    <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight drop-shadow-xl leading-tight">
-                        {message || 'CE BILLET N\'EST PAS POUR CET ÉVÉNEMENT'}
-                    </h1>
-                    {ticketNumber && (
-                        <p className="text-base sm:text-xl font-mono opacity-90">
-                            Billet : {ticketNumber}
-                        </p>
-                    )}
-                </div>
-            )}
-
-            {/* Message QR Expiré */}
-            {status === 'qr_expired' && (
-                <div className="space-y-3 max-w-3xl px-2">
-                    <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight drop-shadow-xl leading-tight">
-                        {message || 'QR CODE EXPIRÉ'}
-                    </h1>
-                    <p className="text-sm sm:text-lg font-medium opacity-90">
-                        Demandez au spectateur de rafraîchir son écran.
-                    </p>
-                </div>
-            )}
-
-            {/* Message Encaissement Espèces */}
-            {status === 'cash_required' && (
-                <div className="space-y-3 max-w-3xl px-2">
-                    <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight drop-shadow-xl leading-tight">
-                        {message || 'ENCAISSEMENT REQUIS'}
-                    </h1>
-                    {holderName && (
-                        <p className="text-lg sm:text-2xl font-bold opacity-95">
-                            Porteur : {holderName}
-                        </p>
-                    )}
-                </div>
-            )}
-
-            {/* Message Erreur Réseau (Neutre, sans accuser le spectateur) */}
-            {status === 'network_error' && (
-                <div className="space-y-3 max-w-3xl px-2">
-                    <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight drop-shadow-xl leading-tight">
-                        {message || 'VÉRIFICATION IMPOSSIBLE'}
-                    </h1>
-                    <p className="text-sm sm:text-base font-semibold opacity-90">
-                        Connexion réseau instable. Vérifiez la couverture 4G/Wi-Fi et réessayez.
-                    </p>
-                </div>
-            )}
-
-            {/* Message Alerte Générique */}
-            {status === 'alert' && (
-                <div className="space-y-3 max-w-3xl px-2">
-                    <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight drop-shadow-xl leading-tight">
-                        {message || 'CONTRÔLE REQUIS'}
-                    </h1>
-                    {holderName && (
-                        <p className="text-lg sm:text-2xl font-bold opacity-95">
-                            Porteur : {holderName}
-                        </p>
-                    )}
-                </div>
-            )}
-
-            {/* Transcription Wolof textuelle (Sous-titrage haute lisibilité) */}
-            {wolofTranscription && (
-                <div className="mt-3 px-3 py-1.5 rounded-xl bg-black/30 border border-white/20 max-w-lg">
-                    <p className="text-xs sm:text-sm font-semibold tracking-wide text-amber-200 italic">
-                        « {wolofTranscription} »
-                    </p>
-                </div>
-            )}
-
-            {/* Bouton "Répéter en Wolof" (Touch Target >= 48px, action prioritaire sur litige) */}
-            {hasWolofMessage && onRepeatWolof && (
-                <div className="mt-4 sm:mt-6 z-20" onClick={(e) => e.stopPropagation()}>
-                    <button
-                        type="button"
-                        data-testid="repeat-wolof-btn"
-                        onClick={onRepeatWolof}
-                        className="px-6 py-3 rounded-2xl bg-white text-slate-900 font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-2xl hover:bg-slate-100 active:scale-95 transition-all min-h-[48px] touch-manipulation cursor-pointer border-2 border-white/90"
-                        aria-label="Répéter l'explication en Wolof pour le spectateur"
-                    >
-                        <Volume2 size={20} className="text-[#FF5722] shrink-0" />
-                        <span>🔊 Répéter en Wolof</span>
-                    </button>
-                </div>
-            )}
-
-            {/* Indication tactile pour enchaîner immédiatement */}
-            <p className="mt-6 text-xs sm:text-sm font-semibold opacity-75 tracking-wider">
-                Toucher l&apos;écran pour scanner le suivant immédiatement
+            <p className="max-w-3xl text-balance text-4xl font-black leading-tight tracking-tight sm:text-5xl">
+                {heading}
             </p>
+
+            {status === 'valid' && (
+                <div className="flex max-w-4xl flex-col items-center gap-2">
+                    <p data-testid="combat-holder-name" className="break-words text-5xl font-black leading-none tracking-tight sm:text-6xl">
+                        {holderName || 'Porteur non renseigné'}
+                    </p>
+                    {ticketLine && <p className="text-xl font-bold tabular-nums sm:text-2xl">{ticketLine}</p>}
+                </div>
+            )}
+
+            {status !== 'valid' && holderName && (
+                <p className="max-w-3xl break-words text-2xl font-bold sm:text-3xl">{holderName}</p>
+            )}
+
+            {usedLine && <p className="text-2xl font-bold tabular-nums sm:text-3xl">{usedLine}</p>}
+
+            {showMessage && <p className="max-w-2xl text-xl font-semibold leading-snug sm:text-2xl">{message}</p>}
+
+            {status !== 'valid' && ticketLine && (
+                <p className="text-lg font-semibold tabular-nums sm:text-xl">Billet : {ticketLine}</p>
+            )}
+
+            {cat === 'technique' && (
+                <p className="max-w-xl text-lg font-semibold leading-snug">
+                    Le billet n’est pas en cause. Ne refusez pas le spectateur pour ce motif : faites patienter et réessayez.
+                </p>
+            )}
+
+            {children && (
+                <div className="flex w-full max-w-md flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+                    {children}
+                </div>
+            )}
+
+            {dismissOnTap && (
+                <p className="text-base font-semibold">Touchez l’écran pour scanner le billet suivant</p>
+            )}
         </div>
     );
 };

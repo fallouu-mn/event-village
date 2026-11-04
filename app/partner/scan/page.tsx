@@ -6,13 +6,16 @@
  * exige la vérification d'une pièce d'identité et n'est acceptée que si le réglage
  * access.manual_entry_scope l'autorise (sinon : « saisie manuelle refusée »). Les encaissements
  * espèces se font depuis le scanner de caisse (contrôleur affecté, caisse ouverte).
+ * Lot 7 (7.2) : clé d'idempotence par lecture et relances (components/scan/scan-client), aucun son ; la
+ * caméra lit `onScan` par une ref et s'arrête pendant l'envoi et l'affichage du résultat (aucune boucle
+ * orpheline) ; une lecture ignorée est tracée ; saisie manuelle en deux temps (vérifier, puis valider).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Camera, ChevronLeft, Keyboard, Loader2, QrCode, ShieldAlert, Ticket } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { CameraQrScanner } from '@/components/scan/CameraQrScanner';
+import { CameraQrScanner, type CameraReadVerdict } from '@/components/scan/CameraQrScanner';
 import { ManualEntryForm } from '@/components/scan/ManualEntryForm';
 import { ScanResultPanel } from '@/components/scan/ScanResultPanel';
 import { isTechnicalOutcome, isTicketRefusal, postScan, titleFor, type ScanOutcome, type ScanRequest } from '@/components/scan/scan-client';
@@ -23,6 +26,8 @@ interface HistoryEntry { key: string; at: string; outcome: ScanOutcome }
 
 const PAGE_PATH = '/partner/scan';
 const FEEDBACK_DISPLAY_MS = 4000;
+/** Même QR qu'une entrée validée : ignoré pendant 20 s (D41). */
+const DUPLICATE_VALID_MS = 20_000;
 
 export default function PartnerScanPage() {
     const router = useRouter();
@@ -36,6 +41,9 @@ export default function PartnerScanPage() {
     const [history, setHistory] = useState<HistoryEntry[]>([]);
     const [validated, setValidated] = useState(0);
     const [refused, setRefused] = useState(0);
+    /** Envoi en cours : lu par la caméra au moment de la lecture (jamais une valeur périmée). */
+    const busyRef = useRef(false);
+    const lastValidRef = useRef<{ payload: string; at: number } | null>(null);
 
     const goToLogin = useCallback(() => {
         router.replace(`/login?redirect=${encodeURIComponent(PAGE_PATH)}`);
@@ -69,40 +77,59 @@ export default function PartnerScanPage() {
         return () => { cancelled = true; };
     }, [goToLogin]);
 
+    // Résultat affiché 4 s (incident technique compris), puis la caméra reprend
     useEffect(() => {
-        if (!outcome || isTechnicalOutcome(outcome)) return;
+        if (!outcome) return;
         const timer = setTimeout(() => setOutcome(null), FEEDBACK_DISPLAY_MS);
         return () => clearTimeout(timer);
     }, [outcome]);
 
-    const runScan = useCallback(async (request: ScanRequest) => {
-        if (isVerifying) return;
+    const runScan = useCallback(async (request: ScanRequest, payload: string | null, key?: string) => {
+        if (busyRef.current) {
+            console.info('[partner/scan] lecture ignorée : un scan est déjà en cours');
+            return;
+        }
+        busyRef.current = true;
         setIsVerifying(true);
         try {
-            const result = await postScan(request);
+            const result = await postScan(request, { key });
             if (result.httpStatus === 401) {
                 router.replace(`/login?redirect=${encodeURIComponent(PAGE_PATH)}`);
                 return;
             }
             setOutcome(result);
             setHistory((prev) => [{ key: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString(), outcome: result }, ...prev].slice(0, 10));
-            if (result.result === 'valid' && !result.failure) setValidated((n) => n + 1);
+            if (result.result === 'valid' && !result.failure) {
+                setValidated((n) => n + 1);
+                if (payload) lastValidRef.current = { payload, at: Date.now() };
+            }
             // Refus du billet seulement : un incident technique n'est jamais compté
             else if (isTicketRefusal(result)) setRefused((n) => n + 1);
         } finally {
+            busyRef.current = false;
             setIsVerifying(false);
         }
-    }, [isVerifying, router]);
+    }, [router]);
 
-    const handleCameraScan = useCallback((code: string) => {
+    const handleCameraScan = useCallback((code: string): CameraReadVerdict => {
         const payload = code.trim();
-        if (!eventId || !payload) return;
-        void runScan({ eventId, payload });
+        if (!eventId || !payload) return 'ignored';
+        if (busyRef.current) {
+            console.info('[partner/scan] lecture ignorée : un scan est déjà en cours');
+            return 'ignored';
+        }
+        const last = lastValidRef.current;
+        if (last && last.payload === payload && Date.now() - last.at < DUPLICATE_VALID_MS) {
+            console.info('[partner/scan] lecture ignorée : même QR que l’entrée validée il y a moins de 20 s');
+            return 'ignored';
+        }
+        void runScan({ eventId, payload }, payload);
+        return 'accepted';
     }, [eventId, runScan]);
 
-    const handleManualScan = useCallback(async (manualTicketNumber: string, identityVerified: boolean) => {
+    const handleManualValidate = useCallback(async (manualTicketNumber: string, key: string) => {
         if (!eventId) return;
-        await runScan({ eventId, manualTicketNumber, identityVerified });
+        await runScan({ eventId, manualTicketNumber, identityVerified: true }, null, key);
     }, [eventId, runScan]);
 
     const selectedEvent = events.find((e) => e.id === eventId);
@@ -203,9 +230,9 @@ export default function PartnerScanPage() {
 
                     <div className="p-5 rounded-3xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
                         {scanMode === 'camera' ? (
-                            <CameraQrScanner onScan={handleCameraScan} isVerifying={isVerifying} onSwitchToManual={() => setScanMode('manual')} />
+                            <CameraQrScanner onScan={handleCameraScan} paused={isVerifying || outcome !== null} onSwitchToManual={() => setScanMode('manual')} />
                         ) : (
-                            <ManualEntryForm onSubmit={handleManualScan} isSubmitting={isVerifying} />
+                            <ManualEntryForm eventId={eventId} onValidate={handleManualValidate} isSubmitting={isVerifying} onSessionExpired={goToLogin} />
                         )}
                     </div>
 

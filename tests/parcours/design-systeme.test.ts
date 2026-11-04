@@ -627,7 +627,10 @@ function accessibilityViolations(rel: string, text: string): DesignViolation[] {
     const add = (rule: string, node: ts.Node, excerpt: string): void => {
         out.push({ rule, line: lineOf(sf, node), excerpt: excerpt.replace(/\s+/g, ' ').trim().slice(0, 100) });
     };
-    const sharedShell = rel.startsWith('components/ui/') || rel.startsWith('components/layout/');
+    // Lot 7 (7.2, signalé au rapport) : exception nommée pour le verdict plein écran du scanner, qui n'est pas une
+    // modale (aucun piège de focus, fermeture automatique) et dont le plein écran est exigé par scanner-combat-ui.
+    const sharedShell = rel.startsWith('components/ui/') || rel.startsWith('components/layout/')
+        || rel === 'components/scan/CombatFlashOverlay.tsx';
     const labelled = (attrs: Map<string, ts.JsxAttribute>): boolean => attrs.has('aria-label') || attrs.has('aria-labelledby');
     const insideLabel = (node: ts.Node): boolean => {
         let cur: ts.Node | undefined = node.parent;

@@ -54,6 +54,39 @@
 - L'ancien dégradé corail (`#FF6A3D` → `#FF3D68`) et `#FF5722` sous du texte blanc ne sont plus admis
   (contraste 2,9 à 3,4:1) : seulement en décor, via `brand-decor`.
 
+#### Résultat plein écran du scanner (lot 7, tâche 7.2, D51)
+
+Jetons `--scan-<x>-bg` / `--scan-<x>-fg` de `app/globals.css`, classes `bg-scan-<x>-bg` et
+`text-scan-<x>-fg`. **Mêmes valeurs en clair et en sombre** (jamais redéfinis par `.dark`) ; texte
+**≥ 7:1** sur son fond (WCAG AAA, calculé par `tests/parcours/scanner-interface.test.ts`). Seul
+`components/scan/CombatFlashOverlay.tsx` les emploie pour le plein écran ; `scan-tech` sert aussi aux fonds
+opaques posés sur l'image de la caméra.
+
+| Catégorie | Résultats | Fond / texte | Contraste | Vibration (D50) |
+|---|---|---|---|---|
+| `accept` (accepte) | valid | `#4ADE80` / `#000000` | 12,05:1 | `[60]` |
+| `used` (deja_utilise) | already_used | `#7C2D12` / `#FFFFFF` | 9,37:1 | `[120, 60, 120, 60, 120]` |
+| `refuse` (refuse, evenement_annule) | invalid, cancelled, refunded, wrong_event, qr_expired, dynamic_qr_required, manual_entry_refused, payment_required ; event_cancelled, event_suspended (icône distincte) | `#7F1D1D` / `#FFFFFF` | 10,02:1 | `[120, 60, 120, 60, 120]` |
+| `cash` (a_encaisser) | cash_required (attend une action) | `#1E3A8A` / `#FFFFFF` | 10,36:1 | `[250, 100, 250]` |
+| `window` (hors_fenetre) | event_not_open, event_ended | `#FBBF24` / `#000000` | 12,58:1 | `[250, 100, 250]` |
+| `tech` (technique) | rate_limited, network_error, server_error, hors ligne, délai dépassé | `#27272A` / `#FFFFFF` | 14,89:1 | aucune (D47) |
+
+Règles du plein écran : icône ≥ 96 px, titre ≥ 40 px sur mobile, un seul `role="alert"`, jamais la couleur
+seule (icône et titre propres à chaque catégorie) ; ni flou, ni ombre portée, ni zoom, ni rebond, ni texte
+atténué ; aucun son. Retour automatique au scan : entrée validée selon le réglage de l'appareil (1 / 1,5 /
+2 / 3 s, défaut 1,5 s), refus, hors fenêtre et incident 3 s ; encaissement : attend une action ; un toucher
+ferme tout de suite. Thème sombre forcé sur `/controller/*` (D45).
+
+#### Opérateurs de paiement (lot 7, D59)
+
+| Jeton (classe Tailwind) | Valeur | Texte | Contraste |
+|---|---|---|---|
+| `op-wave` / `on-op-wave` (`bg-op-wave text-on-op-wave`) | `#1DC8F2` | `#000000` | 10,60:1 |
+| `op-orange-money` / `on-op-orange-money` (`bg-op-orange-money text-on-op-orange-money`) | `#FF7900` | `#000000` | 7,99:1 |
+
+Couleurs de marque des opérateurs, mêmes valeurs en clair et en sombre ; elles remplacent `bg-[#1DC8F2]`
+et `bg-[#FF7900]`. Le nom de l'opérateur reste écrit sur le bouton (jamais la couleur seule).
+
 ### Typography
 
 - **Police :** Plus Jakarta Sans, auto-hébergée (`--font-sans`, `app/layout.tsx`). Les polices proposées

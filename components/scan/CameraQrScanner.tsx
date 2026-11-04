@@ -1,417 +1,444 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, SwitchCamera, RefreshCw, QrCode, ShieldAlert, Sparkles, Flashlight, FlashlightOff, PowerOff } from 'lucide-react';
+/**
+ * Caméra du scanner (lot 4, refondue au lot 7, tâche 7.2 ; décisions D48, D50 ; amendement A6).
+ *
+ * Une seule boucle de détection à la fois, jamais orpheline :
+ *  - chaque démarrage de la caméra reçoit un jeton de session (sessionRef) ; un démarrage dépassé par un
+ *    autre (changement de caméra, retour au premier plan, démontage) libère aussitôt le flux qu'il obtient
+ *    et ne lance aucune boucle ;
+ *  - chaque boucle reçoit son propre numéro (loopRef) et s'arrête dès qu'il change ; pause, veille,
+ *    arrière-plan et démontage changent ce numéro : la boucle est réellement arrêtée, pas seulement muette ;
+ *  - `onScan` est lu par une ref : la boucle appelle toujours le gestionnaire courant de la page, jamais
+ *    une fermeture périmée (défaut du lot 6 trouvé au run 73 : une boucle gardait un `isVerifying` vrai et
+ *    avalait chaque lecture en silence) ;
+ *  - toute lecture écartée laisse une trace (console) ; la page trace celles qu'elle ignore.
+ * Après une lecture acceptée par la page, la boucle s'arrête jusqu'à la reprise (`paused` repasse à faux).
+ * Décodage : BarcodeDetector natif, sinon ZXing image par image (même boucle, même arrêt).
+ * Caméra libérée (getTracks().stop()) en arrière-plan (visibilitychange) et après 3 min sans lecture
+ * (veille, réveil par un toucher). Aucune vibration ici (D50 : seul le verdict vibre), aucun son.
+ * Fonds opaques (jetons --scan-tech-*), ligne de visée fixe, aucune animation.
+ */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Camera, Flashlight, FlashlightOff, PauseCircle, PowerOff, RefreshCw, ShieldAlert, SwitchCamera } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/components/ui/cn';
-import { detectScannerSupport, ScannerSupportMode } from '@/lib/scanner/support';
+import { detectScannerSupport } from '@/lib/scanner/support';
 import { isTorchSupported, setTorchState } from '@/lib/hardware/torch';
 
-export const CAMERA_SCAN_THROTTLE_MS = 140; // 120-150ms interval (~7 checks/s, optimal mobile CPU/battery usage)
-export const CAMERA_INACTIVITY_TIMEOUT_MS = 45000; // 45s inactivité avant mise en veille automatique
+/** Intervalle entre deux analyses d'image (≈ 7 par seconde : batterie et processeur ménagés). */
+export const CAMERA_SCAN_THROTTLE_MS = 140;
+/** Veille de la caméra après 3 min sans lecture (D48). */
+export const CAMERA_INACTIVITY_TIMEOUT_MS = 3 * 60_000;
+/** Reprise de sécurité si la page accepte une lecture sans se mettre en pause. */
+const HOLD_RELEASE_MS = 2000;
+/** Largeur maximale de l'image analysée par ZXing. */
+const ZXING_MAX_WIDTH = 640;
+
+export type CameraReadVerdict = 'accepted' | 'ignored';
 
 export interface CameraQrScannerProps {
-  onScan: (code: string) => void;
-  isVerifying?: boolean;
+  /** Lecture d'un code. « accepted » : la caméra s'arrête jusqu'à la reprise ; « ignored » : elle continue. */
+  onScan: (code: string) => CameraReadVerdict;
+  /** Pause demandée par la page (envoi, résultat affiché, encaissement) : boucle de détection arrêtée. */
+  paused?: boolean;
   onSwitchToManual?: () => void;
-  autoResumeDelayMs?: number;
+  /** Délai de veille (ms). */
+  idleTimeoutMs?: number;
+  /** Calque posé sur l'image (état d'envoi). */
+  overlay?: React.ReactNode;
   className?: string;
-  onTorchToggle?: (isOn: boolean) => void;
+}
+
+type Phase = 'starting' | 'live' | 'error' | 'asleep' | 'background';
+
+interface NativeDetector { detect(source: HTMLVideoElement): Promise<Array<{ rawValue?: string }>> }
+interface ZxingReader { decodeFromCanvas(canvas: HTMLCanvasElement): { getText(): string } }
+type Decoder =
+  | { kind: 'native'; detector: NativeDetector }
+  | { kind: 'zxing'; reader: ZxingReader; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D };
+
+function stopTracks(stream: MediaStream | null): void {
+  if (!stream) return;
+  for (const track of stream.getTracks()) {
+    try {
+      track.stop();
+    } catch (err) {
+      console.warn('[camera] arrêt d’une piste impossible :', err instanceof Error ? err.message : String(err));
+    }
+  }
+}
+
+function cameraErrorMessage(err: unknown): string {
+  const name = err instanceof Error ? err.name : '';
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return 'Accès à la caméra refusé. Autorisez la caméra dans les réglages du navigateur, ou passez en saisie manuelle.';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'Aucune caméra compatible n’a été détectée sur cet appareil.';
+  if (name === 'NotReadableError' || name === 'TrackStartError') return 'La caméra est utilisée par une autre application.';
+  return 'La caméra n’a pas pu démarrer. Réessayez ou passez en saisie manuelle.';
+}
+
+/** Exception « rien trouvé » de ZXing (attendue à chaque image sans QR) : elle porte getKind(). */
+function isZxingMiss(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && typeof (err as { getKind?: unknown }).getKind === 'function';
 }
 
 export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
   onScan,
-  isVerifying = false,
+  paused = false,
   onSwitchToManual,
-  autoResumeDelayMs = 2200,
-  className = '',
-  onTorchToggle,
+  idleTimeoutMs = CAMERA_INACTIVITY_TIMEOUT_MS,
+  overlay,
+  className,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const activeVideoTrackRef = useRef<MediaStreamTrack | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const zxingReaderRef = useRef<any>(null);
-  const isScanningActiveRef = useRef<boolean>(true);
-  const lastScannedCodeRef = useRef<string | null>(null);
-  const lastScannedTimeRef = useRef<number>(0);
-  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
+  const decoderRef = useRef<Decoder | null>(null);
+  const sessionRef = useRef(0);
+  const loopRef = useRef(0);
+  const loopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdRef = useRef(false);
+  const pausedRef = useRef(paused);
+  const phaseRef = useRef<Phase>('starting');
+  const onScanRef = useRef(onScan);
+  const idleMsRef = useRef(idleTimeoutMs);
+  const facingRef = useRef<'environment' | 'user'>('environment');
+  const lastDecodeWarnRef = useRef(0);
 
-  const [supportMode, setSupportMode] = useState<ScannerSupportMode>('native');
+  const [phase, setPhaseState] = useState<Phase>('starting');
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [isInitializing, setIsInitializing] = useState<boolean>(true);
-  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
-  const [currentFacingMode, setCurrentFacingMode] = useState<'environment' | 'user'>('environment');
-  const [currentDeviceId, setCurrentDeviceId] = useState<string | undefined>(undefined);
-  const [isPausedAfterScan, setIsPausedAfterScan] = useState<boolean>(false);
-  const [torchSupported, setTorchSupported] = useState<boolean>(false);
-  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
-  const [isAsleep, setIsAsleep] = useState<boolean>(false);
+  const [cameraCount, setCameraCount] = useState(0);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
-  // Synchronisation de l'état actif dans une ref pour la boucle de détection
-  useEffect(() => {
-    isScanningActiveRef.current = !isVerifying && !isPausedAfterScan && !cameraError && !isAsleep;
-  }, [isVerifying, isPausedAfterScan, cameraError, isAsleep]);
+  onScanRef.current = onScan;
+  idleMsRef.current = idleTimeoutMs;
 
-  // Détection du mode de support au montage
-  useEffect(() => {
-    const info = detectScannerSupport();
-    setSupportMode(info.mode);
+  const setPhase = useCallback((next: Phase) => {
+    phaseRef.current = next;
+    setPhaseState(next);
   }, []);
 
-  // Énumération des caméras disponibles (pour afficher le bouton bascule si > 1)
-  const refreshAvailableCameras = useCallback(async () => {
-    try {
-      if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter((d) => d.kind === 'videoinput');
-        setAvailableCameras(videoDevices);
-      }
-    } catch {
-      // Ignore enumeration errors
+  const clearTimer = (ref: React.MutableRefObject<ReturnType<typeof setTimeout> | null>) => {
+    if (ref.current) {
+      clearTimeout(ref.current);
+      ref.current = null;
     }
+  };
+
+  /** Arrête la boucle courante (son numéro change : elle sort à sa prochaine image). */
+  const stopLoop = useCallback(() => {
+    loopRef.current += 1;
+    clearTimer(loopTimerRef);
   }, []);
 
-  // Gestion du timer d'inactivité (45s -> mise en veille automatique + coupure torche)
-  const resetInactivityTimer = useCallback(() => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
+  /** Libère le flux : pistes arrêtées, torche éteinte, vidéo détachée. */
+  const releaseStream = useCallback(() => {
+    const track = trackRef.current;
+    if (track && isTorchSupported(track)) {
+      setTorchState(track, false).then((r) => {
+        if (!r.success && r.error) console.warn('[camera] extinction de la torche :', r.error);
+      }, (err: unknown) => console.warn('[camera] extinction de la torche :', err instanceof Error ? err.message : String(err)));
     }
-    inactivityTimerRef.current = setTimeout(() => {
-      // Coupure automatique de la torche à la mise en veille
-      if (activeVideoTrackRef.current) {
-        setTorchState(activeVideoTrackRef.current, false).catch(() => {});
-      }
-      setIsTorchOn(false);
-      setIsAsleep(true);
-      isScanningActiveRef.current = false;
-    }, CAMERA_INACTIVITY_TIMEOUT_MS);
-  }, []);
-
-  const wakeUpScanner = useCallback(() => {
-    setIsAsleep(false);
-    isScanningActiveRef.current = true;
-    resetInactivityTimer();
-  }, [resetInactivityTimer]);
-
-  // Arrêt et libération propre des pistes de la caméra
-  const stopCameraStream = useCallback(() => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
-
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    if (zxingReaderRef.current) {
-      try {
-        if (typeof zxingReaderRef.current.reset === 'function') {
-          zxingReaderRef.current.reset();
-        }
-      } catch {
-        // Ignore reset errors
-      }
-      zxingReaderRef.current = null;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop();
-        } catch {
-          // Ignore track stop errors
-        }
-      });
-      streamRef.current = null;
-    }
-
-    if (activeVideoTrackRef.current) {
-      // Coupure systématique de la torche
-      setTorchState(activeVideoTrackRef.current, false).catch(() => {});
-      activeVideoTrackRef.current = null;
-    }
-    setIsTorchOn(false);
+    trackRef.current = null;
+    stopTracks(streamRef.current);
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setTorchOn(false);
     setTorchSupported(false);
+  }, []);
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+  /** Arrêt complet : session close (tout démarrage en cours est abandonné), boucle et flux arrêtés. */
+  const stopCamera = useCallback(() => {
+    sessionRef.current += 1;
+    stopLoop();
+    clearTimer(idleTimerRef);
+    clearTimer(holdTimerRef);
+    releaseStream();
+  }, [releaseStream, stopLoop]);
+
+  const decodeFrame = useCallback(async (): Promise<string | null> => {
+    const video = videoRef.current;
+    const decoder = decoderRef.current;
+    if (!video || !decoder || video.readyState < 2) return null;
+    try {
+      if (decoder.kind === 'native') {
+        const codes = await decoder.detector.detect(video);
+        const raw = codes?.[0]?.rawValue;
+        return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
+      }
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h) return null;
+      const scale = Math.min(1, ZXING_MAX_WIDTH / w);
+      decoder.canvas.width = Math.round(w * scale);
+      decoder.canvas.height = Math.round(h * scale);
+      decoder.ctx.drawImage(video, 0, 0, decoder.canvas.width, decoder.canvas.height);
+      try {
+        const text = decoder.reader.decodeFromCanvas(decoder.canvas).getText();
+        return text && text.trim() !== '' ? text.trim() : null;
+      } catch (err) {
+        if (isZxingMiss(err)) return null;
+        throw err;
+      }
+    } catch (err) {
+      if (decoder.kind === 'native' && err instanceof Error && err.name === 'NotSupportedError') {
+        // API présente mais sans décodeur QR sur cet appareil : bascule sur le décodeur logiciel
+        console.warn('[camera] BarcodeDetector sans prise en charge du QR : passage au décodeur logiciel');
+        decoderRef.current = null;
+        return null;
+      }
+      const now = Date.now();
+      if (now - lastDecodeWarnRef.current > 10_000) {
+        lastDecodeWarnRef.current = now;
+        console.warn('[camera] analyse d’image impossible (nouvel essai à l’image suivante) :', err instanceof Error ? err.message : String(err));
+      }
+      return null;
     }
   }, []);
 
-  // Traitement d'un code détecté
-  const handleCodeDetected = useCallback(
-    (code: string) => {
-      resetInactivityTimer();
-      const trimmed = (code || '').trim();
-      if (!trimmed) return;
+  const goToSleep = useCallback(() => {
+    console.info('[camera] veille : aucune lecture depuis', Math.round(idleMsRef.current / 1000), 's, caméra libérée');
+    stopCamera();
+    setPhase('asleep');
+  }, [setPhase, stopCamera]);
 
-      const now = Date.now();
-      // Protection anti-rafale / doublon immédiat (debounce 1.5s)
-      if (lastScannedCodeRef.current === trimmed && now - lastScannedTimeRef.current < 1500) {
-        return;
-      }
+  const armIdleTimer = useCallback(() => {
+    clearTimer(idleTimerRef);
+    if (idleMsRef.current > 0) idleTimerRef.current = setTimeout(goToSleep, idleMsRef.current);
+  }, [goToSleep]);
 
-      lastScannedCodeRef.current = trimmed;
-      lastScannedTimeRef.current = now;
-      isScanningActiveRef.current = false;
-      setIsPausedAfterScan(true);
-
-      // Feedback haptique si supporté par l'appareil
-      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+  /** Lance la boucle de détection (une seule : la précédente est arrêtée). */
+  const startLoop = useCallback(() => {
+    stopLoop();
+    if (phaseRef.current !== 'live' || pausedRef.current || holdRef.current) return;
+    const loopId = loopRef.current;
+    const session = sessionRef.current;
+    const alive = () => loopId === loopRef.current && session === sessionRef.current;
+    const tick = async (): Promise<void> => {
+      loopTimerRef.current = null;
+      if (!alive() || pausedRef.current || holdRef.current) return;
+      if (!decoderRef.current) {
         try {
-          navigator.vibrate(80);
-        } catch {
-          // Ignore vibration permission
-        }
-      }
-
-      onScan(trimmed);
-
-      // Auto-reprise après le délai configuré
-      setTimeout(() => {
-        setIsPausedAfterScan(false);
-        isScanningActiveRef.current = true;
-      }, autoResumeDelayMs);
-    },
-    [onScan, autoResumeDelayMs, resetInactivityTimer]
-  );
-
-  // Boucle de détection BarcodeDetector natif
-  const startNativeDetectionLoop = useCallback(
-    (barcodeDetector: any) => {
-      let lastCheck = 0;
-      const THROTTLE_MS = CAMERA_SCAN_THROTTLE_MS; // 140ms (~7 checks/s, optimal CPU/battery preservation)
-
-      const checkFrame = async (timestamp: number) => {
-        if (!isScanningActiveRef.current) {
-          animationFrameRef.current = requestAnimationFrame(checkFrame);
+          await ensureDecoderRef.current('zxing');
+        } catch (err) {
+          console.error('[camera] décodeur logiciel indisponible :', err instanceof Error ? err.message : String(err));
           return;
         }
-
-        const video = videoRef.current;
-        if (video && video.readyState >= 2 && timestamp - lastCheck >= THROTTLE_MS) {
-          lastCheck = timestamp;
-          try {
-            const barcodes = await barcodeDetector.detect(video);
-            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-              handleCodeDetected(barcodes[0].rawValue);
-            }
-          } catch {
-            // Frame detection error (e.g. video resize or transient frame drop)
-          }
-        }
-
-        animationFrameRef.current = requestAnimationFrame(checkFrame);
-      };
-
-      animationFrameRef.current = requestAnimationFrame(checkFrame);
-    },
-    [handleCodeDetected]
-  );
-
-  // Boucle de détection ZXing (fallback logiciel)
-  const startZXingDetection = useCallback(
-    async (videoElement: HTMLVideoElement) => {
-      try {
-        const { BrowserQRCodeReader } = await import('@zxing/browser');
-        const codeReader = new BrowserQRCodeReader();
-        zxingReaderRef.current = codeReader;
-
-        // Décodage continu sur le flux vidéo
-        codeReader.decodeFromVideoElement(videoElement, (result, err) => {
-          if (!isScanningActiveRef.current) return;
-          if (result && result.getText()) {
-            handleCodeDetected(result.getText());
-          }
-        });
-      } catch (err) {
-        console.error('[CameraQrScanner] Erreur initialisation ZXing:', err);
-        setCameraError('Impossible d\'initialiser le décodeur logiciel.');
       }
-    },
-    [handleCodeDetected]
-  );
+      const code = await decodeFrame();
+      if (!alive() || pausedRef.current || holdRef.current) {
+        if (code) console.info('[camera] lecture arrivée pendant une pause : écartée, le QR sera relu à la reprise');
+        return;
+      }
+      if (code) {
+        armIdleTimer();
+        let verdict: CameraReadVerdict = 'ignored';
+        try {
+          verdict = onScanRef.current(code);
+        } catch (err) {
+          console.error('[camera] traitement de la lecture en échec :', err instanceof Error ? err.message : String(err));
+        }
+        if (verdict === 'accepted') {
+          holdRef.current = true;
+          clearTimer(holdTimerRef);
+          holdTimerRef.current = setTimeout(() => {
+            holdTimerRef.current = null;
+            if (holdRef.current && !pausedRef.current) {
+              console.warn('[camera] lecture acceptée sans mise en pause de la page : détection reprise');
+              holdRef.current = false;
+              startLoopRef.current();
+            }
+          }, HOLD_RELEASE_MS);
+          return;
+        }
+      }
+      if (alive()) loopTimerRef.current = setTimeout(() => { void tick(); }, CAMERA_SCAN_THROTTLE_MS);
+    };
+    void tick();
+  }, [armIdleTimer, decodeFrame, stopLoop]);
 
-  // Démarrage de la caméra
-  const startCameraStream = useCallback(async () => {
-    setIsInitializing(true);
+  const ensureDecoderRef = useRef<(mode: 'native' | 'zxing') => Promise<Decoder | null>>(async () => null);
+  const startLoopRef = useRef(startLoop);
+  startLoopRef.current = startLoop;
+
+  const ensureDecoder = useCallback(async (mode: 'native' | 'zxing'): Promise<Decoder | null> => {
+    if (decoderRef.current) return decoderRef.current;
+    const Native = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => NativeDetector }).BarcodeDetector;
+    if (mode === 'native' && typeof Native === 'function') {
+      decoderRef.current = { kind: 'native', detector: new Native({ formats: ['qr_code'] }) };
+      return decoderRef.current;
+    }
+    const { BrowserQRCodeReader } = await import('@zxing/browser');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas 2D indisponible pour le décodeur logiciel');
+    decoderRef.current = { kind: 'zxing', reader: new BrowserQRCodeReader() as unknown as ZxingReader, canvas, ctx };
+    return decoderRef.current;
+  }, []);
+  ensureDecoderRef.current = ensureDecoder;
+
+  /** Démarrage (ou redémarrage) : nouvelle session ; un résultat arrivé après une autre session est jeté. */
+  const startCamera = useCallback(async () => {
+    stopCamera();
+    const session = sessionRef.current;
+    holdRef.current = false;
     setCameraError(null);
-    stopCameraStream();
+    setPhase('starting');
 
-    const supportInfo = detectScannerSupport();
-    if (supportInfo.mode === 'manual_only') {
-      setCameraError(supportInfo.reason || 'Caméra non supportée dans cet environnement.');
-      setIsInitializing(false);
+    const support = detectScannerSupport();
+    if (support.mode === 'manual_only') {
+      setCameraError(support.reason || 'Caméra non prise en charge par ce navigateur.');
+      setPhase('error');
       return;
     }
 
+    let stream: MediaStream;
     try {
-      const constraints: MediaStreamConstraints = {
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: currentDeviceId
-          ? { deviceId: { exact: currentDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      const videoTrack = stream.getVideoTracks()[0] || null;
-      activeVideoTrackRef.current = videoTrack;
-      const supported = isTorchSupported(videoTrack);
-      setTorchSupported(supported);
-      setIsTorchOn(false);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true'); // Indispensable pour iOS Safari
-        videoRef.current.muted = true;
-
-        // Démarrage sécurisé du flux vidéo sans conflit de promesses play()
-        try {
-          if (videoRef.current.paused) {
-            await videoRef.current.play();
-          }
-        } catch (playErr: any) {
-          if (playErr.name !== 'AbortError') {
-            console.warn('[CameraQrScanner] Lecture vidéo:', playErr.message);
-          }
-        }
-
-        await refreshAvailableCameras();
-        resetInactivityTimer();
-
-        // Lancement du décodeur selon le mode
-        if (supportInfo.mode === 'native' && typeof (window as any).BarcodeDetector === 'function') {
-          const barcodeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-          startNativeDetectionLoop(barcodeDetector);
-        } else {
-          await startZXingDetection(videoRef.current);
-        }
-      }
-
-      setIsInitializing(false);
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        // Interruption normale lors d'un basculement de caméra ou cycle rapide
-        setIsInitializing(false);
-        return;
-      }
-
-      console.warn('[CameraQrScanner] Erreur accès caméra:', err);
-      setIsInitializing(false);
-
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setCameraError(
-          'Accès caméra refusé. Veuillez autoriser l\'accès dans les réglages de votre navigateur ou utiliser la saisie manuelle.'
-        );
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setCameraError('Aucune caméra compatible n\'a été détectée sur cet appareil.');
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setCameraError('La caméra est actuellement utilisée par une autre application.');
-      } else {
-        setCameraError('Erreur d\'initialisation de la caméra. Utilisez la saisie manuelle ci-dessous.');
-      }
+        video: { facingMode: facingRef.current, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+    } catch (err) {
+      if (session !== sessionRef.current) return;
+      console.warn('[camera] accès caméra refusé ou impossible :', err instanceof Error ? `${err.name} ${err.message}` : String(err));
+      setCameraError(cameraErrorMessage(err));
+      setPhase('error');
+      return;
     }
-  }, [
-    currentDeviceId,
-    currentFacingMode,
-    stopCameraStream,
-    refreshAvailableCameras,
-    startNativeDetectionLoop,
-    startZXingDetection,
-    resetInactivityTimer,
-  ]);
+    if (session !== sessionRef.current) {
+      // Démarrage dépassé (changement de caméra, arrière-plan, démontage) : ce flux n'est à personne
+      stopTracks(stream);
+      return;
+    }
+    streamRef.current = stream;
+    const track = stream.getVideoTracks()[0] ?? null;
+    trackRef.current = track;
+    setTorchSupported(isTorchSupported(track));
 
-  // Initialisation au montage et gestion des changements de caméra
-  useEffect(() => {
-    startCameraStream();
-    return () => {
-      stopCameraStream();
-    };
-  }, [startCameraStream, stopCameraStream]);
+    const video = videoRef.current;
+    if (!video) {
+      console.warn('[camera] élément vidéo absent : caméra libérée');
+      stopCamera();
+      return;
+    }
+    video.srcObject = stream;
+    video.muted = true;
+    video.setAttribute('playsinline', 'true');
+    try {
+      await video.play();
+    } catch (err) {
+      if (session !== sessionRef.current) return;
+      console.warn('[camera] lecture de la vidéo :', err instanceof Error ? err.message : String(err));
+    }
+    if (session !== sessionRef.current) return;
 
-  // Gestion de la visibilité de l'onglet (économie de batterie sur smartphone)
+    try {
+      await ensureDecoder(support.mode === 'native' ? 'native' : 'zxing');
+    } catch (err) {
+      if (session !== sessionRef.current) return;
+      console.error('[camera] décodeur indisponible :', err instanceof Error ? err.message : String(err));
+      stopCamera();
+      setCameraError('Le décodeur de QR n’a pas pu démarrer. Passez en saisie manuelle.');
+      setPhase('error');
+      return;
+    }
+    if (session !== sessionRef.current) return;
+
+    setPhase('live');
+    armIdleTimer();
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
+      navigator.mediaDevices.enumerateDevices().then(
+        (list) => { if (session === sessionRef.current) setCameraCount(list.filter((d) => d.kind === 'videoinput').length); },
+        (err: unknown) => console.warn('[camera] liste des caméras illisible :', err instanceof Error ? err.message : String(err)),
+      );
+    }
+    startLoop();
+  }, [armIdleTimer, ensureDecoder, setPhase, startLoop, stopCamera]);
+
+  const startCameraRef = useRef(startCamera);
+  startCameraRef.current = startCamera;
+
+  // Montage : démarrage ; démontage : tout est libéré (y compris un démarrage encore en attente)
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopCameraStream();
-      } else {
-        startCameraStream();
+    void startCameraRef.current();
+    return () => stopCamera();
+  }, [stopCamera]);
+
+  // Pause de la page : boucle arrêtée ; reprise : la lecture acceptée est libérée et la boucle relancée
+  useEffect(() => {
+    pausedRef.current = paused;
+    if (paused) {
+      stopLoop();
+      clearTimer(idleTimerRef);
+      return;
+    }
+    holdRef.current = false;
+    clearTimer(holdTimerRef);
+    if (phaseRef.current === 'live') {
+      armIdleTimer();
+      startLoopRef.current();
+    }
+  }, [paused, armIdleTimer, stopLoop]);
+
+  // Arrière-plan : caméra réellement libérée ; premier plan : redémarrage (sauf veille)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        if (phaseRef.current !== 'asleep') {
+          stopCamera();
+          setPhase('background');
+        }
+      } else if (phaseRef.current === 'background') {
+        void startCameraRef.current();
       }
     };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [setPhase, stopCamera]);
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [startCameraStream, stopCameraStream]);
-
-  // Bascule Caméra Avant / Arrière
-  const toggleFacingMode = () => {
-    resetInactivityTimer();
-    setCurrentDeviceId(undefined);
-    setCurrentFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+  const switchCamera = () => {
+    facingRef.current = facingRef.current === 'environment' ? 'user' : 'environment';
+    void startCamera();
   };
 
-  // Commutation de la torche matérielle
-  const handleToggleTorch = useCallback(async () => {
-    resetInactivityTimer();
-    const track = activeVideoTrackRef.current;
+  const toggleTorch = async () => {
+    const track = trackRef.current;
     if (!track) return;
-    const nextState = !isTorchOn;
-    const result = await setTorchState(track, nextState);
-    if (result.success) {
-      setIsTorchOn(nextState);
-      if (onTorchToggle) {
-        onTorchToggle(nextState);
-      }
-    }
-  }, [isTorchOn, onTorchToggle, resetInactivityTimer]);
-
-  // Recommencer le scan manuellement
-  const handleManualResume = () => {
-    resetInactivityTimer();
-    setIsPausedAfterScan(false);
-    isScanningActiveRef.current = true;
+    armIdleTimer();
+    const next = !torchOn;
+    const result = await setTorchState(track, next);
+    if (result.success) setTorchOn(next);
+    else console.warn('[camera] torche :', result.error ?? 'commande refusée');
   };
+
+  const live = phase === 'live';
 
   return (
-    <div className={cn('flex flex-col gap-4', className)}>
-      {/* Flux vidéo et viseur : surface sombre de la caméra, identique en thème clair et sombre */}
-      <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl border-2 border-border-strong bg-black shadow-xl">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="h-full w-full object-cover"
-        />
+    <div className={cn('flex flex-col gap-3', className)}>
+      <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl border-2 border-border-strong bg-scan-tech-bg">
+        <video ref={videoRef} autoPlay playsInline muted aria-label="Image de la caméra" className="h-full w-full object-cover" />
 
-        {/* État : chargement initial */}
-        {isInitializing && (
-          <div role="status" className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-scrim/80 p-6 text-center text-white backdrop-blur-xs">
-            <RefreshCw size={32} aria-hidden="true" className="text-brand-decor motion-safe:animate-spin" />
-            <p className="text-sm font-semibold">Initialisation de la caméra…</p>
+        {phase === 'starting' && (
+          <div role="status" className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
+            <RefreshCw size={32} aria-hidden="true" />
+            <p className="text-base font-semibold">Démarrage de la caméra…</p>
           </div>
         )}
 
-        {/* État : erreur d'accès ou permission refusée */}
-        {cameraError && (
-          <div role="alert" className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-scrim/95 p-6 text-center text-white">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-white" aria-hidden="true">
-              <ShieldAlert size={24} />
-            </span>
+        {phase === 'error' && (
+          <div role="alert" className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
+            <ShieldAlert size={32} aria-hidden="true" />
             <div className="flex max-w-xs flex-col gap-1">
-              <h4 className="text-base font-semibold">Caméra indisponible</h4>
-              <p className="text-sm leading-relaxed text-white/85">{cameraError}</p>
+              <p className="text-base font-semibold">Caméra indisponible</p>
+              <p className="text-sm leading-relaxed">{cameraError}</p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="glass" onClick={startCameraStream} leftIcon={<RefreshCw size={16} />}>
+              <Button variant="secondary" onClick={() => void startCamera()} leftIcon={<RefreshCw size={16} />}>
                 Réessayer
               </Button>
               {onSwitchToManual && (
@@ -423,102 +450,56 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
           </div>
         )}
 
-        {/* État : mise en veille automatique après 45 s d'inactivité */}
-        {isAsleep && !cameraError && (
-          <div
-            data-testid="scanner-sleep-overlay"
-            onClick={wakeUpScanner}
-            className="pointer-events-auto absolute inset-0 z-30 flex cursor-pointer flex-col items-center justify-center gap-3 bg-scrim/90 p-6 text-center text-white backdrop-blur-sm"
-          >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-white" aria-hidden="true">
-              <PowerOff size={24} />
-            </span>
+        {(phase === 'asleep' || phase === 'background') && (
+          <div data-testid="scanner-sleep-overlay" className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
+            <PowerOff size={32} aria-hidden="true" />
             <div className="flex max-w-xs flex-col gap-1">
-              <h4 className="text-base font-semibold">Scanner en veille</h4>
-              <p className="text-sm leading-relaxed text-white/85">
-                Mis en veille après 45 secondes d’inactivité pour économiser la batterie.
+              <p className="text-base font-semibold">Caméra en veille</p>
+              <p className="text-sm leading-relaxed">
+                {phase === 'asleep' ? 'Aucun billet lu depuis 3 minutes : la caméra est coupée pour la batterie.' : 'Application en arrière-plan : la caméra est coupée.'}
               </p>
             </div>
-            <Button variant="primary" onClick={(e) => { e.stopPropagation(); wakeUpScanner(); }} leftIcon={<Sparkles size={16} />}>
-              Réactiver la caméra
+            <Button variant="primary" size="lg" onClick={() => void startCamera()} leftIcon={<Camera size={18} />}>
+              Reprendre le contrôle
             </Button>
           </div>
         )}
 
-        {/* Viseur de cadrage et ligne de balayage (décor) */}
-        {!cameraError && !isInitializing && !isAsleep && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
-            <div className="relative flex h-60 max-h-full w-60 max-w-full items-center justify-center overflow-hidden rounded-2xl border-2 border-brand-decor">
-              <div className="absolute -left-1 -top-1 h-5 w-5 rounded-tl-sm border-l-4 border-t-4 border-white" aria-hidden="true" />
-              <div className="absolute -right-1 -top-1 h-5 w-5 rounded-tr-sm border-r-4 border-t-4 border-white" aria-hidden="true" />
-              <div className="absolute -bottom-1 -left-1 h-5 w-5 rounded-bl-sm border-b-4 border-l-4 border-white" aria-hidden="true" />
-              <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-br-sm border-b-4 border-r-4 border-white" aria-hidden="true" />
-
-              {!isPausedAfterScan && !isVerifying && (
-                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-brand-decor to-transparent motion-safe:animate-bounce" aria-hidden="true" />
-              )}
-
-              {/* État : billet lu ou vérification en cours */}
-              {(isPausedAfterScan || isVerifying) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-scrim/40 backdrop-blur-xs">
-                  <span role="status" className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-fg shadow-lg">
-                    {isVerifying ? (
-                      <>
-                        <RefreshCw size={16} aria-hidden="true" className="text-brand-fg motion-safe:animate-spin" />
-                        Vérification…
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={16} aria-hidden="true" className="text-success-fg" />
-                        Billet lu
-                      </>
-                    )}
-                  </span>
-                </div>
-              )}
+        {live && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-8" aria-hidden="true">
+            <div className="relative h-60 max-h-full w-60 max-w-full rounded-2xl border-2 border-scan-tech-fg">
+              <div className="absolute inset-x-4 top-1/2 h-0.5 bg-brand-decor" />
             </div>
           </div>
         )}
 
-        {/* Commandes posées sur le flux vidéo */}
-        {!cameraError && !isInitializing && !isAsleep && (
+        {live && overlay}
+
+        {live && (
           <>
-            {/* Torche en haut à droite (accès direct à une main) */}
-            <div className="pointer-events-auto absolute right-3 top-3 z-30">
-              {torchSupported ? (
-                <button
-                  type="button"
-                  data-testid="torch-toggle-btn"
-                  onClick={handleToggleTorch}
-                  aria-pressed={isTorchOn}
-                  className={cn(
-                    'flex min-h-11 items-center gap-2 rounded-2xl border px-3.5 text-sm font-semibold shadow-lg backdrop-blur-md transition-colors duration-200 motion-safe:active:scale-95',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    isTorchOn ? 'border-warning-border bg-warning-bg text-warning-fg' : 'border-white/20 bg-black/70 text-white hover:bg-black/90',
-                  )}
-                >
-                  {isTorchOn ? <Flashlight size={18} aria-hidden="true" /> : <FlashlightOff size={18} aria-hidden="true" />}
-                  <span>{isTorchOn ? 'Torche allumée' : 'Torche éteinte'}</span>
-                </button>
-              ) : (
-                /* Repli pour iOS Safari et les appareils sans flash : rien n'est affiché, sans erreur */
-                <span data-testid="torch-unsupported-fallback" className="hidden" />
-              )}
-            </div>
-
-            {/* Barre basse : état du scanner et changement de caméra */}
-            <div className="pointer-events-auto absolute inset-x-3 bottom-3 z-20 flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/60 px-3 py-1 text-sm font-medium text-white backdrop-blur-md">
-                <Camera size={16} aria-hidden="true" className="text-brand-decor" />
-                Scanner actif
+            {torchSupported && (
+              <button
+                type="button"
+                data-testid="torch-toggle-btn"
+                onClick={() => void toggleTorch()}
+                aria-pressed={torchOn}
+                className="absolute right-3 top-3 z-30 flex min-h-11 items-center gap-2 rounded-2xl border border-border-strong bg-scan-tech-bg px-3.5 text-sm font-semibold text-scan-tech-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {torchOn ? <Flashlight size={18} aria-hidden="true" /> : <FlashlightOff size={18} aria-hidden="true" />}
+                <span>{torchOn ? 'Torche allumée' : 'Torche éteinte'}</span>
+              </button>
+            )}
+            <div className="absolute inset-x-3 bottom-3 z-20 flex items-center justify-between gap-2">
+              <span className="flex min-h-9 items-center gap-1.5 rounded-full bg-scan-tech-bg px-3 text-sm font-semibold text-scan-tech-fg">
+                {paused ? <PauseCircle size={16} aria-hidden="true" /> : <Camera size={16} aria-hidden="true" />}
+                {paused ? 'Détection en pause' : 'Présentez le QR'}
               </span>
-
-              {availableCameras.length > 1 && (
+              {cameraCount > 1 && (
                 <button
                   type="button"
-                  onClick={toggleFacingMode}
+                  onClick={switchCamera}
                   aria-label="Changer de caméra"
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white backdrop-blur-md transition-colors duration-200 hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-95"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-scan-tech-bg text-scan-tech-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <SwitchCamera size={18} aria-hidden="true" />
                 </button>
@@ -527,15 +508,6 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
           </>
         )}
       </div>
-
-      {/* Reprise immédiate lors d'un scan en rafale */}
-      {isPausedAfterScan && !isVerifying && (
-        <div className="flex justify-center">
-          <Button variant="secondary" onClick={handleManualResume} leftIcon={<QrCode size={18} />}>
-            Scanner le billet suivant
-          </Button>
-        </div>
-      )}
     </div>
   );
 };
