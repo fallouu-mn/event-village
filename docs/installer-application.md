@@ -4,6 +4,8 @@ Event Village est une application web : elle s'ouvre dans le navigateur du tél�
 
 L'installation n'est pas obligatoire pour afficher son billet sans réseau sur Android. Elle est **fortement conseillée sur iPhone** (voir plus bas).
 
+Ouvrez toujours l'application à son **adresse officielle, en `https://`**. Sur une adresse non sécurisée (`http://`, adresse IP d'un poste de test), le navigateur refuse l'installation, l'enregistrement du billet hors ligne et la caméra du scanner.
+
 ---
 
 ## 1. Sur Android (Chrome)
