@@ -545,7 +545,8 @@ const CATALOG = {
         inAppType: 'REMINDER', link: () => '/tickets',
         inApp: (d) => ({
             title: 'C\'est bientôt',
-            content: `${q(text(d, 'title'))} commence à ${formatTime(iso(d, 'start_at'))} (${text(d, 'location')}). Ouvrez votre billet dans l'application avant d'arriver : le QR change toutes les 20 secondes et demande une connexion.`,
+            // Lot 7 (D33) : le billet reste présentable sans réseau (7.1) ; lien et SMS inchangés.
+            content: `${q(text(d, 'title'))} commence à ${formatTime(iso(d, 'start_at'))} (${text(d, 'location')}). Ouvrez votre billet dans l'application avant d'arriver : il restera disponible sans réseau.`,
         }),
         sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 25)} à ${smsTime(iso(d, 'start_at'))}. Ouvrez votre billet avant d'arriver : QR renouvelé toutes les 20 s. ${appLink(ctx, '/tickets')}`,
         sample: { ...SAMPLE_EVENT, sms_policy: 'IF_NO_PUSH' },
@@ -962,6 +963,28 @@ const CATALOG = {
             content: `La part des SMS hors codes de connexion (${formatInteger(count(d, 'limit'))} sur ${formatInteger(count(d, 'cap'))} par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar).`,
         }),
         sample: { day: '2026-11-02', cap: 1_000, limit: 700 },
+    }),
+    // Lot 7 (7.0 a, D15) : alerte à 80 % du budget des SMS optionnels (notif.sms_optional_daily_cap), une fois par
+    // jour de Dakar, mise en file par notification_daily_checks.
+    ADMIN_SMS_OPTIONAL_80: define('ADMIN_SMS_OPTIONAL_80', {
+        label: 'SMS optionnels à 80 % du plafond', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
+        link: () => '/admin/notifications',
+        inApp: (d) => ({
+            title: 'SMS optionnels : 80 % du plafond',
+            content: `${formatInteger(count(d, 'used'))} SMS optionnels envoyés aujourd'hui sur un plafond de ${formatInteger(count(d, 'cap'))}. Au-delà, rappels et annonces partent sans SMS.`,
+        }),
+        sample: { day: '2026-11-05', used: 560, cap: 700, threshold: 560, percent: 80 },
+    }),
+    // Lot 7 (7.0 a, D16) : prévision de la veille, mise en file par notification_reminders_schedule quand les rappels
+    // SMS prévus pour le lendemain dépassent le budget optionnel restant de ce jour.
+    ADMIN_SMS_FORECAST: define('ADMIN_SMS_FORECAST', {
+        label: 'Rappels de demain au-delà du budget SMS', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_THRESHOLD',
+        link: () => '/admin/notifications',
+        inApp: (d) => ({
+            title: 'Budget SMS de demain insuffisant',
+            content: `${formatInteger(count(d, 'planned'))} SMS de rappel prévus le ${formatDate(iso(d, 'day'))} pour ${formatInteger(count(d, 'remaining'))} disponibles (plafond ${formatInteger(count(d, 'cap'))}). Les rappels au-delà partiront sans SMS.`,
+        }),
+        sample: { day: '2026-11-06', planned: 812, cap: 700, remaining: 700 },
     }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),

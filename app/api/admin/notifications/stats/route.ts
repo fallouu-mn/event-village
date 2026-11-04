@@ -9,7 +9,10 @@ export const dynamic = 'force-dynamic';
  * GET /api/admin/notifications/stats?days= — lot 6 (contrat L2, L3). Compteurs de la supervision :
  * permission notifications.read, compte ACTIF. Par jour (de Dakar) et par canal : envoyées, échecs, non
  * envoyées, incertaines, annulées ; SMS du mois (envoyés + incertains, journaux OTP compris, nombre
- * d'OTP) ; SMS du jour et seuil d'alerte notif.sms_daily_alert. `days` de 1 à 31 (défaut 14), sinon 400
+ * d'OTP) ; SMS du jour. Lot 7 (7.0 a, D15) : `threshold` = seuil de l'alerte à 80 % du budget des SMS
+ * optionnels (ceil(0,8 × notif.sms_optional_daily_cap), null si le plafond est absent ou vaut 0),
+ * `optional_cap` (le plafond) et `optional_today` (SMS optionnels du jour), servis tels quels par
+ * admin_notifications_stats : la route ne calcule rien. `days` de 1 à 31 (défaut 14), sinon 400
  * INVALID_FILTER. Aucune heure n'est lue de la requête.
  */
 

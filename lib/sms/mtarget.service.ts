@@ -113,7 +113,10 @@ function guardContext(ctx: SyncSmsContext): SmsContext {
 export class MTargetService {
     /**
      * Envoie un SMS après réservation de quota (lib/sms/sms-guard.ts). Catégorie par défaut :
-     * TRANSACTIONAL (notification) ; `ctx.actorId` = compte connecté qui déclenche l'envoi.
+     * TRANSACTIONAL (notification) ; `ctx.actorId` = compte connecté qui déclenche l'envoi. Lot 7 (7.0 a) :
+     * `ctx.family` (famille du registre, posée par l'envoyeur) est transmise telle quelle à la garde : un SMS
+     * ESSENTIAL n'est soumis à aucun plafond journalier global. Les envois synchrones (sendOtp,
+     * sendControllerInvite) ne la transmettent pas (guardContext) : l'invitation garde la part non OTP (D14).
      */
     async sendSms(to: string, message: string, ctx: SmsContext = {}): Promise<MTargetSendResult> {
         let reservation = ctx.reservation;

@@ -9,7 +9,12 @@
  *    quotidienne par destinataire (SMS_PER_PHONE_DAY, notifications seulement) et, quand un compte
  *    connecté déclenche l'envoi (`actorId`), la limite quotidienne par compte (SMS_PER_ACCOUNT_DAY) ;
  *  - reçus de la vente au guichet (lot 5, COUNTER_RECEIPT) : part non OTP du plafond global, limite par
- *    destinataire et quota par caisse et par jour (COUNTER_RECEIPT_PER_SHIFT_DAY), sans limite par vendeur.
+ *    destinataire et quota par caisse et par jour (COUNTER_RECEIPT_PER_SHIFT_DAY), sans limite par vendeur ;
+ *  - lot 7 (7.0 a, D12, D14) : un SMS de la boîte d'envoi dont la famille est ESSENTIAL (confirmation d'achat,
+ *    reçus, remboursements, annulation, transfert, sécurité du compte…) n'est plus soumis au plafond global
+ *    (ni à sa part non OTP) ; il garde les limites par destinataire, par compte et par caisse. Les SMS
+ *    optionnels gardent la part non OTP, en plus de leur budget (notif.sms_optional_daily_cap, appliqué à la
+ *    réservation de la boîte d'envoi).
  * Les compteurs par destinataire de l'OTP et des notifications sont distincts : des notifications
  * vers un numéro n'épuisent pas ses codes de connexion.
  * Le destinataire est compté sous sa forme facturée (formatMTargetPhoneNumber) : « 77… »,
@@ -44,6 +49,14 @@ export interface SmsContext {
     shiftId?: string | null;
     /** Réservation obtenue plus tôt (routes OTP : réserver avant d'enregistrer le code). */
     reservation?: SmsReservation;
+    /**
+     * Lot 7 (7.0 a, D12, D14) : famille de la notification au registre notification_types, passée par
+     * l'envoyeur de la boîte d'envoi. ESSENTIAL : jamais soumis au plafond global quotidien (ni à sa part non
+     * OTP) ; les limites par destinataire, par compte déclencheur et par caisse restent. OPTIONAL ou absente
+     * (invitation d'un contrôleur, appels sans famille) : règles du lot 1C, part non OTP comprise. Le budget
+     * des SMS optionnels (notif.sms_optional_daily_cap) est appliqué avant, à la réservation de la boîte d'envoi.
+     */
+    family?: 'ESSENTIAL' | 'OPTIONAL';
 }
 
 /** Réservation à usage unique, liée à un destinataire. */
@@ -85,13 +98,15 @@ function rulesFor(recipient: string, ctx: SmsContext): QuotaRule[] {
         return rules;
     }
     // Même compteur global que l'OTP, plafonné plus bas : les non OTP s'arrêtent à la part qui leur
-    // est ouverte, l'OTP continue jusqu'au plafond entier.
-    const rules: QuotaRule[] = [
-        { scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: nonOtpGlobalCap() },
-        { scope: 'sms_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY },
-    ];
+    // est ouverte, l'OTP continue jusqu'au plafond entier. Lot 7 (7.0 a) : un SMS indispensable (famille
+    // ESSENTIAL du registre) n'est jamais refusé par un plafond journalier global ; il garde les limites
+    // par destinataire, par compte et par caisse (consigne : quotas anti-abus du lot 1C maintenus).
+    const rules: QuotaRule[] = [];
+    if (ctx.family !== 'ESSENTIAL') rules.push({ scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: nonOtpGlobalCap() });
+    rules.push({ scope: 'sms_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY });
     if ((ctx.category ?? 'TRANSACTIONAL') === 'COUNTER_RECEIPT') {
-        // Reçu du guichet : part non OTP du plafond global, limite par destinataire, quota par caisse
+        // Reçu du guichet : limite par destinataire, quota par caisse (et part non OTP du plafond global sans
+        // famille ; l'envoyeur passe ESSENTIAL, registre : hors plafond global depuis le lot 7)
         if (!ctx.shiftId) throw new Error('reçu de guichet sans caisse (shiftId) : quota par caisse impossible');
         rules.push({ scope: 'sms_counter_receipt', bucket: ctx.shiftId, windowSecs: DAY, max: env.COUNTER_RECEIPT_PER_SHIFT_DAY });
         return rules;

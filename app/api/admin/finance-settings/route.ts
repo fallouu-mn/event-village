@@ -7,11 +7,12 @@ import { rpcWithRetry } from '@/lib/payments/rpc';
 export const dynamic = 'force-dynamic';
 
 /** Préfixes des réglages exposés par cette route (validation des valeurs : finance_setting_set). */
-const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%';
+const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%';
 
 /**
  * Lot 3 — réglages financiers (clés finance.*), lot 4 — réglages du contrôle d'accès (clés access.*),
- * lot 6 — réglages des notifications (clés notif.*, rappels et SMS) : historisés, jamais rétroactifs.
+ * lot 6 — réglages des notifications (clés notif.*, rappels et SMS), lot 7 — interrupteurs des services hors
+ * billetterie (clés features.*) : historisés, jamais rétroactifs.
  * GET : valeurs courantes et 100 dernières modifications (ADMIN ou SUPERADMIN).
  * PUT : modification d'une clé, SUPERADMIN uniquement ; validation et historique en base
  *       (finance_setting_set) : la route ne fait aucun calcul et n'a aucune valeur par défaut.
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
 }
 
 const PutSchema = z.object({
-    key: z.string().regex(/^(finance|access|notif)\.[A-Za-z0-9_.]+$/),
+    key: z.string().regex(/^(finance|access|notif|features)\.[A-Za-z0-9_.]+$/),
     value: z.union([z.number(), z.boolean(), z.string()]),
     reason: z.string().trim().min(3).max(300),
 });
@@ -52,7 +53,7 @@ export async function PUT(req: NextRequest) {
     }
     const parsed = PutSchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.* ou notif.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
+        return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.*, notif.* ou features.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
     }
     const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>('finance_setting_set', {
         p_key: parsed.data.key,

@@ -84,6 +84,8 @@ interface ClaimedItem {
     actor_id: string | null;
     shift_id: string | null;
     template_data: Record<string, unknown> | null;
+    /** Lot 7 (7.0 a) : plafond des SMS optionnels lu à la réservation (SMS optionnel seulement, sinon null). */
+    sms_optional_cap?: number | null;
 }
 
 interface ClaimReply {
@@ -116,7 +118,19 @@ interface MarkResult {
 
 interface MarkReply { ok?: boolean; code?: string; message?: string; marked?: number; stale?: number; failed_ids?: string[] }
 
-interface DailyReply { ok?: boolean; code?: string; message?: string; sms_today?: number; threshold?: number | null }
+/**
+ * Contrôle du jour (notification_daily_checks). Lot 7 (7.0 a, D15) : le seuil notif.sms_daily_alert est
+ * remplacé par l'alerte à 80 % du budget des SMS optionnels ; optional_cap null = réglage absent.
+ */
+interface DailyReply {
+    ok?: boolean;
+    code?: string;
+    message?: string;
+    sms_today?: number;
+    optional_today?: number;
+    optional_cap?: number | null;
+    optional_threshold?: number | null;
+}
 
 // ── Catalogue (contrat G1) : vue structurelle des modèles ──────────────────
 
@@ -152,7 +166,7 @@ const DAY_SECONDS = 86_400;
 const HIGH_URGENCY_TYPES = ['REMINDER_H3', 'EVENT_CANCELLED', 'PUSH_TEST'];
 const FAKE_EMAIL = /^[0-9]+@eventvillage\.sn$/i;
 
-const MISSING_SETTING_WARNED = Symbol.for('event-village.notif-sms-daily-alert-missing-warned');
+const MISSING_SETTING_WARNED = Symbol.for('event-village.notif-sms-optional-daily-cap-missing-warned');
 type ProcessFlags = typeof globalThis & { [MISSING_SETTING_WARNED]?: boolean };
 
 function renderContext(): RenderCtx {
@@ -271,10 +285,12 @@ async function deliverSms(item: ClaimedItem, data: Record<string, unknown>, ctx:
 
     let res: MTargetSendResult;
     try {
+        // Lot 7 (7.0 a, D12) : la famille du registre décide du plafond global de la garde (aucun pour ESSENTIAL).
         res = await mTargetService.sendSms(phone, text, {
             category: isReceipt ? 'COUNTER_RECEIPT' : 'TRANSACTIONAL',
             actorId: item.actor_id ?? undefined,
             shiftId: item.shift_id ?? undefined,
+            family: item.family,
         });
     } catch (err) {
         // L'issue d'un envoi interrompu par une exception est inconnue : jamais de second envoi.
@@ -569,11 +585,12 @@ export async function dispatchNotifications(opts: DispatchOptions = {}): Promise
     if (dailyErr) throw rpcFailure('notification_daily_checks', `${dailyErr.code} ${dailyErr.message}`);
     if (!dailyData || dailyData.ok !== true) throw rpcFailure('notification_daily_checks', `${dailyData?.code ?? 'réponse vide'} ${dailyData?.message ?? ''}`.trim());
     report.smsToday = Number(dailyData.sms_today ?? 0);
-    if (dailyData.threshold === null || dailyData.threshold === undefined) {
+    if (dailyData.optional_cap === null || dailyData.optional_cap === undefined) {
+        // Visible, une fois par processus : la réservation écrit SKIPPED SETTING_MISSING pour chaque SMS optionnel.
         const flags = globalThis as ProcessFlags;
         if (!flags[MISSING_SETTING_WARNED]) {
             flags[MISSING_SETTING_WARNED] = true;
-            console.warn('[notifications] Réglage notif.sms_daily_alert absent : aucune alerte de volume de SMS du jour.');
+            console.warn('[notifications] Réglage notif.sms_optional_daily_cap absent : les SMS optionnels ne partent pas.');
         }
     }
     return report;

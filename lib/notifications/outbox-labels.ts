@@ -53,6 +53,9 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     PUSH_DELIVERED: 'Notification push déjà remise',
     SMS_POLICY_NEVER: 'Rappel sans SMS selon les réglages',
     SMS_DAILY_CAP: 'Plafond quotidien de SMS atteint',
+    // Lot 7 (7.0 a, 7.0 b) : budget des SMS optionnels ; rappel d'un porteur de billets gratuits seulement.
+    SMS_OPTIONAL_CAP: 'Plafond journalier des SMS optionnels atteint',
+    FREE_TICKETS_ONLY: 'Billets gratuits seulement : rappel sans SMS',
     SMS_RECIPIENT_CAP: 'Limite de SMS du destinataire atteinte',
     SMS_ACCOUNT_CAP: 'Limite de SMS du compte déclencheur atteinte',
     COUNTER_RECEIPT_CAP: 'Limite de reçus de la caisse atteinte',
@@ -153,6 +156,8 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_SMS_DAILY_THRESHOLD: 'Volume de SMS du jour élevé',
     ADMIN_SMS_CAP_GLOBAL: 'Plafond de SMS atteint',
     ADMIN_SMS_CAP_NON_OTP: 'Quota de SMS hors codes atteint',
+    ADMIN_SMS_OPTIONAL_80: 'SMS optionnels à 80 % du plafond',
+    ADMIN_SMS_FORECAST: 'Rappels de demain au-delà du budget SMS',
     OTP_LOGIN: 'Code de connexion',
     OTP_REGISTER: "Code d'inscription",
     OTP_PASSWORD_RESET: 'Code de réinitialisation du mot de passe',
