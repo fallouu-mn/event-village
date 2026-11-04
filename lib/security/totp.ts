@@ -50,6 +50,25 @@ export function generateTicketCode(ticketId: string, totpSecret: string, at: Dat
     return hotp(ticketKey(ticketId, totpSecret), counterAt(at));
 }
 
+/** Nombre maximal de codes d'un lot hors ligne : 48 h de pas de 20 s (+ 1 de marge, contrat M4.5). */
+export const OFFLINE_CODES_MAX = 8641;
+
+/**
+ * Lot 7 (7.1, contrat 3.1) — suite des codes du billet pour les compteurs firstCounter … firstCounter + count − 1,
+ * concaténés en une seule chaîne de 6 × count chiffres (code d'indice i = substr(6 i, 6)). La clé du billet est
+ * dérivée une seule fois. Le secret ne quitte jamais le serveur : seuls les codes sont envoyés au navigateur.
+ */
+export function generateTicketCodes(ticketId: string, totpSecret: string, firstCounter: number, count: number): string {
+    if (!Number.isSafeInteger(firstCounter) || firstCounter < 0) throw new Error(`Compteur de départ invalide pour le billet ${ticketId}.`);
+    if (!Number.isSafeInteger(count) || count < 1 || count > OFFLINE_CODES_MAX) {
+        throw new Error(`Nombre de codes invalide pour le billet ${ticketId} (${count}, de 1 à ${OFFLINE_CODES_MAX}).`);
+    }
+    const key = ticketKey(ticketId, totpSecret);
+    const codes: string[] = new Array(count);
+    for (let i = 0; i < count; i++) codes[i] = hotp(key, firstCounter + i);
+    return codes.join('');
+}
+
 /** Vrai si le code correspond au pas courant ou à un pas voisin (±1), comparaison en temps constant. */
 export function verifyTicketCode(ticketId: string, totpSecret: string, code: string, at: Date = new Date()): boolean {
     if (!/^\d{6}$/.test(code)) return false;

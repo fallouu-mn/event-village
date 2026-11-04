@@ -92,6 +92,13 @@ const serverEnvSchema = z.object({
     COUNTER_RECEIPT_PER_SHIFT_DAY: limit(500),
     SCAN_INCIDENT_REPORT_PER_SCANNER_MIN: limit(10),
     SCAN_INCIDENT_LOG_PER_SCANNER_MIN: limit(60),
+    // Lot 7 (7.1, D37) : téléchargements du lot de codes hors ligne (GET /api/tickets/[id]/offline-codes), par
+    // billet et par compte, fenêtres fixes d'une heure ; une ouverture de l'application ne retélécharge que si
+    // le lot manque, a expiré, a changé de version ou se termine dans moins de 24 h
+    OFFLINE_CODES_PER_TICKET_HOUR: limit(12),
+    OFFLINE_CODES_PER_USER_HOUR: limit(60),
+    // Lot 7 (7.2, D43) : vérifications de saisie manuelle (POST /api/controller/scan/lookup), par contrôleur et par minute
+    SCAN_LOOKUP_PER_SCANNER_MIN: limit(20),
     // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
     // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
     CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),

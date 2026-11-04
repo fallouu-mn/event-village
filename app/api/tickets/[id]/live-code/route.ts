@@ -14,6 +14,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * billet (tout autre compte, personnel compris, reçoit 404 sans donnée), billet VALIDE uniquement.
  * Payload « EVT1:<UUID>:<code> », code à 6 chiffres renouvelé toutes les 20 s ; `expires_in` donne
  * le temps restant du pas courant pour que l'interface rafraîchisse au bon moment.
+ * Lot 7 (7.1) : `server_time` (heure du serveur à l'envoi) permet au téléphone de recalculer son écart
+ * d'horloge, appliqué au lot de codes hors ligne.
  */
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
     const session = await requireActiveSession(req);
@@ -43,6 +45,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     const now = new Date();
     const code = generateTicketCode(ticket.id as string, String(ticket.totp_secret), now);
     return NextResponse.json(
-        { payload: buildTicketPayload(ticket.id as string, code), step_seconds: TOTP_STEP_SECONDS, expires_in: secondsUntilNextStep(now) },
+        // Lot 7 (7.1, contrat 5.2) : heure du serveur, pour recalculer l'écart d'horloge du téléphone à chaque code reçu
+        { payload: buildTicketPayload(ticket.id as string, code), step_seconds: TOTP_STEP_SECONDS, expires_in: secondsUntilNextStep(now), server_time: new Date().toISOString() },
         { headers: { 'Cache-Control': 'no-store' } });
 }

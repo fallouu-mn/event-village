@@ -5,6 +5,15 @@ import { requireActiveSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
+/** Lot 7 (7.1, contrat 3.2) : disponibilité hors ligne d'un billet, servie par ticket_offline_info. */
+interface OfflineInfo {
+    secret_version: number;
+    available: boolean;
+    available_from: string | null;
+    available_until: string | null;
+    reason: null | 'NOT_YET' | 'CLOSED' | 'TICKET_NOT_VALID' | 'EVENT_NOT_PUBLISHED' | 'TRANSFER_PENDING';
+}
+
 /**
  * GET /api/tickets
  * Récupère tous les billets réels de l'utilisateur connecté avec QR code et informations d'événement.
@@ -84,6 +93,27 @@ export async function GET(req: NextRequest) {
             });
         }
 
+        // Lot 7 (7.1, contrat 3.2) : disponibilité hors ligne calculée par le serveur (ticket_offline_info,
+        // même fenêtre et même ordre de contrôle que le téléchargement) ; le navigateur ne calcule rien.
+        const offlineMap = new Map<string, OfflineInfo>();
+        if (ticketIds.length > 0) {
+            const { data: info, error: infoErr } = await supabase.rpc('ticket_offline_info', { p: { user_id: effectiveUserId } });
+            const infoBody = (info ?? null) as { ok?: unknown; tickets?: unknown } | null;
+            if (infoErr || infoBody?.ok !== true || !Array.isArray(infoBody.tickets)) {
+                console.error('[API /api/tickets] disponibilité hors ligne illisible :', infoErr ? `${infoErr.code ?? ''} ${infoErr.message}` : JSON.stringify(info).slice(0, 200));
+                return NextResponse.json({ error: 'Impossible de charger vos billets.' }, { status: 500 });
+            }
+            for (const row of infoBody.tickets as Array<Record<string, unknown>>) {
+                offlineMap.set(String(row.ticket_id), {
+                    secret_version: Number(row.secret_version),
+                    available: row.available === true,
+                    available_from: typeof row.available_from === 'string' ? new Date(row.available_from).toISOString() : null,
+                    available_until: typeof row.available_until === 'string' ? new Date(row.available_until).toISOString() : null,
+                    reason: typeof row.reason === 'string' ? row.reason as OfflineInfo['reason'] : null,
+                });
+            }
+        }
+
         const formatted = (tickets || []).map((t: any) => {
             const startDate = t.events?.start_date ? new Date(t.events.start_date) : new Date();
             const months = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];
@@ -114,6 +144,7 @@ export async function GET(req: NextRequest) {
                 isUpcoming,
                 isTransferLocked,
                 activeTransfer,
+                offline: offlineMap.get(t.id) ?? null,
             };
         });
 
