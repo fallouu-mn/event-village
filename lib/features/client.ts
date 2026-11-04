@@ -9,6 +9,8 @@
  * laisse la valeur à null (services masqués) ; la requête est retentée au prochain montage d'un composant.
  * Les valeurs ne sont qu'un confort d'affichage : chaque page et chaque route contrôle elle-même son
  * interrupteur côté serveur (404 si fermé).
+ * Hors ligne (navigator.onLine faux, par exemple sur la page du billet hors ligne servie par le service worker),
+ * aucune requête n'est tentée : les services restent masqués et la lecture part au retour du réseau (« online »).
  */
 import { useEffect, useState } from 'react';
 
@@ -56,13 +58,28 @@ export function useFeatureFlags(): ClientFeatureFlags | null {
             return;
         }
         let alive = true;
-        loadFeatureFlags()
-            .then((f) => {
-                if (alive) setFlags(f);
-            })
-            .catch((err: unknown) => {
-                console.error('[features] lecture des interrupteurs impossible, services masqués :', err instanceof Error ? err.message : String(err));
-            });
+        const load = () => {
+            loadFeatureFlags()
+                .then((f) => {
+                    if (alive) setFlags(f);
+                })
+                .catch((err: unknown) => {
+                    console.error('[features] lecture des interrupteurs impossible, services masqués :', err instanceof Error ? err.message : String(err));
+                });
+        };
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            // Hors ligne : pas de requête vouée à l'échec ; lecture au retour du réseau.
+            const onOnline = () => {
+                window.removeEventListener('online', onOnline);
+                if (alive) load();
+            };
+            window.addEventListener('online', onOnline);
+            return () => {
+                alive = false;
+                window.removeEventListener('online', onOnline);
+            };
+        }
+        load();
         return () => {
             alive = false;
         };
