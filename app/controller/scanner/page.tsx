@@ -52,10 +52,8 @@ import { ErrorState } from '@/components/ui/EmptyState';
 import { Select } from '@/components/ui/Field';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import { TabPanel, Tabs } from '@/components/ui/Tabs';
-import { CameraQrScanner, type CameraReadVerdict } from '@/components/scan/CameraQrScanner';
-import { CombatFlashOverlay } from '@/components/scan/CombatFlashOverlay';
-import { ScannerShiftBanner, type ServedShift } from '@/components/scan/ScannerShiftBanner';
+import type { CameraReadVerdict } from '@/components/scan/CameraQrScanner';
+import type { ServedShift } from '@/components/scan/ScannerShiftBanner';
 import { ScanStatusBar } from '@/components/scan/ScanStatusBar';
 import { ScanHistoryList, type ServedRefusal, type ServedScan } from '@/components/scan/ScanHistoryList';
 import { ScannerStartScreen, type StartChoice } from '@/components/scan/ScannerStartScreen';
@@ -68,6 +66,7 @@ import {
     readScanSession, savePendingScan, saveScanSession, useScannerReturn, type ScanArea, type ScanInputMode,
     type ScanReturnReason,
 } from '@/lib/scan/scan-session';
+import { deferredPart, useDeferredPart } from '@/lib/scan/deferred-part';
 import { EVENT_STATUS_META, isEventEligibleForController, isEventStatus } from '@/lib/events/event-status';
 import { formatEventDateTime, formatFcfa, formatTime } from '@/lib/format';
 import { triggerHapticFeedback } from '@/lib/hardware/feedback';
@@ -87,6 +86,15 @@ const CounterSalePanel = dynamic(() => import('@/components/scan/CounterSalePane
     ssr: false,
     loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du guichet…</p>,
 });
+// Caméra (double décodeur), résultat plein écran et bandeau de caisse : absents de l'écran de départ, donc hors du
+// premier chargement (7.5), et préchargés au montage de la page, avant le départ du contrôle et avant le premier
+// scan (lib/scan/deferred-part : une fois là, rendus sans suspension, le verdict n'attend rien)
+const cameraPart = deferredPart('caméra', () => import('@/components/scan/CameraQrScanner').then((m) => m.CameraQrScanner));
+const overlayPart = deferredPart('plein écran du résultat', () => import('@/components/scan/CombatFlashOverlay').then((m) => m.CombatFlashOverlay));
+const shiftBannerPart = deferredPart('bandeau de caisse', () => import('@/components/scan/ScannerShiftBanner').then((m) => m.ScannerShiftBanner));
+// Onglets Contrôle, Guichet, Caisse (affectation qui accepte les espèces) : tant qu'ils ne sont pas arrivés, l'espace
+// courant est affiché seul, sans la barre d'onglets
+const tabsPart = deferredPart('onglets', () => import('@/components/ui/Tabs').then((m) => ({ Tabs: m.Tabs, TabPanel: m.TabPanel })));
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -172,6 +180,11 @@ function toNumber(v: unknown): number {
 
 export default function ControllerScannerPage() {
     const router = useRouter();
+    // Parties préchargées dès le montage (null tant qu'elles ne sont pas arrivées : repli neutre ci-dessous)
+    const CameraQrScanner = useDeferredPart(cameraPart);
+    const CombatFlashOverlay = useDeferredPart(overlayPart);
+    const ScannerShiftBanner = useDeferredPart(shiftBannerPart);
+    const tabsUi = useDeferredPart(tabsPart);
 
     // Affectations
     const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -849,16 +862,20 @@ export default function ControllerScannerPage() {
     ];
     const currentArea: Area = tabs.some((t) => t.id === area) ? area : 'controle';
 
-    const pendingLayer = stage === 'pending' || stage === 'slow' ? (
-        <div data-scan-state={stage} role="status" aria-live="polite"
+    // Verdict arrivé avant le plein écran (préchargé au montage ; seulement sur un réseau très lent) : écran neutre sur
+    // l'image, jamais un verdict (la vibration est déjà donnée) ; le plein écran le remplace dès son arrivée
+    const resultWaiting = stage === 'result' && outcome !== null && !CombatFlashOverlay;
+    const pendingLayer = stage === 'pending' || stage === 'slow' || resultWaiting ? (
+        <div data-scan-state={resultWaiting ? undefined : stage} role="status" aria-live="polite"
             className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
             <Loader2 size={40} aria-hidden="true" className="motion-safe:animate-spin" />
-            <p className="text-2xl font-bold">{stage === 'pending' ? 'Envoi…' : 'Réseau lent'}</p>
+            <p className="text-2xl font-bold">{resultWaiting ? 'Affichage du résultat…' : stage === 'pending' ? 'Envoi…' : 'Réseau lent'}</p>
             {stage === 'slow' && (
                 <p className="max-w-xs text-base font-semibold">
                     Ne refaites pas scanner : nouvel essai automatique{attempt > 1 ? ` (essai ${attempt} sur 3)` : ''}.
                 </p>
             )}
+            {resultWaiting && <Button variant="secondary" onClick={dismissResult}>Revenir au scan</Button>}
         </div>
     ) : null;
 
@@ -880,7 +897,7 @@ export default function ControllerScannerPage() {
             ) : (
                 <>
                     {/* Caméra gardée ouverte mais en pause pendant un encaissement (décision attendue) */}
-                    {inputMode === 'camera' && (
+                    {inputMode === 'camera' && (CameraQrScanner ? (
                         <CameraQrScanner
                             onScan={handleCameraRead}
                             paused={cameraPaused || cashPending}
@@ -889,7 +906,14 @@ export default function ControllerScannerPage() {
                             autoStart={!resumeGate}
                             onResume={() => setResumeGate(false)}
                         />
-                    )}
+                    ) : (
+                        // Repli (caméra préchargée pas encore arrivée) : même cadre que la caméra, aucun décalage
+                        <div role="status" aria-busy="true"
+                            className="mx-auto flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-3 rounded-3xl border-2 border-border-strong bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
+                            <Loader2 size={32} aria-hidden="true" className="motion-safe:animate-spin" />
+                            <p className="text-base font-semibold">Préparation de la caméra…</p>
+                        </div>
+                    ))}
                     {inputMode === 'manual' && (
                         <div className="relative flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
                             {pendingLayer && <div className="relative min-h-40 overflow-hidden rounded-2xl">{pendingLayer}</div>}
@@ -972,12 +996,16 @@ export default function ControllerScannerPage() {
 
     const cashArea = (
         <div className="flex flex-col gap-3">
-            <ScannerShiftBanner
-                canAcceptCash={canCash}
-                activeShift={activeShift}
-                onOpenShiftClick={() => setShowOpenShift(true)}
-                onCloseShiftClick={() => setShowCloseShift(true)}
-            />
+            {ScannerShiftBanner ? (
+                <ScannerShiftBanner
+                    canAcceptCash={canCash}
+                    activeShift={activeShift}
+                    onOpenShiftClick={() => setShowOpenShift(true)}
+                    onCloseShiftClick={() => setShowCloseShift(true)}
+                />
+            ) : (
+                <p role="status" className="text-sm text-fg-muted">Chargement de la caisse…</p>
+            )}
         </div>
     );
 
@@ -988,6 +1016,20 @@ export default function ControllerScannerPage() {
         : shown?.recoveredAt ? 0
         : outcome.result === 'valid' && !isTechnicalOutcome(outcome) ? autoReturnMs
         : REFUSAL_RETURN_MS;
+    const areaContent = (
+        <>
+            {currentArea === 'controle' && control}
+            {currentArea === 'guichet' && (
+                <CounterSalePanel
+                    eventId={selected.events.id}
+                    onOpenShift={() => setShowOpenShift(true)}
+                    onSold={() => { void fetchActiveShift(); scheduleStats(STATS_AFTER_SCAN_MS); }}
+                    onSessionExpired={goToLogin}
+                />
+            )}
+            {currentArea === 'caisse' && cashArea}
+        </>
+    );
     const recentByMe = outcome?.result === 'already_used' && outcome.ticket?.checked_in_by_me === true && outcome.ticket.checked_in_at
         ? Date.now() - Date.parse(outcome.ticket.checked_in_at) < 30_000 : false;
 
@@ -1011,26 +1053,17 @@ export default function ControllerScannerPage() {
                 </div>
             )}
 
-            {tabs.length > 1 ? (
+            {tabs.length > 1 && tabsUi ? (
                 <>
-                    <Tabs tabs={tabs} value={currentArea} onChange={(id) => setArea(id as Area)} ariaLabel="Espace du contrôleur" idPrefix="scanner" />
-                    <TabPanel idPrefix="scanner" tabIdValue={currentArea}>
-                        {currentArea === 'controle' && control}
-                        {currentArea === 'guichet' && (
-                            <CounterSalePanel
-                                eventId={selected.events.id}
-                                onOpenShift={() => setShowOpenShift(true)}
-                                onSold={() => { void fetchActiveShift(); scheduleStats(STATS_AFTER_SCAN_MS); }}
-                                onSessionExpired={goToLogin}
-                            />
-                        )}
-                        {currentArea === 'caisse' && cashArea}
-                    </TabPanel>
+                    <tabsUi.Tabs tabs={tabs} value={currentArea} onChange={(id) => setArea(id as Area)} ariaLabel="Espace du contrôleur" idPrefix="scanner" />
+                    <tabsUi.TabPanel idPrefix="scanner" tabIdValue={currentArea}>
+                        {areaContent}
+                    </tabsUi.TabPanel>
                 </>
-            ) : control}
+            ) : tabs.length > 1 ? areaContent : control}
 
-            {/* Résultat plein écran : un seul à la fois, neuf à chaque scan */}
-            {outcome && (
+            {/* Résultat plein écran : un seul à la fois, neuf à chaque scan (préchargé au montage : rendu sans attente) */}
+            {outcome && CombatFlashOverlay && (
                 <CombatFlashOverlay
                     key={shown?.id}
                     status={outcome.result}
