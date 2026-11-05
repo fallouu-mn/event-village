@@ -47,8 +47,6 @@ import { createTimedEvent, scan, ticketPayload } from './acces-helpers';
 
 const SECRET_COLUMNS = ['totp_secret', 'qr_code'];
 const SETTLE_MS = 1_500;
-/** Vivacité stricte (liveFresh) : précondition, distincte du délai vérifié RECEIVE_TIMEOUT_MS. */
-const LIVENESS_TIMEOUT_MS = 60_000;
 
 let partner: TestPartner;
 let holder: Buyer;
@@ -101,16 +99,17 @@ function sameInstant(value: unknown, iso: string): boolean {
  * parti, et le passage à UTILISE n'est jamais arrivé dans les 20 s. Désormais le scan ne part qu'une fois la
  * chaîne Realtime prouvée en temps réel (une action faite après l'abonnement, reçue sans retard) ; le délai
  * de 20 s et l'assertion sur UTILISE sont inchangés.
- * Délai de la vivacité : 60 s au lieu des 30 s par défaut. Ce n'est pas le délai vérifié (RECEIVE_TIMEOUT_MS,
- * 20 s, inchangé) mais l'attente de la précondition : depuis que les suites sms-* qui précèdent tournent en
- * entier (run 75 : massHolders, plus de 2 100 billets en transactions de 701 lignes), Realtime est resté sans
- * diffusion plus de 20 s au début de cette suite (runs 83, 86, 87), jusqu'à ≈ 40 s au run 83.
+ * Délai de la vivacité : celui par défaut de produceUntilReceived (30 s). Au run 88, il avait été porté à 60 s
+ * et la vivacité a échoué quand même : les suites lourdes massHolders (sms-plafond-optionnel, sms-veille),
+ * passées juste avant, laissaient le lecteur de changements de Realtime à 8-15 s par appel, avec deux
+ * recréations de la fente (pertes). Ces suites passent désormais après la dernière suite temps réel
+ * (scripts/run-tests.mjs, orderForRealtime) : la cause est retirée, l'attente revient à son défaut.
  */
 async function liveFresh(collector: Collector, ticketId: string, what: string): Promise<void> {
     let current = '';
     await produceUntilReceived(collector, async () => { current = await touchTicket(ticketId); },
         (e) => e.eventType === 'UPDATE' && e.new.id === ticketId && current !== '' && sameInstant(e.new.updated_at, current),
-        { what, timeoutMs: LIVENESS_TIMEOUT_MS });
+        { what });
 }
 
 function carriesData(e: ReceivedChange): boolean {
@@ -220,7 +219,7 @@ describe('Notifications : le destinataire seul reçoit les siennes (O2, O5)', ()
             let currentId = '';
             await produceUntilReceived(mine, async () => { currentId = await insertNotification(holder.userId); },
                 (e) => e.eventType === 'INSERT' && currentId !== '' && e.new.id === currentId,
-                { what: 'vivacité : notification créée après l’abonnement, reçue par son destinataire', timeoutMs: LIVENESS_TIMEOUT_MS });
+                { what: 'vivacité : notification créée après l’abonnement, reçue par son destinataire' });
 
             const title = `Votre billet a été transféré ${randomUUID().slice(0, 8)}`;
             const id = await insertNotification(holder.userId, { title });

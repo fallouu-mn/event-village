@@ -62,6 +62,36 @@ function discover(dir) {
     return out.sort((a, b) => a.localeCompare(b));
 }
 
+// Lot 7 (runs 75 à 88) : les suites qui créent des porteurs en masse (massHolders : plus de 2 100 comptes et
+// billets en transactions de 701 lignes) dégradent le Realtime local pendant une à deux minutes : au run 88,
+// les appels realtime.list_changes du lecteur de changements durent 8 puis 13 s, puis atteignent la limite de
+// 15 s (PoolingReplicationError à 15:17:26 et 15:18:28, 15,0 s après la livraison précédente) ; la fente est
+// recréée et les changements validés entre-temps sont perdus. Les suites qui vérifient la diffusion en temps
+// réel (abonnements postgres_changes) passent donc AVANT ces suites lourdes : chaque suite lourde placée
+// avant la dernière suite temps réel est déplacée juste après elle, dans l'ordre alphabétique ; rien d'autre
+// ne bouge. Détection par le contenu du fichier : import nommé de massHolders (un commentaire qui le cite ne
+// rend pas une suite lourde) ; subscribeCollect( ou .channel( pour une suite temps réel.
+const HEAVY_SUITE = /\bimport\s*(?:type\s*)?\{[^}]*\bmassHolders\b[^}]*\}\s*from\b/;
+const REALTIME_SUITE = /\bsubscribeCollect\s*\(|\.channel\s*\(/;
+
+function orderForRealtime(files) {
+    const text = (f) => {
+        try {
+            return fs.readFileSync(f, 'utf8');
+        } catch {
+            return '';
+        }
+    };
+    const realtimeIdx = files.map((f, i) => (REALTIME_SUITE.test(text(f)) ? i : -1)).filter((i) => i >= 0);
+    if (realtimeIdx.length === 0) return { files, moved: [], after: null };
+    const last = realtimeIdx[realtimeIdx.length - 1];
+    const moved = files.filter((f, i) => i < last && HEAVY_SUITE.test(text(f)));
+    if (moved.length === 0) return { files, moved: [], after: null };
+    const rest = files.filter((f) => !moved.includes(f));
+    const anchor = rest.indexOf(files[last]);
+    return { files: [...rest.slice(0, anchor + 1), ...moved, ...rest.slice(anchor + 1)], moved, after: files[last] };
+}
+
 function formatMs(ms) {
     return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
@@ -127,11 +157,18 @@ async function main() {
 
     let files = opts.files.length > 0 ? opts.files.map((f) => path.resolve(ROOT, f)) : discover(opts.dir);
     if (opts.filter) files = files.filter((f) => f.includes(opts.filter));
+    const ordering = orderForRealtime(files);
+    files = ordering.files;
+    const orderingNote = ordering.moved.length > 0
+        ? `[run-tests] suites lourdes (massHolders) après la dernière suite temps réel (${path.relative(ROOT, ordering.after).replace(/\\/g, '/')}) : ${ordering.moved.map((f) => path.relative(ROOT, f).replace(/\\/g, '/')).join(', ')}`
+        : null;
 
     if (files.length === 0) {
         console.log(`[run-tests] Aucune suite trouvée (${opts.files.length ? 'fichiers explicites' : `dossier ${opts.dir}`}) — 0 suite exécutée.`);
         process.exit(0);
     }
+
+    if (orderingNote) console.log(orderingNote);
 
     if (opts.list) {
         for (const f of files) console.log(path.relative(ROOT, f).replace(/\\/g, '/'));

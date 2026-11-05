@@ -255,7 +255,17 @@ jobs:
           # (MessagePerSecondRateLimitReached), erreurs et reprises du lecteur de changements, arrêts du flux.
           for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_realtime_" ); do
             echo "===== $c (filtré) =====" >> /tmp/containers.log
+            # -A 14 : le corps multiligne d'une erreur Postgrex (code, message, requête) suit la ligne d'en-tête ;
+            # au run 88, sans lui, la cause des deux PoolingReplicationError restait illisible.
+            docker logs -t "$c" 2>&1 | grep -iE -A 14 "PoolingReplicationError|ReplicationConnectionDown" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g' | tail -300 >> /tmp/containers.log || true
+            echo "----- $c (autres lignes filtrées) -----" >> /tmp/containers.log
             docker logs -t "$c" 2>&1 | grep -iE "ratelimit|rate_limit|too many|error|warn|retry|stopping|slot|poller|subscri" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g; s/(access_token|apikey|token)=[^ &"]+/\1=<masqué>/gI' | tail -400 >> /tmp/containers.log || true
+          done
+          # Lot 7 (run 88) : côté Postgres, sur tout le job, les annulations et erreurs des appels du lecteur de
+          # changements de Realtime (realtime.list_changes, fente de réplication), avec leur instruction.
+          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_db_" ); do
+            echo "===== $c (lecteur Realtime, filtré) =====" >> /tmp/containers.log
+            docker logs -t "$c" 2>&1 | grep -iE -A 3 "canceling statement|statement timeout|list_changes|replication slot|logical decoding" | grep -viE "password|secret" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g' | tail -200 >> /tmp/containers.log || true
           done
           grep -iE "error|sqlstate|failed" /tmp/containers.log | tail -60 || true
 
