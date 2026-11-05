@@ -4121,3 +4121,70 @@ La même chose est prouvée en CI par `scanner-reprise` (25/25) et `terrain` 7 (
 28. **Legacy** : `scanner-security-hardening`, `dynamic-qr-totp` et `ticket-transfer-*` sont probablement rendues fausses par le lot. Elles sont hors CI et je ne les ai pas lancées.
 29. **Les corrections de la relecture** (run 77) n'ont pas été relues à l'œil sur les captures des runs 78 à 83. Seuls les contrôles automatiques les couvrent.
 30. **Clés du projet de production à faire tourner au moment de l'hébergement** (rappel des lots précédents, lot 8).
+
+---
+
+## 16. Addendum du 5 novembre 2026 : runs 85 à 91, avance de `main`
+
+**`main` a été avancé à la demande de l'utilisateur** (« pousse le sur main »), en avance rapide depuis `lot7/terrain` :
+- `6fff1bf..2719992` le 05/11 ;
+- puis `2719992..fd7a822..43842d8` avec les correctifs de tests ci-dessous.
+
+`main` et `lot7/terrain` pointent sur `43842d8`.
+
+**Migrations du lot 7 appliquées par l'utilisateur** sur le projet Supabase renommé `event-village-dev` (ref inchangée) :
+- `db push --dry-run --linked` listait exactement les 7 fichiers `20261105000001` à `…07` ;
+- `db push --linked` les a appliqués, et `03-verification.sql` a donné 20 OK sur 20 ;
+- le contrôle a donné : 8 migrations du lot 6 et 7 du lot 7, 37 réglages, 3 interrupteurs, 69 types de notifications, `TRANSFER_RECEIVED` = `{IN_APP,PUSH,EMAIL}`.
+
+Rien n'a été exécuté contre ce projet depuis le poste de développement.
+
+### Runs
+
+| Run | Branche | Commit | Résultat | Constat |
+|---|---|---|---|---|
+| 85 | lot7/terrain | `4395b61` (rapport) | rouge | terrain 7 : course du test lui-même (compteur incrémenté avant la fin de `route.fetch()`, statut lu à 0) |
+| 86 | lot7/terrain | `2719992` | rouge | `temps-reel-billets` cas 1 ; `dette-categories-publiques` (numéro de téléphone de test déjà attribué) |
+| 87 | main | `2719992` | rouge | `temps-reel-billets` cas 1 |
+| 88 | lot7/terrain | `fd7a822` | rouge | `temps-reel-billets` cas 1 et 2 (vivacité non atteinte en 60 s) |
+| 89 | main | `fd7a822` | **vert** | 181/181, e2e vert |
+| 90 | lot7/terrain | `43842d8` | **vert** | 181/181, e2e vert, job de 1 853 s |
+| 91 | main | `43842d8` | **vert** | 181/181, e2e vert, job de 2 166 s |
+
+Journaux : `docs/lot7-logs/ci-run85-run.txt` à `ci-run91-run.txt`, `ci-run88-temps-reel-billets.log`, `ci-run91-verify.log`.
+
+### Correctifs de tests (aucune assertion relâchée ; tests existants modifiés, signalés)
+
+1. **`2719992`, `e2e/terrain.spec.ts` (terrain 7).** Le test attend désormais la réponse du serveur avant d'en lire le statut. Le statut attendu reste 200.
+
+2. **`8b26b86`, `tests/parcours/temps-reel-billets.test.ts` (suite du lot 5).**
+   - **Défaut prouvé aux runs 83 et 87 :** la vérification de vivacité acceptait l'INSERT périmé du billet « spare », reçu avant l'ouverture du canal.
+   - **Correctif :** elle n'accepte plus que l'UPDATE, ou l'INSERT de notification, qui porte la marque de sa propre action et arrive en moins de 1,5 s.
+   - **Diagnostic :** `tests/helpers/realtime.ts` affiche, pour chaque message, l'heure de validation, l'heure de réception et l'état du canal. La CI capture le journal de Realtime, jetons masqués.
+   - **Inchangé :** l'assertion UTILISE et son délai de 20 s.
+
+3. **`fd7a822`, numéros de test (`tests/parcours/helpers.ts`, `terrain-helpers.ts`).**
+   - **Cause :** `randomSenegalPhone` tirait au hasard, sans mémoire, parmi 9 millions de valeurs. Le paradoxe des anniversaires donnait quelques pour cent de risque de collision par run.
+   - **Correctif :** le suffixe dérive de l'horloge en millisecondes, jamais deux fois la même, ce qui rend chaque numéro d'un run unique. `massHolders` écarte en plus les numéros déjà présents en base.
+   - **Conséquence :** plus aucun « numéro déjà attribué » à partir du run 88.
+
+4. **`43842d8`, ordre d'exécution (`scripts/run-tests.mjs`).**
+   - **Cause établie au run 88 :** les suites `sms-plafond-optionnel` et `sms-veille` créent plus de 2 100 comptes et billets. Juste après elles, le lecteur de changements de Realtime ralentit jusqu'à l'annulation à 15 s (`PoolingReplicationError` à 15:17:26 et 15:18:28). Il recrée alors sa fente et perd les changements validés entre-temps, avec des retards mesurés de 13 à 25 s.
+   - **Piste écartée :** la limite d'événements par seconde. Aucune ligne `MessagePerSecondRateLimitReached`.
+   - **Correctif :** les suites qui créent des porteurs en masse passent après la dernière suite temps réel. La vivacité revient à son délai par défaut de 30 s.
+   - **Extrait brut du run 91 :**
+
+```
+[run-tests] suites lourdes (massHolders) après la dernière suite temps réel (tests/parcours/temps-reel-stock.test.ts) : tests/parcours/sms-plafond-optionnel.test.ts, tests/parcours/sms-veille.test.ts
+tests/parcours/temps-reel-billets.test.ts              PASS     27.5s     0     .test-logs/tests__parcours__temps-reel-billets.test.ts.log
+TOTAL : 181 suite(s) — 181 réussie(s), 0 en échec, 0 expirée(s)
+[verify] OK — 5 étapes réussies en 822s.
+[e2e] résumé :connexion OK · captures OK · emails OK · fumee OK · terrain OK · pwa OK · perf OK
+```
+
+   - **NON PROUVÉ :** la raison, côté Postgres, du ralentissement de `realtime.list_changes` après ces écritures massives. La CI garde désormais le corps des erreurs de réplication et les annulations côté Postgres pour un futur run rouge.
+
+### Points ouverts ajoutés
+
+- **Charge laissée par les écritures massives et lecteur Realtime :** à surveiller en production. Une vente de milliers de billets en quelques secondes pourrait retarder les mises à jour en direct des clients. L'hébergement du lot 8 permettra de le mesurer.
+- **`npm run dev` lit `.env.local` :** ce fichier pointe maintenant vers `event-village-dev`, qui est au niveau du lot 7. Ce projet ne doit tourner qu'avec le code de `lot7/terrain` ou plus récent, car le code du lot 6 ne présente pas la version du secret au scan.
