@@ -689,6 +689,9 @@ test('7. reprise de session : même événement et même mode après une sortie,
         const errorsBefore3 = await probePostErrors(page);
         await presentPayloadNoResult(page, await livePayload(holder, t3.id), 'reprise : billet 3, réponse perdue pendant la sortie');
         await expect.poll(() => served, { message: 'billet 3 : lecture reçue par le serveur', timeout: 20_000 }).toBe(1);
+        // served passe à 1 avant la fin de route.fetch() : attendre la réponse du serveur avant d'en lire le statut
+        // (run 85 : statut lu à 0, la réponse n'était pas encore arrivée).
+        await expect.poll(() => servedStatus, { message: 'billet 3 : réponse du serveur reçue par l’interception', timeout: 20_000 }).not.toBe(0);
         expect(servedStatus, 'billet 3 : la lecture a bien été traitée par le serveur').toBe(200);
         await setVisibility(page, 'hidden'); // l'application passe en arrière-plan pendant l'envoi
         releaseAbort();
