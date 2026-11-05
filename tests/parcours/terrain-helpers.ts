@@ -22,7 +22,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
-import { openConcurrentClient } from '../helpers/db';
+import { openConcurrentClient, type ConcurrentClient } from '../helpers/db';
 import { isModuleNotFound } from '../helpers/notification-invariants';
 import { BASE_URL, randomEmail, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type CategorySpec, type SaleEvent } from './paiement-helpers';
@@ -344,10 +344,31 @@ export interface MassHolders {
     ticketIds: string[];
 }
 
-function massPhones(n: number, prefix: string): string[] {
-    const set = new Set<string>();
+function fillMassPhones(set: Set<string>, n: number, prefix: string): void {
     while (set.size < n) set.add(`+221${prefix}${String(randomInt(0, 10_000_000)).padStart(7, '0')}`);
-    return Array.from(set);
+}
+
+/**
+ * `n` numéros +221<prefix>XXXXXXX distincts et libres : tirés au hasard, puis chaque numéro déjà porté par un
+ * compte (auth.users ou public.users, avec ou sans « + », forme GoTrue comprise) est remplacé, jusqu'à ce
+ * qu'aucun ne soit pris. Lu dans la transaction de massHolders : les suites tournent l'une après l'autre,
+ * aucune autre écriture ne peut prendre le numéro entre la vérification et l'insertion. Avant : tirage sans
+ * vérification, collisions au tirage dans 5 runs sur 8 (runs 77 à 87 relus, « numéro déjà attribué » dans
+ * sms-plafond-optionnel et sms-veille), rattrapées par trois essais seulement.
+ */
+async function freshMassPhones(db: ConcurrentClient, n: number, prefix: string): Promise<string[]> {
+    const set = new Set<string>();
+    fillMassPhones(set, n, prefix);
+    for (let round = 1; round <= 20; round++) {
+        const taken = await db.query<{ phone: string }>(
+            `SELECT p.phone FROM unnest($1::text[]) AS p(phone)
+              WHERE EXISTS (SELECT 1 FROM auth.users a WHERE a.phone IN (p.phone, ltrim(p.phone, '+')))
+                 OR EXISTS (SELECT 1 FROM public.users u WHERE u.phone IN (p.phone, ltrim(p.phone, '+')))`, [Array.from(set)]);
+        if (taken.rows.length === 0) return Array.from(set);
+        for (const r of taken.rows) set.delete(r.phone);
+        fillMassPhones(set, n, prefix);
+    }
+    assert.fail(`massHolders : ${n} numéros +221${prefix} libres introuvables après 20 tirages`);
 }
 
 /**
@@ -363,9 +384,9 @@ export async function massHolders(n: number, opts: MassHoldersOptions): Promise<
     const topics = opts.topics ?? ['REMINDERS'];
     const channels = opts.disableChannels ?? [];
     for (let attempt = 1; ; attempt++) {
-        const phones = massPhones(n, prefix);
         const db = await openConcurrentClient({ applicationName: 'ev-test-mass-holders', statementTimeoutMs: 120_000 });
         try {
+            const phones = await freshMassPhones(db, n, prefix);
             const users = await db.query<{ id: string; phone: string }>(
                 `INSERT INTO auth.users (id, instance_id, aud, role, email, phone, raw_user_meta_data, raw_app_meta_data, created_at, updated_at)
                  SELECT gen_random_uuid(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', NULL, p.phone,

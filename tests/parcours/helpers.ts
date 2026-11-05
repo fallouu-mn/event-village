@@ -24,9 +24,44 @@ export function formRequest(path: string, body: string, headers: Record<string, 
     });
 }
 
-/** Numéro sénégalais mobile valide et aléatoire (+22178XXXXXXX). */
+// Horloge des numéros, partagée par toutes les instances du module dans le processus (globalThis) :
+// tsx peut charger ce fichier deux fois (ESM et CJS), deux compteurs distincts redonneraient le même numéro.
+const PHONE_CLOCK = Symbol.for('event-village.tests.senegal-phone-clock');
+const PHONE_SPAN = 8_999_999;   // suffixes 1 000 000 à 9 999 998 (sept chiffres, premier chiffre non nul)
+const PHONE_SLEEP_CELL = new Int32Array(new SharedArrayBuffer(4));
+
+function phoneClock(): { last: number } {
+    const g = globalThis as typeof globalThis & { [PHONE_CLOCK]?: { last: number } };
+    g[PHONE_CLOCK] ??= { last: 0 };
+    return g[PHONE_CLOCK];
+}
+
+/**
+ * Numéro sénégalais mobile valide et neuf (+221<prefix>XXXXXXX), sans collision au cours d'un run.
+ *
+ * Avant (run 86) : 7 chiffres tirés par Math.random() dans chaque processus de suite, sans mémoire : avec
+ * N numéros tirés par run dans un espace de 9 000 000, la probabilité qu'au moins deux coïncident est
+ * ≈ 1 − exp(−N² / 18 000 000) (paradoxe des anniversaires : ≈ 5 % pour N = 1 000, ≈ 20 % pour N = 2 000),
+ * et GoTrue refuse alors le second compte (« Phone number already registered by another user »).
+ *
+ * Maintenant : le suffixe est la milliseconde d'horloge murale de l'émission, modulo 8 999 999 (≈ 2 h 30),
+ * et jamais deux numéros sur la même milliseconde : dans le processus, une seconde demande dans la même
+ * milliseconde attend la suivante (attente synchrone d'au plus 1 ms). Les suites tournent l'une après
+ * l'autre (scripts/run-tests.mjs) et chaque numéro est émis au plus tard à l'instant où il est rendu : un
+ * processus suivant démarre donc toujours sur une milliseconde plus récente. Deux appels d'un même run (base
+ * remise à zéro par la CI) ne rendent jamais le même numéro, quel que soit le préfixe.
+ * Base locale conservée d'un run à l'autre : le risque reste celui d'un tirage au hasard contre les comptes
+ * des runs précédents (inchangé). Les comptes en masse (massHolders, +22170…) sont hors de cet espace.
+ */
 export function randomSenegalPhone(prefix: '76' | '77' | '78' = '78'): string {
-    return `+221${prefix}${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
+    const clock = phoneClock();
+    let t = Date.now();
+    while (t <= clock.last) {
+        Atomics.wait(PHONE_SLEEP_CELL, 0, 0, clock.last + 1 - t);
+        t = Date.now();
+    }
+    clock.last = t;
+    return `+221${prefix}${1_000_000 + (t % PHONE_SPAN)}`;
 }
 
 export function randomEmail(label: string): string {
