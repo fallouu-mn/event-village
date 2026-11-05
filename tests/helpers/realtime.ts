@@ -206,8 +206,21 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
     };
 }
 
+/**
+ * Messages reçus, pour un message d'échec : type, table, instant de validation en base (commit_timestamp),
+ * instant de réception et retard de diffusion (lot 7, runs 83 à 87 : distinguer un retard d'une perte).
+ */
 function summarize(events: ReceivedChange[]): string {
-    return events.slice(0, 10).map((e) => `  ${e.eventType} ${e.table} ${JSON.stringify(e.new)}`).join('\n');
+    return events.slice(0, 10).map((e) => {
+        const commit = Date.parse(e.commitTimestamp);
+        const lag = Number.isFinite(commit) ? ` retard=${e.receivedAt - commit} ms` : '';
+        return `  ${e.eventType} ${e.table} commit=${e.commitTimestamp} reçu=${new Date(e.receivedAt).toISOString()}${lag} ${JSON.stringify(e.new)}`;
+    }).join('\n');
+}
+
+/** États successifs du canal et heure de l'échec, pour un message d'échec (rejointe ou erreur du canal). */
+function channelTrace(collector: Collector): string {
+    return `états du canal : ${collector.states.join(' → ') || 'aucun'} ; échec à ${new Date().toISOString()}`;
 }
 
 /** Attend un message qui satisfait le prédicat et le renvoie ; échoue après timeoutMs avec les messages reçus. */
@@ -223,7 +236,7 @@ export async function waitForEvent(
         const hit = collector.events.find(predicate);
         if (hit) return hit;
         if (Date.now() >= deadline) {
-            throw new Error(`délai dépassé (${timeoutMs} ms) : ${what} — ${collector.events.length} message(s) reçu(s) sur ${collector.label}\n${summarize(collector.events)}`);
+            throw new Error(`délai dépassé (${timeoutMs} ms) : ${what} — ${collector.events.length} message(s) reçu(s) sur ${collector.label} (${channelTrace(collector)})\n${summarize(collector.events)}`);
         }
         await sleep(POLL_MS);
     }
@@ -284,5 +297,5 @@ export async function produceUntilReceived(
     }
     const hit = collector.events.find(predicate);
     if (hit) return hit;
-    throw new Error(`délai dépassé (${timeoutMs} ms, ${attempts} action(s)) : ${what} — ${collector.events.length} message(s) reçu(s)\n${summarize(collector.events)}`);
+    throw new Error(`délai dépassé (${timeoutMs} ms, ${attempts} action(s)) : ${what} — ${collector.events.length} message(s) reçu(s) (${channelTrace(collector)})\n${summarize(collector.events)}`);
 }

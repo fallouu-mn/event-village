@@ -250,6 +250,13 @@ jobs:
             echo "===== $c =====" >> /tmp/containers.log
             docker logs --tail 300 "$c" >> /tmp/containers.log 2>&1 || true
           done
+          # Lot 7 (temps-reel-billets, runs 83, 86, 87) : journal de Realtime, filtré sur la durée de tout le job
+          # (et non les 300 dernières lignes, qui ne couvrent que l'e2e) : limites de débit
+          # (MessagePerSecondRateLimitReached), erreurs et reprises du lecteur de changements, arrêts du flux.
+          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_realtime_" ); do
+            echo "===== $c (filtré) =====" >> /tmp/containers.log
+            docker logs -t "$c" 2>&1 | grep -iE "ratelimit|rate_limit|too many|error|warn|retry|stopping|slot|poller|subscri" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g; s/(access_token|apikey|token)=[^ &"]+/\1=<masqué>/gI' | tail -400 >> /tmp/containers.log || true
+          done
           grep -iE "error|sqlstate|failed" /tmp/containers.log | tail -60 || true
 
       - name: Annotations d'erreur (extraits bruts des journaux)

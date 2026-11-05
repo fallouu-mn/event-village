@@ -38,6 +38,7 @@ import {
     signedInClient,
     subscribeCollect,
     waitForEvent,
+    type Collector,
     type ReceivedChange,
 } from '../helpers/realtime';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
@@ -46,6 +47,8 @@ import { createTimedEvent, scan, ticketPayload } from './acces-helpers';
 
 const SECRET_COLUMNS = ['totp_secret', 'qr_code'];
 const SETTLE_MS = 1_500;
+/** Vivacité stricte (liveFresh) : précondition, distincte du délai vérifié RECEIVE_TIMEOUT_MS. */
+const LIVENESS_TIMEOUT_MS = 60_000;
 
 let partner: TestPartner;
 let holder: Buyer;
@@ -87,6 +90,29 @@ function sameInstant(value: unknown, iso: string): boolean {
     return typeof value === 'string' && Date.parse(value) === Date.parse(iso);
 }
 
+/**
+ * Vivacité stricte, avant toute action observée : touche le billet (instant unique) et exige de recevoir CETTE
+ * mise à jour (UPDATE du billet, updated_at égal à l'instant de la dernière action) avant l'action suivante,
+ * soit en moins de 1,5 s (pas de produceUntilReceived) ; sinon recommence.
+ *
+ * Avant (runs 83 et 87) : le prédicat `e.new.id === spare` était satisfait par l'INSERT du billet, validé
+ * dans before() AVANT l'ouverture du canal et diffusé avec retard ; les seuls messages reçus de tout le cas
+ * étaient ces deux INSERT : aucun changement fait après l'abonnement n'avait été reçu quand le scan est
+ * parti, et le passage à UTILISE n'est jamais arrivé dans les 20 s. Désormais le scan ne part qu'une fois la
+ * chaîne Realtime prouvée en temps réel (une action faite après l'abonnement, reçue sans retard) ; le délai
+ * de 20 s et l'assertion sur UTILISE sont inchangés.
+ * Délai de la vivacité : 60 s au lieu des 30 s par défaut. Ce n'est pas le délai vérifié (RECEIVE_TIMEOUT_MS,
+ * 20 s, inchangé) mais l'attente de la précondition : depuis que les suites sms-* qui précèdent tournent en
+ * entier (run 75 : massHolders, plus de 2 100 billets en transactions de 701 lignes), Realtime est resté sans
+ * diffusion plus de 20 s au début de cette suite (runs 83, 86, 87), jusqu'à ≈ 40 s au run 83.
+ */
+async function liveFresh(collector: Collector, ticketId: string, what: string): Promise<void> {
+    let current = '';
+    await produceUntilReceived(collector, async () => { current = await touchTicket(ticketId); },
+        (e) => e.eventType === 'UPDATE' && e.new.id === ticketId && current !== '' && sameInstant(e.new.updated_at, current),
+        { what, timeoutMs: LIVENESS_TIMEOUT_MS });
+}
+
 function carriesData(e: ReceivedChange): boolean {
     return Object.keys(e.new).length > 0 || Object.keys(e.old).length > 0;
 }
@@ -121,8 +147,7 @@ describe('Billet composté : statut mis à jour chez son porteur (O4)', () => {
             const spyAll = subscribeCollect(otherC, { table: 'tickets' }, { label: 'autre client tickets (sans filtre)' });
             const anonSpy = subscribeCollect(anon, { table: 'tickets', filter: `user_id=eq.${holder.userId}` }, { label: 'anon tickets (filtre du porteur)' });
             await Promise.all([mine, spyFiltered, spyAll, anonSpy].map((c) => c.ready));
-            await produceUntilReceived(mine, () => touchTicket(spare), (e) => e.new.id === spare,
-                { what: 'vivacité : mise à jour d’un billet du porteur reçue par le porteur' });
+            await liveFresh(mine, spare, 'vivacité : mise à jour d’un billet du porteur, faite après l’abonnement, reçue par le porteur');
 
             const res = await scan(partner, { eventId: ev.eventId, payload: await ticketPayload(scanned) });
             assert.equal(res.status, 200, `scan : HTTP ${res.status} ${JSON.stringify(res.body)}`);
@@ -161,8 +186,7 @@ describe('Billet composté : statut mis à jour chez son porteur (O4)', () => {
             const mine = subscribeCollect(holderC, { table: 'tickets', filter: `user_id=eq.${holder.userId}` }, { label: 'porteur tickets' });
             const owner = subscribeCollect(ownerC, { table: 'tickets', filter: `event_id=eq.${ev.eventId}` }, { label: 'partenaire propriétaire tickets' });
             await Promise.all([mine.ready, owner.ready]);
-            await produceUntilReceived(mine, () => touchTicket(spare), (e) => e.new.id === spare,
-                { what: 'vivacité : mise à jour d’un billet reçue par le porteur' });
+            await liveFresh(mine, spare, 'vivacité : mise à jour d’un billet, faite après l’abonnement, reçue par le porteur');
             const marker = await touchTicket(spare);
             const toHolder = await waitForEvent(mine, (e) => e.new.id === spare && sameInstant(e.new.updated_at, marker), RECEIVE_TIMEOUT_MS, 'billet reçu par le porteur');
             const toOwner = await waitForEvent(owner, (e) => e.new.id === spare && sameInstant(e.new.updated_at, marker), RECEIVE_TIMEOUT_MS, 'billet reçu par le partenaire propriétaire');
@@ -190,8 +214,13 @@ describe('Notifications : le destinataire seul reçoit les siennes (O2, O5)', ()
             const spyAll = subscribeCollect(otherC, { table: 'notifications' }, { label: 'autre compte notifications (sans filtre)' });
             const anonSpy = subscribeCollect(anon, { table: 'notifications', filter: `user_id=eq.${holder.userId}` }, { label: 'anon notifications' });
             await Promise.all([mine, spyFiltered, spyAll, anonSpy].map((c) => c.ready));
-            await produceUntilReceived(mine, () => insertNotification(holder.userId), (e) => e.new.user_id === holder.userId,
-                { what: 'vivacité : notification reçue par son destinataire' });
+            // Vivacité stricte (même défaut que liveFresh) : `e.new.user_id === holder.userId` acceptait toute
+            // notification du porteur, y compris une ligne écrite avant l'abonnement et diffusée en retard (la
+            // confirmation d'achat de before(), PURCHASE_CONFIRMED, a un canal IN_APP).
+            let currentId = '';
+            await produceUntilReceived(mine, async () => { currentId = await insertNotification(holder.userId); },
+                (e) => e.eventType === 'INSERT' && currentId !== '' && e.new.id === currentId,
+                { what: 'vivacité : notification créée après l’abonnement, reçue par son destinataire', timeoutMs: LIVENESS_TIMEOUT_MS });
 
             const title = `Votre billet a été transféré ${randomUUID().slice(0, 8)}`;
             const id = await insertNotification(holder.userId, { title });
