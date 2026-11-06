@@ -5,15 +5,15 @@
  * GET /api/admin/finance/reconciliation (paiements plateforme encaissés). Frais de service perçus,
  * frais agrégateur, revenu net Event Village (remboursements déduits), reversements partenaires et
  * commissions sont affichés tels que calculés par le serveur ; aucun taux n'est codé ni appliqué ici.
+ * Lot 8 (A3, contrat 3.10) : remboursements à reprendre (RefundsToRetry). L'écran passe sur les jetons du système de
+ * design : capturé pour la première fois, il n'avait jamais tenu les contrôles bloquants à 390 px (« § », contrastes,
+ * textes sous 14 px, cibles sous 44 px). Il reste hors de la liste des fichiers migrés (A22).
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
-import Link from 'next/link';
 import {
-  AlertCircle,
   AlertTriangle,
   CheckCircle2,
-  ChevronLeft,
   CreditCard,
   DollarSign,
   RefreshCw,
@@ -21,6 +21,11 @@ import {
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Select } from '@/components/ui/Field';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { RefundsToRetry } from '@/components/admin/RefundsToRetry';
 import { StatusBadge } from '@/components/ui/Badge';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -82,6 +87,7 @@ export default function AdminFinanceReconciliationPage() {
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refundsRefresh, setRefundsRefresh] = useState(0);
 
   const fetchReconciliation = useCallback(async () => {
     setIsLoading(true);
@@ -120,57 +126,45 @@ export default function AdminFinanceReconciliationPage() {
 
   const kpis = summary
     ? [
-        { label: 'Volume encaissé', value: summary.totalGrossVolume, tone: 'text-slate-900 dark:text-white', help: `${summary.totalTransactionsCount} paiement(s), frais de service compris` },
-        { label: 'Frais de service perçus', value: summary.totalServiceFees, tone: 'text-slate-900 dark:text-white', help: 'Payés par les acheteurs, montants enregistrés sur chaque paiement' },
-        { label: 'Frais agrégateur (SamirPay)', value: summary.totalAggregatorFees, tone: 'text-amber-600 dark:text-amber-400', help: 'Prélevés sur les frais de service' },
-        { label: 'Revenu net Event Village', value: summary.totalPlatformNetRevenue, tone: 'text-[#FF5722]', help: 'Frais de service moins frais agrégateur, remboursements déduits' },
-        { label: 'Reversements partenaires', value: summary.totalPartnerPayouts, tone: 'text-emerald-600 dark:text-emerald-400', help: 'Prix des billets et prestations dus aux partenaires' },
-        { label: 'Remboursements versés', value: summary.totalRefunds, tone: 'text-slate-900 dark:text-white', help: 'Cashouts de remboursement confirmés sur la période' },
+        { label: 'Volume encaissé', value: summary.totalGrossVolume, tone: 'text-fg', help: `${summary.totalTransactionsCount} paiement(s), frais de service compris` },
+        { label: 'Frais de service perçus', value: summary.totalServiceFees, tone: 'text-fg', help: 'Payés par les acheteurs, montants enregistrés sur chaque paiement' },
+        { label: 'Frais agrégateur (SamirPay)', value: summary.totalAggregatorFees, tone: 'text-warning-fg', help: 'Prélevés sur les frais de service' },
+        { label: 'Revenu net Event Village', value: summary.totalPlatformNetRevenue, tone: 'text-brand-fg', help: 'Frais de service moins frais agrégateur, remboursements déduits' },
+        { label: 'Reversements partenaires', value: summary.totalPartnerPayouts, tone: 'text-success-fg', help: 'Prix des billets et prestations dus aux partenaires' },
+        { label: 'Remboursements versés', value: summary.totalRefunds, tone: 'text-fg', help: 'Remboursements confirmés sur la période' },
       ]
     : [];
 
   return (
     <div className="space-y-8 pb-16">
-      {/* En-tête */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/dashboard"
-            aria-label="Retour au tableau de bord"
-            className="w-11 h-11 shrink-0 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722]"
-          >
-            <ChevronLeft size={20} aria-hidden="true" />
-          </Link>
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">Console Superadmin</span>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Rapprochement financier (§84)</h1>
-          </div>
-        </div>
+      <PageHeader
+        back={{ href: '/admin/dashboard', label: 'Tableau de bord' }}
+        title="Rapprochement financier"
+        actions={(
+          <>
+            <LinkButton href="/admin/finance-settings" variant="ghost" size="sm">
+              Réglages de la plateforme
+            </LinkButton>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setRefundsRefresh((n) => n + 1);
+                void fetchReconciliation();
+              }}
+              disabled={isLoading}
+              leftIcon={<RefreshCw size={14} className={isLoading ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />}
+            >
+              Actualiser
+            </Button>
+          </>
+        )}
+      />
 
-        <div className="flex items-center gap-2">
-          <Link
-            href="/admin/finance-settings"
-            className="inline-flex items-center min-h-[44px] px-3 rounded-xl text-xs font-bold text-slate-600 dark:text-zinc-300 hover:text-[#FF5722] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722]"
-          >
-            Réglages de la plateforme
-          </Link>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void fetchReconciliation()}
-            disabled={isLoading}
-            leftIcon={<RefreshCw size={14} className={isLoading ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />}
-          >
-            Actualiser
-          </Button>
-        </div>
-      </div>
-
-      {loadError && (
-        <div role="alert" className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-center gap-2 text-xs text-red-700 dark:text-red-300">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+      {loadError && summary && (
+        <StatusBanner tone="danger" title="Rapprochement non actualisé" announce="alert">
           {loadError}
-        </div>
+        </StatusBanner>
       )}
 
       {/* Synthèse */}
@@ -187,86 +181,83 @@ export default function AdminFinanceReconciliationPage() {
         <>
           <section aria-label="Synthèse financière" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {kpis.map((k) => (
-              <div key={k.label} className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-1">
-                <span className="text-xs text-slate-500 dark:text-zinc-400 font-medium">{k.label}</span>
+              <div key={k.label} className="p-5 rounded-3xl bg-surface border border-border shadow-xs space-y-1">
+                <span className="text-sm text-fg-muted font-medium">{k.label}</span>
                 <p className={`text-xl sm:text-2xl font-black tabular-nums ${k.tone}`}>{formatPrice(k.value)}</p>
-                <span className="text-[11px] text-slate-500 dark:text-zinc-400 block leading-relaxed">{k.help}</span>
+                <span className="text-sm text-fg-muted block leading-relaxed">{k.help}</span>
               </div>
             ))}
           </section>
 
           <section aria-label="Parrainage, retraits et écarts" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-xs text-slate-500 dark:text-zinc-400 font-bold">Commissions parrainage (N1 + N2)</span>
-                <p className="text-base font-black text-slate-900 dark:text-white tabular-nums">{formatPrice(summary.totalReferralCommissions)}</p>
+                <span className="text-sm text-fg-muted font-bold">Commissions parrainage (N1 + N2)</span>
+                <p className="text-base font-black text-fg tabular-nums">{formatPrice(summary.totalReferralCommissions)}</p>
               </div>
-              <Users size={22} className="text-[#FF5722] shrink-0" aria-hidden="true" />
+              <Users size={22} className="text-brand-fg shrink-0" aria-hidden="true" />
             </div>
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-xs text-slate-500 dark:text-zinc-400 font-bold">Revenu net après parrainage</span>
-                <p className="text-base font-black text-[#FF5722] tabular-nums">{formatPrice(summary.platformNetBalance)}</p>
+                <span className="text-sm text-fg-muted font-bold">Revenu net après parrainage</span>
+                <p className="text-base font-black text-brand-fg tabular-nums">{formatPrice(summary.platformNetBalance)}</p>
               </div>
-              <DollarSign size={22} className="text-[#FF5722] shrink-0" aria-hidden="true" />
+              <DollarSign size={22} className="text-brand-fg shrink-0" aria-hidden="true" />
             </div>
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-xs text-slate-500 dark:text-zinc-400 font-bold">Retraits versés</span>
-                <p className="text-base font-black text-slate-900 dark:text-white tabular-nums">{formatPrice(summary.totalWithdrawalsPaid)}</p>
+                <span className="text-sm text-fg-muted font-bold">Retraits versés</span>
+                <p className="text-base font-black text-fg tabular-nums">{formatPrice(summary.totalWithdrawalsPaid)}</p>
               </div>
-              <CreditCard size={22} className="text-emerald-500 shrink-0" aria-hidden="true" />
+              <CreditCard size={22} className="text-success-fg shrink-0" aria-hidden="true" />
             </div>
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-xs text-slate-500 dark:text-zinc-400 font-bold">Écarts de rapprochement</span>
-                <p className={`text-base font-black ${summary.discrepanciesCount ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                <span className="text-sm text-fg-muted font-bold">Écarts de rapprochement</span>
+                <p className={`text-base font-black tabular-nums ${summary.discrepanciesCount ? 'text-danger-fg' : 'text-success-fg'}`}>
                   {summary.discrepanciesCount} anomalie(s)
                 </p>
               </div>
               {summary.discrepanciesCount ? (
-                <AlertTriangle size={22} className="text-red-500 shrink-0" aria-hidden="true" />
+                <AlertTriangle size={22} className="text-danger-fg shrink-0" aria-hidden="true" />
               ) : (
-                <CheckCircle2 size={22} className="text-emerald-500 shrink-0" aria-hidden="true" />
+                <CheckCircle2 size={22} className="text-success-fg shrink-0" aria-hidden="true" />
               )}
             </div>
           </section>
         </>
       )}
 
+      <RefundsToRetry refreshToken={refundsRefresh} />
+
       {/* Lignes */}
-      <section aria-labelledby={`${fieldId}-lignes`} className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
+      <section aria-labelledby={`${fieldId}-lignes`} className="p-4 sm:p-6 rounded-3xl bg-surface border border-border shadow-xs space-y-6">
+        <div className="flex flex-col gap-4 border-b border-border pb-4">
           <div>
-            <h2 id={`${fieldId}-lignes`} className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">Paiements rapprochés</h2>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 leading-relaxed">
+            <h2 id={`${fieldId}-lignes`} className="text-lg font-semibold text-fg">Paiements rapprochés</h2>
+            <p className="text-sm text-fg-muted mt-0.5 leading-relaxed">
               Contrôle du serveur, paiement par paiement : total débité = reversement partenaire + frais de service ; frais de service = frais agrégateur + revenu net Event Village.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <div>
-              <label htmlFor={`${fieldId}-statut`} className="block text-[11px] font-bold text-slate-600 dark:text-zinc-300 mb-1">Statut</label>
-              <select
-                id={`${fieldId}-statut`}
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-11 px-3 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF5722]/30 focus:border-[#FF5722]"
-              >
-                {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
-            <div role="group" aria-label="Période" className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-zinc-800">
+            <Select
+              label="Statut"
+              id={`${fieldId}-statut`}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              options={STATUSES}
+              fieldClassName="sm:w-80"
+            />
+            <div role="group" aria-label="Période" className="flex items-center gap-1 p-1 rounded-xl bg-surface-sunken">
               {PERIODS.map((p) => (
                 <button
                   key={p.value}
                   type="button"
                   aria-pressed={periodPreset === p.value}
                   onClick={() => setPeriodPreset(p.value)}
-                  className={`min-h-[40px] px-3 rounded-lg text-xs font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5722] ${
-                    periodPreset === p.value
-                      ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30'
-                      : 'text-slate-600 dark:text-zinc-300'
+                  className={`min-h-11 whitespace-nowrap px-3 rounded-lg text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    periodPreset === p.value ? 'bg-brand text-on-brand' : 'text-fg-muted'
                   }`}
                 >
                   {p.label}
@@ -282,49 +273,49 @@ export default function AdminFinanceReconciliationPage() {
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-2xl" />)}
           </div>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center text-slate-500 dark:text-zinc-400">
-            <DollarSign size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" aria-hidden="true" />
-            <p className="text-xs font-bold">Aucun paiement encaissé pour cette période.</p>
+          <div className="py-12 text-center text-fg-muted">
+            <DollarSign size={32} className="mx-auto text-fg-muted mb-2" aria-hidden="true" />
+            <p className="text-sm font-bold">Aucun paiement encaissé pour cette période.</p>
           </div>
         ) : (
           <>
             {/* Mobile : cartes */}
             <ul className="md:hidden space-y-3">
               {items.map((item) => (
-                <li key={item.paymentId} className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800 space-y-2 text-xs">
+                <li key={item.paymentId} className="p-4 rounded-2xl bg-surface-sunken border border-border space-y-2 text-sm">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-mono font-bold text-slate-900 dark:text-white break-all">{item.transactionReference}</p>
-                      <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                        {TARGET_LABELS[item.targetType] ?? item.targetType} · {OPERATOR_NAMES[item.paymentMethod] ?? item.paymentMethod} · {formatDate(item.createdAt)}
+                      <p className="font-mono font-bold text-fg break-all">{item.transactionReference}</p>
+                      <p className="text-sm text-fg-muted">
+                        {TARGET_LABELS[item.targetType] ?? 'Autre objet'} · {OPERATOR_NAMES[item.paymentMethod] ?? 'Autre moyen'} · {formatDate(item.createdAt)}
                       </p>
                     </div>
                     <StatusBadge status={item.status} />
                   </div>
                   <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
-                    <dt className="text-slate-500 dark:text-zinc-400">Total débité</dt>
-                    <dd className="text-right font-black text-slate-900 dark:text-white">{formatPrice(item.grossAmount)}</dd>
-                    <dt className="text-slate-500 dark:text-zinc-400">Prix</dt>
-                    <dd className="text-right font-bold text-slate-900 dark:text-white">{item.facialAmount !== null ? formatPrice(item.facialAmount) : '—'}</dd>
-                    <dt className="text-slate-500 dark:text-zinc-400">Frais de service</dt>
-                    <dd className="text-right font-bold text-slate-900 dark:text-white">{serviceFeeLabel(item)}</dd>
-                    <dt className="text-slate-500 dark:text-zinc-400">Frais agrégateur</dt>
-                    <dd className="text-right text-amber-600 dark:text-amber-400">{formatPrice(item.aggregatorFee)}</dd>
-                    <dt className="text-slate-500 dark:text-zinc-400">Net Event Village</dt>
-                    <dd className="text-right font-bold text-[#FF5722]">{formatPrice(item.platformNetRevenue)}</dd>
-                    <dt className="text-slate-500 dark:text-zinc-400">Partenaire</dt>
-                    <dd className="text-right font-bold text-emerald-600 dark:text-emerald-400">{formatPrice(item.partnerPayout)}</dd>
+                    <dt className="text-fg-muted">Total débité</dt>
+                    <dd className="text-right font-black text-fg">{formatPrice(item.grossAmount)}</dd>
+                    <dt className="text-fg-muted">Prix</dt>
+                    <dd className="text-right font-bold text-fg">{item.facialAmount !== null ? formatPrice(item.facialAmount) : '—'}</dd>
+                    <dt className="text-fg-muted">Frais de service</dt>
+                    <dd className="text-right font-bold text-fg">{serviceFeeLabel(item)}</dd>
+                    <dt className="text-fg-muted">Frais agrégateur</dt>
+                    <dd className="text-right text-warning-fg">{formatPrice(item.aggregatorFee)}</dd>
+                    <dt className="text-fg-muted">Net Event Village</dt>
+                    <dd className="text-right font-bold text-brand-fg">{formatPrice(item.platformNetRevenue)}</dd>
+                    <dt className="text-fg-muted">Partenaire</dt>
+                    <dd className="text-right font-bold text-success-fg">{formatPrice(item.partnerPayout)}</dd>
                     {item.refundedAmount > 0 && (
                       <>
-                        <dt className="text-slate-500 dark:text-zinc-400">Remboursé</dt>
-                        <dd className="text-right font-bold text-slate-900 dark:text-white">{formatPrice(item.refundedAmount)}</dd>
+                        <dt className="text-fg-muted">Remboursé</dt>
+                        <dd className="text-right font-bold text-fg">{formatPrice(item.refundedAmount)}</dd>
                       </>
                     )}
-                    <dt className="text-slate-500 dark:text-zinc-400">Parrainage</dt>
-                    <dd className="text-right text-slate-600 dark:text-zinc-300">{formatPrice(item.totalReferralCommissions)}</dd>
+                    <dt className="text-fg-muted">Parrainage</dt>
+                    <dd className="text-right text-fg-muted">{formatPrice(item.totalReferralCommissions)}</dd>
                   </dl>
                   {item.discrepancy !== 0 && (
-                    <p className="flex items-center gap-1.5 font-bold text-red-600 dark:text-red-400">
+                    <p className="flex items-center gap-1.5 font-bold text-danger-fg">
                       <AlertTriangle size={13} aria-hidden="true" /> Écart : {formatPrice(item.discrepancy)}
                     </p>
                   )}
@@ -333,11 +324,11 @@ export default function AdminFinanceReconciliationPage() {
             </ul>
 
             {/* Écran large : tableau */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full min-w-[960px] text-xs text-left">
+            <div role="region" aria-label="Paiements rapprochés, tableau défilable" tabIndex={0} className="hidden md:block overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <table className="w-full min-w-[1240px] text-sm text-left">
                 <caption className="sr-only">Paiements encaissés et leur répartition</caption>
                 <thead>
-                  <tr className="border-b border-slate-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px]">
+                  <tr className="border-b border-border text-fg-muted font-bold">
                     <th scope="col" className="pb-3 pr-3">Référence</th>
                     <th scope="col" className="pb-3 pr-3">Objet · moyen</th>
                     <th scope="col" className="pb-3 pr-3">Statut</th>
@@ -353,36 +344,36 @@ export default function AdminFinanceReconciliationPage() {
                     <th scope="col" className="pb-3 text-right">Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60 tabular-nums">
+                <tbody className="divide-y divide-border tabular-nums whitespace-nowrap">
                   {items.map((item) => (
-                    <tr key={item.paymentId} className="hover:bg-slate-50/60 dark:hover:bg-zinc-900/40">
-                      <td className="py-3 pr-3 font-mono font-bold text-slate-900 dark:text-white">{item.transactionReference}</td>
-                      <td className="py-3 pr-3 text-slate-600 dark:text-zinc-400">
-                        {TARGET_LABELS[item.targetType] ?? item.targetType} · {OPERATOR_NAMES[item.paymentMethod] ?? item.paymentMethod}
+                    <tr key={item.paymentId} className="hover:bg-surface-sunken">
+                      <td className="py-3 pr-3 font-mono font-bold text-fg">{item.transactionReference}</td>
+                      <td className="py-3 pr-3 text-fg-muted">
+                        {TARGET_LABELS[item.targetType] ?? 'Autre objet'} · {OPERATOR_NAMES[item.paymentMethod] ?? 'Autre moyen'}
                       </td>
                       <td className="py-3 pr-3"><StatusBadge status={item.status} /></td>
-                      <td className="py-3 pr-3 text-right font-black text-slate-900 dark:text-white">{formatPrice(item.grossAmount)}</td>
-                      <td className="py-3 pr-3 text-right text-slate-700 dark:text-zinc-300">{item.facialAmount !== null ? formatPrice(item.facialAmount) : '—'}</td>
-                      <td className="py-3 pr-3 text-right font-bold text-slate-900 dark:text-white whitespace-nowrap">{serviceFeeLabel(item)}</td>
-                      <td className="py-3 pr-3 text-right text-amber-600 dark:text-amber-400">{formatPrice(item.aggregatorFee)}</td>
-                      <td className="py-3 pr-3 text-right font-bold text-[#FF5722]">{formatPrice(item.platformNetRevenue)}</td>
-                      <td className="py-3 pr-3 text-right font-bold text-emerald-600 dark:text-emerald-400">{formatPrice(item.partnerPayout)}</td>
-                      <td className="py-3 pr-3 text-right text-slate-700 dark:text-zinc-300">
+                      <td className="py-3 pr-3 text-right font-black text-fg">{formatPrice(item.grossAmount)}</td>
+                      <td className="py-3 pr-3 text-right text-fg-muted">{item.facialAmount !== null ? formatPrice(item.facialAmount) : '—'}</td>
+                      <td className="py-3 pr-3 text-right font-bold text-fg whitespace-nowrap">{serviceFeeLabel(item)}</td>
+                      <td className="py-3 pr-3 text-right text-warning-fg">{formatPrice(item.aggregatorFee)}</td>
+                      <td className="py-3 pr-3 text-right font-bold text-brand-fg">{formatPrice(item.platformNetRevenue)}</td>
+                      <td className="py-3 pr-3 text-right font-bold text-success-fg">{formatPrice(item.partnerPayout)}</td>
+                      <td className="py-3 pr-3 text-right text-fg-muted">
                         {item.refundedAmount > 0 ? (
                           <span className="inline-flex items-center gap-1"><Undo2 size={12} aria-hidden="true" />{formatPrice(item.refundedAmount)}</span>
                         ) : '—'}
                       </td>
-                      <td className="py-3 pr-3 text-right text-slate-600 dark:text-zinc-300">{formatPrice(item.totalReferralCommissions)}</td>
+                      <td className="py-3 pr-3 text-right text-fg-muted">{formatPrice(item.totalReferralCommissions)}</td>
                       <td className="py-3 pr-3 text-center font-bold">
                         {item.discrepancy === 0 ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 text-[11px]">Aucun</span>
+                          <span className="text-success-fg text-sm">Aucun</span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 text-[11px]">
+                          <span className="inline-flex items-center gap-1 text-danger-fg text-sm">
                             <AlertTriangle size={12} aria-hidden="true" /> {formatPrice(item.discrepancy)}
                           </span>
                         )}
                       </td>
-                      <td className="py-3 text-right text-slate-500 dark:text-zinc-400 text-[11px] whitespace-nowrap">{formatDate(item.createdAt)}</td>
+                      <td className="py-3 text-right text-fg-muted text-sm whitespace-nowrap">{formatDate(item.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>
