@@ -15,7 +15,8 @@ const COUNTER_SALE_KEY = 'access.counter_sale_enabled';
  * GET /api/controller/counter-sale?event_id=… — ce que l'écran du guichet doit savoir, servi par le serveur
  * (lot 7, D53, contrat 3.3) : `enabled` (réglage access.counter_sale_enabled), `can_accept_cash` (permission
  * espèces de l'affectation), `open_shift` (caisse OUVERT du contrôleur, ou null) et les catégories vendables
- * (actives) avec leur prix et leur disponibilité (total − vendus − réservés). Contrôleur non affecté à
+ * (actives et vendues au guichet) avec leur prix, leur disponibilité (total − vendus − réservés) et
+ * `on_site_only` (non vendue en ligne, lot 8). Contrôleur non affecté à
  * l'événement : 403 NOT_ASSIGNED (comme la vente). Aucun total n'est calculé dans le navigateur : le devis
  * passe par POST /api/controller/counter-sale/quote.
  */
@@ -35,8 +36,8 @@ export async function GET(req: NextRequest) {
             supabase.from('platform_settings').select('value').eq('key', COUNTER_SALE_KEY).maybeSingle(),
             supabase.from('controller_shifts').select('id, opened_at, opening_float_amount, expected_cash_total')
                 .eq('controller_id', session.user.id).eq('event_id', eventId).eq('status', 'OUVERT').maybeSingle(),
-            supabase.from('ticket_categories').select('id, name, price, total_quantity, sold_quantity, held_quantity')
-                .eq('event_id', eventId).eq('is_active', true).order('price', { ascending: true }).order('name', { ascending: true }),
+            supabase.from('ticket_categories').select('id, name, price, total_quantity, sold_quantity, held_quantity, sale_online')
+                .eq('event_id', eventId).eq('is_active', true).eq('sale_counter', true).order('price', { ascending: true }).order('name', { ascending: true }),
         ]);
         if (assignment.error) throw new Error(`affectation : ${assignment.error.message}`);
         if (setting.error) throw new Error(`réglage ${COUNTER_SALE_KEY} : ${setting.error.message}`);
@@ -65,6 +66,7 @@ export async function GET(req: NextRequest) {
                 name: c.name,
                 price: Number(c.price),
                 available: Math.max(0, Number(c.total_quantity) - Number(c.sold_quantity) - Number(c.held_quantity ?? 0)),
+                on_site_only: c.sale_online === false,
             })),
         }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
@@ -89,6 +91,7 @@ const REFUSAL_STATUS: Record<string, number> = {
     NO_OPEN_SHIFT: 409,
     EVENT_CLOSED: 409,
     SALE_CHECK_FAILED: 409,
+    CATEGORY_NOT_SOLD_AT_COUNTER: 409,
     INVALID_ITEMS: 400,
 };
 
@@ -108,7 +111,7 @@ type SaleReply = Record<string, unknown> & {
  * POST /api/controller/counter-sale — vente au guichet en espèces = entrée immédiate (lot 5, C7).
  * En-tête Idempotency-Key obligatoire (une même clé rejouée rend la même vente, sans nouvelle écriture).
  * Contrôleur affecté à l'événement avec la permission espèces et une caisse ouverte ; contrôles de vente
- * (catégorie active, stock sous verrou) ; dans la même transaction (RPC counter_sale) : billets sans
+ * (catégorie active et vendue au guichet, stock sous verrou) ; dans la même transaction (RPC counter_sale) : billets sans
  * compte au statut UTILISE, une entrée acceptée par billet (méthode COUNTER), paiement hors plateforme
  * au prix facial rattaché à la caisse, total attendu de la caisse incrémenté. Aucun rattachement au
  * compte du numéro saisi ; le vendeur n'est jamais porteur. Lot 6 (J1.3) : le reçu SMS au numéro fourni

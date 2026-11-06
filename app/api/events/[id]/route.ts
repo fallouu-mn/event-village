@@ -49,7 +49,7 @@ async function lowStockThreshold(): Promise<number> {
  *  - PUBLIE, SUSPENDU, ANNULE, TERMINE : 200 avec `purchasable` (PUBLIE, fin à venir, au moins une catégorie
  *    achetable) et `banner` (null pour PUBLIE) ; ANNULE : `cancellation { publicNotice, cancelledAt, refundInfo }`,
  *    jamais le motif interne ;
- *  - catégories actives et visibles seulement ; stock en tranches (AVAILABLE, LOW avec le restant, SOLD_OUT),
+ *  - catégories actives et vendues en ligne seulement ; stock en tranches (AVAILABLE, LOW avec le restant, SOLD_OUT),
  *    calculé sur les compteurs de la catégorie (réservations comprises), sans lecture des paiements.
  */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -84,7 +84,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
                 created_at,
                 partner_id,
                 partners(id, company_name, commercial_name, logo_url),
-                ticket_categories(id, name, price, total_quantity, sold_quantity, held_quantity, description, is_active, is_visible, sale_start, sale_end, max_per_order)
+                ticket_categories(id, name, price, total_quantity, sold_quantity, held_quantity, description, is_active, sale_online, sale_start, sale_end, max_per_order)
             `)
             .eq('id', eventId)
             .maybeSingle();
@@ -113,10 +113,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
         type CategoryRow = {
             id: string; name: string; price: number | string; total_quantity: number | null; sold_quantity: number | null;
-            held_quantity: number | null; description: string | null; is_active: boolean; is_visible: boolean;
+            held_quantity: number | null; description: string | null; is_active: boolean; sale_online: boolean;
             sale_start: string | null; sale_end: string | null; max_per_order: number | null;
         };
-        const rows = ((event.ticket_categories ?? []) as CategoryRow[]).filter((c) => c.is_active === true && c.is_visible === true);
+        const rows = ((event.ticket_categories ?? []) as CategoryRow[]).filter((c) => c.is_active === true && c.sale_online === true);
 
         const categories = rows.map((cat) => {
             const price = Number(cat.price);

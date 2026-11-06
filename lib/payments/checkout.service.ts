@@ -6,7 +6,7 @@
  *  1. clé d'idempotence fournie par le client (en-tête Idempotency-Key) obligatoire ; une double
  *     soumission renvoie le paiement déjà créé ;
  *  2. quota de checkout par compte (compteurs en base, fail-closed) ;
- *  3. contrôles partagés ticket_sale_problems (catégorie active et visible, événement PUBLIE et non
+ *  3. contrôles partagés ticket_sale_problems (catégorie active et vendue en ligne, événement PUBLIE et non
  *     passé, fenêtre de vente, max_per_order, stock moins réservations) → 400 / 409 explicites ;
  *  4. panier entièrement gratuit : billets émis tout de suite (free_tickets_claim) ;
  *     sinon opérateur (Wave ou Orange Money) et téléphone payeur (9 chiffres) obligatoires ;

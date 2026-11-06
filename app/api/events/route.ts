@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/events — catalogue public (accueil, explorer). Lot 5 (contrat E) :
  *  - seulement les événements PUBLIE dont la fin (event_end_at : fin renseignée, sinon début à 23:59
  *    Africa/Dakar) est à venir ; un événement en cours reste listé ;
- *  - prix « à partir de » calculé sur les catégories actives ET visibles ; sans catégorie achetable :
+ *  - prix « à partir de » calculé sur les catégories actives ET vendues en ligne ; sans catégorie achetable :
  *    aucun prix (price null) et « Bientôt en vente », jamais « Gratuit » ;
  *  - aucune donnée de stock ni catégorie masquée exposée.
  */
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
                 created_at,
                 partner_id,
                 partners(company_name, commercial_name),
-                ticket_categories(price, is_active, is_visible)
+                ticket_categories(price, is_active, sale_online)
             `)
             .eq('status', 'PUBLIE')
             .order('start_date', { ascending: true });
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
             const timeFormatted = evt.start_time ? evt.start_time.substring(0, 5) : '20:00';
             const dateFormatted = `${dayNumber} ${monthShort} ${startDate.getFullYear()}`;
 
-            const buyable = (evt.ticket_categories || []).filter((c: any) => c.is_active === true && c.is_visible === true);
+            const buyable = (evt.ticket_categories || []).filter((c: any) => c.is_active === true && c.sale_online === true);
             const minPrice: number | null = buyable.length > 0
                 ? Math.min(...buyable.map((c: any) => Number(c.price)))
                 : null;

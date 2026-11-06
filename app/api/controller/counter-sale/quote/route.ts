@@ -19,6 +19,7 @@ const REFUSAL_STATUS: Record<string, number> = {
     NO_CASH_PERMISSION: 403,
     NO_OPEN_SHIFT: 409,
     EVENT_CLOSED: 409,
+    CATEGORY_NOT_SOLD_AT_COUNTER: 409,
 };
 
 type QuoteReply = {
@@ -34,7 +35,8 @@ type QuoteReply = {
  * POST /api/controller/counter-sale/quote — devis du guichet (lot 7, D53, contrat 3.3) :
  * `{ eventId, items: [{ categoryId, quantity }] }` → total et lignes calculés par le serveur (RPC
  * counter_sale_quote : mêmes contrôles que la vente, sans écriture, sans verrou). Catégorie non vendable
- * (inactive, introuvable, quantité ou stock) → 400 INVALID_ITEMS avec le détail ; aucun total.
+ * (inactive, introuvable, quantité ou stock) → 400 INVALID_ITEMS avec le détail ; catégorie non vendue au
+ * guichet → 409 CATEGORY_NOT_SOLD_AT_COUNTER ; aucun total.
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);

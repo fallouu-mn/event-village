@@ -307,7 +307,11 @@ const categoryCreateShape = {
     max_per_order: maxPerOrderField.default(DEFAULT_MAX_PER_ORDER),
     sale_start: saleDateField.optional(),
     sale_end: saleDateField.optional(),
-    is_visible: z.boolean().default(true),
+    // Lot 8 (contrat 3.3) : aucun défaut sur les canaux, sinon l'alias is_visible serait perdu au COALESCE de
+    // ticket_category_normalize. Une catégorie sans canal est permise.
+    sale_online: z.boolean().optional(),
+    sale_counter: z.boolean().optional(),
+    is_visible: z.boolean().optional(),
     is_active: z.boolean().default(true),
 };
 
@@ -494,6 +498,8 @@ export function updateTicketCategorySchema(ctx: UpdateTicketCategorySchemaContex
         max_per_order: maxPerOrderField.optional(),
         sale_start: saleDateField.optional(),
         sale_end: saleDateField.optional(),
+        sale_online: z.boolean().optional(),
+        sale_counter: z.boolean().optional(),
         is_visible: z.boolean().optional(),
         is_active: z.boolean().optional(),
     }).strict().superRefine((v, c) => {
