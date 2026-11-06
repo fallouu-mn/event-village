@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { HallService } from '@/lib/halls/hall.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -21,10 +22,7 @@ export async function GET(
         const hall = await HallService.getHallById(id);
         return NextResponse.json({ success: true, hall });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Salle introuvable.' },
-            { status: 404 }
-        );
+        return apiFailure('GET /api/partner/halls/[id]', error, { message: 'Salle introuvable.', code: 'HALL_NOT_FOUND', status: 404 });
     }
 }
 
@@ -52,10 +50,7 @@ export async function PUT(
 
         return NextResponse.json({ success: true, hall: updated });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Échec modification.' },
-            { status: 400 }
-        );
+        return apiFailure('PUT /api/partner/halls/[id]', error, { message: 'Salle non enregistrée. Réessayez.', code: 'HALL_SAVE_FAILED', status: 400 });
     }
 }
 
@@ -82,9 +77,6 @@ export async function DELETE(
 
         return NextResponse.json(result);
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Échec suppression.' },
-            { status: 400 }
-        );
+        return apiFailure('DELETE /api/partner/halls/[id]', error, { message: 'Salle non supprimée. Réessayez.', code: 'HALL_DELETE_FAILED', status: 400 });
     }
 }

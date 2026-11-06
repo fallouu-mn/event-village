@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -30,10 +31,7 @@ export async function PATCH(
             return NextResponse.json({ success: true, table });
         }
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur modification.' },
-            { status: 400 }
-        );
+        return apiFailure('PATCH /api/partner/tables/[id]', error, { message: 'Table ou zone non enregistrée. Réessayez.', code: 'TABLE_SAVE_FAILED', status: 400 });
     }
 }
 
@@ -64,9 +62,6 @@ export async function DELETE(
 
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur suppression.' },
-            { status: 400 }
-        );
+        return apiFailure('DELETE /api/partner/tables/[id]', error, { message: 'Table ou zone non supprimée. Réessayez.', code: 'TABLE_DELETE_FAILED', status: 400 });
     }
 }

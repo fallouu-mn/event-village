@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -22,10 +23,7 @@ export async function GET(request: NextRequest) {
         const reservations = await TableService.getPartnerReservations(user.id, { status, date });
         return NextResponse.json({ success: true, reservations });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur recuperation reservations.' },
-            { status: 500 }
-        );
+        return apiFailure('GET /api/partner/tables/reservations', error, { message: 'Réservations momentanément indisponibles.', code: 'TABLE_RESERVATIONS_UNAVAILABLE', status: 500 });
     }
 }
 
@@ -47,9 +45,6 @@ export async function POST(request: NextRequest) {
         const reservation = await TableService.createReservation(body);
         return NextResponse.json({ success: true, reservation }, { status: 201 });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur creation reservation.' },
-            { status: 400 }
-        );
+        return apiFailure('POST /api/partner/tables/reservations', error, { message: 'Réservation non enregistrée. Réessayez.', code: 'TABLE_RESERVATION_SAVE_FAILED', status: 400 });
     }
 }

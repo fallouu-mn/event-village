@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -26,9 +27,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
         return NextResponse.json({ success: true, product });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur modification statut produit.' },
-            { status: 400 }
-        );
+        return apiFailure('POST /api/partner/products/[id]/status', error, { message: 'Statut du produit non enregistré. Réessayez.', code: 'PRODUCT_STATUS_SAVE_FAILED', status: 400 });
     }
 }

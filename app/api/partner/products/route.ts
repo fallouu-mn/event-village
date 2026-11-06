@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -24,10 +25,7 @@ export async function GET(request: NextRequest) {
         const products = await ProductService.getPartnerProducts(user.id, { status, category_id, is_daily_special });
         return NextResponse.json({ success: true, products });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur récupération produits.' },
-            { status: 500 }
-        );
+        return apiFailure('GET /api/partner/products', error, { message: 'Produits momentanément indisponibles.', code: 'PRODUCTS_UNAVAILABLE', status: 500 });
     }
 }
 
@@ -48,9 +46,6 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true, product }, { status: 201 });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur création produit.' },
-            { status: 400 }
-        );
+        return apiFailure('POST /api/partner/products', error, { message: 'Produit non enregistré. Réessayez.', code: 'PRODUCT_SAVE_FAILED', status: 400 });
     }
 }

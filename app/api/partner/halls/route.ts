@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { HallService } from '@/lib/halls/hall.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -22,10 +23,7 @@ export async function GET(request: NextRequest) {
         const halls = await HallService.getPartnerHalls(user.id);
         return NextResponse.json({ success: true, halls });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur récupération salles.' },
-            { status: 500 }
-        );
+        return apiFailure('GET /api/partner/halls', error, { message: 'Salles momentanément indisponibles.', code: 'HALLS_UNAVAILABLE', status: 500 });
     }
 }
 
@@ -50,9 +48,6 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true, hall }, { status: 201 });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur création salle.' },
-            { status: 400 }
-        );
+        return apiFailure('POST /api/partner/halls', error, { message: 'Salle non enregistrée. Réessayez.', code: 'HALL_SAVE_FAILED', status: 400 });
     }
 }

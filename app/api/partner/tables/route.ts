@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -26,10 +27,7 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ success: true, tables });
         }
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur recuperation.' },
-            { status: 500 }
-        );
+        return apiFailure('GET /api/partner/tables', error, { message: 'Tables momentanément indisponibles.', code: 'TABLES_UNAVAILABLE', status: 500 });
     }
 }
 
@@ -56,9 +54,6 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: true, table }, { status: 201 });
         }
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur creation.' },
-            { status: 400 }
-        );
+        return apiFailure('POST /api/partner/tables', error, { message: 'Table ou zone non enregistrée. Réessayez.', code: 'TABLE_SAVE_FAILED', status: 400 });
     }
 }

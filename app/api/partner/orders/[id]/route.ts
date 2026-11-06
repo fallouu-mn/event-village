@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { OrderService } from '@/lib/orders/order.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -40,10 +41,7 @@ export async function GET(
 
         return NextResponse.json({ success: true, order });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur récupération commande.' },
-            { status: 500 }
-        );
+        return apiFailure('GET /api/partner/orders/[id]', error, { message: 'Commande momentanément indisponible.', code: 'ORDER_UNAVAILABLE', status: 500 });
     }
 }
 
@@ -73,9 +71,6 @@ export async function PATCH(
         const order = await OrderService.updateOrderStatus(id, user.id, order_status);
         return NextResponse.json({ success: true, order });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur modification commande.' },
-            { status: 400 }
-        );
+        return apiFailure('PATCH /api/partner/orders/[id]', error, { message: 'Commande non enregistrée. Réessayez.', code: 'ORDER_SAVE_FAILED', status: 400 });
     }
 }

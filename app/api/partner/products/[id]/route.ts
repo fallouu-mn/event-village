@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -18,10 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         const product = await ProductService.getProductById(params.id);
         return NextResponse.json({ success: true, product });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur récupération produit.' },
-            { status: 500 }
-        );
+        return apiFailure('GET /api/partner/products/[id]', error, { message: 'Produit momentanément indisponible.', code: 'PRODUCT_UNAVAILABLE', status: 500 });
     }
 }
 
@@ -42,10 +40,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
         return NextResponse.json({ success: true, product });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur modification produit.' },
-            { status: 400 }
-        );
+        return apiFailure('PATCH /api/partner/products/[id]', error, { message: 'Produit non enregistré. Réessayez.', code: 'PRODUCT_SAVE_FAILED', status: 400 });
     }
 }
 
@@ -64,9 +59,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
         await ProductService.deleteProduct(params.id, user.id);
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur suppression produit.' },
-            { status: 400 }
-        );
+        return apiFailure('DELETE /api/partner/products/[id]', error, { message: 'Produit non supprimé. Réessayez.', code: 'PRODUCT_DELETE_FAILED', status: 400 });
     }
 }

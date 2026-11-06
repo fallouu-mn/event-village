@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -24,10 +25,7 @@ export async function PATCH(
         const reservation = await TableService.updateReservationStatus(id, user.id, body.status);
         return NextResponse.json({ success: true, reservation });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur modification reservation.' },
-            { status: 400 }
-        );
+        return apiFailure('PATCH /api/partner/tables/reservations/[id]', error, { message: 'Réservation non enregistrée. Réessayez.', code: 'TABLE_RESERVATION_SAVE_FAILED', status: 400 });
     }
 }
 
@@ -52,9 +50,6 @@ export async function DELETE(
 
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur annulation.' },
-            { status: 400 }
-        );
+        return apiFailure('DELETE /api/partner/tables/reservations/[id]', error, { message: 'Réservation non annulée. Réessayez.', code: 'TABLE_RESERVATION_CANCEL_FAILED', status: 400 });
     }
 }

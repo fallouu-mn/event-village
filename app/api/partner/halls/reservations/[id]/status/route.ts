@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { HallService } from '@/lib/halls/hall.service';
 import { guardFeature } from '@/lib/features/flags';
@@ -37,9 +38,6 @@ export async function POST(
 
         return NextResponse.json({ success: true, reservation: result });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur traitement réservation.' },
-            { status: 400 }
-        );
+        return apiFailure('POST /api/partner/halls/reservations/[id]/status', error, { message: 'Réservation non enregistrée. Réessayez.', code: 'HALL_RESERVATION_SAVE_FAILED', status: 400 });
     }
 }

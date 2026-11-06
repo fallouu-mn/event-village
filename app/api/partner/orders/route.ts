@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { OrderService } from '@/lib/orders/order.service';
@@ -41,9 +42,6 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ success: true, orders: orders || [] });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Erreur récupération commandes.' },
-            { status: 500 }
-        );
+        return apiFailure('GET /api/partner/orders', error, { message: 'Commandes momentanément indisponibles.', code: 'ORDERS_UNAVAILABLE', status: 500 });
     }
 }
