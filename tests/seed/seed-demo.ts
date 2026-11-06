@@ -47,6 +47,16 @@
  *  - billet « à saisir à la main » (non composté) pour la saisie manuelle des captures ;
  *  - fin par assertTerrainInvariants('seed-demo') ((a) à (q)) ; demo-ids.json en version 3.
  *
+ * Lot 8 (contrat T31, L80 ; commit fix(8.0-seed), après la migration des canaux) :
+ *  - catégories écrites par sale_online et sale_counter (is_visible en est le miroir, posé par trigger) ; schéma du lot 8
+ *    exigé au contrôle préalable ;
+ *  - sur « ce soir » : « Carré presse » vendue au guichet seulement (une vente au guichet, décision de vente figée) et
+ *    une catégorie sans aucun canal (noCounter, 10 places, aucune distribution) ;
+ *  - payOnSiteTickets écrit ses billets en direct, canal ONLINE par défaut de la colonne : il refuse une catégorie non
+ *    vendue en ligne, que l'invariant (t1) signalerait ;
+ *  - billet de la saisie manuelle exigé payant, VALIDE et payé en ligne : la capture du remboursement unitaire le recherche ;
+ *  - fin par assertRecetteInvariants('seed-demo') ((a) à (t)).
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -68,7 +78,8 @@ import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
 import { inspect } from '../helpers/db';
 import { TEST_PASSWORD } from '../helpers/fixture-data';
-import { assertTerrainInvariants, missingTerrainSchema } from '../helpers/terrain-invariants';
+import { assertRecetteInvariants, missingRecetteSchema } from '../helpers/recette-invariants';
+import { missingTerrainSchema } from '../helpers/terrain-invariants';
 import { DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoIds } from '../../e2e/support/demo-ids';
 import { dakarDateLabel, logoHtml, posterHtml, POSTER_SIZE, renderPng, type PALETTES, type PosterMotif } from '../../e2e/support/poster';
 
@@ -204,9 +215,11 @@ async function preflight(): Promise<void> {
     for (const [file, why] of LOT5_FILES) if (!fs.existsSync(path.resolve(process.cwd(), file))) missing.push(`fichier ${file} — ${why}`);
     // Lot 7 (M4, M5) : versions du secret et téléchargements hors ligne, sans lesquels (p)(q) ne se vérifient pas
     for (const object of await missingTerrainSchema()) missing.push(`${object} — lot 7 (M4, M5 : invariants (p)(q))`);
+    // Lot 8 (T31) : canaux de vente et décision figée, sans lesquels ce seed n'écrit rien et (r)(s)(t) ne se vérifient pas
+    for (const object of await missingRecetteSchema()) missing.push(`${object} — lot 8 (invariants (r)(s)(t))`);
     if (missing.length > 0) {
         throw new Error(
-            '[seed-demo] la base locale n’a pas les objets du contrat cible (lots 5 et 7).\n'
+            '[seed-demo] la base locale n’a pas les objets du contrat cible (lots 5, 7 et 8).\n'
             + missing.map((m) => `  - ${m}`).join('\n')
             + '\nLe seed de démonstration ne fait passer les statuts que par les RPC du lot 5 : aucune écriture directe de events.status, aucun repli.',
         );
@@ -342,7 +355,8 @@ type Lifecycle = 'BROUILLON' | 'EN_ATTENTE' | 'REFUSE' | 'VALIDE' | 'PUBLIE' | '
 type EventCategory = 'CONCERT' | 'FESTIVAL' | 'FOOD' | 'SALLE';
 const CATEGORY_LABEL: Record<EventCategory, string> = { CONCERT: 'Concert', FESTIVAL: 'Festival', FOOD: 'Gastronomie', SALLE: 'Soirée & réception' };
 
-interface CategorySeed { name: string; price: number; total: number; description: string; hidden?: boolean; inactive?: boolean; deactivateAfterSales?: boolean; maxPerOrder?: number }
+/** hidden : non vendue en ligne (sale_online faux) ; noCounter : non vendue au guichet (sale_counter faux). Les deux : aucun canal. */
+interface CategorySeed { name: string; price: number; total: number; description: string; hidden?: boolean; noCounter?: boolean; inactive?: boolean; deactivateAfterSales?: boolean; maxPerOrder?: number }
 interface SaleSeed { category: string; qty: number }
 
 interface EventSeed {
@@ -399,6 +413,7 @@ const EVENTS: EventSeed[] = [
             { name: 'Standard', price: 5000, total: 180, description: 'Accès à l’esplanade.' },
             { name: 'VIP', price: 15000, total: 50, description: 'Carré assis, entrée dédiée, une boisson offerte.' },
             { name: 'Carré presse', price: 10000, total: 10, description: 'Réservé aux médias accrédités.', hidden: true },
+            { name: 'Invités de la production', price: 0, total: 10, description: 'Places réservées aux invités de l’organisateur.', hidden: true, noCounter: true },
         ],
         lifecycle: 'PUBLIE',
         sales: sales([['Prévente', [2, 1, 2, 1, 1, 2, 2, 1, 1, 2, 1, 2, 1, 2, 1]], ['Standard', [1, 2, 3, 1, 2, 1, 1, 2, 2, 1, 4, 1, 2, 1, 1, 3, 2, 1, 2, 1]], ['VIP', [2, 1, 1, 2, 1]]]),
@@ -692,7 +707,7 @@ async function createEvent(seed: EventSeed, partnerId: string, ownerId: string, 
     for (const c of seed.categories) {
         const { data, error: catErr } = await service.from('ticket_categories').insert({
             event_id: ev.id, name: c.name, description: c.description, price: c.price, total_quantity: c.total, sold_quantity: 0,
-            is_active: !c.inactive, is_visible: !c.hidden, max_per_order: c.maxPerOrder ?? 10, sale_start: saleStart, sale_end: null,
+            is_active: !c.inactive, sale_online: !c.hidden, sale_counter: !c.noCounter, max_per_order: c.maxPerOrder ?? 10, sale_start: saleStart, sale_end: null,
         }).select('id').single();
         if (catErr || !data) fail(`catégorie « ${c.name} » de « ${seed.title} »`, catErr);
         categories[c.name] = { id: data.id as string, price: c.price };
@@ -854,6 +869,8 @@ async function counterSale(ev: CreatedEvent, ctrl: Account, category: string, qt
 
 async function payOnSiteTickets(ev: CreatedEvent, buyer: Account, category: string, count: number): Promise<string[]> {
     const cat = ev.categories[category];
+    // Insertion directe, canal ONLINE par défaut de la colonne : sur une catégorie non vendue en ligne, l'invariant (t1) la signalerait
+    if (ev.seed.categories.find((c) => c.name === category)?.hidden) fail('billets à régler sur place', `catégorie « ${category} » non vendue en ligne`);
     const total = cat.price * count;
     const { data: order, error } = await service.from('orders').insert({
         order_number: `CMD-DEMO-${Date.now()}-${randomUUID().slice(0, 6).toUpperCase()}`,
@@ -1183,9 +1200,13 @@ async function main(): Promise<void> {
     if (t4Err || !t4) fail('numéro de billet', t4Err);
     await scanRpc({ scanner_id: c1.userId, event_id: ceSoir.id, method: 'MANUAL', ticket_number: t4.ticket_number, identity_verified: false, payload_hash: sha256(String(t4.ticket_number).toUpperCase()) }, 'manual_entry_refused');
     // Lot 7 (capture de la saisie manuelle) : billet jamais présenté, vérifié par le contrôleur 1 (lecture seule)
-    const { data: t5, error: t5Err } = await service.from('tickets').select('id, ticket_number, status').eq('id', notYet[5]).single();
+    const { data: t5, error: t5Err } = await service.from('tickets').select('id, ticket_number, status, price, sale_channel, payment_id').eq('id', notYet[5]).single();
     if (t5Err || !t5) fail('billet de la saisie manuelle', t5Err);
     if (t5.status !== 'VALIDE') fail('billet de la saisie manuelle', `statut ${String(t5.status)} au lieu de VALIDE`);
+    // Lot 8 : même billet pour la capture du remboursement unitaire, qui attend « Rembourser ce billet » (payant, payé en ligne)
+    if (!(Number(t5.price) > 0) || t5.sale_channel !== 'ONLINE' || !t5.payment_id) {
+        fail('billet de la saisie manuelle', `billet payant payé en ligne attendu, reçu prix ${String(t5.price)}, canal ${String(t5.sale_channel)}, paiement ${String(t5.payment_id)}`);
+    }
     const manualTicket = { id: String(t5.id), number: String(t5.ticket_number) };
 
     // Billets « à régler sur place » : deux encaissés au scan, un absent
@@ -1198,6 +1219,8 @@ async function main(): Promise<void> {
         [c1, 'Standard', 2, '700000301'], [c1, 'Standard', 1, undefined], [c1, 'Standard', 1, '700000302'], [c1, 'Standard', 3, undefined],
         [c2, 'VIP', 1, '700000303'], [c2, 'VIP', 2, undefined], [c2, 'Standard', 1, undefined],
         [c3, 'Standard', 1, undefined], [c3, 'Standard', 2, '700000304'],
+        // Lot 8 : catégorie non vendue en ligne, vendue au guichet (décision de vente figée, invariant (t2))
+        [c1, 'Carré presse', 1, undefined],
     ] as Array<[Account, string, number, string | undefined]>) {
         await counterSale(ceSoir, ctrl, category, qty, phone);
     }
@@ -1348,9 +1371,9 @@ async function main(): Promise<void> {
     writeDemoIds(ids);
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);
 
-    // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7
-    log('invariants (a) à (q)…');
-    await assertTerrainInvariants('seed-demo');
+    // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7 ; lot 8 (T31) : (r)(s)(t)
+    log('invariants (a) à (t)…');
+    await assertRecetteInvariants('seed-demo');
 
     log(`OK en ${((Date.now() - started) / 1000).toFixed(1)}s`);
 }
