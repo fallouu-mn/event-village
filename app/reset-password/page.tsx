@@ -41,6 +41,26 @@ function storageWarning(action: string, err: unknown): void {
     console.warn(`[ResetPassword] stockage du navigateur indisponible (${action}) :`, err instanceof Error ? err.message : String(err));
 }
 
+/**
+ * Refus de Supabase Auth à la mise à jour (8.2 i) : on décide sur le code, jamais sur le texte, qui est en anglais
+ * et n'atteint que le journal.
+ */
+function passwordUpdateRefusalMessage(code: string | undefined): string {
+    switch (code) {
+        case 'same_password':
+            return 'Choisissez un mot de passe différent de l\'ancien.';
+        case 'weak_password':
+            return 'Ce mot de passe est trop faible. Choisissez-en un plus long ou moins courant.';
+        case 'session_expired':
+        case 'session_not_found':
+            return 'Votre demande de récupération a expiré. Recommencez depuis « Mot de passe oublié ».';
+        case 'over_request_rate_limit':
+            return 'Trop de tentatives. Patientez quelques instants avant de réessayer.';
+        default:
+            return 'Impossible de mettre à jour le mot de passe. Réessayez dans un instant.';
+    }
+}
+
 export default function ResetPasswordPage() {
     const router = useRouter();
     const toast = useToast();
@@ -241,7 +261,8 @@ export default function ResetPasswordPage() {
             const { error } = await supabase.auth.updateUser({ password });
 
             if (error) {
-                recordFailedAttempt(error.message || 'Impossible de mettre à jour le mot de passe.');
+                console.error('[ResetPassword] mise à jour refusée par Supabase Auth :', error.code ?? error.status, error.message);
+                recordFailedAttempt(passwordUpdateRefusalMessage(error.name === 'AuthSessionMissingError' ? 'session_not_found' : error.code));
                 return;
             }
 
@@ -280,8 +301,8 @@ export default function ResetPasswordPage() {
 
             router.replace('/login?reset=success');
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Une erreur inattendue s\'est produite.';
-            recordFailedAttempt(msg);
+            console.error('[ResetPassword] mise à jour du mot de passe en échec :', err);
+            recordFailedAttempt('Une erreur inattendue s\'est produite. Réessayez dans un instant.');
         } finally {
             setIsLoading(false);
         }

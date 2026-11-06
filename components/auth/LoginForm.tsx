@@ -57,6 +57,23 @@ const ERROR_MESSAGES: Record<string, string> = {
     session_expired: 'Le lien a expiré : demandez un nouveau code.',
 };
 
+/**
+ * Refus de Supabase Auth à la connexion par mot de passe (8.2 i) : on décide sur le code, jamais sur le texte, qui est
+ * en anglais et n'atteint que le journal. « Invalid login credentials » garde sa branche dans handlePasswordLogin.
+ */
+function signInRefusalMessage(code: string | undefined): string {
+    switch (code) {
+        case 'email_not_confirmed':
+            return 'Votre adresse email n\'est pas encore confirmée.';
+        case 'user_banned':
+            return 'Ce compte n\'est plus actif. Veuillez contacter le support.';
+        case 'over_request_rate_limit':
+            return 'Trop de tentatives. Patientez quelques instants avant de réessayer.';
+        default:
+            return 'Connexion impossible pour le moment. Réessayez dans un instant.';
+    }
+}
+
 /** Codes ?message= (information, pas une erreur) posés par l'activation d'un contrôleur. */
 const INFO_MESSAGES: Record<string, string> = {
     account_activated: 'Compte activé avec succès. Connectez-vous avec votre mot de passe.',
@@ -311,7 +328,9 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     if (resolveRes.status === 429) {
                         setIsLockedOut(true);
                         setLockoutRemaining(resolveData.remainingSeconds || LOCKOUT_DURATION_SECONDS);
-                        throw new Error(resolveData.error || 'Trop de requêtes. Verrouillage temporaire.');
+                        recordFailedAttempt(resolveData.error || 'Trop de requêtes. Verrouillage temporaire.');
+                        setIsLoading(false);
+                        return;
                     }
                     recordFailedAttempt('Aucun compte associé à ce numéro de téléphone.');
                     setIsLoading(false);
@@ -331,7 +350,10 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     setIsLoading(false);
                     return;
                 }
-                throw authResult.error;
+                console.error('[LoginForm] connexion refusée par Supabase Auth :', authResult.error.code ?? authResult.error.status, authResult.error.message);
+                recordFailedAttempt(signInRefusalMessage(authResult.error.code));
+                setIsLoading(false);
+                return;
             }
 
             if (authResult.data.user) {
@@ -339,8 +361,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             }
         } catch (err: unknown) {
             console.error('[LoginForm] Erreur connexion mot de passe:', err);
-            const msg = err instanceof Error ? err.message : 'Échec de la connexion. Veuillez réessayer.';
-            recordFailedAttempt(msg);
+            recordFailedAttempt('Échec de la connexion. Vérifiez votre réseau, puis réessayez.');
             setIsLoading(false);
         }
     };
@@ -374,7 +395,8 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     setIsLockedOut(true);
                     setLockoutRemaining(resolveData.remainingSeconds || LOCKOUT_DURATION_SECONDS);
                 }
-                throw new Error(resolveData.error || 'Aucun compte associé à ce numéro de téléphone. Veuillez vous inscrire.');
+                setErrorMessage(resolveData.error || 'Aucun compte associé à ce numéro de téléphone. Veuillez vous inscrire.');
+                return;
             }
 
             const res = await fetch('/api/auth/send-otp', {
@@ -389,7 +411,9 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     setIsLockedOut(true);
                     setLockoutRemaining(data.remainingSeconds || LOCKOUT_DURATION_SECONDS);
                 }
-                throw new Error(data.error || 'Impossible d\'envoyer le code SMS.');
+                // 502 : le texte vient du fournisseur de SMS (code réseau, statut HTTP), il reste au journal du serveur.
+                setErrorMessage(res.status === 502 ? 'Impossible d\'envoyer le code SMS. Réessayez dans un instant.' : data.error || 'Impossible d\'envoyer le code SMS.');
+                return;
             }
 
             setOtpSent(true);
@@ -397,8 +421,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             setSuccessMessage(`Code de confirmation envoyé par SMS au ${normalizedPhone}.`);
         } catch (err: unknown) {
             console.error('[LoginForm] Erreur envoi OTP:', err);
-            const msg = err instanceof Error ? err.message : 'Impossible d\'envoyer le code SMS.';
-            setErrorMessage(msg);
+            setErrorMessage('Impossible d\'envoyer le code SMS. Vérifiez votre réseau, puis réessayez.');
         } finally {
             setIsLoading(false);
         }
@@ -434,7 +457,9 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                 } else {
                     recordFailedAttempt('Code OTP incorrect ou expiré.');
                 }
-                throw new Error(verifyData.error || 'Code OTP incorrect.');
+                setErrorMessage(verifyData.error || 'Code OTP incorrect.');
+                setIsLoading(false);
+                return;
             }
 
             const supabase = getBrowserClient();
@@ -458,8 +483,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             }
         } catch (err: unknown) {
             console.error('[LoginForm] Erreur validation OTP:', err);
-            const msg = err instanceof Error ? err.message : 'Échec de la vérification OTP.';
-            setErrorMessage(msg);
+            setErrorMessage('Échec de la vérification du code. Vérifiez votre réseau, puis réessayez.');
             setIsLoading(false);
         }
     };

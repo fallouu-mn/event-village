@@ -259,7 +259,8 @@ export default function ForgotPasswordPage() {
                     setErrorMessage(null);
                     return;
                 }
-                throw new Error(data.error || "Impossible d'envoyer le code SMS.");
+                setErrorMessage(data.error || "Impossible d'envoyer le code SMS.");
+                return;
             }
 
             setStep(2);
@@ -267,8 +268,8 @@ export default function ForgotPasswordPage() {
             setOtpCode('');
             setSuccessMessage(`Code de récupération envoyé par SMS au ${normalizedPhone}.`);
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : "Impossible d'envoyer le code SMS.";
-            setErrorMessage(msg);
+            console.error('[ForgotPassword] envoi du code SMS en échec :', err);
+            setErrorMessage("Impossible d'envoyer le code SMS. Vérifiez votre réseau, puis réessayez.");
         } finally {
             setIsLoading(false);
         }
@@ -348,8 +349,8 @@ export default function ForgotPasswordPage() {
 
             router.push('/reset-password');
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Échec de la vérification.';
-            recordFailedAttempt(msg);
+            console.error('[ForgotPassword] vérification du code en échec :', err);
+            recordFailedAttempt('Échec de la vérification du code. Vérifiez votre réseau, puis réessayez.');
         } finally {
             setIsLoading(false);
         }
