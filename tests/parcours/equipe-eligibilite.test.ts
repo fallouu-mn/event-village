@@ -15,8 +15,12 @@
  *  7. security-fixes T2.3 : compte CLIENT par PATCH → requires_confirmation sans aucun effet, puis confirm_promotion
  *     → rôle CONTROLEUR, compte ACTIF, affectation créée.
  *
- * Non portés, déjà couverts : T6 et T11 (partenaire B par pilotage-equipe-caisse:112), T8 et T9 (scan, acces-fenetre:116,
- * dont le contrat a changé : 200 { result }).
+ *  8. T6 (invitation) : événement d'un autre partenaire → 403 « propriétaire », seul ou mêlé à un événement à soi ;
+ *     aucun compte créé, aucune affectation, aucun SMS. Ajouté avant la suppression du legacy : T6 était annoncé couvert
+ *     par pilotage-equipe-caisse:112, qui vise une autre route ; retirer ce contrôle ne faisait échouer aucun test.
+ *
+ * Non portés, déjà couverts : T11 (même code que T6 par la normalisation eventId vers event_ids, cas 5), T8 et T9 (scan,
+ * acces-fenetre:116, dont le contrat a changé : 200 { result }).
  * Écarts au legacy : événements atteints par les RPC de transition ; ANNULE ajouté (même règle, jamais testé) ;
  * T1 à T3 visent un numéro neuf pour prouver qu'aucun compte n'est créé.
  *
@@ -134,6 +138,24 @@ describe('8.2 v — POST /api/partner/team/invite selon le statut de l’événe
         const accounts = await accountsWithPhone(phone);
         assert.equal(accounts.length, 1, 'un compte créé pour ce numéro');
         assert.deepEqual(await assignedEvents(String(accounts[0].id)), [evValide.eventId, evPublie.eventId].sort(), 'les deux événements sont affectés');
+    });
+
+    test('T6 : événement d’un autre partenaire → 403, aucun compte créé, aucune affectation, aucun SMS', async () => {
+        const cases: Array<{ label: string; eventIds: string[] }> = [
+            { label: 'seul', eventIds: [evB.eventId] },
+            { label: 'mêlé à un événement à soi', eventIds: [evValide.eventId, evB.eventId] },
+        ];
+        for (const { label, eventIds } of cases) {
+            const phone = randomSenegalPhone('76');
+            const r = await invite(partnerA, { phone, event_ids: eventIds, first_name: 'Amadou', last_name: 'Ba' });
+            assert.equal(r.status, 403, `${label} : ${show(r)}`);
+            assert.match(String(r.body.error), /propriétaire/i, `${label} : ${show(r)}`);
+            assert.deepEqual(await accountsWithPhone(phone), [], `${label} : aucun compte créé pour ce numéro`);
+            assert.equal(getFakes().sms.messagesTo(phone).length, 0, `${label} : aucun SMS envoyé à ce numéro`);
+        }
+        const { data, error } = await service.from('event_controllers').select('id').eq('event_id', evB.eventId);
+        assert.equal(error, null, `affectations de l’événement du partenaire B : ${error?.message}`);
+        assert.deepEqual(data ?? [], [], 'aucune affectation sur l’événement du partenaire B');
     });
 
     test('T7 : événement déjà affecté → 200, aucune seconde ligne', async () => {
