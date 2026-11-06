@@ -11,6 +11,11 @@
  * réel ; statut exact SUPPRIME (le legacy admettait aussi le repli SUSPENDU, plus strict ici) ; commande à régler sur
  * place plutôt qu'une commande SUCCESS sans paiement, qui violerait l'invariant (b).
  * Suite existante sans after() : aucun contrôle d'invariants ajouté, les suites suivantes lisent toute la base.
+ *
+ * Lot 8 (8.1), test modifié et signalé au rapport : le dossier app/api/dev est imposé par le contrat 3.13 et par
+ * /api/dev/samirpay/[action]. Il est admis à une condition, plus forte que le refus du seul nom : rien n'y entre dans un
+ * build, donc il ne contient que des route.dev.ts, extension que next.config.mjs n'active qu'en phase de développement.
+ * Tout autre dossier de débogage reste refusé.
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -34,16 +39,23 @@ function anonClient() {
 describe('Routes de débogage et anonymisation', () => {
     test('aucune route de test ou de débogage sous app/api', () => {
         const apiDir = path.resolve(process.cwd(), 'app/api');
+        const devOnlyDir = path.join(apiDir, 'dev');
+        const relative = (p: string) => path.relative(process.cwd(), p).replace(/\\/g, '/');
         const offenders: string[] = [];
         const walk = (p: string) => {
+            const insideDevOnly = p === devOnlyDir || p.startsWith(devOnlyDir + path.sep);
             for (const e of fs.readdirSync(p, { withFileTypes: true })) {
-                if (!e.isDirectory()) continue;
                 const full = path.join(p, e.name);
-                if (/^(test|debug|dev|qa)([-_].*)?$|[-_](test|debug)$/i.test(e.name)) offenders.push(path.relative(process.cwd(), full).replace(/\\/g, '/'));
+                if (!e.isDirectory()) {
+                    if (insideDevOnly && e.name !== 'route.dev.ts') offenders.push(relative(full));
+                    continue;
+                }
+                if (full !== devOnlyDir && /^(test|debug|dev|qa)([-_].*)?$|[-_](test|debug)$/i.test(e.name)) offenders.push(relative(full));
                 walk(full);
             }
         };
         walk(apiDir);
+        assert.ok(fs.existsSync(path.join(devOnlyDir, 'samirpay', '[action]', 'route.dev.ts')), 'témoin : la route de développement attendue est présente et le contrôle la parcourt');
         assert.deepEqual(offenders, [], `routes de débogage présentes :\n${offenders.join('\n')}`);
     });
 
