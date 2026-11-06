@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { accountBalance } from '@/lib/finance/ledger';
@@ -98,8 +99,6 @@ export async function GET(request: NextRequest) {
             withdrawals: withdrawals.rows,
         });
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Erreur interne.';
-        console.error('[API /api/partner/finance] Erreur:', message);
-        return NextResponse.json({ error: message }, { status: 500 });
+        return apiFailure('GET /api/partner/finance', error, { message: 'Finances momentanément indisponibles.', code: 'FINANCE_UNAVAILABLE', status: 500 });
     }
 }

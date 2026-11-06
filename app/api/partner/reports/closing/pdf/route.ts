@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { PartnerDashboardService } from '@/lib/partner/partner-dashboard.service';
 
@@ -46,7 +47,6 @@ export async function GET(req: NextRequest) {
         if (err.message === 'ACCES_REFUSE_AUTRE_TENANT') {
             return NextResponse.json({ error: 'Accès refusé. Cet événement appartient à un autre partenaire.' }, { status: 403 });
         }
-        console.error('[GET /api/partner/reports/closing/pdf] Erreur:', err);
-        return NextResponse.json({ error: err.message || 'Erreur serveur.' }, { status: 500 });
+        return apiFailure('GET /api/partner/reports/closing/pdf', err, { message: 'Rapport de clôture momentanément indisponible.', code: 'CLOSING_REPORT_UNAVAILABLE', status: 500 });
     }
 }

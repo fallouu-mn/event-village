@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
 import { fetchAllRows, ticketsOfEvents, toPartnerSummary } from '@/lib/partner/partner-dashboard.service';
@@ -87,8 +88,6 @@ export async function GET(req: NextRequest) {
             recentOrders: recentOrdersRes.data ?? [],
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/partner/metrics] Erreur:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('GET /api/partner/metrics', err, { message: 'Indicateurs momentanément indisponibles.', code: 'METRICS_UNAVAILABLE', status: 500 });
     }
 }

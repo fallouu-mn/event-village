@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner, serverIsAdmin } from '@/lib/auth/session';
 import { EventService, EventServiceError } from '@/lib/events/event.service';
 
@@ -27,10 +28,8 @@ export async function GET(
 
         return NextResponse.json({ success: true, event });
     } catch (error: unknown) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Événement introuvable.' },
-            { status: 404 }
-        );
+        // A26 (AM7) : statut 404 conservé, une panne de lecture reste présentée comme un événement introuvable.
+        return apiFailure('GET /api/partner/events/[id]', error, { message: 'Événement introuvable.', code: 'EVENT_NOT_FOUND', status: 404 });
     }
 }
 
@@ -95,11 +94,7 @@ export async function DELETE(
         return NextResponse.json(result);
     } catch (error: unknown) {
         if (error instanceof EventServiceError) return NextResponse.json(error.toBody(), { status: error.status });
-        // Autres refus : profil partenaire introuvable (message français de resolvePartnerId).
-        console.error('[API partner/events/[id] DELETE]', error instanceof Error ? error.message : String(error));
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Échec de la suppression.' },
-            { status: 400 }
-        );
+        // Autres refus : profil partenaire introuvable (PublicError de resolvePartnerId), statut 400 conservé.
+        return apiFailure('DELETE /api/partner/events/[id]', error, { message: 'Suppression de l’événement impossible pour le moment.', code: 'EVENT_DELETE_FAILED', status: 400 });
     }
 }

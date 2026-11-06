@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import {
@@ -127,8 +128,6 @@ export async function GET(request: NextRequest) {
             },
         });
     } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : "Erreur.";
-        console.error('[API /api/partner/stats] Erreur:', message);
-        return NextResponse.json({ error: message }, { status: 500 });
+        return apiFailure('GET /api/partner/stats', e, { message: 'Statistiques momentanément indisponibles.', code: 'STATS_UNAVAILABLE', status: 500 });
     }
 }
