@@ -1,6 +1,6 @@
 # Déploiement — montage du futur projet de production depuis zéro
 
-**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 7, billet hors ligne, scanner, budget des SMS optionnels, interrupteurs des services). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet de production déjà monté (02/11) se met à jour par la section 3 bis.
+**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 8, canaux de vente, mode d'essai, migrations `20261106…`, retrait de `legacy-peer-deps`). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet monté le 02/11 est devenu event-village-dev, le projet d'essai manuel : il suit `docs/essai-local.md`, et la production se fera sur un projet neuf.
 
 **Principe :** la production se fait sur un projet Supabase **neuf**. On n'y copie rien du projet de test : ni données, ni comptes, ni clés. Le schéma vient uniquement des migrations du dépôt.
 
@@ -35,7 +35,7 @@ supabase db push
 
 Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éditeur SQL : **toutes** les lignes doivent être `OK`. Sur un projet neuf, cette vérification doit passer sans appliquer `02-hotfix.sql` (la migration du lot 1A est déjà incluse). Depuis le lot 7, le script attend **7** aides RLS (la 7e est `ticket_category_private_read`, migration `20261105000003`) : exécuté avant les migrations du lot 7, il signale à tort la ligne « 1A.3 aides RLS exécutables par anon et authenticated, STABLE, search_path fixé ».
 
-Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7). Le lot 7 n'ajoute ni ne change aucune tâche planifiée.
+Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7). Les lots 7 et 8 n'ajoutent ni ne changent aucune tâche planifiée.
 
 ## 3 bis. Projet déjà en service : appliquer seulement les migrations du lot 7
 
@@ -79,16 +79,56 @@ Toutes sont rejouables (gardes `IF [NOT] EXISTS`, `CREATE OR REPLACE`, `ON CONFL
 
 **Déployer l'application du lot 7 dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Après la migration 5, un QR doit porter la version de son secret : la route de scan du lot 6 ne l'envoie pas, et chacun de ses scans de QR serait refusé (« QR expiré »). Inversement, l'application du lot 7 appelle des fonctions qui n'existent qu'après les migrations (codes hors ligne, chiffres du contrôleur, saisie manuelle, devis du guichet).
 
+## 3 ter. Projet déjà en service : appliquer seulement les migrations du lot 8
+
+Cas d'un projet où les migrations jusqu'au lot 7 compris (`20261105000001` à `20261105000007`) sont déjà appliquées. Sur un projet neuf, la section 3 suffit : `db push` applique tout. Le projet d'essai event-village-dev suit `docs/essai-local.md`, section 3. Les migrations `20261103…` et `20261105…` sont **gelées**. Le lot 8 apporte six migrations nouvelles, à appliquer dans cet ordre, celui des noms, que suit `db push`.
+
+| Ordre | Migration | Ce qu'elle fait |
+|---|---|---|
+| 1 | `20261106000001_lot8_canaux.sql` | Deux réglages par catégorie : `sale_online` (vendue en ligne) et `sale_counter` (vendue au guichet). `is_visible` reste, comme miroir de `sale_online`. Reprise sans changement de comportement : `sale_online` = `is_visible`, `sale_counter` = vrai. Contrôle en base : achat en ligne refusé (`CATEGORY_NOT_SOLD_ONLINE`, par `ticket_sale_problems`), vente au guichet refusée (`CATEGORY_NOT_SOLD_AT_COUNTER`, par `counter_sale` et `counter_sale_quote`). La décision est figée à la vente : `stock_reservations.sale_online_at_checkout` et `tickets.sale_decision`, immuable. Un bloc de contrôle arrête la migration, avec un message en français, si une catégorie masquée a un maximum par commande hors de 1 à 50 ou un prix décimal. |
+| 2 | `20261106000002_lot8_essai.sql` | Colonnes `payments.simulated` et `cashouts.simulated`, immuables, posées par trigger d'après l'en-tête `x-ev-simulation`, que seul un serveur d'essai envoie. Une opération simulée ne peut pas partir en réel, ni l'inverse. **Aucun effet en production** : l'en-tête n'y est jamais envoyé, et toutes les lignes restent à faux. |
+| 3 | `20261106000003_lot8_paiement.sql` | Second paiement réussi d'un même panier : remboursé par le module de cashout, sans billet, ni vente, ni commission, avec l'avis `REFUND_PAID` au client et l'alerte `ADMIN_DUPLICATE_PAYMENT`, nouveau type de notification. Ordre unique des verrous dans `payment_confirm` et `event_cancel` (événement, paiements, catégories, transferts, billets), qui supprime leur interblocage. Conséquence : deux confirmations d'un même événement passent l'une après l'autre. `notif_payments_other_success` transmet `payment_target`, pour que l'avis de paiement d'un abonnement mène à `/partner/subscription`. Dépend de `20261105000003` et `20261105000007`. |
+| 4 | `20261106000004_lot8_commissions.sql` | Plafond des commissions de parrainage : N1 = min(calcul, revenu net d'Event Village), N2 = min(calcul, net − N1), même budget au remboursement partiel. Nouvelle colonne `referral_commissions.uncapped_amount` : montant calculé d'une ligne plafonnée, NULL sinon. La grille ne change pas. |
+| 5 | `20261106000005_lot8_scan.sql` | `ticket_scan` accepte `replay_only` dans ses paramètres : un scan repris après une sortie de l'application ne rend que le verdict d'une ligne existante (`not_processed` sinon) et ne crée jamais d'entrée. Signature inchangée. |
+| 6 | `20261106000006_lot8_profil.sql` | Nouvelle fonction `partner_profile_update` : la fiche et les activités du partenaire s'enregistrent en une seule transaction. |
+
+Aucune ne crée de table, de réglage ni de tâche planifiée, aucune n'ajoute d'aide RLS. Toutes sont rejouables, sans `BEGIN` ni `COMMIT` de transaction, et chaque fonction créée ou recréée est `SECURITY DEFINER`, réservée au service_role.
+
+**Contrôles avant d'appliquer :**
+
+1. Depuis le poste de l'opérateur :
+
+   ```bash
+   supabase link --project-ref <ref-du-projet>
+   supabase migration list        # 20261105000007 présent des deux côtés, les six 20261106… en local seulement
+   supabase db push --dry-run     # doit lister exactement les 6 fichiers 20261106000001 à …06, dans cet ordre
+   ```
+
+2. **Si la liste contient autre chose** : même règle qu'en 3 bis. S'arrêter, sans `--include-all` et sans `supabase migration repair`.
+
+3. Dans l'éditeur SQL, le contrôle de la reprise. Attendu : 0 et 0. Sinon, corriger ces catégories avant `db push`.
+
+   ```sql
+   select count(*) filter (where max_per_order not between 1 and 50) as maximum_hors_regle,
+          count(*) filter (where price <> trunc(price)) as prix_decimal
+     from public.ticket_categories
+    where not is_visible;
+   ```
+
+4. Appliquer : `supabase db push`. Puis exécuter `03-verification.sql` : tout `OK`. La liste blanche des aides RLS reste à 7.
+
+**Déployer l'application du lot 8 dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Elle lit des colonnes et appelle une fonction qui n'existent qu'après ces migrations (`sale_online`, `sale_counter`, `cashouts.simulated`, `partner_profile_update`).
+
 ## 4. Données de référence (sans données de test)
 
 - `supabase/seed.sql` n'est **pas** joué par `db push`. Les données de référence nécessaires au fonctionnement sont créées par les migrations :
-  - `platform_settings` : **37 clés** après le lot 7 (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
+  - `platform_settings` : **37 clés** depuis le lot 7, le lot 8 n'en ajoute aucune (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
   - `referral_config` (4 barèmes) ;
-  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs) et `20261105000007` (email de `TRANSFER_RECEIVED`).
+  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs), `20261105000007` (email de `TRANSFER_RECEIVED`) et `20261106000003` (alerte `ADMIN_DUPLICATE_PAYMENT`).
 
   Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33 ; après celles du lot 7, 37 (33 + 5 clés nouvelles − `notif.sms_daily_alert`).
 - `subscription_plans` n'est **pas** rempli par les migrations : ses lignes ne figurent que dans `supabase/seed.sql`, qui ne doit pas être joué en production. La table reste vide tant que le client n'a pas validé les formules et leurs tarifs (point de l'audit) ; elles seront alors créées par une migration dédiée.
-- **Ne jamais exécuter** `npm run seed:test` ni `tests/seed/seed-test.ts` contre ce projet : ce seed crée des comptes de test avec un mot de passe connu. Le garde-fou `tests/helpers/env.ts` refuse de toute façon une URL non locale.
+- **Ne jamais exécuter** `npm run seed:test` ni `tests/seed/seed-test.ts` contre ce projet : ce seed crée des comptes de test avec un mot de passe connu. Le garde-fou `tests/helpers/env.ts` refuse de toute façon une URL non locale. Même interdiction pour `npm run seed:dev`, réservé au projet d'essai.
 - Avant l'ouverture, vérifier et corriger les valeurs métier contradictoires relevées par l'audit (taux de parrainage `referral_config` de la migration `0011` contre CDC §95-§97, tarifs des packs) : traité dans un lot ultérieur, à valider avec le client.
 
 ### 4 bis. Réglages des notifications (`notif.*`, lots 6 et 7)
@@ -170,6 +210,10 @@ Trois quotas en base, de même nature que ceux du lot 4 (chaque appel compte, fe
 | `OFFLINE_CODES_PER_USER_HOUR` | 60 | même quota, par compte et par heure, tous billets confondus |
 | `SCAN_LOOKUP_PER_SCANNER_MIN` | 20 | vérifications de saisie manuelle par contrôleur et par minute (`POST /api/controller/scan/lookup`, premier temps de la saisie manuelle, guide `docs/guide-organisateur-entrees.md`) |
 
+### 5.3 ter Lot 8 : aucune variable nouvelle en production
+
+Le lot 8 n'ajoute aucune variable à l'hébergeur. Les variables suivantes servent au seul mode d'essai (`docs/essai-local.md`) et **ne doivent jamais y figurer** : `EV_DEV_FAKE_SERVICES_URL`, `EV_DEV_FAKE_PORT`, `EV_DEV_APP_PORT`, `EV_DEV_PROJECT_REF`, `EV_DEV_SEED_PASSWORD`, `EV_DEV_TUNNEL_URL`, `EV_ESSAI_SIMULATION`. `EV_ESSAI_SIMULATION`, posée par `scripts/dev/essai-start.mjs`, reste sans effet si `SAMIRPAY_API_URL` n'est pas une adresse locale.
+
 ### 5.4 Facultatives existantes
 
 | Variable | Défaut | Rôle |
@@ -188,7 +232,7 @@ Trois quotas en base, de même nature que ceux du lot 4 (chaque appel compte, fe
 | `SCAN_PER_SCANNER_10S`, `CASH_COLLECT_PER_SCANNER_MIN`, `LIVE_CODE_PER_USER_MIN`, `RESOLVE_PHONE_PER_IP_HOUR`, `VERIFY_OTP_PER_PHONE_15MIN`, `CONTROLLER_SETUP_PER_PHONE_HOUR`, `PARTNER_REGISTER_PER_IP_HOUR`, `INVITE_PER_PARTNER_HOUR`, `INVITE_PER_PHONE_DAY`, `REGISSEUR_PIN_PER_SHIFT_15MIN` | 30, 20, 60, 30, 10, 10, 10, 20, 3, 5 | quotas en base (lot 4) : chaque tentative compte ; au-delà, HTTP 429 ; garde injoignable, HTTP 503 |
 | `WITHDRAWAL_REQUEST_PER_USER_HOUR`, `COUNTER_RECEIPT_PER_SHIFT_DAY`, `SCAN_INCIDENT_REPORT_PER_SCANNER_MIN`, `SCAN_INCIDENT_LOG_PER_SCANNER_MIN` | 10, 500, 10, 60 | demandes de retrait par compte et par heure, reçus SMS du guichet par caisse et par jour, incidents de scan déclarés et écrits par minute (lot 5) |
 | `DOCUMENT_UPLOADS_PER_IP_HOUR` | 20 | dépôts publics de pièces d'inscription partenaire, par IP et par heure |
-| `EV_INTEGRATIONS` | `real` | **ne pas définir** (valeur `fake` réservée aux tests, refusée en production) |
+| `EV_INTEGRATIONS` | `real` | **ne pas définir**. `fake` n'est accepté qu'en développement (`npm run dev`, mode d'essai) et en test ; ailleurs le serveur le refuse, y compris si `NODE_ENV` est absent. Le refus survient au premier appel d'une route ou d'un adaptateur, pas au démarrage, et `/dev/paiements` n'existe pas dans le build |
 
 Variables qui ne sont plus lues (à retirer si elles existent dans l'hébergeur) : `SAMIRPAY_CASHIN_URL`, `SAMIRPAY_CASHOUT_URL`, `SAMIRPAY_SOLDE_URL`, `SAMIRPAY_STATUS_URL`, `SAMIRPAY_WEBHOOK_SECRET` (lot 2).
 
@@ -232,8 +276,9 @@ Avant l'ouverture des ventes, fixer avec le client, d'après son budget MTarget 
 
 - **HTTPS obligatoire** (déjà exigé par `NEXT_PUBLIC_APP_URL`) : les navigateurs n'enregistrent un service worker et n'ouvrent la caméra que sur une origine sécurisée. Sans HTTPS, ni billet hors ligne, ni scanner.
 - **Service worker** : `public/sw.js`, servi à la racine (`/sw.js`, portée `/`). Il ne met en cache que la page `/billet/hors-ligne`, ses fichiers statiques et les icônes, jamais une réponse de `/api/` (cache `ev-hors-ligne-lot7-1` ; les anciens caches `event-village-*` sont supprimés à l'activation). C'est un changement par rapport au lot 6, où le service worker ne mettait rien en cache.
-- **Compression des réponses** : le lot de codes hors ligne d'un billet (48 h au plus) reste sous 40 Ko une fois compressé en gzip (contrôlé par `tests/parcours/hors-ligne-codes.test.ts`). Le serveur Next compresse ses réponses (`compress: true` dans `next.config.mjs`) ; derrière un proxy ou un CDN, vérifier que la compression des réponses `/api/` est gardée (lot 8, au choix de l'hébergeur).
-- **Images** : `sharp` 0.33.5 est une dépendance figée de l'application (optimisation des images par Next.js) ; `package-lock.json` contient ses binaires Linux x64. Installer par `npm ci` sur la plate-forme de l'hébergeur ; `.npmrc` garde `legacy-peer-deps=true`.
+- **Compression des réponses** : le lot de codes hors ligne d'un billet (48 h au plus) reste sous 40 Ko une fois compressé en gzip (contrôlé par `tests/parcours/hors-ligne-codes.test.ts`). `next start` ne compresse aucune route API, malgré `compress: true` (constat du lot 8) : depuis `fix(8.2x)`, `GET /api/tickets/[id]/offline-codes` sert elle-même du gzip quand le navigateur l'accepte. Derrière un proxy ou un CDN, vérifier que ce corps et son en-tête `Content-Encoding` sont transmis tels quels, au choix de l'hébergeur.
+- **Images** : `sharp` 0.33.5 est une dépendance figée de l'application (optimisation des images par Next.js) ; `package-lock.json` contient ses binaires Linux x64. Installer par `npm ci` sur la plate-forme de l'hébergeur, jamais par `npm install`. Depuis `fix(8.2w)`, le dépôt n'a plus de `.npmrc` ni de `legacy-peer-deps` : `package-lock.json` est régénéré avec npm 10, et `npm install` sous npm 11 lui retirerait des entrées que npm 10 exige.
+- **Paquets de test en production** : `npm ci --omit=dev` garde désormais `@playwright/test`, `playwright` et `playwright-core` (environ 19 Mo). `next` déclare `@playwright/test` en dépendance optionnelle, et le lock les marque `devOptional`. L'application ne les charge pas.
 
 ## 6. Paiements SamirPay (lot 2)
 
@@ -381,6 +426,7 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - Tâches planifiées : les 9 tâches actives, réponses 200 dans `net._http_response` (7.2, étape 5).
 - Parcours manuels : inscription client avec OTP, inscription partenaire puis validation par l'administration, création d'un événement, achat d'un billet en paiement réel de faible montant (SMS de confirmation et notification dans la cloche dans la minute), scan par un contrôleur ; si les clés VAPID sont posées, activation du push et bouton d'essai.
 - Lot 7 : `select count(*) from platform_settings;` donne 37, et les trois `features.*` valent `false` (`select key, value from platform_settings where key like 'features.%';`) ; `/halls` répond « page introuvable ». Sur un téléphone Android et un iPhone, installer l'application (`docs/installer-application.md`), ouvrir le billet de l'essai la veille avec du réseau, passer en mode avion, l'afficher par « Afficher mes billets hors ligne » : le QR change toutes les 20 secondes et le contrôleur, en ligne, le valide. Au scanner : un résultat plein écran par cas, une vibration sur Android, aucun son ; mode avion sur le téléphone du contrôleur : bandeau « Hors ligne : aucune entrée ne peut être validée » (`docs/guide-organisateur-entrees.md`).
+- Lot 8 : aucune variable `EV_` dans l'hébergeur (5.3 ter) ; `/dev/paiements` répond « page introuvable » ; `select count(*) from payments where simulated;` et la même requête sur `cashouts` donnent 0.
 - Surveillance : journaux de l'hébergeur, **Logs > API** de Supabase et page **Notifications** de l'administration (SMS à l'issue incertaine, échecs) pendant les premiers jours.
 
 ## 10. Points ouverts d'exploitation
@@ -390,5 +436,5 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - SMS à l'issue incertaine (délai MTarget dépassé) : jamais renvoyés automatiquement ; leur vérification se fait auprès de MTarget, par l'opérateur (procédure à convenir avec le fournisseur).
 - Email : compte Resend du client et domaine d'envoi vérifié à configurer ; d'ici là, le canal email reste désactivé.
 - Interrupteurs `features.*` : à ouvrir seulement quand le client aura validé les frais des salles, des tables et des commandes (4 ter).
-- Compression des réponses `/api/` gardée par l'hébergeur ou son proxy, nécessaire au lot de codes hors ligne (5.6) : à vérifier au lot 8.
+- Lot de codes hors ligne : compressé par sa route depuis le lot 8 ; vérifier qu'aucun proxy de l'hébergeur ne retire `Content-Encoding` (5.6).
 - Billet hors ligne sur iPhone : stockage de l'application installée séparé de celui de Safari, aucune vibration au scanner ; aucun test automatisé ne couvre l'iPhone (`docs/installer-application.md`).
