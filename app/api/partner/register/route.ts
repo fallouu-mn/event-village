@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { randomInt } from 'crypto';
 import { RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -121,14 +122,14 @@ export async function POST(req: NextRequest) {
         });
 
         if (authError) {
-            console.error('[API /api/partner/register] Erreur auth admin:', authError);
-            if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
+            // Même lecture que /api/auth/register : Supabase Auth écrit « has already been registered ».
+            if (/already (been )?registered|already exists/i.test(authError.message)) {
                 return NextResponse.json(
                     { error: 'Ce numéro de téléphone ou cet email est déjà associé à un compte. Veuillez vous connecter.' },
                     { status: 409 }
                 );
             }
-            return NextResponse.json({ error: authError.message }, { status: 400 });
+            return apiFailure('POST /api/partner/register, compte de connexion', authError, { message: 'Compte non créé. Vérifiez les informations saisies et réessayez.', code: 'ACCOUNT_CREATE_FAILED', status: 400 });
         }
 
         const userId = authData.user.id;
@@ -231,8 +232,6 @@ export async function POST(req: NextRequest) {
             message: `Dossier enregistré. Un code SMS de vérification a été envoyé au ${normalizedPhone}.`,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/partner/register] Exception:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('POST /api/partner/register', err, { message: 'Inscription momentanément impossible. Réessayez.', code: 'PARTNER_REGISTER_FAILED' });
     }
 }

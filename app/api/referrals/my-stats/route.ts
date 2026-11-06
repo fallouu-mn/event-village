@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { accountBalance } from '@/lib/finance/ledger';
 
@@ -137,7 +138,6 @@ export async function GET(req: NextRequest) {
             recentCommissions: commissions?.slice(0, 10) || [],
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('GET /api/referrals/my-stats', err, { message: 'Statistiques de parrainage momentanément indisponibles.', code: 'REFERRAL_STATS_UNAVAILABLE' });
     }
 }

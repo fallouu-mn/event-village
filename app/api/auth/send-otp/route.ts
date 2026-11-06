@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { randomInt } from 'crypto';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
@@ -118,8 +119,6 @@ export async function POST(req: NextRequest) {
             recipient: normalizedPhone,
         });
     } catch (error: unknown) {
-        const errorMsg = error instanceof Error ? error.message : 'Erreur interne du serveur';
-        console.error('[API send-otp] Exception:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('POST /api/auth/send-otp', error, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
     }
 }

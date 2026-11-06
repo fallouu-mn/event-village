@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { ACCOUNT_OTP_PURPOSES, otpFailureMessage, verifyStoredOtp, type OtpPurpose } from '@/lib/auth/otp-store';
@@ -125,8 +126,6 @@ export async function POST(req: NextRequest) {
             message: 'Numéro de téléphone vérifié avec succès.',
         });
     } catch (error: unknown) {
-        const errorMsg = error instanceof Error ? error.message : 'Erreur interne du serveur';
-        console.error('[API verify-otp] Exception:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('POST /api/auth/verify-otp', error, { message: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'OTP_VERIFY_FAILED' });
     }
 }

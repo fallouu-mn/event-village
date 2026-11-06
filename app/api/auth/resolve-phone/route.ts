@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
 import { getServerEnv } from '@/lib/env';
@@ -70,7 +71,6 @@ export async function POST(req: NextRequest) {
             role: userRow.role,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('POST /api/auth/resolve-phone', err, { message: 'Recherche du compte momentanément indisponible. Réessayez.', code: 'ACCOUNT_LOOKUP_UNAVAILABLE' });
     }
 }

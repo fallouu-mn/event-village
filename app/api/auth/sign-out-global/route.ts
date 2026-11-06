@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 
@@ -25,7 +26,6 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ success: true });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        return apiFailure('POST /api/auth/sign-out-global', err, { message: 'Déconnexion de tous les appareils impossible. Réessayez.', code: 'SIGN_OUT_FAILED' });
     }
 }

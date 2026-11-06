@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { startTicketCheckout } from '@/lib/payments/checkout.service';
 import { PaymentInputError, paymentService } from '@/lib/payments/payment.service';
@@ -67,9 +68,7 @@ export async function POST(req: NextRequest) {
         if (err instanceof PaymentInputError) {
             return NextResponse.json({ success: false, error: err.message, code: err.code }, { status: err.httpStatus });
         }
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('[API /api/payments/create] erreur :', message);
-        // Erreurs métier de résolution de la cible (commande d'un tiers, déjà payée…) : 400
-        return NextResponse.json({ success: false, error: message }, { status: 400 });
+        // Erreurs métier de résolution de la cible (commande d'un tiers, déjà payée…) : PublicError, 400
+        return apiFailure('POST /api/payments/create', err, { message: 'Paiement impossible pour le moment. Réessayez.', code: 'PAYMENT_CREATE_FAILED', status: 400 });
     }
 }
