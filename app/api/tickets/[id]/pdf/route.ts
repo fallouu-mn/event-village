@@ -72,7 +72,7 @@ export async function GET(
         // 4. Contrôle de validité du billet
         if (ticket.status === 'ANNULE' || ticket.status === 'REMBOURSE' || ticket.status === 'REMBOURSEMENT_EN_COURS') {
             return NextResponse.json(
-                { error: `Ce billet n'est plus valide (statut: ${ticket.status}) et ne peut pas être téléchargé.` },
+                { error: 'Ce billet n\'est plus valide et ne peut pas être téléchargé.' },
                 { status: 400 }
             );
         }

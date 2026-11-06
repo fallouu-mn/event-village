@@ -551,9 +551,14 @@ function pdfAmount(n: number, suffix = 'FCFA'): string {
     return escapePdfText(`${n.toLocaleString('fr-FR')} ${suffix}`);
 }
 
-/** Champ CSV (séparateur point-virgule) : guillemets si nécessaire. */
+/**
+ * Champ CSV (séparateur point-virgule) : guillemets si nécessaire. Anomalie A23 (AM1) : un TEXTE commençant par un
+ * caractère de formule reçoit une apostrophe, sinon un titre d'événement s'évaluerait à l'ouverture dans un tableur.
+ * Un nombre reste un nombre, négatif compris (lignes de remboursement de la synthèse).
+ */
 function csvField(value: string | number): string {
-    const s = String(value);
+    const text = String(value);
+    const s = typeof value === 'string' && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
     return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
