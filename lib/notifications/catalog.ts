@@ -881,7 +881,7 @@ const CATALOG = {
     }),
     PAYMENT_SUCCESS: define('PAYMENT_SUCCESS', {
         label: 'Paiement confirmé', channels: ['IN_APP'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'PAYMENT_SUCCESS',
-        link: () => '/orders',
+        link: (d) => (field(d, 'payment_target') === 'SUBSCRIPTION' ? '/partner/subscription' : '/orders'),
         inApp: (d) => ({ title: 'Paiement confirmé', content: `Votre paiement de ${money(d, 'amount')} a été validé.` }),
         sample: { payment_id: SAMPLE_ID.payment, amount: 15_000 },
     }),

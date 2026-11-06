@@ -110,7 +110,7 @@ export interface TemplateData {
     PARTNER_REACTIVATED: { partner_id: string; company?: string };
     TRIAL_STARTED: { partner_id: string; days: number };
     SUBSCRIPTION_ACTIVATED: { partner_id: string; plan_id?: string; plan: string; days: number };
-    PAYMENT_SUCCESS: { payment_id: string; amount: number };
+    PAYMENT_SUCCESS: { payment_id: string; amount: number; payment_target?: string };
     HALL_RESERVATION_REQUESTED: { reservation_id: string; hall_name?: string | null; start_date: string; end_date: string };
     HALL_RESERVATION_CONFIRMED: { reservation_id: string; hall_name?: string | null; start_date: string; end_date: string };
     HALL_RESERVATION_CANCELLED: {

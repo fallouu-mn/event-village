@@ -411,6 +411,34 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- 5. notif_payments_other_success (recopie intégrale de 20261103000006_lot6_pros_admin.sql:957-976)
+-- Changement (8.2 m) : la cible du paiement entre dans les données, pour que le catalogue choisisse le lien
+-- (abonnement : /partner/subscription). Une ligne déjà en file, sans la clé, garde /orders.
+-- trg_payments_other_success reste tel quel.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notif_payments_other_success()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = NEW.client_id) THEN
+        RETURN NEW;
+    END IF;
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'PAYMENT_SUCCESS',
+        'key', 'PAYMENT_SUCCESS:' || NEW.id::text,
+        'user_id', NEW.client_id,
+        'data', jsonb_build_object('payment_id', NEW.id, 'amount', NEW.amount, 'payment_target', NEW.payment_target::text)
+    ));
+    RETURN NEW;
+END;
+$$;
+
+
 -- ============================================================================
 -- Privilèges : service_role uniquement (règle 1A.3)
 -- ============================================================================
@@ -421,7 +449,8 @@ BEGIN
     FOREACH f IN ARRAY ARRAY[
         'public.payment_duplicate_of(uuid)',
         'public.payment_confirm(uuid, text)',
-        'public.event_cancel(jsonb)'
+        'public.event_cancel(jsonb)',
+        'public.notif_payments_other_success()'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
