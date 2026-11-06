@@ -10,12 +10,15 @@ import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { formatFcfa, formatShortDate, toDakarDateTimeLocal } from '@/lib/format';
 
 /**
  * Lot 5 (tâche 5.7) — supervision des catalogues (salles, tables, produits, commandes), en lecture.
  * La modération des événements n'est plus ici : elle passe par /admin/events et les transitions de la
  * machine à états (contrat D4). Cet écran n'écrit plus aucun statut.
+ * Lot 8 (8.2 o, contrat 10.3, L59) : un service fermé par son interrupteur reste consultable ici et le dit en tête
+ * du panneau. Tant que les interrupteurs ne sont pas lus (flags null, ou lecture en échec), rien n'est annoncé.
  */
 
 const TAB_IDS = ['evenements', 'salles', 'tables', 'produits', 'commandes'] as const;
@@ -36,6 +39,14 @@ const API_TYPE: Record<CatalogTab, 'halls' | 'tables' | 'products' | 'orders'> =
   salles: 'halls',
   tables: 'tables',
   produits: 'products',
+  commandes: 'orders',
+};
+
+/** Interrupteur de chaque onglet (lib/features/client) : la vente de produits et les commandes partagent « orders ». */
+const TAB_FLAG: Record<CatalogTab, keyof ClientFeatureFlags> = {
+  salles: 'halls',
+  tables: 'tables',
+  produits: 'orders',
   commandes: 'orders',
 };
 
@@ -177,6 +188,7 @@ const EMPTY_ICONS: Record<CatalogTab, React.ReactNode> = {
 type Phase = 'loading' | 'ready' | 'error';
 
 function CatalogPanel({ tab }: { tab: CatalogTab }) {
+  const flags = useFeatureFlags();
   const [rows, setRows] = useState<CatalogRow[]>([]);
   const [phase, setPhase] = useState<Phase>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -211,35 +223,50 @@ function CatalogPanel({ tab }: { tab: CatalogTab }) {
     void load();
   }, [load]);
 
+  const closedNotice = flags?.[TAB_FLAG[tab]] === false ? (
+    <StatusBanner tone="neutral" title="Service désactivé">
+      Ce service est fermé par son interrupteur : il est masqué au public. Les données restent consultables ici.
+    </StatusBanner>
+  ) : null;
+
   if (phase === 'loading') {
     return (
-      <div role="status" aria-busy="true" aria-label="Chargement du catalogue" className="flex flex-col gap-3">
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+      <div className="flex flex-col gap-4">
+        {closedNotice}
+        <div role="status" aria-busy="true" aria-label="Chargement du catalogue" className="flex flex-col gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+        </div>
       </div>
     );
   }
   if (phase === 'error') {
     return (
-      <ErrorState
-        title="Catalogue indisponible"
-        description={errorMessage ?? undefined}
-        onRetry={() => {
-          setIsRetrying(true);
-          void load().finally(() => setIsRetrying(false));
-        }}
-        isRetrying={isRetrying}
-      />
+      <div className="flex flex-col gap-4">
+        {closedNotice}
+        <ErrorState
+          title="Catalogue indisponible"
+          description={errorMessage ?? undefined}
+          onRetry={() => {
+            setIsRetrying(true);
+            void load().finally(() => setIsRetrying(false));
+          }}
+          isRetrying={isRetrying}
+        />
+      </div>
     );
   }
   return (
-    <DataList
-      items={rows}
-      columns={COLUMNS}
-      getKey={(r) => r.id}
-      caption={TABS.find((t) => t.id === tab)?.label ?? 'Catalogue'}
-      cardTitle={(r) => r.name}
-      empty={<EmptyState icon={EMPTY_ICONS[tab]} title="Aucun élément" description="Aucun partenaire n’a encore rien enregistré dans ce catalogue." />}
-    />
+    <div className="flex flex-col gap-4">
+      {closedNotice}
+      <DataList
+        items={rows}
+        columns={COLUMNS}
+        getKey={(r) => r.id}
+        caption={TABS.find((t) => t.id === tab)?.label ?? 'Catalogue'}
+        cardTitle={(r) => r.name}
+        empty={<EmptyState icon={EMPTY_ICONS[tab]} title="Aucun élément" description="Aucun partenaire n’a encore rien enregistré dans ce catalogue." />}
+      />
+    </div>
   );
 }
 
