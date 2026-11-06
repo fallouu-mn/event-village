@@ -215,7 +215,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                         cardTitle={(a) => a.name}
                     />
                 ) : (
-                    <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
+                    <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm tabular-nums text-fg-muted">
                         {absents.list_available ? 'Aucun absent : tous les billets valides ont été compostés.' : (absents.count > 1 ? `${formatInteger(absents.count)} billets valides pas encore compostés.` : `${formatInteger(absents.count)} billet valide pas encore composté.`)}
                     </p>
                 )}

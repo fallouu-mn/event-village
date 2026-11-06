@@ -288,7 +288,7 @@ export default function AdminPricingSettingsPage() {
               >
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-slate-800 dark:text-zinc-200">{channel}</h4>
-                  <span className="font-mono font-bold text-emerald-600">
+                  <span className="font-bold tabular-nums text-emerald-600">
                     Marge: +{tariff.price - tariff.cost} FCFA
                   </span>
                 </div>

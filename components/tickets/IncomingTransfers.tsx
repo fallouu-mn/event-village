@@ -244,7 +244,7 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                       <dt className="sr-only">Billet</dt>
                       <dd className="flex items-start gap-2 text-fg">
                         <Ticket size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
-                        <span className="min-w-0">
+                        <span className="min-w-0 tabular-nums">
                           {t.ticket.category_name ?? 'Billet'}
                           {t.ticket.price > 0 ? ` · ${formatFcfa(t.ticket.price)}` : ' · Gratuit'}
                         </span>

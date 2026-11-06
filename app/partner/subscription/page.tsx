@@ -115,7 +115,7 @@ export default function PartnerSubscriptionPage() {
                                     )}
                                 </div>
                                 {sub.daysRemaining !== null && (
-                                    <Badge variant="success" size="md">
+                                    <Badge variant="success" size="md" className="tabular-nums">
                                         {formatInteger(sub.daysRemaining)} jour{sub.daysRemaining > 1 ? 's' : ''} restant{sub.daysRemaining > 1 ? 's' : ''}
                                     </Badge>
                                 )}
@@ -136,7 +136,7 @@ export default function PartnerSubscriptionPage() {
                                     >
                                         <div className="h-full rounded-full bg-success motion-safe:transition-all" style={{ width: `${percent}%` }} />
                                     </div>
-                                    <p className="text-sm font-medium text-success-fg">
+                                    <p className="text-sm font-medium tabular-nums text-success-fg">
                                         {formatInteger(percent)} % de la période écoulée
                                         {sub.trialDuration !== null && <> · durée totale : {formatInteger(sub.trialDuration)} jours</>}
                                         {sub.isFounder && ' (offre fondateur)'}
@@ -170,7 +170,7 @@ export default function PartnerSubscriptionPage() {
                                 </span>
                                 <div className="min-w-0">
                                     <p className="text-lg font-bold text-fg">{sub.currentPlan.name}</p>
-                                    <p className="text-sm text-fg-muted">{priceLabel(sub.currentPlan)}</p>
+                                    <p className="text-sm tabular-nums text-fg-muted">{priceLabel(sub.currentPlan)}</p>
                                 </div>
                             </div>
                         ) : (

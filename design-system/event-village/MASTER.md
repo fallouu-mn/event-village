@@ -97,6 +97,12 @@ et `bg-[#FF7900]`. Le nom de l'opérateur reste écrit sur le bouton (jamais la 
   (`Badge`, `StatusBadge`) ou sur un élément `<time>`, `<small>`, `<figcaption>`, `<caption>`,
   `<legend>`, `<text>` (SVG). `text-xs` et `text-[N px]` < 14 px sont interdits dans les fichiers migrés.
 - Chiffres : `tabular-nums` dans les indicateurs et les tableaux ; formats de `lib/format.ts`.
+- **Police à chasse fixe (lot 8, tâche 8.2 q).** `font-mono` est réservé aux numéros de billets,
+  références de transaction et de commande, et codes (OTP, PIN). Partout ailleurs, police normale.
+  Montants, compteurs, comptes à rebours, heures et téléphones : `tabular-nums`. Exception : les blocs
+  `<pre>` de JSON du journal d'audit. Aucune police à chasse fixe n'est embarquée : `font-mono` retombe
+  sur la pile système, donc sur une police différente selon l'appareil. Le contrôle est dans
+  `tests/parcours/design-systeme.test.ts` (`MONO_ALLOWED`, nombre exact par fichier).
 
 ### Spacing Variables
 

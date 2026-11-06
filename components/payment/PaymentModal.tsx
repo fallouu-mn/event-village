@@ -745,7 +745,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                   if (normalized) setPhoneInput(formatLocalPhone(normalized));
                 }}
                 className={cn(
-                  'h-12 w-full rounded-xl border bg-surface pl-[3.75rem] pr-10 font-mono text-base font-semibold tracking-wide text-fg transition-colors',
+                  'h-12 w-full rounded-xl border bg-surface pl-[3.75rem] pr-10 text-base font-semibold tabular-nums tracking-wide text-fg transition-colors',
                   'placeholder:text-fg-muted/70 focus:outline-none focus:ring-2 focus:ring-ring',
                   phoneError ? 'border-danger' : 'border-border-strong',
                 )}
@@ -767,7 +767,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                   <Smartphone size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
                   <span>
                     Vous validerez ensuite le paiement dans {chosenLabel}, depuis le{' '}
-                    <span className="whitespace-nowrap font-mono font-semibold text-fg">+221 {formatLocalPhone(payerPhone)}</span>.
+                    <span className="whitespace-nowrap font-semibold tabular-nums text-fg">+221 {formatLocalPhone(payerPhone)}</span>.
                   </span>
                 </li>
               )}

@@ -692,7 +692,7 @@ export default function WalletPage() {
                 onBlur={() => {
                   if (payoutPhone) setPhoneInput(formatLocalPhone(payoutPhone));
                 }}
-                className={cn(inputClass(Boolean(errors.phone)), 'font-mono tracking-wide')}
+                className={cn(inputClass(Boolean(errors.phone)), 'tabular-nums tracking-wide')}
               />
               <p id={ids.phoneHelp} className={helpClass(Boolean(errors.phone))}>
                 {errors.phone ?? 'Mobile sénégalais de 9 chiffres. Le code de confirmation part au numéro de votre compte.'}
@@ -719,7 +719,7 @@ export default function WalletPage() {
                 }}
                 className={cn(inputClass(Boolean(errors.amount)), 'tabular-nums')}
               />
-              <p id={ids.amountHelp} className={helpClass(Boolean(errors.amount))}>
+              <p id={ids.amountHelp} className={cn(helpClass(Boolean(errors.amount)), 'tabular-nums')}>
                 {errors.amount ??
                   (balance
                     ? `Disponible : ${formatFcfa(balance.withdrawable)}. Frais calculés à la demande et déduits du montant versé.`
@@ -758,7 +758,7 @@ export default function WalletPage() {
               <div className="flex justify-between gap-3">
                 <dt className="text-fg-muted">Vers</dt>
                 <dd className="text-right font-semibold text-fg">
-                  {operatorLabel(operator)} · <span className="whitespace-nowrap font-mono">+221 {formatLocalPhone(payoutPhone)}</span>
+                  {operatorLabel(operator)} · <span className="whitespace-nowrap tabular-nums">+221 {formatLocalPhone(payoutPhone)}</span>
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
@@ -902,7 +902,7 @@ export default function WalletPage() {
         ) : (
           <>
             <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-              <p className="flex min-h-12 w-full flex-1 select-all items-center break-all rounded-xl border border-border bg-surface-sunken px-4 py-3 font-mono text-sm text-fg">
+              <p className="flex min-h-12 w-full flex-1 select-all items-center break-all rounded-xl border border-border bg-surface-sunken px-4 py-3 text-sm text-fg">
                 {referral.referralLink}
               </p>
               <Button variant="primary" onClick={() => void handleCopyLink()} leftIcon={copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}>
@@ -976,7 +976,7 @@ export default function WalletPage() {
                       <Badge variant={st.variant} size="sm">{st.label}</Badge>
                       <span className="text-sm text-fg-muted">
                         {w.operator === 'WAVE' || w.operator === 'ORANGE_MONEY' ? operatorLabel(w.operator) : 'Mobile Money'}
-                        {w.phone && <span className="font-mono"> · {maskPhone(w.phone)}</span>}
+                        {w.phone && <span className="tabular-nums"> · {maskPhone(w.phone)}</span>}
                       </span>
                     </div>
                     <p className="text-sm text-fg-muted">

@@ -146,7 +146,7 @@ function ControllerCard({
                         <Phone size={14} aria-hidden="true" />
                         <span className="tabular-nums">{displayPhone(controller.phone)}</span>
                     </p>
-                    <p className="mt-1 text-sm text-fg-muted">
+                    <p className="mt-1 text-sm tabular-nums text-fg-muted">
                         {formatInteger(controller.accepted)} entrée(s) validée(s)
                         {controller.last_activity_at && (
                             <>

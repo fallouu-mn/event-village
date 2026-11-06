@@ -981,7 +981,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                         )}
                       </div>
                       {qty > 0 && cat.price > 0 && (
-                        <p className="mt-2 text-sm text-fg-muted">
+                        <p className="mt-2 text-sm tabular-nums text-fg-muted">
                           {qty} × {priceLabel(cat.price)}
                           {line ? ` : ${formatFcfa(line.lineFacial)}` : ''}
                         </p>

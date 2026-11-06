@@ -120,7 +120,7 @@ export const OfflineTicketView: React.FC<OfflineTicketViewProps> = ({ lot }) => 
             <div className="w-full space-y-2 rounded-xl border border-border bg-surface-sunken p-3">
               <div className="flex items-center justify-between gap-2 text-sm font-semibold text-fg">
                 <span>Code renouvelé toutes les {stepSeconds} s</span>
-                <span className="font-mono tabular-nums text-brand-fg">
+                <span className="tabular-nums text-brand-fg">
                   <span aria-hidden="true">{secondsLeft} s</span>
                   <span className="sr-only">Nouveau code dans {secondsLeft} secondes</span>
                 </span>
@@ -132,7 +132,7 @@ export const OfflineTicketView: React.FC<OfflineTicketViewProps> = ({ lot }) => 
                 />
               </div>
               <p className="text-center text-sm text-fg-muted">
-                Heure du contrôle : <time dateTime={new Date(pick.serverNow).toISOString()} className="font-mono tabular-nums text-fg">{formatTime(pick.serverNow)}</time>
+                Heure du contrôle : <time dateTime={new Date(pick.serverNow).toISOString()} className="tabular-nums text-fg">{formatTime(pick.serverNow)}</time>
               </p>
               {Math.abs(offsetMs) >= NOTICEABLE_OFFSET_MS && (
                 <p className="text-center text-sm text-fg-muted">

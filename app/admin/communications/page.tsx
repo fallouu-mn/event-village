@@ -226,7 +226,7 @@ export default function AdminCommunicationsPage() {
         </h2>
 
         {lastSaved && (
-          <StatusBanner tone="success" title={DRAFT_SAVED}>
+          <StatusBanner tone="success" title={DRAFT_SAVED} className="tabular-nums">
             {`« ${lastSaved.title} » : ${formatInteger(lastSaved.recipients)} destinataire${lastSaved.recipients > 1 ? 's' : ''} ciblé${lastSaved.recipients > 1 ? 's' : ''}, aucun message envoyé.`}
           </StatusBanner>
         )}

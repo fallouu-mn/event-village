@@ -18,7 +18,7 @@ type IncidentRow = PilotageEntries['incidents'][number];
 
 function Moment({ at, timeOnly = false }: { at: string | null; timeOnly?: boolean }) {
     if (!at) return <span className="text-fg-muted">Aucune</span>;
-    return <time dateTime={at}>{timeOnly ? formatTime(at) : formatDateTime(at)}</time>;
+    return <time dateTime={at} className="tabular-nums">{timeOnly ? formatTime(at) : formatDateTime(at)}</time>;
 }
 
 const SCANNER_COLUMNS: DataColumn<ScannerRow>[] = [

@@ -125,7 +125,7 @@ export function PendingPaymentBanner({ eventId, enabled, refreshKey = 0, onChang
         {amount ? `Paiement de ${amount}${via}` : `Paiement${via}`}
         {pending.expiresAt ? (
           <>
-            {' '}à valider avant <time dateTime={pending.expiresAt}>{formatTime(pending.expiresAt)}</time>.
+            {' '}à valider avant <time dateTime={pending.expiresAt} className="tabular-nums">{formatTime(pending.expiresAt)}</time>.
           </>
         ) : '.'}{' '}
         Suivez-le au lieu d’en lancer un autre : vos billets arrivent dès sa confirmation.

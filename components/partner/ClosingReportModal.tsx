@@ -208,7 +208,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
                 Net Partenaire à Reverser
               </span>
-              <span className="text-xl sm:text-2xl font-black text-[#FF5722]">
+              <span className="text-xl sm:text-2xl font-black tabular-nums text-[#FF5722]">
                 {formatFcfa(data.financialSummary.totalNet)}
               </span>
             </div>
@@ -250,7 +250,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
               <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                 {data.paymentsSummary.confirmedCount} transactions
               </div>
-              <p className="text-[11px] font-bold text-slate-500 dark:text-zinc-400">
+              <p className="text-[11px] font-bold tabular-nums text-slate-500 dark:text-zinc-400">
                 Ventes en ligne : {formatFcfa(data.financialSummary.totalGross)}
               </p>
             </div>
@@ -279,7 +279,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                       <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white">
                         {cat.name}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-600 dark:text-zinc-400">
+                      <td className="py-2.5 px-3 text-right tabular-nums text-slate-600 dark:text-zinc-400">
                         {formatFcfa(cat.unitPrice)}
                       </td>
                       <td className="py-2.5 px-3 text-center text-slate-600 dark:text-zinc-400">
@@ -291,7 +291,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                       <td className="py-2.5 px-3 text-center text-emerald-600 dark:text-emerald-400 font-bold">
                         {cat.checkedInQuantity}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-black text-slate-900 dark:text-white font-mono">
+                      <td className="py-2.5 px-3 text-right font-black text-slate-900 dark:text-white tabular-nums">
                         {formatFcfa(cat.grossAmount)}
                       </td>
                     </tr>
@@ -311,14 +311,14 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
             <div className="space-y-2 text-xs divide-y divide-white/10">
               <div className="flex justify-between items-center pt-1">
                 <span className="text-slate-300">Ventes en ligne (prix faciaux des billets) :</span>
-                <span className="font-bold text-white font-mono">
+                <span className="font-bold text-white tabular-nums">
                   {formatFcfa(data.financialSummary.totalGross)}
                 </span>
               </div>
               {data.financialSummary.totalRefunded > 0 && (
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-slate-300">Remboursements aux acheteurs :</span>
-                  <span className="font-bold text-red-400 font-mono">
+                  <span className="font-bold text-red-400 tabular-nums">
                     - {formatFcfa(data.financialSummary.totalRefunded)}
                   </span>
                 </div>
@@ -327,19 +327,19 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                 <span className="font-black text-orange-300 uppercase">
                   Montant Net à Reverser au Partenaire :
                 </span>
-                <span className="text-lg font-black text-white font-mono bg-[#FF5722] px-3 py-1 rounded-xl shadow-xs">
+                <span className="text-lg font-black text-white tabular-nums bg-[#FF5722] px-3 py-1 rounded-xl shadow-xs">
                   {formatFcfa(data.financialSummary.totalNet)}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-2">
-                <span className="text-slate-300">
+                <span className="tabular-nums text-slate-300">
                   Dont disponible : {formatFcfa(data.financialSummary.availableNet)}
                   {' · '}en attente : {formatFcfa(data.financialSummary.pendingNet)}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-2">
                 <span className="text-slate-400">Frais de service payés par l&apos;acheteur (non déduits) :</span>
-                <span className="font-bold text-slate-300 font-mono">
+                <span className="font-bold text-slate-300 tabular-nums">
                   {formatFcfa(data.financialSummary.buyerServiceFees)}
                 </span>
               </div>
@@ -347,7 +347,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({
                 <span className="text-slate-400">
                   Ventes espèces au guichet ({data.financialSummary.cashTickets} billet{data.financialSummary.cashTickets > 1 ? 's' : ''}, hors plateforme, informatif) :
                 </span>
-                <span className="font-bold text-slate-300 font-mono">
+                <span className="font-bold text-slate-300 tabular-nums">
                   {formatFcfa(data.financialSummary.cashSales)}
                 </span>
               </div>

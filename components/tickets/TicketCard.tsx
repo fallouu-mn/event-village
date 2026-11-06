@@ -542,7 +542,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                     {localCode ? 'Hors connexion : billet enregistré' : isOffline ? 'Hors connexion' : 'Code renouvelé toutes les 20 s'}
                   </span>
                   {(showQr || localCode) && (
-                    <span className="font-mono text-sm font-bold tabular-nums text-brand-fg">
+                    <span className="text-sm font-bold tabular-nums text-brand-fg">
                       <span aria-hidden="true">{showQr ? secondsLeft : localSecondsLeft} s</span>
                       <span className="sr-only">Nouveau code dans {showQr ? secondsLeft : localSecondsLeft} secondes</span>
                     </span>

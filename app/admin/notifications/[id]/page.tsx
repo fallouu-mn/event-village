@@ -190,7 +190,7 @@ function DecisionList({ decision }: { decision: Row }) {
   const encoding = delivery ? str(delivery.encoding) : null;
 
   return (
-    <dl className="space-y-3">
+    <dl className="space-y-3 tabular-nums">
       <Info label="Moment">
         {stage ? STAGE_LABELS[stage] ?? 'Étape non répertoriée' : '—'}
         {str(decision.at) ? <> · {when(str(decision.at))}</> : null}
@@ -517,7 +517,7 @@ export default function AdminNotificationDetailPage() {
       </Section>
 
       <Section title="Tentatives" id="notif-tentatives">
-        <dl className="space-y-3">
+        <dl className="space-y-3 tabular-nums">
           <Info label="Tentatives">{`${formatInteger(item.attempts)} sur ${formatInteger(item.maxAttempts)}`}</Info>
           <Info label="Relances manuelles">{formatInteger(item.manualRetries)}</Info>
           <Info label="Dernière prise en charge">{when(item.claimedAt)}</Info>

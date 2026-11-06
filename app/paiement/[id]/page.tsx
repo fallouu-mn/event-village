@@ -806,7 +806,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
                   'Vérification du statut final auprès de l’opérateur…'
                 ) : (
                   <>
-                    Échéance à <time dateTime={new Date(expiresAt).toISOString()}>{formatTime(expiresAt)}</time> : passé ce délai, la réservation est libérée.
+                    Échéance à <time dateTime={new Date(expiresAt).toISOString()} className="tabular-nums">{formatTime(expiresAt)}</time> : passé ce délai, la réservation est libérée.
                   </>
                 )}
               </p>

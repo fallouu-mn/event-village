@@ -195,7 +195,7 @@ export const AdjustTicketQuotaModal: React.FC<AdjustTicketQuotaModalProps> = ({
                             <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider block">
                                 Vendus
                             </span>
-                            <span className="text-lg font-black text-slate-900 dark:text-white font-mono mt-0.5 block">
+                            <span className="text-lg font-black tabular-nums text-slate-900 dark:text-white mt-0.5 block">
                                 {sold}
                             </span>
                         </div>
@@ -203,7 +203,7 @@ export const AdjustTicketQuotaModal: React.FC<AdjustTicketQuotaModalProps> = ({
                             <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider block">
                                 Quota Actuel
                             </span>
-                            <span className="text-lg font-black text-slate-900 dark:text-white font-mono mt-0.5 block">
+                            <span className="text-lg font-black tabular-nums text-slate-900 dark:text-white mt-0.5 block">
                                 {originalTotal}
                             </span>
                         </div>
@@ -212,7 +212,7 @@ export const AdjustTicketQuotaModal: React.FC<AdjustTicketQuotaModalProps> = ({
                                 En Vente
                             </span>
                             <span
-                                className={`text-lg font-black font-mono mt-0.5 block ${
+                                className={`text-lg font-black tabular-nums mt-0.5 block ${
                                     isSoldOut ? 'text-red-500' : 'text-emerald-500'
                                 }`}
                             >
@@ -262,7 +262,7 @@ export const AdjustTicketQuotaModal: React.FC<AdjustTicketQuotaModalProps> = ({
                                 min={sold}
                                 value={newTotal}
                                 onChange={(e) => setNewTotal(Number(e.target.value))}
-                                className="flex-1 h-10 px-3 text-center text-base font-mono font-black text-slate-900 dark:text-white bg-white dark:bg-zinc-800 border-2 border-slate-200 dark:border-zinc-700 rounded-xl focus:border-[#FF5722] outline-hidden transition-all"
+                                className="flex-1 h-10 px-3 text-center text-base font-black tabular-nums text-slate-900 dark:text-white bg-white dark:bg-zinc-800 border-2 border-slate-200 dark:border-zinc-700 rounded-xl focus:border-[#FF5722] outline-hidden transition-all"
                             />
                             <button
                                 type="button"
@@ -302,14 +302,14 @@ export const AdjustTicketQuotaModal: React.FC<AdjustTicketQuotaModalProps> = ({
                     <div className="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-xs space-y-1">
                         <div className="flex justify-between font-medium text-blue-900 dark:text-blue-200">
                             <span>Disponibilité après validation :</span>
-                            <span className="font-bold font-mono">
+                            <span className="font-bold tabular-nums">
                                 {calculatedAvailable} place{calculatedAvailable > 1 ? 's' : ''} en vente
                             </span>
                         </div>
                         {eventCapacity && eventCapacity > 0 && (
                             <div className="flex justify-between text-[11px] text-blue-700 dark:text-blue-300">
                                 <span>Capacité globale de la salle :</span>
-                                <span className="font-mono">
+                                <span className="tabular-nums">
                                     {totalWithNew} / {eventCapacity} places
                                 </span>
                             </div>

@@ -16,7 +16,7 @@ export function OverviewTab({ data }: { data: PilotageOverview }) {
     return (
         <div className="flex flex-col gap-6">
             {tickets.capacity_exceeded && (
-                <StatusBanner tone="warning" title="Les quotas dépassent la jauge déclarée">
+                <StatusBanner tone="warning" title="Les quotas dépassent la jauge déclarée" className="tabular-nums">
                     La somme des quotas des catégories actives ({formatInteger(tickets.capacity)} places) dépasse la jauge
                     déclarée de l’événement ({formatInteger(tickets.declared_capacity)} places). Vérifiez vos catégories.
                 </StatusBanner>

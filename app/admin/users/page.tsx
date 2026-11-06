@@ -513,7 +513,7 @@ export default function AdminUsersManagementPage() {
                 placeholder="77 123 45 67"
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
-                className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-mono font-bold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-bold tabular-nums focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
               />
             </div>
           </div>
@@ -548,7 +548,7 @@ export default function AdminUsersManagementPage() {
                   placeholder="••••••••••••"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full h-10 pl-9 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-mono font-bold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                  className="w-full h-10 pl-9 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-bold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
                 />
                 <button
                   type="button"
@@ -749,7 +749,7 @@ export default function AdminUsersManagementPage() {
                         : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
                     }`}
                   >
-                    <span className="font-mono text-[11px] font-bold">{perm}</span>
+                    <span className="text-[11px] font-bold">{perm}</span>
                     <span
                       className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black transition-all ${
                         isChecked ? 'bg-[#FF5722] text-white shadow-xs' : 'border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'

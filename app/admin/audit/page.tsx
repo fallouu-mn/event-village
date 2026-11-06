@@ -147,7 +147,7 @@ export default function AdminAuditLogPage() {
             </div>
           </div>
 
-          <span className="text-xs font-mono font-bold text-[#FF5722]">
+          <span className="text-xs font-bold tabular-nums text-[#FF5722]">
             {logs.length} entrée(s) trouvée(s)
           </span>
         </div>
@@ -176,10 +176,10 @@ export default function AdminAuditLogPage() {
                   <th className="pb-3 text-right">Détails JSON</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60 font-mono">
+              <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60">
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/60 dark:hover:bg-zinc-900/40 text-[11px]">
-                    <td className="py-3 text-slate-500">{formatDate(log.created_at)}</td>
+                    <td className="py-3 tabular-nums text-slate-500">{formatDate(log.created_at)}</td>
                     <td className="py-3 font-bold text-purple-600 dark:text-purple-400">{log.user_role || 'SYSTEM'}</td>
                     <td className="py-3 font-black text-slate-900 dark:text-white">
                       <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">
@@ -187,8 +187,8 @@ export default function AdminAuditLogPage() {
                       </span>
                     </td>
                     <td className="py-3 font-bold text-[#FF5722]">{log.object_type}</td>
-                    <td className="py-3 text-slate-400 truncate max-w-[120px]">{log.object_id || 'N/A'}</td>
-                    <td className="py-3 text-right font-sans">
+                    <td className="py-3 font-mono text-slate-400 truncate max-w-[120px]">{log.object_id || 'N/A'}</td>
+                    <td className="py-3 text-right">
                       <Button
                         variant="secondary"
                         size="sm"

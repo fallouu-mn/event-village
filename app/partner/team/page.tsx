@@ -419,7 +419,7 @@ export default function PartnerTeamPage() {
             render: (m) => (
                 <div className="min-w-0">
                     <p className="truncate font-semibold text-fg">{displayName(m)}</p>
-                    <p className="flex items-center gap-1.5 font-mono text-sm text-fg-muted">
+                    <p className="flex items-center gap-1.5 text-sm tabular-nums text-fg-muted">
                         <Phone size={14} aria-hidden="true" /> {displayPhone(m.phone)}
                     </p>
                     <p className="mt-1 flex items-center gap-1.5 text-sm text-fg-muted">
@@ -720,7 +720,7 @@ export default function PartnerTeamPage() {
                             setInvPhone(e.target.value);
                             setInvError((prev) => ({ ...prev, phone: undefined }));
                         }}
-                        className="font-mono"
+                        className="tabular-nums"
                     />
                     <TextInput label="Email" aside="Facultatif" type="email" placeholder="controleur@email.com" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} />
 
@@ -786,7 +786,7 @@ export default function PartnerTeamPage() {
                             </div>
                             <div className="flex justify-between gap-3">
                                 <dt className="text-fg-muted">Numéro</dt>
-                                <dd className="font-mono text-fg">{existingAccountConfirm.existingUser.phone}</dd>
+                                <dd className="tabular-nums text-fg">{existingAccountConfirm.existingUser.phone}</dd>
                             </div>
                         </dl>
                         <div className="space-y-1.5 rounded-xl border border-success-border bg-success-bg p-4 text-sm leading-relaxed text-success-fg">

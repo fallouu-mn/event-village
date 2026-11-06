@@ -260,7 +260,7 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
 
                 {cosign && (
                     <>
-                        <StatusBanner tone="warning" title="Écart constaté par le serveur" announce="alert">
+                        <StatusBanner tone="warning" title="Écart constaté par le serveur" announce="alert" className="tabular-nums">
                             {cosign.discrepancy !== null
                                 ? `Écart de ${formatFcfa(cosign.discrepancy)} avec les encaissements enregistrés. `
                                 : 'Le montant compté ne correspond pas aux encaissements enregistrés. '}

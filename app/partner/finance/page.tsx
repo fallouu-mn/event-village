@@ -632,7 +632,7 @@ export default function PartnerFinancePage() {
                             onBlur={() => {
                                 if (payoutPhone) setPhoneInput(formatLocalPhone(payoutPhone));
                             }}
-                            className="font-mono tracking-wide"
+                            className="tabular-nums tracking-wide"
                         />
 
                         <TextInput
@@ -686,7 +686,7 @@ export default function PartnerFinancePage() {
                             <div className="flex justify-between gap-3">
                                 <dt className="text-fg-muted">Vers</dt>
                                 <dd className="text-right font-semibold text-fg">
-                                    {operatorLabel(operator)} · <span className="font-mono">+221 {formatLocalPhone(payoutPhone)}</span>
+                                    {operatorLabel(operator)} · <span className="tabular-nums">+221 {formatLocalPhone(payoutPhone)}</span>
                                 </dd>
                             </div>
                             <div className="flex justify-between gap-3">
@@ -803,7 +803,7 @@ export default function PartnerFinancePage() {
                                             <Badge variant={st.variant} size="sm">{st.label}</Badge>
                                             <span className="text-sm text-fg-muted">
                                                 {w.operator === 'WAVE' || w.operator === 'ORANGE_MONEY' ? operatorLabel(w.operator) : 'Mobile Money'}
-                                                {w.phone && <span className="font-mono"> · {maskPhone(w.phone)}</span>}
+                                                {w.phone && <span className="tabular-nums"> · {maskPhone(w.phone)}</span>}
                                             </span>
                                         </div>
                                         <p className="text-sm text-fg-muted">

@@ -738,7 +738,7 @@ export function EventForm(props: EventFormProps) {
                 <StatusBanner
                     tone="success"
                     title="Modifications enregistrées"
-                    className="mb-4"
+                    className="mb-4 tabular-nums"
                     action={<LinkButton href="/partner/events" variant="secondary" size="sm">Voir mes événements</LinkButton>}
                 >
                     {saveResult.notifiedHolders > 0

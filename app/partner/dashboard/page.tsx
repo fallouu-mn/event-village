@@ -301,7 +301,7 @@ export default function PartnerDashboardPage() {
 
                     {/* Période d'essai (durée et date de fin servies) */}
                     {trial?.active && trial.ends_at && (
-                        <StatusBanner tone="success" title="Période d’essai gratuite en cours" icon={<ShieldCheck size={20} />}>
+                        <StatusBanner tone="success" title="Période d’essai gratuite en cours" icon={<ShieldCheck size={20} />} className="tabular-nums">
                             {trial.days !== null ? `${formatInteger(trial.days)} jours offerts, ` : ''}
                             jusqu’au <time dateTime={trial.ends_at}>{formatDate(trial.ends_at)}</time>.
                         </StatusBanner>
@@ -348,7 +348,7 @@ export default function PartnerDashboardPage() {
                             />
                         </div>
                         {kpis && (
-                            <p className="text-sm text-fg-muted">
+                            <p className="text-sm tabular-nums text-fg-muted">
                                 Les ventes en espèces au guichet ({formatFcfa(kpis.cashSales)}) et les invitations n’alimentent pas le solde.{' '}
                                 <LinkButton href="/partner/finance" variant="ghost" size="sm" className="-ml-2 align-middle">Voir mes finances</LinkButton>
                             </p>
@@ -364,7 +364,7 @@ export default function PartnerDashboardPage() {
                                     Mes événements
                                 </h2>
                                 {kpis && (
-                                    <Badge variant="neutral" size="sm">
+                                    <Badge variant="neutral" size="sm" className="tabular-nums">
                                         {formatInteger(kpis.totalEvents)} au total
                                     </Badge>
                                 )}
