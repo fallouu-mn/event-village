@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '../supabase/server';
+import { PublicError } from '@/lib/api/public-error';
 
 export interface ProductCategory {
     id: string;
@@ -53,7 +54,7 @@ export class ProductService {
             .single();
 
         if (error || !partner) {
-            throw new Error('Profil partenaire introuvable.');
+            throw new PublicError('Profil partenaire introuvable.');
         }
 
         return partner.id;
@@ -167,7 +168,7 @@ export class ProductService {
             .eq('id', productId)
             .single();
 
-        if (error || !data) throw new Error(`Produit introuvable: ${productId}`);
+        if (error || !data) throw new PublicError('Produit introuvable.');
         return data as Product;
     }
 

@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '../supabase/server';
+import { PublicError } from '@/lib/api/public-error';
 import { ProductService } from '../products/product.service';
 import { computeBreakdown } from '../finance/engine';
 
@@ -78,21 +79,21 @@ export class OrderService {
                 const product = await ProductService.getProductById(item.product_id);
 
                 if (product.partner_id !== input.partner_id) {
-                    throw new Error(`Le produit ${product.id} n'appartient pas au partenaire ${input.partner_id}.`);
+                    throw new PublicError('Un produit de cette commande n’appartient pas à ce partenaire.');
                 }
 
                 if (product.status === 'SUSPENDU') {
-                    throw new Error(`Le produit ${product.name} est suspendu et ne peut pas être commandé.`);
+                    throw new PublicError(`Le produit ${product.name} est suspendu et ne peut pas être commandé.`);
                 }
 
                 if (product.status === 'INDISPONIBLE' || product.status === 'EPUISE') {
-                    throw new Error(`Le produit ${product.name} est actuellement indisponible.`);
+                    throw new PublicError(`Le produit ${product.name} est actuellement indisponible.`);
                 }
 
                 // Check stock
                 if (product.is_stock_managed) {
                     if (product.stock_quantity === null || product.stock_quantity < item.quantity) {
-                        throw new Error(`Stock insuffisant pour le produit ${product.name}. Demandé: ${item.quantity}, Disponible: ${product.stock_quantity}`);
+                        throw new PublicError(`Stock insuffisant pour le produit ${product.name}. Demandé: ${item.quantity}, Disponible: ${product.stock_quantity}`);
                     }
 
                     // UPDATE conditionnel atomique (optimistic locking)
@@ -111,7 +112,7 @@ export class OrderService {
                     if (updateError || !updateData || updateData.length === 0) {
                         retries--;
                         if (retries === 0) {
-                            throw new Error(`Conflit de stock pour le produit ${product.name}. Veuillez réessayer.`);
+                            throw new PublicError(`Conflit de stock pour le produit ${product.name}. Veuillez réessayer.`);
                         }
                         continue; // Retry
                     }
@@ -222,13 +223,13 @@ export class OrderService {
             .single();
 
         if (fetchError || !order) {
-            throw new Error(`Commande introuvable ou accès refusé.`);
+            throw new PublicError('Commande introuvable ou accès refusé.');
         }
 
         // Validate status transition
         const validStatuses = ['EN_ATTENTE', 'CONFIRMEE', 'EN_PREPARATION', 'PRETE', 'EN_LIVRAISON', 'LIVREE', 'ANNULEE', 'REJETEE'];
         if (!validStatuses.includes(newStatus)) {
-            throw new Error(`Statut invalide: ${newStatus}`);
+            throw new PublicError('Statut de commande invalide.');
         }
 
         const { data, error } = await supabase
@@ -253,7 +254,7 @@ export class OrderService {
             .single();
 
         if (orderError || !order) {
-            throw new Error(`Commande introuvable.`);
+            throw new PublicError('Commande introuvable.');
         }
 
         if (order.order_status === 'ANNULEE') {

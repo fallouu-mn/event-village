@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PublicError } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '../supabase/server';
 import { EventLifecycleService } from './event-lifecycle.service';
 import { eventEndAt } from './event-end';
@@ -169,7 +170,7 @@ export class EventService {
             .single();
 
         if (error || !partner) {
-            throw new Error('Profil partenaire introuvable pour cet utilisateur.');
+            throw new PublicError('Profil partenaire introuvable pour cet utilisateur.');
         }
 
         return partner.id;
@@ -301,7 +302,7 @@ export class EventService {
 
         const { data, error } = await query.single();
         if (error || !data) {
-            throw new Error('Événement introuvable ou non autorisé.');
+            throw new PublicError('Événement introuvable ou non autorisé.');
         }
 
         return data;

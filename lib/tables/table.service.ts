@@ -1,4 +1,12 @@
 import { getServiceRoleClient } from '../supabase/server';
+import { PublicError } from '@/lib/api/public-error';
+
+/** Refus rédigés en français par create_table_reservation_atomic (0010_table_reservations_exclusion.sql). */
+const TABLE_RESERVATION_REFUSALS: ReadonlySet<string> = new Set([
+    'Table introuvable ou indisponible.',
+    'La table est déjà réservée pour cette période (dates conflictuelles).',
+    "Le nombre d'invités dépasse la capacité de la table.",
+]);
 
 export interface CreateZoneInput {
     name: string;
@@ -93,7 +101,7 @@ export class TableService {
             .single();
 
         if (error || !partner) {
-            throw new Error('Profil partenaire introuvable.');
+            throw new PublicError('Profil partenaire introuvable.');
         }
 
         return partner.id;
@@ -260,7 +268,10 @@ export class TableService {
         }
 
         if (!data || !data.success) {
-            throw new Error(`Échec réservation: ${data?.error || 'Erreur inconnue'}`);
+            // Lot 8 (8.2 i) : seuls les refus rédigés par la RPC atteignent l'écran ; son repli est SQLERRM.
+            const refusal = data?.error;
+            if (typeof refusal === 'string' && TABLE_RESERVATION_REFUSALS.has(refusal)) throw new PublicError(refusal);
+            throw new Error(`Échec réservation: ${refusal || 'réponse vide'}`);
         }
 
         return data.reservation as TableReservation;
@@ -314,12 +325,12 @@ export class TableService {
             .eq('id', reservationId)
             .single();
 
-        if (findErr || !existing) throw new Error('Réservation introuvable.');
+        if (findErr || !existing) throw new PublicError('Réservation introuvable.');
 
         const isOwner = existing.partners?.user_id === actorId;
         const isClient = existing.client_id === actorId;
 
-        if (!isOwner && !isClient) throw new Error('Action non autorisée.');
+        if (!isOwner && !isClient) throw new PublicError('Action non autorisée.');
 
         const { error } = await supabase
             .from('table_reservations')

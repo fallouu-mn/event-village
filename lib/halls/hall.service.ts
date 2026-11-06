@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '../supabase/server';
+import { PublicError } from '@/lib/api/public-error';
 import { FinancialCalculatorService } from '../payments/financial-calculator.service';
 
 export interface CreateHallInput {
@@ -42,7 +43,7 @@ export class HallService {
             .single();
 
         if (error || !partner) {
-            throw new Error('Profil partenaire introuvable.');
+            throw new PublicError('Profil partenaire introuvable.');
         }
 
         return partner.id;
@@ -56,19 +57,19 @@ export class HallService {
         const partnerId = await this.resolvePartnerId(partnerUserId);
 
         if (!input.name || !input.name.trim()) {
-            throw new Error('Le nom de la salle est obligatoire.');
+            throw new PublicError('Le nom de la salle est obligatoire.');
         }
         if (!input.capacity || input.capacity <= 0) {
-            throw new Error('La capacité de la salle doit être supérieure à 0.');
+            throw new PublicError('La capacité de la salle doit être supérieure à 0.');
         }
         if ((!input.price_per_day || input.price_per_day < 0) && (!input.price_per_hour || input.price_per_hour < 0)) {
-            throw new Error('Vous devez renseigner au moins un tarif valide (par jour ou par heure).');
+            throw new PublicError('Vous devez renseigner au moins un tarif valide (par jour ou par heure).');
         }
 
         // Taux d'acompte configurable (par défaut 30%, modifiable par le partenaire)
         const depositRate = input.deposit_percentage !== undefined ? Number(input.deposit_percentage) : 30.0;
         if (depositRate < 0 || depositRate > 100) {
-            throw new Error('Le taux d\'acompte doit être compris entre 0% et 100%.');
+            throw new PublicError('Le taux d\'acompte doit être compris entre 0% et 100%.');
         }
 
         const { data: hall, error } = await supabase
@@ -129,7 +130,7 @@ export class HallService {
             .single();
 
         if (error || !hall) {
-            throw new Error('Salle introuvable.');
+            throw new PublicError('Salle introuvable.');
         }
 
         return hall;
@@ -188,7 +189,7 @@ export class HallService {
             .in('status', ['EN_ATTENTE', 'CONFIRMEE']);
 
         if (activeRes && activeRes.length > 0) {
-            throw new Error('Impossible de supprimer une salle ayant des réservations actives. Veuillez la désactiver.');
+            throw new PublicError('Impossible de supprimer une salle ayant des réservations actives. Veuillez la désactiver.');
         }
 
         const { error } = await supabase
@@ -212,7 +213,7 @@ export class HallService {
 
         // 1. Validation de la chronologie des dates
         if (input.endDate < input.startDate) {
-            throw new Error('La date de fin ne peut pas être antérieure à la date de début.');
+            throw new PublicError('La date de fin ne peut pas être antérieure à la date de début.');
         }
 
         // 2. Récupération de la salle et vérification de la disponibilité
@@ -224,7 +225,7 @@ export class HallService {
             .single();
 
         if (hallErr || !hall) {
-            throw new Error('Salle introuvable ou indisponible.');
+            throw new PublicError('Salle introuvable ou indisponible.');
         }
 
         // 3. Détection de conflit de dates (Protection anti-double réservation)
@@ -237,7 +238,7 @@ export class HallService {
             .gte('end_date', input.startDate);
 
         if (conflicting && conflicting.length > 0) {
-            throw new Error('La salle est déjà réservée pour cette période (dates conflictuelles).');
+            throw new PublicError('La salle est déjà réservée pour cette période (dates conflictuelles).');
         }
 
         // 4. Calcul de la durée en jours et du montant total
@@ -301,7 +302,7 @@ export class HallService {
                 errorMsg.includes('no_overlapping_hall_reservations') ||
                 (resErr as any)?.code === '23P01'
             ) {
-                throw new Error('La salle est déjà réservée pour cette période (dates conflictuelles).');
+                throw new PublicError('La salle est déjà réservée pour cette période (dates conflictuelles).');
             }
             throw new Error(`Échec création réservation: ${errorMsg}`);
         }
@@ -364,14 +365,14 @@ export class HallService {
             .single();
 
         if (findErr || !existing) {
-            throw new Error('Réservation introuvable.');
+            throw new PublicError('Réservation introuvable.');
         }
 
         const isOwner = existing.partners?.user_id === userId;
         const isClient = existing.client_id === userId;
 
         if (!isOwner && !isClient) {
-            throw new Error('Action non autorisée.');
+            throw new PublicError('Action non autorisée.');
         }
 
         const { data: updated, error } = await supabase

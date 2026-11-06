@@ -7,6 +7,7 @@
  * paiement. Le montant est toujours relu en base ; le calcul des frais est inchangé (lot 3).
  */
 import crypto from 'node:crypto';
+import { PublicError } from '@/lib/api/public-error';
 import { getServerEnv } from '@/lib/env';
 import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError } from '@/lib/samirpay/types';
@@ -54,16 +55,16 @@ export class PaymentService {
                     .single();
 
                 if (error || !order) {
-                    throw new Error('Commande introuvable.');
+                    throw new PublicError('Commande introuvable.');
                 }
                 if (order.client_id !== userId) {
-                    throw new Error('Non autorisé : Cette commande appartient à un autre utilisateur.');
+                    throw new PublicError('Non autorisé : Cette commande appartient à un autre utilisateur.');
                 }
                 if (order.payment_status === 'SUCCESS') {
-                    throw new Error('Cette commande est déjà entièrement payée.');
+                    throw new PublicError('Cette commande est déjà entièrement payée.');
                 }
                 if (order.order_status === 'ANNULEE' || order.order_status === 'REJETEE') {
-                    throw new Error('Cette commande est annulée ou rejetée.');
+                    throw new PublicError('Cette commande est annulée ou rejetée.');
                 }
 
                 // Vérification des produits interdits / suspendus à la vente en ligne (§CDC V3.0)
@@ -73,7 +74,7 @@ export class PaymentService {
                     .eq('order_id', order.id);
 
                 if (orderItems && orderItems.some((item: any) => item.products?.status === 'SUSPENDU' || item.products?.status === 'INDISPONIBLE')) {
-                    throw new Error('Paiement en ligne refusé : La commande contient des produits interdits ou indisponibles à la vente en ligne.');
+                    throw new PublicError('Paiement en ligne refusé : La commande contient des produits interdits ou indisponibles à la vente en ligne.');
                 }
 
                 payableAmount = Number(order.balance_amount > 0 ? order.balance_amount : order.total_amount);
@@ -91,13 +92,13 @@ export class PaymentService {
                     .single();
 
                 if (error || !reservation) {
-                    throw new Error('Réservation de salle introuvable.');
+                    throw new PublicError('Réservation de salle introuvable.');
                 }
                 if (reservation.client_id !== userId) {
-                    throw new Error('Non autorisé : Réservation appartenant à un autre utilisateur.');
+                    throw new PublicError('Non autorisé : Réservation appartenant à un autre utilisateur.');
                 }
                 if (reservation.payment_status === 'SUCCESS') {
-                    throw new Error('Cette réservation de salle est déjà payée.');
+                    throw new PublicError('Cette réservation de salle est déjà payée.');
                 }
 
                 payableAmount = Number(
@@ -119,13 +120,13 @@ export class PaymentService {
                     .single();
 
                 if (error || !tableRes) {
-                    throw new Error('Réservation de table introuvable.');
+                    throw new PublicError('Réservation de table introuvable.');
                 }
                 if (tableRes.client_id !== userId) {
-                    throw new Error('Non autorisé : Réservation appartenant à un autre utilisateur.');
+                    throw new PublicError('Non autorisé : Réservation appartenant à un autre utilisateur.');
                 }
                 if (tableRes.payment_status === 'SUCCESS') {
-                    throw new Error('Cette réservation de table est déjà payée.');
+                    throw new PublicError('Cette réservation de table est déjà payée.');
                 }
 
                 payableAmount = Number(tableRes.deposit_amount > 0 ? tableRes.deposit_amount : 0);
@@ -143,7 +144,7 @@ export class PaymentService {
                     .single();
 
                 if (error || !plan) {
-                    throw new Error('Plan d\'abonnement introuvable.');
+                    throw new PublicError('Plan d\'abonnement introuvable.');
                 }
 
                 const { data: partnerRec } = await supabase
@@ -163,7 +164,7 @@ export class PaymentService {
             }
 
             default:
-                throw new Error('Type de cible de paiement non supporté.');
+                throw new PublicError('Type de cible de paiement non supporté.');
         }
 
         if (payableAmount <= 0) {

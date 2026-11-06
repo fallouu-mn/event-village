@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { PublicError } from '@/lib/api/public-error';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 
 export interface FinancialReconciliationItem {
@@ -307,7 +308,7 @@ export class AdminService {
 
         // 1. Protection : interdiction d'anonymiser son propre compte administrateur
         if (targetUserId === actor.id) {
-            throw new Error('Impossible de supprimer votre propre compte administrateur.');
+            throw new PublicError('Impossible de supprimer votre propre compte administrateur.');
         }
 
         // 2. Récupérer les informations du compte cible
@@ -322,7 +323,7 @@ export class AdminService {
         }
 
         if (targetUser?.role === 'SUPERADMIN' && actor.role !== 'SUPERADMIN') {
-            throw new Error('Seul un Superadmin peut supprimer un compte SUPERADMIN.');
+            throw new PublicError('Seul un Superadmin peut supprimer un compte SUPERADMIN.');
         }
 
         const anonymizedEmail = `${targetUserId}@deleted.eventvillage.sn`;
@@ -354,7 +355,7 @@ export class AdminService {
         }
         // Lot 1C.3 : sessions et jetons de rafraîchissement révoqués explicitement, sans dépendre du bannissement
         if (!(await revokeUserSessions(targetUserId, { reason: 'USER_ANONYMIZED', actorId: actor.id }))) {
-            throw new Error('Révocation des sessions du compte anonymisé impossible.');
+            throw new PublicError('Révocation des sessions du compte anonymisé impossible.');
         }
 
         // 4. DB PUBLIQUE users (Anonymisation RGPD)
@@ -446,7 +447,7 @@ export class AdminService {
                 objectId: targetUserId,
                 metadata: { failed: failedCleanups },
             });
-            throw new Error(`Anonymisation incomplète : retrait impossible (${failedCleanups.join(', ')}). Relancez l'anonymisation ; une caisse ouverte doit d'abord être clôturée.`);
+            throw new PublicError(`Anonymisation incomplète : retrait impossible (${failedCleanups.join(', ')}). Relancez l'anonymisation ; une caisse ouverte doit d'abord être clôturée.`);
         }
 
         // 6. Journalisation d'audit inaltérable
