@@ -30,13 +30,14 @@
  * Lot 8 (contrat 15.4, T26) : tests 8 à 12, un par sujet, pour qu'un rouge attendu n'empêche pas de lire les tests 1 à 7 :
  *  8. barre d'achat fixe (8.2 s) ; 9. plein écran du scanner après défilement forcé (8.2 s) ; 10. taille réelle du lot
  *  hors ligne, [HORS-LIGNE-TRANSFERE] (8.2 x) ; 11. scan repris sans ligne en base (8.2 e) ; 12. écart de caisse sans stub
- *  (8.2 f). Le déplacement de expectResumed vers support/parcours.ts est fait à la vague F, avec la recette.
+ *  (8.2 f). Vague F (T26) : expectResumed est dans support/parcours.ts, partagé avec la recette, sans changement.
  */
 import type { Browser, BrowserContext, Locator, Page, Route, TestInfo } from '@playwright/test';
 import { test, expect, openRoleContext } from './support/fixtures';
 import type { RoleKey } from './support/accounts';
 import { CDP_NO_THROTTLING, cdpNetworkConditions, NET_3G } from './support/devices';
 import { PageGuard } from './support/network';
+import { expectResumed } from './support/parcours';
 import { serviceClient } from './support/service';
 import {
     codeOf, computedPayload, describeProbe, expectBuyBarAnchored, fmtMs, forgedPayload, installScanProbe, livePayload, median, openScanner, percentile,
@@ -552,17 +553,6 @@ async function expectHistory(page: Page, ticketNumbers: string[], what: string):
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
     for (const number of ticketNumbers) {
         await expect(page.getByText(number).filter({ visible: true }).first(), `${what} : billet ${number} dans l'historique relu sur le serveur`).toBeVisible({ timeout: 20_000 });
-    }
-}
-
-/** Contrôle repris sans repasser par l'écran de choix : même événement, même mode ; caméra : « Reprendre le contrôle ». */
-async function expectResumed(page: Page, title: string, mode: 'camera' | 'manual', what: string): Promise<void> {
-    await expect(page.getByRole('heading', { level: 1, name: title }), `${what} : même événement repris (barre d'état du scanner)`).toBeVisible({ timeout: 45_000 });
-    await expect(page.getByRole('heading', { level: 1, name: /^commencer le contr[ôo]le$/i }), `${what} : l'écran de choix n'est pas réaffiché`).toHaveCount(0);
-    const pressed = page.getByRole('button', { name: mode === 'camera' ? /^caméra$/i : /^saisie manuelle$/i });
-    await expect(pressed, `${what} : même mode (${mode === 'camera' ? 'caméra' : 'saisie manuelle'})`).toHaveAttribute('aria-pressed', 'true');
-    if (mode === 'camera') {
-        await expect(page.getByRole('button', { name: /^reprendre le contr[ôo]le$/i }), `${what} : écran « Reprendre le contrôle »`).toBeVisible();
     }
 }
 

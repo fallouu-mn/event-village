@@ -237,7 +237,7 @@ export function createFakeCore({ base, sp, mt, transactions, authorized, webhook
         return null;
     }
 
-    /** Points de contrôle des paiements : terminer, refuser, lister. */
+    /** Points de contrôle des paiements : terminer, refuser, lister, régler le solde (AM3 : remboursement bloqué de la recette). */
     async function control(req, res, url) {
         const path = url.pathname;
         if (req.method === 'POST' && (path === '/__test/samirpay/complete' || path === '/__test/samirpay/fail')) {
@@ -258,6 +258,15 @@ export function createFakeCore({ base, sp, mt, transactions, authorized, webhook
             log(`paiement ${tx.orderId} passé en SUCCESS ; webhook : ${hook.ok ? `HTTP ${hook.status}` : hook.error}`);
             if (!hook.ok) return json(res, 502, { ok: false, transactionId: tx.transactionId, orderId: tx.orderId, error: hook.error });
             return json(res, 200, { ok: true, transactionId: tx.transactionId, orderId: tx.orderId, status: tx.status, webhookStatus: hook.status, webhookBody: hook.body });
+        }
+        if (req.method === 'POST' && path === '/__test/samirpay/balance') {
+            const parsed = parseJson(await readBody(req));
+            if (!parsed.ok) return json(res, 400, { ok: false, error: `corps invalide : ${parsed.error}` });
+            const { solde } = parsed.value;
+            if (!Number.isInteger(solde) || solde < 0) return json(res, 400, { ok: false, error: 'solde : entier positif ou nul attendu' });
+            balance = solde;
+            log(`solde du faux SamirPay fixé à ${balance}`);
+            return json(res, 200, { ok: true, balance });
         }
         if (req.method === 'GET' && path === '/__test/samirpay/transactions') {
             const list = [...transactions.values()].slice(-50).reverse().map((t) => ({ ...t, telephone: `${t.telephone.slice(0, 2)}*****${t.telephone.slice(-2)}` }));

@@ -16,6 +16,7 @@
  *      POST /__test/samirpay/complete { transactionId | orderId | telephone } : transaction en SUCCESS puis
  *           webhook RÉEL (form-urlencoded transaction_id, order_id, status=success) posté au callBackUrl reçu ;
  *      POST /__test/samirpay/fail { … } : transaction en FAILED (le contrat n'envoie aucun webhook d'échec) ;
+ *      POST /__test/samirpay/balance { solde } : solde du compte fixé, entier >= 0 (lot 8, AM3 : remboursement bloqué) ;
  *      GET  /__test/samirpay/transactions ; GET /__test/sms?to=&limit= (derniers SMS reçus) ; GET /__test/health.
  *  - Lot 6 (contrat P4) — faux service push web (RFC 8030, 8291, 8292), visé par les abonnements des
  *    captures (état « activé » simulé, e2e/support/fake-push.ts) :
