@@ -138,8 +138,13 @@ const serverEnvSchema = z.object({
     SUPABASE_AUTH_HOOK_SECRET: optionalString,
     CRON_SECRET: optionalString,
 
-    // Intégrations : "real" (défaut) ou "fake" (tests uniquement)
+    // Intégrations : "real" (défaut) ou "fake" (tests, et mode d'essai en développement ; refusé ailleurs, voir getServerEnv)
     EV_INTEGRATIONS: z.enum(['real', 'fake']).default('real'),
+    // Lot 8 (8.1), mode d'essai seulement ; aucune de ces variables n'existe en production.
+    // URL du faux SamirPay local, exigée et contrôlée par lib/integrations/dev-adapters.ts
+    EV_DEV_FAKE_SERVICES_URL: optionalString,
+    // Posée par scripts/dev/essai-start.mjs seulement, sans effet si SAMIRPAY_API_URL n'est pas locale
+    EV_ESSAI_SIMULATION: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -191,8 +196,10 @@ export function getServerEnv(): ServerEnv {
         throw new ServerEnvError(issues);
     }
 
-    if (parsed.data.EV_INTEGRATIONS === 'fake' && parsed.data.NODE_ENV === 'production') {
-        throw new ServerEnvError(['EV_INTEGRATIONS=fake est interdit en production']);
+    // Lot 8 (8.1) : `process.env.NODE_ENV` littéral, figé au build, et non parsed.data : `NODE_ENV=development
+    // next start` passerait, et le défaut « development » du schéma autoriserait le mode si la variable manquait.
+    if (parsed.data.EV_INTEGRATIONS === 'fake' && process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
+        throw new ServerEnvError(['EV_INTEGRATIONS=fake est interdit hors développement et test']);
     }
     const reuse = dedicatedSecretReuse(parsed.data);
     if (reuse.length > 0) throw new ServerEnvError(reuse);

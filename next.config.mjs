@@ -1,3 +1,5 @@
+import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
+
 /**
  * Lot 5 (tâches 5.3 et 5.6) — hôte des images optimisées par next/image : le stockage public du projet
  * Supabase, dérivé de NEXT_PUBLIC_SUPABASE_URL (protocole, hôte et port exacts : instance hébergée en
@@ -91,4 +93,11 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+/**
+ * Lot 8 (8.1, L20) — premier verrou de la page de développement : `*.dev.tsx` et `*.dev.ts` ne sont des pages
+ * et des routes que sous `next dev`. Au build, `page.dev.tsx` ne répond pas au motif de Next : rien n'est servi.
+ */
+export default function config(phase) {
+  if (phase !== PHASE_DEVELOPMENT_SERVER) return nextConfig;
+  return { ...nextConfig, pageExtensions: ['tsx', 'ts', 'jsx', 'js', 'dev.tsx', 'dev.ts'] };
+}

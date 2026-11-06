@@ -400,8 +400,8 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        const baseUrl   = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        const setupLink = `${baseUrl}/controller/setup?phone=${encodeURIComponent(normalizedPhone)}`;
+        // Lot 8 (L26) : lu à l'exécution ; `process.env.NEXT_PUBLIC_APP_URL` serait figé au build (adresse d'un tunnel)
+        const setupLink = `${env.NEXT_PUBLIC_APP_URL}/controller/setup?phone=${encodeURIComponent(normalizedPhone)}`;
 
         // Lot 6 (E7) : seul un compte à activer (nouveau ou, depuis le lot 7, encore temporaire) reçoit un
         // SMS synchrone (code d'activation et lien), journalisé dans la boîte d'envoi sans le code ni le lien.

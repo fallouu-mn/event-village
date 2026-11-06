@@ -2,18 +2,21 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest } from 'next/server';
 import { getServerEnv } from '@/lib/env';
+import { simulationHeaders } from '@/lib/integrations/simulation';
 import { noStoreFetch } from './no-store-fetch';
 
 /**
  * Client Supabase avec clé Service Role pour les opérations backend sécurisées
  * (Webhooks, calculs financiers, mises à jour critiques).
  * Ne JAMAIS utiliser côté frontend ou dans un composant client.
+ * Lot 8 (L28) : seul client service_role, il porte l'en-tête du mode d'essai sur un serveur d'essai, et jamais
+ * ailleurs : la base marque ainsi les opérations simulées (lib/integrations/simulation.ts).
  */
 export function getServiceRoleClient() {
     const env = getServerEnv();
 
     return createSupabaseClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-        global: { fetch: noStoreFetch },
+        global: { fetch: noStoreFetch, headers: simulationHeaders() },
         auth: {
             persistSession: false,
             autoRefreshToken: false,

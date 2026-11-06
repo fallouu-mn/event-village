@@ -33,12 +33,19 @@ interface RawResponse {
 
 type Json = Record<string, unknown>;
 
+/** Lot 8 (8.1, L19) : cible explicite, pour la passerelle de développement. Sans elle, tout vient de getServerEnv(). */
+export interface SamirPayClientOptions {
+    baseUrl: string;
+    apiKey: string;
+    secretKey: string;
+}
+
 function asObject(v: unknown): Json | null {
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : null;
 }
 
 export class SamirPayHttpClient implements PaymentGateway {
-    constructor() {
+    constructor(private readonly options?: SamirPayClientOptions) {
         if (typeof window !== 'undefined') {
             throw new Error('SamirPayHttpClient ne doit jamais être exécuté côté navigateur.');
         }
@@ -49,7 +56,7 @@ export class SamirPayHttpClient implements PaymentGateway {
     }
 
     private url(path: string): string {
-        return `${this.env.SAMIRPAY_API_URL.replace(/\/+$/, '')}${path}`;
+        return `${(this.options?.baseUrl ?? this.env.SAMIRPAY_API_URL).replace(/\/+$/, '')}${path}`;
     }
 
     /**
@@ -64,8 +71,8 @@ export class SamirPayHttpClient implements PaymentGateway {
                 method,
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-API-KEY': this.env.SAMIRPAY_API_KEY,
-                    'X-SECRET-KEY': this.env.SAMIRPAY_SECRET_KEY,
+                    'X-API-KEY': this.options?.apiKey ?? this.env.SAMIRPAY_API_KEY,
+                    'X-SECRET-KEY': this.options?.secretKey ?? this.env.SAMIRPAY_SECRET_KEY,
                 },
                 body: body ? JSON.stringify(body) : undefined,
                 signal: controller.signal,

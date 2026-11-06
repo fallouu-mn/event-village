@@ -66,6 +66,12 @@ function hasAnyRole(roles: string[], required: string[]): boolean {
 }
 
 /**
+ * Lot 8 (8.1, L20) — deuxième verrou de la page de développement. Motif ancré : /developpeurs n'est pas touché.
+ * `process.env.NODE_ENV` est figé au build : en production, ces chemins rendent 404 quel que soit l'environnement.
+ */
+const DEV_ROUTE = /^\/(?:api\/)?dev(?:\/|$)/;
+
+/**
  * Lot 1B.1 — les rôles ne se lisent jamais dans user_metadata (modifiable par l'utilisateur via
  * auth.updateUser). Ils sont lus dans public.user_roles, source unique utilisée aussi par la RLS
  * et les routes serveur, avec la session de l'utilisateur (politique « ses propres rôles »).
@@ -74,6 +80,11 @@ function hasAnyRole(roles: string[], required: string[]): boolean {
  */
 export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl;
+
+    if (DEV_ROUTE.test(pathname)) {
+        if (process.env.NODE_ENV === 'development' && process.env.EV_INTEGRATIONS === 'fake') return NextResponse.next();
+        return new NextResponse(null, { status: 404 });
+    }
 
     if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
         return NextResponse.next();
