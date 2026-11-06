@@ -926,7 +926,7 @@ function adminSignalSubscriptions(rel: string): Array<{ line: number; kinds: str
     const sf = sourceOf(rel);
     return objectLiterals(rel, (o) => propString(sf, o, 'table') === 'admin_signals').map((o) => {
         const raw = propString(sf, o, 'filter');
-        const m = raw ? /^kind=in\.\(([A-Z_]+(?:,[A-Z_]+)*)\)$/.exec(raw.replace(/\s+/g, '')) : null;
+        const m = raw ? /^kind=in\.\(([A-Z0-9_]+(?:,[A-Z0-9_]+)*)\)$/.exec(raw.replace(/\s+/g, '')) : null;
         return { line: lineOf(sf, o), kinds: m ? m[1].split(',').sort() : null, raw: raw ?? (hasProp(o, 'filter') ? '(expression)' : null) };
     });
 }
