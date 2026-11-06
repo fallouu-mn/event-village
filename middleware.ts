@@ -33,6 +33,9 @@ const PUBLIC_API_EXACT = [
     // contrôle elle-même son interrupteur (404 s'il est fermé)
     '/api/features',
     '/api/halls',
+    // Lot 8 (A41) : devis d'un panier, sans session. Sans cette ligne, un visiteur lisait « Total indisponible » sur
+    // la fiche et ne pouvait pas commencer un achat. POST /api/checkout reste protégé.
+    '/api/checkout/quote',
 ];
 
 /**
