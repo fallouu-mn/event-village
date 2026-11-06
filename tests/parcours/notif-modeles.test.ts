@@ -25,6 +25,11 @@
  * FREE_TICKETS_CONFIRMED et TRANSFER_RECEIVED ont le bouton « Voir mes billets » et les phrases obligatoires
  * (D93, exception nommée de la règle générique) ; contenu in-app de TRANSFER_RECEIVED avec le numéro (D94).
  *
+ * Lot 8, T7 (contrat 10.1 et 6.1) : le lien de PAYMENT_SUCCESS dépend de la cible du paiement (8.2 m : liens
+ * admis /orders et /partner/subscription) ; type ADMIN_DUPLICATE_PAYMENT ajouté à la table attendue (8.2 a).
+ * Rouge jusqu'à fix(8.2m) : lien d'un abonnement (lib/notifications/catalog.ts:882, link: () => '/orders').
+ * Rouge jusqu'à fix(8.2a) : le type n'est pas au catalogue ; chaque boucle sur la table le nomme par known().
+ *
  * Noms de variables fixés par ce test là où le contrat se tait (G2 « Données », placeholders de G4) :
  * title, location, city, start_at, event_id ; ticket_count, service_fee, total (achat, billets gratuits) ;
  * amount, reference (guichet, retraits, remboursements) ; operator (code WAVE | ORANGE_MONEY, affiché
@@ -130,6 +135,13 @@ async function catalogModule(): Promise<CatalogModule> {
     return catalogCache;
 }
 
+/** Entrée du catalogue pour un type de la table G2 ; un type absent est nommé, jamais une TypeError. */
+function known(catalog: Record<string, CatalogEntry>, type: string): CatalogEntry {
+    const e = catalog[type];
+    assert.ok(e, `type ${type} absent de NOTIFICATION_CATALOG`);
+    return e;
+}
+
 async function entry(type: string): Promise<CatalogEntry> {
     const { catalog } = await catalogModule();
     const e = catalog[type];
@@ -233,7 +245,8 @@ const EXPECTED: ExpectedType[] = [
     ess('PARTNER_REACTIVATED', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Compte réactivé'),
     ess('TRIAL_STARTED', [I, S], 'PARTNER', 'B', 'TRIAL', ['/partner/dashboard'], 'Période d\'essai activée'),
     ess('SUBSCRIPTION_ACTIVATED', [I], 'PARTNER', 'A', 'SUBSCRIPTION_ACTIVATED', ['/partner/subscription'], 'Abonnement activé'),
-    ess('PAYMENT_SUCCESS', [I], 'CLIENT', 'A', 'PAYMENT_SUCCESS', ['/orders'], 'Paiement confirmé'),
+    // Lot 8, tâche 8.2 m (contrat 10.1) : le lien suit la cible du paiement, voir « PAYMENT_SUCCESS : lien selon la cible ».
+    ess('PAYMENT_SUCCESS', [I], 'CLIENT', 'A', 'PAYMENT_SUCCESS', ['/orders', '/partner/subscription'], 'Paiement confirmé'),
     ess('HALL_RESERVATION_REQUESTED', [I], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls'], 'Nouvelle demande de réservation'),
     ess('HALL_RESERVATION_CONFIRMED', [I], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Réservation confirmée'),
     ess('HALL_RESERVATION_CANCELLED', [I], 'ANY', 'B', 'HALL_RESERVATION', ['/orders', '/partner/halls'], 'Réservation annulée'),
@@ -246,6 +259,8 @@ const EXPECTED: ExpectedType[] = [
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement à valider', 'events.read'),
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'KYC', ['/admin/dashboard'], 'Nouvelle candidature', 'partners.read'),
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Remboursement à reprendre', 'refunds.manage'),
+    // Lot 8, tâche 8.2 a (contrat 6.1, L32) : alerte du second paiement réussi d'un même panier.
+    ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Paiement en double remboursé', 'refunds.manage'),
     ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Versement incertain', 'refunds.manage'),
     ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Retrait refusé par l\'opérateur', 'refunds.manage'),
     ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'FINANCE_ALERT', ['/admin/finance'], 'Créance sur un compte', 'payments.read'),
@@ -436,7 +451,7 @@ describe('6.3 Catalogue : registre SQL = catalogue TS = table G2 (contrat C1, G1
         const { catalog } = await catalogModule();
         assert.deepEqual(Object.keys(catalog).sort(), EXPECTED.map((e) => e.type).sort(), 'types du catalogue = types de G2');
         for (const exp of EXPECTED) {
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             assert.equal(e.type, exp.type, `${exp.type} : champ type`);
             assert.deepEqual(
                 { family: e.family, topic: e.topic, channels: [...e.channels].sort(), audience: e.audience, suspendedPolicy: e.suspendedPolicy, syncOnly: e.syncOnly, adminPermission: e.adminPermission },
@@ -470,7 +485,7 @@ describe('6.3 Catalogue : registre SQL = catalogue TS = table G2 (contrat C1, G1
         const { catalog } = await catalogModule();
         const issues: string[] = [];
         for (const exp of RENDERED_TYPES) {
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             assert.ok(e.sample && typeof e.sample === 'object', `${exp.type} : sample absent (G1)`);
             const fns: Record<Ch, keyof CatalogEntry> = { IN_APP: 'inApp', SMS: 'sms', PUSH: 'push', EMAIL: 'email' };
             const missing = exp.channels.filter((ch) => typeof e[fns[ch]] !== 'function');
@@ -507,7 +522,7 @@ describe('6.3 Catalogue : registre SQL = catalogue TS = table G2 (contrat C1, G1
         const issues: string[] = [];
         for (const exp of RENDERED_TYPES) {
             if (!exp.links) continue;
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             const link = e.link(e.sample);
             if (typeof link !== 'string' || !link.startsWith('/') || link.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(link) || /\s/.test(link)) {
                 issues.push(`${exp.type} : lien non interne ${JSON.stringify(link)}`);
@@ -517,6 +532,25 @@ describe('6.3 Catalogue : registre SQL = catalogue TS = table G2 (contrat C1, G1
             if (!allowed.includes(link)) issues.push(`${exp.type} : lien ${link}, attendu ${allowed.join(' ou ')}`);
         }
         assert.deepEqual(issues, [], issues.join('\n'));
+    });
+
+    test('PAYMENT_SUCCESS : lien selon la cible, un abonnement mène à /partner/subscription (8.2 m, contrat 10.1)', async () => {
+        const e = await entry('PAYMENT_SUCCESS');
+        const { renderNotification } = await catalogModule();
+        const data = dataFrom(e.sample, { payment_target: 'SUBSCRIPTION' });
+        assert.equal(e.link(data), '/partner/subscription', 'lien du catalogue pour payment_target = SUBSCRIPTION');
+        const rendered = renderNotification('PAYMENT_SUCCESS', 'IN_APP', data, CTX) as { actionUrl?: unknown };
+        assert.equal(rendered.actionUrl, '/partner/subscription', `renderNotification (IN_APP) : ${JSON.stringify(rendered)}`);
+    });
+
+    test('témoin PAYMENT_SUCCESS : /orders pour les autres cibles et pour une ligne déjà en file, sans la clé (lecture tolérante, L57)', async () => {
+        const e = await entry('PAYMENT_SUCCESS');
+        for (const target of ['ORDER', 'HALL_RESERVATION', 'TABLE_RESERVATION']) {
+            assert.equal(e.link(dataFrom(e.sample, { payment_target: target })), '/orders', `lien pour payment_target = ${target}`);
+        }
+        const queued = dataFrom(e.sample, {}, ['payment_target']);
+        assert.ok(!('payment_target' in queued), 'ligne d\'avant la migration : données sans payment_target');
+        assert.equal(e.link(queued), '/orders', 'ligne déjà en file : aucune levée, lien inchangé');
     });
 });
 
@@ -528,7 +562,7 @@ describe('6.3 Catalogue : in-app, push et email (contrat G4, F3)', () => {
         const issues: string[] = [];
         for (const exp of RENDERED_TYPES) {
             if (!exp.channels.includes(I) || !exp.title) continue;
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             const r = e.inApp!(e.sample);
             const ok = typeof exp.title === 'string' ? norm(r.title) === norm(exp.title) : exp.title.test(norm(r.title));
             if (!ok) issues.push(`${exp.type} : titre « ${r.title} », attendu « ${String(exp.title)} »`);
@@ -567,7 +601,7 @@ describe('6.3 Catalogue : in-app, push et email (contrat G4, F3)', () => {
         const issues: string[] = [];
         for (const exp of RENDERED_TYPES) {
             if (!exp.channels.includes(P)) continue;
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             for (const d of [e.sample, stress(e.sample, LONG_GSM_TEXT)]) {
                 const push = e.push!(d);
                 if (push.body.length > 160) issues.push(`${exp.type} : corps push de ${push.body.length} caractères`);
@@ -587,7 +621,7 @@ describe('6.3 Catalogue : in-app, push et email (contrat G4, F3)', () => {
         const issues: string[] = [];
         for (const exp of RENDERED_TYPES) {
             if (!exp.channels.includes(M)) continue;
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             const mail = e.email!(e.sample, CTX);
             const inApp = e.inApp!(e.sample);
             const link = e.link(e.sample);
@@ -636,7 +670,7 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
         const { catalog } = await catalogModule();
         const issues: string[] = [];
         for (const exp of SMS_TYPES) {
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             for (const d of variants(exp.type, stress(e.sample, LONG_GSM_TEXT))) {
                 const text = e.sms!(d, CTX);
                 const m = measureSms(text);
@@ -653,7 +687,7 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
         const forbidden = /[«»’‘“”°çêâôîûïëœ  –—…]/;
         const issues: string[] = [];
         for (const exp of SMS_TYPES) {
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             for (const d of variants(exp.type, stress(e.sample, 'Gala Dakar'))) {
                 const text = e.sms!(d, CTX);
                 const bad = nonGsmChars(text);
@@ -670,7 +704,7 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
         const issues: string[] = [];
         let ucs2 = 0;
         for (const exp of SMS_TYPES) {
-            const e = catalog[exp.type];
+            const e = known(catalog, exp.type);
             for (const d of variants(exp.type, stress(e.sample, LONG_UCS2_TEXT))) {
                 const text = e.sms!(d, CTX);
                 const m = measureSms(text);
