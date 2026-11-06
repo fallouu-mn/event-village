@@ -81,7 +81,6 @@ async function snapshot(): Promise<Snapshot> {
         dashboard: {
             grossRevenue: Number(dk.grossRevenue),
             netRevenue: Number(dk.netRevenue),
-            commissionAmount: Number(dk.commissionAmount),
             soldeDisponible: Number(dk.soldeDisponible),
         },
         partnerMetrics: { grossRevenue: Number(mk.grossRevenue), netRevenue: Number(mk.netRevenue) },

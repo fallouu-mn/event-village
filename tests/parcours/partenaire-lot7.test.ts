@@ -39,6 +39,10 @@
  *    formatFcfa importé de PaymentModal, pas d'OtpInput ; components/partner/onboarding/FirstEventSteps.tsx absent.
  * Garde-fous verts sur le code actuel (signalés) : usePartnerOrders importé par le tableau de bord ;
  * finances sans `* 0.01` ni « 1.5 % ».
+ *
+ * Lot 8, tâche 8.2 p, T13 (contrat 10.4, L60) : commissionAmount, commissionRate et evCommission retirés, car
+ * ces zéros en dur ne sont servis à aucun écran : le modèle ne prélève rien sur l'organisateur. Rouge jusqu'à
+ * fix(8.2p) : lib/partner/partner-dashboard.service.ts:28,70,663,743 et app/api/partner/finance/route.ts:65,73.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -751,7 +755,7 @@ describe('7.4 Écrans partenaire : chiffres servis par le serveur, états, conte
         assert.deepEqual(zeros, [], 'zéro affiché sans donnée (« 0 FCFA », « 0 vendu ») : KpiCard loading puis ErrorState');
         const code = files.map(codeOf).join('\n');
         assert.ok(!/\bkpis\b[\w?.!]*\s*(\|\||\?\?)\s*0\b/.test(code), 'repli « || 0 » sur un indicateur : un échec s’afficherait comme un zéro');
-        assert.ok(!strings.some((s) => /Commissions EV/i.test(s)), '« Commissions EV » affiché alors que commissionAmount est codé à 0 (partner-dashboard.service.ts:477,553)');
+        assert.ok(!strings.some((s) => /Commissions EV/i.test(s)), '« Commissions EV » affiché alors qu’Event Village ne prélève rien sur l’organisateur (8.2 p, contrat 10.4)');
         assert.ok(/\bonboarding\b/.test(code), 'onboarding servi par /api/partner/dashboard non lu');
         assert.ok(/\bends_at\b/.test(code), 'fin d’essai (trial.ends_at) servie non lue');
     });
@@ -846,5 +850,71 @@ describe('7.4 Écrans partenaire : chiffres servis par le serveur, états, conte
         assert.ok(/\bhref\s*=\s*\{/.test(code), 'lien de chaque étape (href servi) non rendu');
         const links = rendered([FIRST_STEPS], 'LinkButton', ['components/ui/LinkButton.tsx']).length;
         assert.ok(links > 0 || /<Link\b/.test(code), 'aucun lien vers l’étape (LinkButton ou Link)');
+    });
+});
+
+// ── Lot 8, tâche 8.2 p — zéros en dur retirés (contrat 10.4, L60) ──────────
+
+const PARTNER_SERVICE = 'lib/partner/partner-dashboard.service.ts';
+const PARTNER_FINANCE_ROUTE = 'app/api/partner/finance/route.ts';
+const PARTNER_FINANCE_MODULE = '../../app/api/partner/finance/route';
+const REMOVED_FIELDS = ['commissionAmount', 'commissionRate', 'evCommission'];
+
+function sourceFilesUnder(dir: string): string[] {
+    return fs.readdirSync(absPath(dir), { recursive: true, encoding: 'utf8' })
+        .map((f) => `${dir}/${f.split(path.sep).join('/')}`)
+        .filter((f) => /\.tsx?$/.test(f));
+}
+
+/** Chemins (`kpis.commissionAmount`, `events[0].commissionAmount`…) des clés interdites, à toute profondeur. */
+function removedKeysIn(value: unknown, at = ''): string[] {
+    if (Array.isArray(value)) return value.flatMap((v, i) => removedKeysIn(v, `${at}[${i}]`));
+    if (!isRecord(value)) return [];
+    return Object.entries(value).flatMap(([k, v]) => {
+        const here = at ? `${at}.${k}` : k;
+        return [...(REMOVED_FIELDS.includes(k) ? [here] : []), ...removedKeysIn(v, here)];
+    });
+}
+
+describe('8.2 p — commissionAmount retiré, jamais un 0 en dur (contrat 10.4, T13)', () => {
+    test(`statique : ${PARTNER_SERVICE} ne contient plus commissionAmount, ni aucun fichier de lib, app, components et hooks`, () => {
+        assert.ok(!/\bcommissionAmount\b/.test(fs.readFileSync(absPath(PARTNER_SERVICE), 'utf8')), `${PARTNER_SERVICE} : commissionAmount encore présent`);
+        const hits = ['lib', 'app', 'components', 'hooks'].flatMap(sourceFilesUnder)
+            .flatMap((f) => fs.readFileSync(absPath(f), 'utf8').split('\n').flatMap((line, i) => (/\bcommissionAmount\b/.test(line) ? [`${f}:${i + 1}`] : [])));
+        assert.deepEqual(hits, [], `commissionAmount encore présent :\n${hits.join('\n')}`);
+    });
+
+    test(`statique : ${PARTNER_FINANCE_ROUTE} ne sert plus commissionRate ni evCommission`, () => {
+        const code = codeOf(PARTNER_FINANCE_ROUTE);
+        assert.deepEqual(REMOVED_FIELDS.filter((f) => new RegExp(`\\b${f}\\b`).test(code)), [], `${PARTNER_FINANCE_ROUTE} : zéros en dur encore servis (L60)`);
+    });
+
+    test('GET /api/partner/dashboard : champ absent de kpis et de chaque événement, les montants réels restent servis', async () => {
+        const p = await newPartner('p8-commission');
+        await createPartnerEvent(p.partnerId, 'p8-commission', CATS);
+        const d = await dashboardOf(p, 'tableau de bord (8.2 p)');
+        const kpis = d.kpis;
+        const events = d.events;
+        assert.ok(isRecord(kpis), `dashboard.kpis absent — clés servies : ${Object.keys(d).join(', ')}`);
+        assert.ok(Array.isArray(events), `dashboard.events absent — clés servies : ${Object.keys(d).join(', ')}`);
+        assert.equal(events.length, 1, `un événement attendu, sinon rien n'est contrôlé par événement (${events.length})`);
+        const row = events[0] as Row;
+        for (const k of ['grossRevenue', 'netRevenue', 'refundedAmount']) {
+            assert.equal(typeof kpis[k], 'number', `kpis.${k} servi : ${JSON.stringify(kpis[k])}`);
+            assert.equal(typeof row[k], 'number', `events[0].${k} servi : ${JSON.stringify(row[k])}`);
+        }
+        assert.deepEqual(removedKeysIn({ kpis, events }), [], 'zéro en dur encore servi par /api/partner/dashboard');
+    });
+
+    test('GET /api/partner/finance : ni commissionRate ni evCommission, les montants réels restent servis', async () => {
+        const p = await newPartner('p8-commission-fin');
+        const res = await callGet(PARTNER_FINANCE_MODULE, jsonRequest('/api/partner/finance', 'GET', p.accessToken));
+        assert.equal(res.status, 200, `GET /api/partner/finance : ${show(res)}`);
+        const finance = res.body.finance;
+        assert.ok(isRecord(finance), `réponse sans objet finance : ${show(res)}`);
+        assert.ok(isRecord(finance.breakdown), `finance.breakdown absent : ${show(res)}`);
+        assert.equal(typeof finance.grossRevenue, 'number', `finance.grossRevenue servi : ${show(res)}`);
+        assert.equal(typeof finance.netRevenue, 'number', `finance.netRevenue servi : ${show(res)}`);
+        assert.deepEqual(removedKeysIn(finance), [], 'zéros en dur encore servis par /api/partner/finance');
     });
 });
