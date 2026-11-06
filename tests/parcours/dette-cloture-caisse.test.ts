@@ -43,7 +43,7 @@ import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { routeContext } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { authed, createTimedEvent, newController, openShift, shiftRow, type RouteResult } from './acces-helpers';
+import { authed, cashCheckin, createCashOrderTickets, createTimedEvent, newController, openShift, scan, shiftRow, ticketPayload, type RouteResult } from './acces-helpers';
 import { flushNotifications, outboxRows } from './notif-helpers';
 
 const CLOSE_ROUTE = '../../app/api/controller/shifts/close/route';
@@ -172,6 +172,16 @@ async function assertStillOpen(shiftId: string, label: string): Promise<void> {
     assert.equal(s.closed_at ?? null, null, `${label} : closed_at vide`);
 }
 
+/**
+ * Lot 8, tâche 8.2 f (contrat 3.6) : un refus JUSTIFICATION_REQUIRED ou PIN_REQUIRED porte l'écart, pour que l'écran
+ * l'affiche (components/shifts/ShiftModals.tsx:205-207) : expected, declared, discrepancy = déclaré − attendu.
+ */
+function assertGap(res: RouteResult, expected: number, declared: number, label: string): void {
+    assert.equal(res.body.expected, expected, `${label} : expected = total attendu : ${show(res)}`);
+    assert.equal(res.body.declared, declared, `${label} : declared = montant déclaré : ${show(res)}`);
+    assert.equal(res.body.discrepancy, declared - expected, `${label} : discrepancy = déclaré − attendu : ${show(res)}`);
+}
+
 // ── Clôture par la route ───────────────────────────────────────────────────
 
 describe('C2 — clôture de caisse par la route', () => {
@@ -214,6 +224,7 @@ describe('C2 — clôture de caisse par la route', () => {
             const res = await closeByRoute(c.ctrl, body);
             assert.equal(res.status, 400, `${label} : ${show(res)}`);
             assert.equal(res.body.code, 'JUSTIFICATION_REQUIRED', `${label} : code JUSTIFICATION_REQUIRED : ${show(res)}`);
+            assertGap(res, c.expected, c.expected + 1000, label);
             await assertStillOpen(c.shiftId, label);
         }
     });
@@ -228,7 +239,35 @@ describe('C2 — clôture de caisse par la route', () => {
         const none = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: c.expected + 1000, justification: JUSTIFICATION });
         assert.equal(none.status, 400, `écart sans PIN : ${show(none)}`);
         assert.equal(none.body.code, 'PIN_REQUIRED', `écart sans PIN : code PIN_REQUIRED : ${show(none)}`);
+        assertGap(none, c.expected, c.expected + 1000, 'écart sans PIN');
         await assertStillOpen(c.shiftId, 'écart sans PIN');
+    });
+
+    test('écart négatif (espèces manquantes) : JUSTIFICATION_REQUIRED puis PIN_REQUIRED portent expected, declared et discrepancy = −1000 ; caisse OUVERT', async () => {
+        const c = await newCashier('cl-ecart-negatif');
+        // Un total attendu positif ne vient que d'un encaissement réel (invariant (h) : somme des paiements rattachés)
+        const buyer = await newBuyer('cl-ecart-negatif');
+        const order = await createCashOrderTickets(buyer, partner, ev, 'Standard', 1);
+        const scanned = await scan(c.ctrl, { eventId: ev.eventId, payload: await ticketPayload(order.ticketIds[0]) });
+        assert.equal(scanned.body.result, 'cash_required', `billet à régler sur place : ${show(scanned)}`);
+        const paid = await cashCheckin(c.ctrl, { scanId: scanned.body.scan_id, eventId: ev.eventId });
+        assert.equal(paid.body.result, 'valid', `encaissement : ${show(paid)}`);
+        const expected = Number((await shiftRow(c.shiftId)).expected_cash_total);
+        assert.equal(expected, c.expected + 5000, 'total attendu après l’encaissement');
+        const declared = expected - 1000;
+
+        const noReason = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: declared, regisseurPin: pin });
+        assert.equal(noReason.status, 400, `écart négatif sans justification : ${show(noReason)}`);
+        assert.equal(noReason.body.code, 'JUSTIFICATION_REQUIRED', `écart négatif sans justification : ${show(noReason)}`);
+        assertGap(noReason, expected, declared, 'écart négatif sans justification');
+        assert.equal(noReason.body.discrepancy, -1000, 'écart négatif : signe de la RPC (déclaré − attendu)');
+
+        const noPin = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: declared, justification: JUSTIFICATION });
+        assert.equal(noPin.status, 400, `écart négatif sans PIN : ${show(noPin)}`);
+        assert.equal(noPin.body.code, 'PIN_REQUIRED', `écart négatif sans PIN : ${show(noPin)}`);
+        assertGap(noPin, expected, declared, 'écart négatif sans PIN');
+        assert.equal(noPin.body.discrepancy, -1000, 'écart négatif : signe de la RPC (déclaré − attendu)');
+        await assertStillOpen(c.shiftId, 'écart négatif');
     });
 
     test('double clôture simultanée sans écart : une 200, une 409 SHIFT_NOT_OPEN ; une seule clôture journalisée', async () => {
