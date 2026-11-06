@@ -596,7 +596,7 @@ async function activitiesOf(partnerId: string): Promise<string[]> {
 }
 
 /** Motifs d'un message de Postgres ou de PostgREST (jamais renvoyé au navigateur, D72). */
-const POSTGRES_TEXT_RE = /invalid input|syntax for type|violates|duplicate key|null value in column|double precision|relation "|column "|PGRST|SQLSTATE|\b(22P02|23502|23505|23514|42703)\b/i;
+export const POSTGRES_TEXT_RE = /invalid input|syntax for type|violates|duplicate key|null value in column|double precision|relation "|column "|PGRST|SQLSTATE|\b(22P02|23502|23505|23514|42703)\b/i;
 
 function assertInvalidField(reply: Reply, field: string, what: string): void {
     assert.equal(reply.status, 400, `${what} : statut ${reply.status}, corps ${reply.text.slice(0, 300)} (attendu 400 INVALID_FIELD)`);
