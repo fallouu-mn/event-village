@@ -20,9 +20,14 @@ const ManualSchema = z.object({
     identityVerified: z.unknown().optional(),
 });
 const CashSchema = z.object({ scanId: z.string().uuid(), eventId: z.string().uuid() });
+/** Lot 8 (contrat 3.5) : un renvoi n'exige que l'événement ; payload et numéro, s'ils sont là, ne sont jamais lus. */
+const ReplaySchema = z.object({ eventId: z.string().uuid() });
 
 /** Lot 7 (D39, contrat 3.3) : clé d'idempotence d'une lecture, même motif que la vente au guichet. */
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,100}$/;
+
+/** Lot 8 (contrat 3.5) : phrase complète de la réponse ; SCAN_RESULT_LABELS garde le libellé court de l'écran (7.1). */
+const NOT_PROCESSED_MESSAGE = 'Scan non traité : aucune entrée enregistrée. Scannez le billet de nouveau.';
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
@@ -35,9 +40,22 @@ type Rpc = Record<string, unknown> & { result?: string; http?: number; code?: st
 function scanResponse(data: Rpc): NextResponse {
     const result = data.result;
     if (!isScanResult(result)) throw new Error(`résultat de scan inconnu : ${JSON.stringify(data)}`);
-    return NextResponse.json(
-        { ...data, result, replayed: data.replayed === true, message: SCAN_RESULT_LABELS[result as ScanResult] },
-        { headers: { 'Cache-Control': 'no-store' } });
+    const message = result === 'not_processed' ? NOT_PROCESSED_MESSAGE : SCAN_RESULT_LABELS[result as ScanResult];
+    return NextResponse.json({ ...data, result, replayed: data.replayed === true, message }, { headers: { 'Cache-Control': 'no-store' } });
+}
+
+/**
+ * Lot 8 (contrat 3.5, L44) : indicateur de renvoi, lu sur le corps brut car les schémas retirent les clés inconnues.
+ * Seuls `replayOnly: true` et `replayOnly: false` (ou son absence) sont admis : toute autre valeur, ou la clé
+ * `replay_only`, serait sinon ignorée et une reprise repartirait en compostage réel.
+ */
+function replayFlagOf(body: unknown): 'replay' | 'normal' | 'invalid' {
+    if (!body || typeof body !== 'object') return 'normal';
+    if ('replay_only' in body) return 'invalid';
+    if (!('replayOnly' in body)) return 'normal';
+    const flag = (body as { replayOnly: unknown }).replayOnly;
+    if (flag === true) return 'replay';
+    return flag === false ? 'normal' : 'invalid';
 }
 
 /**
@@ -89,6 +107,9 @@ async function serverError(userId: string, eventId: string | null, message: stri
  * rejouée par le même scanneur rend le verdict d'origine (`replayed: true`), sans nouvelle ligne, même si
  * le code a expiré entre-temps. La version du secret lue ici sans verrou est recontrôlée par ticket_scan
  * sous le verrou du billet : une rotation validée entre les deux donne un refus (invariant (p)).
+ * Lot 8 (8.2 e, contrat 3.5) : `{ eventId, replayOnly: true }` est un renvoi après une sortie de l'application.
+ * Aucune lecture du billet ni du code : ticket_scan rend le verdict de la ligne de cette clé sur cet événement,
+ * ou `not_processed`, et n'écrit jamais rien. Le quota reste consommé.
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -105,15 +126,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Clé d’idempotence manquante ou invalide.', code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });
     }
     const body = read.body;
-    const camera = CameraSchema.safeParse(body);
-    const manual = camera.success ? null : ManualSchema.safeParse(body);
-    if (!camera.success && !manual?.success) {
+    const replayFlag = replayFlagOf(body);
+    if (replayFlag === 'invalid') {
+        return NextResponse.json({ error: 'Indicateur de renvoi invalide.', code: 'INVALID_REPLAY_FLAG' }, { status: 400 });
+    }
+    const replay = replayFlag === 'replay' ? ReplaySchema.safeParse(body) : null;
+    if (replay && !replay.success) {
+        return NextResponse.json({ error: 'Scan invalide : eventId requis.', code: 'INVALID_EVENT_ID' }, { status: 400 });
+    }
+    const camera = replay ? null : CameraSchema.safeParse(body);
+    const manual = replay || camera?.success ? null : ManualSchema.safeParse(body);
+    if (!replay && !camera?.success && !manual?.success) {
         return NextResponse.json({ error: 'Scan invalide : eventId et payload (ou manualTicketNumber) requis.' }, { status: 400 });
     }
 
     const p: Record<string, unknown> = { scanner_id: user.id, client_key: clientKey };
     try {
-        if (camera.success) {
+        if (replay?.success) {
+            p.event_id = replay.data.eventId;
+            p.replay_only = true;
+        } else if (camera?.success) {
             p.event_id = camera.data.eventId;
             p.method = 'QR';
             p.payload_hash = sha256(camera.data.payload);

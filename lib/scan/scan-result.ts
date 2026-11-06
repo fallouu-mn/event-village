@@ -24,12 +24,14 @@ export const SCAN_RESULTS = [
     'rate_limited',
     'network_error',
     'server_error',
+    // Lot 8 (8.2 e, L42) : renvoi d'une lecture sans ligne en base. Rendu par ticket_scan, jamais écrit dans ticket_scans
+    'not_processed',
 ] as const;
 
 export type ScanResult = (typeof SCAN_RESULTS)[number];
 
 /** Résultats techniques : jamais un verdict sur le billet. */
-export const TECHNICAL_SCAN_RESULTS: readonly ScanResult[] = ['rate_limited', 'network_error', 'server_error'];
+export const TECHNICAL_SCAN_RESULTS: readonly ScanResult[] = ['rate_limited', 'network_error', 'server_error', 'not_processed'];
 
 export function isScanResult(value: unknown): value is ScanResult {
     return typeof value === 'string' && (SCAN_RESULTS as readonly string[]).includes(value);
@@ -59,6 +61,7 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     rate_limited: 'Trop de scans : patientez quelques secondes',
     network_error: 'Erreur réseau : réessayez',
     server_error: 'Erreur serveur : réessayez',
+    not_processed: 'Scan non traité : scannez le billet de nouveau',
 };
 
 // ── Lot 7 (7.2, contrat 6.2) — catégories du résultat plein écran ─────────
@@ -89,6 +92,7 @@ export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
     rate_limited: 'technique',
     network_error: 'technique',
     server_error: 'technique',
+    not_processed: 'technique',
 };
 
 export function scanCategoryOf(result: ScanResult): ScanCategory {
