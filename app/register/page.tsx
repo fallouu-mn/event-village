@@ -31,6 +31,9 @@ import { useAuth } from '@/components/providers/AuthProvider';
 
 type Step = 'phone' | 'profile';
 
+/** Longueur admise par RegisterWithCodeSchema : un lien trafiqué ne bloque pas l'inscription sur un refus de validation. */
+const REFERRAL_CODE_MAX = 64;
+
 /** Destination interne (?redirect=) : commence par « / », jamais « // » ni « /\ » (redirection ouverte). */
 function safeInternalPath(raw: string | null): string | null {
     if (!raw) return null;
@@ -97,9 +100,16 @@ export default function RegisterPage() {
 
     const firstNameRef = useRef<HTMLInputElement | null>(null);
 
-    // ?redirect= conservé depuis la connexion (D61), lu dans le navigateur seulement.
+    // ?redirect= conservé depuis la connexion (D61) et ?ref= du lien de parrainage (A2), lus dans le navigateur
+    // seulement. « Plus d'options » s'ouvre pour que le code prérempli reste visible et modifiable.
     useEffect(() => {
-        setRedirectTo(safeInternalPath(new URLSearchParams(window.location.search).get('redirect')));
+        const params = new URLSearchParams(window.location.search);
+        setRedirectTo(safeInternalPath(params.get('redirect')));
+        const ref = params.get('ref')?.trim();
+        if (ref) {
+            setReferralCode(ref.slice(0, REFERRAL_CODE_MAX).toUpperCase());
+            setMoreOptions(true);
+        }
     }, []);
 
     // Décompte avant un nouveau code (délai servi par le serveur).
