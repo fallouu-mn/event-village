@@ -88,9 +88,9 @@ async function fieldsOf(partnerId: string): Promise<Row> {
 }
 
 async function activities(partnerId: string): Promise<string[]> {
-    const { data, error } = await service.from('partner_activities').select('activity_type').eq('partner_id', partnerId).order('activity_type');
+    const { data, error } = await service.from('partner_activities').select('activity_type').eq('partner_id', partnerId);
     assert.equal(error, null, `lecture des activités : ${error?.message}`);
-    return (data ?? []).map((r) => String((r as { activity_type: string }).activity_type));
+    return (data ?? []).map((r) => String((r as { activity_type: string }).activity_type)).sort();
 }
 
 function imageUrl(partnerId: string, folder: string): string {
