@@ -196,6 +196,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({ isOpen, 
       subtitle={eventTitle || report?.event.title || 'Bilan de l’événement'}
       icon={<FileText size={18} />}
       maxWidth="4xl"
+      scrollRegionLabel="Contenu du rapport de clôture"
       footer={
         <div className="flex w-full flex-col gap-3">
           {failedDownload && (

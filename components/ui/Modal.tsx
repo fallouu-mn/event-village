@@ -7,6 +7,11 @@ import { cn } from './cn';
 import { IconButton } from './IconButton';
 
 export interface ModalProps {
+  /**
+   * Nom de la zone défilante. À donner quand le corps ne contient aucun élément focalisable : elle reçoit alors le
+   * focus, sinon le clavier ne peut pas la faire défiler.
+   */
+  scrollRegionLabel?: string;
   isOpen: boolean;
   onClose: () => void;
   title?: string;
@@ -107,6 +112,7 @@ export const Modal: React.FC<ModalProps> = ({
   role = 'dialog',
   initialFocusRef,
   closeOnOverlayClick = true,
+  scrollRegionLabel,
 }) => {
   const uid = useId();
   const titleId = `${uid}-titre`;
@@ -232,7 +238,12 @@ export const Modal: React.FC<ModalProps> = ({
           </IconButton>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">{children}</div>
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-6"
+          {...(scrollRegionLabel ? { tabIndex: 0, role: 'group', 'aria-label': scrollRegionLabel } : {})}
+        >
+          {children}
+        </div>
 
         {footer && (
           <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border bg-surface-sunken/60 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
