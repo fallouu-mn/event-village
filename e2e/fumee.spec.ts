@@ -408,7 +408,11 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             await client.getByRole('button', { name: /^acheter/i }).click();
             const dialog = client.getByRole('dialog').or(client.getByRole('alertdialog'));
             await expect(dialog).toBeVisible();
-            await dialog.getByRole('radio', { name: /^wave/i }).check({ force: true }); // radio masqué (sr-only) dans son libellé : le libellé reçoit le clic
+            // Radio masqué (sr-only) dans son libellé : check({ force: true }) le jugeait parfois hors de l'écran dans la
+            // modale (runs 66 et 92) ; le clic est envoyé à l'élément, puis la sélection est vérifiée.
+            const wave = dialog.getByRole('radio', { name: /^wave/i });
+            await wave.dispatchEvent('click');
+            await expect(wave).toBeChecked();
             await dialog.getByLabel(/numéro/i).fill(fumeePayerPhone());
             await dialog.getByRole('button', { name: /payer|confirmer|continuer/i }).last().click();
             await client.waitForURL(/\/paiement\/[0-9a-f-]{36}/);
