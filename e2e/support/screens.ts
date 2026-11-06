@@ -26,6 +26,17 @@
  *  - `fakeCamera: 'barcode-detector'` : faux BarcodeDetector imposé (payload posé par le test) ;
  *  - `expectStatus` : statut HTTP attendu du document (404 des pages masquées).
  * Chaque simulation est écrite dans les notes de l'index (captures.spec.ts).
+ *
+ * Lot 8 (contrat 15.6, 8.1, 11.4 ; T21, T22, T23) : écrans ajoutés au commit rouge, rouges jusqu'à leur tâche (la colonne
+ * « tâche » du contrat). Modifications signalées :
+ *  - T21 : evenement-non-public exige un vrai 404 et le titre de la page introuvable (200 sinon, 8.2 h) ; les quatre
+ *    témoins publié, suspendu, annulé, terminé exigent 200 ; UUID inconnu et identifiant non UUID ajoutés ;
+ *  - T22 : caisse-cloture-ecart répond 400, le vrai statut (contrat 3.6) ; le stub à 409 masquait le défaut f ;
+ *  - T23 : scanner-guichet exige la mention « Sur place uniquement » sur la catégorie non vendue en ligne, à 14 px au moins ;
+ *  - 8.2 t : admin-notifications lit par CDP le gabarit du champ de date, attendu dd/mm/yyyy (L66).
+ * admin-remboursements-a-reprendre impose ses réponses : le compte admin de démonstration n'a ni payments.read ni
+ * refunds.manage (L76, aucun rôle de capture ajouté) et le seed n'a aucun remboursement bloqué. Elle prouve l'écran, la
+ * route est prouvée par admin-remboursements et par l'acte 8 de la recette.
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
@@ -33,6 +44,7 @@ import type { DemoIds } from './demo-ids';
 import type { FakePushCounters, FakePushMode } from './fake-push';
 import type { CaptureRole } from './fixtures';
 import type { PageGuard } from './network';
+import { expectBuyBarAnchored } from './terrain';
 
 export interface ScreenContext {
     page: Page;
@@ -45,6 +57,8 @@ export interface ScreenContext {
 export type CaptureView = 'mobile-clair' | 'mobile-sombre' | 'ordinateur-clair' | 'ordinateur-sombre';
 /** Écrans du contrôleur : thème sombre forcé par app/controller/layout.tsx (D85), deux vues seulement. */
 export const DARK_VIEWS: readonly CaptureView[] = ['mobile-sombre', 'ordinateur-sombre'];
+/** Lot 8 : écrans propres au téléphone (barre d'achat, masquée à partir de lg). */
+export const MOBILE_VIEWS: readonly CaptureView[] = ['mobile-clair', 'mobile-sombre'];
 
 export interface StubResponse { url: RegExp; method?: string; status: number; body: unknown }
 
@@ -88,6 +102,11 @@ export interface Screen {
 }
 
 const UUID = '[0-9a-f-]{36}';
+/** Lot 8 (8.2 h) : UUID bien formé qu'aucun événement ne porte. */
+const UNKNOWN_EVENT_ID = '00000000-0000-4000-8000-000000000404';
+const NOT_AN_EVENT_ID = 'pas-un-identifiant';
+/** Lot 8 (8.2 h) : document et lecture de l'API en 404, attendus par ces écrans. */
+const EVENT_404_FAILURES = [new RegExp(`/api/events/${UUID}(\\?.*)?$`), new RegExp(`/events/${UUID}$`)];
 
 function ids(i: DemoIds | null): DemoIds {
     if (!i) throw new Error('[e2e] écran dépendant du seed de démonstration appelé sans identifiants');
@@ -209,6 +228,97 @@ async function expectNoPermissionPrompt(page: Page): Promise<void> {
     expect(counters.requestPermissionCalls, 'demandes d’autorisation des notifications au chargement').toBe(0);
 }
 
+// ── Lot 8 : champ de date, canaux de vente, remboursements ──────────────────
+
+/** Nœud du document lu par CDP (DOM.getDocument en pierce) : champs utiles seulement. */
+interface CdpNode { nodeType?: number; nodeName?: string; nodeValue?: string; attributes?: string[]; children?: CdpNode[]; shadowRoots?: CdpNode[] }
+
+function cdpKids(node: CdpNode): CdpNode[] {
+    return [...(node.shadowRoots ?? []), ...(node.children ?? [])];
+}
+
+function findDateInput(node: CdpNode): CdpNode | null {
+    const attrs = node.attributes ?? [];
+    if (node.nodeName === 'INPUT') {
+        for (let i = 0; i < attrs.length; i += 2) if (attrs[i] === 'type' && attrs[i + 1] === 'date') return node;
+    }
+    for (const kid of cdpKids(node)) {
+        const found = findDateInput(kid);
+        if (found) return found;
+    }
+    return null;
+}
+
+function cdpText(node: CdpNode): string {
+    const own = node.nodeType === 3 ? (node.nodeValue ?? '').trim() : '';
+    return own + cdpKids(node).map(cdpText).join('');
+}
+
+/**
+ * Gabarit affiché par le premier champ de date vide (8.2 t, L66). Il vit dans la racine fantôme du navigateur, que le
+ * DOM de la page ne montre pas : lecture par CDP. Non vérifié sous Linux : si le run « avant » lit encore mm/dd/yyyy,
+ * le rapport l'explique, sans changer de binaire (contrat 11.4).
+ */
+async function expectFrenchDateField(c: ScreenContext): Promise<void> {
+    await expect(c.page.locator('input[type="date"]').first()).toBeAttached();
+    const cdp = await c.context.newCDPSession(c.page);
+    try {
+        const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+        const input = findDateInput(root);
+        if (!input) throw new Error('[e2e] aucun champ de date dans l’arbre lu par CDP');
+        expect(cdpText(input), 'gabarit du champ de date, lu par CDP (8.2 t)').toBe('dd/mm/yyyy');
+    } finally {
+        await cdp.detach();
+    }
+}
+
+/** Taille de texte calculée d'un élément (mention « Sur place uniquement » : 14 px au moins, contrat 15.7). */
+async function fontSizePx(target: Locator): Promise<number> {
+    return target.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+}
+
+/** Étape « Billetterie » du formulaire d'un événement (EventForm, navigation par étapes). */
+async function openTicketingStep(page: Page): Promise<void> {
+    await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: /billetterie/i }).click();
+    await expect(page.getByRole('heading', { name: /^billetterie$/i })).toBeVisible();
+}
+
+const ONLINE_BOX = /^vendue en ligne/i;
+const COUNTER_BOX = /^vendue au guichet/i;
+
+/** Blocs des catégories enregistrées (EventTicketingManager), repérés par la case du guichet. */
+function categorySections(page: Page): Locator {
+    return page.locator('section').filter({ has: page.getByRole('checkbox', { name: COUNTER_BOX }) });
+}
+
+const REFUNDS_URL = /\/api\/admin\/refunds(\?.*)?$/;
+const RECONCILIATION_URL = /\/api\/admin\/finance\/reconciliation(\?.*)?$/;
+/** Réponse du contrat 3.10 : deux lignes relançables, une à vérifier auprès de SamirPay, sans bouton. */
+const REFUNDS_TO_RETRY = {
+    items: [
+        {
+            refund_id: 'e6a7b3a9-17de-42fa-8dc0-afbec12d3f39', cashout_id: 'f7b8c4ba-28ef-43ab-9ed1-b0cfd23e4a4a', kind: 'TICKET_REFUND', amount: 5250, state: 'ECHOUE',
+            reason_label: 'Refus de l’opérateur', event_title: 'Croisière musicale vers Gorée', phone_masked: '77 ••• •• 34', created_at: '2026-11-04T18:30:00.000Z', can_retry: true,
+        },
+        {
+            refund_id: '08c9d5cb-39fa-44bc-8fe2-c1d0e34f5b5b', cashout_id: '19dae6dc-4a0b-45cd-9af3-d2e1f4506c6c', kind: 'TICKET_REFUND', amount: 15750, state: 'BLOQUE',
+            reason_label: 'Solde SamirPay insuffisant', event_title: 'Croisière musicale vers Gorée', phone_masked: '76 ••• •• 18', created_at: '2026-11-04T19:05:00.000Z', can_retry: true,
+        },
+        {
+            refund_id: '2aebf7ed-5b1c-46de-8b04-e3f205617d7d', cashout_id: '3bfc08fe-6c2d-47ef-9c15-f40316728e8e', kind: 'TICKET_REFUND', amount: 3150, state: 'INCERTAIN',
+            reason_label: null, event_title: 'Festival Jazz sur le Fleuve', phone_masked: '78 ••• •• 52', created_at: '2026-11-04T20:40:00.000Z', can_retry: false,
+        },
+    ],
+    truncated: false,
+};
+const EMPTY_RECONCILIATION = {
+    summary: {
+        period: 'Tout', totalTransactionsCount: 0, totalGrossVolume: 0, totalServiceFees: 0, totalAggregatorFees: 0, totalPlatformNetRevenue: 0,
+        totalPartnerPayouts: 0, totalReferralCommissions: 0, totalWithdrawalsPaid: 0, totalRefunds: 0, platformNetBalance: 0, discrepanciesCount: 0,
+    },
+    items: [],
+};
+
 function tabScreen(id: string, titre: string, tab: RegExp): Screen {
     return {
         id, titre, role: 'organisateur', needsIds: true, path: pilotage('ceSoir'),
@@ -220,27 +330,51 @@ export const SCREENS: readonly Screen[] = [
     // ── Public ──────────────────────────────────────────────────────────────
     { id: 'accueil', titre: 'Accueil', role: 'anonyme', needsIds: false, path: () => '/' },
     { id: 'catalogue', titre: 'Catalogue des événements', role: 'anonyme', needsIds: false, path: () => '/explore' },
-    { id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}` },
+    { id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200 },
     {
         id: 'evenement-suspendu', titre: 'Page publique — événement suspendu (bandeau, sans achat)', role: 'anonyme', needsIds: true,
-        path: (i) => `/events/${ids(i).events.suspendu.id}`,
+        path: (i) => `/events/${ids(i).events.suspendu.id}`, expectStatus: 200,
         ready: async ({ page }) => { await expect(page.getByText(/suspendu/i).first()).toBeVisible(); },
     },
     {
         id: 'evenement-annule', titre: 'Page publique — événement annulé (avis public, remboursement)', role: 'anonyme', needsIds: true,
-        path: (i) => `/events/${ids(i).events.annule.id}`,
+        path: (i) => `/events/${ids(i).events.annule.id}`, expectStatus: 200,
         ready: async ({ page }) => { await expect(page.getByText(/annulé/i).first()).toBeVisible(); },
     },
     {
         id: 'evenement-termine', titre: 'Page publique — événement terminé (archive)', role: 'anonyme', needsIds: true,
-        path: (i) => `/events/${ids(i).events.termine.id}`,
+        path: (i) => `/events/${ids(i).events.termine.id}`, expectStatus: 200,
         ready: async ({ page }) => { await expect(page.getByText(/terminé/i).first()).toBeVisible(); },
     },
     {
         id: 'evenement-non-public', titre: 'URL d’un brouillon : page introuvable propre', role: 'anonyme', needsIds: true,
         path: (i) => `/events/${ids(i).events.brouillon.id}`,
-        allowFailures: [new RegExp(`/api/events/${UUID}(\\?.*)?$`), new RegExp(`/events/${UUID}$`)],
-        ready: async ({ page }) => { await expect(page.getByText(/introuvable|n[’']existe pas|404/i).first()).toBeVisible(); },
+        expectStatus: 404, allowFailures: EVENT_404_FAILURES,
+        ready: async ({ page }) => { await expectHeading(page, /^page introuvable$/i); },
+    },
+    {
+        id: 'evenement-introuvable', titre: 'URL d’un événement inconnu : vrai 404, page introuvable propre', role: 'anonyme', needsIds: false,
+        path: () => `/events/${UNKNOWN_EVENT_ID}`, expectStatus: 404, allowFailures: EVENT_404_FAILURES,
+        ready: async ({ page }) => { await expectHeading(page, /^page introuvable$/i); },
+    },
+    {
+        id: 'evenement-identifiant-invalide', titre: 'URL d’un identifiant qui n’est pas un UUID : vrai 404', role: 'anonyme', needsIds: false,
+        path: () => `/events/${NOT_AN_EVENT_ID}`, views: ['mobile-clair'], expectStatus: 404,
+        allowFailures: [new RegExp(`/api/events/${NOT_AN_EVENT_ID}(\\?.*)?$`), new RegExp(`/events/${NOT_AN_EVENT_ID}$`)],
+        ready: async ({ page }) => { await expectHeading(page, /^page introuvable$/i); },
+    },
+    {
+        id: 'fiche-barre-achat', titre: 'Fiche d’un événement — barre d’achat fixe, panier non vide, page défilée', role: 'client', needsIds: true,
+        path: (i) => `/events/${ids(i).events.ceSoir.id}`, views: MOBILE_VIEWS,
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^ajouter un billet standard/i }).click();
+            await expectBuyBarAnchored(page, 'fiche de « ce soir »'); // finit à mi-page : c'est l'état capturé
+        },
+    },
+    {
+        id: 'accueil-acces-refuse', titre: 'Accueil après un accès refusé (message de la redirection)', role: 'client', needsIds: true,
+        path: () => '/?error=unauthorized_admin',
+        ready: async ({ page }) => { await expect(page.getByRole('alert').filter({ hasText: 'Cet espace est réservé aux administrateurs.' })).toBeVisible(); },
     },
     {
         id: 'hors-ligne', titre: 'Indicateur « Hors ligne » (catalogue ouvert, connexion coupée)', role: 'anonyme', needsIds: false, path: () => '/explore',
@@ -352,8 +486,66 @@ export const SCREENS: readonly Screen[] = [
         id: 'partenaire-edition', titre: 'Édition d’un événement publié avec ventes (champs verrouillés)', role: 'organisateur', needsIds: true,
         path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
     },
+    {
+        id: 'partenaire-categorie-canaux', titre: 'Catégorie « Carré presse » : deux canaux, sur place uniquement', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.ceSoir.id}/edit`,
+        actions: async ({ page }) => {
+            await openTicketingStep(page);
+            const card = categorySections(page).filter({ has: page.getByRole('heading', { name: 'Carré presse', exact: true }) });
+            await expect(card.getByRole('checkbox', { name: ONLINE_BOX })).not.toBeChecked();
+            await expect(card.getByRole('checkbox', { name: COUNTER_BOX })).toBeChecked();
+            await expect(card.getByText('Sur place uniquement').first()).toBeVisible();
+            await revealCenter(card.getByRole('checkbox', { name: ONLINE_BOX }));
+        },
+    },
+    {
+        id: 'partenaire-categorie-invitations', titre: 'Catégorie sans aucun canal : aide factuelle, aucune distribution', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.ceSoir.id}/edit`,
+        actions: async ({ page }) => {
+            await openTicketingStep(page);
+            // Ligne ajoutée au seed par fix(8.0-seed) (L80) : son nom n'est pas fixé par le contrat, seul son résumé l'est
+            const card = categorySections(page).filter({ hasText: 'Invitations seulement' });
+            await expect(card.getByRole('checkbox', { name: ONLINE_BOX })).not.toBeChecked();
+            await expect(card.getByRole('checkbox', { name: COUNTER_BOX })).not.toBeChecked();
+            await expect(card.getByText('Cette catégorie n’est vendue ni en ligne ni au guichet. L’application n’envoie pas encore d’invitations : aucun billet ne sera distribué pour le moment.')).toBeVisible();
+            await revealCenter(card.getByRole('checkbox', { name: ONLINE_BOX }));
+        },
+    },
+    {
+        id: 'partenaire-rapport-cloture', titre: 'Rapport de clôture d’un événement terminé (modale du tableau de bord)', role: 'organisateur', needsIds: true,
+        path: () => '/partner/dashboard',
+        actions: async (c) => {
+            const { title } = ids(c.ids).events.termine;
+            const button = c.page.locator('tr, li, article')
+                .filter({ hasText: title })
+                .getByRole('button', { name: /^clôture$/i })
+                .filter({ visible: true })
+                .first();
+            const loaded = c.page.waitForResponse((r) => new URL(r.url()).pathname === '/api/partner/reports/closing');
+            await button.click();
+            const report = await loaded;
+            expect(report.status(), `rapport de clôture de « ${title} »`).toBe(200);
+            const dialog = c.page.getByRole('dialog');
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByText(title).first()).toBeVisible();
+        },
+    },
     tabScreen('pilotage-apercu', 'Pilotage — Aperçu', /^aperçu/i),
     tabScreen('pilotage-ventes', 'Pilotage — Ventes', /^ventes/i),
+    {
+        id: 'pilotage-rembourser-billet', titre: 'Pilotage — Ventes : fiche d’un billet à rembourser', role: 'organisateur', needsIds: true, path: pilotage('ceSoir'),
+        actions: async (c) => {
+            const { number } = ids(c.ids).tickets.manualLookup;
+            await openTab(c.page, /^ventes/i);
+            await c.page.getByLabel(/^numéro du billet/i).fill(number);
+            const found = c.page.waitForResponse((r) => new URL(r.url()).pathname.endsWith('/tickets/lookup'));
+            await c.page.getByRole('button', { name: /^rechercher/i }).click();
+            expect((await found).status(), `recherche du billet ${number}`).toBe(200);
+            const refund = c.page.getByRole('button', { name: /^rembourser/i }).filter({ visible: true }).first();
+            await expect(refund).toBeVisible();
+            await revealCenter(refund);
+        },
+    },
     tabScreen('pilotage-entrees', 'Pilotage — Entrées en direct', /^entrées/i),
     tabScreen('pilotage-equipe', 'Pilotage — Équipe', /^équipe/i),
     tabScreen('pilotage-caisse', 'Pilotage — Caisse', /^caisse/i),
@@ -389,6 +581,7 @@ export const SCREENS: readonly Screen[] = [
             await expectHeading(page, /^notifications$/i);
             await expect(page.getByRole('link', { name: /^voir le détail/i }).first()).toBeVisible();
         },
+        actions: expectFrenchDateField,
     },
     {
         id: 'admin-notifications-detail', titre: 'Administration — détail d’une notification en échec (Relancer)', role: 'admin', needsIds: true,
@@ -403,6 +596,29 @@ export const SCREENS: readonly Screen[] = [
         ready: async (c) => {
             await expectRetry(c);
             await revealCenter(c.page.getByRole('button', { name: /réessayer/i }));
+        },
+    },
+    {
+        id: 'admin-services-desactive', titre: 'Administration — services : mention « Service désactivé » (interrupteur fermé)', role: 'admin', needsIds: true,
+        path: () => '/admin/services?tab=salles',
+        ready: async ({ page }) => {
+            await expect(page.getByRole('tab', { name: /^salles de fête/i })).toHaveAttribute('aria-selected', 'true');
+            await expect(page.getByText('Service désactivé', { exact: true })).toBeVisible();
+            await expect(page.getByText('Ce service est fermé par son interrupteur : il est masqué au public. Les données restent consultables ici.')).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-remboursements-a-reprendre', titre: 'Administration — finances : remboursements à reprendre (réponses imposées)', role: 'admin', needsIds: true,
+        path: () => '/admin/finance',
+        stubResponses: [
+            { url: RECONCILIATION_URL, method: 'GET', status: 200, body: EMPTY_RECONCILIATION },
+            { url: REFUNDS_URL, method: 'GET', status: 200, body: REFUNDS_TO_RETRY },
+        ],
+        ready: async ({ page }) => {
+            const retry = page.getByRole('button', { name: /^relancer/i }).filter({ visible: true });
+            await expect(retry, 'un bouton « Relancer » par ligne relançable').toHaveCount(2);
+            await expect(page.getByText(/à vérifier auprès de samirpay/i).filter({ visible: true }).first()).toBeVisible();
+            await revealCenter(retry.first());
         },
     },
     // ── Contrôle d'accès ────────────────────────────────────────────────────
@@ -480,6 +696,10 @@ export const SCREENS: readonly Screen[] = [
     }),
     scanResultScreen('scanner-hors-fenetre', 'Scanner — contrôle pas encore ouvert (plein écran)', { result: 'event_not_open', scan_id: '91b6be54-c28f-4da5-9e7b-5a6f7c8d9ea4' }),
     scanResultScreen('scanner-evenement-annule', 'Scanner — événement annulé (plein écran)', { result: 'event_cancelled', scan_id: 'a2c7cf65-d39a-4eb6-8f8c-6b7a8d9eafb5' }),
+    // Lot 8 (8.2 e, contrat 3.5) : réponse d'un renvoi sans ligne, ni scan_id ni ticket ; le parcours réel est au projet terrain
+    scanResultScreen('scanner-non-traite', 'Scanner — scan non traité après un renvoi (plein écran)', {
+        result: 'not_processed', code: 'REPLAY_NOT_FOUND', message: 'Scan non traité : aucune entrée enregistrée. Scannez le billet de nouveau.',
+    }),
     {
         id: 'scanner-reseau-lent', titre: 'Scanner — réseau lent (envoi retenu, nouvel essai automatique)', role: 'controleur', needsIds: true,
         path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: 'barcode-detector', initStorage: SCANNER_STORAGE, slowTimers: SCANNER_TIMERS,
@@ -521,6 +741,12 @@ export const SCREENS: readonly Screen[] = [
             await openTab(page, /^guichet$/i);
             await page.getByRole('button', { name: /^ajouter un billet standard$/i }).click();
             await expect(page.getByRole('region', { name: /^total à encaisser$/i })).toBeVisible();
+            // Lot 8 (T23) : catégorie vendue au guichet seulement, reconnue d'un coup d'œil
+            const press = page.getByRole('list', { name: /^catégories en vente$/i }).getByRole('listitem').filter({ hasText: 'Carré presse' });
+            const mention = press.getByText('Sur place uniquement', { exact: true });
+            await expect(mention).toBeVisible();
+            expect(await fontSizePx(mention), 'taille de la mention « Sur place uniquement », en pixels').toBeGreaterThanOrEqual(14);
+            await revealCenter(mention);
         },
     },
     {
@@ -538,7 +764,7 @@ export const SCREENS: readonly Screen[] = [
         id: 'caisse-cloture-ecart', titre: 'Caisse — clôture avec écart constaté par le serveur (justification, PIN)', role: 'controleur', needsIds: true,
         path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: true,
         stubResponses: [{
-            url: /\/api\/controller\/shifts\/close$/, method: 'POST', status: 409,
+            url: /\/api\/controller\/shifts\/close$/, method: 'POST', status: 400,
             body: { success: false, code: 'JUSTIFICATION_REQUIRED', discrepancy: -2000, error: 'Écart constaté : justification et code PIN du régisseur requis.' },
         }],
         allowFailures: [/\/api\/controller\/shifts\/close$/],

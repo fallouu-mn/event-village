@@ -16,7 +16,9 @@
  *    (un build fait avec .env.local viserait le projet distant) ;
  *  - lot 7 (tâche 7.5, contrat 11.1) : sharp chargeable avant le démarrage (optimisation des images en
  *    production), puis échec immédiat si la sortie de `next start` (journal next-start.log) contient
- *    « sharp-missing-in-production » : le serveur est arrêté et le script sort en code 1.
+ *    « sharp-missing-in-production » : le serveur est arrêté et le script sort en code 1 ;
+ *  - lot 8 (contrat 15.3, L29, T30) : refus si la sentinelle des adaptateurs de développement se trouve dans
+ *    .next/server ou .next/static : lib/integrations/dev-adapters.ts ne doit jamais entrer dans un build.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -58,6 +60,28 @@ for (const file of jsFiles(staticDir)) {
     }
 }
 if (!localSeen) fail(TAG, `le build ne contient pas l'URL Supabase locale ${localSupabase} : il n'a pas été fait avec l'environnement de test.`);
+
+// Lot 8 (L29) : tous les fichiers du build, pas seulement les .js (manifestes, .rsc, .html, .map), lus en octets
+const DEV_ADAPTERS_SENTINEL = 'EV_DEV_ADAPTERS_SENTINEL_LOT8';
+function* buildFiles(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) yield* buildFiles(full);
+        else if (entry.isFile()) yield full;
+    }
+}
+let sentinelScanned = 0;
+for (const sub of ['server', 'static']) {
+    const dir = path.join(ROOT, '.next', sub);
+    if (!fs.existsSync(dir)) fail(TAG, `build incomplet : .next/${sub} absent.`);
+    for (const file of buildFiles(dir)) {
+        sentinelScanned += 1;
+        if (fs.readFileSync(file).includes(DEV_ADAPTERS_SENTINEL)) {
+            fail(TAG, `le build contient ${DEV_ADAPTERS_SENTINEL} (${path.relative(ROOT, file)}) : les adaptateurs de développement sont entrés dans un build (L29).`);
+        }
+    }
+}
+console.log(`[${TAG}] ${DEV_ADAPTERS_SENTINEL} absente de ${sentinelScanned} fichier(s) de .next/server et .next/static`);
 
 // Lot 7 (7.5) : sharp installé et chargeable (binaire de la plateforme), sinon Next optimise sans lui et avertit
 const SHARP_MISSING = 'sharp-missing-in-production';

@@ -13,7 +13,8 @@
  *    de lectures est compté (> 1 : l'écran a ignoré une lecture). La sonde ne dépend pas des marques de
  *    l'application : elle donne le chiffre « avant » (écran du lot 6) et un recoupement « après » ;
  *  - openScanner(), presentPayload(), livePayload(), computedPayload() ; statistiques (médiane, p95) et
- *    écriture des TSV.
+ *    écriture des TSV ;
+ *  - lot 8 (8.2 s) : expectBuyBarAnchored(), barre d'achat fixe de la fiche d'un événement.
  * Aucune horloge n'est installée dans un contexte de contrôleur ou de mesure (marques factices sinon).
  */
 import { spawnSync } from 'node:child_process';
@@ -512,6 +513,50 @@ export function forgedPayload(payload: string): string {
     if (!m) throw new Error(`payload sans code à 6 chiffres : « ${payload.slice(0, 120)} »`);
     const forged = String((Number(m[2]) + 500_001) % 1_000_000).padStart(6, '0');
     return `${m[1]}${forged}`;
+}
+
+// ── Barre d'achat de la fiche d'un événement (lot 8, 8.2 s) ────────────────
+
+/** Décalage du bas de la barre dans app/events/[id]/page.tsx : `bottom-[calc(4.5rem+…)]`, soit 72 px sans zone sûre. */
+const BUY_BAR_OFFSET_PX = 72;
+const POSITION_TOLERANCE_PX = 2;
+
+interface BarPosition { scrollY: number; scrollMax: number; top: number; bottom: number; left: number; right: number; innerWidth: number; innerHeight: number; navHeight: number }
+
+/**
+ * Barre d'achat posée sur l'écran, en haut de page puis à mi-page (panier non vide attendu). Bloc conteneur piégé par
+ * `.ev-page-enter` (PROUVÉ, contrat 11.3) : elle défile avec la page, loin sous l'écran, et n'a pas la largeur de l'écran.
+ * Exigé aux deux positions : largeur pleine ; bas de la barre au-dessus de la barre de navigation, jamais recouvert ; et
+ * au plus 72 px du bas de l'écran. La borne haute est le décalage actuel de la page, pas la hauteur de la navigation
+ * (53 px mesurés) : voir la réponse de l'agent e2e, l'égalité du contrat 15.4 resterait fausse après le correctif 11.3.
+ * Finit à mi-page.
+ */
+export async function expectBuyBarAnchored(page: Page, what: string): Promise<void> {
+    const button = page.getByRole('button', { name: /^acheter \(/i });
+    await expect(button, `${what} : bouton de la barre d'achat, montant calculé`).toBeVisible({ timeout: 20_000 });
+    const bar = page.locator('div.fixed').filter({ has: button });
+    await expect(bar, `${what} : une seule barre d'achat fixe`).toHaveCount(1);
+    const at = (fraction: number): Promise<BarPosition> => bar.evaluate((el, f) => {
+        const scrollMax = document.documentElement.scrollHeight - window.innerHeight;
+        window.scrollTo({ top: Math.round(scrollMax * f), behavior: 'instant' });
+        const r = el.getBoundingClientRect();
+        const nav = document.querySelector('nav[aria-label="Navigation rapide"]');
+        return {
+            scrollY: window.scrollY, scrollMax, top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+            innerWidth: window.innerWidth, innerHeight: window.innerHeight, navHeight: nav ? nav.getBoundingClientRect().height : 0,
+        };
+    }, fraction);
+    for (const [label, fraction] of [['haut de page', 0], ['mi-page', 0.5]] as const) {
+        const p = await at(fraction);
+        const seen = `${what}, ${label} : ${JSON.stringify(p)}`;
+        expect(p.navHeight, `barre de navigation du bas présente — ${seen}`).toBeGreaterThan(0);
+        if (fraction > 0) expect(p.scrollY, `page réellement défilée — ${seen}`).toBeGreaterThan(0);
+        expect(Math.abs(p.left), `gauche de la barre au bord de l'écran — ${seen}`).toBeLessThanOrEqual(POSITION_TOLERANCE_PX);
+        expect(Math.abs(p.right - p.innerWidth), `droite de la barre au bord de l'écran — ${seen}`).toBeLessThanOrEqual(POSITION_TOLERANCE_PX);
+        const fromBottom = p.innerHeight - p.bottom;
+        expect(fromBottom, `bas de la barre au-dessus de la navigation, jamais recouvert — ${seen}`).toBeGreaterThanOrEqual(p.navHeight - POSITION_TOLERANCE_PX);
+        expect(fromBottom, `bas de la barre près du bas de l'écran — ${seen}`).toBeLessThanOrEqual(BUY_BAR_OFFSET_PX + POSITION_TOLERANCE_PX);
+    }
 }
 
 // ── Statistiques et fichiers de mesure ─────────────────────────────────────

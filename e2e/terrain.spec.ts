@@ -26,14 +26,20 @@
  * Billet hors ligne (E2, fix(7.1e)) : `data-ev-offline-state` de OfflineStatusBadge sur la carte (available,
  * missing, not_yet, offline_missing, expired), `data-ev-qr-payload` et `data-ev-qr-counter` de la page hors ligne.
  * Les assertions et les seuils sont inchangés.
+ *
+ * Lot 8 (contrat 15.4, T26) : tests 8 à 12, un par sujet, pour qu'un rouge attendu n'empêche pas de lire les tests 1 à 7 :
+ *  8. barre d'achat fixe (8.2 s) ; 9. plein écran du scanner après défilement forcé (8.2 s) ; 10. taille réelle du lot
+ *  hors ligne, [HORS-LIGNE-TRANSFERE] (8.2 x) ; 11. scan repris sans ligne en base (8.2 e) ; 12. écart de caisse sans stub
+ *  (8.2 f). Le déplacement de expectResumed vers support/parcours.ts est fait à la vague F, avec la recette.
  */
 import type { Browser, BrowserContext, Locator, Page, Route, TestInfo } from '@playwright/test';
 import { test, expect, openRoleContext } from './support/fixtures';
 import type { RoleKey } from './support/accounts';
 import { CDP_NO_THROTTLING, cdpNetworkConditions, NET_3G } from './support/devices';
 import { PageGuard } from './support/network';
+import { serviceClient } from './support/service';
 import {
-    codeOf, computedPayload, describeProbe, fmtMs, forgedPayload, installScanProbe, livePayload, median, openScanner, percentile,
+    codeOf, computedPayload, describeProbe, expectBuyBarAnchored, fmtMs, forgedPayload, installScanProbe, livePayload, median, openScanner, percentile,
     prepareTerrainEvent, presentPayload, presentPayloadNoResult, probeTracks, probeVibrations, restoreTerrainSetting, scanMarks,
     ticketScans, appendPerfFile, writePerfFile, type ProbeRecord, type TerrainEvent,
 } from './support/terrain';
@@ -758,6 +764,218 @@ test('7. reprise de session : même événement et même mode après une sortie,
         expect(db4.ticket.status).toBe('UTILISE');
         await expectDoorCount(page, 4, 'après le renvoi du billet 4');
         await expectResumed(page, ev.title, 'camera', 'réouverture pendant l’envoi');
+    } finally {
+        await s.close();
+        restoreTerrainSetting(ev);
+    }
+});
+
+// ── 8 et 9. Éléments fixes de l'interface (lot 8, 8.2 s) ───────────────────
+
+test('8. barre d’achat de la fiche : collée au bas de l’écran en haut de page et à mi-page, pleine largeur', async ({ browser }, testInfo) => {
+    test.setTimeout(3 * 60_000);
+    const s = new Session(browser, testInfo);
+    let ev: TerrainEvent | null = null;
+    try {
+        ev = prepareTerrainEvent('barre achat', 'client', 0, { priceFcfa: 5000 });
+        const client = await s.open('fumee-client');
+        await client.page.goto(`/events/${ev.eventId}`);
+        await client.page.getByRole('button', { name: /^ajouter un billet entrée générale/i }).click();
+        await expectBuyBarAnchored(client.page, 'fiche de l’événement');
+    } finally {
+        await s.close();
+        restoreTerrainSetting(ev);
+    }
+});
+
+test('9. résultat du scanner : plein écran égal à la fenêtre, page défilée de force', async ({ browser }, testInfo) => {
+    test.setTimeout(3 * 60_000);
+    const s = new Session(browser, testInfo);
+    let ev: TerrainEvent | null = null;
+    try {
+        ev = prepareTerrainEvent('plein ecran', 'client-bis', 1);
+        const holder = await s.holder('fumee-client-bis');
+        const ctl = await s.open('fumee-controleur', { probe: true });
+        await openScanner(ctl.page, ev.title);
+        // Code refusé : l'écran reste 3 s, le temps de la mesure, et le billet ne change pas d'état
+        await presentPayload(ctl.page, forgedPayload(await livePayload(holder, ev.tickets[0].id)), 'code qui ne se vérifie pas');
+        const box = await ctl.page.evaluate(() => {
+            const overlay = document.querySelector('[data-scan-state="result"]');
+            if (!overlay) return null;
+            document.body.style.minHeight = '3000px';
+            window.scrollTo({ top: 1000, behavior: 'instant' });
+            const r = overlay.getBoundingClientRect();
+            return { scrollY: window.scrollY, top: r.top, bottom: r.bottom, left: r.left, right: r.right, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+        });
+        if (!box) throw new Error('plein écran du scanner fermé avant la mesure');
+        const seen = JSON.stringify(box);
+        expect(box.scrollY, `page défilée de force : ${seen}`).toBeGreaterThan(0);
+        expect({ top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right), bottom: Math.round(box.bottom) }, `rectangle du plein écran : ${seen}`)
+            .toEqual({ top: 0, left: 0, right: box.innerWidth, bottom: box.innerHeight });
+    } finally {
+        await s.close();
+        restoreTerrainSetting(ev);
+    }
+});
+
+// ── 10. Taille réelle du lot hors ligne (lot 8, 8.2 x) ─────────────────────
+
+const OFFLINE_LOT_MAX_ENCODED = 40_000;
+
+test('10. lot hors ligne : réponse compressée en gzip, moins de 40 000 octets transférés', async ({ browser }, testInfo) => {
+    test.setTimeout(3 * 60_000);
+    const s = new Session(browser, testInfo);
+    let ev: TerrainEvent | null = null;
+    try {
+        ev = prepareTerrainEvent('taille du lot', 'client', 1);
+        const ticket = ev.tickets[0];
+        const client = await s.open('fumee-client');
+        const lotPath = `/api/tickets/${ticket.id}/offline-codes`;
+        const responded = client.page.waitForResponse((r) => new URL(r.url()).pathname === lotPath && r.request().method() === 'GET', { timeout: 45_000 });
+        await client.page.goto('/tickets');
+        const res = await responded;
+        await res.finished();
+        expect(res.status(), `téléchargement automatique du lot ${lotPath}`).toBe(200);
+        const encoding = (await res.allHeaders())['content-encoding'] ?? null;
+        const sizes = await res.request().sizes();
+        // Ni content-length (absent en chunked), ni APIRequestContext : seule la mesure du navigateur dit ce qui a transité
+        await expect.poll(() => client.page.evaluate((p) => performance.getEntriesByType('resource').filter((e) => new URL(e.name).pathname === p).length, lotPath), {
+            message: 'mesure du navigateur (Resource Timing) du téléchargement du lot', timeout: 10_000,
+        }).toBeGreaterThan(0);
+        const timing = await client.page.evaluate((p) => {
+            const entry = performance.getEntriesByType('resource').find((e) => new URL(e.name).pathname === p) as PerformanceResourceTiming;
+            return { encodedBodySize: entry.encodedBodySize, decodedBodySize: entry.decodedBodySize, transferSize: entry.transferSize };
+        }, lotPath);
+        console.log(`[HORS-LIGNE-TRANSFERE] content-encoding=${encoding ?? 'aucun'} encodedBodySize=${timing.encodedBodySize} decodedBodySize=${timing.decodedBodySize} `
+            + `transferSize=${timing.transferSize} responseBodySize=${sizes.responseBodySize} responseHeadersSize=${sizes.responseHeadersSize}`);
+        expect(timing.decodedBodySize, 'taille décompressée du lot lue par le navigateur').toBeGreaterThan(0);
+        expect.soft(encoding, 'en-tête content-encoding de la réponse du lot').toBe('gzip');
+        expect.soft(timing.encodedBodySize, 'corps transféré plus petit que le corps décompressé').toBeLessThan(timing.decodedBodySize);
+        expect.soft(timing.encodedBodySize, `corps transféré sous ${OFFLINE_LOT_MAX_ENCODED} octets`).toBeLessThan(OFFLINE_LOT_MAX_ENCODED);
+    } finally {
+        await s.close();
+        restoreTerrainSetting(ev);
+    }
+});
+
+// ── 11. Scan repris sans ligne en base (lot 8, 8.2 e) ──────────────────────
+
+test('11. lecture jamais arrivée au serveur : au retour, « non traité », pas de « Résultat retrouvé », billet intact', async ({ browser }, testInfo) => {
+    test.setTimeout(4 * 60_000);
+    const s = new Session(browser, testInfo);
+    let ev: TerrainEvent | null = null;
+    try {
+        ev = prepareTerrainEvent('renvoi seulement', 'client-bis', 1);
+        const ticket = ev.tickets[0];
+        const holder = await s.holder('fumee-client-bis');
+        const ctl = await s.open('fumee-controleur', { probe: true });
+        const page = ctl.page;
+        await openScanner(page, ev.title);
+
+        const keys: Array<string | null> = [];
+        page.on('request', (req) => {
+            if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/controller/scan') keys.push(req.headers()['idempotency-key'] ?? null);
+        });
+
+        // Toute lecture est coupée AVANT le serveur (aucun route.fetch) ; la première attend que l'application soit sortie
+        let blocked = 0;
+        let releaseAbort: () => void = () => undefined;
+        const abortGate = new Promise<void>((resolve) => { releaseAbort = resolve; });
+        const blockBeforeServer = async (route: Route): Promise<void> => {
+            if (route.request().method() !== 'POST') {
+                await route.fallback();
+                return;
+            }
+            blocked += 1;
+            if (blocked === 1) await abortGate;
+            await route.abort('timedout');
+        };
+        await page.route('**/api/controller/scan', blockBeforeServer);
+        const errorsBefore = await probePostErrors(page);
+        await presentPayloadNoResult(page, await livePayload(holder, ticket.id), 'renvoi seulement : lecture coupée avant le serveur');
+        await expect.poll(() => blocked, { message: 'lecture interceptée avant le serveur', timeout: 20_000 }).toBe(1);
+        await setVisibility(page, 'hidden'); // l'application passe en arrière-plan pendant l'envoi
+        releaseAbort();
+        await expect.poll(async () => (await probePostErrors(page)) - errorsBefore, {
+            message: 'trois essais sans réponse (même clé)', timeout: 30_000,
+        }).toBeGreaterThanOrEqual(3);
+        await expect.poll(() => pendingScanKeys(page), { message: 'scan gardé sur l’appareil avec sa clé', timeout: 10_000 }).toEqual([keys[0]]);
+        const blockedTotal = blocked;
+        await page.unroute('**/api/controller/scan', blockBeforeServer);
+
+        const resumed = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/controller/scan', { timeout: 20_000 });
+        await setVisibility(page, 'visible'); // retour au premier plan : le scan est renvoyé
+        const body = (await resumed).postDataJSON() as Record<string, unknown>;
+
+        expect.soft(body.replayOnly, `renvoi au retour : indicateur replayOnly dans le corps (${blockedTotal} envois coupés avant)`).toBe(true);
+        await expect.soft(page.locator('[data-scan-result="not_processed"]').first(), 'renvoi d’une lecture que le serveur n’a jamais reçue : « non traité »').toBeVisible({ timeout: 30_000 });
+        await expect.soft(page.getByText(/résultat retrouvé/i), 'jamais « Résultat retrouvé » : aucune lecture d’origine').toHaveCount(0);
+        expect.soft(new Set(keys).size, `même clé pour la lecture et son renvoi : ${JSON.stringify(keys)}`).toBe(1);
+        const db = ticketScans(ticket.id);
+        expect(db.ticket.status, `billet ${ticket.number} intact : rien n’a été composté par le renvoi`).toBe('VALIDE');
+        expect(db.scans, 'aucune ligne ticket_scans pour ce billet').toEqual([]);
+        await expect.poll(() => pendingScanKeys(page), { message: 'scan en attente effacé au verdict', timeout: 10_000 }).toEqual([]);
+    } finally {
+        await s.close();
+        restoreTerrainSetting(ev);
+    }
+});
+
+// ── 12. Écart de caisse (lot 8, 8.2 f) ─────────────────────────────────────
+
+/** Permission espèces du contrôleur A sur cet événement : prepareTerrainEvent l'affecte sans elle. */
+async function allowControllerCash(ev: TerrainEvent): Promise<void> {
+    const { data, error } = await serviceClient().from('event_controllers').update({ can_accept_cash: true })
+        .eq('event_id', ev.eventId).eq('user_id', ev.controllerUserId).select('user_id');
+    if (error) throw new Error(`permission espèces du contrôleur A sur ${ev.eventId} : ${error.message}`);
+    if ((data ?? []).length !== 1) throw new Error(`affectation du contrôleur A sur ${ev.eventId} introuvable`);
+}
+
+test('12. clôture de caisse avec écart, sans réponse imposée : refus 400, écart du serveur affiché, puis clôture juste', async ({ browser }, testInfo) => {
+    test.setTimeout(3 * 60_000);
+    const s = new Session(browser, testInfo);
+    let ev: TerrainEvent | null = null;
+    try {
+        ev = prepareTerrainEvent('ecart de caisse', 'client-bis', 1);
+        await allowControllerCash(ev);
+        const ctl = await s.open('fumee-controleur', { probe: true });
+        const page = ctl.page;
+        await openScanner(page, ev.title);
+
+        await page.getByRole('tab', { name: /^caisse$/i }).click();
+        await page.getByRole('button', { name: /^ouvrir ma caisse$/i }).click();
+        const opening = page.getByRole('dialog', { name: /^ouvrir ma caisse$/i });
+        await expect(opening).toBeVisible();
+        const opened = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/controller/shifts/open' && r.request().method() === 'POST');
+        await opening.getByRole('button', { name: /^ouvrir la caisse$/i }).click();
+        const openedRes = await opened;
+        expect(openedRes.status(), `ouverture de la caisse : ${(await openedRes.text()).slice(0, 300)}`).toBe(200);
+
+        await page.getByRole('button', { name: /^clôturer ma caisse$/i }).click();
+        const dialog = page.getByRole('dialog', { name: /^clôturer ma caisse$/i });
+        await expect(dialog).toBeVisible();
+        const closeResponse = () => page.waitForResponse((r) => new URL(r.url()).pathname === '/api/controller/shifts/close' && r.request().method() === 'POST');
+
+        // Rien d'encaissé : 1 000 F comptés font un écart de +1 000 F
+        const counted = dialog.getByLabel(/^espèces encaissées comptées/i);
+        await counted.fill('1000');
+        const refusal = closeResponse();
+        await dialog.getByRole('button', { name: /^clôturer la caisse$/i }).click();
+        const refused = await refusal;
+        const refusedBody = (await refused.json()) as Record<string, unknown>;
+        expect(refused.status(), `clôture avec écart : ${JSON.stringify(refusedBody)}`).toBe(400);
+        expect(refusedBody.code, `clôture avec écart : ${JSON.stringify(refusedBody)}`).toBe('JUSTIFICATION_REQUIRED');
+        await expect(dialog.getByText(/^écart constaté par le serveur$/i)).toBeVisible();
+        // Soft : la caisse est fermée ensuite, même quand l'écart n'est pas affiché
+        expect.soft(refusedBody.discrepancy, 'écart renvoyé par le serveur (contrat 3.6)').toBe(1000);
+        await expect.soft(dialog.getByText(/écart de\s1\s000\sF\sCFA/i), 'texte « Écart de 1 000 F CFA » à l’écran').toBeVisible();
+
+        await counted.fill('0');
+        const closed = closeResponse();
+        await dialog.getByRole('button', { name: /^clôturer la caisse$/i }).click();
+        const closedRes = await closed;
+        expect(closedRes.status(), `clôture sans écart : ${(await closedRes.text()).slice(0, 300)}`).toBe(200);
+        await expect(page.getByRole('dialog', { name: /^caisse clôturée$/i })).toBeVisible();
     } finally {
         await s.close();
         restoreTerrainSetting(ev);

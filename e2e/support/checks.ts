@@ -30,6 +30,8 @@
  *    texte : discovery-7-tests.md §3.5) ;
  *  - RAW_ENUM_VALUES reçoit les codes du lot 7 (PAYMENT_PENDING, OFFLINE_WINDOW_CLOSED, TRANSFER_PENDING,
  *    SMS_OPTIONAL_CAP, FREE_TICKETS_ONLY, MONTHLY, DRAFT ; REJETE y était déjà).
+ * Lot 8 (contrat 15.7, T24 ; modification signalée, plus stricte) : RAW_ENUM_VALUES reçoit not_processed, sale_online,
+ * sale_counter et on_site_only. Les codes en majuscules du lot sont déjà attrapés par codeRe.
  * Les avertissements bruts (nombres, détail axe, textes hors exemption) restent écrits dans index.txt.
  */
 import AxeBuilder from '@axe-core/playwright';
@@ -63,6 +65,8 @@ export const RAW_ENUM_VALUES: readonly string[] = [
     'REMINDERS', 'EVENT_UPDATES', 'PRO_ACTIVITY',
     // lot 7 (contrat 11.2) : paiement en attente, billet hors ligne, plafond SMS, gratuits, offres partenaire
     'PAYMENT_PENDING', 'OFFLINE_WINDOW_CLOSED', 'TRANSFER_PENDING', 'SMS_OPTIONAL_CAP', 'FREE_TICKETS_ONLY', 'MONTHLY', 'DRAFT',
+    // lot 8 (contrat 15.7) : scan non traité, canaux de vente
+    'not_processed', 'sale_online', 'sale_counter', 'on_site_only',
 ];
 
 /** Lot 7 (D73) : contraste minimal du titre du résultat plein écran du scanner sur son fond. */

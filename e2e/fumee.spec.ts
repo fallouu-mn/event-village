@@ -59,9 +59,13 @@
  *     vérifié par terrain-setup.ts), puis code du pas courant calculé depuis l'ANCIEN lot (étape 12) → « qr_expired » ;
  * 16. caches du client : exactement « ev-hors-ligne-lot7-1 », aucune URL /api/ ni _rsc ; aucune réponse /api/
  *     servie par le service worker ; hors ligne, fetch de /api/tickets/<id>/offline-codes rejeté ; réglage remis.
+ *
+ * Lot 8 (contrat 15.3, T25) : test de plus, après la fumée : pages et routes de développement en 404 sur `next start`,
+ * avec et sans session. En dernier parce que le fichier est en mode « serial » : rouge jusqu'à fix(8.1s), il ne doit pas
+ * empêcher la fumée. L'extraction des outils vers support/parcours.ts est faite à la vague F, avec la recette.
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
-import { test, expect, openRoleContext } from './support/fixtures';
+import { test, expect, openRoleContext, prepareContext, projectContextOptions } from './support/fixtures';
 import { fumeePayerPhone } from './support/accounts';
 import { APP_URL, e2eConfig } from './support/env';
 import { cameraDiagSnapshot, describeCameraScan, fakeScanMode, installCameraDiagnostics, installFakeCamera } from './support/fake-camera';
@@ -797,5 +801,26 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             console.log(`[e2e][fumée] erreurs observées dans le navigateur :\n${issues.join('\n')}`);
         }
         for (const c of contexts) await c.close();
+    }
+});
+
+test('pages et routes de développement : 404 sur next start, avec et sans session', async ({ browser }, testInfo) => {
+    const anonymous = await browser.newContext(projectContextOptions(testInfo));
+    await prepareContext(anonymous, 'clair');
+    const signedIn = await openRoleContext(browser, testInfo, 'fumee-client');
+    try {
+        const seen: string[] = [];
+        const expected: string[] = [];
+        for (const [who, context] of [['sans session', anonymous], ['avec session', signedIn]] as const) {
+            for (const [method, url] of [['GET', '/dev/paiements'], ['GET', '/api/dev/samirpay/x'], ['POST', '/api/dev/samirpay/x']] as const) {
+                const res = await context.request.fetch(url, { method, maxRedirects: 0 });
+                seen.push(`${who} ${method} ${url} : ${res.status()}`);
+                expected.push(`${who} ${method} ${url} : 404`);
+            }
+        }
+        expect(seen, 'aucune redirection vers la connexion, aucun 401 : ces adresses n’existent pas sur un build').toEqual(expected);
+    } finally {
+        await anonymous.close();
+        await signedIn.close();
     }
 });
