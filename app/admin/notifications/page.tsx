@@ -329,7 +329,7 @@ export default function AdminNotificationsPage() {
 
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: 'admin-notifications',
-    subscriptions: [{ table: 'admin_signals', event: 'INSERT', filter: 'kind=in.(NOTIFICATION_FAILED,SMS_DAILY_THRESHOLD)' }],
+    subscriptions: [{ table: 'admin_signals', event: 'INSERT', filter: 'kind=in.(NOTIFICATION_FAILED,SMS_DAILY_THRESHOLD,SMS_OPTIONAL_80,SMS_FORECAST)' }],
     onSignal: refreshAll,
   });
 
