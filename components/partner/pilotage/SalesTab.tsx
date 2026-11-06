@@ -6,8 +6,9 @@ import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { categoryChannelLabel } from '@/lib/events/category-channels';
 import { formatFcfa, formatInteger, formatShortDate } from '@/lib/format';
-import { useServerData } from '@/components/partner/useServerData';
+import { useServerData, type ServerData } from '@/components/partner/useServerData';
 import { BarList, PilotageSection } from './PilotageBlocks';
+import { TicketRefundPanel } from './TicketRefundPanel';
 import type { PilotageSales } from './types';
 
 type CategoryRow = PilotageSales['by_category'][number];
@@ -35,9 +36,9 @@ const COLUMNS: DataColumn<CategoryRow>[] = [
     { key: 'revenue', header: 'Recettes en ligne', align: 'right', render: (c) => formatFcfa(c.revenue_online) },
 ];
 
-/** Onglet Ventes (contrat I) : par catégorie (vendus, en cours de paiement, restants) et jour par jour. */
-export function SalesTab({ eventId, signal }: { eventId: string; signal: number }) {
-    const { data, error, loading, refreshing, reload } = useServerData<PilotageSales>(`/api/partner/events/${eventId}/pilotage/sales`, signal);
+/** Chiffres des ventes : par catégorie (vendus, en cours de paiement, restants) et jour par jour. */
+function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
+    const { data, error, loading, refreshing, reload } = sales;
 
     if (loading) {
         return (
@@ -54,7 +55,7 @@ export function SalesTab({ eventId, signal }: { eventId: string; signal: number 
     const maxDay = Math.max(0, ...data.by_day.map((d) => d.sold));
 
     return (
-        <div className="flex flex-col gap-6">
+        <>
             <PilotageSection title="Par catégorie" description="Restants = quota de la catégorie moins les ventes, les invitations et les paiements en cours. Une catégorie inactive n’a plus de place en vente.">
                 <DataList
                     items={data.by_category}
@@ -80,6 +81,21 @@ export function SalesTab({ eventId, signal }: { eventId: string; signal: number 
                     }))}
                 />
             </PilotageSection>
+        </>
+    );
+}
+
+/**
+ * Onglet Ventes (contrat I). Le remboursement d'un billet (A4) reste monté hors des états de chargement et
+ * d'erreur des chiffres : une relecture en échec ne ferme pas une confirmation en cours.
+ */
+export function SalesTab({ eventId, signal }: { eventId: string; signal: number }) {
+    const sales = useServerData<PilotageSales>(`/api/partner/events/${eventId}/pilotage/sales`, signal);
+
+    return (
+        <div className="flex flex-col gap-6">
+            <SalesFigures sales={sales} />
+            <TicketRefundPanel eventId={eventId} onRefunded={() => void sales.reload()} />
         </div>
     );
 }
