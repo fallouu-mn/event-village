@@ -32,6 +32,9 @@
  * (:114-128) ; aucun état réseau ; app/controller/layout.tsx sans thème sombre ; ShiftModals fait main
  * (step="500" :205, step="100" :383, écart calculé :274-276, import de valeur depuis shift.service :9) ;
  * refusedCountMap (app/controller/scanner/page.tsx:86).
+ * Lot 8 : 8.2 e (renvoi seulement, contrat 7.1, L45) ; 8.2 v (cas portés de tests/legacy, déjà verts). Rouge avant
+ * fix(8.2e-c) : postScan ignore replayOnly (components/scan/scan-client.ts:227-229) ; `not_processed` hors de l'union
+ * jusqu'à fix(8.2e-s).
  * Interprétations (contrat muet, à reprendre au rapport) :
  *  - les jetons de texte se nomment --scan-<x>-fg, en face de --scan-<x>-bg (convention -fg / -bg des jetons
  *    du lot 5, app/globals.css:52-67) ; les six fonds attendus : accept, used, refuse, cash, window, tech ;
@@ -44,6 +47,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { detectScannerSupport } from '../../lib/scanner/support';
 import { importModule } from './paiement-helpers';
 import { assertTerrainInvariants } from './terrain-helpers';
 
@@ -60,6 +64,7 @@ const SOURCE_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|css)$/;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|opus)$/i;
 
 const SCANNER_PAGE = 'app/controller/scanner/page.tsx';
+const PARTNER_SCAN_PAGE = 'app/partner/scan/page.tsx';
 const OVERLAY = 'components/scan/CombatFlashOverlay.tsx';
 const CAMERA = 'components/scan/CameraQrScanner.tsx';
 const SCAN_CLIENT = 'components/scan/scan-client.ts';
@@ -291,7 +296,7 @@ describe('7.2 — vibrations distinctes, aucune pour un incident technique (D47,
 
 // ── 4. Client du scan : clé, délais, relances ──────────────────────────────
 
-interface FetchCall { url: string; key: string | null; signal: unknown; at: number }
+interface FetchCall { url: string; key: string | null; signal: unknown; at: number; body: unknown }
 type FetchStep = { status: number; body?: Record<string, unknown>; headers?: Record<string, string> } | 'network';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -312,9 +317,9 @@ async function withFakeFetch(steps: FetchStep[], run: (client: Record<string, (.
     };
     Object.defineProperty(globalThis, 'fetch', {
         configurable: true, writable: true,
-        value: async (input: unknown, init: { headers?: HeadersInit; signal?: unknown } = {}) => {
+        value: async (input: unknown, init: { headers?: HeadersInit; signal?: unknown; body?: unknown } = {}) => {
             const step = steps[Math.min(calls.length, steps.length - 1)];
-            calls.push({ url: String(input), key: new Headers(init.headers ?? {}).get('idempotency-key'), signal: init.signal, at: Date.now() });
+            calls.push({ url: String(input), key: new Headers(init.headers ?? {}).get('idempotency-key'), signal: init.signal, at: Date.now(), body: typeof init.body === 'string' ? JSON.parse(init.body) : null });
             if (step === 'network') throw new TypeError('fetch failed (réseau coupé simulé)');
             return new Response(JSON.stringify(step.body ?? {}), { status: step.status, headers: { 'content-type': 'application/json', ...(step.headers ?? {}) } });
         },
@@ -399,6 +404,100 @@ describe('7.2 — components/scan/scan-client.ts : clé par lecture, délais, re
     });
 });
 
+// ── 4 bis. Lot 8, tâche 8.2 e : renvoi seulement (contrat 7.1, L45) ─────────
+
+const NOT_PROCESSED_BODY = { result: 'not_processed', replayed: false, code: 'REPLAY_NOT_FOUND', message: 'Scan non traité : aucune entrée enregistrée. Scannez le billet de nouveau.' };
+
+/** Texte de chaque appel de runScan (runScan ou runScanRef.current) : ses arguments de premier niveau. */
+function runScanCalls(src: string): string[][] {
+    const calls: string[][] = [];
+    for (const m of Array.from(src.matchAll(/\brunScan(?:Ref\.current)?\s*\(/g))) {
+        const args: string[] = [];
+        let depth = 0;
+        let start = m.index + m[0].length;
+        for (let i = start; i < src.length; i++) {
+            const ch = src[i];
+            if ('([{'.includes(ch)) depth += 1;
+            else if (')]}'.includes(ch) && depth > 0) depth -= 1;
+            else if (ch === ',' && depth === 0) {
+                args.push(src.slice(start, i).trim());
+                start = i + 1;
+            } else if (ch === ')') {
+                args.push(src.slice(start, i).trim());
+                break;
+            }
+        }
+        calls.push(args);
+    }
+    return calls;
+}
+
+describe('8.2 e — renvoi seulement côté client (contrat 7.1, L45)', () => {
+    test('postScan(..., { replayOnly: true }) envoie { eventId, replayOnly: true }, sans le code, à chaque relance et avec la clé d’origine', async () => {
+        const req = request();
+        const key = randomUUID();
+        const { outcomes, calls } = await withFakeFetch(
+            ['network', { status: 503, body: { result: 'server_error' } }, { status: 200, body: NOT_PROCESSED_BODY }],
+            async (c) => [await c.postScan(req, { key, replayOnly: true })]);
+        assert.equal(calls.length, 3, `deux relances (appels : ${calls.length})`);
+        assert.ok(calls.every((c) => c.key === key), `clé d’origine à chaque envoi : ${calls.map((c) => c.key).join(', ')}`);
+        calls.forEach((call, i) => assert.deepEqual(call.body, { eventId: req.eventId, replayOnly: true }, `essai ${i + 1} : corps du renvoi`));
+        assert.equal(outcomes[0].result, 'not_processed', `verdict du renvoi : ${JSON.stringify(outcomes[0])}`);
+    });
+
+    test('saisie manuelle reprise : le numéro de billet n’est pas renvoyé non plus', async () => {
+        const req = { eventId: randomUUID(), manualTicketNumber: 'TCK-RENVOI', identityVerified: true };
+        const { calls } = await withFakeFetch([{ status: 200, body: VALID_BODY }], async (c) => [await c.postScan(req, { key: randomUUID(), replayOnly: true })]);
+        assert.deepEqual(calls[0].body, { eventId: req.eventId, replayOnly: true }, 'corps du renvoi d’une saisie manuelle');
+    });
+
+    test('(V) postScan normal : corps inchangé, aucun indicateur, relance comprise ; replayOnly: false pareil', async () => {
+        const req = request();
+        const { calls } = await withFakeFetch(['network', { status: 200, body: VALID_BODY }], async (c) => [await c.postScan(req)]);
+        assert.equal(calls.length, 2, `une relance (appels : ${calls.length})`);
+        for (const call of calls) assert.deepEqual(call.body, req, 'corps de la lecture, sans replayOnly');
+        const off = await withFakeFetch([{ status: 200, body: VALID_BODY }], async (c) => [await c.postScan(req, { replayOnly: false })]);
+        assert.deepEqual(off.calls[0].body, req, 'replayOnly: false : corps de la lecture, sans replayOnly');
+    });
+
+    test('not_processed : incident technique, verdict reçu (aucune boucle de renvoi), ni refus de billet ni vibration', async () => {
+        const { outcomes } = await withFakeFetch([{ status: 200, body: NOT_PROCESSED_BODY }], async (c) => [await c.postScan(request(), { replayOnly: true })]);
+        const outcome = outcomes[0];
+        assert.equal(outcome.result, 'not_processed', `résultat lu par le client : ${JSON.stringify(outcome)}`);
+        assert.equal(outcome.failure, undefined, `réponse 200 du contrat, pas une panne : ${JSON.stringify(outcome)}`);
+        const client = await importModule('../../components/scan/scan-client');
+        assert.equal(client.isTechnicalOutcome(outcome), true, 'incident technique');
+        assert.equal(client.isTicketRefusal(outcome), false, 'jamais compté comme refus de billet');
+        assert.equal(client.categoryFor(outcome), 'technique', 'catégorie technique : écran neutre, aucune vibration');
+        const session = await importModule('../../lib/scan/scan-session');
+        assert.equal(session.isVerdictReceived(outcome), true, 'verdict reçu : le scan en attente est effacé, jamais renvoyé en boucle');
+    });
+
+    for (const file of [SCANNER_PAGE, PARTNER_SCAN_PAGE]) {
+        test(`${file} : runScan envoie replayOnly seulement pour un scan repris (4e paramètre renseigné)`, () => {
+            const src = stripComments(read(file));
+            const start = src.search(/const\s+runScan\s*=\s*useCallback\(/);
+            assert.ok(start >= 0, `${file} : runScan introuvable`);
+            const run = src.slice(start, src.indexOf('const runScanRef', start));
+            const params = /async\s*\(([^)]*)\)/.exec(run)?.[1].split(',').map((p) => p.trim()) ?? [];
+            assert.equal(params.length, 4, `${file} : paramètres de runScan : ${params.join(' ; ')}`);
+            const name = /^\w+/.exec(params[3])?.[0];
+            // Contrat 7.1 : `createdAt !== undefined`. Le code nomme ce paramètre recoveredAt, avec null par défaut : le
+            // comparer à undefined marquerait TOUTE lecture comme un renvoi, et plus aucun billet ne serait composté.
+            const absent = /=\s*null$/.test(params[3]) ? 'null' : 'undefined';
+            assert.match(run, new RegExp(`postScan\\s*\\(\\s*request\\s*,\\s*\\{[^}]*\\breplayOnly\\s*:\\s*${name}\\s*!==\\s*${absent}\\b`),
+                `${file} : postScan(request, { …, replayOnly: ${name} !== ${absent} })`);
+        });
+
+        test(`(V) ${file} : seule la reprise passe l’heure de la lecture d’origine à runScan`, () => {
+            const calls = runScanCalls(stripComments(read(file)));
+            assert.ok(calls.length >= 3, `${file} : appels de runScan trouvés : ${calls.length}`);
+            const withHour = calls.filter((args) => args.length >= 4);
+            assert.deepEqual(withHour.map((args) => args[3]), ['pending.createdAt'], `${file} : un seul appel à quatre arguments, celui de resumePendingScan`);
+        });
+    }
+});
+
 // ── 5. États réseau et marques de mesure ───────────────────────────────────
 
 describe('7.2 — états « Envoi… », « Réseau lent », « Hors ligne » et marques de mesure (contrat 6.1 test 5)', () => {
@@ -459,6 +558,42 @@ describe('7.2 — ShiftModals sur le système de design, chiffres du serveur (D4
             [/\b\w*(?:declared|expected|opening|float|counted)\w*\s*[-+]\s*\w*(?:declared|expected|opening|float|counted)\w*/i, 'écart ou total calculé dans le navigateur'],
         ]);
         assert.deepEqual(found, [], `${SHIFT_MODALS} :\n${found.join('\n')}`);
+    });
+});
+
+// ── 7 bis. Lot 8, tâche 8.2 v : cas portés de tests/legacy (déjà verts, annoncés) ──
+
+describe('8.2 v — cas portés de camera-qr-scanner et scanner-security-hardening (V, garde-fous)', () => {
+    const camera = { mediaDevices: { getUserMedia: async () => ({}) } };
+
+    test('detectScannerSupport : contexte sûr, getUserMedia et BarcodeDetector → native', () => {
+        const r = detectScannerSupport({ isSecureContext: true, navigator: camera, BarcodeDetector: class {} });
+        assert.deepEqual(r, { mode: 'native', hasGetUserMedia: true, hasBarcodeDetector: true, isSecureContext: true });
+    });
+
+    test('detectScannerSupport : getUserMedia sans BarcodeDetector (Safari, Firefox) → zxing', () => {
+        const r = detectScannerSupport({ isSecureContext: true, navigator: camera });
+        assert.deepEqual(r, { mode: 'zxing', hasGetUserMedia: true, hasBarcodeDetector: false, isSecureContext: true });
+    });
+
+    test('detectScannerSupport : contexte non sûr, ou sans getUserMedia, ou hors navigateur → manual_only, avec la raison', () => {
+        const insecure = detectScannerSupport({ isSecureContext: false, location: { protocol: 'http:', hostname: '192.168.1.50' }, navigator: camera, BarcodeDetector: class {} });
+        assert.equal(insecure.mode, 'manual_only', 'contexte non sûr');
+        assert.equal(insecure.isSecureContext, false, 'contexte non sûr');
+        assert.match(insecure.reason ?? '', /HTTPS requis/, 'contexte non sûr : raison affichée');
+        const noCamera = detectScannerSupport({ isSecureContext: true, navigator: {} });
+        assert.equal(noCamera.mode, 'manual_only', 'sans getUserMedia');
+        assert.equal(noCamera.hasGetUserMedia, false, 'sans getUserMedia');
+        assert.match(noCamera.reason ?? '', /getUserMedia/, 'sans getUserMedia : raison affichée');
+        const server = detectScannerSupport(null);
+        assert.equal(server.mode, 'manual_only', 'hors navigateur');
+        assert.equal(server.isSecureContext, false, 'hors navigateur');
+    });
+
+    test('constantes caméra : cadence de lecture entre 120 et 150 ms, veille après 3 min sans lecture (D48)', async () => {
+        const mod = await importModule('../../components/scan/CameraQrScanner');
+        assert.ok(mod.CAMERA_SCAN_THROTTLE_MS >= 120 && mod.CAMERA_SCAN_THROTTLE_MS <= 150, `CAMERA_SCAN_THROTTLE_MS = ${mod.CAMERA_SCAN_THROTTLE_MS}`);
+        assert.equal(mod.CAMERA_INACTIVITY_TIMEOUT_MS, 180_000, 'veille de la caméra : 3 min (D48 ; la valeur de 45 s du test legacy est périmée)');
     });
 });
 
