@@ -28,6 +28,13 @@
  * app/globals.css:411-419 : `evPageEnter` part de `opacity: 0`.
  * Verts dès le commit test(7.5) (couverture ajoutée, le script est livré avec ses tests) : js-budget.mjs et
  * son appel dans verify.mjs.
+ *
+ * Lot 8, tâche 8.2 s (contrat, section 11.3 ; T17) : `.ev-page-enter` enveloppe chaque page (app/template.tsx:2) et ne
+ * doit plus être le bloc conteneur de ses descendants `position: fixed`. Rouge aujourd'hui : app/globals.css:441-444,
+ * `animation: … both` conserve la transformation après l'animation et `will-change: transform` suffit à lui seul
+ * (expérience du contrat : barre d'achat à top = 2868 au lieu de 712, page de 3 000 px, écran de 844 px).
+ * `isolation: isolate` remplace le contexte d'empilement que `will-change` donnait, sinon la caméra et la barre z-30
+ * passeraient au-dessus de l'en-tête z-20. La position réelle est prouvée en e2e (section 15.4).
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
@@ -586,5 +593,100 @@ describe('7.5 animation d\'entrée de page (D78)', () => {
         assert.equal(opacityIsZero('0.0 !important'), true);
         assert.equal(opacityIsZero('0.6'), false);
         assert.equal(opacityIsZero(undefined), false);
+    });
+});
+
+// ── Lot 8, 8.2 s : bloc conteneur des position: fixed ──────────────────────
+
+const FILL_MODES = new Set(['none', 'forwards', 'backwards', 'both']);
+/** Remplissages qui conservent la dernière image clé, donc sa transformation, après l'animation. */
+const HOLDING_FILL_MODES = new Set(['forwards', 'both']);
+/** Valeurs de will-change qui font de l'élément le bloc conteneur de ses descendants fixed, comme la propriété elle-même. */
+const CONTAINING_WILL_CHANGE = new Set(['transform', 'perspective', 'filter', 'backdrop-filter']);
+
+/** Remplissages d'une règle : raccourci `animation` et propriété `animation-fill-mode`. */
+function animationFillModes(decl: Record<string, string>): string[] {
+    const modes: string[] = [];
+    for (const value of [decl.animation, decl['animation-fill-mode']]) {
+        if (!value) continue;
+        for (const tok of value.replace(/!important/gi, ' ').replace(/[\w-]+\([^)]*\)/g, ' ').split(/[\s,]+/)) {
+            if (FILL_MODES.has(tok.toLowerCase())) modes.push(tok.toLowerCase());
+        }
+    }
+    return modes;
+}
+
+/** Ce qui, dans une règle, fait de l'élément le bloc conteneur de ses descendants `position: fixed`. */
+function fixedTrapProblems(decl: Record<string, string>): string[] {
+    const problems: string[] = [];
+    const holding = animationFillModes(decl).filter((m) => HOLDING_FILL_MODES.has(m));
+    if (holding.length > 0) problems.push(`remplissage ${holding.join(', ')} : la transformation reste après l'animation`);
+    const willChange = (decl['will-change'] ?? '').replace(/!important/gi, ' ').split(/[\s,]+/).map((v) => v.toLowerCase());
+    const trapped = willChange.filter((v) => CONTAINING_WILL_CHANGE.has(v));
+    if (trapped.length > 0) problems.push(`will-change: ${trapped.join(', ')}`);
+    for (const prop of ['transform', 'perspective', 'filter', 'backdrop-filter']) {
+        const value = decl[prop]?.replace(/!important/gi, '').trim().toLowerCase();
+        if (value && value !== 'none') problems.push(`${prop}: ${value}`);
+    }
+    if (/\b(?:paint|layout|strict|content)\b/i.test(decl.contain ?? '')) problems.push(`contain: ${decl.contain}`);
+    return problems;
+}
+
+/** Règles dont un sélecteur vise `.ev-page-enter`, blocs @media compris, hors @keyframes. */
+function pageEnterRules(): { file: string; selector: string; decl: Record<string, string> }[] {
+    const rules: { file: string; selector: string; decl: Record<string, string> }[] = [];
+    const collect = (file: string, nodes: CssNode[]): void => {
+        for (const n of nodes) {
+            if (/^@(?:-webkit-)?keyframes\b/i.test(n.prelude)) continue;
+            if (n.prelude.startsWith('@')) { collect(file, n.children); continue; }
+            if (n.prelude.split(',').some((sel) => /\.ev-page-enter(?![\w-])/.test(sel))) {
+                rules.push({ file, selector: n.prelude, decl: declarations(n.body) });
+            }
+        }
+    };
+    for (const file of cssFiles()) collect(file, parseCss(read(file)));
+    return rules;
+}
+
+describe('8.2 s .ev-page-enter ne retient plus les position: fixed (barre d\'achat)', () => {
+    test('ni will-change: transform, ni remplissage both ou forwards : l\'animation reste, en backwards', () => {
+        assert.match(read('app/template.tsx'), /\bev-page-enter\b/, 'app/template.tsx n\'applique plus .ev-page-enter : le contrôle ne porterait sur rien');
+        const rules = pageEnterRules();
+        assert.ok(rules.length > 0, 'aucune règle .ev-page-enter lue dans app/, components/, styles/');
+        const problems = rules.flatMap((r) => fixedTrapProblems(r.decl).map((p) => `${r.file} « ${r.selector} » : ${p}`));
+        assert.deepEqual(problems, [], `.ev-page-enter est le bloc conteneur des position: fixed de toutes les pages :\n${problems.join('\n')}`);
+        assert.ok(rules.flatMap((r) => animationNames(r.decl)).includes('evPageEnter'), '.ev-page-enter a perdu son animation d\'entrée (D78 : transform seul)');
+        assert.deepEqual(rules.flatMap((r) => animationFillModes(r.decl)), ['backwards'], 'remplissage attendu de .ev-page-enter : backwards');
+    });
+
+    test('garde son contexte d\'empilement : isolation: isolate (caméra et barre z-30 sous l\'en-tête z-20)', () => {
+        const rules = pageEnterRules();
+        assert.ok(rules.length > 0, 'aucune règle .ev-page-enter lue dans app/, components/, styles/');
+        assert.ok(rules.some((r) => r.decl.isolation?.trim().toLowerCase() === 'isolate'),
+            `.ev-page-enter sans isolation: isolate (${rules.map((r) => `${r.file} « ${r.selector} » : ${JSON.stringify(r.decl)}`).join(' ; ')})`);
+    });
+
+    test('auto-test du détecteur : règle d\'aujourd\'hui signalée, règle du contrat acceptée, chaque variante vue', () => {
+        const rule = (body: string): Record<string, string> => declarations(body);
+        const easing = 'cubic-bezier(0.22, 1, 0.36, 1)';
+        assert.deepEqual(fixedTrapProblems(rule(`animation: evPageEnter 0.32s ${easing} both; will-change: transform;`)), [
+            'remplissage both : la transformation reste après l\'animation',
+            'will-change: transform',
+        ]);
+        const target = rule(`animation: evPageEnter 0.32s ${easing} backwards; isolation: isolate;`);
+        assert.deepEqual(fixedTrapProblems(target), []);
+        assert.deepEqual(animationFillModes(target), ['backwards']);
+
+        assert.equal(fixedTrapProblems(rule(`animation: a 1s ${easing} forwards;`)).length, 1);
+        assert.equal(fixedTrapProblems(rule('animation: a 1s, b 2s both;')).length, 1);
+        assert.equal(fixedTrapProblems(rule('animation-name: a; animation-fill-mode: forwards;')).length, 1);
+        assert.equal(fixedTrapProblems(rule('will-change: opacity, transform !important;')).length, 1);
+        assert.equal(fixedTrapProblems(rule('transform: translateY(0);')).length, 1);
+        assert.equal(fixedTrapProblems(rule('filter: blur(2px);')).length, 1);
+        assert.equal(fixedTrapProblems(rule('contain: paint;')).length, 1);
+
+        assert.deepEqual(fixedTrapProblems(rule('will-change: opacity;')), []);
+        assert.deepEqual(fixedTrapProblems(rule('transform: none; filter: none;')), []);
+        assert.deepEqual(fixedTrapProblems(rule('animation: both-sides 1s backwards;')), [], 'un nom d\'animation n\'est pas un remplissage');
     });
 });
