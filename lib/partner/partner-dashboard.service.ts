@@ -24,8 +24,6 @@ export interface PartnerKPIs {
     grossRevenue: number;
     /** Net organisateur = ventes en ligne − remboursements (grand livre). */
     netRevenue: number;
-    /** Event Village ne prélève rien sur l'organisateur : ses frais sont payés par l'acheteur. */
-    commissionAmount: number;
     refundedAmount: number;
     availableRevenue: number;
     pendingRevenue: number;
@@ -67,7 +65,6 @@ export interface PartnerEventBreakdown {
     checkInRatePercent: number;
     grossRevenue: number;
     refundedAmount: number;
-    commissionAmount: number;
     netRevenue: number;
 }
 
@@ -660,7 +657,6 @@ export class PartnerDashboardService {
                 checkInRatePercent: evSold > 0 ? Math.min(100, Math.round((evCheckedIn / evSold) * 100)) : 0,
                 grossRevenue: ledger.sales,
                 refundedAmount: ledger.refunded,
-                commissionAmount: 0,
                 netRevenue: ledger.net,
             };
         });
@@ -740,7 +736,6 @@ export class PartnerDashboardService {
             kpis: {
                 grossRevenue: summary.onlineSales,
                 netRevenue: summary.organizerNet,
-                commissionAmount: 0,
                 refundedAmount: summary.refunded,
                 availableRevenue: summary.available,
                 pendingRevenue: summary.pending,
@@ -1069,7 +1064,7 @@ export class PartnerDashboardService {
         stream += `36 ${footerY + 10} Td\n(Document comptable certifie genere automatiquement par Event Village Senegal -- contact@event-village.sn) Tj\nET\n`;
 
         stream += 'BT\n/F2 7.5 Tf\n0.35 0.40 0.50 rg\n';
-        stream += `36 ${footerY} Td\n(Certificat de cloture : ${escapePdfText(data.reportId)} -- Conforme CDC V3.0) Tj\nET\n`;
+        stream += `36 ${footerY} Td\n(Certificat de cloture : ${escapePdfText(data.reportId)}) Tj\nET\n`;
 
         stream += 'Q\n';
 

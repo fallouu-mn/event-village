@@ -63,7 +63,6 @@ export async function GET(request: NextRequest) {
                 grossRevenue: bucket.sales,
                 refunded: bucket.refunded,
                 netRevenue: summary.byTarget[key] ?? 0,
-                commissionRate: 0,
             };
         };
 
@@ -71,7 +70,6 @@ export async function GET(request: NextRequest) {
             success: true,
             finance: {
                 grossRevenue: summary.onlineSales,
-                evCommission: 0,
                 netRevenue: summary.organizerNet,
                 refunded: summary.refunded,
                 availableRevenue: summary.available,
