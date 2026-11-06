@@ -2,16 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { eventEndAt } from '@/lib/events/event-end';
+import { isEventId, PUBLIC_EVENT_STATUSES, type PublicEventStatus } from '@/lib/events/public-status';
 
 export const dynamic = 'force-dynamic';
-
-/** Statuts visibles du public (contrat E) ; BROUILLON, EN_ATTENTE et VALIDE répondent 404. */
-const PUBLIC_STATUSES = new Set(['PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE']);
 
 const LOW_STOCK_KEY = 'access.low_stock_threshold';
 const LOW_STOCK_DEFAULT = 10;
 
-type BannerKind = 'SUSPENDU' | 'ANNULE' | 'TERMINE';
+type BannerKind = Exclude<PublicEventStatus, 'PUBLIE'>;
 
 const BANNERS: Record<BannerKind, { title: string; message: string }> = {
     SUSPENDU: {
@@ -55,8 +53,7 @@ async function lowStockThreshold(): Promise<number> {
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
     try {
         const eventId = params.id;
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId ?? '');
-        if (!isUuid) return NOT_FOUND();
+        if (!isEventId(eventId)) return NOT_FOUND();
 
         const supabase = getServiceRoleClient();
         const { data: event, error } = await supabase
@@ -93,9 +90,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             console.error('[API /api/events/[id]] lecture de l’événement impossible :', error.message);
             return NextResponse.json({ error: 'Impossible de charger l’événement.' }, { status: 500 });
         }
-        if (!event || !PUBLIC_STATUSES.has(String(event.status))) return NOT_FOUND();
+        if (!event || !PUBLIC_EVENT_STATUSES.has(String(event.status))) return NOT_FOUND();
 
-        const status = String(event.status) as 'PUBLIE' | BannerKind;
+        const status = String(event.status) as PublicEventStatus;
         const now = new Date();
         const ended = eventEndAt(event).getTime() <= now.getTime();
         const threshold = await lowStockThreshold();
