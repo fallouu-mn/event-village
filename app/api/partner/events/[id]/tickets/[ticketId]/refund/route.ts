@@ -15,6 +15,11 @@ const REFUSALS: Record<string, number> = {
     ALREADY_REFUNDED: 409,
 };
 
+/** ticket_refund_request écrit le statut du billet dans son message (migration gelée du lot 3) : il ne sort pas d'ici. */
+const REFUSAL_MESSAGES: Record<string, string> = {
+    TICKET_NOT_REFUNDABLE: 'Ce billet ne peut plus être remboursé.',
+};
+
 /**
  * POST /api/partner/events/[id]/tickets/[ticketId]/refund — remboursement d'un billet (lot 3.4).
  * Droits : le partenaire propriétaire de l'événement [id], ou un ADMIN / SUPERADMIN (rôles
@@ -63,7 +68,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     try {
         const result = await CashoutService.requestTicketRefund({ ticketId, actorId: user.id, reason: parsed.data.reason });
         if (!result.ok) {
-            return NextResponse.json({ error: result.message || 'Remboursement impossible.', code: result.code }, { status: REFUSALS[result.code ?? ''] ?? 400 });
+            const message = REFUSAL_MESSAGES[result.code ?? ''] ?? (result.message || 'Remboursement impossible.');
+            return NextResponse.json({ error: message, code: result.code }, { status: REFUSALS[result.code ?? ''] ?? 400 });
         }
         let cashoutStatus: string | null = result.cashout?.status ?? null;
         if (result.cashout && result.cashout.status === 'A_ENVOYER' && !result.cashout.blocked_reason) {
