@@ -172,7 +172,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             </p>
 
             {recoveredAt ? (
-                <p className="max-w-2xl text-xl font-bold leading-snug sm:text-2xl">
+                <p className="max-w-2xl text-xl font-bold leading-snug tabular-nums sm:text-2xl">
                     Résultat retrouvé : billet lu à {formatTime(recoveredAt)}.
                 </p>
             ) : null}

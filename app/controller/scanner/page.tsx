@@ -1094,7 +1094,7 @@ export default function ControllerScannerPage() {
                                         {titleFor(cashError)}. Rien n’a été encaissé ni validé : ne laissez pas entrer le spectateur.
                                     </StatusBanner>
                                 )}
-                                <Button variant="primary" size="lg" fullWidth isLoading={cashConfirming} onClick={() => void handleConfirmCash()} leftIcon={<Banknote size={18} />}>
+                                <Button variant="primary" size="lg" fullWidth className="tabular-nums" isLoading={cashConfirming} onClick={() => void handleConfirmCash()} leftIcon={<Banknote size={18} />}>
                                     {!activeShift ? 'Ouvrir ma caisse pour encaisser'
                                         : outcome.amountDue !== undefined ? `J’ai reçu ${formatFcfa(outcome.amountDue)} : valider l’entrée` : 'J’ai reçu les espèces : valider l’entrée'}
                                 </Button>

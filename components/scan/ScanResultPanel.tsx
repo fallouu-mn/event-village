@@ -84,7 +84,7 @@ export function ScanResultPanel({ outcome, title, recoveredAt, children }: ScanR
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <p className={cn('text-base font-bold leading-snug', classes.title)}>{heading}</p>
                     {recoveredAt ? (
-                        <p className={cn('text-sm font-semibold', classes.body)}>
+                        <p className={cn('text-sm font-semibold tabular-nums', classes.body)}>
                             Résultat retrouvé : billet lu à {formatTime(recoveredAt)}.
                         </p>
                     ) : null}
