@@ -1,6 +1,6 @@
 # Recette de la billetterie
 
-Ce document relie chaque exigence du cahier des charges V3.0 à sa preuve et liste les anomalies. La source des exigences est `docs/CDC-V3.md`.
+Ce document a trois parties : la matrice qui relie chaque exigence du cahier des charges V3.0 à sa preuve, la liste des anomalies, et le cahier de recette à dérouler à la main sur event-village-dev. La source des exigences est `docs/CDC-V3.md`.
 
 ## 1. Résumé
 
@@ -285,3 +285,1067 @@ Gravité : **Élevée** trompe un utilisateur, ou bloque une opération d’arge
 | Q5 | Personnalisation des taux par le superadmin : à construire quand ? |
 | Q6 | Quels taux après le passage d’un client en Ambassadeur ? |
 | Sans numéro | Outil d’invitations : une catégorie sans canal n’est distribuée à personne aujourd’hui. Faut-il un outil pour envoyer des invitations ? |
+
+## 7. Cahier de recette manuelle
+
+Ce cahier se déroule sur event-village-dev, à l’ordinateur et au téléphone. Il ne demande aucune connaissance technique. Comptez environ 2 h 30.
+
+Avant de commencer, suivez le guide `docs/essai-local.md`. Il explique comment lancer l’application, créer les comptes de test, ouvrir l’application sur le téléphone, et lire les SMS simulés.
+
+Pour chaque essai, suivez les étapes, comparez avec le résultat attendu, puis cochez OK ou Anomalie. En cas d’anomalie, notez ce que vous avez vu dans la ligne Remarque.
+
+Quelques essais demandent une condition particulière :
+
+- Les essais 19, 42 et 58 se font en mode simulé.
+- Les essais 25, 26 et 32 se font en mode B, avec le tunnel (sections 9 et 11 du guide).
+- L’essai 48 suit la section 8.7 du guide. L’essai 50 se termine 7 jours plus tard.
+- L’essai 60 se fait en dernier, car il repasse en réel.
+
+### A. Préparation
+
+#### Essai 1. Lancer l’application et les tâches planifiées
+
+**Appareil :** ordinateur.
+
+**Préparation :** Le guide `docs/essai-local.md` est ouvert. Les migrations sont appliquées et le fichier de réglages est rempli (sections 3 et 4 du guide).
+
+1. Lancez le faux SamirPay, l’application et les tâches planifiées, chacun dans sa fenêtre (section 6 du guide).
+2. Ouvrez l’accueil dans le navigateur.
+3. Regardez la fenêtre des tâches planifiées pendant 5 minutes.
+
+**Résultat attendu :** L’accueil s’ouvre. Le journal des tâches défile sans erreur. La bannière « Intégrations simulées » s’affiche si vous êtes en mode simulé.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 2. Se connecter avec les comptes de test
+
+**Appareil :** ordinateur.
+
+**Préparation :** Les comptes de test sont créés (section 7 du guide).
+
+1. Connectez-vous avec `superadmin`, puis déconnectez-vous.
+2. Faites de même avec `partenaire`, `controleur` et `client1`.
+
+**Résultat attendu :** Chaque compte arrive sur son espace : administration, espace partenaire, scanner, accueil.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### B. Découverte
+
+#### Essai 3. Voir les événements sans compte
+
+**Appareil :** téléphone.
+
+**Préparation :** Le téléphone ouvre l’adresse du tunnel (section 9 du guide). Vous n’êtes pas connecté.
+
+1. Ouvrez l’accueil.
+2. Touchez Explorer.
+
+**Résultat attendu :** Les événements publiés s’affichent, avec leur prix « à partir de ». Le brouillon et l’événement en attente n’y sont pas.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 4. Chercher un événement et filtrer par ville
+
+**Appareil :** téléphone.
+
+**Préparation :** Vous êtes sur Explorer.
+
+1. Tapez un mot du titre de « Concert d’essai à Dakar ».
+2. Choisissez une ville dans le filtre.
+3. Effacez la recherche.
+
+**Résultat attendu :** Seuls les bons événements restent. Après effacement, la liste complète revient.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 5. Ouvrir une fiche complète
+
+**Appareil :** ordinateur.
+
+**Préparation :** Un événement a un programme et des informations pratiques renseignés (essai 11).
+
+1. Ouvrez sa fiche depuis Explorer.
+2. Lisez la page jusqu’en bas.
+
+**Résultat attendu :** Programme, adresse, accès, parking, contact de l’organisateur, règles et carte sont présents. La barre d’achat reste en bas de l’écran pendant le défilement.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 6. Ouvrir l’adresse d’un événement non publié
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire` : ouvrez « Atelier d’essai en brouillon » et copiez le long identifiant qui figure à la fin de l’adresse de la page.
+
+1. Dans une fenêtre privée, sans compte, ouvrez l’adresse du site suivie de events, d’une barre oblique, puis de l’identifiant copié.
+
+**Résultat attendu :** La page affiche « Page introuvable ». Rien du brouillon n’apparaît.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### C. Compte client
+
+#### Essai 7. S’inscrire : numéro, code, profil
+
+**Appareil :** téléphone.
+
+**Préparation :** Vous n’êtes pas connecté. Vous êtes sur la fiche d’un événement payant.
+
+1. Ajoutez un billet et touchez Acheter.
+2. Choisissez « Créer un compte client ».
+3. Saisissez un numéro inventé de 9 chiffres commençant par 70 et demandez le code.
+4. Lisez le code dans la fenêtre des SMS et saisissez-le.
+5. Remplissez prénom, nom et mot de passe.
+
+**Résultat attendu :** Le compte est créé. Vous revenez sur la fiche de l’événement, connecté.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 8. Mot de passe oublié
+
+**Appareil :** téléphone.
+
+**Préparation :** Un compte client existe, connecté sur un second appareil ou navigateur.
+
+1. Sur la page de connexion, touchez « Mot de passe oublié » et choisissez le téléphone.
+2. Saisissez le numéro, puis le code reçu.
+3. Choisissez un nouveau mot de passe.
+4. Rechargez la page sur le second appareil.
+
+**Résultat attendu :** Le nouveau mot de passe est accepté. L’ancien ne marche plus. La session du second appareil est fermée.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### D. Partenaire et événement
+
+#### Essai 9. S’inscrire comme partenaire avec ses pièces
+
+**Appareil :** ordinateur.
+
+**Préparation :** Déconnecté. Un fichier PDF ou une image pour la pièce d’identité.
+
+1. Ouvrez l’inscription partenaire.
+2. Remplissez le formulaire et joignez les pièces.
+3. Touchez « Envoyer mon dossier ».
+4. Saisissez le code reçu, puis touchez « Vérifier le code ».
+
+**Résultat attendu :** L’écran annonce « Dossier reçu ». Le dossier est en attente de validation.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 10. Admin : ouvrir les pièces et valider
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `superadmin`. Le dossier de l’essai 9 existe.
+
+1. Dans le tableau de bord d’administration, ouvrez l’onglet En attente.
+2. Touchez Dossier sur la ligne du partenaire.
+3. Ouvrez la pièce d’identité.
+4. Touchez Valider, puis « Valider la candidature ».
+
+**Résultat attendu :** La pièce s’ouvre. Le dossier quitte la file. Le partenaire reçoit un SMS et peut entrer dans son espace.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 11. Créer un événement avec 4 catégories
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire`. Une image pour l’affiche.
+
+1. Touchez « Créer un événement ». Remplissez titre, description, dates, lieu, ville, capacité et affiche.
+2. Ajoutez une ligne de programme.
+3. Remplissez adresse, accès, stationnement, contact et règles.
+4. Créez 4 catégories : Standard (en ligne et guichet), Sur place (guichet seulement), Invitations (aucun canal), Découverte à 0 F (en ligne).
+5. Lisez l’aide sous les deux cases « Vendue en ligne » et « Vendue au guichet ».
+6. Touchez « Enregistrer le brouillon ».
+
+**Résultat attendu :** Les aides sont claires (« Sur place uniquement », « Invitations seulement »). L’enregistrement réussit sans message d’erreur.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 12. Soumettre, refuser avec un motif
+
+**Appareil :** ordinateur.
+
+**Préparation :** Comptes `partenaire` et `superadmin`. L’événement de l’essai 11 est en brouillon.
+
+1. Côté partenaire, touchez Soumettre.
+2. Côté administration, ouvrez l’événement et refusez-le avec un motif.
+3. Revenez côté partenaire.
+
+**Résultat attendu :** Le motif du refus est visible par le partenaire. L’événement redevient un brouillon.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 13. Corriger, soumettre, valider, publier
+
+**Appareil :** ordinateur.
+
+**Préparation :** Suite de l’essai 12.
+
+1. Corrigez l’événement et soumettez-le.
+2. Côté administration, touchez Valider.
+3. Côté partenaire, touchez Publier.
+4. Ouvrez Explorer sans compte.
+
+**Résultat attendu :** L’événement est visible par le public. Sur sa fiche, les catégories Sur place et Invitations n’apparaissent pas.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 14. Modifier la date après une vente
+
+**Appareil :** ordinateur.
+
+**Préparation :** Un billet de cet événement est vendu (essai 16).
+
+1. Côté partenaire, modifiez la date de l’événement et enregistrez.
+2. Attendez un passage des tâches planifiées.
+
+**Résultat attendu :** Le client qui a un billet est prévenu dans sa cloche et par SMS.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 15. Inviter un contrôleur, permission espèces, PIN
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire`, événement publié, onglet Équipe.
+
+1. Saisissez le prénom, le nom et le téléphone d’un nouveau contrôleur.
+2. Cochez l’encaissement en espèces.
+3. Touchez « Inviter le contrôleur ».
+4. Ouvrez l’onglet Caisse et touchez « Générer le code PIN ».
+5. Notez le code, puis touchez « J’ai noté le code ».
+
+**Résultat attendu :** Le contrôleur reçoit son code d’activation. Le PIN s’affiche une seule fois. L’écran dit ensuite qu’un code est en place.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### E. Achat
+
+#### Essai 16. Acheter 2 billets payants
+
+**Appareil :** téléphone.
+
+**Préparation :** Compte `client1`. Événement de l’essai 13.
+
+1. Ajoutez 2 billets Standard.
+2. Lisez les frais et le total, puis touchez Acheter.
+3. Choisissez Wave ou Orange Money et saisissez un numéro.
+4. Validez le paiement simulé (section 8.3 du guide).
+
+**Résultat attendu :** Frais et total sont affichés avant de payer. Un SMS de confirmation s’écrit dans la fenêtre des SMS. Les 2 billets sont dans Mes billets.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 17. Vérifier les montants à 1 000 F
+
+**Appareil :** téléphone.
+
+**Préparation :** Un événement a une catégorie à 1 000 F.
+
+1. Ajoutez 1 billet à 1 000 F.
+2. Lisez le détail avant de payer.
+
+**Résultat attendu :** Prix 1 000 F, frais 50 F, total 1 050 F.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 18. Refuser le paiement
+
+**Appareil :** téléphone.
+
+**Préparation :** Compte `client1`.
+
+1. Lancez un achat.
+2. Sur la page du paiement simulé, touchez « Refuser le paiement ».
+
+**Résultat attendu :** Le message est clair, « Réessayer le paiement » est proposé, et aucun billet n’est créé.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 19. Fermer la page pendant l’attente
+
+**Appareil :** téléphone.
+
+**Préparation :** Compte `client1`. Mode simulé obligatoire.
+
+1. Lancez un achat et fermez la page d’attente.
+2. Sur l’ordinateur, validez le paiement simulé.
+3. Rouvrez Mes billets.
+
+**Résultat attendu :** Le billet est reçu malgré la page fermée.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 20. Prendre un billet gratuit
+
+**Appareil :** téléphone.
+
+**Préparation :** Compte `client2`. « Journée portes ouvertes d’essai ».
+
+1. Ajoutez une Entrée libre.
+2. Touchez « Réserver 1 billet gratuit ».
+
+**Résultat attendu :** Le billet est dans Mes billets tout de suite, sans paiement.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 21. Catégorie Sur place absente en ligne
+
+**Appareil :** téléphone.
+
+**Préparation :** Événement de l’essai 13.
+
+1. Ouvrez sa fiche publique.
+2. Parcourez la liste des billets.
+
+**Résultat attendu :** Ni Sur place ni Invitations n’apparaissent.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 22. Dépasser la limite par commande
+
+**Appareil :** téléphone.
+
+**Préparation :** Une catégorie a une limite par commande.
+
+1. Ajoutez plus de billets que la limite.
+
+**Résultat attendu :** L’écran empêche l’achat, avec un refus clair en français.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 23. Télécharger le PDF du billet
+
+**Appareil :** téléphone.
+
+**Préparation :** Un billet valide dans Mes billets.
+
+1. Touchez le téléchargement du billet.
+2. Ouvrez le fichier.
+
+**Résultat attendu :** Le numéro du billet et la mention de la pièce d’identité sont présents. Il n’y a pas de QR.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### F. Billet et transfert
+
+#### Essai 24. Observer le QR
+
+**Appareil :** téléphone.
+
+**Préparation :** Un billet valide dans Mes billets.
+
+1. Affichez le QR.
+2. Observez-le pendant une minute.
+
+**Résultat attendu :** Le QR change toutes les 20 secondes.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 25. Installer l’application
+
+**Appareil :** téléphone.
+
+**Préparation :** Mode B et tunnel (sections 9 et 11 du guide). Suivez `docs/installer-application.md`.
+
+1. Installez l’application depuis le navigateur.
+2. Ouvrez-la depuis l’écran d’accueil.
+
+**Résultat attendu :** L’icône est sur l’écran d’accueil et l’application s’ouvre sans barre d’adresse.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 26. Billet hors ligne, la veille
+
+**Appareil :** téléphone.
+
+**Préparation :** Mode B. Application installée. L’événement commence dans moins de 24 h.
+
+1. Connectez `client1` et ouvrez Mes billets avec du réseau. Attendez la mention « Disponible hors ligne ».
+2. Passez en mode avion.
+3. Touchez « Afficher mes billets hors ligne ».
+
+**Résultat attendu :** Le QR reste affiché et continue de changer toutes les 20 secondes.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 27. Transférer un billet et l’accepter
+
+**Appareil :** deux téléphones, ou téléphone et ordinateur.
+
+**Préparation :** Comptes `client1` et `client2`.
+
+1. Côté `client1`, touchez Transférer sur un billet et saisissez le numéro de `client2`.
+2. Touchez « Envoyer le billet », puis Terminer.
+3. Côté `client2`, ouvrez l’onglet des billets reçus et touchez « Accepter le billet ».
+
+**Résultat attendu :** Le billet change de propriétaire. Il disparaît des billets valides de `client1` et apparaît chez `client2`.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 28. Présenter une capture de l’ancien QR
+
+**Appareil :** téléphone.
+
+**Préparation :** Faites une capture d’écran du QR avant le transfert de l’essai 27.
+
+1. Présentez la capture au scanner du contrôleur après le transfert.
+
+**Résultat attendu :** Le billet est refusé.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### G. Contrôle à l’entrée
+
+#### Essai 29. Activer le compte contrôleur
+
+**Appareil :** téléphone.
+
+**Préparation :** Le contrôleur de l’essai 15 a reçu son code.
+
+1. Ouvrez le lien reçu dans le SMS.
+2. Saisissez le code, puis un mot de passe et sa confirmation.
+3. Touchez « Activer mon compte ».
+
+**Résultat attendu :** Vous arrivez sur le scanner.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 30. Scanner un billet valide
+
+**Appareil :** deux téléphones.
+
+**Préparation :** Événement du jour (section 8.1 du guide), contrôleur affecté, `client1` a un billet.
+
+1. Côté contrôleur, choisissez l’événement et commencez le contrôle.
+2. Autorisez la caméra et visez le QR du client.
+
+**Résultat attendu :** Écran vert plein écran, vibration courte.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 31. Rescanner le même billet
+
+**Appareil :** deux téléphones.
+
+**Préparation :** Suite de l’essai 30.
+
+1. Présentez le même QR.
+
+**Résultat attendu :** Le message dit « déjà utilisé ». La vibration est différente de celle de l’essai 30.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 32. Scanner le QR du client en mode avion
+
+**Appareil :** deux téléphones.
+
+**Préparation :** Mode B. Le téléphone du client est en mode avion (essai 26).
+
+1. Présentez le QR hors ligne au contrôleur.
+
+**Résultat attendu :** L’entrée est acceptée.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 33. Saisie manuelle avec pièce d’identité
+
+**Appareil :** téléphone.
+
+**Préparation :** Un billet valide non scanné. Lisez son numéro dans Mes billets.
+
+1. Touchez « Saisie manuelle » et saisissez le numéro.
+2. Touchez « Vérifier le billet ».
+3. Cochez la pièce d’identité conforme.
+4. Touchez « Pièce conforme, valider l’entrée ».
+
+**Résultat attendu :** Le titulaire est affiché et l’entrée est validée.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 34. Quitter l’application en plein contrôle
+
+**Appareil :** téléphone.
+
+**Préparation :** Le contrôle est en cours.
+
+1. Ouvrez le profil, puis revenez en arrière.
+2. Touchez « Reprendre le contrôle ».
+
+**Résultat attendu :** Même événement, mêmes chiffres. La caméra repart.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 35. Couper le réseau et scanner
+
+**Appareil :** téléphone.
+
+**Préparation :** Contrôle en cours.
+
+1. Passez le téléphone du contrôleur en mode avion.
+2. Présentez un QR.
+3. Remettez le réseau.
+
+**Résultat attendu :** Le message parle d’un incident de réseau, jamais de « billet invalide ». Le billet reste intact.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### H. Caisse et guichet
+
+#### Essai 36. Ouvrir la caisse et vendre 2 billets Sur place
+
+**Appareil :** téléphone.
+
+**Préparation :** Contrôleur avec permission espèces.
+
+1. Ouvrez l’onglet Caisse et touchez « Ouvrir ma caisse ». Indiquez le fonds de caisse.
+2. Ouvrez l’onglet Guichet.
+3. Ajoutez 2 billets Sur place.
+4. Saisissez le numéro de l’acheteur et validez la vente.
+
+**Résultat attendu :** Seules les catégories vendues au guichet sont proposées. Sur place porte la mention « Sur place uniquement ». Le total vient du serveur. Le reçu part par SMS.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 37. Clôturer sans écart
+
+**Appareil :** téléphone.
+
+**Préparation :** Suite de l’essai 36.
+
+1. Ouvrez l’onglet Caisse et touchez « Clôturer ma caisse ».
+2. Saisissez le montant exact, puis touchez « Clôturer la caisse ».
+
+**Résultat attendu :** Le Z de caisse est correct et affiché.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 38. Clôturer avec un écart
+
+**Appareil :** téléphone.
+
+**Préparation :** Une caisse ouverte. Le PIN de l’essai 15 est noté.
+
+1. Saisissez un montant différent.
+2. Touchez « Clôturer la caisse ».
+3. Ajoutez une justification et le PIN.
+
+**Résultat attendu :** L’écart calculé par le serveur s’affiche. La justification et le PIN sont exigés avant la clôture.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### I. Pilotage
+
+#### Essai 39. Suivre le pilotage pendant un scan
+
+**Appareil :** ordinateur et téléphone.
+
+**Préparation :** Compte `partenaire`, onglet Aperçu ouvert.
+
+1. Scannez un billet sur le téléphone.
+2. Regardez l’ordinateur sans recharger.
+
+**Résultat attendu :** Les chiffres se mettent à jour seuls.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 40. Exporter les participants
+
+**Appareil :** ordinateur.
+
+**Préparation :** Onglet Clôture du pilotage.
+
+1. Touchez « Exporter les participants ».
+2. Ouvrez le fichier dans Excel.
+
+**Résultat attendu :** Le fichier s’ouvre et les accents sont corrects.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 41. Lire le rapport de clôture
+
+**Appareil :** ordinateur.
+
+**Préparation :** Tableau de bord du partenaire.
+
+1. Touchez Clôture sur la ligne de l’événement.
+2. Lisez le rapport, puis téléchargez le PDF.
+
+**Résultat attendu :** Ventes en ligne et espèces sont séparées. Le PDF se télécharge. Notez la mention « certifié » du PDF : elle est connue (A39).
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 42. Demander un retrait
+
+**Appareil :** ordinateur.
+
+**Préparation :** Mode simulé. Avant les ventes, `superadmin` a mis « Délai de garde des ventes » à Désactivé, avec un motif. Le partenaire a au moins 6 000 F de ventes en ligne disponibles.
+
+1. Ouvrez Finances dans l’espace partenaire.
+2. Choisissez Wave, saisissez le numéro et 6 000 F.
+3. Touchez « Recevoir le code de confirmation ».
+4. Saisissez le code, puis touchez « Confirmer le retrait ».
+
+**Résultat attendu :** Le code est demandé. Les frais sont de 60 F, soit 1 %. Le montant versé est de 5 940 F.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 43. Demander moins de 5 000 F
+
+**Appareil :** ordinateur.
+
+**Préparation :** Même écran.
+
+1. Saisissez 4 999 F et poursuivez.
+
+**Résultat attendu :** Le refus est clair : le minimum est de 5 000 F.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### J. Annulation et remboursement
+
+#### Essai 44. Annuler un événement
+
+**Appareil :** ordinateur.
+
+**Préparation :** Un événement avec des billets vendus, en ligne et au guichet.
+
+1. Touchez « Annuler l’événement ».
+2. Rédigez l’avis public et le motif interne.
+3. Retapez le titre exact.
+4. Touchez « Confirmer l’annulation ».
+
+**Résultat attendu :** L’avis s’affiche sur la fiche publique et les ventes s’arrêtent.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 45. Côté client après l’annulation
+
+**Appareil :** téléphone.
+
+**Préparation :** Suite de l’essai 44, tâches planifiées actives.
+
+1. Attendez un passage des tâches planifiées.
+2. Ouvrez Mes billets avec le compte du client.
+
+**Résultat attendu :** Le SMS d’annulation puis celui du remboursement partent. Le billet est marqué Remboursé.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 46. Côté espèces après l’annulation
+
+**Appareil :** ordinateur.
+
+**Préparation :** Suite de l’essai 44, avec une vente au guichet.
+
+1. Ouvrez la page de l’événement annulé, côté partenaire.
+2. Regardez l’avancement des remboursements.
+
+**Résultat attendu :** Le remboursement en espèces est signalé à la charge de l’organisateur. La plateforme ne verse rien.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### K. Notifications
+
+#### Essai 47. Couper une préférence facultative
+
+**Appareil :** téléphone.
+
+**Préparation :** Compte `client1`, page des préférences de notification.
+
+1. Coupez les SMS de rappel.
+2. Déclenchez un rappel (essai 48), puis un achat.
+
+**Résultat attendu :** Le rappel n’arrive plus par SMS. La confirmation d’achat, indispensable, arrive toujours.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 48. Rappels de la veille et de H-3
+
+**Appareil :** téléphone.
+
+**Préparation :** Section 8.7 du guide : événement du jour avec un début dans 3 h 20, entre 8 h et 19 h.
+
+1. Laissez tourner les tâches planifiées, ou forcez un passage comme le guide l’indique.
+2. Regardez la cloche et la fenêtre des SMS.
+
+**Résultat attendu :** Le rappel arrive une seule fois.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### L. Parrainage
+
+#### Essai 49. Copier son lien et s’inscrire avec
+
+**Appareil :** téléphone.
+
+**Préparation :** Compte `client1`, page Portefeuille.
+
+1. Copiez le lien de parrainage.
+2. Ouvrez-le dans une fenêtre privée.
+3. Vérifiez que le code est déjà rempli dans « Plus d’options ».
+4. Créez un compte.
+5. Revenez sur le Portefeuille de `client1`.
+
+**Résultat attendu :** Le lien mène à l’inscription, le code est prérempli, et le filleul est rattaché : `client1` voit 1 filleul.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 50. Le filleul achète
+
+**Appareil :** téléphone.
+
+**Préparation :** Le filleul de l’essai 49.
+
+1. Achetez un billet avec ce compte.
+2. Revenez sur le Portefeuille de `client1`.
+3. Reprenez cet essai 7 jours plus tard.
+
+**Résultat attendu :** Une commission est En attente tout de suite, puis Disponible après le délai, qui est de 7 jours au moins.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 51. Passer un client Ambassadeur
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `superadmin`, page Parrainage de l’administration.
+
+1. Cherchez `client2` et activez le statut.
+2. Lisez la mention sur les taux.
+
+**Résultat attendu :** Le statut est visible et le rôle reste Client. La mention dit que la personnalisation des taux n’est pas disponible. Aucun bouton n’annonce une fausse sauvegarde.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### M. Administration
+
+#### Essai 52. Modifier un réglage et voir l’historique
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `superadmin`, Réglages financiers.
+
+1. Touchez Modifier sur un réglage.
+2. Tentez d’enregistrer sans motif.
+3. Ajoutez un motif et enregistrez.
+
+**Résultat attendu :** Sans motif, rien n’est enregistré. Ensuite, valeur, auteur et motif s’affichent dans l’historique.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 53. Admin sans droit
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `admin`.
+
+1. Tentez la même modification.
+
+**Résultat attendu :** Le refus s’affiche : « Réglage non enregistré ». La valeur ne change pas.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 54. Superviser les notifications et relancer un échec
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `admin`. Une notification est en échec, ce qui suppose un refus de SMS ; sinon notez « sans objet ».
+
+1. Ouvrez Notifications et filtrez sur les échecs.
+2. Ouvrez le détail et touchez Relancer, puis confirmez.
+
+**Résultat attendu :** La ligne est relancée puis envoyée.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 55. Suspendre un partenaire
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `superadmin`. Partenaire connecté dans une autre fenêtre.
+
+1. Ouvrez Utilisateurs et cherchez le partenaire.
+2. Touchez Suspendre.
+3. Rechargez la fenêtre du partenaire.
+
+**Résultat attendu :** Il est déconnecté et ne peut plus revenir.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 56. Rapprochement financier
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `superadmin`, page Finances de l’administration, après les essais E et J.
+
+1. Lisez les totaux.
+2. Comparez-les à vos achats et remboursements.
+
+**Résultat attendu :** Les totaux sont cohérents avec les essais. La vente en espèces n’y figure pas.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 57. Journal d’activité
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `superadmin`, page Journal.
+
+1. Filtrez par action.
+2. Ouvrez le détail d’une ligne.
+
+**Résultat attendu :** Les actions sensibles sont listées, avec l’utilisateur, le rôle, la date et les anciennes et nouvelles valeurs. L’utilisateur apparaît par un identifiant tronqué : c’est connu (A38).
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+### N. Ajouts du lot 8
+
+#### Essai 58. Relancer un remboursement bloqué
+
+**Appareil :** ordinateur.
+
+**Préparation :** Mode simulé, faux SamirPay lancé, un billet payé en ligne. Ouvrez une fenêtre PowerShell et collez la commande ci-dessous telle quelle : elle vide le solde du faux SamirPay. C’est la seule commande de ce cahier.
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:4010/__test/samirpay/balance -ContentType application/json -Body '{"solde":0}'
+```
+
+1. Côté partenaire, remboursez ce billet (essai 59).
+2. Dans PowerShell, collez la même commande en remplaçant 0 par 50000000.
+3. Compte `superadmin`, page Finances, section « Remboursements à reprendre ».
+4. Touchez « Relancer le remboursement », puis confirmez.
+
+**Résultat attendu :** La ligne donne le motif en français : solde insuffisant. Après la relance, « Relance envoyée » s’affiche, la ligne quitte la liste et le billet devient Remboursé.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 59. Rembourser un billet depuis le pilotage
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire`, onglet Ventes. Le numéro d’un billet payé en ligne.
+
+1. Saisissez le numéro et touchez « Rechercher le billet ».
+2. Lisez la fiche : montant et mode de remboursement.
+3. Touchez « Rembourser ce billet » et donnez un motif.
+4. Confirmez avec « Rembourser le client ».
+
+**Résultat attendu :** Deux confirmations sont demandées, et « Revenir à la fiche » permet de renoncer. Le billet est ensuite remboursé.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 60. Retour en réel : un remboursement simulé reste bloqué
+
+**Appareil :** ordinateur.
+
+**Préparation :** À faire seulement en fin de campagne. Un billet payé en simulé existe. Suivez « Pour passer de simulé à réel », section 5 du guide.
+
+1. Une fois en réel, remboursez ce billet.
+2. Compte `superadmin`, page Finances, section « Remboursements à reprendre ».
+
+**Résultat attendu :** Le remboursement ne part pas. Le motif affiché est « opération créée en mode simulé : aucun versement ». Aucun argent ne bouge.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 61. Catégorie Invitations seulement : aucune vente
+
+**Appareil :** ordinateur et téléphone.
+
+**Préparation :** Une catégorie sans aucun canal (essai 11).
+
+1. Cherchez-la sur la fiche publique.
+2. Côté contrôleur, cherchez-la dans l’onglet Guichet.
+
+**Résultat attendu :** Elle n’apparaît ni en ligne ni au guichet. L’écran ne propose pas non plus d’envoyer des invitations : ce point est une question au client.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
