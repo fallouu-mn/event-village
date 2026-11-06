@@ -97,14 +97,13 @@ export async function POST(req: NextRequest) {
             log: { type: SYNC_TYPE[otpPurpose], ref: otpId, userId: resetUserId },
         });
         const sendSuccess = sendResult.success;
-        const errorMessage = sendSuccess ? undefined
-            : purpose === 'PASSWORD_RESET' ? 'Impossible d\'envoyer le SMS de réinitialisation.' : sendResult.error;
 
         if (!sendSuccess) {
-            console.error('[API send-otp] Échec envoi SMS:', errorMessage);
+            // Le détail vient du fournisseur (statut HTTP, code de refus) : il reste au journal.
+            console.error('[API send-otp] Échec envoi SMS:', sendResult.error);
             return NextResponse.json(
                 {
-                    error: errorMessage || 'Impossible d\'envoyer le SMS.',
+                    error: purpose === 'PASSWORD_RESET' ? 'Impossible d\'envoyer le SMS de réinitialisation.' : 'Impossible d\'envoyer le SMS. Réessayez dans un instant.',
                     recipient: normalizedPhone,
                 },
                 { status: 502 }
