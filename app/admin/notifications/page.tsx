@@ -604,7 +604,7 @@ export default function AdminNotificationsPage() {
       <section aria-labelledby="notif-par-jour" className="space-y-3">
         <div className="space-y-1">
           <h2 id="notif-par-jour" className="text-lg font-semibold text-fg">Par jour et par canal</h2>
-          <p className="text-sm text-fg-muted">
+          <p className="text-sm tabular-nums text-fg-muted">
             {stats ? `${formatInteger(stats.days)} derniers jours, jours de Dakar.` : 'Derniers jours, jours de Dakar.'}
           </p>
         </div>

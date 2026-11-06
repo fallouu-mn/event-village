@@ -315,7 +315,7 @@ export default function AdminFinanceReconciliationPage() {
                     <dd className="text-right text-fg-muted">{formatPrice(item.totalReferralCommissions)}</dd>
                   </dl>
                   {item.discrepancy !== 0 && (
-                    <p className="flex items-center gap-1.5 font-bold text-danger-fg">
+                    <p className="flex items-center gap-1.5 font-bold tabular-nums text-danger-fg">
                       <AlertTriangle size={13} aria-hidden="true" /> Écart : {formatPrice(item.discrepancy)}
                     </p>
                   )}
