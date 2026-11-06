@@ -371,10 +371,11 @@ describe('8.2 b — ordre écrit dans les deux fonctions', () => {
         const cancel = code('event_cancel');
         const cancelEvents = lockAt(cancel, 'events', 'FOR\\s+NO\\s+KEY\\s+UPDATE');
         const cancelPayments = lockAt(cancel, 'payments', 'FOR\\s+UPDATE');
-        const cancelCategories = lockAt(cancel, 'ticket_categories', 'FOR\\s+UPDATE');
+        const cancelCategories = lockAt(cancel, 'ticket_categories', 'FOR\\s+NO\\s+KEY\\s+UPDATE');
         assert.ok(cancelEvents >= 0, 'event_cancel : verrou FOR NO KEY UPDATE sur public.events');
         assert.equal(lockAt(cancel, 'events', 'FOR\\s+UPDATE'), -1, 'event_cancel : plus aucun FOR UPDATE sur public.events (il bloquerait les clés étrangères)');
-        assert.ok(cancelCategories >= 0, 'event_cancel : verrou des catégories');
+        assert.ok(cancelCategories >= 0, 'event_cancel : verrou FOR NO KEY UPDATE sur les catégories (ticket_scans.category_id, scan du billet tenu)');
+        assert.equal(lockAt(cancel, 'ticket_categories', 'FOR\\s+UPDATE'), -1, 'event_cancel : plus aucun FOR UPDATE sur les catégories (il bloquerait la clé étrangère du scan)');
         assert.ok(cancelPayments >= 0 && cancelEvents < cancelPayments && cancelPayments < cancelCategories,
             `event_cancel : ordre events → paiements → catégories (positions ${cancelEvents}, ${cancelPayments}, ${cancelCategories})`);
 
