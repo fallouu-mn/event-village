@@ -13,7 +13,8 @@
  *  2. Ordre inverse : B tient event_cancel sans COMMIT, A attend ; après le COMMIT de B, A répond
  *     EVENT_NOT_ACTIVE ou TRANSFER_NOT_PENDING ; le porteur n'a pas changé ; aucune erreur 40P01.
  *  3. Course au milieu de event_cancel (trois connexions) : C tient les catégories de l'événement
- *     (FOR UPDATE) ; B lance event_cancel, qui s'arrête sur ce verrou après avoir verrouillé l'événement ;
+ *     (FOR UPDATE) ; B lance event_cancel, qui s'arrête sur ce verrou après avoir verrouillé l'événement
+ *     (FOR NO KEY UPDATE depuis le lot 8, tâche 8.2 b) ;
  *     A lance ticket_transfer_accept et attend à son tour ; C annule. Attendu : aucune erreur 40P01,
  *     B annule l'événement, A est refusé (EVENT_NOT_ACTIVE ou TRANSFER_NOT_PENDING), le billet reste à
  *     l'expéditeur, le transfert est CANCELLED, EVENT_CANCELLED part à l'expéditeur et pas au destinataire,
@@ -27,9 +28,11 @@
  *  - 1 et 2 : verts dès l'écriture (SUPPOSÉ par lecture, couverture ajoutée). Pour 1, l'acceptation insère
  *    ses avis dans notification_outbox, dont la clé étrangère event_id pose FOR KEY SHARE sur la ligne de
  *    l'événement (20261103000002_lot6_outbox.sql:166) : event_cancel attend déjà à son FOR UPDATE de events
- *    (20261103000005_lot6_billetterie.sql:1094) et lit les porteurs après le COMMIT de A. Le scénario du
+ *    (20261103000005_lot6_billetterie.sql:1094 ; depuis le lot 8, FOR NO KEY UPDATE, en conflit avec le FOR SHARE
+ *    de l'acceptation) et lit les porteurs après le COMMIT de A. Le scénario du
  *    contrat ne peut donc pas être rouge aujourd'hui ; il reste le garde-fou de la correction ;
- *  - 3 : ROUGE. B tient l'événement (FOR UPDATE) quand A verrouille le transfert et le billet ; A attend
+ *  - 3 : ROUGE. B tient l'événement (FOR UPDATE, FOR NO KEY UPDATE depuis le lot 8) quand A verrouille le
+ *    transfert et le billet ; A attend
  *    alors l'événement à sa mise en file (clé étrangère), B attend le transfert à son UPDATE des transferts
  *    (:1147-1149) : interblocage, une des deux transactions est annulée en 40P01. C'est la course réelle
  *    de la consigne ; le correctif (A verrouille l'événement FOR SHARE avant le transfert, event_cancel
@@ -243,7 +246,7 @@ describe('7.0 c — course event_cancel / ticket_transfer_accept (deux et trois 
             const held = await c.query('SELECT id FROM public.ticket_categories WHERE event_id = $1 ORDER BY id FOR UPDATE', [s.ev.eventId]);
             assert.ok(held.rows.length > 0, 'précondition : catégories de l’événement verrouillées par C');
             const bPending = settle(b.query<{ r: Row }>(CANCEL_SQL, cancelArgs(s)));
-            // B a verrouillé l'événement (FOR UPDATE) et attend les catégories tenues par C
+            // B a verrouillé l'événement (FOR NO KEY UPDATE depuis le lot 8) et attend les catégories tenues par C
             await waitForLockWaiters([b.pid]);
             const aPending = settle(a.query<{ r: Row }>(ACCEPT_SQL, acceptArgs(s)));
             // A attend la ligne de l'événement tenue par B (avant le correctif : à sa mise en file, après avoir verrouillé transfert et billet)
