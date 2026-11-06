@@ -968,7 +968,6 @@ const PRE_LOT5_UI_FILES = new Set<string>([
     'components/layout/AppLayout.tsx',
     'components/layout/AppLayoutHeader.tsx',
     'components/notifications/NotificationBell.tsx',
-    'components/partner/ClosingReportModal.tsx',
     'components/payment/PaymentModal.tsx',
     'components/providers/AuthProvider.tsx',
     'components/providers/ThemeProvider.tsx',
@@ -1594,5 +1593,31 @@ describe('8.2 q — tabular-nums sur les montants, compteurs et heures affichés
         ].join('\n');
         const v = tabularViolations('app/exemple/montants.tsx', source);
         assert.deepEqual(v.map((x) => x.line), [4, 8, 9, 10, 12, 15, 17], formatViolations('montants', v));
+    });
+});
+
+// ── Lot 8, 8.2 r ───────────────────────────────────────────────────────────
+
+describe('8.2 r — rapport de clôture (L64)', () => {
+    const MODAL = 'components/partner/ClosingReportModal.tsx';
+    const PDF = 'lib/partner/partner-dashboard.service.ts';
+    const INTERNAL_TERMS = [/CDC/, /commissions de la plateforme/i];
+
+    test('écran : ni « CDC » ni « commissions de la plateforme » (terme interne, affirmation fausse)', () => {
+        const found = INTERNAL_TERMS.filter((re) => re.test(codeOf(MODAL))).map((re) => re.source);
+        assert.deepEqual(found, [], `${MODAL} : termes à retirer de l'écran`);
+    });
+
+    test('PDF : même retrait (rouge jusqu\'à fix(8.2p), S4 porte ce fichier)', () => {
+        const found = INTERNAL_TERMS.filter((re) => re.test(codeOf(PDF))).map((re) => re.source);
+        assert.deepEqual(found, [], `${PDF} : termes à retirer du PDF de clôture`);
+    });
+
+    test('erreur de chargement : pas de message de la réponse affiché tel quel, ErrorState avec « Réessayer »', () => {
+        const code = codeOf(MODAL);
+        assert.doesNotMatch(code, /new Error\([^)]*\.error\b/, `${MODAL} : le texte de la réponse devient le message affiché`);
+        assert.doesNotMatch(code, /setError\([^)]*\.message\b/, `${MODAL} : le message d'une exception part à l'écran`);
+        const errorState = bindingsOf(MODAL).find((b) => b.imported === 'ErrorState');
+        assert.ok(errorState?.spec.includes('components/ui/'), `${MODAL} : ErrorState de components/ui absent (imports : ${bindingsOf(MODAL).map((b) => b.imported).join(', ')})`);
     });
 });
