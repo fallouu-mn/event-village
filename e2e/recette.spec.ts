@@ -358,9 +358,9 @@ test('acte 2 [partenaire] [admin] : inscription avec pièces, validation, E1 et 
         const file = await fetch(String(signed.signedUrl));
         expect(file.status, 'pièce lue par son URL signée').toBe(200);
         expect((await file.text()).startsWith('%PDF-'), 'pièce d’identité : le fichier déposé').toBe(true);
-        await details.getByRole('button', { name: /^valider$/i }).click();
-        await expectRoute(admin, 'PATCH', /^\/api\/admin\/partners\/[^/]+\/status$/,
-            () => admin.getByRole('button', { name: /^valider la candidature$/i }).click(), 200, 'validation de la candidature');
+        await details.getByRole('button', { name: /^valider la candidature$/i }).click();
+        const validation = admin.getByRole('alertdialog', { name: /^valider la candidature/i });
+        await expectRoute(admin, 'PATCH', /^\/api\/admin\/partners\/[^/]+\/status$/, () => validation.getByRole('button', { name: /^valider la candidature$/i }).click(), 200, 'validation de la candidature');
         await expect(row, 'candidature sortie de la file').toHaveCount(0);
     });
 
@@ -459,7 +459,7 @@ test('acte 3 [partenaire] : invitation de K1, permission espèces, point d’ent
         await partner.getByLabel(/^nom/i).first().fill('Controle');
         await partner.getByLabel(/^téléphone du contrôleur/i).fill(r.k1.local);
         await partner.getByRole('checkbox', { name: /encaissement en espèces/i }).check();
-        const invited = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => partner.getByRole('button', { name: /^inviter le contrôleur$/i }).click(), 200, 'invitation du contrôleur');
+        const invited = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => partner.getByRole('button', { name: /^inviter le contrôleur$/i }).click(), 201, 'invitation du contrôleur');
         expect(String(invited.message ?? ''), 'SMS d’activation parti').toMatch(/SMS avec code d'activation envoyé/);
     });
 
@@ -550,7 +550,7 @@ test('acte 4 [client] : découverte, fiche, refus direct, inscription depuis l�
         r.tickets.std1 = std1;
         r.tickets.std2 = std2;
 
-        await client.goto(`/events/${r.e1.id}`);
+        await Promise.all([client.waitForResponse((res) => pathOf(res.url()) === '/api/auth/me'), client.goto(`/events/${r.e1.id}`)]); // session lue : sinon « Réserver » renvoie à la connexion (app/events/[id]/page.tsx:619)
         await client.getByRole('button', { name: /ajouter un billet découverte/i }).click();
         await client.getByRole('button', { name: /^réserver 1 billet gratuit$/i }).click();
         await client.waitForURL(/\/tickets(\?|$)/);
@@ -897,8 +897,8 @@ test('acte 8 [admin] : supervision et relance d’une notification, remboursemen
     await test.step('suspension du compte de P1 : session refusée', async () => {
         await superadmin.goto('/admin/users');
         await superadmin.getByPlaceholder(/rechercher par nom/i).fill(r.p1.email);
-        const row = cardOf(superadmin, r.p1.email, /^suspendre$/);
-        await expectRoute(superadmin, 'PATCH', '/api/admin/users', () => row.getByRole('button', { name: /^suspendre$/ }).click(), 200, 'suspension de P1');
+        const row = cardOf(superadmin, r.p1.email, /^suspendre$/i);
+        await expectRoute(superadmin, 'PATCH', '/api/admin/users', () => row.getByRole('button', { name: /^suspendre$/i }).click(), 200, 'suspension de P1');
         const { data, error } = await serviceClient().from('users').select('status').eq('id', r.p1.userId).single();
         if (error || !data) throw new Error(`[e2e] compte de P1 : ${error?.message ?? 'introuvable'}`);
         expect(String(data.status), 'compte de P1').toBe('SUSPENDU');
