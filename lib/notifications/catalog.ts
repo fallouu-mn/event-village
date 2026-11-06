@@ -181,6 +181,7 @@ const BLOCKED_REASON_LABELS: Readonly<Record<string, string>> = {
     OPERATOR_UNKNOWN: 'opérateur du paiement inconnu',
     PHONE_UNKNOWN: 'numéro du payeur inconnu',
     NAME_UNKNOWN: 'nom du bénéficiaire incomplet',
+    SOLDE_INSUFFISANT: 'solde du compte partenaire SamirPay insuffisant',
     SIMULATED: 'opération créée en mode simulé : aucun versement',
 };
 
