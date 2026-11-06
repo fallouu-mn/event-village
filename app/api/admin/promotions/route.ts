@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -19,7 +20,9 @@ export async function GET(req: NextRequest) {
         `)
         .order('requested_at', { ascending: false });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+        return apiFailure('GET /api/admin/promotions', error, { message: 'Mises en avant momentanément indisponibles.', code: 'PROMOTIONS_UNAVAILABLE' });
+    }
     return NextResponse.json({ promotions: data || [] });
 }
 

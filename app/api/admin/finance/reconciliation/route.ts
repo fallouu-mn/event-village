@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
 
@@ -29,8 +30,6 @@ export async function GET(req: NextRequest) {
             ...result,
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne de rapprochement financier';
-        console.error('[API /api/admin/finance/reconciliation] Erreur:', msg);
-        return NextResponse.json({ error: msg }, { status: 500 });
+        return apiFailure('GET /api/admin/finance/reconciliation', err, { message: 'Rapprochement financier momentanément indisponible.', code: 'RECONCILIATION_UNAVAILABLE' });
     }
 }

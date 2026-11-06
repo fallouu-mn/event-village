@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { z } from 'zod';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -72,8 +73,7 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({ error: 'Type de service inconnu.' }, { status: 400 });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur lors de la récupération des services';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        return apiFailure('GET /api/admin/services', err, { message: 'Catalogues momentanément indisponibles.', code: 'SERVICES_UNAVAILABLE' });
     }
 }
 

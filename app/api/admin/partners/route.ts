@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 
 export const dynamic = 'force-dynamic';
+
+const PARTNERS_FALLBACK = { message: 'Liste des partenaires momentanément indisponible.', code: 'PARTNERS_UNAVAILABLE' };
 
 /**
  * GET /api/admin/partners
@@ -58,10 +61,7 @@ export async function GET(req: NextRequest) {
 
         const { data: partners, error } = await query;
 
-        if (error) {
-            console.error('[API /api/admin/partners] Erreur query:', error);
-            return NextResponse.json({ error: error.message }, { status: 500 });
-        }
+        if (error) return apiFailure('GET /api/admin/partners', error, PARTNERS_FALLBACK);
 
         return NextResponse.json({
             success: true,
@@ -69,8 +69,6 @@ export async function GET(req: NextRequest) {
             total: partners?.length || 0,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/admin/partners] Erreur:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('GET /api/admin/partners', err, PARTNERS_FALLBACK);
     }
 }

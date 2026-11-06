@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
 
@@ -34,9 +35,7 @@ async function handleAnonymize(
             message: result.message,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne lors de l\'anonymisation.';
-        console.error('[API /api/admin/users/[id]/anonymize] Exception:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 400 });
+        return apiFailure('API /api/admin/users/[id]/anonymize', err, { message: 'Anonymisation momentanément impossible. Réessayez.', code: 'ANONYMIZE_FAILED', status: 400 });
     }
 }
 

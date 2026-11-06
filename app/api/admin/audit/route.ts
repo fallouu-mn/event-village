@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
+
+const AUDIT_FALLBACK = { message: 'Journal d’audit momentanément indisponible.', code: 'AUDIT_UNAVAILABLE' };
 
 /**
  * GET /api/admin/audit
@@ -41,9 +44,7 @@ export async function GET(req: NextRequest) {
 
         const { data: logs, error } = await query;
 
-        if (error) {
-            return NextResponse.json({ error: error.message }, { status: 500 });
-        }
+        if (error) return apiFailure('GET /api/admin/audit', error, AUDIT_FALLBACK);
 
         return NextResponse.json({
             success: true,
@@ -51,7 +52,6 @@ export async function GET(req: NextRequest) {
             total: logs?.length || 0,
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        return apiFailure('GET /api/admin/audit', err, AUDIT_FALLBACK);
     }
 }

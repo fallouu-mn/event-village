@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 
@@ -103,8 +104,6 @@ export async function GET(req: NextRequest) {
             configWarning: null,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/admin/metrics] Erreur:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('GET /api/admin/metrics', err, { message: 'Indicateurs momentanément indisponibles.', code: 'METRICS_UNAVAILABLE' });
     }
 }

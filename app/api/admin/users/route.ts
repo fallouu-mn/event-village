@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
@@ -18,6 +19,17 @@ const ROLE_CHANGE_REFUSALS: Record<string, [number, string]> = {
 };
 
 const ASSIGNABLE_ROLES: readonly UserRoleType[] = ['CLIENT', 'PARTENAIRE', 'CONTROLEUR', 'ADMIN', 'SUPERADMIN'];
+
+/** Refus de Supabase Auth à la création d'un compte, par code stable : jamais son texte anglais à l'écran. */
+const AUTH_CREATE_REFUSALS = new Map<string, string>([
+    ['email_exists', 'Cet email est déjà associé à un compte.'],
+    ['phone_exists', 'Ce numéro de téléphone est déjà associé à un compte.'],
+    ['user_already_exists', 'Ce numéro de téléphone ou cet email est déjà associé à un compte.'],
+]);
+
+const USERS_FALLBACK = { message: 'Liste des comptes momentanément indisponible.', code: 'USERS_UNAVAILABLE' };
+const USER_SAVE_FALLBACK = { message: 'Compte non enregistré. Réessayez.', code: 'USER_SAVE_FAILED' };
+const USER_UPDATE_FALLBACK = { message: 'Modification non enregistrée. Réessayez.', code: 'USER_SAVE_FAILED' };
 
 /**
  * GET /api/admin/users
@@ -66,10 +78,7 @@ export async function GET(req: NextRequest) {
 
         const { data: users, error } = await query;
 
-        if (error) {
-            console.error('[API /api/admin/users] Erreur:', error);
-            return NextResponse.json({ error: error.message }, { status: 500 });
-        }
+        if (error) return apiFailure('GET /api/admin/users', error, USERS_FALLBACK);
 
         return NextResponse.json({
             success: true,
@@ -77,9 +86,7 @@ export async function GET(req: NextRequest) {
             total: users?.length || 0,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/admin/users] Exception:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('GET /api/admin/users', err, USERS_FALLBACK);
     }
 }
 
@@ -139,8 +146,9 @@ export async function POST(req: NextRequest) {
         });
 
         if (authErr) {
-            console.error('[API /api/admin/users POST] Erreur auth admin:', authErr);
-            return NextResponse.json({ error: authErr.message }, { status: 400 });
+            const refusal = AUTH_CREATE_REFUSALS.get(authErr.code ?? '');
+            if (refusal) return NextResponse.json({ error: refusal, code: 'USER_ALREADY_EXISTS' }, { status: 400 });
+            return apiFailure('POST /api/admin/users, compte de connexion', authErr, { message: 'Compte non créé. Vérifiez les informations saisies et réessayez.', code: 'USER_CREATE_FAILED', status: 400 });
         }
 
         const userId = authData.user.id;
@@ -166,10 +174,7 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString(),
         });
 
-        if (upsertErr) {
-            console.error('[API /api/admin/users POST] Erreur upsert public.users:', upsertErr);
-            return NextResponse.json({ error: upsertErr.message }, { status: 500 });
-        }
+        if (upsertErr) return apiFailure('POST /api/admin/users, profil', upsertErr, USER_SAVE_FALLBACK);
 
         // 3. Journal d'audit inaltérable
         await AdminService.logAudit({
@@ -193,8 +198,7 @@ export async function POST(req: NextRequest) {
             message: `Utilisateur avec le rôle ${targetRole} créé avec succès.`,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('POST /api/admin/users', err, USER_SAVE_FALLBACK);
     }
 }
 
@@ -319,10 +323,7 @@ export async function PATCH(req: NextRequest) {
             .select()
             .single();
 
-        if (error) {
-            console.error('[API /api/admin/users PATCH] Erreur:', error);
-            return NextResponse.json({ error: error.message }, { status: 500 });
-        }
+        if (error) return apiFailure('PATCH /api/admin/users', error, USER_UPDATE_FALLBACK);
 
         // 6. Lot 1C.3 : rôle retiré ou compte non actif → sessions révoquées (déconnexion forcée réelle)
         const rolesRemoved = (roleChange?.removed.length ?? 0) > 0;
@@ -359,8 +360,7 @@ export async function PATCH(req: NextRequest) {
             message: 'Utilisateur mis à jour avec succès.',
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+        return apiFailure('PATCH /api/admin/users', err, USER_UPDATE_FALLBACK);
     }
 }
 
@@ -399,9 +399,7 @@ export async function DELETE(req: NextRequest) {
             message: result.message,
         });
     } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        console.error('[API /api/admin/users DELETE] Exception:', errorMsg);
-        return NextResponse.json({ error: errorMsg }, { status: 400 });
+        return apiFailure('DELETE /api/admin/users', err, { message: 'Suppression du compte momentanément impossible. Réessayez.', code: 'USER_DELETE_FAILED', status: 400 });
     }
 }
 

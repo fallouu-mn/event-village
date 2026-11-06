@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false });
 
     if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiFailure('GET /api/admin/communications', error, { message: 'Campagnes momentanément indisponibles.', code: 'CAMPAIGNS_UNAVAILABLE' });
     }
 
     return NextResponse.json({

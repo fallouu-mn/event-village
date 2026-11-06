@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth, ADMIN_PERMISSIONS, AdminPermission } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
         .eq('user_id', targetAdminId);
 
     if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiFailure('GET /api/admin/permissions', error, { message: 'Permissions momentanément indisponibles.', code: 'PERMISSIONS_UNAVAILABLE' });
     }
 
     return NextResponse.json({
@@ -113,7 +114,6 @@ export async function POST(req: NextRequest) {
             message: 'Permissions de l\'administrateur mises à jour avec succès.',
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        return apiFailure('POST /api/admin/permissions', err, { message: 'Permissions non enregistrées. Réessayez.', code: 'PERMISSIONS_SAVE_FAILED' });
     }
 }

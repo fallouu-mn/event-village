@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 
 export const dynamic = 'force-dynamic';
+
+const PRICING_SAVE_FALLBACK = { message: 'Réglage non enregistré. Réessayez.', code: 'PRICING_SAVE_FAILED' };
 
 /**
  * GET /api/admin/pricing
@@ -17,7 +20,7 @@ export async function GET(req: NextRequest) {
     const { data: settings, error } = await supabase.from('platform_settings').select('*');
 
     if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiFailure('GET /api/admin/pricing', error, { message: 'Tarifs momentanément indisponibles.', code: 'PRICING_UNAVAILABLE' });
     }
 
     const configMap: Record<string, any> = {};
@@ -81,9 +84,7 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString(),
         });
 
-        if (upsertErr) {
-            return NextResponse.json({ error: upsertErr.message }, { status: 500 });
-        }
+        if (upsertErr) return apiFailure('POST /api/admin/pricing', upsertErr, PRICING_SAVE_FALLBACK);
 
         // Journalisation inaltérable
         await AdminService.logAudit({
@@ -102,7 +103,6 @@ export async function POST(req: NextRequest) {
             message: `Grille tarifaire "${key}" mise à jour avec succès.`,
         });
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Erreur interne du serveur';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        return apiFailure('POST /api/admin/pricing', err, PRICING_SAVE_FALLBACK);
     }
 }
