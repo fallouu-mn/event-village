@@ -74,6 +74,16 @@ describe('Parcours OTP serveur', () => {
         await verifyFromAnotherInstance(phone, code, await assertStoredUnverified(phone, code));
     });
 
+    test('A35 : un refus du fournisseur SMS reste au journal, la réponse garde un texte fixe', async () => {
+        const phone = randomSenegalPhone('76');
+        getFakes().sms.failNext('Requête refusée par le fournisseur SMS (HTTP 400).');
+        const res = await sendOtp(jsonRequest('/api/auth/send-otp', { phone }));
+        const body = await res.json();
+        assert.equal(res.status, 502, `send-otp : HTTP ${res.status} ${JSON.stringify(body)}`);
+        assert.ok(typeof body.error === 'string' && body.error.length > 0, 'un message pour l’utilisateur');
+        assert.doesNotMatch(body.error, /fournisseur|HTTP \d+/i, `texte fournisseur à l’écran : ${body.error}`);
+    });
+
     test('inscription client (numéro d’abord) → otp_codes → /api/auth/register depuis une autre instance', async () => {
         const phone = randomSenegalPhone('77');
         const start = await registerStart(phone);
