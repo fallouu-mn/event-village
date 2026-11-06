@@ -4,8 +4,9 @@
  * supabase/ops/schedule-crons.sql, en développement seulement.
  *
  *   npm run cron:local                     boucle calée sur la minute
- *   npm run cron:local -- --list           liste des tâches, aucun appel
- *   npm run cron:local -- --once <tâche>   un seul appel, puis fin (code 1 si l'appel échoue)
+ *   node scripts/dev/cron-local.mjs --list           liste des tâches, aucun appel
+ *   node scripts/dev/cron-local.mjs --once <tâche>   un seul appel, puis fin (code 1 si l'appel échoue)
+ *   Sous PowerShell 5.1, npm run cron:local -- --list perd le « -- » : passer par node directement.
  *
  * Les appels partent toujours vers http://localhost:<EV_DEV_APP_PORT> : CRON_SECRET ne traverse jamais le
  * tunnel, même déclaré (L21). Journal : console et .logs/cron-local.log, jamais l'en-tête.
@@ -114,7 +115,7 @@ async function main() {
     };
     if (args.mode === 'once') {
         const task = tasks.find((t) => t.name === args.task);
-        if (!task) throw new Error(`Tâche inconnue : ${args.task}. Liste : npm run cron:local -- --list`);
+        if (!task) throw new Error(`Tâche inconnue : ${args.task}. Liste : node scripts/dev/cron-local.mjs --list`);
         return (await callTask(task, target)) ? 0 : 1;
     }
     runLoop(tasks, target);
