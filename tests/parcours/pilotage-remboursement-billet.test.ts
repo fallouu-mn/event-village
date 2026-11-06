@@ -262,6 +262,23 @@ describe('A4 — la fiche sert au remboursement', () => {
         assert.equal(sheet.status, 'UTILISE');
         assert.equal(sheet.refundable, false);
     });
+
+    test('A36 : refus du remboursement d’un billet utilisé, sans statut technique dans la réponse', async () => {
+        const door = await createTimedEvent(partner.partnerId, 'a36-porte', [{ name: 'Standard', price: PRICE, total: 5 }]);
+        const client = await newBuyer('a36-utilise');
+        const { tickets: [t] } = await buyConfirmed(client, door, [['Standard', 1]]);
+        const scanned = await scan(partner, { eventId: door.eventId, payload: await ticketPayload(String(t.id)) });
+        assert.equal(scanned.body.result, 'valid', show(scanned));
+
+        const res = await refundRoute(
+            authed(`/api/partner/events/${door.eventId}/tickets/${String(t.id)}/refund`, 'POST', partner, { reason: 'Client empêché, lot 8' }),
+            routeCtx({ id: door.eventId, ticketId: String(t.id) }),
+        );
+        const refused = await res.json() as Row;
+        assert.equal(res.status, 409, JSON.stringify(refused));
+        assert.equal(refused.code, 'TICKET_NOT_REFUNDABLE', JSON.stringify(refused));
+        assert.doesNotMatch(String(refused.error), /UTILISE|VALIDE|REMBOURS[EÉ]_|[A-Z]{4,}_[A-Z]+/, 'aucun statut technique dans le message');
+    });
 });
 
 // ── 5. Écran (statique) ────────────────────────────────────────────────────
