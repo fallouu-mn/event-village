@@ -13,6 +13,9 @@
 -- veut FOR KEY SHARE sur l'événement, pendant qu'event_cancel tient l'événement FOR UPDATE et attend cette
 -- catégorie ou ce billet. FOR NO KEY UPDATE ne bloque pas FOR KEY SHARE, et reste en conflit avec le FOR SHARE
 -- de ticket_transfer_accept (D20 tient).
+-- Second cycle, de même nature (run 96) : ticket_scan tient le billet, puis l'INSERT ticket_scans veut FOR KEY
+-- SHARE sur la catégorie (ticket_scans.category_id) ; event_cancel tient donc ses catégories FOR NO KEY UPDATE
+-- aussi. Le verrou reste en conflit avec tous les FOR UPDATE de la vente et égale celui de son UPDATE sold_quantity.
 --
 -- Conséquence (L34) : deux confirmations d'un même événement se sérialisent (avant : par catégorie).
 -- Hors de ce fichier, aucune fonction ne change d'ordre (contrat 2.3) ; points ouverts PO3 et PO4.
@@ -334,7 +337,7 @@ BEGIN
         OR pay.id IN (SELECT t.payment_id FROM public.tickets t WHERE t.event_id = v_event AND t.payment_id IS NOT NULL)
      ORDER BY pay.id FOR UPDATE OF pay;
 
-    PERFORM 1 FROM public.ticket_categories WHERE event_id = v_event ORDER BY id FOR UPDATE;
+    PERFORM 1 FROM public.ticket_categories WHERE event_id = v_event ORDER BY id FOR NO KEY UPDATE;
 
     -- Lot 7 (D20) : transferts en attente puis billets de l'événement verrouillés avant la lecture des
     -- porteurs (même ordre que ticket_transfer_initiate et ticket_transfer_claim : transfert, puis billet).
