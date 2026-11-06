@@ -1,5 +1,7 @@
 # Inventaire détaillé des 31 suites de tests héritées (lot 0)
 
+> **Document historique.** La quarantaine a pris fin au lot 8 : `tests/legacy/` et `npm run test:legacy` n'existent plus. Le sort de chaque suite est dans `docs/lot8-rapport.md`. Ce fichier est gardé parce que `docs/lot0-rapport.md` et `docs/lot1c-rapport.md` y renvoient.
+
 Complément de la section 4 de `docs/lot0-rapport.md`. Analyse statique en lecture seule de chaque fichier, croisée avec son exécution sur la base Supabase locale seedée (CI run 3, 41161426009).
 
 #### payment

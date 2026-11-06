@@ -1,7 +1,7 @@
 /**
  * @deprecated Lot 3 — plus aucun appelant applicatif : la répartition des paiements est calculée par le
  * moteur financier unique (SQL finance_compute, lib/finance/engine.ts) et les rapports lisent le grand
- * livre. Conservé pour les suites tests/legacy (quarantaine) et les imports inertes de
+ * livre. Conservé pour les imports inertes de
  * lib/events/event.service.ts et lib/halls/hall.service.ts. Aucun taux par défaut : chaque taux est
  * fourni par l'appelant (un taux à 0 est valide).
  */
