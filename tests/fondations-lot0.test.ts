@@ -8,6 +8,8 @@
 import { getBlockedRequests } from './helpers/env';
 import { describe, test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getFakes, resetFakes } from './fakes';
 import { FIXTURE_EVENTS, loadFixtures } from './helpers/fixtures';
 import { mTargetService } from '../lib/sms/mtarget.service';
@@ -127,5 +129,12 @@ describe('LOT 0 — fondations de vérification', () => {
         assert.equal(fx.events.B_PUBLIE.partnerId, fx.partners.B.id);
         assert.notEqual(fx.users.CLIENT.id, fx.users.CLIENT_BIS.id);
         assert.equal(Object.keys(fx.events).length, Object.keys(FIXTURE_EVENTS).length);
+    });
+
+    // Lot 8 (8.2 w, L70, T38) : sans cette option, npm ci prouve en CI que le lock et les paquets pairs concordent.
+    test('npm : legacy-peer-deps=true n’est plus actif dans le dépôt', () => {
+        const npmrc = path.join(process.cwd(), '.npmrc');
+        const content = fs.existsSync(npmrc) ? fs.readFileSync(npmrc, 'utf8') : '';
+        assert.doesNotMatch(content, /^\s*legacy-peer-deps\s*=\s*true\b/m, '.npmrc active encore legacy-peer-deps=true');
     });
 });
