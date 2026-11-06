@@ -7,7 +7,6 @@ import {
   Users,
   Sparkles,
   Search,
-  Sliders,
   ShieldCheck,
   CheckCircle2,
   DollarSign,
@@ -19,8 +18,8 @@ import {
   Mail,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 
 export interface RealUserRow {
@@ -41,7 +40,6 @@ export default function AdminReferralAmbassadorsPage() {
   const [usersList, setUsersList] = useState<RealUserRow[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'STANDARD' | 'AMBASSADEUR'>('ALL');
-  const [selectedUser, setSelectedUser] = useState<RealUserRow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
 
@@ -154,6 +152,9 @@ export default function AdminReferralAmbassadorsPage() {
           <span className="text-xs text-slate-500">Pour tout filleul enregistré</span>
         </div>
       </div>
+
+      {/* Lot 8, A1 (contrat 13.4, L86) : les taux et la durée ne s'enregistrent nulle part, l'écran ne propose plus de les saisir. */}
+      <StatusBanner tone="neutral" title="La personnalisation des taux n’est pas disponible pour le moment." />
 
       {/* Tableau des Utilisateurs & Attribution */}
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
@@ -268,16 +269,6 @@ export default function AdminReferralAmbassadorsPage() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => setSelectedUser(user)}
-                      className="text-xs"
-                    >
-                      <Sliders size={13} className="mr-1" />
-                      Taux & Durée
-                    </Button>
-
-                    <Button
-                      variant="secondary"
-                      size="sm"
                       onClick={() => handleToggleAmbassador(user)}
                       disabled={isUpdating === user.id}
                       className={`text-xs ${
@@ -295,88 +286,6 @@ export default function AdminReferralAmbassadorsPage() {
           </div>
         )}
       </div>
-
-      {/* Modal Personnalisation Taux & Durée (§132/§98) */}
-      {selectedUser && (
-        <Modal
-          isOpen={!!selectedUser}
-          onClose={() => setSelectedUser(null)}
-          title={`Personnalisation Parrainage : ${selectedUser.first_name} ${selectedUser.last_name}`}
-        >
-          <div className="space-y-4 text-xs">
-            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300">
-              <strong>Règle de Non-Rétroactivité (CDC V3) :</strong> Toute modification de taux ou de durée s&apos;appliquera exclusivement aux futures transactions. Les commissions passées restent figées.
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">Taux N1 Client (%)</label>
-                <input
-                  type="number"
-                  defaultValue={selectedUser.referral_status === 'AMBASSADEUR' ? 7.0 : 4.0}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">Taux N2 Client (%)</label>
-                <input
-                  type="number"
-                  defaultValue={selectedUser.referral_status === 'AMBASSADEUR' ? 2.0 : 1.0}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">Taux N1 Prestataire (%)</label>
-                <input
-                  type="number"
-                  defaultValue={selectedUser.referral_status === 'AMBASSADEUR' ? 7.0 : 4.0}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">Taux N2 Prestataire (%)</label>
-                <input
-                  type="number"
-                  defaultValue={selectedUser.referral_status === 'AMBASSADEUR' ? 2.0 : 1.0}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-700 dark:text-zinc-300 font-bold mb-1">Durée de validité (Mois)</label>
-              <select
-                defaultValue="24"
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
-              >
-                <option value="12">12 Mois</option>
-                <option value="24">24 Mois (Standard CDC V3)</option>
-                <option value="36">36 Mois (VIP Partenaire)</option>
-                <option value="999">À vie</option>
-              </select>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-zinc-800">
-              <Button variant="secondary" onClick={() => setSelectedUser(null)}>
-                Fermer
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  toast.success(`Les taux personnalisés ont bien été enregistrés pour ${selectedUser.first_name} ${selectedUser.last_name}.`);
-                  setSelectedUser(null);
-                }}
-                className="bg-[#FF5722] text-white"
-              >
-                Enregistrer la personnalisation
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
