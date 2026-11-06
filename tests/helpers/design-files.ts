@@ -173,4 +173,21 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/partner/subscription/page.tsx',
     // Hors liste, modifiés sans migration (vérifié : présents dans PRE_LOT5_UI_FILES de design-systeme.test.ts,
     // donc non concernés par le garde-fou des fichiers créés) : app/layout.tsx, app/partner/scan/page.tsx.
+    // ── Lot 8 (contrat, section 16.3 ; T4) ──
+    // Fichiers créés par le lot (aucun autre nouveau .tsx n'est permis). Absents tant que l'écran n'est pas
+    // écrit : la suite design-systeme est rouge jusqu'aux commits d'écran (fix(8.2h), fix(8.2j-e), fix(8.3-A3e),
+    // fix(8.3-A4e), fix(8.1e)).
+    // 8.2 h : page d'un événement, garde serveur du 404 réel (S0)
+    'app/events/[id]/layout.tsx',
+    // 8.2 j : message d'accès refusé à l'accueil (E4)
+    'components/layout/AccessNotice.tsx',
+    // 8.3 A3 et A4 : remboursements à reprendre (E3), remboursement d'un billet au pilotage (E0)
+    'components/admin/RefundsToRetry.tsx',
+    'components/partner/pilotage/TicketRefundPanel.tsx',
+    // 8.1 : page de développement du faux SamirPay (E5), hors du build de production
+    'app/dev/paiements/page.dev.tsx',
+    'app/dev/paiements/[id]/page.dev.tsx',
+    'components/dev/FakePaymentPanel.tsx',
+    // Fichier existant migré par le lot : rouge jusqu'à sa migration (fix(8.2r)). Retrait de PRE_LOT5_UI_FILES : W7.
+    'components/partner/ClosingReportModal.tsx',
 ];

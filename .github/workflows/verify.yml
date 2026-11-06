@@ -23,12 +23,24 @@ jobs:
     # Lot 7 (A2, contrat 11.7) : 90 min pour le run « avant » (captures à 15 s d'attente), remis à 60 en vague F
     # (fix(7.7)) : attente des captures plafonnée à 3 s (D84) ; durée mesurée runs 72 à 74 : 43 à 46 min dont
     # 24 min de captures ; estimation après D84 : ≈ 40 min (job_elapsed_s de run.txt fait foi au run suivant)
-    timeout-minutes: 60
+    # Lot 8 (AR11, L77) : 75 min pour le run « avant » (36 captures rouges de plus, parcours de recette, pire cas
+    # projeté ≈ 68 min) ; retour à 60 si trois runs « après » restent sous 50 min, sinon 75 justifié au rapport.
+    timeout-minutes: 75
 
     steps:
       # Lot 7 (contrat 11.7) : durée du job (délai de 60 min), écrite dans run.txt sur ci-results
+      # Lot 8 (contrat 15.9, PO16 : 766 s hors verify et e2e au run 93, cause non établie) : chaque étape `run`
+      # s'ouvre par `. /tmp/etape.sh <nom>`, qui note son début, sa fin et son code de sortie dans /tmp/etapes.txt ;
+      # recopié dans run.txt. Mesure seule. Le temps des étapes `uses` (checkout, Node, CLI, cache) se lit dans
+      # l'écart entre deux étapes. Une étape coupée par son délai ne laisse aucune ligne.
       - name: Horodatage du début du job
-        run: echo "EV_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+        run: |
+          echo "EV_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+          cat > /tmp/etape.sh <<'EOS'
+          EV_ETAPE="$1"
+          EV_ETAPE_DEBUT="$(date +%s)"
+          trap 'code=$?; echo "$EV_ETAPE $EV_ETAPE_DEBUT $(date +%s) $code" >> /tmp/etapes.txt' EXIT
+          EOS
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,8 +51,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Lot 8 (AR11, L71) : le lock régénéré exige npm 10 (npm 11 le réécrit) ; version lue dans le journal et run.txt
       - name: Installer les dépendances
-        run: npm ci
+        run: |
+          . /tmp/etape.sh npm-ci
+          npm --version
+          echo "EV_NPM_VERSION=$(npm --version)" >> "$GITHUB_ENV"
+          npm ci
 
       - name: Supabase CLI
         uses: supabase/setup-cli@v1
@@ -51,6 +68,7 @@ jobs:
         # Lot 7 (runs 81 et 82) : le runner a refusé deux fois le port 54322 (« address already in use ») avant tout
         # test. On journalise qui écoute sur les ports locaux, puis une seule nouvelle tentative après un arrêt propre.
         run: |
+          . /tmp/etape.sh supabase-start
           set -o pipefail
           echo "ports 54320-54329 avant démarrage :"; (sudo ss -ltnp | grep -E ':5432[0-9]\b' || echo "aucun")
           if ! supabase start -x studio,imgproxy,logflare,vector,edge-runtime 2>&1 | tee /tmp/supabase-start.log; then
@@ -64,11 +82,13 @@ jobs:
 
       - name: Appliquer toutes les migrations depuis zéro (supabase db reset)
         run: |
+          . /tmp/etape.sh db-reset
           set -o pipefail
           supabase db reset 2>&1 | tee /tmp/db-reset.log
 
       - name: Générer .env.test depuis l'instance locale
         run: |
+          . /tmp/etape.sh env-test
           supabase status -o env > /tmp/supabase.env
           set -a
           # shellcheck disable=SC1091
@@ -88,12 +108,14 @@ jobs:
 
       - name: Seed de test (idempotent, données fictives)
         run: |
+          . /tmp/etape.sh seed-test
           set -o pipefail
           npm run seed:test 2>&1 | tee /tmp/seed.log
 
       - name: Vérification complète (typecheck → lint → tests → build)
         id: verify
         run: |
+          . /tmp/etape.sh verify
           set -o pipefail
           npm run verify 2>&1 | tee /tmp/verify.log
 
@@ -104,6 +126,7 @@ jobs:
         id: build-mesure
         if: ${{ !cancelled() && steps.verify.outcome == 'failure' }}
         run: |
+          . /tmp/etape.sh build-mesure
           set -o pipefail
           node scripts/e2e/build-mesure.mjs 2>&1 | tee /tmp/build-mesure.log
 
@@ -128,6 +151,7 @@ jobs:
       - name: "E2E : installer Chromium"
         if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
+          . /tmp/etape.sh e2e-chromium
           set -o pipefail
           if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
             npx playwright install-deps chromium 2>&1 | tee /tmp/e2e-install.log
@@ -138,6 +162,7 @@ jobs:
       - name: "E2E : générer .env.e2e (instance locale, faux services, secrets aléatoires du run)"
         if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
+          . /tmp/etape.sh e2e-env
           set -euo pipefail
           supabase status -o env > /tmp/supabase-e2e.env
           set -a
@@ -196,6 +221,10 @@ jobs:
             # Lot 7 (D37) : quotas de téléchargement des codes hors ligne relevés (captures en contextes neufs)
             echo "OFFLINE_CODES_PER_TICKET_HOUR=1000"
             echo "OFFLINE_CODES_PER_USER_HOUR=1000"
+            # Lot 8 (contrat 15.1, précédent D37) : tout vient de 127.0.0.1 ; quotas par IP relevés pour le parcours de recette
+            echo "SMS_OTP_PER_IP_HOUR=1000"
+            echo "SMS_OTP_PER_IP_DAY=1000"
+            echo "PARTNER_REGISTER_PER_IP_HOUR=100"
           } > .env.e2e
           echo ".env.e2e généré : $(grep -c '=' .env.e2e) variables (URL=${API_URL}, valeurs secrètes masquées)"
 
@@ -203,6 +232,7 @@ jobs:
         id: e2e-seed
         if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
+          . /tmp/etape.sh e2e-seed
           set -o pipefail
           {
             set -e
@@ -215,6 +245,7 @@ jobs:
         id: e2e-start
         if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
         run: |
+          . /tmp/etape.sh e2e-demarrage
           nohup node scripts/e2e/fake-services.mjs > /tmp/fake-services.log 2>&1 &
           nohup node scripts/e2e/start-app.mjs > /tmp/next-start.log 2>&1 &
           for i in $(seq 1 60); do
@@ -230,7 +261,10 @@ jobs:
       - name: "E2E : captures d'écran et test de fumée (npm run e2e)"
         id: e2e
         if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') && steps.e2e-start.outcome == 'success' }}
+        # Lot 8 (contrat 15.9) : délai propre, pour qu'une recette bloquée laisse le temps de publier les journaux
+        timeout-minutes: 50
         run: |
+          . /tmp/etape.sh e2e
           set -o pipefail
           npm run e2e 2>&1 | tee /tmp/e2e.log
 
@@ -246,6 +280,7 @@ jobs:
       - name: Journal du conteneur Supabase Auth (diagnostic en cas d'échec)
         if: failure()
         run: |
+          . /tmp/etape.sh diagnostic-conteneurs
           for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_(auth|db)_" ); do
             echo "===== $c =====" >> /tmp/containers.log
             docker logs --tail 300 "$c" >> /tmp/containers.log 2>&1 || true
@@ -347,6 +382,11 @@ jobs:
             echo "e2e=${{ steps.e2e.outcome }}"
             echo "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             if [ -n "${EV_JOB_STARTED_AT:-}" ]; then echo "job_elapsed_s=$(( $(date +%s) - EV_JOB_STARTED_AT ))"; fi
+            # Lot 8 (L71, contrat 15.9) : version de npm, puis une ligne par étape, secondes comptées depuis le début du job
+            echo "npm_version=${EV_NPM_VERSION:-inconnue}"
+            if [ -n "${EV_JOB_STARTED_AT:-}" ] && [ -f /tmp/etapes.txt ]; then
+              awk -v t0="$EV_JOB_STARTED_AT" '{ printf "etape_%s=debut_s:%d duree_s:%d code:%s\n", $1, $2 - t0, $3 - $2, $4 }' /tmp/etapes.txt
+            fi
           } > "$RUN_DIR/run.txt"
           git add -A
           git commit -q -m "ci-results: run ${{ github.run_number }} (${{ github.sha }}) — ${JOB_STATUS}"

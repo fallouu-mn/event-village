@@ -5,6 +5,8 @@
  * (elles doivent EXISTER et être refusées par le privilège EXECUTE, 42501) ; 7e aide RLS
  * ticket_category_private_read (D21). Rouges jusqu'aux migrations 20261105000002 à …05.
  * Lot 7, tâche 7.9 (T31) : notif_ticket_lines (migration 20261105000007), même contrôle ; rouge jusqu'à fix(7.9).
+ * Lot 8 (T3) : fonctions nouvelles du lot, même contrôle (42501, jamais PGRST202) ; rouges chacune jusqu'à sa
+ * migration : fix(8.0s), fix(8.1s), fix(8.2a), fix(8.2l).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -62,6 +64,20 @@ const LOT7_RPCS: Array<[string, Record<string, unknown>]> = [
     ['counter_sale_quote', { p: {} }],
     // Tâche 7.9 (T31, migration 20261105000007, contrat 19.3) : lignes de billets figées dans la confirmation
     ['notif_ticket_lines', { p_ticket_ids: [ZERO_UUID] }],
+];
+
+/**
+ * Lot 8 (contrat 2.2, 2.5) : fonctions créées par le lot, avec des arguments factices valides en type.
+ * Les noms de paramètres font partie du contrat : ticket_counter_channel_problems(p_event uuid, p_items jsonb)
+ * (M1), payment_duplicate_of(p_payment_id uuid) (M3), partner_profile_update(p jsonb) (M6),
+ * ev_request_simulated() (M2). Les fonctions de triggers ne sont pas des RPC : leur privilège est contrôlé par
+ * tests/schema/fonctions-privileges.test.ts (groupe c).
+ */
+const LOT8_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['ticket_counter_channel_problems', { p_event: ZERO_UUID, p_items: [] }],
+    ['ev_request_simulated', {}],
+    ['payment_duplicate_of', { p_payment_id: ZERO_UUID }],
+    ['partner_profile_update', { p: {} }],
 ];
 
 /** RPC métier (groupe b) avec des arguments factices valides en type. */
@@ -168,6 +184,8 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ...lot6Rpcs(),
     // Lot 7 : budget SMS optionnel, billet hors ligne, rotation du secret, scanner, guichet ; service_role uniquement
     ...LOT7_RPCS,
+    // Lot 8 : canaux de vente, marquage simulé, double paiement, profil partenaire ; service_role uniquement
+    ...LOT8_RPCS,
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */
@@ -234,6 +252,27 @@ describe('R3 — lot 7 : chaque fonction du lot existe et reste réservée au r�
             assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
             assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
                 `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (migrations 20261105000002 à …05, …07 pour notif_ticket_lines) ou signature différente`);
+        });
+    }
+});
+
+/**
+ * Lot 8, même exigence que les lots 6 et 7 : une fonction absente (PGRST202) passerait pour refusée dans la
+ * boucle générale ; ici chaque fonction du lot doit exister ET être refusée par le privilège EXECUTE (42501).
+ */
+describe('R3 — lot 8 : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261106000001 (canaux), …02 (essai), …03 (paiement), …06 (profil)';
+    for (const [fn, args] of LOT8_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
         });
     }
 });

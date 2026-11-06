@@ -379,7 +379,8 @@ interface Insertion {
 }
 
 const INVENTORY: Insertion[] = [
-    { k1: 'B1-B3, B4', fn: 'payment_confirm', types: ['PURCHASE_CONFIRMED', 'NEW_ORDER'] },
+    // Lot 8 (T9, tâche 8.2 a) : la RPC émet aussi l'alerte du paiement en double ; rouge jusqu'à fix(8.2a).
+    { k1: 'B1-B3, B4', fn: 'payment_confirm', types: ['PURCHASE_CONFIRMED', 'NEW_ORDER', 'ADMIN_DUPLICATE_PAYMENT'] },
     { k1: 'gratuits', fn: 'free_tickets_claim', types: ['FREE_TICKETS_CONFIRMED'] },
     { k1: 'B16', fn: 'counter_sale', types: ['COUNTER_RECEIPT'] },
     { k1: 'B5', trigger: { name: 'trg_tickets_first_sale', table: 'public.tickets' }, types: ['FIRST_TICKET_SOLD'] },

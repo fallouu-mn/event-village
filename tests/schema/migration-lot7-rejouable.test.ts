@@ -7,6 +7,8 @@
  *
  * Garde-fou ajouté (vert dès l'écriture) : les migrations 20261103000001 à …08 sont appliquées en
  * production et gelées ; leur contenu (fins de ligne normalisées en LF) doit rester celui de 6fff1bf.
+ * Lot 8 (T2, contrat 18.4), vert dès l'écriture, annoncé : gel étendu aux sept migrations 20261105…,
+ * appliquées sur event-village-dev (contenu de 7fdcb32), et messages d'échec portés sur 20261106….
  *
  * Rouge avant correctif : les sept fichiers du lot n'existent pas (fix(7.0a), fix(7.0c), fix(7.1s),
  * fix(7.2s), fix(7.3s), fix(7.9) pour …07, ajoutée par W11 : T32).
@@ -45,6 +47,17 @@ const FROZEN_LOT6: Readonly<Record<string, string>> = {
     '20261103000008_lot6_supervision.sql': '549a66c7ce2a840d9d2e8b27e3a0b0c2fc050a41d44b3e96637129df3288f796',
 };
 
+/** Empreintes SHA-256 (LF) des migrations du lot 7 telles qu'appliquées sur event-village-dev (commit 7fdcb32). */
+const FROZEN_LOT7: Readonly<Record<string, string>> = {
+    '20261105000001_lot7_reglages.sql': 'fffdfaece6c927b9de1d52739de0a85a075eb31dac651675c736e16ba3fe034c',
+    '20261105000002_lot7_sms.sql': '767898aa5b2a14dd2fe8ca6a93bc45ca6a70b5f26351987cfd87b5050ba8baa1',
+    '20261105000003_lot7_securite.sql': '5aac6c33879aa363f561d25dfdb3dba4686ec6bf1e9a843a849954ee6a3b4ada',
+    '20261105000004_lot7_billet_hors_ligne.sql': 'b2aa3c2d3361fac8734a9ae4d5fe833768917b2667cad42b01fed998659b72a4',
+    '20261105000005_lot7_scan.sql': 'ad84eea9f79972371e2e8db37e58f555846e974f2e1f807607a53cde14c4aea8',
+    '20261105000006_lot7_client.sql': '0372bdb4d89eda3c3df5a174fcc49e2ce8c4faabba7958cc31e0368117fada66',
+    '20261105000007_lot7_confirmation.sql': '471bdb1701ec9f948ab50fef38ca84f39651617cc0c8384d2891c9cc4107262f',
+};
+
 function readMigration(name: string): string {
     const file = path.join(DIR, name);
     assert.ok(fs.existsSync(file), `migration du lot 7 absente : supabase/migrations/${name} (contrat, section 2)`);
@@ -80,7 +93,19 @@ describe('Lot 6 — migrations appliquées en production : gelées', () => {
             assert.ok(fs.existsSync(file), `migration gelée supprimée : supabase/migrations/${name}`);
             const content = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
             const got = createHash('sha256').update(content, 'utf8').digest('hex');
-            assert.equal(got, sha, `${name} a été modifiée : elle est appliquée en production et gelée (contrat, en-tête) ; toute correction passe par une migration 20261105…`);
+            assert.equal(got, sha, `${name} a été modifiée : elle est appliquée en production et gelée (contrat, en-tête) ; toute correction passe par une migration 20261106…`);
+        });
+    }
+});
+
+describe('Lot 7 — migrations appliquées sur event-village-dev : gelées', () => {
+    for (const [name, sha] of Object.entries(FROZEN_LOT7)) {
+        test(`${name} inchangée depuis 7fdcb32`, () => {
+            const file = path.join(DIR, name);
+            assert.ok(fs.existsSync(file), `migration gelée supprimée : supabase/migrations/${name}`);
+            const content = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+            const got = createHash('sha256').update(content, 'utf8').digest('hex');
+            assert.equal(got, sha, `${name} a été modifiée : elle est appliquée sur event-village-dev et gelée (contrat du lot 8, en-tête) ; toute correction passe par une migration 20261106…`);
         });
     }
 });
