@@ -44,6 +44,21 @@
  *  - tests/helpers/design-files.ts:13 : MIGRATED_DESIGN_FILES vide.
  * Garde-fous (verts aujourd'hui) : auto-test du détecteur de règles, entrées de la liste existantes et
  * sans doublon, fichiers .tsx créés par le lot listés (aucun aujourd'hui).
+ *
+ * Lot 8 (contrat, section 11 ; T16), durcissement, aucune règle existante relâchée.
+ * 8.2 q : `font-mono` est réservé aux numéros de billets, aux références et aux codes, sur TOUS les .tsx
+ * d'app/ et de components/ (MONO_ALLOWED, nombre exact par fichier ; MONO_CONTENT vérifie que l'usage gardé
+ * est le bon) ; tout montant, compteur ou heure affiché porte `tabular-nums` ; la règle est dans MASTER.md.
+ * 8.2 r : ClosingReportModal entre dans la liste migrée (T4), sort de PRE_LOT5_UI_FILES (qui ne doit plus
+ * l'excuser s'il quitte la liste), et ses textes internes disparaissent de l'écran et du PDF.
+ * Rouge aujourd'hui : 46 usages de `font-mono`, 13 admis après correctif (dont celui descendu sur la cellule
+ * `object_id` du journal d'audit) ; 48 affichages sans `tabular-nums` ; MASTER.md ne cite pas `font-mono` ;
+ * « Conforme CDC V3.0 » à l'écran (ClosingReportModal.tsx:134) et dans le PDF
+ * (lib/partner/partner-dashboard.service.ts:1072, rouge jusqu'à fix(8.2p)) ; message de la réponse affiché tel
+ * quel (ClosingReportModal.tsx:62).
+ * Limite connue du contrôle `tabular-nums` : il suit les appels placés dans le JSX. Une valeur formatée plus haut
+ * puis rendue par variable, ou passée en prop à un composant (KpiCard, DefinitionRow, BarList), ne lui est pas
+ * visible : ces composants portent la classe eux-mêmes.
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -687,6 +702,162 @@ function formatViolations(rel: string, v: DesignViolation[]): string {
     return v.map((x) => `${rel}:${x.line} [${x.rule}] ${x.excerpt}`).join('\n');
 }
 
+// ── Lot 8, 8.2 q : police à chasse fixe et chiffres tabulaires ─────────────
+
+/** `font-mono` avec ses variantes, et les écritures équivalentes (`font-[Courier]`, `fontFamily: 'monospace'`). */
+const MONO_RE = new RegExp('(?<![\\w-])(?:[\\w-]+:)*!?font-mono(?![\\w-])|monospace|courier', 'gi');
+const TABULAR_RE = new RegExp('(?<![\\w-])tabular-nums(?![\\w-])');
+/** Appels qui produisent un montant, un compteur ou une heure (contrat, section 11.1). */
+const TABULAR_FORMATTERS = new Set(['formatFcfa', 'formatPrice', 'formatInteger', 'priceLabel', 'formatTime']);
+
+/** Usages admis, nombre exact par fichier (L61). Tout fichier absent d'ici en a zéro. */
+const MONO_ALLOWED: Record<string, number> = {
+    // Trois <pre> de JSON (exception nommée) et la cellule `object_id`, qui reçoit le font-mono du <tbody>.
+    'app/admin/audit/page.tsx': 4,
+    'app/admin/finance/page.tsx': 2,
+    'app/billet/hors-ligne/page.tsx': 1,
+    'app/orders/page.tsx': 1,
+    'app/wallet/page.tsx': 1,
+    'components/partner/ClosingReportModal.tsx': 1,
+    'components/partner/pilotage/CashTab.tsx': 1,
+    'components/tickets/TicketCard.tsx': 1,
+    'components/tickets/offline/OfflineTicketView.tsx': 1,
+};
+
+/**
+ * Ce que porte chaque usage admis, lu dans l'élément JSX qui reçoit la classe. Un nombre seul laisserait passer
+ * le mauvais retrait : dans app/wallet/page.tsx, garder le téléphone et retirer le code OTP donnerait le bon compte.
+ */
+const MONO_CONTENT: Record<string, RegExp> = {
+    'app/admin/audit/page.tsx': /^<pre\b[^]*JSON\.stringify|^<(?:td|span|p)\b[^]*object_id/,
+    'app/admin/finance/page.tsx': /transactionReference/,
+    'app/billet/hors-ligne/page.tsx': /ticket_number/,
+    'app/orders/page.tsx': /orderNumber/,
+    'app/wallet/page.tsx': /otpCode|errors\.otp/,
+    'components/partner/ClosingReportModal.tsx': /reportId/,
+    'components/partner/pilotage/CashTab.tsx': /\bpin\b/i,
+    'components/tickets/TicketCard.tsx': /ticketNumber/,
+    'components/tickets/offline/OfflineTicketView.tsx': /ticket_number/,
+};
+
+interface MonoUsage {
+    line: number;
+    excerpt: string;
+    /** Texte de l'élément JSX qui reçoit la classe ; vide hors JSX. */
+    element: string;
+}
+
+function isTextLiteral(node: ts.Node): boolean {
+    return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node)
+        || ts.isTemplateMiddle(node) || ts.isTemplateTail(node);
+}
+
+function enclosingJsxElement(node: ts.Node): ts.JsxElement | ts.JsxSelfClosingElement | null {
+    let cur: ts.Node | undefined = node.parent;
+    while (cur) {
+        if (ts.isJsxElement(cur) || ts.isJsxSelfClosingElement(cur)) return cur;
+        cur = cur.parent;
+    }
+    return null;
+}
+
+/** Usages d'une police à chasse fixe dans les littéraux : ni les commentaires ni le texte affiché ne comptent. */
+function monoUsages(rel: string, text: string): MonoUsage[] {
+    const sf = parseSource(rel, text);
+    const out: MonoUsage[] = [];
+    const visit = (node: ts.Node): void => {
+        if (isTextLiteral(node) && !isModuleSpecifier(node)) {
+            const value = (node as ts.LiteralLikeNode).text;
+            for (const m of Array.from(value.matchAll(MONO_RE))) {
+                out.push({
+                    line: lineOf(sf, node),
+                    excerpt: `${m[0]} : ${value.replace(/\s+/g, ' ').trim().slice(0, 80)}`,
+                    element: enclosingJsxElement(node)?.getText(sf) ?? '',
+                });
+            }
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return out;
+}
+
+/** Écarts au dictionnaire : un usage de plus, mais aussi une entrée trop large, qui laisserait passer le prochain. */
+function monoProblems(found: Map<string, MonoUsage[]>, allowed: Record<string, number>): string[] {
+    const out: string[] = [];
+    for (const file of Array.from(new Set([...Array.from(found.keys()), ...Object.keys(allowed)])).sort()) {
+        const usages = found.get(file) ?? [];
+        const max = allowed[file] ?? 0;
+        if (usages.length === max) continue;
+        out.push(`${file} : ${usages.length} usage(s), ${max} admis`, ...usages.map((u) => `    ${file}:${u.line} ${u.excerpt}`));
+    }
+    return out;
+}
+
+/** Usages admis par le nombre mais qui ne portent pas ce que la règle réserve. */
+function monoMisplaced(found: Map<string, MonoUsage[]>, content: Record<string, RegExp>): string[] {
+    const out: string[] = [];
+    for (const [file, re] of Object.entries(content)) {
+        for (const u of found.get(file) ?? []) {
+            if (!re.test(u.element)) out.push(`${file}:${u.line} ${u.excerpt}`);
+        }
+    }
+    return out;
+}
+
+function classHasTabular(el: ts.JsxElement | ts.JsxSelfClosingElement): boolean {
+    const attr = attrsOf(ts.isJsxElement(el) ? el.openingElement : el).get('className');
+    return !!attr && hasDescendant(attr, (n) => isTextLiteral(n) && TABULAR_RE.test((n as ts.LiteralLikeNode).text));
+}
+
+/**
+ * Le nœud est-il rendu comme enfant JSX ? Le premier conteneur rencontré tranche : une expression enfant d'un
+ * élément, ou un attribut. Un élément placé dans un attribut (`footer={<p>{…}</p>}`) est donc bien vu.
+ */
+function isJsxChildValue(node: ts.Node): boolean {
+    let cur: ts.Node | undefined = node.parent;
+    while (cur) {
+        if (ts.isJsxAttribute(cur)) return false;
+        if (ts.isJsxExpression(cur) && (ts.isJsxElement(cur.parent) || ts.isJsxFragment(cur.parent))) return true;
+        cur = cur.parent;
+    }
+    return false;
+}
+
+/** Montants, compteurs et heures rendus sans `tabular-nums` sur eux ni sur un ancêtre JSX. */
+function tabularViolations(rel: string, text: string): DesignViolation[] {
+    const sf = parseSource(rel, text);
+    const out: DesignViolation[] = [];
+    const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && TABULAR_FORMATTERS.has(node.expression.text) && isJsxChildValue(node)) {
+            let el = enclosingJsxElement(node);
+            let covered = false;
+            while (el && !covered) {
+                covered = classHasTabular(el);
+                el = enclosingJsxElement(el);
+            }
+            if (!covered) out.push({ rule: 'montant sans tabular-nums', line: lineOf(sf, node), excerpt: node.getText(sf).slice(0, 100) });
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return out;
+}
+
+/** Tous les .tsx d'app/ et de components/ : le contrôle ne dépend pas de la liste des fichiers migrés. */
+function allUiFiles(): string[] {
+    return [...listFiles('app', /\.tsx$/), ...listFiles('components', /\.tsx$/)];
+}
+
+function monoUsagesOfUi(): Map<string, MonoUsage[]> {
+    const found = new Map<string, MonoUsage[]>();
+    for (const file of allUiFiles()) {
+        const usages = monoUsages(file, readText(file));
+        if (usages.length > 0) found.set(file, usages);
+    }
+    return found;
+}
+
 // ── Listes attendues ───────────────────────────────────────────────────────
 
 /** Écrans du lot (contrat Q, consigne 5.1) : ils doivent exister et figurer dans MIGRATED_DESIGN_FILES. */
@@ -1162,6 +1333,23 @@ describe('Q — design-system/event-village/MASTER.md', () => {
         assert.match(md, /brand-decor/, `${file} : la règle brand-decor (décor seulement) n'est pas consignée`);
         assert.match(md, /text-caption/, `${file} : la règle text-caption (petite taille réservée) n'est pas consignée`);
     });
+
+    test('8.2 q : la règle de la police à chasse fixe et des chiffres tabulaires est consignée', () => {
+        const file = 'design-system/event-village/MASTER.md';
+        // Le fichier est coupé à 100 colonnes : la règle se lit sur le texte remis à plat, pas ligne par ligne.
+        const flat = readText(file).replace(/\s+/g, ' ');
+        const start = flat.search(/font-mono[^.]{0,20}réservé/);
+        assert.ok(start >= 0, `${file} : rien ne dit que font-mono est réservé (contrat, section 11.1)`);
+        const mono = flat.slice(start, start + 500);
+        for (const usage of [/numéros de billets/, /références? de transaction/, /commande/, /OTP/, /PIN/, /police normale/]) {
+            assert.match(mono, usage, `${file} : la règle de font-mono ne cite pas ${usage.source} (« ${mono} »)`);
+        }
+        assert.match(mono, /tabular-nums/, `${file} : la règle de font-mono ne renvoie pas à tabular-nums (« ${mono} »)`);
+        for (const usage of [/[Mm]ontants/, /compteurs/, /comptes à rebours/, /heures/, /téléphones/]) {
+            assert.match(mono, usage, `${file} : tabular-nums ne couvre pas ${usage.source} (« ${mono} »)`);
+        }
+        assert.match(mono, /<pre>/, `${file} : l'exception des blocs <pre> du journal d'audit n'est pas nommée (« ${mono} »)`);
+    });
 });
 
 // ── Q. Fichiers migrés ─────────────────────────────────────────────────────
@@ -1301,4 +1489,110 @@ describe('Q — fichiers migrés (tests/helpers/design-files.ts)', () => {
             assert.deepEqual(v, [], `${v.length} écart(s) d'accessibilité :\n${formatViolations(file, v)}`);
         });
     }
+});
+
+// ── Lot 8, 8.2 q ───────────────────────────────────────────────────────────
+
+describe('8.2 q — police à chasse fixe (tous les .tsx d\'app/ et de components/)', () => {
+    test('`font-mono` hors de MONO_ALLOWED : nombre exact par fichier', () => {
+        const problems = monoProblems(monoUsagesOfUi(), MONO_ALLOWED);
+        assert.deepEqual(problems, [], `font-mono est réservé aux numéros de billets, aux références et aux codes :\n${problems.join('\n')}`);
+    });
+
+    test('chaque usage admis porte bien un numéro de billet, une référence, un code ou le JSON du journal d\'audit', () => {
+        const misplaced = monoMisplaced(monoUsagesOfUi(), MONO_CONTENT);
+        assert.deepEqual(misplaced, [], `usages à déplacer ou à retirer :\n${misplaced.join('\n')}`);
+    });
+
+    test('garde-fou du détecteur : un fichier fautif est signalé, les commentaires et le texte affiché sont ignorés', () => {
+        const bad = [
+            "import x from './font-mono';", // 1 : chemin d'import, ignoré
+            '// font-mono dans un commentaire',
+            '/* monospace dans un bloc */',
+            'export function Mauvais({ a }: { a: string }) {',
+            '    return (',
+            '        <section className="font-mono">', // 6
+            '            {/* font-mono ignoré */}',
+            '            <TextInput label="Téléphone" className="font-mono" />', // 8
+            "            <p className={cn('text-sm', 'md:font-mono')}>x</p>", // 9
+            '            <p className={`block !font-mono ${a}`}>x</p>', // 10
+            "            <p style={{ fontFamily: 'monospace' }}>x</p>", // 11
+            '            <p className="font-[Courier]">x</p>', // 12
+            '            <p>La classe font-mono est interdite ici.</p>', // texte affiché, ignoré
+            '            <p className="font-monotone">x</p>', // autre classe, ignorée
+            '        </section>',
+            '    );',
+            '}',
+        ].join('\n');
+        const usages = monoUsages('app/exemple/mauvais.tsx', bad);
+        assert.deepEqual(usages.map((u) => u.line), [6, 8, 9, 10, 11, 12], JSON.stringify(usages));
+    });
+
+    test('garde-fou du détecteur : nombre dépassé, fichier inconnu et entrée trop large sont signalés ; l\'usage mal placé aussi', () => {
+        const u = (line: number, element: string): MonoUsage => ({ line, excerpt: 'font-mono', element });
+        const allowed = { 'a.tsx': 1, 'b.tsx': 2 };
+        const conforme = new Map([['a.tsx', [u(1, '')]], ['b.tsx', [u(1, ''), u(2, '')]]]);
+        assert.deepEqual(monoProblems(conforme, allowed), []);
+
+        const nouveau = new Map([['a.tsx', [u(1, ''), u(9, '')]], ['b.tsx', [u(1, ''), u(2, '')]], ['c.tsx', [u(3, '')]]]);
+        const signale = monoProblems(nouveau, allowed);
+        assert.ok(signale.includes('a.tsx : 2 usage(s), 1 admis'), signale.join('\n'));
+        assert.ok(signale.includes('c.tsx : 1 usage(s), 0 admis'), signale.join('\n'));
+        assert.ok(signale.includes('    a.tsx:9 font-mono'), signale.join('\n'));
+
+        const perime = monoProblems(new Map([['a.tsx', [u(1, '')]]]), allowed);
+        assert.deepEqual(perime, ['b.tsx : 0 usage(s), 2 admis'], 'entrée de dictionnaire devenue trop large');
+
+        const place = new Map([['a.tsx', [u(4, '<span>{ticketNumber}</span>'), u(5, '<span>{phone}</span>')]]]);
+        assert.deepEqual(monoMisplaced(place, { 'a.tsx': /ticketNumber/ }), ['a.tsx:5 font-mono']);
+    });
+
+    test('garde-fou : chaque entrée de MONO_CONTENT a son nombre, et réciproquement ; le journal d\'audit refuse le <tbody>', () => {
+        assert.deepEqual(Object.keys(MONO_CONTENT).sort(), Object.keys(MONO_ALLOWED).sort());
+        const audit = MONO_CONTENT['app/admin/audit/page.tsx'];
+        assert.ok(audit.test('<td className="font-mono">{log.object_id || \'N/A\'}</td>'), 'cellule object_id refusée');
+        assert.ok(audit.test('<pre className="font-mono">{JSON.stringify(v, null, 2)}</pre>'), 'bloc JSON refusé');
+        assert.ok(!audit.test('<tbody className="font-mono"><td>{log.object_id}</td></tbody>'), '<tbody> entier accepté');
+        assert.ok(!audit.test('<span className="font-mono">{logs.length}</span>'), 'compteur accepté');
+    });
+});
+
+describe('8.2 q — tabular-nums sur les montants, compteurs et heures affichés', () => {
+    test('aucun appel affiché à formatFcfa, formatPrice, formatInteger, priceLabel ou formatTime sans tabular-nums', () => {
+        const lines: string[] = [];
+        let count = 0;
+        for (const file of allUiFiles()) {
+            const v = tabularViolations(file, readText(file));
+            count += v.length;
+            if (v.length > 0) lines.push(formatViolations(file, v));
+        }
+        assert.deepEqual(lines, [], `${count} affichage(s) sans tabular-nums :\n${lines.join('\n')}`);
+    });
+
+    test('garde-fou du détecteur : classe sur l\'élément ou un ancêtre, composée par cn(), dans une boucle, un attribut, un commentaire', () => {
+        const source = [
+            'export function A({ x, rows }: { x: number; rows: number[] }) {', // 1
+            '    return (', // 2
+            '        <section>', // 3
+            '            <p>{formatFcfa(x)}</p>', // 4 : signalé
+            '            <p className="tabular-nums">{formatFcfa(x)}</p>', // 5
+            "            <div className={cn('a', 'tabular-nums')}><span><b>{formatInteger(x)}</b></span></div>", // 6
+            '            <ul className="tabular-nums">{rows.map((r) => <li key={r}>{formatPrice(r)}</li>)}</ul>', // 7
+            '            <ul>{rows.map((r) => <li key={r}>{priceLabel(r)}</li>)}</ul>', // 8 : signalé
+            '            <>{x > 0 ? formatTime(x) : null}</>', // 9 : signalé
+            '            <p>{`Total : ${formatFcfa(x)}`}</p>', // 10 : signalé
+            '            <KpiCard value={formatFcfa(x)} />', // 11 : le composant porte la classe
+            '            <Modal footer={<p>{formatFcfa(x)}</p>} />', // 12 : signalé
+            '            <button onClick={() => toast(formatFcfa(x))}>Ok</button>', // 13 : pas affiché dans le JSX
+            '            <p>{formatDate(x)}</p>', // 14 : pas dans la liste
+            '            <p className="sans-tabular-nums-x">{formatInteger(x)}</p>', // 15 : signalé
+            '            {/* formatFcfa(x) */}', // 16
+            '            <p className={/* tabular-nums */ undefined}>{formatTime(x)}</p>', // 17 : signalé
+            '        </section>',
+            '    );',
+            '}',
+        ].join('\n');
+        const v = tabularViolations('app/exemple/montants.tsx', source);
+        assert.deepEqual(v.map((x) => x.line), [4, 8, 9, 10, 12, 15, 17], formatViolations('montants', v));
+    });
 });
