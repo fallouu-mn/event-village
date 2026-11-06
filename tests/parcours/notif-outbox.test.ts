@@ -137,6 +137,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'events.read'),
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'partners.read'),
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
+    ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'refunds.manage'), // lot 8, tâche 8.2 a (L32, migration 20261106000003)
     ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'payments.read'),
