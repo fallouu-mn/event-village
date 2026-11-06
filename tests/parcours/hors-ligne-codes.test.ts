@@ -25,6 +25,14 @@
  * 12. ticket_secret_versions et ticket_offline_downloads : RLS activée, aucune politique, aucun privilège
  *     pour anon et authenticated ; lecture et écriture refusées par REST avec la clé anon (anonyme et porteur).
  *
+ * Lot 8, tâche 8.2 x (contrat 3.7, section 12.3, T18) : compression gzip dans la route (next start 14.2.35 ne compresse
+ * aucune route API). Le test 7 garde son seuil : il mesure un gzip calculé par le test, pas le réseau.
+ * 13. avec Accept-Encoding: gzip : corps gzip, Content-Encoding, Vary, no-store, type JSON ; décompressé, il est
+ *     exactement le JSON de la route ;
+ * 14. sans gzip accepté : JSON brut, aucun Content-Encoding (témoin, vert aujourd'hui, garde-fou de la non-régression) ;
+ * 15. lot de 48 h : corps réellement servi sous 40 000 octets, plus petit que le JSON, [HORS-LIGNE-TRANSFERE].
+ * Rouges jusqu'à fix(8.2x) : 13 et 15, la route ne lit pas Accept-Encoding et sert 52 Ko de JSON.
+ *
  * Rouge aujourd'hui : la route n'existe pas (downloadOfflineCodes échoue « route des codes hors ligne
  * absente ») ; ticket_offline_grant, ticket_offline_downloads, ticket_secret_versions (M4) n'existent pas ;
  * GET /api/tickets ne renvoie aucun champ offline (app/api/tickets/route.ts:95-118). Aucun cas n'est vert.
@@ -36,9 +44,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomInt } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { inspect } from '../helpers/db';
 import { advanceEventTo } from './cycle-helpers';
+import { routeContext } from './helpers';
 import { withEnv } from './notif-helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { authed, newController, scan, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
@@ -54,6 +64,7 @@ const HOUR = 3600_000;
 const STEP_MS = 20_000;
 const ROUTE_FILE = 'app/api/tickets/[id]/offline-codes/route.ts';
 const SERVICE_FILE = 'lib/tickets/offline-codes.service.ts';
+const ROUTE_MODULE = '../../app/api/tickets/[id]/offline-codes/route';
 
 after(async () => {
     await assertTerrainInvariants('hors-ligne-codes');
@@ -432,7 +443,11 @@ describe('7.1 Contrôles statiques, liste des billets, RLS', () => {
     test('10. statique : la route ne lit ni paramètre ni en-tête d’heure ; issueOfflineCodes({ ticketId, userId }) seulement ; aucun now transmis', () => {
         const route = stripComments(read(ROUTE_FILE));
         assert.doesNotMatch(route, /searchParams|nextUrl/, 'la route ne lit aucun paramètre de requête');
-        assert.doesNotMatch(route, /\.headers\s*\.\s*(get|has|entries|forEach)\s*\(|\bheaders\s*\(\s*\)/, 'la route ne lit aucun en-tête (la session est lue par requireActiveSession)');
+        // Lot 8, consigne x (T39) : seul Accept-Encoding est admis, une seule fois, pour la compression du contrat 3.7.
+        // Tout autre en-tête reste refusé : aucune heure ni session n'en vient.
+        const acceptEncoding = /\breq\.headers\.get\('accept-encoding'\)/g;
+        assert.ok((route.match(acceptEncoding) ?? []).length <= 1, 'Accept-Encoding lu au plus une fois');
+        assert.doesNotMatch(route.replace(acceptEncoding, ''), /\.headers\s*\.\s*(get|has|entries|forEach)\s*\(|\bheaders\s*\(\s*\)/, 'la route ne lit aucun autre en-tête (la session est lue par requireActiveSession)');
         assert.match(route, /requireActiveSession\s*\(/, 'session par requireActiveSession');
         assert.match(route, /export\s+(async\s+)?function\s+GET\b|export\s+const\s+GET\b/, 'GET exporté');
         const calls = Array.from(route.matchAll(/issueOfflineCodes\s*\(\s*\{([^}]*)\}\s*\)/g));
@@ -521,5 +536,83 @@ describe('7.1 Contrôles statiques, liste des billets, RLS', () => {
             assert.ok(insV.error, `${who} écrit dans ticket_secret_versions : ${JSON.stringify(insV.data)}`);
         }
         assert.equal((await downloadsOf(off.ticketId!)).length, 1, 'journal inchangé après les tentatives');
+    });
+});
+
+// ── 13 à 15. Compression du lot (8.2 x) ────────────────────────────────────
+
+describe('8.2 x Compression du lot hors ligne dans la route (contrat 3.7)', () => {
+    interface RawDownload { status: number; headers: Record<string, string>; raw: Buffer }
+
+    /** Appel direct de la route : le corps est lu tel que servi, sans décompression par un client HTTP. */
+    async function rawDownload(user: Buyer, ticketId: string, acceptEncoding: string | null): Promise<RawDownload> {
+        const { GET } = await importModule(ROUTE_MODULE);
+        const path = `/api/tickets/${ticketId}/offline-codes`;
+        const res: Response = await GET(authed(path, 'GET', user, undefined, acceptEncoding === null ? {} : { 'accept-encoding': acceptEncoding }), routeContext({ id: ticketId }));
+        const headers: Record<string, string> = {};
+        res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
+        return { status: res.status, headers, raw: Buffer.from(await res.arrayBuffer()) };
+    }
+
+    function assertCompressed(r: RawDownload, label: string): string {
+        assert.equal(r.status, 200, `${label} : HTTP ${r.status}`);
+        assert.equal(r.headers['content-encoding'], 'gzip', `${label} : Content-Encoding: gzip attendu (contrat 3.7, fix(8.2x)), en-têtes reçus ${JSON.stringify(r.headers)}`);
+        assert.match(r.headers.vary ?? '', /accept-encoding/i, `${label} : Vary: Accept-Encoding attendu (reçu ${r.headers.vary})`);
+        assert.match(r.headers['cache-control'] ?? '', /no-store/, `${label} : no-store conservé (reçu ${r.headers['cache-control']})`);
+        assert.match(r.headers['content-type'] ?? '', /application\/json/, `${label} : réponse JSON (reçu ${r.headers['content-type']})`);
+        assert.deepEqual([r.raw[0], r.raw[1]], [0x1f, 0x8b], `${label} : le corps servi est au format gzip`);
+        return gunzipSync(r.raw).toString('utf8');
+    }
+
+    /** Champs qui ne dépendent pas du pas de 20 s ni de l'heure d'envoi. */
+    function stableFields(lot: OfflineLot): Row {
+        const { ticket_id, secret_version, prefix, step_seconds, digits, scan_opens_at, scan_closes_at, complete, ticket } = lot;
+        return { ticket_id, secret_version, prefix, step_seconds, digits, scan_opens_at, scan_closes_at, complete, ticket };
+    }
+
+    test('13. Accept-Encoding: gzip → corps gzip, Vary, no-store ; décompressé, c’est le JSON de la route', async () => {
+        const off = await createOfflineEvent('gzip');
+        const ticketId = off.ticketId!;
+        const plain = await rawDownload(off.holder!, ticketId, null);
+        assert.equal(plain.status, 200, `téléchargement sans compression : HTTP ${plain.status}`);
+        const packed = await rawDownload(off.holder!, ticketId, 'gzip, deflate, br, zstd');
+        const text = assertCompressed(packed, 'navigateur');
+        const lot = JSON.parse(text) as OfflineLot;
+        assert.equal(text, JSON.stringify(lot), 'le corps décompressé est du JSON compact, sans enveloppe');
+        const plainLot = JSON.parse(plain.raw.toString('utf8')) as OfflineLot;
+        assert.deepEqual(Object.keys(lot).sort(), Object.keys(plainLot).sort(), 'mêmes champs que la réponse non compressée');
+        assert.deepEqual(stableFields(lot), stableFields(plainLot), 'mêmes valeurs que la réponse non compressée');
+        assert.equal(lot.codes.length, 6 * lot.count, 'codes.length = 6 × count');
+        const totp = await importModule('../../lib/security/totp');
+        const secret = String((await ticketRow(ticketId)).totp_secret);
+        assert.equal(lot.codes.slice(0, 6), totp.generateTicketCode(ticketId, secret, new Date(lot.first_counter * STEP_MS + 10_000)), 'premier code du lot décompressé = code calculé');
+    });
+
+    test('14. sans gzip accepté (en-tête absent, identity, br seul) → JSON brut, aucun Content-Encoding, no-store (témoin)', async () => {
+        const off = await createOfflineEvent('sans-gzip');
+        for (const [label, header] of [['en-tête absent', null], ['identity', 'identity'], ['br seul', 'br']] as Array<[string, string | null]>) {
+            const r = await rawDownload(off.holder!, off.ticketId!, header);
+            assert.equal(r.status, 200, `${label} : HTTP ${r.status}`);
+            assert.equal(r.headers['content-encoding'], undefined, `${label} : aucune compression (reçu ${r.headers['content-encoding']})`);
+            assert.match(r.headers['cache-control'] ?? '', /no-store/, `${label} : no-store conservé`);
+            assert.match(r.headers['content-type'] ?? '', /application\/json/, `${label} : réponse JSON`);
+            const lot = JSON.parse(r.raw.toString('utf8')) as OfflineLot;
+            assert.equal(lot.ticket_id, off.ticketId, `${label} : JSON brut lisible`);
+            assert.equal(lot.codes.length, 6 * lot.count, `${label} : codes.length = 6 × count`);
+        }
+    });
+
+    test('15. lot de 48 h : corps réellement servi sous 40 000 octets, plus petit que le JSON', async () => {
+        await withPlatformSettings({ 'access.scan_window_before_hours': 48, 'access.scan_window_after_hours': 48 }, async () => {
+            const off = await createOfflineEvent('gzip-3-jours', { startsInHours: 2, durationHours: 72 });
+            const r = await rawDownload(off.holder!, off.ticketId!, 'gzip');
+            const text = assertCompressed(r, 'lot de 48 h');
+            const lot = JSON.parse(text) as OfflineLot;
+            const decoded = Buffer.byteLength(text, 'utf8');
+            console.log(`[HORS-LIGNE-TRANSFERE] 3 jours, before = after = 48 h : ${lot.count} codes, ${decoded} octets de JSON, ${r.raw.length} octets servis`);
+            assert.equal(lot.count, 8640, 'lot glissant de 48 h : 8 640 codes (D31)');
+            assert.ok(r.raw.length < 40_000, `corps servi sous 40 000 octets : ${r.raw.length}`);
+            assert.ok(r.raw.length < decoded, `corps servi (${r.raw.length}) plus petit que le JSON (${decoded})`);
+        });
     });
 });
