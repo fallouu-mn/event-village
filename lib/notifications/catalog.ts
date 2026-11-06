@@ -181,6 +181,7 @@ const BLOCKED_REASON_LABELS: Readonly<Record<string, string>> = {
     OPERATOR_UNKNOWN: 'opérateur du paiement inconnu',
     PHONE_UNKNOWN: 'numéro du payeur inconnu',
     NAME_UNKNOWN: 'nom du bénéficiaire incomplet',
+    SIMULATED: 'opération créée en mode simulé : aucun versement',
 };
 
 /** Motif de blocage d'un versement : libellé humain pour un code, texte libre gardé tel quel. */
@@ -330,6 +331,7 @@ const SAMPLE_EVENT = {
 };
 const SAMPLE_ID = {
     payment: '1f6e2b9c-7d3a-4c8e-9b21-0a5d3e7f8c42',
+    keptPayment: '7c4e1a9d-3b6f-4d2e-a8c5-6f1b3d9e2a84',
     ticket: '5c2a8e41-9b3d-4f7a-8e16-2d4b6a9c1e73',
     transfer: '9e4b1c7a-2f5d-4a8e-b3c6-7d1e9f2a4b58',
     cashout: '3a7d9e2b-6c1f-4b8a-9d5e-1f3b7c9a2e64',
@@ -1030,6 +1032,13 @@ const CATALOG = {
             return { title: 'Remboursement à reprendre', content: `Un remboursement de ${money(d, 'amount')} est ${state}` };
         },
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 5_000, cashout_status: 'BLOQUE', blocked_reason: 'OPERATOR_UNKNOWN' },
+    }),
+    /** Lot 8 (8.2 a, L32) : second paiement réussi d'un même panier, remboursement lancé par payment_confirm. */
+    ADMIN_DUPLICATE_PAYMENT: define('ADMIN_DUPLICATE_PAYMENT', {
+        label: 'Paiement en double remboursé', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
+        link: () => '/admin/finance',
+        inApp: (d) => ({ title: 'Paiement en double remboursé', content: `Un second paiement de ${money(d, 'amount')} a été encaissé pour le même panier : son remboursement au client est lancé.` }),
+        sample: { payment_id: SAMPLE_ID.payment, duplicate_of: SAMPLE_ID.keptPayment, amount: 21_000 },
     }),
     ADMIN_CASHOUT_UNCERTAIN: define('ADMIN_CASHOUT_UNCERTAIN', {
         label: 'Versement incertain', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',

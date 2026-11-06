@@ -149,6 +149,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_EVENT_SUBMITTED: 'Événement à valider',
     ADMIN_PARTNER_REGISTERED: 'Nouvelle candidature partenaire',
     ADMIN_REFUND_TO_RETRY: 'Remboursement à reprendre',
+    ADMIN_DUPLICATE_PAYMENT: 'Paiement en double remboursé',
     ADMIN_CASHOUT_UNCERTAIN: 'Versement incertain',
     ADMIN_WITHDRAWAL_REJECTED: "Retrait refusé par l'opérateur",
     ADMIN_FINANCE_DEBT: 'Créance sur un compte',

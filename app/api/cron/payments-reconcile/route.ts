@@ -20,7 +20,8 @@ export const dynamic = 'force-dynamic';
  *  3. succès tardifs : paiements EXPIRED ou annulés par le client dans la fenêtre
  *     PAYMENT_LATE_SUCCESS_WINDOW_HOURS (au plus un contrôle toutes les 15 minutes) ;
  *  4. PENDING sans identifiant SamirPay (initialisation interrompue) trop anciens → EXPIRED ;
- *  5. envois d'argent : confirmation des ENVOYE ; envoi réservé puis interrompu → INCERTAIN.
+ *  5. envois d'argent : confirmation des ENVOYE ; envoi réservé puis interrompu → INCERTAIN ;
+ *     lot 8 (L33) : remboursements restés à envoyer, repris après 5 minutes.
  */
 async function run(req: NextRequest) {
     const refused = refuseUnlessCron(req);
@@ -75,6 +76,9 @@ async function run(req: NextRequest) {
             if (!logged) console.error(`[cron payments-reconcile] alerte de l'envoi ${c.idempotency_key} non journalisée`);
         }
         summary.cashouts_interrupted = stale?.length ?? 0;
+        const resumed = await CashoutService.resumeUnsentRefunds(env.PAYMENT_RECONCILE_BATCH);
+        summary.refunds_resumed = resumed.resumed;
+        summary.refunds_resume_failed = resumed.failed;
         return NextResponse.json({ ok: true, ...summary });
     } catch (err) {
         console.error('[cron payments-reconcile] erreur :', err instanceof Error ? err.message : String(err));

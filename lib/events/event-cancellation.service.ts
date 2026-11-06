@@ -16,7 +16,7 @@
  */
 
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { CashoutService } from '@/lib/payments/cashout.service';
+import { CashoutService, sendOutcomeLabel } from '@/lib/payments/cashout.service';
 import { EventLifecycleError, refusalToError, type LifecycleRefusal } from '@/lib/events/event-lifecycle.service';
 
 export interface EventCancellationInput {
@@ -217,7 +217,7 @@ export class EventCancellationService {
             success: sent,
             refundId,
             status: sent ? 'PROCESSED' : 'FAILED',
-            message: sent ? 'Remboursement envoyé.' : `Remboursement non envoyé (${outcome.skipped ?? outcome.status}).`,
+            message: sent ? 'Remboursement envoyé.' : `Remboursement non envoyé : ${sendOutcomeLabel(outcome)}.`,
         };
     }
 }

@@ -19,8 +19,12 @@
  * transaction de chaque changement de statut ou de motif de blocage, les avis au bénéficiaire, au
  * partenaire (remboursements d'une annulation) et aux administrateurs ; ce module garde le journal
  * d'audit des alertes (lib/admin/alerts.ts).
+ * Lot 8 (L28, L33) : une opération simulée ne part jamais en réel, une opération réelle ne part jamais vers le
+ * faux service (cashoutSendRefusal, avant tout appel SamirPay ; garde en base trg_cashouts_simulation_guard).
+ * Un remboursement resté à envoyer, faute de solde lisible, est repris par payments-reconcile.
  */
 import { logAdminAlert } from '@/lib/admin/alerts';
+import { isSimulationRun } from '@/lib/integrations/simulation';
 import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError, type SamirPayOperatorName } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -49,11 +53,14 @@ export interface CashoutRow {
     send_started_at: string | null;
     samirpay_transaction_id: string | null;
     alerted_at: string | null;
+    simulated: boolean;
 }
+
+export type SendRefusal = 'SIMULATED' | 'REAL_IN_SIMULATION';
 
 export interface SendOutcome {
     status: CashoutStatus;
-    skipped?: 'NOT_A_ENVOYER' | 'BLOCKED' | 'ALREADY_CLAIMED' | 'SOLDE_INSUFFISANT' | 'SOLDE_UNAVAILABLE';
+    skipped?: 'NOT_A_ENVOYER' | 'BLOCKED' | 'ALREADY_CLAIMED' | 'SOLDE_INSUFFISANT' | 'SOLDE_UNAVAILABLE' | SendRefusal;
 }
 
 const BLOCK_LABELS: Record<string, string> = {
@@ -61,7 +68,42 @@ const BLOCK_LABELS: Record<string, string> = {
     PHONE_UNKNOWN: 'numéro du payeur inconnu',
     NAME_UNKNOWN: 'prénom ou nom du bénéficiaire manquant',
     SOLDE_INSUFFISANT: 'solde du compte partenaire SamirPay insuffisant',
+    SIMULATED: 'opération créée en mode simulé : aucun versement',
 };
+
+/** Âge minimal d'un remboursement à reprendre (L33) : laisse à l'envoi d'origine le temps d'aboutir. */
+const UNSENT_REFUND_MIN_AGE_MS = 5 * 60_000;
+
+const SKIPPED_LABELS: Record<NonNullable<SendOutcome['skipped']>, string> = {
+    NOT_A_ENVOYER: "il n'est plus à envoyer",
+    BLOCKED: 'il est bloqué',
+    ALREADY_CLAIMED: 'un envoi est déjà en cours',
+    SOLDE_INSUFFISANT: BLOCK_LABELS.SOLDE_INSUFFISANT,
+    SOLDE_UNAVAILABLE: 'solde SamirPay indisponible, nouvel essai automatique',
+    SIMULATED: BLOCK_LABELS.SIMULATED,
+    REAL_IN_SIMULATION: "opération réelle refusée par un serveur d'essai",
+};
+
+const UNSENT_STATUS_LABELS: Partial<Record<CashoutStatus, string>> = {
+    ECHOUE: "refusé par l'opérateur",
+    INCERTAIN: 'issue incertaine, à vérifier auprès de SamirPay',
+};
+
+/** Raison d'un envoi qui n'a pas abouti, en français : jamais de code ni de statut technique à l'écran. */
+export function sendOutcomeLabel(outcome: SendOutcome): string {
+    if (outcome.skipped) return SKIPPED_LABELS[outcome.skipped];
+    return UNSENT_STATUS_LABELS[outcome.status] ?? 'envoi non abouti';
+}
+
+/**
+ * Lot 8 (L28, AR6) : motif de refus d'envoi, ou null. Une ligne simulée ne part que d'un serveur d'essai, une
+ * ligne réelle jamais d'un serveur d'essai, où elle serait marquée versée par le faux service.
+ */
+export function cashoutSendRefusal(row: Pick<CashoutRow, 'simulated'>, simulationActive: boolean): SendRefusal | null {
+    if (row.simulated && !simulationActive) return 'SIMULATED';
+    if (!row.simulated && simulationActive) return 'REAL_IN_SIMULATION';
+    return null;
+}
 
 async function load(id: string): Promise<CashoutRow> {
     const { data, error } = await getServiceRoleClient().from('cashouts').select('*').eq('id', id).single();
@@ -145,6 +187,18 @@ export class CashoutService {
     static async send(cashoutId: string, opts: { skipBalanceCheck?: boolean } = {}): Promise<SendOutcome> {
         let row = await load(cashoutId);
         if (row.status !== 'A_ENVOYER') return { status: row.status, skipped: 'NOT_A_ENVOYER' };
+        const refusal = cashoutSendRefusal(row, isSimulationRun());
+        if (refusal === 'REAL_IN_SIMULATION') {
+            console.error(`[cashout] envoi réel ${row.idempotency_key} refusé par un serveur d'essai : rien n'est écrit, rien ne part`);
+            return { status: row.status, skipped: refusal };
+        }
+        if (refusal === 'SIMULATED') {
+            if (row.blocked_reason !== 'SIMULATED') {
+                await patch(row.id, { blocked_reason: 'SIMULATED' });
+                await alert({ ...row, blocked_reason: 'SIMULATED' }, 'BLOCKED', BLOCK_LABELS.SIMULATED);
+            }
+            return { status: row.status, skipped: refusal };
+        }
         if (row.blocked_reason) {
             if (!row.alerted_at) await alert(row, 'BLOCKED', BLOCK_LABELS[row.blocked_reason] ?? row.blocked_reason);
             return { status: row.status, skipped: 'BLOCKED' };
@@ -212,7 +266,12 @@ export class CashoutService {
         const out: Record<string, SendOutcome> = {};
         if (!cashoutIds.length) return out;
         const rows = await Promise.all(cashoutIds.map(load));
-        const eligible = rows.filter((r) => r.status === 'A_ENVOYER' && !r.blocked_reason && !r.send_started_at);
+        // Lot 8 (L28) : une ligne refusée sort du total ; send la traite sans aucun appel SamirPay
+        const simulationActive = isSimulationRun();
+        const isRefused = (r: CashoutRow) => r.status === 'A_ENVOYER' && cashoutSendRefusal(r, simulationActive) !== null;
+        for (const r of rows.filter(isRefused)) out[r.id] = await CashoutService.send(r.id);
+        const sendable = rows.filter((r) => !isRefused(r));
+        const eligible = sendable.filter((r) => r.status === 'A_ENVOYER' && !r.blocked_reason && !r.send_started_at);
         const total = eligible.reduce((s, r) => s + Number(r.amount), 0);
         if (eligible.length) {
             let solde: number;
@@ -220,7 +279,7 @@ export class CashoutService {
                 solde = (await samirPayClient.getSolde()).solde;
             } catch (err) {
                 console.error('[cashout] solde SamirPay indisponible, lot différé :', err instanceof Error ? err.message : String(err));
-                for (const r of rows) out[r.id] = { status: r.status, skipped: 'SOLDE_UNAVAILABLE' };
+                for (const r of sendable) out[r.id] = { status: r.status, skipped: 'SOLDE_UNAVAILABLE' };
                 return out;
             }
             if (solde < total) {
@@ -237,13 +296,38 @@ export class CashoutService {
                 return out;
             }
         }
-        for (const r of rows) out[r.id] = await CashoutService.send(r.id, { skipBalanceCheck: true });
+        for (const r of sendable) out[r.id] = await CashoutService.send(r.id, { skipBalanceCheck: true });
         return out;
+    }
+
+    /**
+     * Lot 8 (L33) — reprise des remboursements REFUND restés à envoyer, faute de solde lisible au premier envoi :
+     * ni bloqués ni réservés, créés depuis plus de 5 minutes. Appelée par payments-reconcile. Un échec sur une
+     * ligne est journalisé et compté, il n'arrête pas les suivantes.
+     */
+    static async resumeUnsentRefunds(limit = 50): Promise<{ checked: number; resumed: number; failed: number }> {
+        const before = new Date(Date.now() - UNSENT_REFUND_MIN_AGE_MS).toISOString();
+        const { data, error } = await getServiceRoleClient().from('cashouts').select('id, idempotency_key')
+            .eq('kind', 'REFUND').eq('status', 'A_ENVOYER').is('blocked_reason', null).is('send_started_at', null)
+            .lt('created_at', before).eq('simulated', isSimulationRun())
+            .order('created_at', { ascending: true }).limit(limit);
+        if (error) throw new Error(`Lecture des remboursements à reprendre impossible : ${error.message}`);
+        let resumed = 0;
+        let failed = 0;
+        for (const row of data ?? []) {
+            try {
+                if (!(await CashoutService.send(row.id)).skipped) resumed++;
+            } catch (err) {
+                failed++;
+                console.error(`[cashout] reprise de l'envoi ${row.idempotency_key} en échec :`, err instanceof Error ? err.message : String(err));
+            }
+        }
+        return { checked: data?.length ?? 0, resumed, failed };
     }
 
     /** Confirmation des envois ENVOYE par l'endpoint de statut (réconciliation). */
     static async confirmSent(limit = 50): Promise<{ checked: number; confirmed: number }> {
-        const { data, error } = await getServiceRoleClient().from('cashouts').select('*').eq('status', 'ENVOYE').not('samirpay_transaction_id', 'is', null).limit(limit);
+        const { data, error } = await getServiceRoleClient().from('cashouts').select('*').eq('status', 'ENVOYE').not('samirpay_transaction_id', 'is', null).eq('simulated', isSimulationRun()).limit(limit);
         if (error) throw new Error(`Lecture des envois à confirmer impossible : ${error.message}`);
         let confirmed = 0;
         for (const row of (data ?? []) as CashoutRow[]) {

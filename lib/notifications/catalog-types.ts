@@ -125,6 +125,8 @@ export interface TemplateData {
     ADMIN_EVENT_SUBMITTED: EventData & { company?: string | null };
     ADMIN_PARTNER_REGISTERED: { partner_id: string; company: string };
     ADMIN_REFUND_TO_RETRY: { cashout_id: string; amount: number; cashout_status: 'ECHOUE' | 'BLOQUE' | string; blocked_reason?: string | null };
+    /** Lot 8 (8.2 a, L32) : second paiement réussi d'un même panier. */
+    ADMIN_DUPLICATE_PAYMENT: { payment_id: string; duplicate_of: string; amount: number };
     ADMIN_CASHOUT_UNCERTAIN: { cashout_id: string; amount: number };
     ADMIN_WITHDRAWAL_REJECTED: { cashout_id: string; amount: number };
     ADMIN_FINANCE_DEBT: { debt_id: string; amount: number; debt: number; account_kind: AccountKind | string; entry_type?: string };

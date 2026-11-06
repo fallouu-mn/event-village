@@ -1,6 +1,12 @@
 -- ============================================================================
--- EVENT VILLAGE — LOT 8, TÂCHE 8.2 b : ordre unique des verrous (contrat 2.3, 2.6, 6.2, L34, AR4)
+-- EVENT VILLAGE — LOT 8, TÂCHES 8.2 a et b : double paiement, ordre unique des verrous (contrat 2.3, 2.6, 6.1,
+-- 6.2, L30 à L34, AR4)
 -- ============================================================================
+-- Double paiement (8.2 a) : le second paiement réussi d'un même panier est remboursé par le module de cashout
+-- existant (kind REFUND, frais d'agrégateur à la charge d'Event Village), avec un avis REFUND_PAID au client et
+-- une alerte ADMIN_DUPLICATE_PAYMENT. Le paiement passe à REFUND_PENDING sans passer par SUCCESS : ni VENTE, ni
+-- commission, ni billet. Le contrôle se fait sous le verrou de l'événement : aucune course entre deux confirmations.
+--
 -- Ordre unique dans payment_confirm et event_cancel :
 --     events (FOR NO KEY UPDATE) → paiements (par id) → catégories (par id) → transferts → billets.
 -- Le cycle réel passe par la clé étrangère vers events : une transaction tient une catégorie ou un billet et
@@ -16,12 +22,61 @@
 -- ============================================================================
 
 
+-- ----------------------------------------------------------------------------
+-- 1. Type de notification de l'alerte (L32) : aucun nouveau kind dans admin_signals (AR2)
+-- ----------------------------------------------------------------------------
+INSERT INTO public.notification_types (type, family, topic, channels, audience, suspended_policy, sync_only, admin_permission)
+VALUES ('ADMIN_DUPLICATE_PAYMENT', 'ESSENTIAL', NULL, ARRAY['IN_APP','PUSH','EMAIL'], 'ADMIN', 'BLOCK', FALSE, 'refunds.manage')
+ON CONFLICT (type) DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- 2. payment_duplicate_of(uuid) (nouvelle, L30) : paiement déjà réglé dont p_payment_id serait le double
+-- ----------------------------------------------------------------------------
+-- Même panier : mêmes catégories et mêmes quantités (lues sur stock_reservations, jamais sur
+-- metadata.checkout_items), même compte, même événement, plateforme, billetterie. Le paiement conservé Y est
+-- réglé (SUCCESS, PARTIAL) et X a été créé avant la confirmation de Y, sans borne de durée : un rachat fait après
+-- la confirmation n'est jamais touché. Un paiement entièrement remboursé ne compte plus.
+CREATE OR REPLACE FUNCTION public.payment_duplicate_of(p_payment_id uuid)
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    WITH x AS (
+        SELECT p.id, p.client_id, p.event_id, p.created_at,
+               (SELECT array_agg(r.category_id::text || ':' || r.quantity ORDER BY r.category_id::text)
+                  FROM public.stock_reservations r WHERE r.payment_id = p.id) AS panier
+          FROM public.payments p
+         WHERE p.id = p_payment_id AND p.client_id IS NOT NULL
+           AND p.payment_target::text = 'TICKET' AND p.is_platform_payment
+    )
+    SELECT y.id
+      FROM x
+      JOIN public.payments y
+        ON y.id <> x.id AND y.client_id = x.client_id AND y.event_id = x.event_id
+       AND y.payment_target::text = 'TICKET' AND y.is_platform_payment
+       AND y.status::text IN ('SUCCESS', 'PARTIAL')
+       AND x.created_at < y.paid_at
+     WHERE x.panier = (SELECT array_agg(r.category_id::text || ':' || r.quantity ORDER BY r.category_id::text)
+                         FROM public.stock_reservations r WHERE r.payment_id = y.id)
+     ORDER BY y.paid_at, y.id
+     LIMIT 1
+$$;
+COMMENT ON FUNCTION public.payment_duplicate_of(uuid) IS
+    'Lot 8 (8.2 a, L30) : id du paiement déjà réglé pour le même panier, ou NULL. Appelée par payment_confirm sous le verrou de l''événement.';
+
+
 -- ============================================================================
--- 1. payment_confirm (recopie intégrale de 20261105000007_lot7_confirmation.sql:57-197)
+-- 3. payment_confirm (recopie intégrale de 20261105000007_lot7_confirmation.sql:57-197)
 -- Changement (8.2 b) : avant le verrou du paiement, lecture sans verrou de son statut et de son événement
 -- (event_id et panier ne changent pas après la création), puis verrou de l'événement, sauf statut final : un
 -- rejeu de webhook n'attend pas une annulation. NOT_FOUND et NOT_TICKET inchangés. Le reste relit sous
 -- FOR UPDATE, à l'identique.
+-- Changements (8.2 a) : après la boucle du panier, contrôle du double paiement, si rien d'autre ne bloque. Dans
+-- la branche de remboursement : metadata.duplicate_of, motif « Paiement en double du même panier », alerte
+-- ADMIN_DUPLICATE_PAYMENT, duplicate_of dans le résultat. Le corps sans double est inchangé, résultat compris.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.payment_confirm(p_payment_id uuid, p_source text)
 RETURNS jsonb
@@ -45,6 +100,7 @@ DECLARE
     v_data jsonb;
     v_seen text;
     v_lock_event uuid;
+    v_duplicate uuid;
 BEGIN
     -- Lot 8 (8.2 b) : événement d'abord (ordre unique, contrat 2.3)
     SELECT p.status::text, COALESCE(p.event_id,
@@ -106,6 +162,14 @@ BEGIN
         EXIT WHEN v_blocking IS NOT NULL;
     END LOOP;
 
+    -- Lot 8 (8.2 a) : second paiement réussi d'un même panier, sous le verrou de l'événement
+    IF v_blocking IS NULL THEN
+        v_duplicate := public.payment_duplicate_of(p_payment_id);
+        IF v_duplicate IS NOT NULL THEN
+            v_blocking := format('paiement en double du panier déjà réglé (%s)', v_duplicate);
+        END IF;
+    END IF;
+
     IF v_blocking IS NOT NULL THEN
         UPDATE public.stock_reservations SET status = 'RELEASED', closed_at = now(), close_reason = 'REFUND'
          WHERE payment_id = p_payment_id AND status = 'ACTIVE';
@@ -113,9 +177,17 @@ BEGIN
            SET status = 'REFUND_PENDING', provider_status = 'SUCCESS', provider_final = TRUE, paid_at = now(),
                confirmed_source = p_source,
                metadata = metadata || jsonb_build_object('refund_reason', v_blocking)
+                          || CASE WHEN v_duplicate IS NULL THEN '{}'::jsonb
+                                  ELSE jsonb_build_object('duplicate_of', v_duplicate) END
          WHERE id = p_payment_id;
-        v_cashout := public.refund_request(p_payment_id, 'Panier impossible à honorer : ' || v_blocking, 'REFUND');
-        RETURN jsonb_build_object('result', 'REFUND_REQUIRED', 'reason', v_blocking, 'cashout_id', v_cashout);
+        IF v_duplicate IS NULL THEN
+            v_cashout := public.refund_request(p_payment_id, 'Panier impossible à honorer : ' || v_blocking, 'REFUND');
+            RETURN jsonb_build_object('result', 'REFUND_REQUIRED', 'reason', v_blocking, 'cashout_id', v_cashout);
+        END IF;
+        v_cashout := public.refund_request(p_payment_id, 'Paiement en double du même panier', 'REFUND');
+        PERFORM public.notif_enqueue_admins(jsonb_build_object('type', 'ADMIN_DUPLICATE_PAYMENT', 'ref', p_payment_id, 'event_id', v_lock_event,
+            'data', jsonb_build_object('payment_id', p_payment_id, 'duplicate_of', v_duplicate, 'amount', v_pay.amount)));
+        RETURN jsonb_build_object('result', 'REFUND_REQUIRED', 'reason', v_blocking, 'cashout_id', v_cashout, 'duplicate_of', v_duplicate);
     END IF;
 
     -- Conversion et émission (montants lus sur les réservations, jamais recalculés)
@@ -180,7 +252,7 @@ $$;
 
 
 -- ============================================================================
--- 2. event_cancel (recopie intégrale de 20261105000003_lot7_securite.sql:97-239)
+-- 4. event_cancel (recopie intégrale de 20261105000003_lot7_securite.sql:97-239)
 -- Changements (8.2 b) : l'événement est pris FOR NO KEY UPDATE au lieu de FOR UPDATE ; juste avant le verrou
 -- des catégories, tous les paiements de l'événement sont verrouillés dans l'ordre des identifiants, tous
 -- statuts et hors plateforme compris (ticket_refund_request verrouille aussi les paiements en espèces). La
@@ -347,6 +419,7 @@ DECLARE
     f text;
 BEGIN
     FOREACH f IN ARRAY ARRAY[
+        'public.payment_duplicate_of(uuid)',
         'public.payment_confirm(uuid, text)',
         'public.event_cancel(jsonb)'
     ] LOOP
