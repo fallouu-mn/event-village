@@ -498,6 +498,14 @@ describe('6.3 Catalogue : registre SQL = catalogue TS = table G2 (contrat C1, G1
         assert.deepEqual(issues, [], `rendus défectueux :\n${issues.join('\n')}`);
     });
 
+    test('A29 : ADMIN_REFUND_TO_RETRY nomme le solde insuffisant, pas un bénéficiaire incomplet', async () => {
+        const { renderNotification } = await catalogModule();
+        const rendered = renderNotification('ADMIN_REFUND_TO_RETRY', 'IN_APP', { cashout_id: '00000000-0000-4000-8000-000000000001', amount: 5000, cashout_status: 'BLOQUE', blocked_reason: 'SOLDE_INSUFFISANT' }, CTX) as { content: string };
+        assert.match(rendered.content, /solde/i, rendered.content);
+        assert.doesNotMatch(rendered.content, /bénéficiaire/i, rendered.content);
+        assert.doesNotMatch(rendered.content, /SOLDE_INSUFFISANT/, rendered.content);
+    });
+
     test('renderNotification lève TemplateDataError quand une variable obligatoire manque, et rend le même texte que le catalogue', async () => {
         const { catalog, renderNotification, TemplateDataError } = await catalogModule();
         const e = catalog.PURCHASE_CONFIRMED;
