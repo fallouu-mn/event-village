@@ -58,8 +58,8 @@ import { ScanStatusBar } from '@/components/scan/ScanStatusBar';
 import { ScanHistoryList, type ServedRefusal, type ServedScan } from '@/components/scan/ScanHistoryList';
 import { ScannerStartScreen, type StartChoice } from '@/components/scan/ScannerStartScreen';
 import {
-    categoryFor, confirmCashCheckin, isTechnicalOutcome, newIdempotencyKey, postScan, SCAN_INCIDENTS_ENDPOINT, titleFor,
-    type ScanOutcome, type ScanRequest,
+    categoryFor, confirmCashCheckin, isTechnicalOutcome, newIdempotencyKey, postScan, recoveredTimeOf, SCAN_INCIDENTS_ENDPOINT,
+    titleFor, type ScanOutcome, type ScanRequest,
 } from '@/components/scan/scan-client';
 import {
     clearAllScanMemory, clearPendingScan, clearScanSession, isVerdictReceived, pendingPayload, readPendingScan,
@@ -124,8 +124,11 @@ type InputMode = ScanInputMode;
 type Stage = 'idle' | 'pending' | 'slow' | 'result';
 type Area = ScanArea;
 
-/** Résultat affiché ; `recoveredAt` : heure de la lecture d'un scan renvoyé au retour (A10). */
-interface Shown { id: number; outcome: ScanOutcome; payload: string | null; recoveredAt: number | null }
+/**
+ * Résultat affiché. `recoveredAt` : heure de la lecture quand le renvoi au retour a rendu un verdict (A10), sinon null.
+ * `resumed` : scan renvoyé au retour, avec ou sans verdict ; le contrôleur revient et doit voir ce résultat.
+ */
+interface Shown { id: number; outcome: ScanOutcome; payload: string | null; recoveredAt: number | null; resumed: boolean }
 
 interface DeviceIncident { eventId: string; kind: 'NETWORK' | 'TIMEOUT'; at: string }
 
@@ -533,7 +536,7 @@ export default function ControllerScannerPage() {
         }
         busyRef.current = true;
         seqRef.current += 1;
-        setShown({ id: seqRef.current, outcome, payload, recoveredAt });
+        setShown({ id: seqRef.current, outcome, payload, recoveredAt: recoveredTimeOf(outcome, recoveredAt), resumed: recoveredAt !== null });
         setStage('result');
         if (!technical) {
             scheduleStats(STATS_AFTER_SCAN_MS);
@@ -551,7 +554,9 @@ export default function ControllerScannerPage() {
     /**
      * Envoi d'un scan (caméra ou saisie manuelle) : « Envoi… », « Réseau lent », puis résultat. La clé et la requête
      * sont gardées sur l'appareil jusqu'au verdict (A10) : un scan coupé par la sortie de l'application est renvoyé
-     * au retour avec la même clé (`recoveredAt` : heure de la lecture d'origine).
+     * au retour avec la même clé (`recoveredAt` : heure de la lecture d'origine). Ce renvoi demande seulement le verdict
+     * de la lecture d'origine (8.2 e, L45) : si le serveur ne l'a jamais reçue, rien n'est composté et le billet reste à
+     * rescanner, car le spectateur n'est peut-être plus là.
      */
     const runScan = useCallback(async (request: ScanRequest, payload: string | null, key?: string, recoveredAt: number | null = null) => {
         const scanKey = key ?? newIdempotencyKey();
@@ -572,7 +577,7 @@ export default function ControllerScannerPage() {
         }, SLOW_AFTER_MS);
         let outcome: ScanOutcome;
         try {
-            outcome = await postScan(request, { key: scanKey, onAttempt: setAttempt });
+            outcome = await postScan(request, { key: scanKey, replayOnly: recoveredAt !== null, onAttempt: setAttempt });
         } finally {
             inFlightRef.current = false;
         }
@@ -1010,10 +1015,11 @@ export default function ControllerScannerPage() {
     );
 
     // Durée du plein écran : entrée validée = préférence de l'appareil ; encaissement = attend une action ; résultat
-    // retrouvé au retour dans l'application (A10) = attend un toucher (le contrôleur revient et doit le voir)
+    // d'un scan repris au retour dans l'application (A10), verdict retrouvé ou scan non traité = attend un toucher (le
+    // contrôleur revient et doit le voir ; un scan non traité se perdrait en 3 s alors que le billet reste à rescanner)
     const overlayDuration = !outcome ? 0
         : cashPending ? 0
-        : shown?.recoveredAt ? 0
+        : shown?.resumed ? 0
         : outcome.result === 'valid' && !isTechnicalOutcome(outcome) ? autoReturnMs
         : REFUSAL_RETURN_MS;
     const areaContent = (

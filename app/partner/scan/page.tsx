@@ -18,7 +18,8 @@
  *     l'événement, comme pour le scan ; le middleware ouvre cette lecture au partenaire, voie de contrôle
  *     partagée) et relus au montage, après chaque scan et à chaque retour (visibilitychange, pageshow). La
  *     liste « Scans de la session », tenue dans la page et perdue au retour, est supprimée ;
- *  3. scan sans verdict renvoyé au retour avec la même clé (2 minutes au plus), « Résultat retrouvé » ;
+ *  3. scan sans verdict renvoyé au retour avec la même clé (2 minutes au plus), « Résultat retrouvé » ; ce renvoi ne
+ *     demande que le verdict de la lecture d'origine (8.2 e, L45), sans ligne en base le billet reste à rescanner ;
  *  5. caméra coupée en arrière-plan, écran « Reprendre le contrôle » au retour (pas de caisse ici : point 4
  *     sans objet pour le partenaire).
  */
@@ -34,7 +35,7 @@ import { CameraQrScanner, type CameraReadVerdict } from '@/components/scan/Camer
 import { ManualEntryForm } from '@/components/scan/ManualEntryForm';
 import { ScanHistoryList, type ServedRefusal, type ServedScan } from '@/components/scan/ScanHistoryList';
 import { ScanResultPanel } from '@/components/scan/ScanResultPanel';
-import { newIdempotencyKey, postScan, type ScanOutcome, type ScanRequest } from '@/components/scan/scan-client';
+import { newIdempotencyKey, postScan, recoveredTimeOf, type ScanOutcome, type ScanRequest } from '@/components/scan/scan-client';
 import { formatInteger, formatShortDate, formatTime } from '@/lib/format';
 import {
     clearPendingScan, clearScanSession, isVerdictReceived, pendingPayload, readPendingScan, readScanSession,
@@ -53,12 +54,16 @@ interface ServedStats {
     recent: ServedScan[];
 }
 
-interface Shown { outcome: ScanOutcome; recoveredAt: number | null }
+/**
+ * `recoveredAt` : heure de la lecture quand le renvoi au retour a rendu un verdict, sinon null. `resumed` : scan renvoyé
+ * au retour, avec ou sans verdict.
+ */
+interface Shown { outcome: ScanOutcome; recoveredAt: number | null; resumed: boolean }
 
 const PAGE_PATH = '/partner/scan';
 const SURFACE = 'partenaire' as const;
 const FEEDBACK_DISPLAY_MS = 4000;
-/** Résultat retrouvé au retour dans l'application : affiché plus longtemps (le contrôleur revient). */
+/** Résultat d'un scan repris au retour dans l'application : affiché plus longtemps (le contrôleur revient). */
 const RECOVERED_DISPLAY_MS = 10_000;
 /** Même QR qu'une entrée validée : ignoré pendant 20 s (D41). */
 const DUPLICATE_VALID_MS = 20_000;
@@ -211,10 +216,10 @@ export default function PartnerScanPage() {
         if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
     }, []);
 
-    // Résultat affiché 4 s (incident technique compris ; 10 s pour un résultat retrouvé), puis la caméra reprend
+    // Résultat affiché 4 s (incident technique compris ; 10 s pour un scan repris au retour), puis la caméra reprend
     useEffect(() => {
         if (!shown) return;
-        const timer = setTimeout(() => setShown(null), shown.recoveredAt ? RECOVERED_DISPLAY_MS : FEEDBACK_DISPLAY_MS);
+        const timer = setTimeout(() => setShown(null), shown.resumed ? RECOVERED_DISPLAY_MS : FEEDBACK_DISPLAY_MS);
         return () => clearTimeout(timer);
     }, [shown]);
 
@@ -233,7 +238,7 @@ export default function PartnerScanPage() {
         setPendingNotice(null);
         let left = false;
         try {
-            const result = await postScan(request, { key: scanKey });
+            const result = await postScan(request, { key: scanKey, replayOnly: recoveredAt !== null });
             const verdict = isVerdictReceived(result);
             left = !verdict && awayRef.current;
             // Gardé pour un renvoi au retour seulement si l'application a été quittée pendant l'envoi
@@ -246,7 +251,7 @@ export default function PartnerScanPage() {
                 router.replace(`/login?redirect=${encodeURIComponent(PAGE_PATH)}`);
                 return;
             }
-            setShown({ outcome: result, recoveredAt });
+            setShown({ outcome: result, recoveredAt: recoveredTimeOf(result, recoveredAt), resumed: recoveredAt !== null });
             if (result.result === 'valid' && !result.failure && payload) lastValidRef.current = { payload, at: Date.now() };
             // Compteur et historique relus sur le serveur (un incident technique n'y figure pas)
             scheduleStats();

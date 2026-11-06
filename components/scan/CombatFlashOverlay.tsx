@@ -15,7 +15,8 @@
  *  | a_encaisser       | scan-cash         | cash_required (attend une action : enfants)             |
  *  | hors_fenetre      | scan-window       | event_not_open, event_ended                             |
  *  | evenement_annule  | scan-refuse       | event_cancelled, event_suspended (icône distincte)      |
- *  | technique         | scan-tech         | rate_limited, network_error, server_error, hors ligne   |
+ *  | technique         | scan-tech         | rate_limited, network_error, server_error, hors ligne,  |
+ *  |                   |                   | not_processed (icône distincte : le réseau répond)      |
  *
  * Un seul role="alert". Un toucher ferme tout de suite (sauf encaissement, qui attend une action) ;
  * sinon retour automatique après `durationMs`. Le conteneur porte data-scan-result (résultat) et
@@ -23,7 +24,7 @@
  *
  * Amendement A10 : un scan renvoyé au retour dans l'application (même clé d'idempotence, verdict d'origine rendu
  * par le serveur) porte `recoveredAt` : la ligne « Résultat retrouvé » dit l'heure de la lecture d'origine, et le
- * conteneur porte data-scan-recovered="true".
+ * conteneur porte data-scan-recovered="true". Lot 8 (8.2 e) : jamais pour `not_processed`, rien n'a été retrouvé.
  *
  * Ce n'est pas une modale : il ne piège pas le focus et ne bloque pas la caméra au-delà de son délai.
  * La position plein écran (fixed inset-0) est voulue : elle est imposée par tests/scanner-combat-ui.test.ts, et ce
@@ -31,7 +32,7 @@
  */
 import React, { useEffect } from 'react';
 import {
-    Ban, Banknote, CalendarX2, CheckCircle2, Clock, OctagonX, RotateCcw, WifiOff, type LucideIcon,
+    Ban, Banknote, CalendarX2, CheckCircle2, Clock, OctagonX, RotateCcw, ScanLine, WifiOff, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { formatFcfa, formatTime } from '@/lib/format';
@@ -135,7 +136,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     if (!status || !isScanResult(status)) return null;
     const cat = kind ?? scanCategoryOf(status);
     const look = LOOKS[cat];
-    const Icon = status === 'event_suspended' ? Ban : look.Icon;
+    const Icon = status === 'event_suspended' ? Ban : status === 'not_processed' ? ScanLine : look.Icon;
     const heading = title ?? titleOf(status, cat, amountDue);
     const ticketLine = [category, ticketNumber].filter(Boolean).join(' · ');
     // Message masqué s'il redit le titre, y compris quand le titre le complète (« Encaissement requis : 5 000 F CFA »
@@ -213,7 +214,8 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
                 // Retour automatique (consigne 7.2 : aucun clic nécessaire) : le toucher ne fait que l'avancer. « Touchez
                 // l'écran pour… » laissait croire qu'il fallait toucher ; gardé seulement sans retour automatique.
                 <p className="text-base font-semibold">
-                    {effectiveDuration > 0 ? 'Retour automatique au scan · touchez pour passer' : 'Touchez l’écran pour scanner le billet suivant'}
+                    {effectiveDuration > 0 ? 'Retour automatique au scan · touchez pour passer'
+                        : cat === 'technique' ? 'Touchez l’écran pour reprendre le scan' : 'Touchez l’écran pour scanner le billet suivant'}
                 </p>
             )}
         </div>

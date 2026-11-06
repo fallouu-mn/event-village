@@ -7,11 +7,12 @@
  * incident technique est signalé comme tel : le billet n'est pas en cause.
  * Lot 7 (D52) : aucun son, plus de bouton « Répéter en wolof ».
  * Amendement A10 : un scan renvoyé au retour dans l'application (même clé, verdict d'origine) porte `recoveredAt`
- * (ligne « Résultat retrouvé » avec l'heure de la lecture, attribut data-scan-recovered).
+ * (ligne « Résultat retrouvé » avec l'heure de la lecture, attribut data-scan-recovered). Lot 8 (8.2 e) : jamais pour
+ * `not_processed`, rien n'a été retrouvé.
  */
 import React from 'react';
 import {
-    AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ServerCrash, ShieldAlert, WifiOff, XCircle,
+    AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ScanLine, ServerCrash, ShieldAlert, WifiOff, XCircle,
     type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
@@ -30,6 +31,7 @@ const TONE_CLASSES: Record<ScanTone, { box: string; title: string; body: string;
 function iconFor(outcome: ScanOutcome): LucideIcon {
     if (outcome.failure === 'network' || outcome.failure === 'timeout' || outcome.failure === 'offline') return WifiOff;
     if (outcome.failure === 'auth' || outcome.failure === 'forbidden') return ShieldAlert;
+    if (outcome.result === 'not_processed') return ScanLine; // le serveur a répondu : rien de cassé, le billet est à rescanner
     if (isTechnicalOutcome(outcome)) return ServerCrash;
     switch (outcome.result) {
         case 'valid':

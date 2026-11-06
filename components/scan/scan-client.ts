@@ -14,6 +14,10 @@
  *  - relance automatique sur coupure réseau, délai dépassé et 5xx seulement, jamais sur une réponse 4xx ;
  *    l'en-tête Retry-After d'une réponse 5xx est respecté ;
  *  - appareil hors ligne (navigator.onLine faux) : aucun envoi, incident technique « hors ligne ».
+ * Lot 8 (8.2 e, contrat 3.5 et 7.1, L45) : un scan repris au retour dans l'application part avec `replayOnly`, sous la
+ * forme { eventId, replayOnly: true } à chaque essai, sans code ni numéro de billet. Le serveur rend le verdict de la
+ * ligne de cette clé, ou `not_processed` s'il n'y en a pas ; il ne composte jamais. Un scan repris ne fait donc jamais
+ * entrer un spectateur qui n'est plus devant le contrôleur.
  * Aucun son (D52).
  */
 import {
@@ -74,6 +78,8 @@ export interface SendOptions {
     key?: string;
     /** Appelé avant chaque essai (1, 2, 3) : l'écran affiche « nouvel essai automatique ». */
     onAttempt?: (attempt: number) => void;
+    /** Scan repris (L45) : demande seulement le verdict d'une ligne existante, avec la clé d'origine dans `key`. */
+    replayOnly?: boolean;
 }
 
 function text(v: unknown): string | undefined {
@@ -222,10 +228,12 @@ async function sendWithRetry(method: 'POST' | 'PUT', body: Record<string, unknow
 
 /**
  * Scan caméra ({ eventId, payload }) ou saisie manuelle ({ eventId, manualTicketNumber, identityVerified }).
- * Une clé neuve par appel, sauf `opts.key` (validation d'une saisie manuelle vérifiée).
+ * Une clé neuve par appel, sauf `opts.key` (validation d'une saisie manuelle vérifiée, scan repris).
+ * `opts.replayOnly` : le corps ne porte plus que l'événement et l'indicateur (L45), relances comprises.
  */
 export function postScan(request: ScanRequest, opts: SendOptions = {}): Promise<ScanOutcome> {
-    return sendWithRetry('POST', request, opts.key ?? newIdempotencyKey(), opts);
+    const body: Record<string, unknown> = opts.replayOnly === true ? { eventId: request.eventId, replayOnly: true } : request;
+    return sendWithRetry('POST', body, opts.key ?? newIdempotencyKey(), opts);
 }
 
 /**
@@ -305,6 +313,14 @@ export async function lookupManualTicket(eventId: string, manualTicketNumber: st
 /** Incident technique ou de droit : ni vibration, ni compteur de refus, jamais « billet invalide ». */
 export function isTechnicalOutcome(outcome: ScanOutcome): boolean {
     return outcome.failure !== undefined || isTechnicalScanResult(outcome.result);
+}
+
+/**
+ * Heure de la ligne « Résultat retrouvé » d'un scan repris : null quand le renvoi n'a rendu aucun verdict sur le billet
+ * (`not_processed`, contrat 7.1 ; panne, cadence ou droit refusé) : il n'y a alors rien de retrouvé à annoncer.
+ */
+export function recoveredTimeOf(outcome: ScanOutcome, recoveredAt: number | null): number | null {
+    return isTechnicalOutcome(outcome) ? null : recoveredAt;
 }
 
 /** Catégorie du résultat plein écran (contrat 6.2) ; tout incident est « technique ». */
