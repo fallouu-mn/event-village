@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
+import { rpcWithRetry } from '@/lib/payments/rpc';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PartnerActivityTypes, toSenegaleseE164 } from '@/lib/validations/auth';
 
@@ -14,10 +15,10 @@ export const dynamic = 'force-dynamic';
  *    `{ error, code: 'INVALID_FIELD', field }`, message en français, jamais le texte de la base. Numéro
  *    normalisé en E.164 sénégalais ; logo et couverture : adresse du stockage public du projet déposée pour ce
  *    partenaire (ImageUpload), ou valeur déjà enregistrée ; activités dans la liste fermée, au moins une.
- *    Activités : aucune suppression avant que les nouvelles soient écrites (ajout des manquantes, puis retrait
- *    des autres) ; une demande refusée ne touche rien. Aucune RPC ne couvre la fiche et les activités dans une
- *    même transaction (aucune migration n'est attribuée à cet écran au lot 7) : un échec entre les deux étapes
- *    est journalisé et rendu en 500 explicite, sans perte d'activité (point ouvert du rapport).
+ *    Lot 8 (8.2 l, contrat 8.4) : fiche et activités s'écrivent dans une seule transaction, par la RPC
+ *    partner_profile_update (20261106000006_lot8_profil.sql) : un échec n'écrit rien, 500 PROFILE_SAVE_FAILED.
+ *    La route garde toute la validation. Une clé absente de `fields` laisse la colonne inchangée, une clé à
+ *    null la vide ; `activities: null` laisse les activités inchangées. La lecture finale reste hors transaction.
  */
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
@@ -189,26 +190,24 @@ export async function PATCH(request: NextRequest) {
         update[key] = value;
     }
 
-    if (Object.keys(update).length > 0) {
-        update.updated_at = new Date().toISOString();
-        const { error: updateErr } = await supabase.from('partners').update(update).eq('id', existing.id);
-        if (updateErr) return serverError('mise à jour de la fiche', `${updateErr.code ?? ''} ${updateErr.message}`);
-    }
-
-    if (input.activities !== undefined) {
-        const wanted = Array.from(new Set(input.activities));
-        // 1. Ajout (ou réactivation) des activités demandées : rien n'est supprimé tant que cette étape n'a pas réussi.
-        const { error: upsertErr } = await supabase
-            .from('partner_activities')
-            .upsert(wanted.map((activity_type) => ({ partner_id: existing.id, activity_type, is_active: true })), { onConflict: 'partner_id,activity_type' });
-        if (upsertErr) return serverError('ajout des activités', `${upsertErr.code ?? ''} ${upsertErr.message}`);
-        // 2. Retrait des activités qui ne sont plus demandées.
-        const { error: deleteErr } = await supabase
-            .from('partner_activities')
-            .delete()
-            .eq('partner_id', existing.id)
-            .not('activity_type', 'in', `(${wanted.join(',')})`);
-        if (deleteErr) return serverError('retrait des activités non demandées', `${deleteErr.code ?? ''} ${deleteErr.message}`);
+    // Corps vide : rien à écrire, la fiche est relue telle quelle (aucune entrée vide n'atteint la RPC).
+    if (Object.keys(update).length > 0 || input.activities !== undefined) {
+        const { data: saved, error: saveErr } = await rpcWithRetry('partner_profile_update', {
+            p: {
+                partner_id: existing.id,
+                user_id: user.id,
+                fields: update,
+                activities: input.activities !== undefined ? Array.from(new Set(input.activities)) : null,
+            },
+        });
+        if (saveErr) return serverError('enregistrement du profil', `${saveErr.code ?? ''} ${saveErr.message}`);
+        const outcome = saved as { ok?: unknown; code?: unknown } | null;
+        if (outcome?.ok !== true) {
+            if (outcome?.code === 'PARTNER_NOT_FOUND') {
+                return NextResponse.json({ error: 'Profil partenaire introuvable.', code: 'PARTNER_NOT_FOUND' }, { status: 404, headers: NO_STORE });
+            }
+            return serverError('enregistrement du profil', `réponse inattendue : ${JSON.stringify(saved)}`);
+        }
     }
 
     const { data: partner, error: rereadErr } = await supabase.from('partners').select(PUBLIC_COLUMNS).eq('id', existing.id).single();
