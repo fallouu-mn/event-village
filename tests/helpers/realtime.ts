@@ -23,6 +23,7 @@
  */
 import './env';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
     createClient,
@@ -194,7 +195,7 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
         // Promesse créée à la lecture : un test qui ne lit que `outcome` ne laisse aucun rejet non traité.
         get ready(): Promise<void> {
             return outcome.then((o) => {
-                if (o.status !== 'SUBSCRIBED') throw new Error(`abonnement Realtime ${label} : ${o.status} ${o.error ?? ''}`.trim());
+                if (o.status !== 'SUBSCRIBED') throw new Error(`abonnement Realtime ${label} : ${o.status}${o.error ? ` ${o.error}` : ''} (${channelTrace({ states })})`);
             });
         },
         clear() {
@@ -218,9 +219,30 @@ function summarize(events: ReceivedChange[]): string {
     }).join('\n');
 }
 
-/** États successifs du canal et heure de l'échec, pour un message d'échec (rejointe ou erreur du canal). */
-function channelTrace(collector: Collector): string {
-    return `états du canal : ${collector.states.join(' → ') || 'aucun'} ; échec à ${new Date().toISOString()}`;
+/**
+ * Statut du conteneur realtime de l'instance locale, pour un message d'échec (lot 8, contrat 7.3, L48) :
+ * distinguer un conteneur tombé ou redémarré d'un message perdu. Appel bloquant de 3 s au plus, fait
+ * seulement à l'échec. Docker absent, en échec ou muet : la ligne le dit, jamais d'exception, pour ne pas
+ * remplacer l'échec d'origine.
+ */
+export function realtimeDiagnostics(): string {
+    try {
+        const status = execFileSync(
+            'docker',
+            ['inspect', '-f', '{{.State.Status}} démarré={{.State.StartedAt}} redémarrages={{.RestartCount}}', 'supabase_realtime_event-village'],
+            { timeout: 3000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+        ).trim();
+        return `conteneur realtime : ${status || 'indisponible (sortie vide)'}`;
+    } catch (err) {
+        const failure = err as Error & { stderr?: string };
+        const reason = failure.stderr?.trim() || failure.message || String(err);
+        return `conteneur realtime : indisponible (${reason.replace(/\s+/g, ' ')})`;
+    }
+}
+
+/** États successifs du canal, heure de l'échec et statut du conteneur, pour un message d'échec (rejointe ou erreur du canal). */
+function channelTrace(collector: Pick<Collector, 'states'>): string {
+    return `états du canal : ${collector.states.join(' → ') || 'aucun'} ; échec à ${new Date().toISOString()} ; ${realtimeDiagnostics()}`;
 }
 
 /** Attend un message qui satisfait le prédicat et le renvoie ; échoue après timeoutMs avec les messages reçus. */
