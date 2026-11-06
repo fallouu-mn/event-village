@@ -396,9 +396,13 @@ export class ShiftService {
         const pin = (input.regisseurPin ?? '').trim();
 
         let pinProof: { pin_salt: string; pin_hash: string } | null = null;
-        if (declared !== Number(shift.expected_cash_total)) {
-            if (justification.length < 10) throw new ShiftError(400, 'JUSTIFICATION_REQUIRED', SHIFT_CLOSE_REFUSALS.JUSTIFICATION_REQUIRED[1]);
-            if (!pin) throw new ShiftError(400, 'PIN_REQUIRED', SHIFT_CLOSE_REFUSALS.PIN_REQUIRED[1]);
+        const expected = Number(shift.expected_cash_total);
+        if (declared !== expected) {
+            // Lot 8 (8.2 f, contrat 3.6) : écart rendu à l'écran avec le refus. Chiffre lu sans verrou, pour
+            // l'affichage seulement : shift_close recontrôle sous verrou et rend le sien. Signe de la RPC.
+            const gap = { expected, declared, discrepancy: declared - expected };
+            if (justification.length < 10) throw new ShiftError(400, 'JUSTIFICATION_REQUIRED', SHIFT_CLOSE_REFUSALS.JUSTIFICATION_REQUIRED[1], gap);
+            if (!pin) throw new ShiftError(400, 'PIN_REQUIRED', SHIFT_CLOSE_REFUSALS.PIN_REQUIRED[1], gap);
             pinProof = await this.regisseurPinProof(shift.event_id, pin, `shift:${shift.id}`);
         }
 
