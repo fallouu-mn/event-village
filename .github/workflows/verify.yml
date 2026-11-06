@@ -26,6 +26,10 @@ jobs:
     # Lot 8 (AR11, L77) : 75 min pour le run « avant » (36 captures rouges de plus, parcours de recette, pire cas
     # projeté ≈ 68 min) ; retour à 60 si trois runs « après » restent sous 50 min, sinon 75 justifié au rapport.
     timeout-minutes: 75
+    # Lot 8, temporaire : un commit marqué [recette-seule] ne joue que le parcours de recette, pour mettre ses
+    # sélecteurs au point sans 40 min par essai. Un tel run se termine toujours en échec : il ne prouve jamais le lot.
+    env:
+      EV_CI_CIBLE: ${{ contains(github.event.head_commit.message, '[recette-seule]') && 'recette' || '' }}
 
     steps:
       # Lot 7 (contrat 11.7) : durée du job (délai de 60 min), écrite dans run.txt sur ci-results
@@ -117,7 +121,11 @@ jobs:
         run: |
           . /tmp/etape.sh verify
           set -o pipefail
-          npm run verify 2>&1 | tee /tmp/verify.log
+          if [ "$EV_CI_CIBLE" = "recette" ]; then
+            node scripts/e2e/build-mesure.mjs 2>&1 | tee /tmp/verify.log
+          else
+            npm run verify 2>&1 | tee /tmp/verify.log
+          fi
 
       # Lot 7 (contrat 9, 11.7, 14.1) : au run « avant », les tests rouges arrêtent verify à l'étape test ; sans ce
       # build, ni la mesure du poids JavaScript (js-budget) ni les phases e2e (terrain, pwa, perf) ne tourneraient.
@@ -266,6 +274,11 @@ jobs:
         run: |
           . /tmp/etape.sh e2e
           set -o pipefail
+          if [ "$EV_CI_CIBLE" = "recette" ]; then
+            npm run e2e -- --project=setup --project=recette --workers=1 2>&1 | tee /tmp/e2e.log
+            echo "::error title=run ciblé::parcours de recette seul : ce run ne prouve pas le lot"
+            exit 1
+          fi
           npm run e2e 2>&1 | tee /tmp/e2e.log
 
       # Lot 7 (7.5, contrat 11.1) : sharp absent en production = échec (start-app.mjs arrête aussi le serveur)
