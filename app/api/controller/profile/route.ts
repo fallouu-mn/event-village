@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { z } from 'zod';
 import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
@@ -8,6 +9,8 @@ import { AdminService } from '@/lib/admin/admin.service';
 export const dynamic = 'force-dynamic';
 
 const ALLOWED_ROLES = ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'] as const;
+
+const PROFILE_FALLBACK = { message: 'Votre profil est momentanément indisponible. Réessayez.', code: 'PROFILE_UNAVAILABLE' };
 
 // GET /api/controller/profile
 // Retourne le profil du contrôleur connecté avec ses assignations
@@ -27,11 +30,13 @@ export async function GET(req: NextRequest) {
             .eq('id', user.id)
             .maybeSingle();
 
-        if (profileErr || !profile) {
+        // Lot 8 (8.2 k, contrat 3.9) : une panne de lecture n'est ni un profil absent ni une liste vide.
+        if (profileErr) return apiFailure('GET /api/controller/profile, profil', profileErr, PROFILE_FALLBACK);
+        if (!profile) {
             return NextResponse.json({ error: 'Profil introuvable.' }, { status: 404 });
         }
 
-        const { data: assignments } = await supabase
+        const { data: assignments, error: assignmentsErr } = await supabase
             .from('event_controllers')
             .select(`
                 id,
@@ -41,6 +46,13 @@ export async function GET(req: NextRequest) {
             `)
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
+
+        if (assignmentsErr) {
+            return apiFailure('GET /api/controller/profile, affectations', assignmentsErr, {
+                message: 'Vos affectations sont momentanément indisponibles. Réessayez.',
+                code: 'ASSIGNMENTS_UNAVAILABLE',
+            });
+        }
 
         const formattedAssignments = (assignments ?? []).map((a: any) => ({
             ...a,
@@ -95,18 +107,26 @@ export async function PATCH(req: NextRequest) {
         const supabase = getServiceRoleClient();
 
         // 1. Récupérer le numéro de téléphone pour la vérification de l'ancien mot de passe
-        const { data: profile } = await supabase
+        const { data: profile, error: profileErr } = await supabase
             .from('users')
             .select('phone')
             .eq('id', user.id)
             .maybeSingle();
 
+        // Lot 8 (L56) : même règle que GET, une panne n'est pas un profil absent.
+        if (profileErr) return apiFailure('PATCH /api/controller/profile, profil', profileErr, PROFILE_FALLBACK);
         if (!profile?.phone) {
             return NextResponse.json({ error: 'Profil introuvable.' }, { status: 404 });
         }
 
         // 2. Résoudre l'email Supabase Auth depuis le numéro de téléphone
-        const { data: authUser } = await supabase.auth.admin.getUserById(user.id);
+        const { data: authUser, error: authUserErr } = await supabase.auth.admin.getUserById(user.id);
+        if (authUserErr) {
+            return apiFailure('PATCH /api/controller/profile, compte de connexion', authUserErr, {
+                message: 'Impossible de vérifier l\'identité.',
+                code: 'IDENTITY_UNAVAILABLE',
+            });
+        }
         const loginEmail = authUser?.user?.email;
 
         if (!loginEmail) {
