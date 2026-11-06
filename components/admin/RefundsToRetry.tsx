@@ -142,7 +142,9 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
           ? { tone: 'success', title: 'Relance envoyée', text: replyText(reply.message, 'Le remboursement est parti.') }
           : { tone: 'warning', title: 'Remboursement non relancé', text: replyText(reply.message, 'Le serveur n’a pas confirmé l’envoi. Relisez la liste avant de recommencer.') };
       } else {
-        result = { tone: 'danger', title: 'Relance refusée', text: (await apiErrorOf(res)).message };
+        // Le 403 de verifyAdminAuth nomme la permission technique : il ne s'affiche pas tel quel.
+        const text = res.status === 403 ? 'Votre compte n’a plus la permission de gérer les remboursements.' : (await apiErrorOf(res)).message;
+        result = { tone: 'danger', title: 'Relance refusée', text };
       }
     } catch (err) {
       console.error(`[remboursements à reprendre] relance ${refundId} sans réponse lisible :`, err);
