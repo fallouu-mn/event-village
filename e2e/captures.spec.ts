@@ -253,7 +253,7 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
                 const problem = await markAllOnOneLine(page);
                 if (problem) record.blocking.push(problem);
             }
-            const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true });
+            const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true, references: screen.references });
             record.blocking.push(...checks.blocking);
             record.warnings.push(...checks.warnings);
             record.axeDetails = checks.axeDetails;

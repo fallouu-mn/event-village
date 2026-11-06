@@ -32,6 +32,9 @@
  *    SMS_OPTIONAL_CAP, FREE_TICKETS_ONLY, MONTHLY, DRAFT ; REJETE y était déjà).
  * Lot 8 (contrat 15.7, T24 ; modification signalée, plus stricte) : RAW_ENUM_VALUES reçoit not_processed, sale_online,
  * sale_counter et on_site_only. Les codes en majuscules du lot sont déjà attrapés par codeRe.
+ * Vague F (signalé) : `references`, propre à un écran : un nœud de texte égal à une référence de ce format n'est pas lu comme
+ * une valeur technique. Seul usage : « CLOTURE-<8 hex>-<date> », numéro du rapport de clôture, que design-systeme et
+ * legacy-exports-partenaire imposent à l'écran et dans le PDF ; CLOTURE reste refusé partout ailleurs, sur cet écran aussi.
  * Les avertissements bruts (nombres, détail axe, textes hors exemption) restent écrits dans index.txt.
  */
 import AxeBuilder from '@axe-core/playwright';
@@ -120,8 +123,9 @@ interface DomReport {
 }
 
 /** Exécuté dans la page : aucune référence extérieure, tout passe par l'argument. */
-function inspectDom(arg: { enums: string[]; captionSelector: string }): DomReport {
+function inspectDom(arg: { enums: string[]; captionSelector: string; references: string[] }): DomReport {
     const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const references = arg.references.map((source) => new RegExp(source));
     const enumRe = new RegExp(`(?<![\\p{L}\\p{N}_])(${arg.enums.map(escape).join('|')})(?![\\p{L}\\p{N}_])`, 'gu');
     // Constructeur plutôt que littéral : le tsconfig du projet ne cible pas ES6 (drapeau « u »)
     const codeRe = new RegExp('(?<![\\p{L}\\p{N}_])[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+(?![\\p{L}\\p{N}_])', 'gu');
@@ -181,7 +185,7 @@ function inspectDom(arg: { enums: string[]; captionSelector: string }): DomRepor
         const parent = node.parentElement;
         const text = node.nodeValue ?? '';
         if (!parent || !text.trim() || skipTags.has(parent.tagName) || !isVisible(parent)) continue;
-        scan(text, 'texte');
+        if (!references.some((re) => re.test(text.trim()))) scan(text, 'texte');
         const size = parseFloat(getComputedStyle(parent).fontSize);
         if (size < 14) smallTexts.push({ size, sample: text.trim().slice(0, 50), admittedBy: admittedBy(parent), selector: shortSelector(parent) });
     }
@@ -292,11 +296,11 @@ function summarize<T>(items: T[], key: (t: T) => string, max = 6): string {
     return Array.from(counts.entries()).slice(0, max).map(([k, n]) => (n > 1 ? `${k} (×${n})` : k)).join(' ; ');
 }
 
-export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: boolean }): Promise<PageCheckResult> {
+export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: boolean; references?: readonly RegExp[] }): Promise<PageCheckResult> {
     // Les transpileurs qui conservent les noms de fonctions (esbuild/tsx) insèrent un appel à
     // __name dans le code sérialisé : l'aide est définie dans la page avant l'évaluation.
     await page.evaluate('window.__name = window.__name || function (f) { return f; };');
-    const dom = await page.evaluate(inspectDom, { enums: [...RAW_ENUM_VALUES], captionSelector: CAPTION_SELECTOR });
+    const dom = await page.evaluate(inspectDom, { enums: [...RAW_ENUM_VALUES], captionSelector: CAPTION_SELECTOR, references: (opts.references ?? []).map((re) => re.source) });
     const blocking: string[] = [];
     const warnings: string[] = [];
     if (opts.mobile && dom.scrollWidth > 391) {

@@ -37,6 +37,12 @@
  * admin-remboursements-a-reprendre impose ses réponses : le compte admin de démonstration n'a ni payments.read ni
  * refunds.manage (L76, aucun rôle de capture ajouté) et le seed n'a aucun remboursement bloqué. Elle prouve l'écran, la
  * route est prouvée par admin-remboursements et par l'acte 8 de la recette.
+ *
+ * Vague F, écrans livrés (modifications signalées, aucun seuil relâché) :
+ *  - partenaire-rapport-cloture : libellés de fix(8.2r) exigés (« Rapport de clôture », « Télécharger le PDF », « Entrées »,
+ *    « Généré le … ») ; `references` : le numéro CLOTURE-… n'est pas une valeur technique ; fond ramené en haut de page avant
+ *    les contrôles : à 390 px, la feuille coupait un bouton du tableau de bord, relevé par axe target-size (run 96) ;
+ *  - pilotage-rembourser-billet : libellés de fix(8.3-A4e) exigés, fiche d'un billet payant (seed), « Revenir à la fiche » joué.
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
@@ -99,6 +105,8 @@ export interface Screen {
     slowTimers?: { minDelayMs: number; factor: number };
     /** Lot 7 : statut HTTP attendu du document (sinon : réponse < 400 non vérifiée, comme avant). */
     expectStatus?: number;
+    /** Lot 8 : formats exacts, ancrés, de références affichées, qui ne sont pas des valeurs techniques (checks.ts). */
+    references?: readonly RegExp[];
 }
 
 const UUID = '[0-9a-f-]{36}';
@@ -513,7 +521,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'partenaire-rapport-cloture', titre: 'Rapport de clôture d’un événement terminé (modale du tableau de bord)', role: 'organisateur', needsIds: true,
-        path: () => '/partner/dashboard',
+        path: () => '/partner/dashboard', references: [/^CLOTURE-[0-9A-F]{8}-\d{8}$/],
         actions: async (c) => {
             const { title } = ids(c.ids).events.termine;
             const button = c.page.locator('tr, li, article')
@@ -525,9 +533,13 @@ export const SCREENS: readonly Screen[] = [
             await button.click();
             const report = await loaded;
             expect(report.status(), `rapport de clôture de « ${title} »`).toBe(200);
-            const dialog = c.page.getByRole('dialog');
+            const dialog = c.page.getByRole('dialog', { name: /^rapport de clôture$/i });
             await expect(dialog).toBeVisible();
             await expect(dialog.getByText(title).first()).toBeVisible();
+            await expect(dialog.getByText(/^généré le/i)).toBeVisible();
+            await expect(dialog.getByText('Entrées', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+            await expect(dialog.getByRole('button', { name: /^télécharger le pdf$/i })).toBeVisible();
+            await c.page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
         },
     },
     tabScreen('pilotage-apercu', 'Pilotage — Aperçu', /^aperçu/i),
@@ -539,10 +551,16 @@ export const SCREENS: readonly Screen[] = [
             await openTab(c.page, /^ventes/i);
             await c.page.getByLabel(/^numéro du billet/i).fill(number);
             const found = c.page.waitForResponse((r) => new URL(r.url()).pathname.endsWith('/tickets/lookup'));
-            await c.page.getByRole('button', { name: /^rechercher/i }).click();
+            await c.page.getByRole('button', { name: /^rechercher le billet$/i }).click();
             expect((await found).status(), `recherche du billet ${number}`).toBe(200);
-            const refund = c.page.getByRole('button', { name: /^rembourser/i }).filter({ visible: true }).first();
+            const refund = c.page.getByRole('button', { name: /^rembourser ce billet$/i });
             await expect(refund).toBeVisible();
+            await expect(c.page.getByRole('button', { name: /^annuler ce billet gratuit$/i }), 'billet payant : jamais l’action du billet gratuit').toHaveCount(0);
+            // Le motif se quitte sans rien envoyer : capture de la fiche, pas d'un remboursement
+            await refund.click();
+            const reason = c.page.getByRole('dialog', { name: /^motif du remboursement$/i });
+            await reason.getByRole('button', { name: /^revenir à la fiche$/i }).click();
+            await expect(reason).toBeHidden();
             await revealCenter(refund);
         },
     },
