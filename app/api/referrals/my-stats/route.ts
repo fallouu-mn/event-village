@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
 import { accountBalance } from '@/lib/finance/ledger';
+import { getServerEnv } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +24,12 @@ export async function GET(req: NextRequest) {
         // 2. Profil utilisateur réel
         const { data: profile, error: uErr } = await supabase
             .from('users')
-            .select('id, first_name, last_name, phone, role, referral_status')
+            .select('id, first_name, last_name, phone, role, referral_status, referral_code')
             .eq('id', userId)
             .maybeSingle();
 
-        if (uErr || !profile) {
+        if (uErr) throw new Error(`Lecture du profil impossible : ${uErr.message}`);
+        if (!profile) {
             return NextResponse.json({
                 success: false,
                 error: 'Profil utilisateur introuvable.',
@@ -43,35 +45,36 @@ export async function GET(req: NextRequest) {
 
         const isAmbassador = profile.referral_status === 'AMBASSADEUR';
 
-        // Code de parrainage dynamique
-        const cleanPhone = (profile.phone || '').replace(/\D/g, '');
-        const referralCode: string =
-            `EV-${cleanPhone.slice(-6) || profile.id.slice(0, 6).toUpperCase()}`;
+        // Lot 8 (A2, AM6) : le code est celui que l'inscription reconnaît, users.referral_code. Il n'est plus
+        // recalculé depuis le téléphone : deux comptes aux six mêmes derniers chiffres ont des codes différents
+        // en base, et le lien du second parrainait pour le premier.
+        const referralCode: string = profile.referral_code ?? '';
+        if (!referralCode) console.error('[API /api/referrals/my-stats] compte sans code de parrainage :', userId);
 
         // 3. Taux dynamiques depuis referral_config
         let rateN1 = isAmbassador ? 7.0 : 5.0;
         let rateN2 = isAmbassador ? 2.0 : 2.0;
 
-        try {
-            const { data: rateConfig } = await supabase
-                .from('referral_config')
-                .select('rate_n1, rate_n2')
-                .eq('sponsor_status', profile.referral_status || 'STANDARD')
-                .eq('referral_type', 'CLIENT_TO_CLIENT')
-                .eq('is_active', true)
-                .maybeSingle();
+        const { data: rateConfig, error: rateErr } = await supabase
+            .from('referral_config')
+            .select('rate_n1, rate_n2')
+            .eq('sponsor_status', profile.referral_status || 'STANDARD')
+            .eq('referral_type', 'CLIENT_TO_CLIENT')
+            .eq('is_active', true)
+            .maybeSingle();
+        if (rateErr) throw new Error(`Lecture des taux impossible : ${rateErr.message}`);
 
-            if (rateConfig) {
-                rateN1 = Number(rateConfig.rate_n1) || rateN1;
-                rateN2 = Number(rateConfig.rate_n2) || rateN2;
-            }
-        } catch {}
+        if (rateConfig) {
+            rateN1 = Number(rateConfig.rate_n1) || rateN1;
+            rateN2 = Number(rateConfig.rate_n2) || rateN2;
+        }
 
         // 4. Filleuls N1 directs (sponsor_id = userId dans referral_relationships)
-        const { data: n1Relationships } = await supabase
+        const { data: n1Relationships, error: n1Err } = await supabase
             .from('referral_relationships')
             .select('id, referred_id, created_at')
             .eq('sponsor_id', userId);
+        if (n1Err) throw new Error(`Lecture des filleuls impossible : ${n1Err.message}`);
 
         const n1Count = n1Relationships?.length || 0;
         const n1FilleulIds = n1Relationships?.map((r: { referred_id: string }) => r.referred_id) || [];
@@ -79,10 +82,11 @@ export async function GET(req: NextRequest) {
         // 5. Filleuls N2 (sous-filleuls : filleuls des filleuls N1)
         let n2Count = 0;
         if (n1FilleulIds.length > 0) {
-            const { data: n2Relationships } = await supabase
+            const { data: n2Relationships, error: n2Err } = await supabase
                 .from('referral_relationships')
                 .select('id, referred_id, created_at')
                 .in('sponsor_id', n1FilleulIds);
+            if (n2Err) throw new Error(`Lecture des sous-filleuls impossible : ${n2Err.message}`);
             n2Count = n2Relationships?.length || 0;
         }
 
@@ -112,10 +116,13 @@ export async function GET(req: NextRequest) {
         const balance = await accountBalance(userId, 'PARRAINAGE');
         const availableBalance = balance.available;
 
+        // Contrat 3.12 : lien d'inscription sur l'adresse de l'application, tunnel d'essai compris.
+        const appUrl = getServerEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, '');
+
         return NextResponse.json({
             success: true,
             referralCode,
-            referralLink: `https://eventvillage.sn/r/${referralCode}`,
+            referralLink: referralCode ? `${appUrl}/register?ref=${encodeURIComponent(referralCode)}` : '',
             isAmbassador,
             rates: {
                 level1: rateN1,
