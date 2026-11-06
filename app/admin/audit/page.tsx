@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   ChevronLeft,
@@ -14,6 +14,7 @@ import {
   FileCode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ErrorState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 
 interface AuditItem {
@@ -35,23 +36,29 @@ export default function AdminAuditLogPage() {
   const [objectFilter, setObjectFilter] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState<AuditItem | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  // Deux filtres changés de suite : seule la dernière lecture décide de ce qui est affiché.
+  const lastRequest = useRef(0);
 
   const fetchLogs = useCallback(async () => {
+    const request = ++lastRequest.current;
     setIsLoading(true);
+    setLoadError(false);
     try {
       let url = `/api/admin/audit?limit=100`;
       if (actionFilter !== 'ALL') url += `&action=${actionFilter}`;
       if (objectFilter !== 'ALL') url += `&objectType=${objectFilter}`;
 
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`lecture refusée, HTTP ${res.status}`);
       const data = await res.json();
-      if (res.ok && data.logs) {
-        setLogs(data.logs);
-      }
+      if (!Array.isArray(data.logs)) throw new Error('réponse sans journal');
+      if (request === lastRequest.current) setLogs(data.logs);
     } catch (err) {
       console.error('[AdminAudit] Erreur chargement:', err);
+      if (request === lastRequest.current) setLoadError(true);
     } finally {
-      setIsLoading(false);
+      if (request === lastRequest.current) setIsLoading(false);
     }
   }, [actionFilter, objectFilter]);
 
@@ -91,7 +98,7 @@ export default function AdminAuditLogPage() {
               Console Superadmin HQ
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Journal d&apos;Audit Inaltérable & Traçabilité (§134, §156)
+              Journal d&apos;Audit Inaltérable & Traçabilité
             </h1>
           </div>
         </div>
@@ -147,9 +154,11 @@ export default function AdminAuditLogPage() {
             </div>
           </div>
 
-          <span className="text-xs font-bold tabular-nums text-[#FF5722]">
-            {logs.length} entrée(s) trouvée(s)
-          </span>
+          {!loadError && (
+            <span className="text-xs font-bold tabular-nums text-[#FF5722]">
+              {logs.length} entrée(s) trouvée(s)
+            </span>
+          )}
         </div>
 
         {/* Tableau des Logs */}
@@ -158,6 +167,12 @@ export default function AdminAuditLogPage() {
             <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement du journal d&apos;audit...</p>
           </div>
+        ) : loadError ? (
+          <ErrorState
+            title="Journal d’audit indisponible"
+            description="La lecture du journal a échoué. Rien ne permet de dire qu’il est vide : réessayez."
+            onRetry={() => void fetchLogs()}
+          />
         ) : logs.length === 0 ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
             <Activity size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" />
@@ -169,6 +184,7 @@ export default function AdminAuditLogPage() {
               <thead>
                 <tr className="border-b border-slate-200 dark:border-zinc-800 text-slate-400 font-bold uppercase text-[10px]">
                   <th className="pb-3">Horodatage</th>
+                  <th className="pb-3">Utilisateur</th>
                   <th className="pb-3">Rôle</th>
                   <th className="pb-3">Action</th>
                   <th className="pb-3">Objet</th>
@@ -180,6 +196,7 @@ export default function AdminAuditLogPage() {
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/60 dark:hover:bg-zinc-900/40 text-[11px]">
                     <td className="py-3 tabular-nums text-slate-500">{formatDate(log.created_at)}</td>
+                    <td className="py-3 text-slate-600 dark:text-zinc-300 truncate max-w-[120px]" title={log.user_id ?? undefined}>{log.user_id || 'Système'}</td>
                     <td className="py-3 font-bold text-purple-600 dark:text-purple-400">{log.user_role || 'SYSTEM'}</td>
                     <td className="py-3 font-black text-slate-900 dark:text-white">
                       <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">
@@ -217,6 +234,7 @@ export default function AdminAuditLogPage() {
           <div className="space-y-4 text-xs">
             <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-zinc-400">
               <div><strong className="text-slate-900 dark:text-white">Date:</strong> {formatDate(selectedLog.created_at)}</div>
+              <div className="break-all"><strong className="text-slate-900 dark:text-white">Utilisateur:</strong> {selectedLog.user_id || 'Système'}</div>
               <div><strong className="text-slate-900 dark:text-white">Rôle:</strong> {selectedLog.user_role}</div>
               <div><strong className="text-slate-900 dark:text-white">Objet:</strong> {selectedLog.object_type}</div>
               <div><strong className="text-slate-900 dark:text-white">ID Objet:</strong> {selectedLog.object_id}</div>
