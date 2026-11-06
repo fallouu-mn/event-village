@@ -25,6 +25,7 @@ import { GET as ticketPdfRoute } from '../../app/api/tickets/[id]/pdf/route';
 import { buyConfirmed, createPartnerEvent, jsonRequest, newPartner, paymentRow, type TestPartner } from './finance-helpers';
 import { cart, checkout, importModule, initCalls, newBuyer, pollStatus, type SaleEvent } from './paiement-helpers';
 import { flushNotifications, outboxRows } from './notif-helpers';
+import { callMiddleware } from '../helpers/middleware';
 
 type Handler = (req: NextRequest) => Promise<Response>;
 
@@ -76,6 +77,13 @@ function pdfTexts(pdf: string): string {
 }
 
 describe('Devis serveur : POST /api/checkout/quote', () => {
+    test('A41 : le middleware laisse passer le devis d’un visiteur sans session ; le paiement reste protégé', async () => {
+        const quoteCall = await callMiddleware('/api/checkout/quote', []);
+        assert.equal(quoteCall.passedThrough, true, `devis refusé à un visiteur : HTTP ${quoteCall.status}, la fiche affiche « Total indisponible »`);
+        const checkoutCall = await callMiddleware('/api/checkout', []);
+        assert.equal(checkoutCall.passedThrough, false, 'POST /api/checkout reste protégé');
+    });
+
     test('route publique : sous-total, frais de service (FCFA supérieur par billet), total, détail par ligne', async () => {
         const std = ev.categories.Standard.id;
         const vip = ev.categories.VIP.id;
