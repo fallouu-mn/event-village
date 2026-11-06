@@ -11,6 +11,9 @@
  * Champs de réponse fixés par cette suite (contrat G) :
  *  - GET /api/partner/reports/closing → report.financialSummary.{totalNet, buyerServiceFees, cashSales} ;
  *  - GET /api/partner/finance → finance.netRevenue et finance.breakdown.tickets.{netRevenue, buyerServiceFees, cashSales}.
+ *
+ * Lot 8 (8.2 v) : cas T12 de tests/legacy/controller-14-points.test.ts porté, contrôleur refusé sur la finance,
+ * vert dès l'écriture.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -23,6 +26,7 @@ import {
     buyConfirmed, createPartnerEvent, getSetting, jsonRequest, newPartner, withSettings, type TestPartner,
 } from './finance-helpers';
 import { categoryState, importModule, newBuyer, service, type SaleEvent } from './paiement-helpers';
+import { newController } from './acces-helpers';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
@@ -118,5 +122,14 @@ describe('Rapports partenaire lus depuis le grand livre', () => {
         assert.equal(Number(tickets.buyerServiceFees), expectedServiceFees, 'frais de service payés par l’acheteur (informatif)');
         assert.equal(Number(tickets.cashSales), expectedCash, 'ventes espèces séparées');
         assert.equal(Number(body.finance?.netRevenue), expectedNet, 'partenaire sans autre activité : net total = net billetterie');
+    });
+
+    test('contrôleur affecté à l’événement du partenaire : GET /api/partner/finance → 403, aucune donnée financière (cas T12 porté)', async () => {
+        const controller = await newController(partner, ev.eventId, { label: 'rapports' });
+        const res = await financeRoute(jsonRequest('/api/partner/finance', 'GET', controller.accessToken));
+        const body = (await res.json()) as { error?: unknown; finance?: unknown };
+        assert.equal(res.status, 403, `finance vue par un contrôleur : HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
+        assert.equal(body.finance, undefined, 'aucune donnée financière dans le refus');
+        assert.equal(typeof body.error, 'string', 'message d’erreur attendu');
     });
 });

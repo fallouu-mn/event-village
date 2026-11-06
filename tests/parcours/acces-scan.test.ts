@@ -17,6 +17,10 @@
  * contrôle de paiement ni RPC, L241-280 contrôle de paiement sur orders seulement ; middleware.ts:190-204
  * refuse /api/controller/* au PARTENAIRE ; app/api/tickets/verify/route.ts existe et
  * app/partner/scan/page.tsx:53 l'appelle.
+ *
+ * Lot 8 (8.2 v) : cas T3.2 de tests/legacy/security-fixes.test.ts porté, vert dès l'écriture : un contrôleur SUSPENDU
+ * est refusé au scan. Écart au legacy : code ACCOUNT_NOT_ACTIVE, plus strict que le texte (le legacy cherchait
+ * « inactif » ou « suspendu », absents du message actuel).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -108,6 +112,21 @@ describe('4.3 Périmètre du scanneur', () => {
         assert.equal(r.body.result, 'wrong_event', show(r));
         assertNoTicketData(r, t, 'billet d’un autre événement');
         await assertNotConsumed(String(t.id), 'billet d’un autre événement');
+    });
+
+    test('contrôleur affecté dont le compte est SUSPENDU → 403 ACCOUNT_NOT_ACTIVE, sans donnée du billet, aucune ligne de scan (cas T3.2 porté)', async () => {
+        const t = tickets[0];
+        const suspended = await newController(partnerA, evA.eventId, { label: 'porte-suspendue' });
+        const payload = await ticketPayload(String(t.id));
+        const scansBefore = (await scansOf(String(t.id))).length;
+        const { error } = await service.from('users').update({ status: 'SUSPENDU' }).eq('id', suspended.userId);
+        assert.equal(error, null, `suspension : ${error?.message}`);
+        const r = await scan(suspended, { eventId: evA.eventId, payload });
+        assert.equal(r.status, 403, `contrôleur SUSPENDU : ${show(r)}`);
+        assert.equal(r.body.code, 'ACCOUNT_NOT_ACTIVE', show(r));
+        assertNoTicketData(r, t, 'contrôleur SUSPENDU');
+        await assertNotConsumed(String(t.id), 'contrôleur SUSPENDU');
+        assert.equal((await scansOf(String(t.id))).length, scansBefore, 'aucune ligne ticket_scans pour un compte suspendu');
     });
 });
 

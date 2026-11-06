@@ -21,6 +21,10 @@
  *    simultanées réussissent toutes les deux (la dernière impose son mot de passe) ;
  *  - 6 : une invitation d'un compte existant n'émet aucun code (route :356-371, `isNewUser` seulement).
  * Comptage des SMS par numéro neuf (faux MTarget) ; IP de test distinctes ; aucune horloge simulée.
+ *
+ * Lot 8 (8.2 v) : cas T1.2 de tests/legacy/security-fixes.test.ts porté, vert dès l'écriture : un compte établi garde
+ * son mot de passe (ACCOUNT_ALREADY_CONFIGURED). Écart au legacy : code d'activation posé par storeOtp, le legacy
+ * écrivait la colonne `code`, supprimée au lot 1C.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -28,12 +32,12 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomInt } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
-import { hashOtpCode } from '../../lib/auth/otp-store';
+import { hashOtpCode, storeOtp } from '../../lib/auth/otp-store';
 import { getFakes } from '../fakes';
-import { BASE_URL, randomSenegalPhone } from './helpers';
-import { importModule, service } from './paiement-helpers';
+import { BASE_URL, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { importModule, newBuyer, service } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { authed, type RouteResult } from './acces-helpers';
+import { assignController, authed, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, type DraftEvent } from './cycle-helpers';
 import { assertTerrainInvariants } from './terrain-helpers';
 
@@ -261,5 +265,27 @@ describe('7.0 d Code d’activation : usage unique et renvoi (D22)', () => {
         const ok = await setup(c.phone, fresh);
         assert.equal(ok.status, 200, `nouveau code : ${show(ok)}`);
         assert.equal(await isTemporary(c.phone), false, 'compte activé par le nouveau code');
+    });
+});
+
+describe('8.2 v — /api/controller/setup ne réécrit pas le mot de passe d’un compte établi (cas T1.2 porté)', () => {
+    async function opensSession(email: string, password: string): Promise<boolean> {
+        const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+        const { data, error } = await anon.auth.signInWithPassword({ email, password });
+        return !error && Boolean(data.session);
+    }
+
+    test('compte établi affecté, code valide : 400 ACCOUNT_ALREADY_CONFIGURED, le mot de passe d’origine ouvre la session, le mot de passe présenté est refusé', async () => {
+        const victim = await newBuyer('setup-etabli');
+        await assignController(partner, victim.userId, ev1.eventId, false);
+        const code = String(randomInt(100000, 1000000));
+        await storeOtp(victim.phoneE164, code, new Date(Date.now() + 3600_000), 'CONTROLLER_SETUP');
+        const stolen = newPassword();
+        const res = await setup(victim.phoneE164, code, stolen);
+        assert.equal(res.status, 400, `activation d’un compte établi : ${show(res)}`);
+        assert.equal(res.body.code, 'ACCOUNT_ALREADY_CONFIGURED', show(res));
+        assert.equal(res.body.redirect, '/login', `renvoi vers la connexion : ${show(res)}`);
+        assert.equal(await opensSession(victim.email, STRONG_PASSWORD), true, 'le mot de passe d’origine ouvre toujours la session');
+        assert.equal(await opensSession(victim.email, stolen), false, 'le mot de passe présenté est refusé');
     });
 });

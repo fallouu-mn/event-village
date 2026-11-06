@@ -45,6 +45,9 @@
  * lus par les classes du contrat 19.5 (ev-bg, ev-card, ev-text, ev-muted, ev-link, ev-notice) : couleurs en
  * ligne pour le clair, bloc sombre pour le sombre ; ev-text, ev-muted et ev-link sont du texte posé sur la
  * carte, le texte de l'encadré prend la couleur de ev-notice ou, à défaut, celle de ev-text.
+ *
+ * Lot 8 (8.2 v) : cas T13 de tests/legacy/client-ticket-lifecycle.test.ts porté, vert dès l'écriture : isUpcoming et
+ * usedAt de GET /api/tickets après un vrai compostage.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -56,7 +59,7 @@ import { inspect } from '../helpers/db';
 import { routeContext } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
-import { authed, ticketRow, type RouteResult } from './acces-helpers';
+import { authed, createTimedEvent, scan, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, type DraftEvent } from './cycle-helpers';
 import { dispatchAt, emailsTo, loadLotModule, markPhoneVerified, outboxRows, smsMark, smsTo, type OutboxRow } from './notif-helpers';
 import { assertTerrainInvariants } from './terrain-helpers';
@@ -966,6 +969,35 @@ describe('7.9 — migration 20261105000007 : notif_ticket_lines et fonctions ém
         assert.match(accept, /FOR\s+SHARE/i, 'ticket_transfer_accept : verrou FOR SHARE de M3 conservé (D97)');
         assert.equal(channels.length, 1, 'type TRANSFER_RECEIVED au registre');
         assert.deepEqual([...channels[0].channels].sort(), ['EMAIL', 'IN_APP', 'PUSH'], 'registre : TRANSFER_RECEIVED avec EMAIL (19.3.5)');
+    });
+});
+
+// ── 8.2 v : GET /api/tickets après compostage (cas T13 porté) ──────────────
+
+describe('8.2 v — GET /api/tickets : billet composté (cas T13 porté)', () => {
+    test('billet scanné : UTILISE, isUpcoming = false, usedAt = date du compostage ; billet voisin : VALIDE, isUpcoming = true, usedAt null', async () => {
+        const organizer = await newPartner('conf-compostage');
+        const ev = await createTimedEvent(organizer.partnerId, 'conf-compostage', [{ name: 'Standard', price: 3000, total: 10 }]);
+        const buyer = await newBuyer('conf-compostage');
+        const { tickets } = await buyConfirmed(buyer, ev, [['Standard', 2]]);
+        assert.equal(tickets.length, 2, 'deux billets émis');
+        const [usedId, freshId] = tickets.map((t) => String(t.id));
+        const entry = await scan(organizer, { eventId: ev.eventId, payload: await ticketPayload(usedId) });
+        assert.equal(entry.body.result, 'valid', `compostage : ${show(entry)}`);
+        const checkedIn = (await ticketRow(usedId)).checked_in_at;
+        assert.ok(checkedIn, 'précondition : checked_in_at renseigné');
+
+        const { GET } = await importModule('../../app/api/tickets/route') as { GET: Handler };
+        const res = await invoke(GET, authed('/api/tickets', 'GET', buyer));
+        assert.equal(res.status, 200, `GET /api/tickets : ${show(res)}`);
+        const listed = (res.body.tickets ?? []) as Row[];
+        const used = listed.find((t) => t.id === usedId);
+        assert.ok(used, 'billet composté présent dans la liste');
+        assert.deepEqual({ status: used.status, isUpcoming: used.isUpcoming }, { status: 'UTILISE', isUpcoming: false }, `billet composté : ${JSON.stringify(used).slice(0, 300)}`);
+        assert.equal(Date.parse(String(used.usedAt)), Date.parse(String(checkedIn)), 'usedAt = date du compostage');
+        const fresh = listed.find((t) => t.id === freshId);
+        assert.ok(fresh, 'billet voisin présent dans la liste');
+        assert.deepEqual({ status: fresh.status, isUpcoming: fresh.isUpcoming, usedAt: fresh.usedAt }, { status: 'VALIDE', isUpcoming: true, usedAt: null }, `billet voisin : ${JSON.stringify(fresh).slice(0, 300)}`);
     });
 });
 

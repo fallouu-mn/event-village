@@ -7,6 +7,9 @@
  *  3. rôle retiré → la même session est de nouveau redirigée ;
  *  4. compte promu PARTENAIRE → /partner/dashboard s'ouvre, puis se ferme au retrait.
  * Attribution et retrait par le service_role, comme les routes serveur.
+ *
+ * Lot 8 (8.2 v) : cas T1 de tests/legacy/controller-complete-workflow.test.ts porté, resolvePostLoginRoute réel (pur,
+ * aucune base), vert dès l'écriture.
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -14,6 +17,7 @@ import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { grantUserRoles } from '../../lib/auth/roles';
+import { resolvePostLoginRoute } from '../../lib/auth/resolve-post-login-route';
 import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { randomEmail, STRONG_PASSWORD } from './helpers';
 
@@ -34,6 +38,23 @@ async function removeRole(userId: string, role: string): Promise<void> {
     const { error } = await getServiceRoleClient().from('user_roles').delete().eq('user_id', userId).eq('role', role);
     assert.equal(error, null, `retrait du rôle ${role} : ${error?.message}`);
 }
+
+describe('8.2 v — redirection après connexion (cas T1 porté, controller-complete-workflow)', () => {
+    test('resolvePostLoginRoute : destination par rôle, anciennes routes de scan ramenées au scanner du contrôleur', () => {
+        assert.equal(resolvePostLoginRoute('CONTROLEUR'), '/controller/scanner');
+        assert.equal(resolvePostLoginRoute('CONTROLEUR', '/'), '/controller/scanner');
+        assert.equal(resolvePostLoginRoute('CONTROLEUR', '/scan'), '/controller/scanner');
+        assert.equal(resolvePostLoginRoute('CONTROLEUR', '/partner/scan'), '/controller/scanner');
+        assert.equal(resolvePostLoginRoute('CLIENT'), '/');
+        assert.equal(resolvePostLoginRoute('PARTENAIRE'), '/partner');
+        assert.equal(resolvePostLoginRoute('ADMIN'), '/admin');
+        assert.equal(resolvePostLoginRoute('SUPERADMIN'), '/admin');
+        assert.equal(resolvePostLoginRoute(null), '/', 'aucun rôle : accueil');
+        assert.equal(resolvePostLoginRoute(['CLIENT', 'CONTROLEUR']), '/controller/scanner', 'multi-rôle : le contrôleur va au scanner');
+        assert.equal(resolvePostLoginRoute(['CLIENT', 'CONTROLEUR', 'PARTENAIRE']), '/partner', 'multi-rôle : le partenaire prime sur le contrôleur');
+        assert.equal(resolvePostLoginRoute('CONTROLEUR', '/tickets'), '/tickets', 'une autre destination demandée est conservée');
+    });
+});
 
 describe('Fraîcheur des rôles dans le middleware (même session)', () => {
     test('contrôleur promu puis retiré : /controller/scanner suit sans reconnexion', async () => {

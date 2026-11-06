@@ -26,6 +26,10 @@
  * par une réponse { ok: false } ; dans les deux cas, rien n'est retiré.
  * La suite crée ses partenaires A et B, leurs événements, ses contrôleurs et son admin (sans profil
  * partenaire).
+ *
+ * Lot 8 (8.2 v) : cas T3 et T5 de tests/legacy/controller-multi-role.test.ts portés, verts dès l'écriture : retour au
+ * rôle CLIENT d'un compte ACTIF, puis ré-invitation avec nouvelle confirmation. Écart au legacy : aucune remise à
+ * zéro des quotas, un numéro neuf n'est invité qu'une fois par cas.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -37,11 +41,12 @@ import { getFakes } from '../fakes';
 import { routeContext } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { assignController, authed, createTimedEvent, newController, type RouteResult } from './acces-helpers';
+import { assignController, authed, createCashOrderTickets, createTimedEvent, newController, type RouteResult } from './acces-helpers';
 import { flushNotifications, outboxRows } from './notif-helpers';
 
 const CONTROLLER_ROUTE = '../../app/api/partner/team/controller/[controllerId]/route';
 const ASSIGNMENT_ROUTE = '../../app/api/partner/team/[eventId]/route';
+const INVITE_ROUTE = '../../app/api/partner/team/invite/route';
 
 let partnerA: TestPartner;
 let partnerB: TestPartner;
@@ -242,5 +247,56 @@ describe('C5 — DELETE /api/partner/team/[eventId] : l’affectation doit appar
         const res = await removeAssignment(partnerA, evA2.eventId, onA2);
         assert.equal(res.status, 200, `retrait de l’affectation : ${show(res)}`);
         assert.deepEqual((await assignmentsOf(ctrl.userId)).map((a) => a.event_id), [evA1.eventId], 'seule l’affectation à A1 reste');
+    });
+});
+
+// ── Cas portés du legacy (8.2 v) ───────────────────────────────────────────
+
+describe('8.2 v — retour au rôle CLIENT et ré-invitation (cas T3 et T5 portés, controller-multi-role)', () => {
+    async function accountOf(userId: string): Promise<{ role: unknown; status: unknown }> {
+        const { data, error } = await service.from('users').select('role, status').eq('id', userId).single();
+        assert.equal(error, null, `compte ${userId} : ${error?.message}`);
+        return { role: data.role, status: data.status };
+    }
+
+    async function invite(phone: string, extra: Row = {}): Promise<RouteResult> {
+        const { POST } = await importModule(INVITE_ROUTE);
+        return invoke(POST as Handler, authed('/api/partner/team/invite', 'POST', partnerA, { phone, event_ids: [evA1.eventId], ...extra }));
+    }
+
+    test('T3 : retrait de la dernière affectation → rôle CLIENT, statut ACTIF (jamais SUSPENDU), commande intacte', async () => {
+        const ctrl = await newController(partnerA, evA1.eventId, { label: 'ret-client' });
+        const order = await createCashOrderTickets(ctrl, partnerA, evA1, 'Standard', 1);
+        assert.deepEqual(await accountOf(ctrl.userId), { role: 'CONTROLEUR', status: 'ACTIF' }, 'précondition : compte contrôleur ACTIF');
+        const res = await removeController(partnerA, ctrl.userId);
+        assert.equal(res.status, 200, `retrait : ${show(res)}`);
+        assert.equal(res.body.success, true, show(res));
+        assert.equal(res.body.deactivated, true, `rôle contrôleur révoqué : ${show(res)}`);
+        assert.deepEqual(await accountOf(ctrl.userId), { role: 'CLIENT', status: 'ACTIF' }, 'retour au rôle CLIENT, compte ACTIF');
+        assert.ok(!(await rolesOf(ctrl.userId)).includes('CONTROLEUR'), 'user_roles sans CONTROLEUR');
+        assert.deepEqual(await assignmentsOf(ctrl.userId), [], 'plus aucune affectation');
+        const { data, error } = await service.from('orders').select('client_id').eq('id', order.orderId).single();
+        assert.equal(error, null, `commande : ${error?.message}`);
+        assert.equal(data.client_id, ctrl.userId, 'commande du client intacte');
+    });
+
+    test('T5 : après retrait total, une ré-invitation redemande la confirmation, puis rend le rôle sans conflit', async () => {
+        const ctrl = await newController(partnerA, evA1.eventId, { label: 'ret-reinvite' });
+        const removed = await removeController(partnerA, ctrl.userId);
+        assert.equal(removed.status, 200, `retrait : ${show(removed)}`);
+        assert.deepEqual(await accountOf(ctrl.userId), { role: 'CLIENT', status: 'ACTIF' }, 'précondition : redevenu CLIENT');
+
+        const asked = await invite(ctrl.phoneE164);
+        assert.equal(asked.status, 200, `ré-invitation sans confirmation : ${show(asked)}`);
+        assert.equal(asked.body.requires_confirmation, true, `confirmation redemandée : ${show(asked)}`);
+        assert.deepEqual(await assignmentsOf(ctrl.userId), [], 'sans confirmation : aucune affectation');
+        assert.ok(!(await rolesOf(ctrl.userId)).includes('CONTROLEUR'), 'sans confirmation : aucun rôle CONTROLEUR');
+
+        const confirmed = await invite(ctrl.phoneE164, { confirm_promotion: true });
+        assert.equal(confirmed.status, 201, `ré-invitation confirmée : ${show(confirmed)}`);
+        assert.equal(confirmed.body.success, true, show(confirmed));
+        assert.equal(confirmed.body.is_new_user, false, `aucun compte créé : ${show(confirmed)}`);
+        assert.deepEqual(await accountOf(ctrl.userId), { role: 'CONTROLEUR', status: 'ACTIF' }, 'rôle rendu, compte ACTIF');
+        assert.deepEqual((await assignmentsOf(ctrl.userId)).map((a) => a.event_id), [evA1.eventId], 'affectation rétablie');
     });
 });

@@ -35,6 +35,11 @@
  *  - préparation des événements publiés, terminés ou annulés : event_transition et event_cancel absentes
  *    (cycle-helpers.ts, advanceEventTo).
  * La suite crée ses partenaires, ses acheteurs et ses événements.
+ *
+ * Lot 8 (8.2 v) : cas T8 de tests/legacy/event-live-editing-and-stock.test.ts porté, vert dès l'écriture : deux hausses
+ * de quota simultanées par la route. T1 du legacy attendait une réactivation implicite, contredite par la suite :
+ * non porté. Plus strict que le legacy (au moins une réussite) : les deux réussissent, sans mise à jour perdue,
+ * ticket_category_guard verrouillant l'événement.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -530,6 +535,34 @@ describe('F4 — statuts et droits', () => {
 });
 
 // ── RPC et code ────────────────────────────────────────────────────────────
+
+describe('8.2 v — concurrence sur les quotas (cas T8 porté)', () => {
+    test('deux hausses simultanées du quota : deux 200, aucune mise à jour perdue, vendus intacts', async () => {
+        const ev = await prepareEvent('quota-simultane', [{ name: 'Standard', price: 5000, total: 50 }], 'PUBLIE', 200);
+        await sell(ev, 'Standard', 2);
+        const id = ev.categories.Standard.id;
+        const results = await Promise.all([
+            patchCategory(partner, ev.eventId, id, { total_quantity: 80 }),
+            patchCategory(partner, ev.eventId, id, { total_quantity: 90 }),
+        ]);
+        assert.deepEqual(results.map((r) => r.status), [200, 200], `les deux hausses sont acceptées : ${JSON.stringify(results)}`);
+        const c = await existingCategory(id);
+        assert.equal(Number(c.sold_quantity), 2, 'vendus intacts');
+
+        const { data, error } = await service.from('audit_logs').select('metadata').eq('action', 'CATEGORY_UPDATED').eq('object_id', id);
+        assert.equal(error, null, `journal CATEGORY_UPDATED : ${error?.message}`);
+        const steps = (data ?? []).map((row) => {
+            const m = row.metadata as { old: { total_quantity: number }; new: { total_quantity: number } };
+            return { from: Number(m.old.total_quantity), to: Number(m.new.total_quantity) };
+        });
+        assert.equal(steps.length, 2, `deux modifications journalisées : ${JSON.stringify(steps)}`);
+        const first = steps.find((s) => s.from === 50);
+        assert.ok(first, `une modification part du quota d’origine : ${JSON.stringify(steps)}`);
+        const second = steps.find((s) => s !== first)!;
+        assert.equal(second.from, first.to, `la seconde part du résultat de la première, aucune mise à jour perdue : ${JSON.stringify(steps)}`);
+        assert.equal(Number(c.total_quantity), second.to, 'le quota final est celui de la dernière modification validée');
+    });
+});
 
 describe('F4 — RPC et routes (catalogue et contrôles statiques)', () => {
     test('RPC ticket_category_create, _update et _delete : SECURITY DEFINER, search_path = public, (p jsonb) RETURNS jsonb, réservées au service_role', async () => {

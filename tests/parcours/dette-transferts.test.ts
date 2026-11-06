@@ -29,6 +29,12 @@
  *  - recipient_notified est lu à la racine de la réponse de la route, ou dans `transfer` ;
  *  - refus d'une RPC = `ok: false` (code libre), ou erreur levée pour une entrée invalide.
  * La suite crée son partenaire, son événement, son acheteur et ses billets.
+ *
+ * Lot 8 (8.2 v) : cas portés, verts dès l'écriture : T5 de tests/legacy/ticket-transfer-phase2-initiation.test.ts
+ * (billet UTILISE), T11, T12, T15, T16 de tests/legacy/ticket-transfer-phase3-claim.test.ts (route d'annulation,
+ * rejeu de l'expiration, nouveau transfert après expiration). Écarts au legacy : billet composté par un vrai scan ;
+ * refus par code stable ; T15 compté sur le transfert de la suite (le legacy attendait 0 expiration sur toute la
+ * base, faux dès qu'une autre suite laisse un transfert échu).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -44,13 +50,14 @@ import { getFakes } from '../fakes';
 import { randomSenegalPhone, routeContext } from './helpers';
 import { cronRequest, importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
-import { authed, createTimedEvent, ticketRow, type RouteResult } from './acces-helpers';
+import { authed, createTimedEvent, scan, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
 import { dispatchAt, loadLotModule, outboxRows } from './notif-helpers';
 
 const ROOT = process.cwd();
 const SERVICE_FILE = 'lib/tickets/ticket-transfer.service.ts';
 const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
 const CRON_ROUTE = '../../app/api/cron/ticket-transfers/route';
+const CANCEL_ROUTE = '../../app/api/tickets/transfers/[id]/cancel/route';
 const RPCS = ['ticket_transfer_initiate', 'ticket_transfer_cancel', 'ticket_transfers_expire'];
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '');
 
@@ -478,5 +485,100 @@ describe('C1 — cron ticket-transfers protégé par CRON_SECRET seul', () => {
         const row = (await transfersOf(ticketId)).find((t) => t.id === transferId)!;
         assert.equal(row.status, 'EXPIRED', 'transfert échu → EXPIRED');
         assert.equal(await lockOf(ticketId), false, 'billet déverrouillé');
+    });
+});
+
+// ── Cas portés du legacy (8.2 v) ───────────────────────────────────────────
+
+describe('8.2 v — transferts : billet composté, route d’annulation, expiration (cas portés)', () => {
+    let spare: string[] = [];
+
+    before(async () => {
+        spare = (await buyConfirmed(owner, ev, [['Standard', 4]])).tickets.map((t) => String(t.id));
+        assert.equal(spare.length, 4, 'quatre billets de plus pour ces cas');
+    });
+
+    async function cancelByRoute(user: Buyer, transferId: string): Promise<RouteResult> {
+        const { POST } = await importModule(CANCEL_ROUTE);
+        return invoke(POST as Handler, authed(`/api/tickets/transfers/${transferId}/cancel`, 'POST', user), routeContext({ id: transferId }));
+    }
+
+    async function pendingTransfer(ticketId: string): Promise<string> {
+        const res = await initiateByRoute(owner, ticketId, randomSenegalPhone('77'));
+        assert.equal(res.status, 200, `initiation de préparation : ${show(res)}`);
+        const [pending] = await pendingOf(ticketId);
+        assert.ok(pending, 'préparation : transfert PENDING en base');
+        return String(pending.id);
+    }
+
+    test('T5 : billet UTILISE → 400 TICKET_NOT_TRANSFERABLE, aucun transfert, aucun verrou', async () => {
+        const door = await createTimedEvent(partner.partnerId, 'dette-transferts-entree', [{ name: 'Standard', price: 2000, total: 5 }], { startsInHours: 1 });
+        const { tickets: bought } = await buyConfirmed(owner, door, [['Standard', 1]]);
+        const ticketId = String(bought[0].id);
+        const entry = await scan(partner, { eventId: door.eventId, payload: await ticketPayload(ticketId) });
+        assert.equal(entry.body.result, 'valid', `compostage préalable : ${show(entry)}`);
+        const res = await initiateByRoute(owner, ticketId, randomSenegalPhone('77'));
+        assert.equal(res.status, 400, `billet composté : ${show(res)}`);
+        assert.equal(res.body.code, 'TICKET_NOT_TRANSFERABLE', show(res));
+        assert.match(String(res.body.error), /valide/i, `message explicite : ${show(res)}`);
+        assert.deepEqual(await transfersOf(ticketId), [], 'aucun transfert écrit');
+        assert.equal(await lockOf(ticketId), false, 'aucun verrou posé');
+    });
+
+    test('T11 : POST /api/tickets/transfers/[id]/cancel par l’émetteur → 200, CANCELLED, billet libre, porteur inchangé', async () => {
+        const ticketId = spare[0];
+        const transferId = await pendingTransfer(ticketId);
+        const res = await cancelByRoute(owner, transferId);
+        assert.equal(res.status, 200, `annulation par l’émetteur : ${show(res)}`);
+        assert.equal(res.body.success, true, show(res));
+        const row = (await transfersOf(ticketId)).find((t) => t.id === transferId)!;
+        assert.equal(row.status, 'CANCELLED', 'transfert CANCELLED');
+        assert.ok(row.cancelled_at, 'cancelled_at renseigné');
+        assert.equal(await lockOf(ticketId), false, 'billet déverrouillé');
+        assert.equal((await ticketRow(ticketId)).user_id, owner.userId, 'porteur inchangé');
+    });
+
+    test('T12 : la même route par un tiers → 403 NOT_SENDER, transfert toujours PENDING, billet toujours verrouillé', async () => {
+        const ticketId = spare[1];
+        const transferId = await pendingTransfer(ticketId);
+        const res = await cancelByRoute(stranger, transferId);
+        assert.equal(res.status, 403, `annulation par un tiers : ${show(res)}`);
+        assert.equal(res.body.code, 'NOT_SENDER', show(res));
+        assert.match(String(res.body.error), /émetteur/, `message explicite : ${show(res)}`);
+        assert.deepEqual((await pendingOf(ticketId)).map((t) => t.id), [transferId], 'transfert toujours PENDING');
+        assert.equal(await lockOf(ticketId), true, 'billet toujours verrouillé');
+    });
+
+    test('T15 : cron rejoué → le transfert expire une seule fois, sans second avis', async () => {
+        const ticketId = spare[2];
+        const transferId = await overdueTransfer(ticketId);
+        const first = await runCron(process.env.CRON_SECRET!);
+        assert.equal(first.status, 200, `premier passage : ${show(first)}`);
+        assert.ok((first.body.transferIds as string[]).includes(transferId), `transfert expiré au premier passage : ${show(first)}`);
+        const expired = (await transfersOf(ticketId)).find((t) => t.id === transferId)!;
+        assert.equal(expired.status, 'EXPIRED', 'transfert EXPIRED');
+        const notices = (await outboxRows({ type: 'TRANSFER_EXPIRED', keyPrefix: `TRANSFER_EXPIRED:${transferId}` })).map((r) => r.id).sort();
+        assert.ok(notices.length > 0, 'avis d’expiration mis en file au premier passage');
+
+        const second = await runCron(process.env.CRON_SECRET!);
+        assert.equal(second.status, 200, `second passage : ${show(second)}`);
+        assert.ok(!(second.body.transferIds as string[]).includes(transferId), `transfert traité deux fois : ${show(second)}`);
+        const again = (await transfersOf(ticketId)).find((t) => t.id === transferId)!;
+        assert.equal(again.expired_at, expired.expired_at, 'expired_at inchangé au second passage');
+        assert.deepEqual((await outboxRows({ type: 'TRANSFER_EXPIRED', keyPrefix: `TRANSFER_EXPIRED:${transferId}` })).map((r) => r.id).sort(), notices, 'aucun second avis');
+    });
+
+    test('T16 : après expiration, nouveau transfert accepté sur le même billet, billet de nouveau verrouillé', async () => {
+        const ticketId = spare[3];
+        const expiredId = await overdueTransfer(ticketId);
+        const cron = await runCron(process.env.CRON_SECRET!);
+        assert.equal(cron.status, 200, `expiration : ${show(cron)}`);
+        assert.equal(await lockOf(ticketId), false, 'précondition : billet déverrouillé par l’expiration');
+        const res = await initiateByRoute(owner, ticketId, randomSenegalPhone('77'));
+        assert.equal(res.status, 200, `nouveau transfert : ${show(res)}`);
+        const pending = await pendingOf(ticketId);
+        assert.equal(pending.length, 1, 'un transfert PENDING');
+        assert.notEqual(pending[0].id, expiredId, 'un nouveau transfert, pas l’ancien');
+        assert.equal(await lockOf(ticketId), true, 'billet de nouveau verrouillé');
     });
 });
