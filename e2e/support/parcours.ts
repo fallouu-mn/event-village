@@ -2,11 +2,14 @@
  * Lot 8 (contrat 15.5, T25, T26) — outils des parcours de bout en bout, partagés par la fumée (e2e/fumee.spec.ts), le projet
  * terrain (e2e/terrain.spec.ts) et la recette (e2e/recette.spec.ts). Extraits de ces fichiers sans changement de
  * comportement ; seul ajout : le numéro de paiement facultatif de buyThroughUi, celui du client de la fumée par défaut.
+ * Fin de fichier : outils propres à la recette (codes SMS, réglages, boîte d'envoi par la vraie route, invariants).
  */
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { fumeePayerPhone } from './accounts';
-import { e2eConfig } from './env';
+import { APP_URL, e2eConfig, E2E_ENV_FILE } from './env';
 import { outboxByProviderIds, serviceClient, type OutboxLine, type SentSmsLine } from './service';
 
 export function escapeRe(s: string): string {
@@ -227,4 +230,110 @@ export async function expectResumed(page: Page, title: string, mode: 'camera' | 
     if (mode === 'camera') {
         await expect(page.getByRole('button', { name: /^reprendre le contr[ôo]le$/i }), `${what} : écran « Reprendre le contrôle »`).toBeVisible();
     }
+}
+
+// ── Recette (contrat 15.5) ─────────────────────────────────────────────────
+
+/** Onglet d'une page (rôle tab), sélection vérifiée. */
+export async function openTab(page: Page, name: RegExp): Promise<void> {
+    const tab = page.getByRole('tab', { name });
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Tickets des SMS déjà reçus par ce numéro : repère avant une demande de code. */
+export async function smsSeen(phone: string): Promise<Set<string>> {
+    return new Set((await fakeSmsTo(phone)).map((m) => m.ticket));
+}
+
+/**
+ * Code à 6 chiffres du dernier SMS reçu par ce numéro depuis le repère. Aucune route de test dans l'application : le code
+ * n'est lu que sur le faux MTarget. Attente plafonnée : l'envoi est synchrone côté application.
+ */
+export async function smsCode(phone: string, seen: ReadonlySet<string>, what: string): Promise<string> {
+    let code = '';
+    await expect.poll(async () => {
+        const fresh = (await fakeSmsTo(phone)).filter((m) => !seen.has(m.ticket));
+        code = fresh.map((m) => /(?<!\d)\d{6}(?!\d)/.exec(m.message)?.[0] ?? '').find(Boolean) ?? '';
+        return code;
+    }, { message: `${what} : code à 6 chiffres reçu par SMS sur le faux MTarget`, timeout: 20_000, intervals: [250, 500, 1000] }).toMatch(/^\d{6}$/);
+    return code;
+}
+
+/** Code saisi dans OtpInput : le premier champ accepte les 6 chiffres (remplissage automatique du code reçu). */
+export async function fillOtp(page: Page, code: string): Promise<void> {
+    await page.getByRole('textbox', { name: /^chiffre 1 sur 6$/i }).fill(code);
+    await expect(page.getByRole('textbox', { name: /^chiffre 6 sur 6$/i }), 'code réparti sur les 6 champs').toHaveValue(code.slice(-1));
+}
+
+/** Valeur courante d'un réglage de platform_settings (contrat I1 : { value }). */
+export async function settingValue(key: string): Promise<unknown> {
+    const { data, error } = await serviceClient().from('platform_settings').select('value').eq('key', key).maybeSingle();
+    if (error) throw new Error(`[e2e] réglage ${key} : ${error.message}`);
+    if (!data) throw new Error(`[e2e] réglage ${key} absent de platform_settings`);
+    return (data.value as { value?: unknown } | null)?.value;
+}
+
+/** Réglage écrit comme la route, par finance_setting_set : remise en état après la recette, jamais une étape du parcours. */
+export async function restoreSetting(key: string, value: unknown, superadminId: string): Promise<void> {
+    const { data, error } = await serviceClient().rpc('finance_setting_set', {
+        p_key: key, p_value: { value }, p_actor: superadminId, p_reason: 'Remise en état après la recette e2e (lot 8).',
+    });
+    if (error) throw new Error(`[e2e] finance_setting_set ${key} : ${error.code ?? ''} ${error.message}`);
+    if ((data as { ok?: boolean } | null)?.ok !== true) throw new Error(`[e2e] finance_setting_set ${key} refusé : ${JSON.stringify(data)}`);
+}
+
+/**
+ * Boîte d'envoi vidée par la vraie route (Bearer CRON_SECRET, adaptateurs de l'application pointés sur les faux services),
+ * passages répétés jusqu'à ce qu'aucune ligne due ne reste. Même hôte que run-e2e.mjs : le serveur écoute sur 127.0.0.1.
+ */
+export async function drainOutbox(what: string): Promise<number> {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) throw new Error(`CRON_SECRET absente de ${e2eConfig().envFile} : la vraie route de l’envoyeur est protégée`);
+    let total = 0;
+    for (let i = 0; i < 30; i++) {
+        const res = await fetch(`http://127.0.0.1:${new URL(APP_URL).port}/api/cron/notifications-dispatch`, { method: 'GET', headers: { authorization: `Bearer ${secret}` } });
+        const text = await res.text();
+        if (res.status !== 200) throw new Error(`${what} : route de l’envoyeur, HTTP ${res.status} ${text.slice(0, 300)}`);
+        let report: { claimed?: unknown };
+        try {
+            report = JSON.parse(text) as { claimed?: unknown };
+        } catch (err) {
+            throw new Error(`${what} : réponse de l’envoyeur illisible (${err instanceof Error ? err.message : String(err)}) : ${text.slice(0, 300)}`);
+        }
+        const claimed = Number(report.claimed);
+        if (!Number.isInteger(claimed)) throw new Error(`${what} : réponse de l’envoyeur sans « claimed » : ${text.slice(0, 300)}`);
+        if (claimed === 0) {
+            console.log(`[e2e][recette] ${what} : ${total} ligne(s) envoyée(s) par la vraie route`);
+            return total;
+        }
+        total += claimed;
+    }
+    throw new Error(`${what} : lignes encore dues après 30 passages de l’envoyeur (${total} réservées)`);
+}
+
+const INVARIANTS_SCRIPT = path.join('scripts', 'e2e', 'invariants-run.ts');
+
+/**
+ * Invariants (a) à (t) sur toute la base locale, boîte d'envoi d'abord vidée par la vraie route (L79) : le script exige de
+ * ne trouver aucune ligne due, ses faux adaptateurs l'enverraient dans le vide. Journaux [INVARIANT-…] recopiés dans e2e.log.
+ */
+export async function assertInvariants(label: string): Promise<void> {
+    await drainOutbox(`avant les invariants ${label}`);
+    e2eConfig(); // .env.e2e chargé et URL locales vérifiées avant de lancer le script
+    const r = spawnSync(process.execPath, ['--import', 'tsx', '--import', './tests/helpers/env.ts', INVARIANTS_SCRIPT, label], {
+        cwd: process.cwd(), env: { ...process.env, EV_ENV_FILE: E2E_ENV_FILE }, encoding: 'utf8', timeout: 180_000, maxBuffer: 16 * 1024 * 1024,
+    });
+    if (r.error) throw new Error(`[e2e][recette] ${INVARIANTS_SCRIPT} ${label} : ${r.error.message}`);
+    const out = (r.stdout ?? '').trim().split(/\r?\n/).filter(Boolean);
+    for (const line of out) if (line.startsWith('[INVARIANT')) console.log(line);
+    if (r.status !== 0) throw new Error(`[e2e][recette] invariants ${label} : code ${r.status}\n${(r.stderr ?? '').slice(-3000)}\n${out.slice(-10).join('\n')}`);
+    const last = out[out.length - 1] ?? '';
+    let reserved: unknown;
+    try {
+        reserved = (JSON.parse(last) as { reserved?: unknown }).reserved;
+    } catch (err) {
+        throw new Error(`[e2e][recette] invariants ${label} : réponse illisible (${err instanceof Error ? err.message : String(err)}) : ${last.slice(0, 300)}`);
+    }
+    expect(reserved, `invariants ${label} : lignes de la boîte d’envoi trouvées dues après le passage de la vraie route`).toBe(0);
 }

@@ -89,3 +89,13 @@ export async function openRoleContext(browser: Browser, testInfo: TestInfo, role
     await prepareContext(context, theme);
     return context;
 }
+
+/**
+ * Lot 8 (contrat 15.5) : contexte sans session, pour un compte créé à l'écran par le test (recette : C1, P1, K1) ; `extra`
+ * reçoit l'état de connexion et le réglage du service worker d'un second contexte du même compte.
+ */
+export async function openAnonymousContext(browser: Browser, testInfo: TestInfo, theme: ThemeKey = 'clair', extra: BrowserContextOptions = {}): Promise<BrowserContext> {
+    const context = await browser.newContext({ ...projectContextOptions(testInfo), colorScheme: EV_THEME_VALUE[theme], ...extra });
+    await prepareContext(context, theme);
+    return context;
+}
