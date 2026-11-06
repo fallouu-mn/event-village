@@ -27,11 +27,17 @@
  * Garde-fou (vert aujourd'hui) : ticket_scans n'arrive ni au partenaire B (lot 4), ni à un client, ni à
  * anon (RLS ticket_scans_owner_admin_select, 20261101000013_lot4_pilotage.sql:64-72 ; REVOKE pour anon,
  * 20261101000010_lot4_scan.sql:53).
+ *
+ * Lot 8, T11 (contrat 10.2, consigne n) : abonnement d'un admin avec EXACTEMENT le filtre lu dans
+ * app/admin/notifications/page.tsx. Rouge jusqu'à fix(8.2n) : les INSERT de SMS_FORECAST et de SMS_OPTIONAL_80
+ * n'arrivent pas (filtre à deux valeurs, page.tsx:332). Garde-fou vert : CASHOUT_UNCERTAIN n'arrive pas, avec
+ * un témoin sans filtre qui le reçoit et une sentinelle reçue par l'abonnement filtré.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { inRolledBackTransaction, inspect } from '../helpers/db';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
@@ -349,6 +355,68 @@ describe('admin_signals : reçus par un admin seulement (O2)', () => {
             await assertNobodyElse(spies, carriesData, 'signal d’administration : rien chez un compte non admin (le partenaire qui soumet compris)');
         } finally {
             await disposeClients(admin, ...spies.clients);
+        }
+    });
+
+    // ── 8.2 n : la page Notifications se recharge aussi pour les alertes de budget SMS ─────
+
+    /** Filtre de l'abonnement à admin_signals, tel qu'il est écrit dans la page (jamais recopié ici). */
+    function notificationsPageFilter(): string {
+        const page = 'app/admin/notifications/page.tsx';
+        const found = Array.from(fs.readFileSync(page, 'utf8').matchAll(/table:\s*['"`]admin_signals['"`][^}]*?filter:\s*['"`]([^'"`]+)['"`]/g), (m) => m[1]);
+        assert.equal(found.length, 1, `${page} : un seul abonnement filtré à admin_signals attendu (trouvé : ${JSON.stringify(found)})`);
+        return found[0];
+    }
+
+    async function insertSignal(kind: string): Promise<string> {
+        const refId = randomUUID();
+        const { error } = await service.from('admin_signals').insert({ kind, ref_id: refId });
+        assert.equal(error, null, `signal ${kind} : ${error?.message}`);
+        return refId;
+    }
+
+    function signalOf(kind: string, refId: string): (e: ReceivedChange) => boolean {
+        return (e) => e.new.kind === kind && e.new.ref_id === refId;
+    }
+
+    /** Abonnement de la page et témoin sans filtre, ouverts, puis vivacité par SMS_DAILY_THRESHOLD (dans le filtre, avant et après le correctif). */
+    async function pageFeeds(admin: SupabaseClient, filter: string): Promise<{ feed: Collector; all: Collector }> {
+        const feed = subscribeCollect(admin, { table: 'admin_signals', event: 'INSERT', filter }, { label: `admin admin_signals [${filter}]` });
+        const all = subscribeCollect(admin, { table: 'admin_signals', event: 'INSERT' }, { label: 'admin admin_signals (témoin sans filtre)' });
+        await Promise.all([feed.ready, all.ready]);
+        const produced: string[] = [];
+        await produceUntilReceived(feed, async () => produced.push(await insertSignal('SMS_DAILY_THRESHOLD')),
+            (e) => produced.includes(String(e.new.ref_id)), { what: 'vivacité : SMS_DAILY_THRESHOLD reçu avec le filtre de la page' });
+        return { feed, all };
+    }
+
+    test('8.2 n : avec le filtre lu dans la page, l’admin reçoit les INSERT de SMS_FORECAST et de SMS_OPTIONAL_80', async () => {
+        const filter = notificationsPageFilter();
+        const admin = await signedInClient('ADMIN');
+        try {
+            const { feed } = await pageFeeds(admin, filter);
+            for (const kind of ['SMS_FORECAST', 'SMS_OPTIONAL_80']) {
+                const refId = await insertSignal(kind);
+                const got = await waitForEvent(feed, signalOf(kind, refId), RECEIVE_TIMEOUT_MS, `${kind} reçu avec le filtre de la page (« ${filter} »)`);
+                assert.equal(got.eventType, 'INSERT', JSON.stringify(got));
+            }
+        } finally {
+            await disposeClients(admin);
+        }
+    });
+
+    test('garde-fou 8.2 n : avec le filtre lu dans la page, CASHOUT_UNCERTAIN n’est pas reçu (témoin sans filtre et sentinelle)', async () => {
+        const filter = notificationsPageFilter();
+        const admin = await signedInClient('ADMIN');
+        try {
+            const { feed, all } = await pageFeeds(admin, filter);
+            const excluded = await insertSignal('CASHOUT_UNCERTAIN');
+            await waitForEvent(all, signalOf('CASHOUT_UNCERTAIN', excluded), RECEIVE_TIMEOUT_MS, 'témoin sans filtre : CASHOUT_UNCERTAIN reçu');
+            const sentinel = await insertSignal('SMS_DAILY_THRESHOLD');
+            await waitForEvent(feed, signalOf('SMS_DAILY_THRESHOLD', sentinel), RECEIVE_TIMEOUT_MS, 'sentinelle reçue avec le filtre de la page');
+            await expectNothing(feed, SETTLE_MS, (e) => e.new.kind === 'CASHOUT_UNCERTAIN', `CASHOUT_UNCERTAIN reçu malgré le filtre « ${filter} »`);
+        } finally {
+            await disposeClients(admin);
         }
     });
 });

@@ -45,6 +45,9 @@
  * ?limit=50 sans pagination ; TransferModal propose l'email et affiche un lien de réclamation ; la page de
  * réclamation lit le jeton dans le navigateur.
  * Garde-fou vert dès l'écriture : la liste blanche contient les fichiers de Q (ajoutés par ce même commit).
+ *
+ * Lot 8, T10 (contrat 10.2, consigne n) : le filtre de la page Notifications passe à quatre valeurs, avec
+ * SMS_OPTIONAL_80 et SMS_FORECAST. Rouge jusqu'à fix(8.2n) : app/admin/notifications/page.tsx:332.
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
@@ -954,11 +957,11 @@ describe('6.8 — supervision admin (L4, C6)', () => {
         assert.deepEqual(faults, [], `${APP_LAYOUT} :\n  ${faults.join('\n  ')}`);
     });
 
-    test('abonnements à admin_signals filtrés par kind : tableau de bord et file des événements kind=in.(EVENT_SUBMITTED,PARTNER_REGISTERED), page Notifications kind=in.(NOTIFICATION_FAILED,SMS_DAILY_THRESHOLD)', () => {
+    test('abonnements à admin_signals filtrés par kind : tableau de bord et file des événements kind=in.(EVENT_SUBMITTED,PARTNER_REGISTERED), page Notifications kind=in.(NOTIFICATION_FAILED,SMS_DAILY_THRESHOLD,SMS_OPTIONAL_80,SMS_FORECAST)', () => {
         const EXPECTED: Record<string, string[]> = {
             [ADMIN_DASHBOARD]: ['EVENT_SUBMITTED', 'PARTNER_REGISTERED'],
             [ADMIN_EVENTS]: ['EVENT_SUBMITTED', 'PARTNER_REGISTERED'],
-            [ADMIN_NOTIFS]: ['NOTIFICATION_FAILED', 'SMS_DAILY_THRESHOLD'],
+            [ADMIN_NOTIFS]: ['NOTIFICATION_FAILED', 'SMS_DAILY_THRESHOLD', 'SMS_OPTIONAL_80', 'SMS_FORECAST'],
         };
         const faults: string[] = [];
         for (const [f, kinds] of Object.entries(EXPECTED)) {
