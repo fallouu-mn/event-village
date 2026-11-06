@@ -1,0 +1,216 @@
+TAP version 13
+[requireActiveSession] accès refusé à /api/tickets/22aba8e2-b352-4991-85c1-af831fdb86ab/offline-codes : compte 6ce60ef7-4401-4425-a54d-d17c5587cd94 au statut SUSPENDU
+[offline-codes] billet 3a289607-9df1-4dc8-8ca7-1c3ff2ea1786 introuvable ou d'un autre porteur (compte 0379f505-e1e6-4a6c-ac9c-44aedffe4e27) : 404
+[offline-codes] billet 7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01 introuvable ou d'un autre porteur (compte 0379f505-e1e6-4a6c-ac9c-44aedffe4e27) : 404
+[offline-codes] identifiant non UUID demandé par le compte 0379f505-e1e6-4a6c-ac9c-44aedffe4e27 : 404
+# Subtest: 7.1 GET /api/tickets/[id]/offline-codes : accès
+    # Subtest: 1. 401 sans session ; 403 compte SUSPENDU ; 404 même corps pour le billet d’un autre, un UUID inconnu et un id non UUID
+    ok 1 - 1. 401 sans session ; 403 compte SUSPENDU ; 404 même corps pour le billet d’un autre, un UUID inconnu et un id non UUID
+      ---
+      duration_ms: 992.589471
+      type: 'test'
+      ...
+[offline-codes] billet 308b90b9-cef6-4bc9-af88-3b670b0cebba (compte e796bf9c-cb97-48f7-b21f-6474b868266c) refusé : TICKET_NOT_VALID
+[offline-codes] billet 032ed335-bcd4-40ce-80ca-7fee7539ad81 (compte d5081e9f-2619-4ed9-a834-4d254931e342) refusé : TICKET_NOT_VALID
+[offline-codes] billet b69fc7fc-796c-43a6-a35c-7943dd156730 (compte c630016f-c11f-49d8-861a-24f01c58384c) refusé : EVENT_NOT_PUBLISHED
+[offline-codes] billet f81b7b31-7d14-42ff-928c-face4ff820d2 (compte 8d670616-c391-4420-a472-2ddc5b47ead8) refusé : EVENT_NOT_PUBLISHED
+[offline-codes] billet e066add0-b43c-4e4c-9c4a-a03b1bff3c05 (compte bfd8ae08-abd5-429b-86a1-0085218ed3fd) refusé : TRANSFER_PENDING
+    # Subtest: 2. 409 TICKET_NOT_VALID (UTILISE, ANNULE), EVENT_NOT_PUBLISHED (SUSPENDU, TERMINE), TRANSFER_PENDING
+    ok 2 - 2. 409 TICKET_NOT_VALID (UTILISE, ANNULE), EVENT_NOT_PUBLISHED (SUSPENDU, TERMINE), TRANSFER_PENDING
+      ---
+      duration_ms: 2264.391116
+      type: 'test'
+      ...
+    1..2
+ok 1 - 7.1 GET /api/tickets/[id]/offline-codes : accès
+  ---
+  duration_ms: 3257.920357
+  type: 'suite'
+  ...
+[offline-codes] billet 2e91b34f-752f-4e00-be77-004ed7caf519 (compte 92c0e6c0-a0db-45b4-a2bf-63b158352f06) refusé : OFFLINE_WINDOW_CLOSED
+[offline-codes] billet 0e9f4e69-fd8b-4745-b221-db46f2e28a6c (compte 8113e9af-b434-4c26-aeb3-7e790711040b) refusé : OFFLINE_WINDOW_CLOSED
+# Subtest: 7.1 Fenêtre de téléchargement [début − 24 h ; fin + access.scan_window_after_hours]
+    # Subtest: 3. début dans 23,9 h → 200 ; dans 24,1 h → 409 OFFLINE_WINDOW_CLOSED avec available_from ; fin passée, after = 0 → 409 (témoin after = 6 : 200)
+    ok 1 - 3. début dans 23,9 h → 200 ; dans 24,1 h → 409 OFFLINE_WINDOW_CLOSED avec available_from ; fin passée, after = 0 → 409 (témoin after = 6 : 200)
+      ---
+      duration_ms: 1174.944235
+      type: 'test'
+      ...
+    # Subtest: 4. bornes à la seconde (ticket_offline_grant, p.now) : début − 24 h − 1 s refusé, début − 24 h admis, fin + after admis, + 1 s refusé ; now passé → INVALID_NOW
+    ok 2 - 4. bornes à la seconde (ticket_offline_grant, p.now) : début − 24 h − 1 s refusé, début − 24 h admis, fin + after admis, + 1 s refusé ; now passé → INVALID_NOW
+      ---
+      duration_ms: 375.311322
+      type: 'test'
+      ...
+    1..2
+ok 2 - 7.1 Fenêtre de téléchargement [début − 24 h ; fin + access.scan_window_after_hours]
+  ---
+  duration_ms: 1550.468891
+  type: 'suite'
+  ...
+# Subtest: 7.1 Contenu du lot (contrat 3.1)
+    # Subtest: 5. format compact, champs dérivés, 30 codes au hasard égaux au code calculé ; le code courant est accepté au scan
+    ok 1 - 5. format compact, champs dérivés, 30 codes au hasard égaux au code calculé ; le code courant est accepté au scan
+      ---
+      duration_ms: 569.523385
+      type: 'test'
+      ...
+    # Subtest: 6. aucun secret dans la réponse ; Cache-Control: no-store
+    ok 2 - 6. aucun secret dans la réponse ; Cache-Control: no-store
+      ---
+      duration_ms: 374.262658
+      type: 'test'
+      ...
+[HORS-LIGNE-TAILLE] 3 jours, before = after = 48 h : 8640 codes, 52629 octets bruts, 25672 octets gzip (niveau 6)
+[HORS-LIGNE-TAILLE] soirée de 4 h, réglages courants : 2162 codes, 13715 octets bruts, 6758 octets gzip (niveau 6)
+    # Subtest: 7. taille : 3 jours avec before = after = 48 → 8 640 codes, lot glissant incomplet, gzip < 40 000 octets ; soirée par défaut complète
+    ok 3 - 7. taille : 3 jours avec before = after = 48 → 8 640 codes, lot glissant incomplet, gzip < 40 000 octets ; soirée par défaut complète
+      ---
+      duration_ms: 847.106132
+      type: 'test'
+      ...
+    1..3
+ok 3 - 7.1 Contenu du lot (contrat 3.1)
+  ---
+  duration_ms: 1791.268402
+  type: 'suite'
+  ...
+[offline-codes] quota offline_codes_ticket atteint pour le billet d6aaae59-cf68-4c23-81df-20df4a042410 (compte f66448e1-659d-417d-84db-f9916f87954f) : 429
+[offline-codes] quota offline_codes_user atteint pour le billet be5a939e-a5be-4f2e-9ef8-f4c0263c2345 (compte cfbe371b-38ac-403c-8826-318bbe7ae54f) : 429
+# Subtest: 7.1 Quotas et journal des téléchargements
+    # Subtest: 8. quota par billet puis par compte (3 par heure) : 4ᵉ → 429 RATE_LIMITED + Retry-After, refus non journalisé
+    ok 1 - 8. quota par billet puis par compte (3 par heure) : 4ᵉ → 429 RATE_LIMITED + Retry-After, refus non journalisé
+      ---
+      duration_ms: 956.843814
+      type: 'test'
+      ...
+[offline-codes] billet 267da359-7b63-44ab-a9d3-31a3f4ca512d introuvable ou d'un autre porteur (compte 8f7cd206-aa05-4c70-82fc-8014cd6dc00f) : 404
+[offline-codes] billet 267da359-7b63-44ab-a9d3-31a3f4ca512d (compte b4190fbc-4d79-4fbb-9865-b05563c949cd) refusé : TRANSFER_PENDING
+    # Subtest: 9. une ligne par 200 avec l’instantané de décision, aucune pour 404 et 409 ; aucune colonne ne contient un code servi
+    ok 2 - 9. une ligne par 200 avec l’instantané de décision, aucune pour 404 et 409 ; aucune colonne ne contient un code servi
+      ---
+      duration_ms: 695.484548
+      type: 'test'
+      ...
+    1..2
+ok 4 - 7.1 Quotas et journal des téléchargements
+  ---
+  duration_ms: 1652.638339
+  type: 'suite'
+  ...
+# Subtest: 7.1 Contrôles statiques, liste des billets, RLS
+    # Subtest: 10. statique : la route ne lit ni paramètre ni en-tête d’heure ; issueOfflineCodes({ ticketId, userId }) seulement ; aucun now transmis
+    ok 1 - 10. statique : la route ne lit ni paramètre ni en-tête d’heure ; issueOfflineCodes({ ticketId, userId }) seulement ; aucun now transmis
+      ---
+      duration_ms: 1.227767
+      type: 'test'
+      ...
+    # Subtest: 11. GET /api/tickets : champ offline par billet (dans la fenêtre, pas encore ouverte, transfert en attente)
+    ok 2 - 11. GET /api/tickets : champ offline par billet (dans la fenêtre, pas encore ouverte, transfert en attente)
+      ---
+      duration_ms: 954.3956
+      type: 'test'
+      ...
+    # Subtest: 12. ticket_secret_versions et ticket_offline_downloads : RLS activée, aucune politique, aucun accès anon ni authenticated (clé anon)
+    ok 3 - 12. ticket_secret_versions et ticket_offline_downloads : RLS activée, aucune politique, aucun accès anon ni authenticated (clé anon)
+      ---
+      duration_ms: 420.588485
+      type: 'test'
+      ...
+    1..3
+ok 5 - 7.1 Contrôles statiques, liste des billets, RLS
+  ---
+  duration_ms: 1376.41159
+  type: 'suite'
+  ...
+# Subtest: 8.2 x Compression du lot hors ligne dans la route (contrat 3.7)
+    # Subtest: 13. Accept-Encoding: gzip → corps gzip, Vary, no-store ; décompressé, c’est le JSON de la route
+    not ok 1 - 13. Accept-Encoding: gzip → corps gzip, Vary, no-store ; décompressé, c’est le JSON de la route
+      ---
+      duration_ms: 432.726068
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:8:4009'
+      failureType: 'testCodeFailure'
+      error: |-
+        navigateur : Content-Encoding: gzip attendu (contrat 3.7, fix(8.2x)), en-têtes reçus {"cache-control":"no-store","content-type":"application/json"}
+        + actual - expected
+        
+        + undefined
+        - 'gzip'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'gzip'
+      operator: 'strictEqual'
+      stack: |-
+        assertCompressed (/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:559:16)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:579:22)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: 14. sans gzip accepté (en-tête absent, identity, br seul) → JSON brut, aucun Content-Encoding, no-store (témoin)
+    ok 2 - 14. sans gzip accepté (en-tête absent, identity, br seul) → JSON brut, aucun Content-Encoding, no-store (témoin)
+      ---
+      duration_ms: 415.189392
+      type: 'test'
+      ...
+    # Subtest: 15. lot de 48 h : corps réellement servi sous 40 000 octets, plus petit que le JSON
+    not ok 3 - 15. lot de 48 h : corps réellement servi sous 40 000 octets, plus petit que le JSON
+      ---
+      duration_ms: 419.128843
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:8:6518'
+      failureType: 'testCodeFailure'
+      error: |-
+        lot de 48 h : Content-Encoding: gzip attendu (contrat 3.7, fix(8.2x)), en-têtes reçus {"cache-control":"no-store","content-type":"application/json"}
+        + actual - expected
+        
+        + undefined
+        - 'gzip'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'gzip'
+      operator: 'strictEqual'
+      stack: |-
+        assertCompressed (/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:559:16)
+        <anonymous> (/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:609:26)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async withSettings (/home/runner/work/event-village/event-village/tests/parcours/terrain-helpers.ts:73:16)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:606:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 6 - 8.2 x Compression du lot hors ligne dans la route (contrat 3.7)
+  ---
+  duration_ms: 1267.31468
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/hors-ligne-codes.test.ts:8:2149'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] hors-ligne-codes — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] hors-ligne-codes — purge des réservations échues : {"expired":0}
+[INVARIANT] hors-ligne-codes — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] hors-ligne-codes — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] hors-ligne-codes — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] hors-ligne-codes — cron events_finish_overdue : 1 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] hors-ligne-codes — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] hors-ligne-codes — envoyeur : 995 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] hors-ligne-codes — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] hors-ligne-codes — (p)(q) : 0 violation(s)
+1..6
+# tests 15
+# suites 6
+# pass 13
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12264.096464

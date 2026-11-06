@@ -1,0 +1,173 @@
+TAP version 13
+# Subtest: C2 — clôture de caisse par la route
+    # Subtest: clôture sans écart : sans PIN, CLOTURE, écart 0, déclaré = attendu, closed_by = contrôleur
+    ok 1 - clôture sans écart : sans PIN, CLOTURE, écart 0, déclaré = attendu, closed_by = contrôleur
+      ---
+      duration_ms: 216.9012
+      type: 'test'
+      ...
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+    # Subtest: clôture avec écart justifié et PIN : CLOTURE, écart = déclaré − attendu, justification, co-signature, une alerte in-app sans emoji
+    ok 2 - clôture avec écart justifié et PIN : CLOTURE, écart = déclaré − attendu, justification, co-signature, une alerte in-app sans emoji
+      ---
+      duration_ms: 300.794772
+      type: 'test'
+      ...
+    # Subtest: garde-fou : écart sans justification, ou justification de moins de 10 caractères → 400 JUSTIFICATION_REQUIRED, caisse OUVERT
+    not ok 3 - garde-fou : écart sans justification, ou justification de moins de 10 caractères → 400 JUSTIFICATION_REQUIRED, caisse OUVERT
+      ---
+      duration_ms: 190.406212
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:2:9438'
+      failureType: 'testCodeFailure'
+      error: |-
+        sans justification : expected = total attendu : HTTP 400 {"error":"Un écart de caisse doit être justifié (10 caractères au moins).","code":"JUSTIFICATION_REQUIRED"}
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        assertGap (/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:180:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:227:13)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: garde-fou : écart justifié avec un PIN faux → 401 PIN_INVALID ; sans PIN → 400 PIN_REQUIRED ; caisse OUVERT
+    not ok 4 - garde-fou : écart justifié avec un PIN faux → 401 PIN_INVALID ; sans PIN → 400 PIN_REQUIRED ; caisse OUVERT
+      ---
+      duration_ms: 207.318125
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:2:10224'
+      failureType: 'testCodeFailure'
+      error: |-
+        écart sans PIN : expected = total attendu : HTTP 400 {"error":"Le code PIN régisseur est obligatoire pour co-signer une clôture avec écart.","code":"PIN_REQUIRED"}
+        
+        undefined !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      operator: 'strictEqual'
+      stack: |-
+        assertGap (/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:180:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:242:9)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: écart négatif (espèces manquantes) : JUSTIFICATION_REQUIRED puis PIN_REQUIRED portent expected, declared et discrepancy = −1000 ; caisse OUVERT
+    not ok 5 - écart négatif (espèces manquantes) : JUSTIFICATION_REQUIRED puis PIN_REQUIRED portent expected, declared et discrepancy = −1000 ; caisse OUVERT
+      ---
+      duration_ms: 405.795412
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:2:11256'
+      failureType: 'testCodeFailure'
+      error: |-
+        écart négatif sans justification : expected = total attendu : HTTP 400 {"error":"Un écart de caisse doit être justifié (10 caractères au moins).","code":"JUSTIFICATION_REQUIRED"}
+        + actual - expected
+        
+        + undefined
+        - 5000
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 5000
+      operator: 'strictEqual'
+      stack: |-
+        assertGap (/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:180:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:262:9)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: double clôture simultanée sans écart : une 200, une 409 SHIFT_NOT_OPEN ; une seule clôture journalisée
+    ok 6 - double clôture simultanée sans écart : une 200, une 409 SHIFT_NOT_OPEN ; une seule clôture journalisée
+      ---
+      duration_ms: 205.286731
+      type: 'test'
+      ...
+    # Subtest: double clôture simultanée avec écart justifié : une seule réussit, une seule alerte au partenaire
+    ok 7 - double clôture simultanée avec écart justifié : une seule réussit, une seule alerte au partenaire
+      ---
+      duration_ms: 256.097134
+      type: 'test'
+      ...
+    # Subtest: le partenaire propriétaire clôture la caisse d’un contrôleur : 200, closed_by = partenaire
+    ok 8 - le partenaire propriétaire clôture la caisse d’un contrôleur : 200, closed_by = partenaire
+      ---
+      duration_ms: 203.547083
+      type: 'test'
+      ...
+    # Subtest: un admin clôture avec écart justifié et PIN : 200, closed_by = admin
+    ok 9 - un admin clôture avec écart justifié et PIN : 200, closed_by = admin
+      ---
+      duration_ms: 202.745291
+      type: 'test'
+      ...
+    # Subtest: garde-fou : le contrôleur d’une autre caisse du même événement est refusé (403 ou 404), caisse OUVERT
+    ok 10 - garde-fou : le contrôleur d’une autre caisse du même événement est refusé (403 ou 404), caisse OUVERT
+      ---
+      duration_ms: 360.980911
+      type: 'test'
+      ...
+    1..10
+not ok 1 - C2 — clôture de caisse par la route
+  ---
+  duration_ms: 2984.538233
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/dette-cloture-caisse.test.ts:2:7047'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: C2 — RPC shift_close
+    # Subtest: catalogue : SECURITY DEFINER, search_path = public, service_role seul
+    ok 1 - catalogue : SECURITY DEFINER, search_path = public, service_role seul
+      ---
+      duration_ms: 17.728704
+      type: 'test'
+      ...
+    # Subtest: deux appels simultanés sans écart : un ok, l’autre SHIFT_NOT_OPEN
+    ok 2 - deux appels simultanés sans écart : un ok, l’autre SHIFT_NOT_OPEN
+      ---
+      duration_ms: 182.635737
+      type: 'test'
+      ...
+    # Subtest: montant déclaré non entier ou négatif : refusé, caisse OUVERT
+    ok 3 - montant déclaré non entier ou négatif : refusé, caisse OUVERT
+      ---
+      duration_ms: 182.813982
+      type: 'test'
+      ...
+    # Subtest: acteur sans droit (autre contrôleur) : refusé, caisse OUVERT
+    ok 4 - acteur sans droit (autre contrôleur) : refusé, caisse OUVERT
+      ---
+      duration_ms: 359.720345
+      type: 'test'
+      ...
+    1..4
+ok 2 - C2 — RPC shift_close
+  ---
+  duration_ms: 743.225477
+  type: 'suite'
+  ...
+[INVARIANT] dette-cloture-caisse — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] dette-cloture-caisse — purge des réservations échues : {"expired":0}
+[INVARIANT] dette-cloture-caisse — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] dette-cloture-caisse — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] dette-cloture-caisse — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] dette-cloture-caisse — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] dette-cloture-caisse — (j)(k)(l) : 0 violation(s)
+1..2
+# tests 14
+# suites 2
+# pass 11
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3893.90517
