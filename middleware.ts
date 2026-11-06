@@ -238,13 +238,14 @@ export async function middleware(req: NextRequest) {
 
         if (profileError) {
             console.error(`[middleware] lecture du statut impossible pour ${user.id} :`, profileError.code, profileError.message);
-            return deny('Vérification du compte impossible. Réessayez.', '/login?error=unauthorized_controller', 503);
+            return deny('Vérification du compte impossible. Réessayez.', '/?error=roles_unavailable', 503);
         }
         const allowedRoles: Parameters<typeof hasAnyRole>[1] = isSharedControlApi
             ? ['CONTROLEUR', 'PARTENAIRE', 'ADMIN', 'SUPERADMIN']
             : ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'];
         if (!dbProfile || dbProfile.status !== 'ACTIF' || !hasAnyRole(roles, allowedRoles)) {
-            return deny('Accès non autorisé : Rôle Contrôleur actif requis.', '/login?error=unauthorized_controller');
+            // Lot 8 (L53) : jamais /login pour un connecté, cette page le renverrait vers son espace (boucle)
+            return deny('Accès non autorisé : Rôle Contrôleur actif requis.', '/?error=unauthorized_controller');
         }
         return supabaseResponse;
     }
