@@ -4,7 +4,7 @@
  * Vente au guichet en espèces = entrée immédiate (lot 5, C7 ; écran du lot 7, D53). Tout chiffre vient du
  * serveur :
  *  - GET /api/controller/counter-sale : guichet ouvert ou non, permission espèces, caisse ouverte,
- *    catégories actives avec prix et disponibilité ;
+ *    catégories actives vendues au guichet, avec prix et disponibilité (on_site_only : non vendue en ligne) ;
  *  - POST /api/controller/counter-sale/quote : total et lignes du devis (aucun total calculé ici) ;
  *  - POST /api/controller/counter-sale : vente, avec une clé d'idempotence par vente (une relance après une
  *    coupure rend la même vente, jamais une seconde).
@@ -19,7 +19,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { formatFcfa, formatInteger } from '@/lib/format';
 import { newIdempotencyKey } from './scan-client';
 
-interface SaleCategory { id: string; name: string; price: number; available: number }
+interface SaleCategory { id: string; name: string; price: number; available: number; on_site_only?: boolean }
 interface CounterState {
     enabled: boolean;
     can_accept_cash: boolean;
@@ -209,6 +209,7 @@ export function CounterSalePanel({ eventId, onOpenShift, onSold, onSessionExpire
                             <li key={c.id} className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3">
                                 <span className="flex min-w-0 flex-1 flex-col">
                                     <span className="break-words text-base font-semibold text-fg">{c.name}</span>
+                                    {c.on_site_only && <span className="text-sm font-medium text-brand-fg">Sur place uniquement</span>}
                                     <span className="text-sm text-fg-muted tabular-nums">{formatFcfa(c.price)} · {formatInteger(c.available)} disponible{c.available > 1 ? 's' : ''}</span>
                                 </span>
                                 <IconButton aria-label={`Retirer un billet ${c.name}`} variant="secondary" disabled={q === 0 || selling} onClick={() => setQuantity(c.id, q - 1)}>
@@ -256,7 +257,7 @@ export function CounterSalePanel({ eventId, onOpenShift, onSold, onSessionExpire
             )}
 
             <Button variant="primary" size="lg" fullWidth isLoading={selling || quoting} disabled={!quote || items.length === 0}
-                onClick={() => void sell()} leftIcon={<Receipt size={18} />}>
+                className="tabular-nums" onClick={() => void sell()} leftIcon={<Receipt size={18} />}>
                 {quote ? `J’ai reçu ${formatFcfa(quote.total)} : valider la vente` : 'Choisissez au moins un billet'}
             </Button>
         </div>

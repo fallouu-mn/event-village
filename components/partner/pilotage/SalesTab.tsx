@@ -4,6 +4,7 @@ import React from 'react';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { KpiCardSkeleton } from '@/components/ui/KpiCard';
+import { categoryChannelLabel } from '@/lib/events/category-channels';
 import { formatFcfa, formatInteger, formatShortDate } from '@/lib/format';
 import { useServerData } from '@/components/partner/useServerData';
 import { BarList, PilotageSection } from './PilotageBlocks';
@@ -20,7 +21,7 @@ const COLUMNS: DataColumn<CategoryRow>[] = [
             <span className="font-semibold">
                 {c.name}
                 {!c.is_active && <span className="ml-2 font-normal text-fg-muted">(inactive)</span>}
-                {c.is_active && !c.is_visible && <span className="ml-2 font-normal text-fg-muted">(masquée)</span>}
+                {c.is_active && <span className="block text-sm font-normal text-fg-muted">{categoryChannelLabel(c)}</span>}
             </span>
         ),
     },

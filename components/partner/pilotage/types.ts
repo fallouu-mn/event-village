@@ -55,6 +55,8 @@ export interface PilotageSales {
         price: number;
         is_active: boolean;
         is_visible: boolean;
+        sale_online: boolean;
+        sale_counter: boolean;
         total: number;
         sold: number;
         sold_online: number;

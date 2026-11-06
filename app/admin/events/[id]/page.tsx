@@ -27,6 +27,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
 import { RefundProgress } from '@/components/events/RefundProgress';
+import { categoryChannelLabel } from '@/lib/events/category-channels';
 import { EVENT_STATUS_META, eventStatusLabel, isEventStatus, type EventStatus } from '@/lib/events/event-status';
 import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { PROGRAM_KIND_LABELS, type ProgramKind } from '@/lib/validations/event';
@@ -34,7 +35,7 @@ import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger, formatS
 
 /**
  * Lot 5 (tâche 5.7, contrat G ; 5.8, contrat J) — fiche complète d'un événement pour l'administration.
- *  - Lecture : GET /api/admin/events/[id] (affiche, dates, lieu, programme, catégories et prix, masquées et
+ *  - Lecture : GET /api/admin/events/[id] (affiche, dates, lieu, programme, catégories et prix, tous canaux et
  *    inactives comprises, organisateur et contact, historique des statuts avec les motifs, actions).
  *  - Actions : uniquement celles renvoyées par event_actions (D5). Une action avec `reason_required`
  *    (refuser, suspendre) ouvre ReasonDialog ; les autres (valider, publier, réactiver, terminer) une
@@ -71,7 +72,8 @@ interface SheetCategory {
   sale_start: string | null;
   sale_end: string | null;
   max_per_order: number | null;
-  is_visible: boolean | null;
+  sale_online: boolean;
+  sale_counter: boolean;
   is_active: boolean | null;
 }
 
@@ -500,10 +502,10 @@ export default function AdminEventSheetPage() {
     { key: 'max', header: 'Par commande', align: 'right', render: (c) => <span className="tabular-nums">{c.max_per_order ? `${formatInteger(c.max_per_order)} au plus` : '—'}</span> },
     {
       key: 'state',
-      header: 'Visibilité',
+      header: 'Canaux et état',
       render: (c) => (
         <div className="flex flex-wrap gap-1.5">
-          <Badge variant={c.is_visible === false ? 'neutral' : 'info'} size="sm">{c.is_visible === false ? 'Masquée' : 'Visible'}</Badge>
+          <Badge variant={c.sale_online || c.sale_counter ? 'info' : 'neutral'} size="sm">{categoryChannelLabel(c)}</Badge>
           <Badge variant={c.is_active === false ? 'warning' : 'success'} size="sm">{c.is_active === false ? 'Inactive' : 'Active'}</Badge>
         </div>
       ),
@@ -585,7 +587,7 @@ export default function AdminEventSheetPage() {
                 {[event.location, event.city].filter(Boolean).join(', ') || 'Non renseigné'}
               </InfoRow>
               <InfoRow icon={<Users size={18} />} label="Jauge déclarée">
-                {event.capacity ? `${formatInteger(event.capacity)} personnes` : 'Non limitée'}
+                <span className="tabular-nums">{event.capacity ? `${formatInteger(event.capacity)} personnes` : 'Non limitée'}</span>
               </InfoRow>
             </dl>
             {practical.length > 0 && (
@@ -636,7 +638,7 @@ export default function AdminEventSheetPage() {
               items={categories}
               columns={categoryColumns}
               getKey={(c) => c.id}
-              caption="Catégories de billets, masquées et inactives comprises"
+              caption="Catégories de billets, tous canaux et inactives comprises"
               cardTitle={(c) => c.name}
               empty={<p className="text-sm text-fg-muted">Aucune catégorie de billet : l’événement ne peut pas être vendu.</p>}
             />

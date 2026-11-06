@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Lock, Plus, Ticket, Trash2 } from 'lucide-react';
+import { AlertTriangle, Lock, Plus, Ticket, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconButton } from '@/components/ui/IconButton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { TextInput, Textarea } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
+import { CATEGORY_CHANNEL_HELP, categoryChannelLabel } from '@/lib/events/category-channels';
 import { formatInteger, toDakarDateTimeLocal } from '@/lib/format';
 import { DEFAULT_MAX_PER_ORDER, EVENT_LIMITS } from '@/lib/validations/event';
 
@@ -23,7 +24,7 @@ import { DEFAULT_MAX_PER_ORDER, EVENT_LIMITS } from '@/lib/validations/event';
 export type Row = Record<string, unknown>;
 
 export const CATEGORY_FIELDS = [
-    'name', 'description', 'price', 'total_quantity', 'max_per_order', 'sale_start', 'sale_end', 'is_visible', 'is_active',
+    'name', 'description', 'price', 'total_quantity', 'max_per_order', 'sale_start', 'sale_end', 'sale_online', 'sale_counter', 'is_active',
 ] as const;
 export type CategoryField = (typeof CATEGORY_FIELDS)[number];
 
@@ -35,7 +36,8 @@ export const CATEGORY_FIELD_LABELS: Record<CategoryField, string> = {
     max_per_order: 'Maximum de billets par commande',
     sale_start: 'Début de la vente',
     sale_end: 'Fin de la vente',
-    is_visible: 'Visible sur la page publique',
+    sale_online: 'Vendue en ligne',
+    sale_counter: 'Vendue au guichet',
     is_active: 'En vente',
 };
 
@@ -51,7 +53,8 @@ export interface CategoryDraft {
     max_per_order: string;
     sale_start: string;
     sale_end: string;
-    is_visible: boolean;
+    sale_online: boolean;
+    sale_counter: boolean;
     is_active: boolean;
     /** Billets vendus et réservés en cours de paiement (lus en base, jamais calculés ici). */
     sold: number;
@@ -82,7 +85,8 @@ export function newCategoryDraft(): CategoryDraft {
         max_per_order: String(DEFAULT_MAX_PER_ORDER),
         sale_start: '',
         sale_end: '',
-        is_visible: true,
+        sale_online: true,
+        sale_counter: true,
         is_active: true,
         sold: 0,
         held: 0,
@@ -116,7 +120,8 @@ export function categoryDraftFromRow(row: Row, key?: string): CategoryDraft {
         max_per_order: numberText(row.max_per_order) || String(DEFAULT_MAX_PER_ORDER),
         sale_start: row.sale_start ? toDakarDateTimeLocal(String(row.sale_start)) : '',
         sale_end: row.sale_end ? toDakarDateTimeLocal(String(row.sale_end)) : '',
-        is_visible: row.is_visible !== false,
+        sale_online: row.sale_online !== false,
+        sale_counter: row.sale_counter !== false,
         is_active: row.is_active !== false,
         sold: count(row.sold_quantity),
         held: count(row.held_quantity),
@@ -140,7 +145,8 @@ export function categoryCreateBody(d: CategoryDraft): Row {
         max_per_order: numberInput(d.max_per_order),
         sale_start: d.sale_start === '' ? null : d.sale_start,
         sale_end: d.sale_end === '' ? null : d.sale_end,
-        is_visible: d.is_visible,
+        sale_online: d.sale_online,
+        sale_counter: d.sale_counter,
         is_active: d.is_active,
     };
 }
@@ -291,15 +297,40 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                 disabled={disabled}
                 fieldClassName="sm:col-span-2"
             />
-            <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:flex-wrap sm:gap-6">
-                <ToggleField
-                    id={id('is_visible')}
-                    label={CATEGORY_FIELD_LABELS.is_visible}
-                    checked={draft.is_visible}
-                    onChange={(v) => set('is_visible', v)}
-                    disabled={disabled}
-                    error={errors.is_visible}
-                />
+            <fieldset className="flex min-w-0 flex-col gap-3 sm:col-span-2">
+                <legend className="text-sm font-semibold text-fg">Où vendre cette catégorie</legend>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <ToggleField
+                        id={id('sale_online')}
+                        label={CATEGORY_FIELD_LABELS.sale_online}
+                        hint={CATEGORY_CHANNEL_HELP.online}
+                        checked={draft.sale_online}
+                        onChange={(v) => set('sale_online', v)}
+                        disabled={disabled}
+                        error={errors.sale_online}
+                    />
+                    <ToggleField
+                        id={id('sale_counter')}
+                        label={CATEGORY_FIELD_LABELS.sale_counter}
+                        hint={CATEGORY_CHANNEL_HELP.counter}
+                        checked={draft.sale_counter}
+                        onChange={(v) => set('sale_counter', v)}
+                        disabled={disabled}
+                        error={errors.sale_counter}
+                    />
+                </div>
+                <p className="text-sm text-fg">
+                    <span className="text-fg-muted">Résultat : </span>
+                    <span className="font-semibold">{categoryChannelLabel(draft)}</span>
+                </p>
+                {!draft.sale_online && !draft.sale_counter && (
+                    <p className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-sm font-medium text-warning-fg">
+                        <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                        <span>{CATEGORY_CHANNEL_HELP.none}</span>
+                    </p>
+                )}
+            </fieldset>
+            <div className="sm:col-span-2">
                 <ToggleField
                     id={id('is_active')}
                     label={CATEGORY_FIELD_LABELS.is_active}
@@ -313,14 +344,19 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
     );
 }
 
-function ToggleField({ id, label, checked, onChange, disabled, error }: {
+function ToggleField({ id, label, hint, checked, onChange, disabled, error }: {
     id: string;
     label: string;
+    /** Aide sous la case, reliée par aria-describedby. */
+    hint?: string;
     checked: boolean;
     onChange: (v: boolean) => void;
     disabled?: boolean;
     error?: string;
 }) {
+    const hintId = hint ? `${id}-aide` : undefined;
+    const errorId = error ? `${id}-erreur` : undefined;
+    const describedBy = [errorId, hintId].filter(Boolean).join(' ') || undefined;
     return (
         <div className="flex flex-col gap-1">
             <label htmlFor={id} className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-base text-fg">
@@ -331,12 +367,13 @@ function ToggleField({ id, label, checked, onChange, disabled, error }: {
                     onChange={(e) => onChange(e.target.checked)}
                     disabled={disabled}
                     aria-invalid={error ? true : undefined}
-                    aria-describedby={error ? `${id}-erreur` : undefined}
+                    aria-describedby={describedBy}
                     className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-border-strong accent-brand"
                 />
                 {label}
             </label>
-            {error && <p id={`${id}-erreur`} className="text-sm font-medium text-danger-fg">{error}</p>}
+            {hint && <p id={hintId} className="text-sm leading-snug text-fg-muted">{hint}</p>}
+            {error && <p id={errorId} className="text-sm font-medium text-danger-fg">{error}</p>}
         </div>
     );
 }
@@ -518,14 +555,14 @@ export function EventTicketingManager({ eventId, initialCategories }: EventTicke
                                 <h3 id={`${draft.key}-titre`} className="break-words text-base font-semibold text-fg">
                                     {draft.name.trim() || `Catégorie ${index + 1}`}
                                 </h3>
-                                <p className="text-sm text-fg-muted">
+                                <p className="text-sm text-fg-muted tabular-nums">
                                     {isNew
                                         ? 'Nouvelle catégorie, pas encore enregistrée'
                                         : sales
                                             ? `${plural(draft.sold, 'billet vendu', 'billets vendus')}${draft.held > 0 ? `, ${formatInteger(draft.held)} en cours de paiement` : ''}`
                                             : 'Aucun billet vendu'}
                                     {!isNew && !draft.is_active ? ' · hors vente' : ''}
-                                    {!isNew && !draft.is_visible ? ' · masquée au public' : ''}
+                                    {item.base ? ` · ${categoryChannelLabel(item.base)}` : ''}
                                 </p>
                             </div>
                             {(isNew || !sales) && (
