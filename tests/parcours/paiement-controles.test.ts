@@ -59,7 +59,7 @@ describe('Contrôles avant débit', () => {
         const b = await newBuyer('fenetre');
         await refusedBeforeDebit(b, cart(ev.eventId, [[ev.categories.Close.id, 1]], b), 'SALE_CLOSED', 'vente close');
         await refusedBeforeDebit(b, cart(ev.eventId, [[ev.categories.Future.id, 1]], b), 'SALE_NOT_STARTED', 'vente future');
-        await refusedBeforeDebit(b, cart(ev.eventId, [[ev.categories.Cachee.id, 1]], b), 'CATEGORY_NOT_VISIBLE', 'catégorie invisible');
+        await refusedBeforeDebit(b, cart(ev.eventId, [[ev.categories.Cachee.id, 1]], b), 'CATEGORY_NOT_SOLD_ONLINE', 'catégorie invisible');
         await refusedBeforeDebit(b, cart(ev.eventId, [[ev.categories.Inactive.id, 1]], b), 'CATEGORY_INACTIVE', 'catégorie inactive');
     });
 
