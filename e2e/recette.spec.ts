@@ -901,7 +901,11 @@ test('acte 8 [admin] : supervision et relance d’une notification, remboursemen
         await superadmin.goto('/admin/users');
         await superadmin.getByPlaceholder(/rechercher par nom/i).fill(r.p1.email);
         const row = cardOf(superadmin, r.p1.email, /^suspendre$/i);
-        await expectRoute(superadmin, 'PATCH', '/api/admin/users', () => row.getByRole('button', { name: /^suspendre$/i }).click(), 200, 'suspension de P1');
+        // Statut seul : cette page ne lit pas le corps de la réponse, et response.text() attendrait sans fin
+        const patched = superadmin.waitForResponse((res) => res.request().method() === 'PATCH' && pathOf(res.url()) === '/api/admin/users');
+        await row.getByRole('button', { name: /^suspendre$/i }).click();
+        expect((await patched).status(), 'suspension de P1').toBe(200);
+        await expect(cardOf(superadmin, r.p1.email, /^réactiver$/i).getByText(/^suspendu$/i), 'statut à l’écran').toBeVisible();
         const { data, error } = await serviceClient().from('users').select('status').eq('id', r.p1.userId).single();
         if (error || !data) throw new Error(`[e2e] compte de P1 : ${error?.message ?? 'introuvable'}`);
         expect(String(data.status), 'compte de P1').toBe('SUSPENDU');
