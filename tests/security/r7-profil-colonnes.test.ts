@@ -7,6 +7,7 @@ import '../helpers/env';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertDenied, signInFixture, signUpAttacker, uniqueSuffix } from './helpers';
+import { randomSenegalPhone } from '../parcours/helpers';
 
 describe('R7 — colonnes protégées de public.users', () => {
     test('compte SUSPENDU qui tente status = ACTIF → refusé, statut inchangé', async () => {
@@ -20,7 +21,7 @@ describe('R7 — colonnes protégées de public.users', () => {
 
     test('CLIENT qui change son téléphone par REST → refusé', async () => {
         const client = await signUpAttacker('r7-phone');
-        const phone = `+22170${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
+        const phone = randomSenegalPhone('78');
         const { error } = await client.client.from('users').update({ phone }).eq('id', client.userId).select('phone');
         assertDenied(error, 'changement de téléphone par REST');
         const { data: after } = await client.client.from('users').select('phone').eq('id', client.userId).single();

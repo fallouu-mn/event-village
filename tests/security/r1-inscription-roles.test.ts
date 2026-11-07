@@ -11,12 +11,13 @@ import '../helpers/env';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { signUpAttacker } from './helpers';
+import { randomSenegalPhone } from '../parcours/helpers';
 
 const ELEVATED_ROLES = ['SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR'] as const;
 
 /** Téléphone unique en métadonnée : isole l'élévation de rôle du défaut « téléphone vide » (testé à part). */
 function uniqueMetaPhone(): string {
-    return `+22176${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
+    return randomSenegalPhone('76');
 }
 
 async function rpcBool(client: Awaited<ReturnType<typeof signUpAttacker>>['client'], fn: string, args?: Record<string, unknown>): Promise<boolean> {
@@ -51,7 +52,7 @@ describe('R1 — inscription : aucune élévation de rôle par les métadonnées
     });
 
     test('un téléphone fourni en métadonnée n\'est pas recopié dans users.phone (pas d\'appropriation de numéro)', async () => {
-        const claimed = `+22177${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
+        const claimed = randomSenegalPhone('77');
         const attacker = await signUpAttacker('phone-squat', { phone: claimed });
         const { data: me, error } = await attacker.client.from('users').select('phone').eq('id', attacker.userId).single();
         assert.equal(error, null, `lecture de son propre profil : ${error?.message}`);

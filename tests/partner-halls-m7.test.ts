@@ -10,6 +10,7 @@ import * as path from 'path';
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
 import './helpers/env';
 import { TEST_PASSWORD } from './helpers/fixture-data';
+import { randomSenegalPhone } from './parcours/helpers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -20,7 +21,7 @@ test('1. CONFIGURATION SALLE (§42/§45) : Création avec acompte personnalisé 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const suffix = Date.now().toString().slice(-6);
-    const phone = `+22177${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const phone = randomSenegalPhone('77');
     const email = `partner.hall.${suffix}@eventvillage.sn`;
 
     const { data: authUser } = await adminClient.auth.admin.createUser({
@@ -84,9 +85,9 @@ test('2. DISPONIBILITÉ & CONCURRENCE RÉELLE (§43-§44) : Deux réservations s
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const suffix = Date.now().toString().slice(-6);
-    const phoneP = `+22177${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const phoneC1 = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const phoneC2 = `+22175${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const phoneP = randomSenegalPhone('77');
+    const phoneC1 = randomSenegalPhone('76');
+    const phoneC2 = randomSenegalPhone('78');
 
     const { data: authP } = await adminClient.auth.admin.createUser({
         email: `partner.conflict.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,
@@ -190,8 +191,8 @@ test('3. INVARIANT FINANCIER ACOMPTE + SOLDE = TOTAL (§45-§47) & MORATOIRE', a
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const suffix = Date.now().toString().slice(-6);
-    const phoneP = `+22177${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const phoneC = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const phoneP = randomSenegalPhone('77');
+    const phoneC = randomSenegalPhone('76');
 
     const { data: authP } = await adminClient.auth.admin.createUser({
         email: `partner.fin.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,
@@ -274,8 +275,8 @@ test('4. CYCLE DE STATUT RÉSERVATION (§47-§48) : EN_ATTENTE -> CONFIRMEE -> A
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const suffix = Date.now().toString().slice(-6);
-    const phoneP = `+22177${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const phoneC = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const phoneP = randomSenegalPhone('77');
+    const phoneC = randomSenegalPhone('76');
 
     const { data: authP } = await adminClient.auth.admin.createUser({
         email: `partner.cycle.h.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,

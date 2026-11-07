@@ -32,6 +32,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { anonClient, assertDenied, signInFixture, signUpAttacker, ZERO_UUID, type AttackerAccount } from './helpers';
+import { randomSenegalPhone } from '../parcours/helpers';
 
 type Role = 'anon' | 'CLIENT' | 'PARTNER_A' | 'ADMIN';
 const ROLES: Role[] = ['anon', 'CLIENT', 'PARTNER_A', 'ADMIN'];
@@ -51,7 +52,7 @@ function assertPrivilegeDenied(error: PostgrestError | null, what: string): void
 }
 
 function phone(): string {
-    return `+22176${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
+    return randomSenegalPhone('76');
 }
 
 interface TableCase {

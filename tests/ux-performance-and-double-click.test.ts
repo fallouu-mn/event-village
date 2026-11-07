@@ -11,6 +11,7 @@ import * as path from 'path';
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
 import './helpers/env';
 import { TEST_PASSWORD } from './helpers/fixture-data';
+import { randomSenegalPhone } from './parcours/helpers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -20,7 +21,7 @@ test('1. UX / MUTATION UNIQUE : 1 clic valide déclenche exactement 1 création 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const suffix = Date.now().toString().slice(-6);
-    const phone = `+22177${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const phone = randomSenegalPhone('77');
     const email = `partner.ux.${suffix}@eventvillage.sn`;
 
     const { data: authUser } = await adminClient.auth.admin.createUser({
@@ -70,8 +71,8 @@ test('2. PROTECTION ANTI-DOUBLE CLIC CONCURRENT : 2 clics simultanés sur une r�
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const suffix = Date.now().toString().slice(-6);
-    const phoneP = `+22177${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const phoneC = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const phoneP = randomSenegalPhone('77');
+    const phoneC = randomSenegalPhone('76');
 
     const { data: authP } = await adminClient.auth.admin.createUser({
         email: `partner.double.${suffix}@eventvillage.sn`, password: TEST_PASSWORD, email_confirm: true, phone: phoneP, phone_confirm: true,

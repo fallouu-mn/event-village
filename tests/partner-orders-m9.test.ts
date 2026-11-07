@@ -10,6 +10,7 @@ import { OrderService } from '../lib/orders/order.service';
 // et le garde-fou anti-base réelle sont fournis par tests/helpers/env.ts.
 import './helpers/env';
 import { TEST_PASSWORD } from './helpers/fixture-data';
+import { randomSenegalPhone } from './parcours/helpers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -17,8 +18,8 @@ const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
 async function createTestUsers(prefix: string) {
     const uniqueSuffix = `${prefix}_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-    const phoneP = `+22177${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const phoneC = `+22176${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const phoneP = randomSenegalPhone('77');
+    const phoneC = randomSenegalPhone('76');
     const emailP = `partner.m9.${uniqueSuffix}@eventvillage.sn`;
     const emailC = `client.m9.${uniqueSuffix}@eventvillage.sn`;
 

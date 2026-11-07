@@ -10,9 +10,10 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { anonClient, signInFixture } from './helpers';
+import { randomSenegalPhone } from '../parcours/helpers';
 
 const OTP_ROW = () => ({
-    phone: `+22170${Math.floor(1_000_000 + Math.random() * 8_999_999)}`,
+    phone: randomSenegalPhone('78'),
     expires_at: new Date(Date.now() + 600_000).toISOString(),
     verified: false,
 });
