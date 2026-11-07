@@ -161,7 +161,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
         <div className="flex flex-col gap-6">
             {/* Une colonne sous sm : à deux colonnes, libellés coupés sur 4 lignes, montant et date sur 2 (run 98) */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <KpiCard label="Montant net organisateur" value={<KpiAmount value={formatFcfa(finance.organizer_net)} />} hint="Ventes en ligne, commissions et remboursements déduits" tone="success" icon={<Landmark size={18} />} />
+                <KpiCard label="Montant net organisateur" value={<KpiAmount value={formatFcfa(finance.organizer_net)} />} hint="Ventes en ligne, remboursements déduits" tone="success" icon={<Landmark size={18} />} />
                 <KpiCard
                     label="Disponibilité des fonds"
                     value={<KpiValue>{fundsFrom ? formatDateTime(fundsFrom) : 'Aucune vente en ligne'}</KpiValue>}
