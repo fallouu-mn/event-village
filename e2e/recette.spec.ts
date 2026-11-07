@@ -27,6 +27,7 @@
  * Les erreurs du navigateur sont imprimées et jointes, sans bloquer, comme la fumée.
  */
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import type { Browser, BrowserContext, Locator, Page, TestInfo } from '@playwright/test';
 import { readDemoIds } from './support/demo-ids';
 import { test, expect, openAnonymousContext, openRoleContext } from './support/fixtures';
@@ -742,10 +743,10 @@ test('acte 6 [partenaire] : pilotage, rapport de clôture, export, retrait, remb
     await test.step('export des participants, journalisé', async () => {
         await openTab(partner, /^clôture/i);
         const exported = partner.waitForResponse((res) => pathOf(res.url()) === `/api/partner/events/${r.e1.id}/participants-export`);
-        await partner.getByRole('button', { name: /^exporter les participants$/i }).click();
+        const [download] = await Promise.all([partner.waitForEvent('download'), partner.getByRole('button', { name: /^exporter les participants$/i }).click()]);
         const res = await exported;
         expect(res.status(), 'export des participants').toBe(200);
-        expect(await res.text(), 'export : les billets de l’événement').toContain('Standard');
+        expect(fs.readFileSync(await download.path(), 'utf8'), 'export : le fichier reçu porte les billets de l’événement').toContain('Standard');
         const { data, error } = await serviceClient().from('participant_exports').select('event_id').eq('id', String(res.headers()['x-export-id'])).maybeSingle();
         if (error) throw new Error(`[e2e] journal des exports : ${error.message}`);
         expect(data?.event_id, 'export écrit au journal').toBe(r.e1.id);
