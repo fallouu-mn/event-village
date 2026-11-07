@@ -34,7 +34,7 @@ export function ScanStatusBar({ eventTitle, doorLabel, doorEntries, online, stat
     return (
         <header className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3 py-2">
             <div className="flex min-w-0 flex-1 flex-col">
-                <h1 className="truncate text-base font-semibold leading-snug text-fg">{eventTitle}</h1>
+                <h1 className="line-clamp-2 text-base font-semibold leading-snug text-fg">{eventTitle}</h1>
                 <p className="flex flex-wrap items-center gap-x-2 text-sm text-fg">
                     <span role="status" aria-atomic="true" className="font-semibold tabular-nums">
                         {counter}{statsStale ? ' (non actualisé)' : ''}

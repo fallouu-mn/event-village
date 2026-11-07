@@ -142,7 +142,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
 
     if (loading) {
         return (
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la clôture">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-busy="true" aria-label="Chargement de la clôture">
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
@@ -159,7 +159,8 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
 
     return (
         <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            {/* Une colonne sous sm : à deux colonnes, libellés coupés sur 4 lignes, montant et date sur 2 (run 98) */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <KpiCard label="Montant net organisateur" value={<KpiAmount value={formatFcfa(finance.organizer_net)} />} hint="Ventes en ligne, commissions et remboursements déduits" tone="success" icon={<Landmark size={18} />} />
                 <KpiCard
                     label="Disponibilité des fonds"
@@ -168,10 +169,10 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                     tone="info"
                     icon={<CalendarClock size={18} />}
                 />
-                <KpiCard label="Absents" value={formatInteger(absents.count)} hint="Billets valides non compostés" tone="neutral" icon={<UserX size={18} />} />
+                <KpiCard label="Absents" value={formatInteger(absents.count)} hint="Billets valides jamais scannés à l’entrée" tone="neutral" icon={<UserX size={18} />} />
             </div>
 
-            <PilotageSection title="Rapport de clôture" description="Bilan de l’événement, mêmes définitions que l’aperçu.">
+            <PilotageSection title="Rapport de clôture" description="Bilan complet de l’événement.">
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     <dl className="rounded-2xl border border-border bg-surface px-4 py-1">
                         <DefinitionRow label="Billets vendus (hors invitations)" value={formatInteger(report.tickets.sold)} />
@@ -204,7 +205,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
 
             <PilotageSection
                 title="Absents"
-                description={absents.list_available ? 'Participants dont le billet valide n’a pas été composté.' : 'La liste nominative est disponible après la fin de l’événement ; le nombre est tenu à jour en direct.'}
+                description={absents.list_available ? 'Participants dont le billet valide n’a pas été scanné à l’entrée.' : 'La liste nominative est disponible après la fin de l’événement ; le nombre est tenu à jour en direct.'}
             >
                 {absents.list_available && absents.list && absents.list.length > 0 ? (
                     <DataList
@@ -216,7 +217,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                     />
                 ) : (
                     <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm tabular-nums text-fg-muted">
-                        {absents.list_available ? 'Aucun absent : tous les billets valides ont été compostés.' : (absents.count > 1 ? `${formatInteger(absents.count)} billets valides pas encore compostés.` : `${formatInteger(absents.count)} billet valide pas encore composté.`)}
+                        {absents.list_available ? 'Aucun absent : tous les billets valides ont été scannés à l’entrée.' : (absents.count > 1 ? `${formatInteger(absents.count)} billets valides pas encore compostés.` : `${formatInteger(absents.count)} billet valide pas encore composté.`)}
                     </p>
                 )}
             </PilotageSection>

@@ -449,7 +449,7 @@ export default function PartnerTeamPage() {
                             return (
                                 <li key={a.id} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-border bg-surface-sunken pl-2.5 text-sm text-fg">
                                     <CalendarDays size={14} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
-                                    <span className="truncate">{title}</span>
+                                    <span className="min-w-0 break-words py-1">{title}</span>
                                     <IconButton
                                         aria-label={`Retirer ${displayName(m)} de ${title}`}
                                         variant="danger"
@@ -510,7 +510,7 @@ export default function PartnerTeamPage() {
     const filtersActive = filterEvent !== 'all' || searchQuery.trim() !== '';
 
     return (
-        <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 pb-24 sm:px-6">
+        <div className="mx-auto max-w-5xl space-y-6 py-6 pb-24">
             <PageHeader
                 eyebrow={<LiveIndicator status={liveStatus} />}
                 title="Équipe de contrôle"
@@ -560,7 +560,6 @@ export default function PartnerTeamPage() {
                                 placeholder="Nom ou numéro"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                aside={<Search size={16} aria-hidden="true" />}
                             />
                             <Select
                                 label="Événement"

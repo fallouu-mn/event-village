@@ -183,7 +183,7 @@ export default function PartnerEventsPage() {
     const totals = overview?.totals;
 
     return (
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:py-8">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 py-6 lg:py-8">
             <PageHeader
                 title="Mes événements"
                 description="Soumettez, publiez et pilotez vos événements. Les indicateurs portent sur tous vos événements."

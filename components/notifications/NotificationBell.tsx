@@ -442,7 +442,7 @@ export function NotificationBell() {
                                                 onClick={() => void handleNotificationClick(notif)}
                                                 className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                             >
-                                                <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', TONE_ICON[tone])} aria-hidden="true">
+                                                <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', !notif.isRead && tone === 'brand' ? 'bg-surface text-brand-fg' : TONE_ICON[tone])} aria-hidden="true">
                                                     <Icon size={16} />
                                                 </span>
                                                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">

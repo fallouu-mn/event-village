@@ -338,7 +338,7 @@ export function ZSummaryModal({ isOpen, onClose, summary }: ZSummaryModalProps) 
             icon={<Receipt size={20} />}
             maxWidth="md"
             footer={(
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end print:hidden">
+                <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:justify-end print:hidden">
                     <Button variant="secondary" onClick={() => window.print()} leftIcon={<Printer size={18} />}>Imprimer le Z</Button>
                     <Button variant="primary" onClick={onClose}>Terminé</Button>
                 </div>

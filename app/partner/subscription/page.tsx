@@ -69,7 +69,7 @@ export default function PartnerSubscriptionPage() {
     const percent = sub?.trial_percent_used ?? data?.trial_percent_used ?? null;
 
     return (
-        <div className="mx-auto max-w-4xl space-y-8 px-4 py-6 pb-24 sm:px-6">
+        <div className="mx-auto max-w-4xl space-y-8 py-6 pb-24">
             <PageHeader
                 title="Abonnement"
                 description="Votre offre actuelle et votre période d’essai."

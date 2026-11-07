@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { formatFcfa, formatTime } from '@/lib/format';
+import { NOT_PROCESSED_DETAIL } from '@/lib/scan/scan-result';
 import { isTechnicalOutcome, titleFor, toneFor, type ScanOutcome, type ScanTone } from './scan-client';
 
 /** Tons du résultat sur les tokens sémantiques (contrat Q) : fond doux, bordure et titre du ton, texte courant. */
@@ -69,7 +70,8 @@ export function ScanResultPanel({ outcome, title, recoveredAt, children }: ScanR
     const technical = isTechnicalOutcome(outcome);
     const heading = title ?? titleFor(outcome);
     const ticket = outcome.ticket;
-    const showMessage = outcome.message && outcome.message !== heading;
+    const detail = outcome.result === 'not_processed' ? NOT_PROCESSED_DETAIL : outcome.message;
+    const showMessage = detail && detail !== heading;
 
     return (
         <div
@@ -88,7 +90,7 @@ export function ScanResultPanel({ outcome, title, recoveredAt, children }: ScanR
                             Résultat retrouvé : billet lu à {formatTime(recoveredAt)}.
                         </p>
                     ) : null}
-                    {showMessage && <p className={cn('text-sm font-medium', classes.body)}>{outcome.message}</p>}
+                    {showMessage && <p className={cn('text-sm font-medium', classes.body)}>{detail}</p>}
                     {technical && (
                         <p className={cn('text-sm', classes.body)}>
                             Incident technique : le billet n’est pas en cause. Ne refusez pas le spectateur pour ce motif, réessayez.

@@ -60,7 +60,7 @@ export function RefundProgress({ eventId, isAdmin, className }: RefundProgressPr
             </div>
 
             {loading && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <KpiCardSkeleton />
                     <KpiCardSkeleton />
                     <KpiCardSkeleton />
@@ -73,7 +73,7 @@ export function RefundProgress({ eventId, isAdmin, className }: RefundProgressPr
 
             {!loading && !error && progress && (
                 <div className="flex flex-col gap-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         <KpiCard label="Versés" value={formatFcfa(progress.paid.total)} hint={refundsHint(progress.paid)} tone="success" icon={<BadgeCheck size={18} />} />
                         <KpiCard label="En cours" value={formatFcfa(progress.in_progress.total)} hint={refundsHint(progress.in_progress)} tone="info" icon={<Hourglass size={18} />} />
                         <KpiCard

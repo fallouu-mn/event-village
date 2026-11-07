@@ -18,7 +18,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
  * en fond plein `brand` (#C2410C, texte blanc 5,18:1), focus visible sur l'anneau `ring`.
  */
 const baseStyles =
-  'inline-flex min-h-11 items-center justify-center gap-2 font-semibold tracking-tight cursor-pointer select-none transition-colors duration-200 motion-safe:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
+  'inline-flex min-h-11 items-center justify-center gap-2 font-semibold cursor-pointer select-none transition-colors duration-200 motion-safe:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
 
 const variants: Record<ButtonVariant, string> = {
   primary: 'bg-brand text-on-brand hover:bg-brand-hover border border-transparent shadow-sm',

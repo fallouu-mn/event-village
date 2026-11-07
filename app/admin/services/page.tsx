@@ -3,7 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Building2, CalendarDays, ShoppingBag, Ticket, Utensils } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Tabs, TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
+import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
+import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
@@ -281,7 +282,7 @@ export default function AdminServicesPage() {
         description="Vue d’ensemble, en lecture, des salles, tables, produits et commandes des partenaires."
       />
 
-      <Tabs
+      <ScrollableTabs
         tabs={TABS}
         value={tab}
         onChange={(next) => {

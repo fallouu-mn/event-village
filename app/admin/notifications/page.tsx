@@ -201,7 +201,7 @@ function formatDay(day: string): string {
 function smsMonthHint(m: { month: string; uncertain: number; otp: number }): string {
   const codes = m.otp === 1 ? '1 code de connexion' : `${formatInteger(m.otp)} codes de connexion`;
   const uncertain = m.uncertain === 1 ? '1 à l’issue incertaine' : `${formatInteger(m.uncertain)} à l’issue incertaine`;
-  return `En ${formatMonth(m.month)}, dont ${codes} et ${uncertain} (peut-être facturés)`;
+  return `En ${formatMonth(m.month)}, dont ${codes} et ${uncertain} (peut-être facturé${m.uncertain > 1 ? 's' : ''})`;
 }
 
 function formatMonth(month: string): string {
@@ -443,7 +443,7 @@ export default function AdminNotificationsPage() {
     <div className="space-y-6 pb-24 lg:pb-12">
       <PageHeader
         title="Notifications"
-        description="Supervision des envois : application, SMS, email et notifications push. Les chiffres sont ceux du serveur, en jours de Dakar."
+        description="Supervision des envois : application, SMS, email et notifications push. Chiffres arrêtés à l’heure de Dakar."
         eyebrow={<LiveIndicator status={liveStatus} />}
       />
 
@@ -605,7 +605,7 @@ export default function AdminNotificationsPage() {
         <div className="space-y-1">
           <h2 id="notif-par-jour" className="text-lg font-semibold text-fg">Par jour et par canal</h2>
           <p className="text-sm tabular-nums text-fg-muted">
-            {stats ? `${formatInteger(stats.days)} derniers jours, jours de Dakar.` : 'Derniers jours, jours de Dakar.'}
+            {stats ? `${formatInteger(stats.days)} derniers jours, heure de Dakar.` : 'Derniers jours, heure de Dakar.'}
           </p>
         </div>
         {stats ? (

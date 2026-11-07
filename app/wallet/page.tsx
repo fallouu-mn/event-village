@@ -240,6 +240,12 @@ const WITHDRAWAL_STATUS: Record<string, { label: string; variant: BadgeVariant }
   CANCELLED: { label: 'Annulé', variant: 'neutral' },
 };
 
+/** Niveau d'une commission, en clair : N1 et N2 sont des codes internes, jamais montrés au client (relecture du run 98). */
+const COMMISSION_LEVEL: Record<string, string> = {
+  N1: 'Commission sur un filleul direct',
+  N2: 'Commission sur un filleul indirect',
+};
+
 const COMMISSION_STATUS: Record<string, string> = {
   PENDING: 'En attente',
   AVAILABLE: 'Disponible',
@@ -508,7 +514,7 @@ export default function WalletPage() {
       {/* 1. En-tête */}
       <PageHeader
         title="Portefeuille de parrainage"
-        description="Vos commissions N1 et N2 deviennent disponibles après leur délai de validation ; retirez-les par Wave ou Orange Money."
+        description="Vos commissions de parrainage deviennent disponibles après leur délai de validation ; retirez-les par Wave ou Orange Money."
       />
 
       {/* 2. Soldes */}
@@ -565,7 +571,7 @@ export default function WalletPage() {
             </div>
             <div className={statClass}>
               <p className="flex items-center gap-1.5 text-sm font-semibold text-fg-muted">
-                <ShieldCheck size={16} className="text-success-fg" aria-hidden="true" /> Créance
+                <ShieldCheck size={16} className="text-success-fg" aria-hidden="true" /> À compenser
               </p>
               <p className="text-lg font-bold tabular-nums text-fg">{formatFcfa(balance.debt)}</p>
               <p className="text-sm leading-relaxed text-fg-muted">
@@ -584,7 +590,7 @@ export default function WalletPage() {
             Retirer mes commissions
           </h2>
           <p className="mt-0.5 text-sm text-fg-muted">
-            Wave ou Orange Money. Montant minimum et frais de retrait appliqués par Event Village à la demande, puis affichés ici.
+            Wave ou Orange Money. Event Village applique le montant minimum et les frais de retrait au moment de la demande ; ils sont ensuite affichés ici.
           </p>
         </div>
 
@@ -939,11 +945,11 @@ export default function WalletPage() {
                             comm.generation === 'N1' ? 'bg-success-bg text-success-fg' : 'bg-warning-bg text-warning-fg',
                           )}
                         >
-                          {comm.generation}
+                          {comm.generation === 'N1' ? '1' : '2'}
                         </span>
                         <div className="min-w-0">
                           <span className="block font-semibold text-fg">
-                            Commission {comm.generation} · {COMMISSION_STATUS[comm.status] ?? 'statut à vérifier'}
+                            {COMMISSION_LEVEL[comm.generation] ?? 'Commission de parrainage'} · {COMMISSION_STATUS[comm.status] ?? 'statut à vérifier'}
                           </span>
                           <span className="text-fg-muted">{formatDateTime(comm.createdAt) ?? '—'}</span>
                         </div>

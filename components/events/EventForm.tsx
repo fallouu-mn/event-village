@@ -658,7 +658,7 @@ export function EventForm(props: EventFormProps) {
 
     if (load.state === 'loading') {
         return (
-            <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+            <div className="mx-auto w-full max-w-4xl py-6">
                 {header}
                 <div className="flex flex-col gap-4" aria-busy="true" aria-live="polite">
                     <span className="sr-only">Chargement de l’événement…</span>
@@ -671,7 +671,7 @@ export function EventForm(props: EventFormProps) {
 
     if (load.state === 'error') {
         return (
-            <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+            <div className="mx-auto w-full max-w-4xl py-6">
                 {header}
                 <ErrorState title="Événement indisponible" description={load.message} onRetry={() => void loadEvent()} />
             </div>
@@ -680,7 +680,7 @@ export function EventForm(props: EventFormProps) {
 
     if (load.state === 'notfound') {
         return (
-            <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+            <div className="mx-auto w-full max-w-4xl py-6">
                 {header}
                 <EmptyState
                     title="Événement introuvable"
@@ -695,7 +695,7 @@ export function EventForm(props: EventFormProps) {
     if (isEdit && !EDITABLE_STATUSES.has(status)) {
         const pending = status === 'EN_ATTENTE';
         return (
-            <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+            <div className="mx-auto w-full max-w-4xl py-6">
                 {header}
                 <StatusBanner
                     tone={pending ? 'warning' : 'neutral'}
@@ -721,7 +721,7 @@ export function EventForm(props: EventFormProps) {
     const hint = (base: string | undefined, notify: boolean) => (notify && withHolders ? [base, NOTIFY_HINT].filter(Boolean).join(' ') : base);
 
     return (
-        <div className="mx-auto w-full max-w-4xl px-4 pb-24 pt-6 sm:px-6 md:pb-10">
+        <div className="mx-auto w-full max-w-4xl pb-24 pt-6 md:pb-10">
             {header}
 
             {afterValidation && (

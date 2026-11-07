@@ -369,7 +369,7 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
 
             <PilotageSection
                 title="Contrôleurs affectés"
-                description="Le point d’entrée est recopié sur chaque scan ; la permission espèces vaut pour cette affectation seulement."
+                description="Chaque scan garde le point d’entrée du contrôleur ; la permission espèces vaut pour cette affectation seulement."
             >
                 {data.controllers.length === 0 ? (
                     <EmptyState

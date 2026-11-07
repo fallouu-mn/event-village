@@ -29,6 +29,7 @@ import { RefundsToRetry } from '@/components/admin/RefundsToRetry';
 import { StatusBadge } from '@/components/ui/Badge';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { formatFcfaPrecise } from '@/lib/format';
 import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
 import type { FinancialReconciliationItem, FinancialReconciliationSummary } from '@/lib/admin/admin.service';
 
@@ -58,9 +59,7 @@ const TARGET_LABELS: Record<string, string> = {
 
 const OPERATOR_NAMES: Record<string, string> = { WAVE: 'Wave', ORANGE_MONEY: 'Orange Money', SAMIRPAY: 'SamirPay' };
 
-function formatPrice(amount: number): string {
-  return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(amount)} FCFA`;
-}
+const formatPrice = formatFcfaPrecise;
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -192,7 +191,7 @@ export default function AdminFinanceReconciliationPage() {
           <section aria-label="Parrainage, retraits et écarts" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-sm text-fg-muted font-bold">Commissions parrainage (N1 + N2)</span>
+                <span className="text-sm text-fg-muted font-bold">Commissions de parrainage</span>
                 <p className="text-base font-black text-fg tabular-nums">{formatPrice(summary.totalReferralCommissions)}</p>
               </div>
               <Users size={22} className="text-brand-fg shrink-0" aria-hidden="true" />
@@ -215,7 +214,7 @@ export default function AdminFinanceReconciliationPage() {
               <div className="space-y-0.5">
                 <span className="text-sm text-fg-muted font-bold">Écarts de rapprochement</span>
                 <p className={`text-base font-black tabular-nums ${summary.discrepanciesCount ? 'text-danger-fg' : 'text-success-fg'}`}>
-                  {summary.discrepanciesCount} anomalie(s)
+                  {summary.discrepanciesCount} {summary.discrepanciesCount > 1 ? 'anomalies' : 'anomalie'}
                 </p>
               </div>
               {summary.discrepanciesCount ? (

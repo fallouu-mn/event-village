@@ -157,7 +157,7 @@ et `bg-[#FF7900]`. Le nom de l'opérateur reste écrit sur le bouton (jamais la 
   (avertissement), Validé (info), Publié (succès), Suspendu (avertissement fort), Terminé (atténué),
   Annulé (danger). Aucun enum dans le JSX.
 - `lib/format.ts` : `formatDateTime` (« sam. 15 nov. 2026 à 20:00 », Africa/Dakar), `formatEventDateTime`,
-  `formatFcfa` (« 5 000 F CFA »), `formatPercent` (« 42 % »), `formatInteger`. Valeur absente → « — ».
+  `formatFcfa` (« 5 000 F CFA »), `formatFcfaPrecise` (« 19,7 F CFA », rapprochements financiers seulement), `formatPercent` (« 42 % »), `formatInteger`. Valeur absente → « — ».
 - `lib/scan/scan-result.ts` : `SCAN_REFUSAL_LABELS` (dont `forbidden`), `SCAN_METHOD_LABELS` (QR, Saisie
   manuelle, Guichet).
 

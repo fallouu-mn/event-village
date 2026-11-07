@@ -443,9 +443,9 @@ export default function PartnerRegisterPage() {
               1. Votre structure
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TextInput id={FIELD_IDS.companyName} label="Raison sociale" required autoComplete="organization" placeholder="Terrou-Bi Hospitality SARL"
+              <TextInput id={FIELD_IDS.companyName} label="Raison sociale" required autoComplete="organization" placeholder="Nom légal de la société"
                 value={companyName} onChange={(e) => { setCompanyName(e.target.value); clearError('companyName'); }} error={fieldErrors.companyName} />
-              <TextInput id={FIELD_IDS.commercialName} label="Nom commercial (enseigne)" placeholder="Terrou-Bi Dakar"
+              <TextInput id={FIELD_IDS.commercialName} label="Nom commercial (enseigne)" placeholder="Nom connu du public"
                 value={commercialName} onChange={(e) => { setCommercialName(e.target.value); clearError('commercialName'); }} error={fieldErrors.commercialName} />
             </div>
 

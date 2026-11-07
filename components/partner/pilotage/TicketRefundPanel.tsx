@@ -259,7 +259,7 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
 
                 {sheet && copy && (
                     <section aria-labelledby={sheetTitleId} className="flex flex-col gap-3 rounded-2xl border border-border-strong bg-surface-sunken p-4">
-                        <h3 id={sheetTitleId} className="break-all text-base font-semibold text-fg tabular-nums">Billet {sheet.ticket_number}</h3>
+                        <h3 id={sheetTitleId} className="text-base font-semibold text-fg tabular-nums">Billet <span className="block break-all">{sheet.ticket_number}</span></h3>
                         <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm text-fg tabular-nums">
                             <SheetRow label="Catégorie">{sheet.category || 'Non renseignée'}</SheetRow>
                             <SheetRow label="Porteur">{sheet.holder_short || 'Non renseigné'}</SheetRow>

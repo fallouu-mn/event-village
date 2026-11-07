@@ -123,7 +123,7 @@ export default function PartnerEventPilotagePage() {
 
     if (overview.loading && !ov) {
         return (
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:py-8" role="status" aria-busy="true" aria-label="Chargement du pilotage">
+            <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 py-6 lg:py-8" role="status" aria-busy="true" aria-label="Chargement du pilotage">
                 <div className="flex flex-col gap-3">
                     <span className="h-5 w-40 rounded bg-surface-sunken motion-safe:animate-pulse" />
                     <span className="h-8 w-3/4 rounded bg-surface-sunken motion-safe:animate-pulse" />
@@ -141,7 +141,7 @@ export default function PartnerEventPilotagePage() {
 
     if (!ov) {
         return (
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-6 sm:px-6 lg:py-8">
+            <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 py-6 lg:py-8">
                 <PageHeader title="Pilotage de l’événement" back={{ href: '/partner/events', label: 'Mes événements' }} className="pb-0 sm:pb-0" />
                 <ErrorState
                     title="Le pilotage n’a pas pu être chargé"
@@ -159,7 +159,7 @@ export default function PartnerEventPilotagePage() {
     const busy = pendingTo !== null;
 
     return (
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:py-8">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 py-6 lg:py-8">
             <PageHeader
                 back={{ href: '/partner/events', label: 'Mes événements' }}
                 eyebrow={
@@ -240,7 +240,7 @@ export default function PartnerEventPilotagePage() {
             <div className="flex flex-col gap-5">
                 <ScrollableTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as PilotageTabId)} ariaLabel="Rubriques du pilotage" idPrefix={TABS_PREFIX} />
                 <TabPanel idPrefix={TABS_PREFIX} tabIdValue={activeTab}>
-                    {activeTab === 'apercu' && <OverviewTab data={ov} />}
+                    {activeTab === 'apercu' && <OverviewTab data={ov} saleStopped={ov.status === 'ANNULE'} />}
                     {activeTab === 'ventes' && <SalesTab eventId={eventId} signal={signal} />}
                     {activeTab === 'entrees' && <EntriesTab eventId={eventId} signal={signal} />}
                     {activeTab === 'equipe' && <TeamTab eventId={eventId} eventStatus={ov.status} signal={signal} />}

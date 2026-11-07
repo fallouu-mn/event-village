@@ -279,7 +279,7 @@ export default function AdminEventsPage() {
           </div>
         )}
         {ev.submitted_at && (
-          <div className="flex items-start gap-2">
+          <div className="flex items-start gap-1">
             <dt className="flex-shrink-0">Soumis le</dt>
             <dd><time dateTime={toDakarDateTimeLocal(ev.submitted_at)} className="tabular-nums">{formatDateTime(ev.submitted_at)}</time></dd>
           </div>

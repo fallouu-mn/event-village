@@ -64,6 +64,12 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     not_processed: 'Scan non traité : scannez le billet de nouveau',
 };
 
+/**
+ * Texte affiché sous le titre de `not_processed`. Le titre donne déjà la consigne ; la phrase complète de l'API la redisait
+ * (trois fois avec la ligne « réessayez », relecture du run 98). Le message de la réponse (contrat 3.5) ne change pas.
+ */
+export const NOT_PROCESSED_DETAIL = 'Aucune entrée enregistrée.';
+
 // ── Lot 7 (7.2, contrat 6.2) — catégories du résultat plein écran ─────────
 
 /**

@@ -75,7 +75,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
         <div className="flex flex-col gap-6">
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                 <KpiCard label="Entrées validées" value={formatInteger(data.total)} hint="Scans acceptés, guichet compris" tone="success" icon={<DoorOpen size={18} />} />
-                <KpiCard label="Au guichet" value={formatInteger(data.counter)} hint="Billets vendus et compostés sur place" tone="info" icon={<Store size={18} />} />
+                <KpiCard label="Au guichet" value={formatInteger(data.counter)} hint="Billets vendus et validés sur place" tone="info" icon={<Store size={18} />} />
                 <KpiCard label="Refus" value={formatInteger(data.refused)} hint="Tentatives refusées au contrôle" tone="danger" icon={<Ban size={18} />} />
                 <KpiCard label="Encaissements en attente" value={formatInteger(data.cash_pending)} hint="Billets à régler sur place présentés, pas encore encaissés" tone="warning" icon={<HandCoins size={18} />} />
             </div>

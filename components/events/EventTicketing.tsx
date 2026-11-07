@@ -38,7 +38,7 @@ export const CATEGORY_FIELD_LABELS: Record<CategoryField, string> = {
     sale_end: 'Fin de la vente',
     sale_online: 'Vendue en ligne',
     sale_counter: 'Vendue au guichet',
-    is_active: 'En vente',
+    is_active: 'Catégorie active',
 };
 
 export interface CategoryDraft {

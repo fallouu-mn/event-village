@@ -28,7 +28,7 @@ const STEPS: Array<{ title: string; text: string; icon: React.ReactNode }> = [
   },
   {
     title: 'Il est prévenu par SMS',
-    text: 'Votre proche reçoit un SMS. Il se connecte avec ce numéro et accepte le billet dans « Mes billets » sous 48 heures.',
+    text: 'Votre proche reçoit un SMS. Il se connecte avec ce numéro et accepte le billet dans «\u00A0Mes billets\u00A0» sous 48\u00A0heures.',
     icon: <Send size={18} aria-hidden="true" />,
   },
   {
@@ -40,24 +40,24 @@ const STEPS: Array<{ title: string; text: string; icon: React.ReactNode }> = [
 
 const FAQS: Array<{ q: string; a: string }> = [
   {
-    q: 'Mon proche doit-il avoir un compte pour recevoir le billet ?',
+    q: 'Mon proche doit-il avoir un compte pour recevoir le billet\u00A0?',
     a: 'Oui. Le compte est gratuit et se crée en quelques instants avec le numéro auquel vous envoyez le billet, confirmé par un code SMS. Lui seul peut ensuite présenter ce billet.',
   },
   {
-    q: 'Pourquoi une capture d’écran ne fonctionne-t-elle pas ?',
+    q: 'Pourquoi une capture d’écran ne fonctionne-t-elle pas\u00A0?',
     a: 'Le code d’entrée change toutes les 20 secondes. Une capture garde un code figé, refusé par les contrôleurs à l’entrée.',
   },
   {
-    q: 'Que se passe-t-il si le destinataire n’accepte pas le billet ?',
-    a: 'Le transfert reste en attente pendant 48 heures. Sans réponse dans ce délai, le billet revient dans vos billets sans aucune action de votre part.',
+    q: 'Que se passe-t-il si le destinataire n’accepte pas le billet\u00A0?',
+    a: 'Le transfert reste en attente pendant 48\u00A0heures. Sans réponse dans ce délai, le billet revient dans vos billets sans aucune action de votre part.',
   },
   {
-    q: 'Puis-je annuler le transfert si je me suis trompé de numéro ?',
-    a: 'Oui. Tant que le destinataire n’a pas accepté le billet, touchez « Annuler le transfert » sur la carte du billet. Le billet vous revient aussitôt.',
+    q: 'Puis-je annuler le transfert si je me suis trompé de numéro\u00A0?',
+    a: 'Oui. Tant que le destinataire n’a pas accepté le billet, touchez «\u00A0Annuler le transfert\u00A0» sur la carte du billet. Le billet vous revient aussitôt.',
   },
   {
-    q: 'Puis-je télécharger le billet en PDF et l’imprimer ?',
-    a: 'Le PDF n’est pas un billet d’entrée : il ne contient pas de QR. À l’entrée, ouvrez le billet dans l’application ; il reste disponible sans réseau si vous l’avez ouvert avant d’arriver.',
+    q: 'Puis-je télécharger le billet en PDF et l’imprimer\u00A0?',
+    a: 'Le PDF n’est pas un billet d’entrée\u00A0: il ne contient pas de QR. À l’entrée, ouvrez le billet dans l’application\u00A0; il reste disponible sans réseau si vous l’avez ouvert avant d’arriver.',
   },
 ];
 
@@ -65,7 +65,7 @@ export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({ 
   <Modal
     isOpen={isOpen}
     onClose={onClose}
-    title="Comment fonctionne le transfert ?"
+    title="Comment marche le transfert&nbsp;?"
     subtitle="Donnez un billet à un proche en trois étapes."
     icon={<ArrowRightLeft size={20} />}
     maxWidth="2xl"
@@ -103,16 +103,16 @@ export const TransferExplainerModal: React.FC<TransferExplainerModalProps> = ({ 
           <div className="space-y-1.5 rounded-2xl border border-danger-border bg-danger-bg p-4">
             <p className="flex items-center gap-2 font-semibold text-danger-fg">
               <AlertTriangle size={16} aria-hidden="true" />
-              Capture d’écran : refusée
+              Capture d’écran&nbsp;: refusée
             </p>
             <p className="leading-relaxed text-fg">
-              Le code change toutes les 20 secondes : une capture est refusée à l’entrée.
+              Le code change toutes les 20 secondes&nbsp;: une capture est refusée à l’entrée.
             </p>
           </div>
           <div className="space-y-1.5 rounded-2xl border border-success-border bg-success-bg p-4">
             <p className="flex items-center gap-2 font-semibold text-success-fg">
               <CheckCircle2 size={16} aria-hidden="true" />
-              Transfert : accepté
+              Transfert&nbsp;: accepté
             </p>
             <p className="leading-relaxed text-fg">
               Votre proche présente son propre billet, à son nom de compte, depuis son téléphone.

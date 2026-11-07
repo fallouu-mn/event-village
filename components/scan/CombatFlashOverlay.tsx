@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { formatFcfa, formatTime } from '@/lib/format';
-import { isScanResult, SCAN_RESULT_LABELS, scanCategoryOf, type ScanCategory, type ScanResult } from '@/lib/scan/scan-result';
+import { isScanResult, NOT_PROCESSED_DETAIL, SCAN_RESULT_LABELS, scanCategoryOf, type ScanCategory, type ScanResult } from '@/lib/scan/scan-result';
 
 export interface CombatFlashOverlayProps {
     /** Résultat affiché (null : rien). */
@@ -141,7 +141,8 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     const ticketLine = [category, ticketNumber].filter(Boolean).join(' · ');
     // Message masqué s'il redit le titre, y compris quand le titre le complète (« Encaissement requis : 5 000 F CFA »
     // suivi de « Encaissement requis », relecture du run 77).
-    const showMessage = Boolean(message) && !repeatsHeading(message ?? '', heading);
+    const detail = status === 'not_processed' ? NOT_PROCESSED_DETAIL : message;
+    const showMessage = Boolean(detail) && !repeatsHeading(detail ?? '', heading);
     const usedLine = status === 'already_used' && checkedInAt
         ? (checkedInByMe ? `Déjà validé par vous à ${formatTime(checkedInAt)}` : `Entré à ${formatTime(checkedInAt)}`)
         : null;
@@ -192,7 +193,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
 
             {usedLine && <p className="text-2xl font-bold tabular-nums sm:text-3xl">{usedLine}</p>}
 
-            {showMessage && <p className="max-w-2xl text-xl font-semibold leading-snug sm:text-2xl">{message}</p>}
+            {showMessage && <p className="max-w-2xl text-xl font-semibold leading-snug sm:text-2xl">{detail}</p>}
 
             {status !== 'valid' && ticketLine && (
                 <p className="text-lg font-semibold tabular-nums sm:text-xl">Billet : {ticketLine}</p>

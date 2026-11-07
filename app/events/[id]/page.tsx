@@ -825,7 +825,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <InfoTile icon={<CalendarDays size={20} />} label="Date et heure">
-              {capitalize(event.dateFormatted)} à {event.time}
+              {capitalize(event.dateFormatted)} à&nbsp;{event.time}
             </InfoTile>
             <InfoTile icon={<MapPin size={20} />} label="Lieu">
               {place}
@@ -1116,9 +1116,10 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         </aside>
       </div>
 
-      {/* Barre d'achat mobile, au-dessus de la barre de navigation du bas */}
+      {/* Barre d'achat mobile, collée à la barre de navigation du bas : 53 px (bordure 1, marge haute 4, liens 48) plus
+          la zone sûre, que .safe-bottom ajoute à la navigation (AppLayout). Hauteur relevée sur la capture du run 98. */}
       {showMobileBar && (
-        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-surface px-4 py-3 shadow-lg lg:hidden">
+        <div className="fixed inset-x-0 bottom-[calc(3.3125rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-surface px-4 py-3 shadow-lg lg:hidden">
           <Button
             variant="primary"
             size="lg"

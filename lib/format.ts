@@ -32,6 +32,7 @@ const TIME_FORMAT = new Intl.DateTimeFormat('fr-FR', {
     timeZone: DAKAR_TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
 const INTEGER_FORMAT = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+const PRECISE_FORMAT = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 
 type DateInput = Date | string | number | null | undefined;
 
@@ -109,6 +110,15 @@ export function formatInteger(value: number | null | undefined): string {
 export function formatFcfa(amount: number | null | undefined): string {
     if (amount === null || amount === undefined || !Number.isFinite(amount)) return MISSING_VALUE;
     return `${formatInteger(amount)}${NBSP}F${NBSP}CFA`;
+}
+
+/**
+ * Montant en francs CFA avec ses décimales (2 au plus) : « 19,7 F CFA ». Pour les rapprochements financiers, où les
+ * frais de l'agrégateur et les nets ne sont pas entiers ; partout ailleurs, formatFcfa.
+ */
+export function formatFcfaPrecise(amount: number | null | undefined): string {
+    if (amount === null || amount === undefined || !Number.isFinite(amount)) return MISSING_VALUE;
+    return `${visibleSpaces(PRECISE_FORMAT.format(amount))}${NBSP}F${NBSP}CFA`;
 }
 
 /**

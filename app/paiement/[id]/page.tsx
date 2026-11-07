@@ -51,7 +51,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { PaymentWaitingInfo, type PaymentWaitingItem } from '@/components/payment/PaymentWaitingInfo';
-import { formatFcfa, formatTime } from '@/lib/format';
+import { formatDateTime, formatFcfa, formatTime } from '@/lib/format';
 import {
   clearPaymentHandoff,
   isMobileDevice,
@@ -256,7 +256,7 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         chip: null,
         tone: 'failed',
         title: 'Le paiement n’a pas abouti',
-        description: `${label ?? 'L’opérateur'} n’a pas confirmé le paiement de ${amount}. Vous pouvez réessayer ; si votre compte a tout de même été débité, contactez le support avec la référence ci-dessous.`,
+        description: `${label ?? 'L’opérateur'} n’a pas confirmé le paiement de ${amount}. Vous pouvez réessayer ; si votre compte a tout de même été débité, contactez le support avec la référence ci-\u2060dessous.`,
         icon: XCircle,
       };
     case 'CANCELLED':
@@ -303,7 +303,7 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         chip: null,
         tone: 'unknown',
         title: 'Statut à vérifier',
-        description: 'Le statut de ce paiement n’a pas pu être interprété. Si la situation persiste, contactez le support avec la référence ci-dessous.',
+        description: 'Le statut de ce paiement n’a pas pu être interprété. Si la situation persiste, contactez le support avec la référence ci-\u2060dessous.',
         icon: AlertTriangle,
       };
   }
@@ -806,7 +806,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
                   'Vérification du statut final auprès de l’opérateur…'
                 ) : (
                   <>
-                    Échéance à <time dateTime={new Date(expiresAt).toISOString()} className="tabular-nums">{formatTime(expiresAt)}</time> : passé ce délai, la réservation est libérée.
+                    Échéance le <time dateTime={new Date(expiresAt).toISOString()} className="tabular-nums">{formatDateTime(expiresAt)}</time> : passé ce délai, la réservation est libérée.
                   </>
                 )}
               </p>
@@ -981,7 +981,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
     <>
       <div className="flex min-h-[80vh] flex-col items-center justify-center gap-4 py-8 sm:py-12">
         {content}
-        <p className="flex max-w-md items-center justify-center gap-1.5 text-center text-sm text-fg-muted">
+        <p className="flex max-w-md items-center justify-center gap-1.5 text-left text-sm text-fg-muted">
           <ShieldCheck size={16} className="shrink-0 text-success-fg" aria-hidden="true" />
           <span>Ne communiquez jamais votre code secret : Event Village ne vous le demandera pas.</span>
         </p>

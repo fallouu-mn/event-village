@@ -414,8 +414,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     <article className="mx-auto flex w-full max-w-md flex-col" aria-label={`Billet pour ${eventTitle}`}>
       {/* 1. Carte billet */}
       <div className="relative w-full overflow-hidden rounded-3xl border border-border bg-surface shadow-md">
-        {/* Visuel de l'événement */}
-        <div className="relative h-44 w-full overflow-hidden bg-scrim">
+        {/* Visuel de l'événement, au ratio de la fiche : à hauteur fixe, le recadrage coupait le texte des affiches (run 98) */}
+        <div className="relative aspect-[16/9] w-full overflow-hidden bg-scrim">
           <Image
             src={eventImageUrl}
             alt=""
@@ -465,7 +465,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               <dd className="mt-0.5 truncate text-base font-semibold text-fg">{venue}</dd>
             </div>
             <div className="min-w-0 text-right">
-              <dt className="text-sm font-medium text-fg-muted">Emplacement</dt>
+              <dt className="text-sm font-medium text-fg-muted">Catégorie</dt>
               <dd className="mt-0.5 truncate text-base font-semibold text-fg">{seat}</dd>
             </div>
           </dl>
@@ -563,7 +563,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                       ? 'Le code s’affichera dès le retour du réseau. Une capture d’écran n’est pas acceptée.'
                       : 'Une capture d’écran n’est pas acceptée au contrôle.'}
                 </p>
-                <p className="flex items-start justify-center gap-1.5 text-center text-sm leading-snug text-fg-muted">
+                <p className="flex items-start justify-center gap-1.5 text-left text-sm leading-snug text-fg-muted">
                   <IdCard size={16} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
                   <span>Sans téléphone : numéro du billet et pièce d’identité au contrôle.</span>
                 </p>

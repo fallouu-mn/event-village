@@ -537,7 +537,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     className={cn(
                         'min-h-11 cursor-pointer rounded-xl px-3 text-sm font-semibold transition-colors duration-200',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
-                        !isOtpMode ? 'bg-surface text-fg shadow-sm' : 'text-fg-muted hover:text-fg',
+                        !isOtpMode ? 'bg-surface text-fg shadow-sm ring-1 ring-border' : 'text-fg-muted hover:text-fg',
                     )}
                 >
                     Mot de passe
@@ -550,7 +550,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     className={cn(
                         'min-h-11 cursor-pointer rounded-xl px-3 text-sm font-semibold transition-colors duration-200',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
-                        isOtpMode ? 'bg-surface text-fg shadow-sm' : 'text-fg-muted hover:text-fg',
+                        isOtpMode ? 'bg-surface text-fg shadow-sm ring-1 ring-border' : 'text-fg-muted hover:text-fg',
                     )}
                 >
                     Code SMS

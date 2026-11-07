@@ -227,11 +227,11 @@ export default function PartnerDashboardPage() {
     const title = partner?.commercialName || partner?.companyName || 'Tableau de bord';
 
     return (
-        <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 pb-24 sm:px-6 sm:space-y-8">
+        <div className="mx-auto max-w-6xl space-y-6 py-6 pb-24 sm:space-y-8">
             <PageHeader
                 eyebrow={<span className="text-sm font-medium text-fg-muted">Espace organisateur</span>}
                 title={title}
-                description="Ventes, entrées et solde de vos événements, mis à jour par le serveur."
+                description="Ventes, entrées et solde de vos événements."
                 actions={
                     <>
                         <Button
