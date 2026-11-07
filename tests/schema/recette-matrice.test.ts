@@ -7,7 +7,7 @@
  *  - aucune suite qui ne prouve rien n'est citée (AR14, L92, A21) ;
  *  - « fait » a au moins un test, « partiel » et « non fait » disent ce qui manque ;
  *  - la colonne CI dit la même chose que la colonne Test ;
- *  - A1 à A40 une fois chacune, avec gravité, état et référence ;
+ *  - A1 à A41 une fois chacune, avec gravité, état et référence ;
  *  - les essais 1 à 61 ont leurs étapes, leur résultat attendu, leur case et aucun nom de route ni de table.
  * Un test cité qui bouge rend cette suite rouge : reprendre le numéro de ligne dans le document.
  */
@@ -31,7 +31,7 @@ const SUITES_INTERDITES = [
     'tests/partner-auth-complete.test.ts',
     'tests/payment.test.ts',
 ];
-const CORRIGEES = ['A1', 'A2', 'A3', 'A4', 'A13', 'A20', 'A23', 'A29', 'A35', 'A36'];
+const CORRIGEES = ['A1', 'A2', 'A3', 'A4', 'A13', 'A20', 'A23', 'A29', 'A35', 'A36', 'A41'];
 const PREUVES = ['A11', 'A14', 'A15'];
 const ECARTS = ['Voix Wolof', 'Audio du scanner', 'Wallet', 'panier multi-événements', 'billets à régler sur place'];
 const NOMBRE_ESSAIS = 61;
@@ -144,11 +144,11 @@ function auditAnomalies(text: string): string[] {
     const faults: string[] = [];
     const rows = tableRows(section(text, /^## 5\./)).filter((c) => /^A\d+$/.test(c[0]));
     const ids = rows.map((c) => c[0]);
-    for (let i = 1; i <= 40; i++) {
+    for (let i = 1; i <= 41; i++) {
         const n = ids.filter((id) => id === `A${i}`).length;
         if (n !== 1) faults.push(`A${i} présente ${n} fois`);
     }
-    for (const id of ids) if (Number(id.slice(1)) > 40) faults.push(`anomalie inconnue : ${id}`);
+    for (const id of ids) if (Number(id.slice(1)) > 41) faults.push(`anomalie inconnue : ${id}`);
     for (const cells of rows) {
         const id = cells[0];
         if (cells.length !== 8) {
@@ -207,7 +207,7 @@ describe('8.3 — docs/recette-billetterie.md', () => {
         assert.deepEqual(auditCitations(doc), []);
     });
 
-    test('8.3 d : A1 à A40, gravité, état, référence', () => {
+    test('8.3 d : A1 à A41, gravité, état, référence', () => {
         assert.deepEqual(auditAnomalies(doc), []);
     });
 
