@@ -792,8 +792,9 @@ export const SCREENS: readonly Screen[] = [
             await page.getByRole('button', { name: /^clôturer ma caisse$/i }).click();
             const dialog = page.getByRole('dialog', { name: /^clôturer ma caisse$/i });
             await expect(dialog).toBeVisible();
-            // 43 000 pour 45 000 enregistrés : l'écart affiché (-2 000, réponse figée ci-dessus) tombe juste à l'écran
-            await dialog.getByLabel(/^espèces encaissées comptées/i).fill('43000');
+            // 2 000 de moins que le montant enregistré à l'écran : l'écart affiché (-2 000, réponse figée ci-dessus) tombe juste
+            const recorded = Number((await dialog.locator('dd').nth(1).innerText()).replace(/\D/g, ''));
+            await dialog.getByLabel(/^espèces encaissées comptées/i).fill(String(recorded - 2000));
             await dialog.getByRole('button', { name: /^clôturer la caisse$/i }).click();
             await expect(dialog.getByText(/^écart constaté par le serveur$/i)).toBeVisible();
             await expect(dialog.getByLabel(/^justification de l.écart/i)).toBeVisible();
