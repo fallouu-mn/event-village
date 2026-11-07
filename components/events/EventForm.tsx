@@ -728,7 +728,7 @@ export function EventForm(props: EventFormProps) {
                 <StatusBanner tone="info" title="Modifications encadrées après la validation" className="mb-4">
                     <ul className="list-disc space-y-1 pl-5">
                         <li>Description, programme, informations pratiques, affiche et position : modifiables librement.</li>
-                        <li>Titre, dates, heures, lieu, ville et adresse : les détenteurs de billets sont prévenus.</li>
+                        <li>Titre, dates, heures, lieu, ville et adresse&nbsp;: les détenteurs de billets sont prévenus.</li>
                         <li>Catégorie d’événement et jauge : verrouillées dès la première vente (la jauge peut seulement augmenter).</li>
                     </ul>
                 </StatusBanner>

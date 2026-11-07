@@ -516,7 +516,7 @@ export default function PartnerFinancePage() {
                                     icon={<Send size={18} />}
                                 />
                                 <KpiCard
-                                    label="Créance"
+                                    label="À compenser"
                                     value={formatFcfa(balance.debt)}
                                     hint={balance.debt > 0 ? 'Remboursement à compenser : déduit de vos prochaines ventes.' : 'Aucune somme à compenser.'}
                                     tone={balance.debt > 0 ? 'danger' : 'success'}

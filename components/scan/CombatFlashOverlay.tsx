@@ -86,7 +86,7 @@ const LOOKS: Record<ScanCategory, Look> = {
 function titleOf(status: ScanResult, category: ScanCategory, amountDue?: number): string {
     switch (status) {
         case 'cash_required':
-            return amountDue !== undefined ? `Encaissement requis : ${formatFcfa(amountDue)}` : LOOKS.a_encaisser.title;
+            return amountDue !== undefined ? `Encaissement requis : ${formatFcfa(amountDue)}` : LOOKS.a_encaisser.title;
         case 'event_suspended':
             return 'Événement suspendu';
         case 'event_cancelled':

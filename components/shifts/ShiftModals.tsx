@@ -264,7 +264,7 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
                             {cosign.discrepancy !== null
                                 ? `Écart de ${formatFcfa(cosign.discrepancy)} avec les encaissements enregistrés. `
                                 : 'Le montant compté ne correspond pas aux encaissements enregistrés. '}
-                            Justifiez l’écart ; le régisseur co-signe la clôture avec son code PIN.
+                            Justifiez l’écart&nbsp;; le régisseur co-signe la clôture avec son code PIN.
                         </StatusBanner>
                         <Textarea
                             id={justificationId}
