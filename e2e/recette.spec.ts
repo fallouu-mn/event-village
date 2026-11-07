@@ -665,6 +665,8 @@ test('acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, an
     });
 
     await test.step('saisie manuelle du billet transféré, pièce conforme', async () => {
+        // Le transfert renumérote le billet (ticket_transfer_accept) : l'ancien numéro ne vaut plus rien
+        [r.numbers.std2] = await ticketNumbers([r.tickets.std2]);
         await page.getByRole('button', { name: /^saisie manuelle$/i }).click();
         await page.getByLabel(/^numéro du billet/i).fill(r.numbers.std2);
         await page.getByRole('button', { name: /^vérifier le billet$/i }).click();
