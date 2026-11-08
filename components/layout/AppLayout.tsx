@@ -195,7 +195,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     proItems.push({ name: 'Parrainage et ambassadeurs', href: '/admin/referral', icon: ShieldAlert });
     proItems.push({ name: 'Tarifs et monétisation', href: '/admin/pricing', icon: Sliders });
     proItems.push({ name: 'Communications et campagnes', href: '/admin/communications', icon: Radio });
-    proItems.push({ name: 'Journal d’audit', href: '/admin/audit', icon: Activity });
+    if (isSuperAdmin) proItems.push({ name: 'Journal d’audit', href: '/admin/audit', icon: Activity });
     proItems.push({ name: 'Notifications', href: '/admin/notifications', icon: BellRing });
     proItems.push({ name: 'Scanner de contrôle', href: '/scan', icon: QrCode });
   } else if (isPartner && !isPartnerRoute) {
@@ -234,7 +234,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     {
       label: 'Système',
       items: [
-        { name: 'Journal d’audit', href: '/admin/audit', icon: FileText },
+        ...(isSuperAdmin ? [{ name: 'Journal d’audit', href: '/admin/audit', icon: FileText }] : []),
         { name: 'Notifications', href: '/admin/notifications', icon: BellRing },
         { name: 'Scanner', href: '/scan', icon: QrCode },
       ],
@@ -331,7 +331,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const mobileItems = canShowRoleNav && isPartnerRoute && isPartner
     ? partnerMobileItems
     : canShowRoleNav && isAdminRoute && isAdmin
-    ? adminMobileItems
+    ? adminMobileItems.filter((i) => i.href !== '/admin/audit' || isSuperAdmin)
     : roles.includes('CONTROLEUR')
     ? controllerMobileItems
     : navItems;
