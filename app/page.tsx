@@ -15,7 +15,6 @@ import {
   Undo2,
 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
-import { HomeDiscovery } from '@/components/events/HomeDiscovery';
 import { AccessNotice } from '@/components/layout/AccessNotice';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
@@ -28,6 +27,11 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
 import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
 import { useFeatureFlags } from '@/lib/features/client';
+import dynamic from 'next/dynamic';
+
+// Lot 9 (L, budget JS de /) : sections de découverte chargées à part, sous « À l’affiche ». Rien n'est
+// affiché à la place : elles arrivent sous le premier écran et portent leurs propres états de chargement.
+const HomeDiscovery = dynamic(() => import('@/components/events/HomeDiscovery').then((m) => m.HomeDiscovery));
 
 /**
  * Accueil public (lot 5, tâches 5.3 et 5.13 ; contrats E, O3, O5, Q).
