@@ -70,11 +70,14 @@ export async function POST(req: NextRequest) {
         const supabase = getServiceRoleClient();
 
         // Récupérer l'ancienne valeur pour l'audit log
-        const { data: current } = await supabase
+        const { data: current, error: currentErr } = await supabase
             .from('platform_settings')
             .select('value')
             .eq('key', key)
             .maybeSingle();
+
+        // Lot 9 (A34) : sans l'ancienne valeur, l'audit serait faux ; rien n'est écrit.
+        if (currentErr) return apiFailure('POST /api/admin/pricing, ancienne valeur', currentErr, PRICING_SAVE_FALLBACK);
 
         const { error: upsertErr } = await supabase.from('platform_settings').upsert({
             key,

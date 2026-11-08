@@ -75,23 +75,19 @@ export async function POST(req: NextRequest) {
 
         const supabase = getServiceRoleClient();
 
-        // 2. Ciblage des destinataires réels
-        let targetPhones: string[] = [];
+        // 2. Ciblage des destinataires réels. Lot 9 (A34) : une panne de lecture n'est pas une liste vide.
+        const recipients = targetAudience === 'ALL_PARTNERS'
+            ? await supabase.from('partners').select('phone').not('phone', 'is', null)
+            : targetAudience === 'AMBASSADORS'
+                ? await supabase.from('users').select('phone').eq('referral_status', 'AMBASSADEUR')
+                : await supabase.from('users').select('phone').not('phone', 'is', null);
 
-        if (targetAudience === 'ALL_PARTNERS') {
-            const { data: partners } = await supabase.from('partners').select('phone').not('phone', 'is', null);
-            targetPhones = partners?.map((p) => p.phone!).filter(Boolean) || [];
-        } else if (targetAudience === 'AMBASSADORS') {
-            const { data: ambassadors } = await supabase.from('users').select('phone').eq('referral_status', 'AMBASSADEUR');
-            targetPhones = ambassadors?.map((a) => a.phone!).filter(Boolean) || [];
-        } else {
-            // Tous les clients
-            const { data: users } = await supabase.from('users').select('phone').not('phone', 'is', null);
-            targetPhones = users?.map((u) => u.phone!).filter(Boolean) || [];
+        if (recipients.error) {
+            return apiFailure('POST /api/admin/communications, destinataires', recipients.error, { message: 'Destinataires momentanément indisponibles.', code: 'RECIPIENTS_UNAVAILABLE' });
         }
 
         // Dédoublonnage
-        targetPhones = Array.from(new Set(targetPhones));
+        const targetPhones = Array.from(new Set((recipients.data ?? []).map((r) => r.phone!).filter(Boolean)));
 
         // 3. Enregistrement de la campagne, toujours en brouillon. Lot 6 (décision 43, confirmée par
         //    l'utilisateur) : l'envoi immédiat est désactivé (marketing hors périmètre : ni préférences,

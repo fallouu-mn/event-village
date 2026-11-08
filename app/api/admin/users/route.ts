@@ -263,7 +263,11 @@ export async function PATCH(req: NextRequest) {
             .eq('id', userId)
             .maybeSingle();
 
-        if (targetErr || !targetUser) {
+        // Lot 9 (A34) : une panne n'est pas une absence. Un identifiant mal formé (22P02) reste un compte introuvable.
+        if (targetErr && targetErr.code !== '22P02') {
+            return apiFailure('PATCH /api/admin/users, lecture du compte', targetErr, USER_UPDATE_FALLBACK);
+        }
+        if (!targetUser) {
             return NextResponse.json({ error: 'Utilisateur cible introuvable.' }, { status: 404 });
         }
 

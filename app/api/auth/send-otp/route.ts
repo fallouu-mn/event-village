@@ -56,11 +56,16 @@ export async function POST(req: NextRequest) {
         // Si demande de réinitialisation de mot de passe, vérifier l'existence du compte
         let resetUserId: string | null = null;
         if (purpose === 'PASSWORD_RESET') {
-            const { data: userRecord } = await supabase
+            const { data: userRecord, error: userRecordErr } = await supabase
                 .from('users')
                 .select('id, email, phone')
                 .eq('phone', normalizedPhone)
                 .maybeSingle();
+
+            // Lot 9 (A34) : une panne n'est pas un compte absent, et aucun SMS ne part.
+            if (userRecordErr) {
+                return apiFailure('POST /api/auth/send-otp, lecture du compte', userRecordErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
+            }
 
             if (!userRecord) {
                 return NextResponse.json(

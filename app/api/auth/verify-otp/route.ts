@@ -79,11 +79,20 @@ export async function POST(req: NextRequest) {
         }
 
         // 3. Récupération du profil utilisateur et génération de session
-        const { data: userProfile } = await supabase
+        const { data: userProfile, error: userProfileErr } = await supabase
             .from('users')
             .select('*')
             .eq('phone', normalizedPhone)
             .maybeSingle();
+
+        // Lot 9 (A34) : une panne n'est ni un compte absent ni une vérification réussie (le code est déjà consommé).
+        if (userProfileErr) {
+            console.error('[API verify-otp] lecture du profil impossible :', userProfileErr.message);
+            return NextResponse.json(
+                { error: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'PHONE_VERIFY_FAILED' },
+                { status: 503 }
+            );
+        }
 
         if (isLogin && !userProfile) {
             return NextResponse.json(
@@ -95,7 +104,9 @@ export async function POST(req: NextRequest) {
         // Confirmer le téléphone dans auth.users si pas encore fait (H3: partenaire OTP)
         if (userProfile?.id) {
             try {
-                await supabase.auth.admin.updateUserById(userProfile.id, { phone_confirm: true });
+                // Lot 9 (L40) : l'erreur est rendue sans être levée ; journalisée, réponse inchangée.
+                const { error: confirmError } = await supabase.auth.admin.updateUserById(userProfile.id, { phone_confirm: true });
+                if (confirmError) console.error('[API verify-otp] phone_confirm non enregistré :', confirmError.message);
             } catch (confirmErr) {
                 console.warn('[API verify-otp] Impossible de confirmer phone_confirm:', confirmErr);
             }
@@ -106,10 +117,11 @@ export async function POST(req: NextRequest) {
 
         if (userProfile) {
             try {
-                const { data: linkData } = await supabase.auth.admin.generateLink({
+                const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
                     type: 'magiclink',
                     email: targetEmail,
                 });
+                if (linkError) console.error('[API verify-otp] lien de session non généré :', linkError.message);
                 tokenHash = linkData?.properties?.hashed_token;
             } catch (linkErr) {
                 console.warn('[API verify-otp] Notice generateLink:', linkErr);
