@@ -1,6 +1,7 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
-import { FinancialCalculatorService } from '../payments/financial-calculator.service';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface CreateHallInput {
     name: string;
@@ -122,16 +123,19 @@ export class HallService {
      * Récupère une salle par son ID
      */
     public static async getHallById(hallId: string) {
+        // Lot 9 (A32) : absence ou uuid invalide : 404 ; panne : erreur, journal et 500.
+        const notFound = () => new PublicError('Salle introuvable.', 'HALL_NOT_FOUND', 404);
+        if (!UUID_RE.test(hallId)) throw notFound();
+
         const supabase = getServiceRoleClient();
         const { data: hall, error } = await supabase
             .from('halls')
             .select('*, partners(company_name, phone, user_id), hall_reservations(*)')
             .eq('id', hallId)
-            .single();
+            .maybeSingle();
 
-        if (error || !hall) {
-            throw new PublicError('Salle introuvable.');
-        }
+        if (error) throw new Error(`salle ${hallId} illisible : ${error.message}`);
+        if (!hall) throw notFound();
 
         return hall;
     }

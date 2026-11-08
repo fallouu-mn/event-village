@@ -22,7 +22,7 @@ export async function GET(
         const hall = await HallService.getHallById(id);
         return NextResponse.json({ success: true, hall });
     } catch (error: unknown) {
-        return apiFailure('GET /api/partner/halls/[id]', error, { message: 'Salle introuvable.', code: 'HALL_NOT_FOUND', status: 404 });
+        return apiFailure('GET /api/partner/halls/[id]', error, { message: 'Salle momentanément indisponible.', code: 'HALL_UNAVAILABLE', status: 500 });
     }
 }
 

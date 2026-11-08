@@ -1,6 +1,8 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface ProductCategory {
     id: string;
     partner_id: string;
@@ -51,11 +53,11 @@ export class ProductService {
             .from('partners')
             .select('id')
             .eq('user_id', userId)
-            .single();
+            .maybeSingle();
 
-        if (error || !partner) {
-            throw new PublicError('Profil partenaire introuvable.');
-        }
+        // Lot 9 (A32) : une panne n'est pas un compte sans fiche ; l'absence garde son message et son statut.
+        if (error) throw new Error(`partenaire du compte ${userId} illisible : ${error.message}`);
+        if (!partner) throw new PublicError('Profil partenaire introuvable.');
 
         return partner.id;
     }
@@ -161,14 +163,19 @@ export class ProductService {
     }
 
     static async getProductById(productId: string): Promise<Product> {
+        // Lot 9 (A32) : absence ou uuid invalide : 404 (500 auparavant) ; panne : erreur, journal et 500.
+        const notFound = () => new PublicError('Produit introuvable.', 'PRODUCT_NOT_FOUND', 404);
+        if (!UUID_RE.test(productId)) throw notFound();
+
         const supabase = getServiceRoleClient();
         const { data, error } = await supabase
             .from('products')
             .select('*')
             .eq('id', productId)
-            .single();
+            .maybeSingle();
 
-        if (error || !data) throw new PublicError('Produit introuvable.');
+        if (error) throw new Error(`produit ${productId} illisible : ${error.message}`);
+        if (!data) throw notFound();
         return data as Product;
     }
 

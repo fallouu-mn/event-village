@@ -289,6 +289,10 @@ export class EventService {
      * Récupère un événement par son ID avec vérification des droits
      */
     public static async getEventById(eventId: string, partnerUserId?: string) {
+        // Lot 9 (A32) : absence, uuid invalide ou compte sans fiche partenaire : 404 ; panne : erreur, journal et 500.
+        const notFound = () => new PublicError('Événement introuvable ou non autorisé.', 'EVENT_NOT_FOUND', 404);
+        if (!UUID_RE.test(eventId)) throw notFound();
+
         const supabase = getServiceRoleClient();
         let query = supabase
             .from('events')
@@ -296,14 +300,14 @@ export class EventService {
             .eq('id', eventId);
 
         if (partnerUserId) {
-            const partnerId = await this.resolvePartnerId(partnerUserId);
-            query = query.eq('partner_id', partnerId);
+            const partner = await this.partnerOf(partnerUserId);
+            if (!partner) throw notFound();
+            query = query.eq('partner_id', partner.id);
         }
 
-        const { data, error } = await query.single();
-        if (error || !data) {
-            throw new PublicError('Événement introuvable ou non autorisé.');
-        }
+        const { data, error } = await query.maybeSingle();
+        if (error) throw new Error(`événement ${eventId} illisible : ${error.message}`);
+        if (!data) throw notFound();
 
         return data;
     }
