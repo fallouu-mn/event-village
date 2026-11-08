@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -15,6 +15,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
+import { HomeDiscovery } from '@/components/events/HomeDiscovery';
 import { AccessNotice } from '@/components/layout/AccessNotice';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
@@ -32,6 +33,7 @@ import { useFeatureFlags } from '@/lib/features/client';
  * Accueil public (lot 5, tâches 5.3 et 5.13 ; contrats E, O3, O5, Q).
  *  - « À l'affiche » : GET /api/events (PUBLIE à venir, prix du serveur, « Bientôt en vente » sans
  *    catégorie achetable), mis à jour en direct sur le résumé public public_event_state.
+ *  - La catégorie est filtrée par le serveur (lot 9, A28) ; Populaires et Près de chez vous : HomeDiscovery.
  *  - Aucune photo d'une banque d'images : décor sur les tokens du thème, affiches du stockage du projet.
  *  - Seuls des liens vers des pages existantes ; aucune donnée de contact factice.
  */
@@ -71,17 +73,28 @@ export default function HomePage() {
   const featureFlags = useFeatureFlags();
   const hallsEnabled = featureFlags?.halls === true;
   const [events, setEvents] = useState<CatalogEvent[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [category, setCategory] = useState<string>(ALL);
   const [search, setSearch] = useState('');
+  const [isFiltering, setIsFiltering] = useState(false);
+  const categoryRef = useRef<string>(ALL);
+  /** Seule la dernière requête écrit : une réponse lente d'une catégorie précédente est ignorée. */
+  const loadSeq = useRef(0);
+  const hasListRef = useRef(false);
 
   const load = useCallback(async (mode: 'initial' | 'silent') => {
-    const result = await readCatalog('accueil');
+    const seq = ++loadSeq.current;
+    const result = await readCatalog('accueil', { category: categoryRef.current });
+    if (seq !== loadSeq.current) return;
+    setIsFiltering(false);
     if (result.ok) {
+      hasListRef.current = true;
       setEvents(result.events);
+      setCities(result.cities);
       setLoadError(null);
       setRefreshError(null);
       setPhase('ready');
@@ -98,8 +111,10 @@ export default function HomePage() {
   const refreshEvents = useCallback(() => load('silent'), [load]);
 
   useEffect(() => {
-    void load('initial');
-  }, [load]);
+    categoryRef.current = category;
+    if (hasListRef.current) setIsFiltering(true);
+    void load(hasListRef.current ? 'silent' : 'initial');
+  }, [category, load]);
 
   // Temps réel (contrat O5) : publication, suspension, annulation ou fin d'un événement → la liste est
   // rechargée par le serveur, sans recharger la page.
@@ -118,10 +133,7 @@ export default function HomePage() {
     }
   };
 
-  const shown = useMemo(
-    () => events.filter((evt) => category === ALL || evt.category === category).slice(0, HOME_LIMIT),
-    [events, category],
-  );
+  const shown = events.slice(0, HOME_LIMIT);
 
   const onSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -255,7 +267,10 @@ export default function HomePage() {
             {[1, 2, 3, 4].map((i) => <CardSkeleton key={i} />)}
           </div>
         ) : shown.length > 0 ? (
-          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <ul
+            className={cn('grid grid-cols-1 gap-5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4', isFiltering && 'opacity-60')}
+            aria-busy={isFiltering || undefined}
+          >
             {shown.map((evt, i) => (
               <li key={evt.id}>
                 <EventCard
@@ -289,7 +304,10 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* 3. Organisateurs et salles */}
+      {/* 3. Populaires et Près de chez vous */}
+      <HomeDiscovery cities={phase === 'loading' ? null : cities} />
+
+      {/* 4. Organisateurs et salles */}
       <section aria-labelledby="organisateurs-titre" className={cn('grid gap-5', hallsEnabled && 'lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]')}>
         <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-surface p-6 shadow-sm sm:p-10">
           <div className="pointer-events-none absolute -right-20 -top-20 -z-10 h-64 w-64 rounded-full bg-brand-decor/10 blur-3xl" aria-hidden="true" />
@@ -330,7 +348,7 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* 4. Pied de page */}
+      {/* 5. Pied de page */}
       <footer className="border-t border-border pt-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-sm">

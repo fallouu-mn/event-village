@@ -75,6 +75,7 @@ export interface UserProfile {
     status: 'ACTIF' | 'SUSPENDU' | 'EN_ATTENTE';
     referral_status: 'STANDARD' | 'AMBASSADEUR';
     avatar_url?: string | null;
+    city?: string | null;
     created_at?: string;
 }
 

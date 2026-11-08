@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, RotateCcw, Search } from 'lucide-react';
 import { EventCard, cityLabel } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
@@ -21,7 +21,9 @@ import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
  *  - Temps réel : le résumé public public_event_state (publication, suspension, annulation, fin) ;
  *    chaque signal recharge la liste par le serveur, sans recharger la page. Indicateur « En direct » /
  *    « Hors ligne ».
- *  - Recherche, catégorie, ville et tri ne font que filtrer et ordonner la liste reçue (aucun agrégat).
+ *  - Recherche, catégorie et ville sont appliquées par le serveur (lot 9, A28), la recherche après 300 ms sans
+ *    frappe. Seul le tri reste ici. Un compteur de séquence écarte une réponse lente devenue obsolète : une
+ *    requête annulée serait une panne pour la garde réseau de l'e2e.
  */
 
 type SortKey = 'date' | 'price-asc' | 'price-desc';
@@ -33,13 +35,7 @@ const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
 ];
 
 const ALL = 'tous';
-
-function matches(evt: CatalogEvent, query: string): boolean {
-  if (!query) return true;
-  const q = query.toLocaleLowerCase('fr-FR');
-  return [evt.title, evt.venue, evt.subtitle ?? '', evt.city ?? '']
-    .some((field) => field.toLocaleLowerCase('fr-FR').includes(q));
-}
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Prix croissant ou décroissant ; « Bientôt en vente » (sans prix) toujours en fin de liste. */
 function byPrice(direction: 1 | -1) {
@@ -67,25 +63,40 @@ function CardSkeleton() {
 
 export default function ExplorePage() {
   const [events, setEvents] = useState<CatalogEvent[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
 
   const [query, setQuery] = useState('');
+  /** Texte envoyé au serveur, après le délai de frappe ; null tant que ?q= n'est pas lu. */
+  const [serverQuery, setServerQuery] = useState<string | null>(null);
   const [category, setCategory] = useState<string>(ALL);
   const [city, setCity] = useState<string>(ALL);
   const [sortBy, setSortBy] = useState<SortKey>('date');
 
+  /** Filtres courants, lus par load : un signal temps réel recharge avec les filtres en cours. */
+  const filtersRef = useRef({ q: '', city: ALL, category: ALL });
+  /** Seule la dernière requête écrit. */
+  const loadSeq = useRef(0);
+  const hasListRef = useRef(false);
+
   /**
    * Chargement de la liste. « initial » (premier affichage, « Réessayer ») : un échec affiche l'écran
-   * d'erreur. « silent » (signal temps réel, reconnexion) : la liste reste affichée, l'échec est signalé
-   * par un bandeau avec « Réessayer ».
+   * d'erreur. « silent » (signal temps réel, reconnexion, changement de filtre) : la liste reste affichée,
+   * l'échec est signalé par un bandeau avec « Réessayer ».
    */
   const load = useCallback(async (mode: 'initial' | 'silent') => {
-    const result = await readCatalog('catalogue');
+    const seq = ++loadSeq.current;
+    const result = await readCatalog('catalogue', filtersRef.current);
+    if (seq !== loadSeq.current) return;
+    setIsFiltering(false);
     if (result.ok) {
+      hasListRef.current = true;
       setEvents(result.events);
+      setCities(result.cities);
       setLoadError(null);
       setRefreshError(null);
       setPhase('ready');
@@ -101,15 +112,29 @@ export default function ExplorePage() {
 
   const refreshEvents = useCallback(() => load('silent'), [load]);
 
+  // Recherche lancée depuis l'accueil (/explore?q=…) : lue une fois, sans Suspense (page statique). Elle part
+  // avec le premier chargement : une seule requête.
   useEffect(() => {
-    void load('initial');
-  }, [load]);
-
-  // Recherche lancée depuis l'accueil (/explore?q=…) : lue une fois, sans Suspense (page statique).
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get('q');
-    if (q) setQuery(q.slice(0, 120));
+    const q = new URLSearchParams(window.location.search).get('q')?.slice(0, 120) ?? '';
+    if (q) setQuery(q);
+    setServerQuery(q.trim());
   }, []);
+
+  useEffect(() => {
+    if (serverQuery === null) return undefined;
+    const next = query.trim();
+    if (next === serverQuery) return undefined;
+    const timer = window.setTimeout(() => setServerQuery(next), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query, serverQuery]);
+
+  // Le texte part après le délai de frappe ; la ville et la catégorie partent aussitôt.
+  useEffect(() => {
+    if (serverQuery === null) return;
+    filtersRef.current = { q: serverQuery, city, category };
+    if (hasListRef.current) setIsFiltering(true);
+    void load(hasListRef.current ? 'silent' : 'initial');
+  }, [serverQuery, city, category, load]);
 
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: 'catalogue-public',
@@ -126,29 +151,25 @@ export default function ExplorePage() {
     }
   };
 
-  const cities = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const evt of events) {
-      if (evt.city && !seen.has(evt.city)) seen.set(evt.city, cityLabel(evt.city) ?? evt.city);
-    }
-    return Array.from(seen.entries())
-      .map(([value, label]) => ({ value, label }))
+  const cityOptions = useMemo(() => {
+    const values = city !== ALL && !cities.includes(city) ? [...cities, city] : cities;
+    return values
+      .map((value) => ({ value, label: cityLabel(value) ?? value }))
       .sort((a, b) => a.label.localeCompare(b.label, 'fr-FR'));
-  }, [events]);
+  }, [cities, city]);
 
   const visible = useMemo(() => {
-    const list = events.filter((evt) => (category === ALL || evt.category === category)
-      && (city === ALL || evt.city === city)
-      && matches(evt, query.trim()));
-    if (sortBy === 'price-asc') return [...list].sort(byPrice(1));
-    if (sortBy === 'price-desc') return [...list].sort(byPrice(-1));
-    return list;
-  }, [events, category, city, query, sortBy]);
+    if (sortBy === 'price-asc') return [...events].sort(byPrice(1));
+    if (sortBy === 'price-desc') return [...events].sort(byPrice(-1));
+    return events;
+  }, [events, sortBy]);
 
-  const filtersActive = query.trim() !== '' || category !== ALL || city !== ALL || sortBy !== 'date';
+  const serverFiltersActive = Boolean(serverQuery) || category !== ALL || city !== ALL;
+  const filtersActive = query.trim() !== '' || serverFiltersActive || sortBy !== 'date';
 
   const resetFilters = () => {
     setQuery('');
+    setServerQuery('');
     setCategory(ALL);
     setCity(ALL);
     setSortBy('date');
@@ -186,7 +207,7 @@ export default function ExplorePage() {
             label="Ville"
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            options={[{ value: ALL, label: 'Toutes les villes' }, ...cities]}
+            options={[{ value: ALL, label: 'Toutes les villes' }, ...cityOptions]}
           />
           <Select
             label="Trier par"
@@ -238,7 +259,7 @@ export default function ExplorePage() {
       <section aria-labelledby="resultats-titre" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="resultats-titre" className="text-base font-semibold text-fg" aria-live="polite">
-            {phase === 'loading' ? 'Chargement des événements…' : resultLabel}
+            {phase === 'loading' ? 'Chargement des événements…' : isFiltering ? 'Recherche…' : resultLabel}
           </h2>
           {filtersActive && (
             <Button variant="ghost" size="sm" onClick={resetFilters} leftIcon={<RotateCcw size={16} />}>
@@ -259,7 +280,10 @@ export default function ExplorePage() {
             {[1, 2, 3, 4, 5, 6].map((i) => <CardSkeleton key={i} />)}
           </div>
         ) : visible.length > 0 ? (
-          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <ul
+            className={cn('grid grid-cols-1 gap-5 transition-opacity duration-200 sm:grid-cols-2 xl:grid-cols-3', isFiltering && 'opacity-60')}
+            aria-busy={isFiltering || undefined}
+          >
             {visible.map((evt, i) => (
               <li key={evt.id}>
                 <EventCard
@@ -280,7 +304,7 @@ export default function ExplorePage() {
               </li>
             ))}
           </ul>
-        ) : events.length === 0 ? (
+        ) : events.length === 0 && !serverFiltersActive ? (
           <EmptyState
             title="Aucun événement à venir pour le moment"
             description="Les prochains événements apparaîtront ici dès leur publication, sans recharger la page."
