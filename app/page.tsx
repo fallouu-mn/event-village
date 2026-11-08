@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -15,7 +15,6 @@ import {
   Undo2,
 } from 'lucide-react';
 import { EventCard } from '@/components/events/EventCard';
-import { AccessNotice } from '@/components/layout/AccessNotice';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { TextInput } from '@/components/ui/Field';
@@ -31,6 +30,8 @@ import dynamic from 'next/dynamic';
 
 // Lot 9 (L, budget JS de /) : sections de découverte chargées à part, sous « À l’affiche ». Rien n'est
 // affiché à la place : elles arrivent sous le premier écran et portent leurs propres états de chargement.
+// Le message de redirection ne sert qu'à un accès refusé : chargé à part, côté navigateur (il lit l'URL).
+const AccessNotice = dynamic(() => import('@/components/layout/AccessNotice').then((m) => m.AccessNotice), { ssr: false });
 const HomeDiscovery = dynamic(() => import('@/components/events/HomeDiscovery').then((m) => m.HomeDiscovery));
 
 /**
@@ -148,9 +149,7 @@ export default function HomePage() {
   return (
     <div className="space-y-14 pb-24 sm:space-y-20 lg:pb-12">
       {/* Accès refusé par le middleware (8.2 j) : rien sans clé connue */}
-      <Suspense fallback={null}>
-        <AccessNotice />
-      </Suspense>
+      <AccessNotice />
 
       {/* 1. Accroche */}
       <section className="relative isolate overflow-hidden rounded-3xl border border-border bg-surface px-5 py-10 shadow-sm sm:px-10 sm:py-14 lg:px-14">
