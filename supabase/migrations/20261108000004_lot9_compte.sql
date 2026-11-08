@@ -9,7 +9,9 @@
 -- Nouvelles, service_role seul :
 --  - account_identity_taken : un email ou un numéro est-il pris par un autre compte (AM1 : GoTrue ne garantit pas de code) ;
 --  - account_profile_finalize, account_phone_finalize : écriture de public.users, APRÈS auth.admin.updateUserById (AR2) ;
---  - client_payments_list : Mes paiements, le compte vient toujours de la session.
+--  - client_payments_list : Mes paiements, le compte vient toujours de la session ;
+--  - account_avatar_set : avatar_url et ancienne valeur, sous verrou.
+-- Bucket avatars : public, 2 Mo, image/webp, aucune politique (AR3).
 -- auth.users n'est jamais écrit ici : seule l'API d'administration l'écrit. auth.sessions et auth.refresh_tokens le
 -- sont, patron 20261031000008:28-33 (révocation « sauf la session courante », même transaction que le reste).
 -- Verrous : public.users seul, puis les tables auth ; aucune table de la chaîne events → paiements → catégories →
@@ -29,6 +31,16 @@ INSERT INTO public.notification_types (type, family, topic, channels, audience, 
     ('PHONE_CHANGED',    'ESSENTIAL', NULL, ARRAY['SMS'], 'ANY', 'ALLOW', FALSE, NULL),
     ('OTP_PHONE_CHANGE', 'ESSENTIAL', NULL, ARRAY['SMS'], 'ANY', 'ALLOW', TRUE,  NULL)
 ON CONFLICT (type) DO NOTHING;
+
+-- ── Compartiment des photos de profil (L34, AR3) ────────────────────────────
+-- Aucune politique sur storage.objects : la route POST /api/account/avatar (service_role) est le seul écrivain, sinon un
+-- compte déposerait directement un WebP sans passer par sharp (EXIF et position GPS conservés). Lecture par l'URL publique.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('avatars', 'avatars', true, 2097152, ARRAY['image/webp'])
+ON CONFLICT (id) DO UPDATE SET
+    public = true,
+    file_size_limit = 2097152,
+    allowed_mime_types = ARRAY['image/webp'];
 
 -- ── Colonnes du profil : plus d'écriture REST (L32, AR3) ────────────────────
 REVOKE UPDATE (first_name, last_name, avatar_url) ON TABLE public.users FROM authenticated;
@@ -259,6 +271,36 @@ $$;
 
 REVOKE ALL ON FUNCTION public.account_phone_finalize(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.account_phone_finalize(jsonb) TO service_role;
+
+-- ── Photo de profil (section 5.3) ───────────────────────────────────────────
+-- p = { user_id, url | null }. Rend l'ancienne URL ; le verrou rend deux remplacements simultanés déterministes : chacun
+-- supprime exactement ce qu'il remplace. La route ne supprime l'ancienne qu'après contrôle du chemin (D-cpt C6).
+CREATE OR REPLACE FUNCTION public.account_avatar_set(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := NULLIF(p->>'user_id', '')::uuid;
+    v_url  text := NULLIF(btrim(COALESCE(p->>'url', '')), '');
+    v_prev text;
+BEGIN
+    IF v_user IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT');
+    END IF;
+    SELECT u.avatar_url INTO v_prev FROM public.users u WHERE u.id = v_user FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'USER_NOT_FOUND');
+    END IF;
+    UPDATE public.users SET avatar_url = v_url WHERE id = v_user;
+    RETURN jsonb_build_object('ok', true, 'previous_url', v_prev);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.account_avatar_set(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.account_avatar_set(jsonb) TO service_role;
 
 -- ── Mes paiements (L33) ─────────────────────────────────────────────────────
 -- p = { user_id, page, page_size, include_simulated }. Totaux sur tout le filtre, indépendants de la page.
