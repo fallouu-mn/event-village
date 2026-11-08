@@ -1,6 +1,6 @@
 /**
  * Lot 8 (consigne 8.3 b, contrat 15.5, décisions L79, L84 ; commit test(8.3b)) — recette de la billetterie : quatre parcours
- * enchaînés sur une seule base, celle du seed e2e, sans db reset, découpés en 8 actes étiquetés par rôle. Le parcours d'un
+ * enchaînés sur une seule base, celle du seed e2e, sans db reset, découpés en 9 actes étiquetés par rôle. Le parcours d'un
  * rôle est la réunion de ses actes :
  *   npx playwright test --project=recette --grep "\[client\]"
  * Mode « serial » : chaque acte s'appuie sur le précédent (le client achète ce que le partenaire a publié, le partenaire
@@ -19,7 +19,7 @@
  * billets payants encore valables pour le remboursement à l'écran (acte 6, A4) et le remboursement bloqué (acte 8, A3) :
  * ceux de C1 sont consommés par le scan hors ligne et par le transfert.
  *
- * Invariants (a) à (t) (L79) : fin des actes 4, 5, 6 et 8, boîte d'envoi vidée par la vraie route, 0 ligne restée due
+ * Invariants (a) à (t) (L79) : fin des actes 4, 5, 6, 8 et 9, boîte d'envoi vidée par la vraie route, 0 ligne restée due
  * exigée, [INVARIANT-RECETTE] dans e2e.log. Jamais pendant un paiement en cours.
  *
  * Preuves portées ici et absentes ailleurs : A15 (programme et infos pratiques affichés sur la fiche), A3 et A4 de bout en
@@ -835,6 +835,109 @@ test('acte 7 [client] [partenaire] : annulation de E2, envoyeur par la vraie rou
         expect(res?.status(), 'page d’un événement annulé').toBe(200);
         await expect(visitor.getByText(NOTICE_E2), 'avis public').toBeVisible();
         await expect(visitor.getByRole('button', { name: /ajouter un billet/i }), 'plus aucune vente').toHaveCount(0);
+    });
+});
+
+test('acte 9 [partenaire] [client] [contrôleur] : invitation d’un numéro sans compte, inscription, réclamation, entrée', async ({ browser }, testInfo) => {
+    // Placé avant l'acte 8 (AR8), qui suspend E1 et P1 : une invitation exige un événement publié et un partenaire actif.
+    const partner = known('P1');
+    const controller = known('K1');
+    const invite = { local: local('70'), phone: `+221${local('70')}`, firstName: 'Fatou' };
+    const categoryId = r.e1.categories['Invitations'];
+    const soldOfCategory = async (): Promise<number> => {
+        const { data, error } = await serviceClient().from('ticket_categories').select('sold_quantity').eq('id', categoryId).single();
+        if (error || !data) throw new Error(`[e2e] stock de la catégorie Invitations : ${error?.message ?? 'introuvable'}`);
+        return Number(data.sold_quantity);
+    };
+    const soldBefore = await soldOfCategory();
+    let ticketId = '';
+
+    await test.step('P1 invite un numéro neuf sur la catégorie Invitations', async () => {
+        await partner.goto(`/partner/events/${r.e1.id}?tab=invitations`);
+        await expect(partner.getByRole('tab', { name: /^invitations/i }), 'onglet Invitations du pilotage ouvert par ?tab=invitations').toHaveAttribute('aria-selected', 'true');
+        const panel = partner.getByRole('tabpanel');
+        const category = panel.getByLabel(/^catégorie/i);
+        // Le libellé de l'option porte aussi le restant (contrat 5.1) : l'option est repérée par le début du nom
+        const value = await category.locator('option', { hasText: /^Invitations/ }).getAttribute('value');
+        if (!value) throw new Error('[e2e] option « Invitations » sans valeur dans le champ Catégorie');
+        await category.selectOption(value);
+        await panel.getByLabel(/^numéros de téléphone/i).fill(invite.local);
+        await panel.getByLabel(/^billets par numéro/i).selectOption('1');
+        await panel.getByRole('button', { name: /^envoyer les invitations$/i }).click();
+        const confirm = partner.getByRole('alertdialog', { name: /^confirmer l.envoi/i });
+        await expect(confirm, 'boîte de confirmation de l’envoi').toBeVisible();
+        const sent = await expectRoute(partner, 'POST', `/api/partner/events/${r.e1.id}/invitations`, () => confirm.getByRole('button', { name: /^confirmer$/i }).click(), 200, 'envoi de l’invitation');
+        expect(sent, 'réponse de l’envoi, identique avec ou sans compte').toMatchObject({ ok: true, ticket_count: 1, phone_count: 1 });
+        await expect(partner.getByText(/invitations envoyées/i).first(), 'envoi annoncé à l’écran').toBeVisible();
+    });
+
+    await test.step('en base : billet d’invitation à 0 F sans porteur, stock décrémenté, transfert en attente vers le numéro', async () => {
+        const { data, error } = await serviceClient().from('tickets').select('id, sale_channel, price, user_id, status, transfer_locked, sale_decision').eq('event_id', r.e1.id).eq('category_id', categoryId);
+        if (error) throw new Error(`[e2e] billets de la catégorie Invitations : ${error.message}`);
+        expect((data ?? []).length, `un seul billet d’invitation : ${JSON.stringify(data)}`).toBe(1);
+        const ticket = data![0];
+        ticketId = String(ticket.id);
+        expect(ticket.sale_channel, 'canal du billet').toBe('INVITATION');
+        expect(Number(ticket.price), 'prix du billet').toBe(0);
+        expect(ticket.user_id, 'aucun porteur avant la réclamation').toBeNull();
+        expect(ticket.status, 'statut du billet').toBe('VALIDE');
+        expect(ticket.transfer_locked, 'billet verrouillé pendant l’attente').toBe(true);
+        expect((ticket.sale_decision as { source?: unknown }).source, 'source de la décision figée').toBe('INVITATION');
+        expect(await soldOfCategory(), 'stock décrémenté comme une vente').toBe(soldBefore + 1);
+        const { data: transfers, error: transferError } = await serviceClient().from('ticket_transfers').select('status, to_phone_or_email, from_user_id').eq('ticket_id', ticketId);
+        if (transferError) throw new Error(`[e2e] transfert de l’invitation : ${transferError.message}`);
+        expect(transfers, 'un transfert en attente, sans expéditeur').toEqual([{ status: 'PENDING', to_phone_or_email: invite.phone, from_user_id: null }]);
+    });
+
+    await test.step('boîte d’envoi vidée par la vraie route : un SMS au numéro, lien vers Mes billets, aucun code', async () => {
+        await drainOutbox('après l’envoi de l’invitation');
+        const received = await fakeSmsTo(invite.phone);
+        expect(received.length, `SMS reçus par le numéro invité : ${JSON.stringify(received.map((m) => m.message))}`).toBe(1);
+        expect(received[0].message, 'lien vers Mes billets').toContain('/tickets');
+        expect(received[0].message, 'aucun code dans le SMS d’invitation').not.toMatch(/(?<!\d)\d{6}(?!\d)/);
+    });
+
+    const invitee = await asNew(browser, testInfo, 'invité');
+
+    await test.step('inscription à l’écran avec le numéro invité, invitation retrouvée dans Reçus et acceptée', async () => {
+        await invitee.goto('/register');
+        const seen = await smsSeen(invite.phone);
+        await invitee.locator('#inscription-telephone').fill(invite.local);
+        await invitee.getByRole('button', { name: /^recevoir le code par sms$/i }).click();
+        await expect(invitee.getByText(/^code reçu par sms$/i)).toBeVisible();
+        await fillOtp(invitee, await smsCode(invite.phone, seen, 'inscription de l’invité'));
+        await invitee.getByLabel(/^prénom/i).fill(invite.firstName);
+        await invitee.getByLabel(/^nom/i).fill('Recette');
+        await invitee.getByLabel(/^mot de passe/i).first().fill(TEST_PASSWORD);
+        await invitee.getByRole('button', { name: /^créer mon compte$/i }).click();
+        await invitee.waitForURL((url) => !url.pathname.startsWith('/register'), { timeout: 30_000 });
+
+        await invitee.goto('/tickets?tab=recus');
+        const offer = invitee.locator('li, article, section').filter({ hasText: r.e1.title }).filter({ has: invitee.getByRole('button', { name: /^accepter le billet$/i }) }).last();
+        await expect(offer, 'invitation dans l’onglet Reçus').toBeVisible({ timeout: 30_000 });
+        await expect(offer, 'expéditeur affiché').toContainText(/l.organisateur de l.événement/i);
+        await offer.getByRole('button', { name: /^accepter le billet$/i }).click();
+        const confirm = invitee.getByRole('dialog').or(invitee.getByRole('alertdialog'));
+        await expect(confirm).toBeVisible();
+        await expectRoute(invitee, 'POST', /^\/api\/tickets\/transfers\/[^/]+\/claim$/, () => confirm.getByRole('button', { name: /^accepter le billet$/i }).click(), 200, 'réclamation de l’invitation');
+
+        const { data: account, error: accountError } = await serviceClient().from('users').select('id').in('phone', [invite.phone, invite.phone.slice(1)]).single();
+        if (accountError || !account) throw new Error(`[e2e] compte de l’invité : ${accountError?.message ?? 'introuvable'}`);
+        const { data: claimed, error: claimedError } = await serviceClient().from('tickets').select('user_id').eq('id', ticketId).single();
+        if (claimedError || !claimed) throw new Error(`[e2e] billet réclamé : ${claimedError?.message ?? 'introuvable'}`);
+        expect(String(claimed.user_id), 'billet au compte de l’invité').toBe(String(account.id));
+    });
+
+    await test.step('K1 scanne le billet réclamé : entrée validée, sans caisse', async () => {
+        // K1 est resté sur le scanner de E1 depuis l'acte 5 ; openScanner attendrait l'écran de départ, que la reprise de session (A10) n'affiche pas
+        await openTab(controller, /^contrôle$/i);
+        await videoPlaying(controller, 'retour au contrôle après la clôture de caisse');
+        await expectScan(controller, await livePayload(invitee, ticketId), 'invitation réclamée', 'valid');
+        expect(await ticketStatus(ticketId), 'invitation compostée').toBe('UTILISE');
+    });
+
+    await test.step('invariants (a) à (t)', async () => {
+        await assertInvariants('recette-invitation');
     });
 });
 
