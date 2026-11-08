@@ -317,7 +317,7 @@ describe('9.0 Invitations : catégories admises et stock (L5, 5.1 étapes 5 et 6
     });
 
     test('catégorie inactive : 409 SALE_CHECK_FAILED, problems CATEGORY_INACTIVE, sans écriture', async () => {
-        const ev = await newEvent('inactive', [{ name: STANDARD, price: 5_000, total: 30, isActive: false }]);
+        const ev = await newEvent('inactive', [{ name: STANDARD, price: 5_000, total: 30, isActive: false }, { name: 'Active', price: 5_000, total: 30 }]);
         const res = await send(partner, ev.eventId, payload(ev, [randomSenegalPhone('76')]));
         assertRefusal(res, 409, 'SALE_CHECK_FAILED', 'catégorie inactive');
         assert.deepEqual(problemCodes(res), ['CATEGORY_INACTIVE'], show(res));
