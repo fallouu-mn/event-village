@@ -428,10 +428,13 @@ const INVENTORY: Insertion[] = [
     // Lot 7 (7.0 a, T6, D15) : le seuil notif.sms_daily_alert est remplacé par l'alerte à 80 % du budget optionnel ;
     // ADMIN_SMS_DAILY_THRESHOLD reste au registre (lignes déjà écrites) sans point d'insertion.
     { k1: 'seuil', fn: 'notification_daily_checks', types: ['ADMIN_SMS_OPTIONAL_80'] },
+    // Lot 9 (T8) : rouges jusqu'aux migrations 20261108000002 (9.0) et 20261108000004 (9.2).
+    { k1: '9.0', fn: 'ticket_invitation_create', types: ['INVITATION_RECEIVED'] },
+    { k1: '9.2', fn: 'account_phone_finalize', types: ['PHONE_CHANGED'] },
 ];
 
 /** Types sans point d'insertion SQL littéral : appelés par TypeScript (OTP, invitation, plafond SMS). */
-const TS_TYPES = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK', 'CONTROLLER_INVITE', 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP'];
+const TS_TYPES = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK', 'OTP_PHONE_CHANGE', 'CONTROLLER_INVITE', 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP'];
 
 describe('6.7 K1 — inventaire : chaque envoi migré a son type au registre et son point d’insertion en base', () => {
     let registry: Set<string> | null = null;

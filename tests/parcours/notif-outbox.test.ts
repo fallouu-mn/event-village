@@ -86,6 +86,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A'),
     ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A'),
+    ess('INVITATION_RECEIVED', [S], 'ANY', 'A'), // lot 9, tâche 9.0 (migration 20261108000002)
     ess('TRANSFER_OFFERED', [S, I, P], 'CLIENT', 'B'),
     ess('TRANSFER_CANCELLED', [S, I, P], 'CLIENT', 'B'),
     ess('TRANSFER_EXPIRED', [I, P], 'CLIENT', 'B'),
@@ -101,6 +102,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('REFUND_REQUESTED', [I], 'CLIENT', 'A'),
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A'),
     ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B'),
+    ess('PHONE_CHANGED', [S], 'ANY', 'A'), // lot 9, tâche 9.2 (migration 20261108000004)
     ess('PUSH_TEST', [P], 'ANY', 'B'),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B'),
@@ -152,6 +154,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     sync('OTP_REGISTER'),
     sync('OTP_PASSWORD_RESET'),
     sync('OTP_WITHDRAWAL'),
+    sync('OTP_PHONE_CHANGE'), // lot 9, tâche 9.2 (migration 20261108000004)
     sync('OTP_AUTH_HOOK'),
     sync('CONTROLLER_INVITE'),
 ];

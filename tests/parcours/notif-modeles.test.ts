@@ -206,6 +206,7 @@ const EXPECTED: ExpectedType[] = [
     ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A', 'TICKET', ['/tickets'], 'Achat confirmé'),
     ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B', 'TICKET', ['/tickets'], 'Billets confirmés'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A', null, null, null),
+    ess('INVITATION_RECEIVED', [S], 'ANY', 'A', null, null, null), // lot 9, tâche 9.0 : SMS seul, lien dans le texte
     ess('TRANSFER_OFFERED', [S, I, P], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus'], 'Un billet vous est transféré'),
     ess('TRANSFER_CANCELLED', [S, I, P], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Transfert annulé'),
     ess('TRANSFER_EXPIRED', [I, P], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Transfert expiré'),
@@ -222,6 +223,7 @@ const EXPECTED: ExpectedType[] = [
     ess('REFUND_REQUESTED', [I], 'CLIENT', 'A', 'REFUND_REQUESTED', ['/tickets?tab=historique'], 'Remboursement demandé'),
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROCESSED', ['/tickets?tab=historique'], 'Remboursement versé'),
     ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B', 'SECURITY', ['/profile'], 'Mot de passe modifié'),
+    ess('PHONE_CHANGED', [S], 'ANY', 'A', null, null, null), // lot 9, tâche 9.2 : envoyé à l'ancien numéro
     ess('PUSH_TEST', [P], 'ANY', 'B', 'SYSTEM', ['/profile/notifications'], null),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement validé'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement non validé'),
@@ -275,6 +277,7 @@ const EXPECTED: ExpectedType[] = [
     sync('OTP_REGISTER'),
     sync('OTP_PASSWORD_RESET'),
     sync('OTP_WITHDRAWAL'),
+    sync('OTP_PHONE_CHANGE'), // lot 9, tâche 9.2
     sync('OTP_AUTH_HOOK'),
     sync('CONTROLLER_INVITE'),
 ];
@@ -740,6 +743,8 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : 2 billets gratuits pour Gala Dakar le sam. 14 nov. à 20:00. Vos billets : ${U}/tickets`],
             ['COUNTER_RECEIPT', { ...ev, ticket_count: 2, amount: 10000, reference: 'AB12CD34' }, [],
                 'Event Village : achat au guichet pour Gala Dakar, 2 billets, 10 000 F CFA. Entrée validée. Réf. AB12CD34.'],
+            ['INVITATION_RECEIVED', { ...ev, ticket_count: 1 }, [], `Event Village : 1 invitation pour Gala Dakar le sam. 14 nov. à 20:00. Connectez-vous avec ce numéro : ${U}/tickets`],
+            ['INVITATION_RECEIVED', { ...ev, ticket_count: 3 }, [], `Event Village : 3 invitations pour Gala Dakar le sam. 14 nov. à 20:00. Connectez-vous avec ce numéro : ${U}/tickets`],
             ['TRANSFER_OFFERED', { ...ev, expires_at: '2026-11-12T18:30:00.000Z' }, [],
                 `Event Village : un billet Gala Dakar vous est transféré. Connectez-vous avec ce numéro avant le 12 nov. à 18:30 : ${U}/tickets`],
             ['TRANSFER_CANCELLED', ev, [], 'Event Village : le transfert du billet Gala Dakar a été annulé par son propriétaire.'],
@@ -762,6 +767,7 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['REFUND_PAID', { ...ev, amount: 5000, operator: 'WAVE' }, [], 'Event Village : remboursement de 5 000 F CFA versé sur votre compte Wave (Gala Dakar).'],
             ['REFUND_PAID', { amount: 5000, operator: 'ORANGE_MONEY' }, NO_EVENT_KEYS, 'Event Village : remboursement de 5 000 F CFA versé sur votre compte Orange Money.'],
             ['PASSWORD_CHANGED', {}, [], 'Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.'],
+            ['PHONE_CHANGED', {}, [], 'Event Village : le numéro de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.'],
             ['EVENT_VALIDATED', ev, [], `Event Village : votre événement Gala Dakar est validé. Publiez-le depuis votre espace : ${U}/partner/events`],
             ['EVENT_REJECTED', { ...ev, reason: 'Affiche illisible' }, [], `Event Village : événement Gala Dakar non validé. Motif : Affiche illisible. ${U}/partner/events`],
             ['EVENT_SUSPENDED', { ...ev, reason: 'Signalement en cours' }, [], `Event Village : événement Gala Dakar suspendu. Motif : Signalement en cours. ${U}/partner/events`],
@@ -808,7 +814,7 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
         const { renderSyncSms } = await catalogModule();
         const code = '483920';
         const otp = `Votre code de verification Event Village est : ${code}. Valable 10 minutes.`;
-        for (const type of ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK']) {
+        for (const type of ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK', 'OTP_PHONE_CHANGE']) {
             const text = renderSyncSms(type, { code });
             assert.equal(text, otp, `${type} : texte OTP actuel`);
             assert.deepEqual(measureSms(text), { encoding: 'GSM7', length: 74, segments: 1 }, `${type} : un SMS GSM-7`);
