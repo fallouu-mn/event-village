@@ -23,7 +23,16 @@ export interface CatalogEvent {
     price: number | null;
 }
 
-export type CatalogResult = { ok: true; events: CatalogEvent[] } | { ok: false; message: string };
+export type CatalogResult = { ok: true; events: CatalogEvent[]; cities: string[] } | { ok: false; message: string };
+
+/** Filtres du serveur (lot 9, A28). `tous`, la valeur « sans filtre » des écrans, n'est jamais envoyée. */
+export interface CatalogFilters {
+    q?: string;
+    city?: string;
+    category?: string;
+}
+
+const NO_FILTER = 'tous';
 
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
 
@@ -55,11 +64,32 @@ function toCatalogEvent(raw: unknown): CatalogEvent | null {
     };
 }
 
-/** Charge le catalogue ; `tag` identifie l'écran dans le journal de la console. */
-export async function readCatalog(tag: string): Promise<CatalogResult> {
+function catalogUrl(filters: CatalogFilters): string {
+    const params = new URLSearchParams();
+    const q = filters.q?.trim();
+    if (q) params.set('q', q);
+    for (const key of ['city', 'category'] as const) {
+        const value = filters[key];
+        if (value && value !== NO_FILTER) params.set(key, value);
+    }
+    const query = params.toString();
+    return query ? `/api/events?${query}` : '/api/events';
+}
+
+/** Charge le catalogue, filtré par le serveur ; `tag` identifie l'écran dans le journal de la console. */
+export function readCatalog(tag: string, filters: CatalogFilters = {}): Promise<CatalogResult> {
+    return readEvents(tag, catalogUrl(filters));
+}
+
+/** Charge « Populaires » (lot 9, 9.1), avec la même lecture et le même traitement d'erreur que le catalogue. */
+export function readPopular(tag: string): Promise<CatalogResult> {
+    return readEvents(tag, '/api/events/popular');
+}
+
+async function readEvents(tag: string, url: string): Promise<CatalogResult> {
     let res: Response;
     try {
-        res = await fetch('/api/events', { cache: 'no-store' });
+        res = await fetch(url, { cache: 'no-store' });
     } catch (err) {
         console.error(`[${tag}] catalogue injoignable :`, err instanceof Error ? err.message : String(err));
         return { ok: false, message: NETWORK_MESSAGE };
@@ -71,7 +101,7 @@ export async function readCatalog(tag: string): Promise<CatalogResult> {
         console.error(`[${tag}] réponse illisible du catalogue (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
         return { ok: false, message: `Réponse inattendue du serveur (erreur ${res.status}).` };
     }
-    const payload = (typeof body === 'object' && body !== null ? body : {}) as { events?: unknown; error?: unknown };
+    const payload = (typeof body === 'object' && body !== null ? body : {}) as { events?: unknown; cities?: unknown; error?: unknown };
     if (!res.ok) {
         return { ok: false, message: text(payload.error) ?? `Le catalogue n’a pas pu être chargé (erreur ${res.status}).` };
     }
@@ -80,5 +110,6 @@ export async function readCatalog(tag: string): Promise<CatalogResult> {
         return { ok: false, message: 'Réponse inattendue du serveur.' };
     }
     const events = payload.events.map(toCatalogEvent).filter((e): e is CatalogEvent => e !== null);
-    return { ok: true, events };
+    const cities = Array.isArray(payload.cities) ? payload.cities.filter((c): c is string => text(c) !== null) : [];
+    return { ok: true, events, cities };
 }

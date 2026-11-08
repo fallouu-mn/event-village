@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
-import { getCategoryLabel } from '@/lib/constants/event-categories';
+import { apiFailure } from '@/lib/api/public-error';
+import { CATALOG_SELECT, formatCatalogEvent, type CatalogRow } from '@/lib/events/catalog.server';
 import { eventEndAt } from '@/lib/events/event-end';
+import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
+
+function failure(err: unknown): NextResponse {
+    const response = apiFailure('GET /api/events', err, {
+        message: 'Impossible de charger les événements.',
+        code: 'CATALOG_UNAVAILABLE',
+    });
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
+}
 
 /**
  * GET /api/events — catalogue public (accueil, explorer). Lot 5 (contrat E) :
@@ -12,83 +22,31 @@ export const dynamic = 'force-dynamic';
  *  - prix « à partir de » calculé sur les catégories actives ET vendues en ligne ; sans catégorie achetable :
  *    aucun prix (price null) et « Bientôt en vente », jamais « Gratuit » ;
  *  - aucune donnée de stock ni catégorie masquée exposée.
+ * Lot 9 (9.1, A28, L18, L19) : les écrans filtrent par ces paramètres. `q` (120 caractères au plus) cherche aussi la
+ * ville ; `city` est normalisée, `ALL` = pas de filtre ; `cities` liste les villes à venir AVANT les filtres, pour que
+ * le choix de ville reste complet quand une ville est sélectionnée.
  */
 export async function GET(req: NextRequest) {
     try {
         const supabase = getServiceRoleClient();
         const { searchParams } = new URL(req.url);
-        const search = searchParams.get('q')?.trim().toLowerCase();
+        const search = searchParams.get('q')?.trim().slice(0, 120).toLowerCase();
         const category = searchParams.get('category');
-        const city = searchParams.get('city');
+        const city = searchParams.get('city')?.trim().toUpperCase();
 
-        let query = supabase
+        const { data: events, error } = await supabase
             .from('events')
-            .select(`
-                id,
-                slug,
-                title,
-                category,
-                description,
-                location,
-                city,
-                start_date,
-                start_time,
-                end_date,
-                end_time,
-                image_url,
-                status,
-                created_at,
-                partner_id,
-                partners(company_name, commercial_name),
-                ticket_categories(price, is_active, sale_online)
-            `)
+            .select(CATALOG_SELECT)
             .eq('status', 'PUBLIE')
             .order('start_date', { ascending: true });
 
-        const { data: events, error } = await query;
-
-        if (error) {
-            console.error('[API /api/events] Erreur Supabase:', error);
-            return NextResponse.json({ error: 'Impossible de charger les événements.' }, { status: 500 });
-        }
+        if (error) return failure(error);
 
         const now = Date.now();
-        const upcoming = (events || []).filter((evt: any) => eventEndAt(evt).getTime() > now);
-        const formatted = upcoming.map((evt: any) => {
-            const startDate = new Date(evt.start_date);
-            const months = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];
-            const monthShort = months[startDate.getMonth()] || 'SEP';
-            const dayNumber = String(startDate.getDate()).padStart(2, '0');
-            const timeFormatted = evt.start_time ? evt.start_time.substring(0, 5) : '20:00';
-            const dateFormatted = `${dayNumber} ${monthShort} ${startDate.getFullYear()}`;
-
-            const buyable = (evt.ticket_categories || []).filter((c: any) => c.is_active === true && c.sale_online === true);
-            const minPrice: number | null = buyable.length > 0
-                ? Math.min(...buyable.map((c: any) => Number(c.price)))
-                : null;
-
-            return {
-                id: evt.id,
-                slug: evt.slug || evt.id,
-                title: evt.title,
-                subtitle: evt.partners?.commercial_name || evt.partners?.company_name || 'Event Village',
-                imageUrl: evt.image_url || null,
-                dateFormatted,
-                dayNumber,
-                monthShort,
-                timeFormatted,
-                venue: evt.location || 'Dakar, Sénégal',
-                category: evt.category || null,
-                categoryLabel: getCategoryLabel(evt.category),
-                city: (evt.city || 'DAKAR').toUpperCase(),
-                price: minPrice,
-                priceFormatted: minPrice === null
-                    ? 'Bientôt en vente'
-                    : minPrice === 0 ? 'Gratuit' : `${minPrice.toLocaleString('fr-FR')} F CFA`,
-                onSaleSoon: minPrice === null,
-                status: evt.status,
-            };
-        });
+        const formatted = ((events ?? []) as unknown as CatalogRow[])
+            .filter((evt) => eventEndAt(evt).getTime() > now)
+            .map(formatCatalogEvent);
+        const cities = Array.from(new Set(formatted.map((e) => e.city))).sort((a, b) => a.localeCompare(b, 'fr'));
 
         // Filtrage en mémoire pour recherche et ville si demandés
         let results = formatted;
@@ -96,7 +54,8 @@ export async function GET(req: NextRequest) {
             results = results.filter(e =>
                 e.title.toLowerCase().includes(search) ||
                 e.venue.toLowerCase().includes(search) ||
-                e.subtitle.toLowerCase().includes(search)
+                e.subtitle.toLowerCase().includes(search) ||
+                e.city.toLowerCase().includes(search)
             );
         }
         if (category && category !== 'ALL') {
@@ -106,9 +65,8 @@ export async function GET(req: NextRequest) {
             results = results.filter(e => e.city === city);
         }
 
-        return NextResponse.json({ events: results });
+        return NextResponse.json({ events: results, cities }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
-        console.error('[API /api/events] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+        return failure(err);
     }
 }
