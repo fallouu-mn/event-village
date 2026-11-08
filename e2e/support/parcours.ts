@@ -315,7 +315,7 @@ export async function drainOutbox(what: string): Promise<number> {
 const INVARIANTS_SCRIPT = path.join('scripts', 'e2e', 'invariants-run.ts');
 
 /**
- * Invariants (a) à (t) sur toute la base locale, boîte d'envoi d'abord vidée par la vraie route (L79) : le script exige de
+ * Invariants (a) à (v) sur toute la base locale, boîte d'envoi d'abord vidée par la vraie route (L79) : le script exige de
  * ne trouver aucune ligne due, ses faux adaptateurs l'enverraient dans le vide. Journaux [INVARIANT-…] recopiés dans e2e.log.
  */
 export async function assertInvariants(label: string): Promise<void> {

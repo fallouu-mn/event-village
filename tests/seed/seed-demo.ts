@@ -57,6 +57,9 @@
  *  - billet de la saisie manuelle exigé payant, VALIDE et payé en ligne : la capture du remboursement unitaire le recherche ;
  *  - fin par assertRecetteInvariants('seed-demo') ((a) à (t)).
  *
+ * Lot 9 (AR6, T29 ; commit fix(9-seed), après les migrations du lot) : fin par assertLot9Invariants('seed-demo'), qui
+ * enchaîne (a) à (t), le schéma du lot, puis (t)(u)(v).
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -78,7 +81,8 @@ import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
 import { inspect } from '../helpers/db';
 import { TEST_PASSWORD } from '../helpers/fixture-data';
-import { assertRecetteInvariants, missingRecetteSchema } from '../helpers/recette-invariants';
+import { assertLot9Invariants } from '../helpers/lot9-invariants';
+import { missingRecetteSchema } from '../helpers/recette-invariants';
 import { missingTerrainSchema } from '../helpers/terrain-invariants';
 import { DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoIds } from '../../e2e/support/demo-ids';
 import { dakarDateLabel, logoHtml, posterHtml, POSTER_SIZE, renderPng, type PALETTES, type PosterMotif } from '../../e2e/support/poster';
@@ -1364,9 +1368,9 @@ async function main(): Promise<void> {
     writeDemoIds(ids);
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);
 
-    // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7 ; lot 8 (T31) : (r)(s)(t)
-    log('invariants (a) à (t)…');
-    await assertRecetteInvariants('seed-demo');
+    // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7 ; lot 8 (T31) : (r)(s)(t) ; lot 9 (T29) : (t)(u)(v)
+    log('invariants (a) à (v)…');
+    await assertLot9Invariants('seed-demo');
 
     log(`OK en ${((Date.now() - started) / 1000).toFixed(1)}s`);
 }
