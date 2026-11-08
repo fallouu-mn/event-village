@@ -190,4 +190,18 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/dev/FakePaymentPanel.tsx',
     // Fichier existant migré par le lot : rouge jusqu'à sa migration (fix(8.2r)). Retrait de PRE_LOT5_UI_FILES : W7.
     'components/partner/ClosingReportModal.tsx',
+    // ── Lot 9 (contrat, section 8 ; T4) ──
+    // Fichiers créés par le lot. Absents tant que l'écran n'est pas écrit : la suite design-systeme est rouge
+    // jusqu'aux commits d'écran (fix(9.0e), fix(9.1e), fix(9.2e)).
+    // 9.0 : invitations au pilotage (E0)
+    'components/partner/pilotage/InvitationsTab.tsx',
+    // 9.1 : accueil, populaires et près de chez vous (E1)
+    'components/events/HomeDiscovery.tsx',
+    // 9.2 : profil, avatar, changement de numéro, Mes paiements (E2)
+    'components/ui/Avatar.tsx',
+    'components/profile/ProfileForm.tsx',
+    'components/profile/PhoneChangeDialog.tsx',
+    'components/profile/AvatarEditor.tsx',
+    'app/profile/payments/page.tsx',
+    'app/profile/payments/loading.tsx',
 ];

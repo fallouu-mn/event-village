@@ -7,6 +7,8 @@
  * Lot 7, tâche 7.9 (T31) : notif_ticket_lines (migration 20261105000007), même contrôle ; rouge jusqu'à fix(7.9).
  * Lot 8 (T3) : fonctions nouvelles du lot, même contrôle (42501, jamais PGRST202) ; rouges chacune jusqu'à sa
  * migration : fix(8.0s), fix(8.1s), fix(8.2a), fix(8.2l).
+ * Lot 9 (T2, T3) : fonctions nouvelles du lot, même contrôle strict ; rouges chacune jusqu'à sa migration
+ * (M1 fix(9.3-A33), M2 fix(9.0s), M3 fix(9.1s), M4 fix(9.2s)). ticket_cash_checkin retirée (A16, supprimée par M5).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -80,6 +82,24 @@ const LOT8_RPCS: Array<[string, Record<string, unknown>]> = [
     ['partner_profile_update', { p: {} }],
 ];
 
+/**
+ * Lot 9 (contrat 3.2, T2) : fonctions créées par le lot, avec des arguments factices valides en type
+ * (signature `(p jsonb)` sauf events_popular(p_limit integer)). Les fonctions de triggers ne sont pas des RPC :
+ * leur privilège est contrôlé par tests/schema/fonctions-privileges.test.ts (groupe c).
+ */
+const LOT9_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['ticket_invitation_create', { p: {} }],
+    ['ticket_invitation_cancel', { p: {} }],
+    ['ticket_invitations_list', { p: {} }],
+    ['account_profile_finalize', { p: {} }],
+    ['account_phone_finalize', { p: {} }],
+    ['account_avatar_set', { p: {} }],
+    ['client_payments_list', { p: {} }],
+    ['admin_permissions_set', { p: {} }],
+    ['partner_register_finalize', { p: {} }],
+    ['events_popular', { p_limit: 10 }],
+];
+
 /** RPC métier (groupe b) avec des arguments factices valides en type. */
 const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['validate_and_check_in_ticket', { p_qr_code: 'EV-QR-INEXISTANT', p_controller_id: ZERO_UUID }],
@@ -115,7 +135,6 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['finance_platform_revenue', { p_from: null, p_to: null }],
     // Lot 4 : contrôle d'accès et caisse (service_role uniquement)
     ['ticket_scan', { p: {} }],
-    ['ticket_cash_checkin', { p: {} }],
     ['counter_sale', { p: {} }],
     ['shift_open', { p: {} }],
     ['ticket_transfer_claim', { p_transfer_id: ZERO_UUID, p_recipient: ZERO_UUID }],
@@ -186,6 +205,8 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ...LOT7_RPCS,
     // Lot 8 : canaux de vente, marquage simulé, double paiement, profil partenaire ; service_role uniquement
     ...LOT8_RPCS,
+    // Lot 9 : invitations, compte client, sécurité (A33), populaires ; service_role uniquement
+    ...LOT9_RPCS,
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */
@@ -263,6 +284,27 @@ describe('R3 — lot 7 : chaque fonction du lot existe et reste réservée au r�
 describe('R3 — lot 8 : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
     const MIGRATIONS = 'migrations 20261106000001 (canaux), …02 (essai), …03 (paiement), …06 (profil)';
     for (const [fn, args] of LOT8_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
+/**
+ * Lot 9, même exigence que les lots 6 à 8 : une fonction absente (PGRST202) passerait pour refusée dans la boucle
+ * générale ; ici chaque fonction du lot doit exister ET être refusée par le privilège EXECUTE (42501).
+ */
+describe('R3 — lot 9 : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261108000001 (sécurité), …02 (invitations), …03 (découverte), …04 (compte)';
+    for (const [fn, args] of LOT9_RPCS) {
         test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
             const anon = await anonClient().rpc(fn, args);
             assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
