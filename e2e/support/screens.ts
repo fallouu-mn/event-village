@@ -43,6 +43,10 @@
  *    « Généré le … ») ; `references` : le numéro CLOTURE-… n'est pas une valeur technique ; fond ramené en haut de page avant
  *    les contrôles : à 390 px, la feuille coupait un bouton du tableau de bord, relevé par axe target-size (run 96) ;
  *  - pilotage-rembourser-billet : libellés de fix(8.3-A4e) exigés, fiche d'un billet payant (seed), « Revenir à la fiche » joué.
+ *
+ * Lot 9 (contrat section 7 ; T26) : scanner-a-encaisser retirée (A16 : plus d'encaissement au scan) ; accueil attend Populaires ;
+ * sept captures ajoutées, rouges jusqu'à leurs écrans (fix(9.0e), fix(9.1e), fix(9.2e)) : invitations-onglet,
+ * invitations-confirmation, mes-paiements, profil, changement-numero, accueil-ville, accueil-populaires-erreur.
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
@@ -327,6 +331,19 @@ const EMPTY_RECONCILIATION = {
     items: [],
 };
 
+// ── Lot 9 : invitations, découverte, compte ─────────────────────────────────
+
+/** Onglet « Invitations » du pilotage ouvert par ?tab=invitations (libellés figés, contrat 5.1). */
+async function invitationsReady(page: Page): Promise<void> {
+    await expect(page.getByRole('tab', { name: /^invitations/i })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: /^envoyer les invitations$/i })).toBeVisible();
+}
+
+/** Section « Près de chez vous » de l'accueil (contrat 5.2). */
+function nearbySection(page: Page): Locator {
+    return page.locator('section').filter({ has: page.getByRole('heading', { name: /^près de chez vous/i }) });
+}
+
 function tabScreen(id: string, titre: string, tab: RegExp): Screen {
     return {
         id, titre, role: 'organisateur', needsIds: true, path: pilotage('ceSoir'),
@@ -336,7 +353,11 @@ function tabScreen(id: string, titre: string, tab: RegExp): Screen {
 
 export const SCREENS: readonly Screen[] = [
     // ── Public ──────────────────────────────────────────────────────────────
-    { id: 'accueil', titre: 'Accueil', role: 'anonyme', needsIds: false, path: () => '/' },
+    {
+        id: 'accueil', titre: 'Accueil', role: 'anonyme', needsIds: false, path: () => '/',
+        // Lot 9 : section sous « À l'affiche », chargée après la page ; le seed y place des ventes récentes (spreadPurchases)
+        ready: async ({ page }) => { await expect(page.getByRole('region', { name: /^populaires/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 }); },
+    },
     { id: 'catalogue', titre: 'Catalogue des événements', role: 'anonyme', needsIds: false, path: () => '/explore' },
     { id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200 },
     {
@@ -709,9 +730,6 @@ export const SCREENS: readonly Screen[] = [
         ticket: { ...SCAN_TICKET, checked_in_at: '2026-11-04T19:42:00.000Z', checked_in_by_me: false },
     }),
     scanResultScreen('scanner-refuse', 'Scanner — entrée refusée (plein écran, QR expiré)', { result: 'qr_expired', scan_id: '7f4e9c32-a06d-4b83-9c5f-3e4d5a6b7c82', ticket: SCAN_TICKET }),
-    scanResultScreen('scanner-a-encaisser', 'Scanner — encaissement requis (plein écran, caisse ouverte)', {
-        result: 'cash_required', scan_id: '80a5ad43-b17e-4c94-8d6a-4f5e6b7c8d93', amount_due: 5000, ticket: SCAN_TICKET,
-    }),
     scanResultScreen('scanner-hors-fenetre', 'Scanner — contrôle pas encore ouvert (plein écran)', { result: 'event_not_open', scan_id: '91b6be54-c28f-4da5-9e7b-5a6f7c8d9ea4' }),
     scanResultScreen('scanner-evenement-annule', 'Scanner — événement annulé (plein écran)', { result: 'event_cancelled', scan_id: 'a2c7cf65-d39a-4eb6-8f8c-6b7a8d9eafb5' }),
     // Lot 8 (8.2 e, contrat 3.5) : réponse d'un renvoi sans ligne, ni scan_id ni ticket ; le parcours réel est au projet terrain
@@ -920,4 +938,64 @@ export const SCREENS: readonly Screen[] = [
         masks: (page) => [page.getByRole('img', { name: /QR/i })],
     },
     { id: 'portefeuille', titre: 'Portefeuille du client (solde, parrainage)', role: 'client', needsIds: true, path: () => '/wallet', ready: async ({ page }) => expectPageTitle(page) },
+    // ── Lot 9 : invitations, découverte, compte (contrat section 7) ─────────
+    {
+        id: 'invitations-onglet', titre: 'Pilotage — Invitations (catégorie, numéros, liste)', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.ceSoir.id}?tab=invitations`,
+        ready: async ({ page }) => invitationsReady(page),
+    },
+    {
+        id: 'invitations-confirmation', titre: 'Pilotage — Invitations : confirmation de l’envoi', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.ceSoir.id}?tab=invitations`,
+        ready: async ({ page }) => invitationsReady(page),
+        actions: async ({ page }) => {
+            const category = page.getByRole('tabpanel').getByLabel(/^catégorie/i);
+            const value = await category.locator('option:not([value=""]):not([disabled])').first().getAttribute('value');
+            if (!value) throw new Error('[e2e] aucune catégorie proposée dans le champ Catégorie des invitations');
+            await category.selectOption(value);
+            await page.getByLabel(/^numéros de téléphone/i).fill('771234567');
+            await page.getByRole('button', { name: /^envoyer les invitations$/i }).click();
+            await expect(page.getByRole('alertdialog', { name: /^confirmer l.envoi/i })).toBeVisible();
+        },
+    },
+    {
+        id: 'mes-paiements', titre: 'Mes paiements (date, événement, montant, opérateur, statut, totaux)', role: 'client', needsIds: true,
+        path: () => '/profile/payments', expectStatus: 200,
+        ready: async ({ page }) => {
+            await expectHeading(page, /^mes paiements$/i);
+            await expect(page.locator('a[href^="/paiement/"]').first()).toBeVisible();
+        },
+    },
+    {
+        id: 'profil', titre: 'Profil du client (identité, photo, numéro)', role: 'client', needsIds: true, path: () => '/profile',
+        ready: async ({ page }) => {
+            await expect(page.getByRole('button', { name: /^enregistrer le profil$/i })).toBeVisible();
+            await expect(page.getByRole('button', { name: /^changer de numéro$/i })).toBeVisible();
+            await expect(page.getByRole('button', { name: /^choisir une photo$/i })).toBeVisible();
+        },
+    },
+    {
+        id: 'changement-numero', titre: 'Profil du client — changement de numéro (boîte ouverte)', role: 'client', needsIds: true, path: () => '/profile',
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^changer de numéro$/i }).click();
+            await expect(page.getByRole('dialog')).toBeVisible();
+        },
+    },
+    {
+        id: 'accueil-ville', titre: 'Accueil — Près de chez vous, ville gardée sur l’appareil', role: 'anonyme', needsIds: false, path: () => '/',
+        initStorage: { 'ev-city': 'DAKAR' },
+        ready: async ({ page }) => {
+            await expect(nearbySection(page).getByRole('combobox'), 'ville du visiteur relue sur l’appareil').toHaveValue('DAKAR', { timeout: 30_000 });
+            await revealCenter(nearbySection(page).getByRole('combobox'));
+        },
+    },
+    {
+        id: 'accueil-populaires-erreur', titre: 'Accueil — Populaires, état d’erreur (Réessayer)', role: 'anonyme', needsIds: false, path: () => '/',
+        injectError: /\/api\/events\/popular/,
+        // Section sous « À l'affiche » : hors de l'image sans défilement
+        ready: async (c) => {
+            await expectRetry(c);
+            await revealCenter(c.page.getByRole('button', { name: /réessayer/i }));
+        },
+    },
 ];

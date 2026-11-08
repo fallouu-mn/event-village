@@ -87,23 +87,38 @@ async function settle(page: Page, guard: PageGuard, notes: string[]): Promise<vo
     });
 }
 
+/** Lot 9 (9.4) : tout QR d'entrée est masqué sur tous les écrans, cloche ouverte comprise ; le QR de paiement n'est pas visé. */
+const QR_ENTREE = (page: Page) => page.getByRole('img', { name: /^QR d.entrée/i });
+
+/**
+ * Lot 9 (9.4, T27) : le masque est posé sur l'élément lui-même, par un attribut et une feuille de style de capture.
+ * L'option `mask` de Playwright dessinait une couche calculée à part, qui ne suivait pas le panneau de la cloche et
+ * recouvrait l'en-tête d'une page défilée.
+ */
+const MASK_STYLE = `[data-e2e-masked]{background:#FF00FF!important;color:transparent!important}
+[data-e2e-masked]>*{visibility:hidden!important}`;
+
 function globalMasks(page: Page) {
     return [
         page.locator('[data-e2e-mask]'),
         page.getByText(/^(il y a|dans) \d+\s?(s|sec|min|minutes?|h|heures?|j|jours?)\b/i),
         page.getByText(/^à l[’']instant$/i),
+        QR_ENTREE(page),
     ];
 }
 
 async function capture(page: Page, screen: Screen, file: string): Promise<string> {
     fs.mkdirSync(CAPTURES_DIR, { recursive: true });
     const target = path.join(CAPTURES_DIR, file);
+    for (const masked of [...globalMasks(page), ...(screen.masks ? screen.masks(page) : [])]) {
+        await masked.evaluateAll((els) => els.forEach((e) => e.setAttribute('data-e2e-masked', '')));
+    }
     await page.screenshot({
         path: target,
         animations: 'disabled',
         caret: 'hide',
         scale: 'device',
-        mask: [...globalMasks(page), ...(screen.masks ? screen.masks(page) : [])],
+        style: MASK_STYLE,
     });
     return target;
 }
