@@ -11,10 +11,10 @@ export function categoryChannelLabel(c: { sale_online: boolean; sale_counter: bo
 }
 
 /**
- * Aides du formulaire. `none` ne promet aucune invitation : l'application n'en envoie pas encore (AR8).
+ * Aides du formulaire. `none` renvoie à l'onglet Invitations du pilotage (lot 9, AM6).
  */
 export const CATEGORY_CHANNEL_HELP: Record<'online' | 'counter' | 'none', string> = {
     online: 'Affichée sur la page de l’événement et achetable sur le site.',
     counter: 'Proposée au contrôleur et vendue en espèces à l’entrée.',
-    none: 'Cette catégorie n’est vendue ni en ligne ni au guichet. L’application n’envoie pas encore d’invitations : aucun billet ne sera distribué pour le moment.',
+    none: 'Cette catégorie n’est vendue ni en ligne ni au guichet. Distribuez ses billets depuis l’onglet Invitations du pilotage.',
 };
