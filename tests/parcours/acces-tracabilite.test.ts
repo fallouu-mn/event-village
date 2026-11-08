@@ -14,13 +14,13 @@
  *  - scanner contrôleur (contrôle statique) : statut HTTP lu, 401 → connexion, erreurs techniques
  *    (rate_limited, server_error, network_error) traitées à part, jamais « invalide » par défaut ni son
  *    de rejet (lot 7 : l'audio du scanner est supprimé ; l'absence de tout son est vérifiée plus largement
- *    par tests/parcours/scanner-interface.test.ts), compteur de refus réservé aux refus de billet, caméra
- *    en pause pendant une confirmation espèces, union importée de lib/scan/scan-result.
+ *    par tests/parcours/scanner-interface.test.ts), compteur de refus réservé aux refus de billet,
+ *    union importée de lib/scan/scan-result (lot 9, A16 : contrôle de la caméra pendant un encaissement retiré).
  * Rouge avant correctif : aucune table ticket_scans (app/api/controller/scan/route.ts:355-367 n'audite
  * que le succès) ; lib/scan/scan-result.ts n'existe pas ; limiteur en mémoire 5/s (route.ts:41-57),
  * SCAN_PER_SCANNER_10S absent de .env.test.example ; app/controller/scanner/page.tsx:483 et :548
  * (`|| 'invalid'`), :418-421 (voix INVALID par défaut), :452-457 (refus comptés sans exclure les erreurs
- * techniques), :475-488 (statut HTTP ignoré), :1060-1065 (caméra active pendant un encaissement).
+ * techniques), :475-488 (statut HTTP ignoré).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -250,15 +250,6 @@ describe('4.9 Scanner contrôleur (contrôle statique)', () => {
             assert.ok(/server_error|rate_limited|network_error|technical|technique|isTicketRefusal|isRefusal|REFUSAL/i.test(guard),
                 `le compteur de refus (${m[0]}) doit exclure explicitement les erreurs techniques`);
         }
-    });
-
-    test('caméra en pause pendant une confirmation d’encaissement espèces', () => {
-        const src = scannerSources();
-        const camera = /<CameraQrScanner[\s\S]*?\/>/.exec(src);
-        assert.ok(camera, 'le scanner caméra est présent');
-        const preceding = src.slice(Math.max(0, camera.index - 400), camera.index);
-        const guarded = /cash/i.test(camera[0]) || /cash/i.test(preceding) || /if\s*\([^)]*cash[^)]*\)\s*return\b/i.test(src);
-        assert.ok(guarded, 'la caméra doit être suspendue (prop ou rendu conditionnel) tant qu’une confirmation espèces est en attente');
     });
 
     test('l’union des résultats est importée de lib/scan/scan-result (API et interfaces)', () => {
