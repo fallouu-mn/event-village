@@ -19,7 +19,6 @@ const ManualSchema = z.object({
     // Contrat : seule la valeur true vaut « pièce vérifiée » ; toute autre valeur donne manual_entry_refused
     identityVerified: z.unknown().optional(),
 });
-const CashSchema = z.object({ scanId: z.string().uuid(), eventId: z.string().uuid() });
 /** Lot 8 (contrat 3.5) : un renvoi n'exige que l'événement ; payload et numéro, s'ils sont là, ne sont jamais lus. */
 const ReplaySchema = z.object({ eventId: z.string().uuid() });
 
@@ -183,39 +182,5 @@ export async function POST(req: NextRequest) {
     } catch (err) {
         console.error('[API /api/controller/scan] erreur :', err instanceof Error ? err.message : String(err));
         return serverError(user.id, typeof p.event_id === 'string' ? p.event_id : null, 'Erreur serveur pendant le contrôle.');
-    }
-}
-
-/**
- * PUT /api/controller/scan — encaissement espèces d'un billet « à régler sur place » puis compostage,
- * tout ou rien (ticket_cash_checkin) : `{ scanId, eventId }` d'un scan cash_required de moins de
- * 5 minutes ; caisse ouverte obligatoire pour tous les rôles ; montant = prix facial du billet.
- * Lot 7 (D40) : idempotent par sa clé naturelle scanId ; rejoué par le même scanneur après un encaissement
- * fait, il rend le verdict d'origine (200 `valid`, `replayed: true`, même paiement), sans aucune écriture.
- * Version du secret changée depuis le scan : 409 CASH_QR_OUTDATED (statut d'annulation dit avant la version).
- */
-export async function PUT(req: NextRequest) {
-    const session = await requireActiveSession(req);
-    if (session.response) return session.response;
-    const user = session.user;
-    const read = await readBody(req);
-    const limited = await scanQuota(user.id, read?.eventId ?? null, 'encaissement', 'cash_collect', 60, getServerEnv().CASH_COLLECT_PER_SCANNER_MIN);
-    if (limited) return limited;
-    if (!read) return NextResponse.json({ error: 'Corps JSON invalide.' }, { status: 400 });
-    const parsed = CashSchema.safeParse(read.body);
-    if (!parsed.success) return NextResponse.json({ error: 'scanId et eventId requis.' }, { status: 400 });
-    try {
-        const { data, error } = await rpcWithRetry<Rpc>('ticket_cash_checkin', {
-            p: { scan_id: parsed.data.scanId, scanner_id: user.id, event_id: parsed.data.eventId },
-        });
-        if (error || !data) throw new Error(`ticket_cash_checkin : ${error?.message ?? 'réponse vide'}`);
-        if (data.result !== 'valid') {
-            // Refus du serveur : pas de compostage ; l'écran garde l'erreur et propose une action explicite
-            return NextResponse.json({ ...data, message: SCAN_RESULT_LABELS[(isScanResult(data.result) ? data.result : 'invalid') as ScanResult] }, { status: 409 });
-        }
-        return scanResponse(data);
-    } catch (err) {
-        console.error('[API /api/controller/scan PUT] erreur :', err instanceof Error ? err.message : String(err));
-        return serverError(user.id, parsed.data.eventId, 'Erreur serveur pendant l’encaissement.');
     }
 }

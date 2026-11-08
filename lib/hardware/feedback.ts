@@ -5,7 +5,7 @@
  * Une vibration par résultat, distincte selon la catégorie du résultat plein écran (contrat 6.2) :
  *  - accepte                                   : [60]                  (une impulsion courte)
  *  - deja_utilise, refuse, evenement_annule    : [120, 60, 120, 60, 120] (trois impulsions marquées)
- *  - a_encaisser, hors_fenetre                 : [250, 100, 250]       (deux impulsions longues)
+ *  - hors_fenetre                              : [250, 100, 250]       (deux impulsions longues)
  *  - technique (réseau, serveur, cadence)      : aucune (le billet n'est pas en cause, D47)
  * Plus aucune vibration à la lecture du QR : seul le verdict vibre.
  * Sans `navigator.vibrate` (iPhone, WebView bridée) : aucune exception, la fonction rend false.
@@ -17,7 +17,6 @@ const PATTERNS: Record<ScanCategory, readonly number[] | null> = {
     deja_utilise: [120, 60, 120, 60, 120],
     refuse: [120, 60, 120, 60, 120],
     evenement_annule: [120, 60, 120, 60, 120],
-    a_encaisser: [250, 100, 250],
     hors_fenetre: [250, 100, 250],
     technique: null,
 };

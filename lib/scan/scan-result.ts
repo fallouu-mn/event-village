@@ -17,7 +17,6 @@ export const SCAN_RESULTS = [
     'event_suspended',
     'event_not_open',
     'payment_required',
-    'cash_required',
     'qr_expired',
     'dynamic_qr_required',
     'manual_entry_refused',
@@ -54,7 +53,6 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     event_suspended: 'Événement suspendu',
     event_not_open: 'Contrôle pas encore ouvert',
     payment_required: 'Paiement requis',
-    cash_required: 'Encaissement requis',
     qr_expired: 'QR expiré : demandez au client de rafraîchir son billet',
     dynamic_qr_required: 'QR dynamique requis (billet ouvert dans l’application)',
     manual_entry_refused: 'Saisie manuelle refusée',
@@ -77,7 +75,7 @@ export const NOT_PROCESSED_DETAIL = 'Aucune entrée enregistrée.';
  * Un incident technique (« technique ») n'est jamais un verdict sur le billet : écran neutre, aucune
  * vibration, jamais compté comme refus (D47).
  */
-export type ScanCategory = 'accepte' | 'deja_utilise' | 'refuse' | 'a_encaisser' | 'hors_fenetre' | 'evenement_annule' | 'technique';
+export type ScanCategory = 'accepte' | 'deja_utilise' | 'refuse' | 'hors_fenetre' | 'evenement_annule' | 'technique';
 
 export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
     valid: 'accepte',
@@ -90,7 +88,6 @@ export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
     manual_entry_refused: 'refuse',
     payment_required: 'refuse',
     qr_expired: 'refuse',
-    cash_required: 'a_encaisser',
     event_not_open: 'hors_fenetre',
     event_ended: 'hors_fenetre',
     event_cancelled: 'evenement_annule',

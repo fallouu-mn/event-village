@@ -6,7 +6,7 @@
  *  - Ouverture par la RPC shift_open (contrôleur affecté avec la permission espèces, partenaire
  *    propriétaire ou admin ; une seule caisse OUVERT par scanneur et événement). Le PIN régisseur y est
  *    facultatif : fourni, il est vérifié et la caisse est marquée « ouverte sous PIN ».
- *  - Encaissement et vente au guichet : RPC ticket_cash_checkin et counter_sale (routes dédiées).
+ *  - Vente au guichet : RPC counter_sale (route dédiée).
  *  - PIN : HMAC-SHA256(REGISSEUR_PIN_KEY, `regisseur-pin:v2:<eventId>:<sel>:<pin>`), sel aléatoire par
  *    événement ; régénération confirmée, refusée (409 OPEN_SHIFTS) tant qu'une caisse est ouverte sauf
  *    confirmation explicite, journalisée ; vérifications limitées par reserveQuota

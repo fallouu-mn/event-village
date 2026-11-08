@@ -77,7 +77,6 @@ const serverEnvSchema = z.object({
     // Lot 4 : quotas en base (lib/security/quota.ts), toutes les tentatives comptées, refus si la garde
     // ne répond pas. Fenêtres fixes : 10 s, minute, 15 min, heure, jour.
     SCAN_PER_SCANNER_10S: limit(30), // scans par scanneur (contrôleur, partenaire, admin)
-    CASH_COLLECT_PER_SCANNER_MIN: limit(20), // encaissements espèces par scanneur
     LIVE_CODE_PER_USER_MIN: limit(60), // codes dynamiques demandés par compte
     RESOLVE_PHONE_PER_IP_HOUR: limit(30), // résolutions numéro → compte, par IP
     VERIFY_OTP_PER_PHONE_15MIN: limit(10), // vérifications de code OTP, par numéro
