@@ -47,7 +47,7 @@ const CASES: Array<[boolean, boolean, string]> = [
  */
 const IS_VISIBLE_ALLOWED: Record<string, { why: string; count?: number }> = {
     'lib/validations/event.ts': { why: 'alias accepté par l’API (contrat 3.3)', count: 2 },
-    'components/events/AdjustTicketQuotaModal.tsx': { why: 'code mort, conservé (L13)' },
+    // Lot 9 (PO10) : components/events/AdjustTicketQuotaModal.tsx, code mort, supprimé (entrée retirée, ligne gardée pour la matrice).
     'components/partner/pilotage/types.ts': { why: 'type de compatibilité : is_visible reste dans la réponse de pilotage_sales (contrat 3.4)', count: 1 },
 };
 
