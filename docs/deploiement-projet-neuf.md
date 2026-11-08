@@ -1,8 +1,10 @@
 # Déploiement — montage du futur projet de production depuis zéro
 
-**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 8, canaux de vente, mode d'essai, migrations `20261106…`, retrait de `legacy-peer-deps`). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet monté le 02/11 est devenu event-village-dev, le projet d'essai manuel : il suit `docs/essai-local.md`, et la production se fera sur un projet neuf.
+**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 9, invitations, découverte, compte client, migrations `20261108…`, retrait de `CASH_COLLECT_PER_SCANNER_MIN`). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet monté le 02/11 est devenu event-village-dev, le projet d'essai manuel : il suit `docs/essai-local.md`, et la production se fera sur un projet neuf.
 
 **Principe :** la production se fait sur un projet Supabase **neuf**. On n'y copie rien du projet de test : ni données, ni comptes, ni clés. Le schéma vient uniquement des migrations du dépôt.
+
+**Commandes :** partout où ce document écrit `<quelque chose>`, remplacez tout le bloc, chevrons compris. Sous PowerShell, une commande qui garde `<` ou `>` échoue.
 
 ---
 
@@ -35,7 +37,7 @@ supabase db push
 
 Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éditeur SQL : **toutes** les lignes doivent être `OK`. Sur un projet neuf, cette vérification doit passer sans appliquer `02-hotfix.sql` (la migration du lot 1A est déjà incluse). Depuis le lot 7, le script attend **7** aides RLS (la 7e est `ticket_category_private_read`, migration `20261105000003`) : exécuté avant les migrations du lot 7, il signale à tort la ligne « 1A.3 aides RLS exécutables par anon et authenticated, STABLE, search_path fixé ».
 
-Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7). Les lots 7 et 8 n'ajoutent ni ne changent aucune tâche planifiée.
+Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7). Les lots 7, 8 et 9 n'ajoutent ni ne changent aucune tâche planifiée.
 
 ## 3 bis. Projet déjà en service : appliquer seulement les migrations du lot 7
 
@@ -119,12 +121,98 @@ Aucune ne crée de table, de réglage ni de tâche planifiée, aucune n'ajoute d
 
 **Déployer l'application du lot 8 dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Elle lit des colonnes et appelle une fonction qui n'existent qu'après ces migrations (`sale_online`, `sale_counter`, `cashouts.simulated`, `partner_profile_update`).
 
+## 3 quater. Projet déjà en service : appliquer seulement les migrations du lot 9
+
+Cas d'un projet où les migrations jusqu'au lot 8 compris (`20261106000001` à `20261106000006`) sont déjà appliquées. Sur un projet neuf, la section 3 suffit : `db push` applique tout. Le projet d'essai event-village-dev suit `docs/essai-local.md`, section 3. Les migrations `20261103…`, `20261105…` et `20261106…` sont **gelées**. Le lot 9 apporte cinq migrations nouvelles, à appliquer dans cet ordre, celui des noms, que suit `db push`.
+
+| Ordre | Migration | Ce qu'elle fait |
+|---|---|---|
+| 1 | `20261108000001_lot9_securite.sql` | Ordre unique des verrous dans `ticket_refund_request`, `event_update` et `ticket_category_guard` (catégorie prise avant le billet, en `FOR NO KEY UPDATE`, événement en `FOR NO KEY UPDATE`), qui supprime leurs interblocages avec `event_cancel` et `checkout_create_payment`. Le trigger anti-boucle de parrainage `trg_check_circular_referral` couvre aussi l'UPDATE de `sponsor_id` et `referred_id`, quel que soit le rôle (A27). Nouvelles fonctions `admin_permissions_set` et `partner_register_finalize` : les écritures qui doivent aller ensemble passent dans une seule transaction (A33). |
+| 2 | `20261108000002_lot9_invitations.sql` | Outil d'invitations. La contrainte `tickets_holder_or_counter` admet un billet sans porteur pour le canal `INVITATION` ; `ticket_transfers.from_user_id` devient facultatif. Nouveau type de notification `INVITATION_RECEIVED` (SMS indispensable). Nouvelles fonctions `ticket_invitation_create`, `ticket_invitation_cancel`, `ticket_invitations_list`. Le trigger `trg_events_invitation_expiry` recale l'échéance d'une invitation en attente au report de l'événement. Recopies : `tickets_sale_decision_set` (source `INVITATION`), `ticket_transfer_accept`, `ticket_transfers_incoming` (expéditeur « L'organisateur de l'événement »), `participants_export` (colonne Canal). |
+| 3 | `20261108000003_lot9_decouverte.sql` | Colonne `users.city` (ville choisie par le client, facultative). Index `idx_tickets_created_at`, construit sans `CONCURRENTLY` : les écritures de billets attendent la fin de sa construction. Fonction `events_popular` (classement « Populaires » sur 7 jours, invitations exclues). |
+| 4 | `20261108000004_lot9_compte.sql` | Objet de code `PHONE_CHANGE` pour les OTP, types `PHONE_CHANGED` (SMS indispensable, vers l'ancien numéro) et `OTP_PHONE_CHANGE`. **Crée le bucket `avatars`** : public, 2 Mo au plus, `image/webp` seul, aucune politique sur `storage.objects`. La route `POST /api/account/avatar` est le seul écrivain (service_role), pour que sharp et le retrait des métadonnées ne puissent pas être contournés. Ne créez pas ce bucket à la main. `REVOKE UPDATE (first_name, last_name, avatar_url)` pour `authenticated` : ces colonnes ne s'écrivent plus que par les routes. Nouvelles fonctions `account_identity_taken`, `account_profile_finalize`, `account_phone_finalize`, `account_avatar_set`, `client_payments_list`. Recopie de `notification_sync_log`. |
+| 5 | `20261108000005_lot9_nettoyage.sql` | Retrait du parcours « à régler sur place » (A16) : `ticket_scan` et `ticket_manual_lookup` sans la branche `cash_required`, suppression de `ticket_cash_checkin`. Un billet payant impayé tombe sur le refus `payment_required`, qui existait déjà. L'historique reste lisible : le `CHECK` de `ticket_scans.result` et les filtres du pilotage ne changent pas. |
+
+Aucune ne crée de table, de réglage ni de tâche planifiée, aucune n'ajoute d'aide RLS, aucune ne reprend de données. Toutes sont rejouables, sans `BEGIN` ni `COMMIT` de transaction, et chaque fonction créée ou recréée est `SECURITY DEFINER`, réservée au service_role.
+
+**Contrôles avant d'appliquer :**
+
+1. Depuis le poste de l'opérateur. Remplacez `VOTRE_REFERENCE` par la référence du projet, sans rien ajouter autour : ni chevrons, ni guillemets. Sous PowerShell, `<` et `>` sont des opérateurs, et la commande échouerait.
+
+   ```powershell
+   npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
+   npx supabase@2.122.0 migration list --linked
+   npx supabase@2.122.0 db push --linked --dry-run
+   ```
+
+   `migration list` : `20261106000006` présent des deux côtés, les cinq `20261108…` en local seulement. `--dry-run` : exactement les 5 fichiers `20261108000001` à `…05`, dans cet ordre.
+
+2. **Si la liste contient autre chose** : même règle qu'en 3 bis. S'arrêter, sans `--include-all` et sans `supabase migration repair`.
+
+3. Dans l'éditeur SQL, le contrôle A27, en lecture seule : aucune boucle de parrainage ne doit déjà exister. Attendu : **aucune ligne**.
+
+   ```sql
+   with recursive chaine as (
+     select r.referred_id as depart, r.sponsor_id as ancetre,
+            array[r.referred_id, r.sponsor_id] as chemin, false as boucle
+       from public.referral_relationships r
+     union all
+     select c.depart, r.sponsor_id, c.chemin || r.sponsor_id, r.sponsor_id = any(c.chemin)
+       from chaine c
+       join public.referral_relationships r on r.referred_id = c.ancetre
+      where not c.boucle
+   )
+   select depart, chemin from chaine where boucle;
+   ```
+
+   La remontée du trigger (`check_no_circular_referral`) ne se termine pas sur une boucle déjà présente : la migration passerait, mais toute écriture d'une relation de cette chaîne resterait bloquée jusqu'au délai maximal de la requête. Aucun chemin de code n'a pu en créer. **Une ligne ou plus : s'arrêter**, ne rien corriger à la main et faire examiner ces comptes avant `db push`.
+
+**Appliquer :**
+
+```powershell
+npx supabase@2.122.0 db push --linked
+```
+
+**Contrôles après, dans l'éditeur SQL, une requête à la fois :**
+
+```sql
+-- attendu : 5 lignes, de 20261108000001 à 20261108000005
+select version from supabase_migrations.schema_migrations where version like '20261108%' order by version;
+
+-- attendu : 1 ligne, avatars, public = true, 2097152, {image/webp}
+select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = 'avatars';
+
+-- attendu : 0 ; aucune politique sur ce bucket
+select count(*) as politiques_avatars from pg_policies
+ where schemaname = 'storage' and tablename = 'objects'
+   and (coalesce(qual, '') ilike '%avatars%' or coalesce(with_check, '') ilike '%avatars%');
+
+-- attendu : 3 lignes, toutes ESSENTIAL
+select type, family from public.notification_types
+ where type in ('INVITATION_RECEIVED', 'PHONE_CHANGED', 'OTP_PHONE_CHANGE') order by type;
+
+-- attendu : la définition contient BEFORE INSERT OR UPDATE OF sponsor_id, referred_id
+select pg_get_triggerdef(oid) from pg_trigger where tgname = 'trg_check_circular_referral';
+
+-- attendu : NULL ; la fonction est retirée
+select to_regprocedure('public.ticket_cash_checkin(jsonb)') as fonction_retiree;
+
+-- attendu : false, false, false
+select has_column_privilege('authenticated', 'public.users', 'first_name', 'UPDATE') as prenom,
+       has_column_privilege('authenticated', 'public.users', 'last_name', 'UPDATE') as nom,
+       has_column_privilege('authenticated', 'public.users', 'avatar_url', 'UPDATE') as photo;
+```
+
+Puis exécuter `03-verification.sql` : tout `OK`. La liste blanche des aides RLS reste à 7.
+
+**Déployer l'application du lot 9 juste après, dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Elle lit la colonne `users.city` et appelle des fonctions qui n'existent qu'après ces migrations (`events_popular`, `ticket_invitation_*`, `account_*`, `client_payments_list`). Inversement, la route `PUT /api/controller/scan` du lot 8 appelle `ticket_cash_checkin`, que la migration 5 retire : sans effet tant qu'aucun billet n'est à régler sur place, mais l'ancienne application ne doit pas rester en service. Retirer `CASH_COLLECT_PER_SCANNER_MIN` de l'hébergeur (5.4) et vérifier que `sharp` est bien installé (5.6).
+
 ## 4. Données de référence (sans données de test)
 
 - `supabase/seed.sql` n'est **pas** joué par `db push`. Les données de référence nécessaires au fonctionnement sont créées par les migrations :
-  - `platform_settings` : **37 clés** depuis le lot 7, le lot 8 n'en ajoute aucune (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
+  - `platform_settings` : **37 clés** depuis le lot 7, les lots 8 et 9 n'en ajoutent aucune (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
   - `referral_config` (4 barèmes) ;
-  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs), `20261105000007` (email de `TRANSFER_RECEIVED`) et `20261106000003` (alerte `ADMIN_DUPLICATE_PAYMENT`).
+  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs), `20261105000007` (email de `TRANSFER_RECEIVED`), `20261106000003` (alerte `ADMIN_DUPLICATE_PAYMENT`), `20261108000002` (`INVITATION_RECEIVED`) et `20261108000004` (`PHONE_CHANGED`, `OTP_PHONE_CHANGE`).
 
   Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33 ; après celles du lot 7, 37 (33 + 5 clés nouvelles − `notif.sms_daily_alert`).
 - `subscription_plans` n'est **pas** rempli par les migrations : ses lignes ne figurent que dans `supabase/seed.sql`, qui ne doit pas être joué en production. La table reste vide tant que le client n'a pas validé les formules et leurs tarifs (point de l'audit) ; elles seront alors créées par une migration dédiée.
@@ -214,6 +302,17 @@ Trois quotas en base, de même nature que ceux du lot 4 (chaque appel compte, fe
 
 Le lot 8 n'ajoute aucune variable à l'hébergeur. Les variables suivantes servent au seul mode d'essai (`docs/essai-local.md`) et **ne doivent jamais y figurer** : `EV_DEV_FAKE_SERVICES_URL`, `EV_DEV_FAKE_PORT`, `EV_DEV_APP_PORT`, `EV_DEV_PROJECT_REF`, `EV_DEV_SEED_PASSWORD`, `EV_DEV_TUNNEL_URL`, `EV_ESSAI_SIMULATION`. `EV_ESSAI_SIMULATION`, posée par `scripts/dev/essai-start.mjs`, reste sans effet si `SAMIRPAY_API_URL` n'est pas une adresse locale.
 
+### 5.3 quater Facultatives, nouvelles au lot 9
+
+Quatre quotas en base, de même nature que ceux du lot 4 (chaque appel compte, fenêtres fixes ; au-delà : HTTP 429 avec `Retry-After`). Ce ne sont pas des secrets. Aucune variable obligatoire n'est ajoutée et aucun réglage SUPERADMIN nouveau.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `INVITATION_PER_EVENT_HOUR` | 50 | invitations (une ligne par numéro d'un envoi) par événement et par heure |
+| `INVITATION_PER_PHONE_DAY` | 3 | invitations reçues par un même numéro et par jour |
+| `PHONE_CHANGE_PER_ACCOUNT_DAY` | 5 | codes de changement de numéro demandés par compte et par jour |
+| `AVATAR_UPLOADS_PER_ACCOUNT_HOUR` | 20 | envois de photo de profil par compte et par heure |
+
 ### 5.4 Facultatives existantes
 
 | Variable | Défaut | Rôle |
@@ -229,12 +328,12 @@ Le lot 8 n'ajoute aucune variable à l'hébergeur. Les variables suivantes serve
 | `PAYMENT_HOLD_MINUTES`, `CHECKOUT_PER_USER_15MIN`, `CHECKOUT_PER_USER_DAY`, `CLAIM_FREE_PER_USER_HOUR`, `PAYMENT_RECONCILE_MIN_AGE_MINUTES`, `PAYMENT_PENDING_MAX_AGE_MINUTES`, `PAYMENT_LATE_SUCCESS_WINDOW_HOURS`, `PAYMENT_RECONCILE_BATCH`, `STATUS_POLL_RECONCILE_SECONDS` | 15, 10, 50, 20, 2, 60, 48, 50, 5 | durée de réservation du stock, quotas d'achat par compte, fenêtres et taille de lot de la réconciliation, intervalle minimal des réconciliations demandées par la page de statut (lot 2) |
 | `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | 3, 10, 10, 30, 30, 1000 | à ajuster au budget SMS du client (5.5) ; `SMS_PER_PHONE_DAY` ne compte que les notifications (l'OTP a ses propres compteurs par numéro) ; `SMS_GLOBAL_DAILY_CAP` est la protection anti-abus de dernier recours : depuis le lot 7, il ne s'applique plus aux SMS indispensables (5.5) ; atteint, il alerte les administrateurs |
 | `SMS_GLOBAL_OTP_RESERVED_PERCENT`, `SMS_PER_ACCOUNT_DAY` | 30, 30 | part du plafond global réservée à l'OTP (les autres SMS soumis au plafond s'arrêtent quand le compteur du jour atteint 100 − part %) ; SMS non OTP qu'un même compte connecté peut déclencher par jour |
-| `SCAN_PER_SCANNER_10S`, `CASH_COLLECT_PER_SCANNER_MIN`, `LIVE_CODE_PER_USER_MIN`, `RESOLVE_PHONE_PER_IP_HOUR`, `VERIFY_OTP_PER_PHONE_15MIN`, `CONTROLLER_SETUP_PER_PHONE_HOUR`, `PARTNER_REGISTER_PER_IP_HOUR`, `INVITE_PER_PARTNER_HOUR`, `INVITE_PER_PHONE_DAY`, `REGISSEUR_PIN_PER_SHIFT_15MIN` | 30, 20, 60, 30, 10, 10, 10, 20, 3, 5 | quotas en base (lot 4) : chaque tentative compte ; au-delà, HTTP 429 ; garde injoignable, HTTP 503 |
+| `SCAN_PER_SCANNER_10S`, `LIVE_CODE_PER_USER_MIN`, `RESOLVE_PHONE_PER_IP_HOUR`, `VERIFY_OTP_PER_PHONE_15MIN`, `CONTROLLER_SETUP_PER_PHONE_HOUR`, `PARTNER_REGISTER_PER_IP_HOUR`, `INVITE_PER_PARTNER_HOUR`, `INVITE_PER_PHONE_DAY`, `REGISSEUR_PIN_PER_SHIFT_15MIN` | 30, 60, 30, 10, 10, 10, 20, 3, 5 | quotas en base (lot 4) : chaque tentative compte ; au-delà, HTTP 429 ; garde injoignable, HTTP 503 |
 | `WITHDRAWAL_REQUEST_PER_USER_HOUR`, `COUNTER_RECEIPT_PER_SHIFT_DAY`, `SCAN_INCIDENT_REPORT_PER_SCANNER_MIN`, `SCAN_INCIDENT_LOG_PER_SCANNER_MIN` | 10, 500, 10, 60 | demandes de retrait par compte et par heure, reçus SMS du guichet par caisse et par jour, incidents de scan déclarés et écrits par minute (lot 5) |
 | `DOCUMENT_UPLOADS_PER_IP_HOUR` | 20 | dépôts publics de pièces d'inscription partenaire, par IP et par heure |
 | `EV_INTEGRATIONS` | `real` | **ne pas définir**. `fake` n'est accepté qu'en développement (`npm run dev`, mode d'essai) et en test ; ailleurs le serveur le refuse, y compris si `NODE_ENV` est absent. Le refus survient au premier appel d'une route ou d'un adaptateur, pas au démarrage, et `/dev/paiements` n'existe pas dans le build |
 
-Variables qui ne sont plus lues (à retirer si elles existent dans l'hébergeur) : `SAMIRPAY_CASHIN_URL`, `SAMIRPAY_CASHOUT_URL`, `SAMIRPAY_SOLDE_URL`, `SAMIRPAY_STATUS_URL`, `SAMIRPAY_WEBHOOK_SECRET` (lot 2).
+Variables qui ne sont plus lues (à retirer si elles existent dans l'hébergeur) : `SAMIRPAY_CASHIN_URL`, `SAMIRPAY_CASHOUT_URL`, `SAMIRPAY_SOLDE_URL`, `SAMIRPAY_STATUS_URL`, `SAMIRPAY_WEBHOOK_SECRET` (lot 2), `CASH_COLLECT_PER_SCANNER_MIN` (lot 9, parcours « à régler sur place » retiré).
 
 Règles :
 
@@ -252,13 +351,15 @@ Depuis le lot 7, deux mécanismes distincts limitent les SMS. Ils n'ont ni le m�
 | Où le régler | réglage SUPERADMIN (`platform_settings`), page Réglages, section « Notifications » : effet immédiat, sans redéploiement, motif et historique | variable d'environnement de l'hébergeur : redéploiement |
 | Défaut | 700 par jour de Dakar | 1 000 par jour (minuit UTC, qui est minuit à Dakar), dont `SMS_GLOBAL_OTP_RESERVED_PERCENT` = 30 % réservés aux codes |
 | SMS concernés | les SMS **optionnels** de la boîte d'envoi seulement (famille `OPTIONAL` du registre) : rappel de la veille, rappel avant le début, rappel des contrôleurs, changement de date ou de lieu, premier billet vendu, catégorie épuisée, événement complet | les codes OTP, jusqu'au plafond entier ; les SMS optionnels, les invitations de contrôleurs et les envois directs sans famille, jusqu'à la part non OTP (70 %, soit 700 par défaut) |
-| SMS jamais concernés | les SMS indispensables (famille `ESSENTIAL` : confirmation d'achat et de billets gratuits, reçus du guichet, remboursement versé, annulation d'un événement, transferts, changement de mot de passe, statut des événements et des partenaires, début d'essai, affectation et activation des contrôleurs, écart de caisse, retraits), les codes OTP, les invitations | les SMS indispensables de la boîte d'envoi : **plus aucun plafond journalier global** ne les refuse |
+| SMS jamais concernés | les SMS indispensables (famille `ESSENTIAL` : confirmation d'achat et de billets gratuits, reçus du guichet, remboursement versé, annulation d'un événement, transferts, changement de mot de passe, statut des événements et des partenaires, début d'essai, affectation et activation des contrôleurs, écart de caisse, retraits, invitations à un événement et changement de numéro du lot 9), les codes OTP, les invitations de contrôleurs | les SMS indispensables de la boîte d'envoi : **plus aucun plafond journalier global** ne les refuse |
 | Comment c'est compté | lignes SMS optionnelles réservées par l'envoyeur (en cours d'envoi, envoyées ou à l'issue incertaine) dans le jour de Dakar ; une tentative réservée compte même si l'envoi échoue ensuite | un compteur unique du jour, **partagé** par les codes OTP, les SMS optionnels, les invitations et les envois sans famille ; les SMS indispensables n'y entrent pas |
 | Au-delà | le SMS n'est pas envoyé : « Non envoyée », motif « Plafond journalier des SMS optionnels atteint », sans relance ; l'in-app et le push partent normalement | notification : « Non envoyée », motif « Plafond quotidien de SMS atteint » ; code OTP : demande refusée (HTTP 429) |
 | Alertes | à 80 % du budget : notification dans l'application et email (si le canal email est configuré) aux administrateurs ayant la permission `notifications.read`, et signal `SMS_OPTIONAL_80`, une fois par jour ; la veille : si les rappels SMS prévus pour le lendemain dépassent le budget restant de ce jour-là, notification aux mêmes administrateurs (nombre prévu, budget restant, plafond) et signal `SMS_FORECAST`, une fois par jour ; budget à 0 : aucune alerte | une fois par jour et par type (plafond entier, part non OTP), dans l'application, aux administrateurs `notifications.read` ; jamais par SMS |
 | Suivi | page **Notifications** de l'administration : carte « SMS optionnels aujourd'hui » (envoyés, plafond, seuil de 80 %) | même page, alertes |
 
 Les quotas anti-abus du lot 1C restent appliqués aux SMS indispensables comme aux autres : par destinataire (`SMS_PER_PHONE_DAY`) pour tout SMS hors OTP, par compte déclencheur (`SMS_PER_ACCOUNT_DAY`) quand un compte connecté provoque l'envoi, par caisse (`COUNTER_RECEIPT_PER_SHIFT_DAY`) pour les reçus du guichet ; les codes OTP gardent leurs propres compteurs par numéro et par IP, et leur réserve sur `SMS_GLOBAL_DAILY_CAP`.
+
+**SMS du lot 9.** `INVITATION_RECEIVED` et `PHONE_CHANGED` sont des SMS indispensables de la boîte d'envoi : ils ne comptent ni dans le budget optionnel, ni dans `SMS_GLOBAL_DAILY_CAP`. Ils restent limités par `SMS_PER_PHONE_DAY`, et par leurs propres quotas (5.3 quater) ; sans compte déclencheur, ils ne comptent pas dans `SMS_PER_ACCOUNT_DAY`. Ne pas les confondre avec les invitations de contrôleurs, qui comptent dans la part non OTP. `OTP_PHONE_CHANGE` est un code OTP comme les autres : il compte dans le plafond entier et dans les codes prévus de la règle ci-dessous.
 
 **Ordre des contrôles.** Le budget optionnel est vérifié en premier, au moment où l'envoyeur réserve la ligne (sous verrou, deux envoyeurs simultanés ne le dépassent pas) ; la garde anti-abus ne voit ensuite que les SMS admis par le budget. Le 701ᵉ rappel du jour est donc refusé avec le motif « Plafond journalier des SMS optionnels atteint », et une confirmation d'achat envoyée juste après part normalement.
 
@@ -277,7 +378,7 @@ Avant l'ouverture des ventes, fixer avec le client, d'après son budget MTarget 
 - **HTTPS obligatoire** (déjà exigé par `NEXT_PUBLIC_APP_URL`) : les navigateurs n'enregistrent un service worker et n'ouvrent la caméra que sur une origine sécurisée. Sans HTTPS, ni billet hors ligne, ni scanner.
 - **Service worker** : `public/sw.js`, servi à la racine (`/sw.js`, portée `/`). Il ne met en cache que la page `/billet/hors-ligne`, ses fichiers statiques et les icônes, jamais une réponse de `/api/` (cache `ev-hors-ligne-lot7-1` ; les anciens caches `event-village-*` sont supprimés à l'activation). C'est un changement par rapport au lot 6, où le service worker ne mettait rien en cache.
 - **Compression des réponses** : le lot de codes hors ligne d'un billet (48 h au plus) reste sous 40 Ko une fois compressé en gzip (contrôlé par `tests/parcours/hors-ligne-codes.test.ts`). `next start` ne compresse aucune route API, malgré `compress: true` (constat du lot 8) : depuis `fix(8.2x)`, `GET /api/tickets/[id]/offline-codes` sert elle-même du gzip quand le navigateur l'accepte. Derrière un proxy ou un CDN, vérifier que ce corps et son en-tête `Content-Encoding` sont transmis tels quels, au choix de l'hébergeur.
-- **Images** : `sharp` 0.33.5 est une dépendance figée de l'application (optimisation des images par Next.js) ; `package-lock.json` contient ses binaires Linux x64. Installer par `npm ci` sur la plate-forme de l'hébergeur, jamais par `npm install`. Depuis `fix(8.2w)`, le dépôt n'a plus de `.npmrc` ni de `legacy-peer-deps` : `package-lock.json` est régénéré avec npm 10, et `npm install` sous npm 11 lui retirerait des entrées que npm 10 exige.
+- **Images** : `sharp` 0.33.5 est une dépendance figée de l'application (optimisation des images par Next.js) et, **depuis le lot 9, elle est requise en production** : `POST /api/account/avatar` l'importe directement pour redimensionner les photos de profil et retirer leurs métadonnées. Sans son binaire pour la plate-forme de l'hébergeur, cette route (envoi et suppression de la photo) répond 500, le reste de l'application continue. Après le déploiement, envoyer une photo depuis la page profil. `package-lock.json` contient ses binaires Linux x64 (glibc et musl) et arm64 : ne jamais recopier le `node_modules` d'un poste Windows. Installer par `npm ci` sur la plate-forme de l'hébergeur, jamais par `npm install`. Depuis `fix(8.2w)`, le dépôt n'a plus de `.npmrc` ni de `legacy-peer-deps` : `package-lock.json` est régénéré avec npm 10, et `npm install` sous npm 11 lui retirerait des entrées que npm 10 exige.
 - **Paquets de test en production** : `npm ci --omit=dev` garde désormais `@playwright/test`, `playwright` et `playwright-core` (environ 19 Mo). `next` déclare `@playwright/test` en dépendance optionnelle, et le lock les marque `devOptional`. L'application ne les charge pas.
 
 ## 6. Paiements SamirPay (lot 2)
@@ -427,6 +528,7 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - Parcours manuels : inscription client avec OTP, inscription partenaire puis validation par l'administration, création d'un événement, achat d'un billet en paiement réel de faible montant (SMS de confirmation et notification dans la cloche dans la minute), scan par un contrôleur ; si les clés VAPID sont posées, activation du push et bouton d'essai.
 - Lot 7 : `select count(*) from platform_settings;` donne 37, et les trois `features.*` valent `false` (`select key, value from platform_settings where key like 'features.%';`) ; `/halls` répond « page introuvable ». Sur un téléphone Android et un iPhone, installer l'application (`docs/installer-application.md`), ouvrir le billet de l'essai la veille avec du réseau, passer en mode avion, l'afficher par « Afficher mes billets hors ligne » : le QR change toutes les 20 secondes et le contrôleur, en ligne, le valide. Au scanner : un résultat plein écran par cas, une vibration sur Android, aucun son ; mode avion sur le téléphone du contrôleur : bandeau « Hors ligne : aucune entrée ne peut être validée » (`docs/guide-organisateur-entrees.md`).
 - Lot 8 : aucune variable `EV_` dans l'hébergeur (5.3 ter) ; `/dev/paiements` répond « page introuvable » ; `select count(*) from payments where simulated;` et la même requête sur `cashouts` donnent 0.
+- Lot 9 : contrôles après migration de 3 quater ; une invitation envoyée depuis l'onglet **Invitations** du pilotage, le SMS reçu et le billet scanné ; une photo envoyée puis supprimée sur la page profil (5.6) ; **un changement de numéro de bout en bout** : c'est le seul contrôle, sur un projet hébergé, des écritures sur `auth.sessions` et `auth.refresh_tokens` de `account_phone_finalize` (la CI les exerce sur une instance locale) ; une ligne d'audit `ACCOUNT_AUTH_DESYNC` signale une désynchronisation à réparer (`docs/lot9-rapport.md`).
 - Surveillance : journaux de l'hébergeur, **Logs > API** de Supabase et page **Notifications** de l'administration (SMS à l'issue incertaine, échecs) pendant les premiers jours.
 
 ## 10. Points ouverts d'exploitation

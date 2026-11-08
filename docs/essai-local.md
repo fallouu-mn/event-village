@@ -57,9 +57,9 @@ cd $HOME\Documents\event-village
 
 ## 3. Appliquer les migrations sur event-village-dev
 
-Une migration modifie la structure de la base. Celles du lot 8 sont au nombre de six.
+Une migration modifie la structure de la base. Celles du lot 8 sont déjà appliquées sur event-village-dev. Il reste les **cinq du lot 9**. Ne les appliquez qu'une fois la vérification automatique du lot annoncée verte dans `docs/lot9-rapport.md` : ce projet ne doit pas prendre d'avance sur le code livré.
 
-Votre **référence de projet** est la suite de lettres au début de l'adresse Supabase : `https://<référence>.supabase.co`. Elle figure aussi dans **Project Settings > General**.
+Votre **référence de projet** est la suite de lettres au début de l'adresse Supabase, juste avant `.supabase.co`. Elle figure aussi dans **Project Settings > General**.
 
 1. Connectez l'outil à votre compte. Le navigateur s'ouvre.
 
@@ -67,68 +67,78 @@ Votre **référence de projet** est la suite de lettres au début de l'adresse S
    npx supabase@2.122.0 login
    ```
 
-2. Reliez le dossier au projet. Le mot de passe de la base peut être demandé. L'outil peut encore afficher l'ancien nom `event-village-prod` : c'est le même projet, seule la référence compte.
+2. Reliez le dossier au projet. Remplacez `VOTRE_REFERENCE` par la référence, **sans rien ajouter autour** : ni chevrons, ni guillemets. PowerShell refuse `<` et `>` dans une commande. Le mot de passe de la base peut être demandé. L'outil peut encore afficher l'ancien nom `event-village-prod` : c'est le même projet, seule la référence compte.
 
    ```powershell
-   npx supabase@2.122.0 link --project-ref <référence>
+   npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
    ```
 
-3. Comparez l'historique. Les colonnes Local et Remote doivent être identiques jusqu'à `20261105000007`. Seules les six lignes `20261106…` n'ont rien dans la colonne Remote.
+3. Comparez l'historique. Les colonnes Local et Remote doivent être identiques jusqu'à `20261106000006`. Seules les cinq lignes `20261108…` n'ont rien dans la colonne Remote.
 
    ```powershell
-   npx supabase@2.122.0 migration list
+   npx supabase@2.122.0 migration list --linked
    ```
 
 4. Demandez la liste de ce qui serait appliqué, sans rien appliquer :
 
    ```powershell
-   npx supabase@2.122.0 db push --dry-run
+   npx supabase@2.122.0 db push --linked --dry-run
    ```
 
-   La liste doit contenir **exactement** ces six fichiers, dans cet ordre :
+   La liste doit contenir **exactement** ces cinq fichiers, dans cet ordre :
 
    ```text
-   20261106000001_lot8_canaux.sql
-   20261106000002_lot8_essai.sql
-   20261106000003_lot8_paiement.sql
-   20261106000004_lot8_commissions.sql
-   20261106000005_lot8_scan.sql
-   20261106000006_lot8_profil.sql
+   20261108000001_lot9_securite.sql
+   20261108000002_lot9_invitations.sql
+   20261108000003_lot9_decouverte.sql
+   20261108000004_lot9_compte.sql
+   20261108000005_lot9_nettoyage.sql
    ```
 
    **Si la liste contient autre chose ou s'il manque un fichier : arrêtez-vous.** N'ajoutez pas `--include-all` et ne lancez pas `supabase migration repair`. Demandez d'abord une vérification : l'historique du projet ne correspond plus au dépôt.
 
-5. Dans le tableau de bord Supabase, ouvrez **SQL Editor** et lancez ce contrôle. La première migration réécrit les catégories masquées. Une ancienne catégorie qui ne respecte pas les règles actuelles l'arrêterait.
+5. Dans le tableau de bord Supabase, ouvrez **SQL Editor** et lancez ce contrôle. Il ne modifie rien : il cherche une boucle de parrainage déjà présente (A est parrain de B, B de C, C de A).
 
    ```sql
-   -- attendu : 0 et 0
-   select count(*) filter (where max_per_order not between 1 and 50) as maximum_hors_regle,
-          count(*) filter (where price <> trunc(price)) as prix_decimal
-     from public.ticket_categories
-    where not is_visible;
+   -- attendu : aucune ligne
+   with recursive chaine as (
+     select r.referred_id as depart, r.sponsor_id as ancetre,
+            array[r.referred_id, r.sponsor_id] as chemin, false as boucle
+       from public.referral_relationships r
+     union all
+     select c.depart, r.sponsor_id, c.chemin || r.sponsor_id, r.sponsor_id = any(c.chemin)
+       from chaine c
+       join public.referral_relationships r on r.referred_id = c.ancetre
+      where not c.boucle
+   )
+   select depart, chemin from chaine where boucle;
    ```
 
-   Un autre résultat que 0 et 0 : arrêtez-vous et corrigez d'abord ces catégories.
+   Une ligne ou plus : arrêtez-vous, ne corrigez rien à la main et demandez une vérification. La première migration n'échouerait pas, mais les parrainages de ces comptes resteraient bloqués ensuite.
 
 6. Appliquez. Confirmez par `y` si l'outil le demande.
 
    ```powershell
-   npx supabase@2.122.0 db push
+   npx supabase@2.122.0 db push --linked
    ```
 
 7. Contrôlez dans **SQL Editor**, une requête à la fois :
 
    ```sql
-   -- attendu : 6 lignes, de 20261106000001 à 20261106000006
-   select version from supabase_migrations.schema_migrations where version like '20261106%' order by version;
+   -- attendu : 5 lignes, de 20261108000001 à 20261108000005
+   select version from supabase_migrations.schema_migrations where version like '20261108%' order by version;
 
-   -- attendu avant seed:dev : 0 et 0 ; aucune catégorie n'a changé de comportement
-   select count(*) filter (where sale_online <> is_visible) as ecarts_en_ligne,
-          count(*) filter (where not sale_counter) as hors_guichet
-     from public.ticket_categories;
+   -- attendu : 1 ligne, avatars, public = true, 2097152, {image/webp}. La migration crée ce bucket : ne le créez pas à la main
+   select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = 'avatars';
+
+   -- attendu : 3 lignes, toutes ESSENTIAL
+   select type, family from public.notification_types
+    where type in ('INVITATION_RECEIVED', 'PHONE_CHANGED', 'OTP_PHONE_CHANGE') order by type;
    ```
 
 8. Ouvrez `supabase/hotfix/2026-10-31-lot1a/03-verification.sql`, collez tout son contenu dans **SQL Editor** et lancez-le. Les 20 lignes doivent afficher `OK`. Une ligne `ÉCHEC` : arrêtez-vous.
+
+9. Redémarrez ce qui tournait (section 6). Le code du lot 9 ne fonctionne pas sans ces migrations, et event-village-dev ne doit plus tourner qu'avec lui ou plus récent.
 
 ---
 
@@ -399,6 +409,35 @@ Compte `controleur`, page `/controller/scanner` : choisissez « Essai du jour »
 
 Résultat attendu : écran vert à la première entrée, « déjà utilisé » à la seconde.
 
+### 8.8 bis Invitations
+
+À faire avant l'annulation de la section 8.10 : une invitation se scanne comme un billet, et l'événement doit être encore ouvert. Terminez d'abord l'inscription commencée en 8.6.
+
+Compte `partenaire`, page `/partner/events` : ouvrez « Essai du jour », onglet **Invitations**.
+
+1. **Catégorie** : « Entrée ». **Billets par numéro** : 1.
+2. **Numéros de téléphone**, un par ligne, à 9 chiffres, sans indicatif :
+   - le numéro du compte créé en 8.6 ;
+   - `70 000 90 06`, le numéro de `client2` ;
+   - un numéro inventé de 9 chiffres qui commence par `70`, sans compte.
+3. Touchez **Envoyer les invitations**, puis **Confirmer**.
+
+Résultat attendu : le bandeau « Invitations envoyées », trois lignes dans **Historique des invitations**, numéros masqués, canal « Invitation » à 0 F, statut « Envoyée ». Le stock de la catégorie baisse de 3, l'onglet **Ventes** compte 3 dans la colonne **Invitations**. Au passage suivant de `cron:local`, trois SMS s'écrivent dans la fenêtre 2, avec un lien vers Mes billets et aucun code.
+
+Ce que voit chaque invité :
+
+| Numéro | Ce qui se passe |
+|---|---|
+| Compte de 8.6, numéro vérifié à l'inscription | Le billet est déjà dans **Mes billets** |
+| `client2` : comptes de `seed:dev`, numéro jamais vérifié | **Mes billets**, onglet **Reçus** : bandeau « Un billet vous attend peut-être. Confirmez votre numéro pour le voir. » Touchez **Confirmer mon numéro**, le code s'écrit dans la fenêtre 2, puis **Accepter le billet** |
+| Numéro sans compte | Dans une fenêtre de navigation privée, créez le compte sur `/register` avec ce numéro. **Mes billets**, onglet **Reçus** : l'expéditeur est « L'organisateur de l'événement ». Touchez **Accepter le billet** |
+
+Compte `controleur`, **Saisie manuelle** : entrez le numéro d'un de ces billets, lu dans **Mes billets** de l'invité. Résultat attendu : écran vert.
+
+Pour voir l'annulation, invitez un autre numéro inventé, sur le même onglet, puis **Annuler l'invitation** dans l'historique et confirmez. Résultat attendu : « Invitation annulée : la place revient au stock. », statut « Annulée », aucun SMS. Un numéro ne reçoit que 3 invitations par jour : au-delà, l'envoi est refusé.
+
+L'export (onglet **Clôture**, **Exporter les participants**) porte la colonne « Canal », et « Invitation en attente » à la place du nom tant que le billet n'est pas réclamé. Sur « Concert d'essai à Dakar », « Carré invités » s'affiche en premier, sous « Sans canal de vente ».
+
 ### 8.9 Guichet
 
 Toujours en contrôleur, onglet **Guichet** : **Ouvrir ma caisse**, puis vendez un billet « Sur place ». Il porte la mention « Sur place uniquement ». Terminez par **Clôturer ma caisse**, sans écart.
@@ -416,6 +455,48 @@ Résultat attendu : l'annulation s'affiche sur la page publique, les ventes s'ar
 Il part seul après l'annulation. Le versement s'affiche dans la fenêtre 1, et l'avancement sur la page de l'événement. `cron:local` le confirme en 5 minutes au plus.
 
 Résultat attendu : `client1` voit son billet marqué remboursé et reçoit le SMS. Sur `/admin/finance`, les totaux correspondent et il n'y a rien à reprendre.
+
+### 8.12 Mes paiements
+
+Compte `client1`, page `/profile`, **Mes paiements**.
+
+Résultat attendu : une ligne par paiement, du plus récent au plus ancien, avec l'événement, la date, l'opérateur, le montant et un statut en français. Le paiement de 8.3 est « Remboursé », celui de 8.4 « Échoué » ou « Annulé ». Les cartes **Total payé** et **Total remboursé** portent sur tous les paiements, pas sur la page. Une ligne mène à la page de statut du paiement. Aucun identifiant technique ne s'affiche.
+
+Compte `client2` : « Aucun paiement pour le moment », un billet gratuit n'étant pas un paiement. Chaque compte ne voit que les siens. La liste du mode d'essai ne montre que les paiements simulés : ils disparaissent de cette page quand vous repassez en réel.
+
+### 8.13 Photo de profil
+
+Compte `client1`, page `/profile`, **Choisir une photo** : une image JPEG, PNG ou WebP de 2 Mo au plus.
+
+Résultat attendu : « Photo de profil enregistrée. », et la photo s'affiche sur la page et dans la navigation. Choisissez une deuxième photo : elle remplace la première. Dans Supabase, **Storage > avatars**, le dossier du compte ne contient qu'un seul fichier `.webp`.
+
+Essais de refus : un fichier texte renommé en `.jpg` donne « Format non pris en charge », un fichier de plus de 2 Mo est refusé. Aucun des deux ne change la photo.
+
+**Supprimer la photo**, puis confirmez. Résultat attendu : les initiales reviennent et le fichier disparaît du bucket.
+
+### 8.14 Ville et Populaires
+
+Accueil, `http://localhost:3000`, connecté avec `client1`.
+
+**Populaires** : la section montre les événements qui ont vendu des billets depuis 7 jours, dont « Journée portes ouvertes d'essai » (billet de 8.5). Les invitations ne comptent pas, et un événement annulé n'y figure plus. Le classement est gardé 60 secondes : rechargez après une minute. Sans vente récente, la section est absente : c'est normal.
+
+**Près de chez vous** : dans **Votre ville**, choisissez Dakar.
+
+Résultat attendu : les prochains événements de Dakar s'affichent, sans que le navigateur demande votre position. Déconnectez-vous puis reconnectez-vous : la ville reste, elle est enregistrée dans le profil.
+
+Dans une fenêtre de navigation privée, sans compte, choisissez une ville et rechargez : elle reste, mais seulement dans ce navigateur.
+
+Page `/explore` : tapez « portes » dans la recherche, seul « Journée portes ouvertes d'essai » doit rester. Le filtre **Ville** propose les villes du catalogue, et **Toutes les villes** remet tout. Les événements de `seed:dev` étant tous à Dakar, publiez-en un dans une autre ville pour voir la liste se réduire.
+
+### 8.15 Changement de numéro
+
+À faire en dernier : le compte n'aura plus son numéro de `seed:dev`.
+
+Compte `client2`, page `/profile`, **Changer de numéro**. Saisissez un numéro inventé de 9 chiffres qui commence par `70`, touchez **Recevoir le code**. Le code s'écrit dans la fenêtre 2, pour ce nouveau numéro. Saisissez-le, puis **Confirmer**.
+
+Résultat attendu : le nouveau numéro s'affiche et les billets restent au compte. Au passage suivant de `cron:local`, le SMS « le numéro de votre compte a été modifié » s'écrit dans la fenêtre 2, adressé à l'**ancien** numéro. Une session ouverte sur un autre navigateur est révoquée : elle se ferme au plus tard quand son jeton expire, soit 1 h au plus. La connexion par adresse email continue de fonctionner.
+
+C'est le seul essai qui vérifie sur le projet hébergé la révocation des autres sessions : faites-le au moins une fois.
 
 La liste complète des essais, avec leur case OK ou anomalie, est dans `docs/recette-billetterie.md`.
 
