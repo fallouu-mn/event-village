@@ -17,10 +17,20 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 
+const ACTOR_ROLE_LABELS: Record<string, string> = {
+  CLIENT: 'Client',
+  PARTENAIRE: 'Organisateur',
+  CONTROLEUR: 'Contrôleur',
+  ADMIN: 'Administrateur',
+  SUPERADMIN: 'Superadmin',
+};
+
 interface AuditItem {
   id: string;
   user_id: string | null;
   user_role: string | null;
+  actor_name: string | null;
+  actor_role: string | null;
   action: string;
   object_type: string;
   object_id: string | null;
@@ -203,7 +213,7 @@ export default function AdminAuditLogPage() {
                 <tr className="border-b border-slate-200 dark:border-zinc-800 text-slate-400 font-bold uppercase text-[10px]">
                   <th className="pb-3">Horodatage</th>
                   <th className="pb-3">Utilisateur</th>
-                  <th className="pb-3">Rôle</th>
+                  <th className="pb-3">Rôle à l’action</th>
                   <th className="pb-3">Action</th>
                   <th className="pb-3">Objet</th>
                   <th className="pb-3">ID Objet</th>
@@ -214,7 +224,14 @@ export default function AdminAuditLogPage() {
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/60 dark:hover:bg-zinc-900/40 text-[11px]">
                     <td className="py-3 tabular-nums text-slate-500">{formatDate(log.created_at)}</td>
-                    <td className="py-3 text-slate-600 dark:text-zinc-300 truncate max-w-[120px]" title={log.user_id ?? undefined}>{log.user_id || 'Système'}</td>
+                    <td className="py-3 pr-3 min-w-[140px] max-w-[200px] break-words text-sm">
+                      <span className="block font-semibold text-fg">{log.actor_name ?? 'Système'}</span>
+                      {log.actor_role && (
+                        <span className="block text-fg-muted">
+                          Aujourd’hui : {ACTOR_ROLE_LABELS[log.actor_role] ?? 'Autre rôle'}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 font-bold text-purple-600 dark:text-purple-400">{log.user_role || 'SYSTEM'}</td>
                     <td className="py-3 font-black text-slate-900 dark:text-white">
                       <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">
@@ -253,8 +270,11 @@ export default function AdminAuditLogPage() {
           <div className="space-y-4 text-xs">
             <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-zinc-400">
               <div><strong className="text-slate-900 dark:text-white">Date:</strong> {formatDate(selectedLog.created_at)}</div>
-              <div className="break-all"><strong className="text-slate-900 dark:text-white">Utilisateur:</strong> {selectedLog.user_id || 'Système'}</div>
-              <div><strong className="text-slate-900 dark:text-white">Rôle:</strong> {selectedLog.user_role}</div>
+              <div className="break-words"><strong className="text-slate-900 dark:text-white">Utilisateur:</strong> {selectedLog.actor_name ?? 'Système'}</div>
+              {selectedLog.user_id && (
+                <div className="break-all"><strong className="text-slate-900 dark:text-white">Identifiant:</strong> {selectedLog.user_id}</div>
+              )}
+              <div><strong className="text-slate-900 dark:text-white">Rôle à l’action:</strong> {selectedLog.user_role}</div>
               <div><strong className="text-slate-900 dark:text-white">Objet:</strong> {selectedLog.object_type}</div>
               <div><strong className="text-slate-900 dark:text-white">ID Objet:</strong> {selectedLog.object_id}</div>
             </div>
