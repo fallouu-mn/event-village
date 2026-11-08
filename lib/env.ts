@@ -99,6 +99,12 @@ const serverEnvSchema = z.object({
     OFFLINE_CODES_PER_USER_HOUR: limit(60),
     // Lot 7 (7.2, D43) : vérifications de saisie manuelle (POST /api/controller/scan/lookup), par contrôleur et par minute
     SCAN_LOOKUP_PER_SCANNER_MIN: limit(20),
+    // Lot 9 (9.0) : invitations (lignes numéro) par événement et par heure, puis par numéro et par jour
+    INVITATION_PER_EVENT_HOUR: limit(50),
+    INVITATION_PER_PHONE_DAY: limit(3),
+    // Lot 9 (9.2) : codes de changement de numéro par compte et par jour ; envois de photo par compte et par heure
+    PHONE_CHANGE_PER_ACCOUNT_DAY: limit(5),
+    AVATAR_UPLOADS_PER_ACCOUNT_HOUR: limit(20),
     // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
     // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
     CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),
