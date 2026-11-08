@@ -915,10 +915,10 @@ export class PartnerDashboardService {
 
         // Titres Header
         stream += 'BT\n/F2 16 Tf\n1 1 1 rg\n';
-        stream += `52 ${headerY + 44} Td\n(EVENT VILLAGE -- RAPPORT DE CLOTURE DE SESSION) Tj\nET\n`;
+        stream += `52 ${headerY + 44} Td\n(${escapePdfText('Rapport de clôture')}) Tj\nET\n`;
 
         stream += 'BT\n/F1 9 Tf\n1 1 1 rg\n';
-        stream += `52 ${headerY + 28} Td\n(DOCUMENT OFFICIEL DE SYNTHESE COMPTABLE & DE BILLETTERIE) Tj\nET\n`;
+        stream += `52 ${headerY + 28} Td\n(Event Village -- Billetterie et recettes de la session) Tj\nET\n`;
 
         stream += 'BT\n/F2 9 Tf\n1 1 1 rg\n';
         stream += `${pageWidth - 210} ${headerY + 44} Td\n(ID: ${escapePdfText(data.reportId)}) Tj\nET\n`;
@@ -1066,10 +1066,10 @@ export class PartnerDashboardService {
         stream += `36 ${footerY + 22} m ${pageWidth - 36} ${footerY + 22} l S\n`;
 
         stream += 'BT\n/F1 7.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `36 ${footerY + 10} Td\n(Document comptable certifie genere automatiquement par Event Village Senegal -- contact@event-village.sn) Tj\nET\n`;
+        stream += `36 ${footerY + 10} Td\n(Genere automatiquement par Event Village Senegal -- contact@event-village.sn) Tj\nET\n`;
 
         stream += 'BT\n/F2 7.5 Tf\n0.35 0.40 0.50 rg\n';
-        stream += `36 ${footerY} Td\n(Certificat de cloture : ${escapePdfText(data.reportId)}) Tj\nET\n`;
+        stream += `36 ${footerY} Td\n(Reference : ${escapePdfText(data.reportId)}) Tj\nET\n`;
 
         stream += 'Q\n';
 
