@@ -2,8 +2,8 @@
  * Lot 9, tâche 9.2 (contrat 4.3, 5.3 ; L24, L25 ; AR2) — profil du client : PATCH /api/account/profile.
  *  - prénom, nom, email validés par Zod ; email en minuscules ; domaine @eventvillage.sn refusé ; email vidé : email
  *    technique du numéro rétabli, jamais NULL ;
- *  - auth.users n'est écrit que par auth.admin.updateUserById, avant la RPC account_profile_finalize ; email_exists et
- *    l'unique de public.users donnent 409 EMAIL_TAKEN ; RPC en échec : l'API est rappelée vers la valeur relue dans
+ *  - auth.users n'est écrit que par auth.admin.updateUserById, avant la RPC account_profile_finalize ; la RPC
+ *    account_identity_taken (AM1) et l'unique de public.users donnent 409 EMAIL_TAKEN ; RPC en échec : l'API est rappelée vers la valeur relue dans
  *    public.users ; compensation en échec : 500 ACCOUNT_SYNC_FAILED, ligne ACCOUNT_AUTH_DESYNC, réparation par un nouvel
  *    enregistrement ;
  *  - la connexion suit : par le nouvel email, par le numéro ; l'ancien email est refusé ;
@@ -12,8 +12,8 @@
  * Rouge avant correctif : la route app/api/account/profile n'existe pas (import dynamique, l'échec la nomme), ni la RPC ;
  * après les tests, assertLot9Invariants reste rouge tant que M2 et M4 ne sont pas livrés.
  *
- * Verts dès l'écriture, signalés : les deux cas du middleware (règle générale des /api/*) ; le cas « SUPPOSÉ email_exists »
- * ne dépend pas du code du lot : il lit GoTrue, et son message d'échec tranche le SUPPOSÉ du contrat au run « avant ».
+ * Verts dès l'écriture, signalés : les deux cas du middleware (règle générale des /api/*) ; le constat AM1 (un email pris
+ * fait échouer l'API, avec un code non garanti) ne dépend pas du code du lot : il lit GoTrue.
  *
  * Les pannes passent par globalThis.fetch (le client serveur lit le fetch global à chaque requête, voir
  * messages-bruts.test.ts). Chaque test travaille sur des comptes neufs : les invariants (v) lisent toute la base, et la
@@ -141,6 +141,11 @@ function fault(): Response {
 
 const adminUserUpdate = (userId: string): Rule['match'] => (url, method) => method === 'PUT' && url.pathname === `/auth/v1/admin/users/${userId}`;
 const finalizeRpc: Rule['match'] = (url, method) => method === 'POST' && url.pathname === '/rest/v1/rpc/account_profile_finalize';
+const identityRpc: Rule['match'] = (url, method) => method === 'POST' && url.pathname === '/rest/v1/rpc/account_identity_taken';
+/** AM1 : la vérification préalable répond « libre » une fois (l'email est pris juste après elle) ; les appels suivants sont réels. */
+const identityFreeOnce: NonNullable<Rule['reply']> = (pass, n) => (n === 1
+    ? new Response(JSON.stringify({ email_taken: false, phone_taken: false }), { status: 200, headers: { 'content-type': 'application/json' } })
+    : pass());
 
 /** Exécute `fn` avec les règles posées sur fetch ; passages comptés par règle, journal d'erreurs capturé. */
 async function intercept<T>(rules: Rule[], fn: () => Promise<T>): Promise<{ result: T; hits: Record<string, Hit[]>; logged: string[] }> {
@@ -327,9 +332,11 @@ describe('PATCH /api/account/profile — unicité de l’email', () => {
         const a = await newBuyer('profil-pris-a');
         const b = await newBuyer('profil-pris-b');
         for (const email of [b.email, b.email.toUpperCase()]) {
-            const r = await patchProfile(a, { first_name: 'Modifiee', last_name: a.lastName, email });
+            const { result: r, hits } = await intercept([{ name: 'put', match: adminUserUpdate(a.userId), reply: (pass) => pass() }],
+                () => patchProfile(a, { first_name: 'Modifiee', last_name: a.lastName, email }));
             assert.equal(r.status, 409, `${email} : ${r.text}`);
             assert.equal(r.body.code, 'EMAIL_TAKEN', `${email} : ${r.text}`);
+            assert.equal(hits.put.length, 0, `${email} : email pris à la vérification préalable, aucun appel à l’API (AM1)`);
             assertCleanFailure(r, 'email pris');
         }
         const row = await profileOf(a.userId);
@@ -339,16 +346,18 @@ describe('PATCH /api/account/profile — unicité de l’email', () => {
         assert.equal((await auditRows(a.userId, 'ACCOUNT_PROFILE_UPDATED')).length, 0);
     });
 
-    test('email présent seulement dans auth.users : 409 EMAIL_TAKEN par email_exists, sans compensation ni RPC', async () => {
+    test('email présent seulement dans auth.users, pris après la vérification préalable : l’API échoue, 409 EMAIL_TAKEN sans compensation ni RPC (AM1)', async () => {
         const a = await newBuyer('profil-auth-a');
         const ghost = await newBuyer('profil-auth-b');
         await setProfileEmail(ghost.userId, freshEmail('decale'));
         const { result, hits } = await intercept([
+            { name: 'identity', match: identityRpc, reply: identityFreeOnce },
             { name: 'put', match: adminUserUpdate(a.userId), reply: (pass) => pass() },
             { name: 'rpc', match: finalizeRpc, reply: (pass) => pass() },
         ], () => patchProfile(a, valid(a, ghost.email)));
         assert.equal(result.status, 409, result.text);
         assert.equal(result.body.code, 'EMAIL_TAKEN', result.text);
+        assert.ok(hits.identity.length >= 1, 'vérification préalable account_identity_taken absente');
         assert.equal(hits.put.length, 1, 'rien n’a été écrit : aucune compensation');
         assert.equal(hits.rpc.length, 0, 'la RPC n’est pas appelée après un refus de l’API');
         assert.equal(await authEmailOf(a.userId), a.email);
@@ -359,8 +368,11 @@ describe('PATCH /api/account/profile — unicité de l’email', () => {
         const other = await newBuyer('profil-pub-b');
         const taken = freshEmail('public');
         await setProfileEmail(other.userId, taken);
-        const { result, hits } = await intercept([{ name: 'put', match: adminUserUpdate(a.userId), reply: (pass) => pass() }],
-            () => patchProfile(a, valid(a, taken)));
+        // AM1 : la vérification préalable voit public.users ; vue libre une fois, pour atteindre le refus de la RPC de finalisation.
+        const { result, hits } = await intercept([
+            { name: 'identity', match: identityRpc, reply: identityFreeOnce },
+            { name: 'put', match: adminUserUpdate(a.userId), reply: (pass) => pass() },
+        ], () => patchProfile(a, valid(a, taken)));
         assert.equal(result.status, 409, result.text);
         assert.equal(result.body.code, 'EMAIL_TAKEN', result.text);
         assert.equal(hits.put.length, 2, `aller puis compensation : ${JSON.stringify(hits.put)}`);
@@ -537,14 +549,14 @@ describe('PATCH /api/account/profile — pannes (AR2, L28)', () => {
     });
 });
 
-describe('Hypothèse de GoTrue (SUPPOSÉ du contrat, section 13)', () => {
-    test('SUPPOSÉ : updateUserById vers un email pris renvoie error.code = email_exists', async () => {
+describe('Comportement de GoTrue (constat AM1 du run 110)', () => {
+    test('constat AM1 : updateUserById vers un email pris échoue et laisse auth.users inchangé, sans figer le code d’erreur', async () => {
         const a = await newBuyer('profil-gotrue-a');
         const b = await newBuyer('profil-gotrue-b');
         const { error } = await service.auth.admin.updateUserById(a.userId, { email: b.email, email_confirm: true });
         assert.ok(error, 'GoTrue accepte un email déjà pris : le refus 409 EMAIL_TAKEN du contrat ne peut pas reposer sur l’API');
-        assert.equal(error.code, 'email_exists',
-            `SUPPOSÉ INFIRMÉ (contrat, section 13) : GoTrue ne renvoie pas email_exists mais code=${String(error.code)}, status=${String(error.status)}, message=${error.message} ; la table de codes de fix(9.2s) doit reprendre ce code`);
+        assert.equal(await authEmailOf(a.userId), a.email, 'auth.users modifié malgré l’échec de l’appel');
+        assert.equal(await authEmailOf(b.userId), b.email, 'le titulaire de l’email ne doit pas être touché');
     });
 });
 

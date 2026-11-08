@@ -12,9 +12,9 @@
  * Rouge avant correctif : les routes n'existent pas (import dynamique, l'échec les nomme), ni la RPC, ni l'objet
  * PHONE_CHANGE ; après les tests, assertLot9Invariants reste rouge tant que M2 et M4 ne sont pas livrés.
  *
- * Verts dès l'écriture, signalés : les quatre cas du middleware ; les deux cas « SUPPOSÉ » (session_id dans le JWT, code
- * phone_exists) ne dépendent pas du code du lot : ils lisent GoTrue, et leur message d'échec tranche le SUPPOSÉ du
- * contrat au run « avant ».
+ * Verts dès l'écriture, signalés : les quatre cas du middleware ; les deux cas qui lisent GoTrue sans le code du lot
+ * (session_id dans le JWT, confirmé au run 110 ; constat AM1 : un numéro pris fait échouer l'API, avec un code non
+ * garanti, d'où la RPC account_identity_taken avant l'API et après toute erreur de l'API).
  *
  * Comptage : SMS par numéro neuf (smsMark, smsTo), jamais globalement. Chaque test travaille sur un compte neuf ; le test
  * de compensation en échec répare le compte qu'il laisse désynchronisé (v4, v6).
@@ -229,6 +229,11 @@ const passThrough: NonNullable<Rule['reply']> = (pass) => pass();
 const adminUpdate = (userId: string): Rule['match'] => (url, method) => method === 'PUT' && url.pathname === `/auth/v1/admin/users/${userId}`;
 const adminRead = (userId: string): Rule['match'] => (url, method) => method === 'GET' && url.pathname === `/auth/v1/admin/users/${userId}`;
 const finalizeRpc: Rule['match'] = (url, method) => method === 'POST' && url.pathname === '/rest/v1/rpc/account_phone_finalize';
+const identityRpc: Rule['match'] = (url, method) => method === 'POST' && url.pathname === '/rest/v1/rpc/account_identity_taken';
+/** AM1 : la vérification préalable répond « libre » une fois (le numéro est pris juste après elle) ; les appels suivants sont réels. */
+const identityFreeOnce: NonNullable<Rule['reply']> = (pass, n) => (n === 1
+    ? new Response(JSON.stringify({ email_taken: false, phone_taken: false }), { status: 200, headers: { 'content-type': 'application/json' } })
+    : pass());
 
 /** Exécute `fn` avec les règles posées sur fetch ; passages comptés par règle, journal d'erreurs capturé. */
 async function intercept<T>(rules: Rule[], fn: () => Promise<T>): Promise<{ result: T; hits: Record<string, Hit[]>; logged: string[] }> {
@@ -728,7 +733,7 @@ describe('SMS PHONE_CHANGED (L30)', () => {
 // ── Numéro pris, courses ───────────────────────────────────────────────────
 
 describe('Numéro pris et courses', () => {
-    test('numéro pris entre start et confirm : 409 PHONE_TAKEN par phone_exists, sans compensation ni RPC, code consommé', async () => {
+    test('numéro pris entre start et confirm : 409 PHONE_TAKEN avant l’API (AM1), sans appel, ni compensation, ni RPC, code consommé', async () => {
         const a = await newBuyer('num-entre-a');
         const b = await newBuyer('num-entre-b');
         const next = randomSenegalPhone('78');
@@ -743,21 +748,28 @@ describe('Numéro pris et courses', () => {
         ], () => postConfirm(a, { phone: next, code }));
         assert.equal(result.status, 409, result.text);
         assert.equal(result.body.code, 'PHONE_TAKEN', result.text);
-        assert.equal(hits.put.length, 1, 'rien n’a été écrit : aucune compensation');
+        assert.equal(hits.put.length, 0, 'numéro pris à la vérification préalable : aucun appel à l’API, donc aucune compensation (AM1)');
         assert.equal(hits.rpc.length, 0);
         assert.equal((await otpRow(next, 'PHONE_CHANGE'))?.verified, true, 'code consommé');
         await assertNothingChanged(a, 'numéro pris entre start et confirm');
     });
 
-    test('numéro présent seulement dans auth.users : start passe, confirm répond 409 PHONE_TAKEN par phone_exists', async () => {
+    test('numéro présent seulement dans auth.users, pris après la vérification préalable : start passe, l’API échoue, 409 PHONE_TAKEN sans compensation ni RPC (AM1)', async () => {
         const a = await newBuyer('num-auth-a');
         const ghost = await newBuyer('num-auth-b');
         const { error } = await service.from('users').update({ phone: null }).eq('id', ghost.userId);
         assert.equal(error, null, `retrait du numéro du profil : ${error?.message}`);
         const code = await askCode(a, ghost.phoneE164);
-        const r = await postConfirm(a, { phone: ghost.phoneE164, code });
+        const { result: r, hits } = await intercept([
+            { name: 'identity', match: identityRpc, reply: identityFreeOnce },
+            { name: 'put', match: adminUpdate(a.userId), reply: passThrough },
+            { name: 'rpc', match: finalizeRpc, reply: passThrough },
+        ], () => postConfirm(a, { phone: ghost.phoneE164, code }));
         assert.equal(r.status, 409, r.text);
         assert.equal(r.body.code, 'PHONE_TAKEN', r.text);
+        assert.ok(hits.identity.length >= 1, 'vérification préalable account_identity_taken absente');
+        assert.equal(hits.put.length, 1, 'rien n’a été écrit : aucune compensation');
+        assert.equal(hits.rpc.length, 0, 'la RPC de finalisation n’est pas appelée après un refus de l’API');
         await assertNothingChanged(a, 'numéro présent seulement dans auth.users');
     });
 
@@ -768,7 +780,11 @@ describe('Numéro pris et courses', () => {
         const code = await askCode(a, next);
         const { error } = await service.from('users').update({ phone: next }).eq('id', b.userId);
         assert.equal(error, null, `profil de B : ${error?.message}`);
-        const { result, hits } = await intercept([{ name: 'put', match: adminUpdate(a.userId), reply: passThrough }], () => postConfirm(a, { phone: next, code }));
+        // AM1 : la vérification préalable voit public.users ; vue libre une fois, pour atteindre le refus de la RPC de finalisation.
+        const { result, hits } = await intercept([
+            { name: 'identity', match: identityRpc, reply: identityFreeOnce },
+            { name: 'put', match: adminUpdate(a.userId), reply: passThrough },
+        ], () => postConfirm(a, { phone: next, code }));
         assert.equal(result.status, 409, result.text);
         assert.equal(result.body.code, 'PHONE_TAKEN', result.text);
         assert.equal(hits.put.length, 2, `aller puis compensation : ${JSON.stringify(hits.put)}`);
@@ -1006,13 +1022,13 @@ describe('Hypothèses de GoTrue (SUPPOSÉ du contrat, section 13)', () => {
         assert.equal(found, 1, 'SUPPOSÉ INFIRMÉ : session_id du JWT absent de auth.sessions : la révocation « sauf celle-ci » viserait une mauvaise ligne');
     });
 
-    test('SUPPOSÉ : updateUserById vers un numéro pris renvoie error.code = phone_exists', async () => {
+    test('constat AM1 : updateUserById vers un numéro pris échoue et laisse auth.users inchangé, sans figer le code d’erreur', async () => {
         const a = await newBuyer('num-gotrue-a');
         const b = await newBuyer('num-gotrue-b');
         const { error } = await service.auth.admin.updateUserById(a.userId, { phone: b.phoneE164, phone_confirm: true });
         assert.ok(error, 'GoTrue accepte un numéro déjà pris : le refus 409 PHONE_TAKEN du contrat ne peut pas reposer sur l’API');
-        assert.equal(error.code, 'phone_exists',
-            `SUPPOSÉ INFIRMÉ (contrat, section 13) : GoTrue ne renvoie pas phone_exists mais code=${String(error.code)}, status=${String(error.status)}, message=${error.message} ; la table de codes de fix(9.2s) doit reprendre ce code`);
+        assert.equal((await authOf(a.userId)).phone, digits(a.phoneE164), 'auth.users modifié malgré l’échec de l’appel');
+        assert.equal((await authOf(b.userId)).phone, digits(b.phoneE164), 'le titulaire du numéro ne doit pas être touché');
     });
 });
 

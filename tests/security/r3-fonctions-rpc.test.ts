@@ -93,6 +93,7 @@ const LOT9_RPCS: Array<[string, Record<string, unknown>]> = [
     ['ticket_invitations_list', { p: {} }],
     ['account_profile_finalize', { p: {} }],
     ['account_phone_finalize', { p: {} }],
+    ['account_identity_taken', { p_user_id: ZERO_UUID, p_email: 'absent@example.invalid', p_phone: '221770000000' }],
     ['account_avatar_set', { p: {} }],
     ['client_payments_list', { p: {} }],
     ['admin_permissions_set', { p: {} }],
