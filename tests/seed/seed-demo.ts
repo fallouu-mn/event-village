@@ -9,8 +9,8 @@
  *    events_finish_overdue (D7) ; aucun UPDATE de events.status ;
  *  - ventes par le service de checkout (checkout_create_payment) et confirmation par la
  *    réconciliation (payment_confirm), avec le faux SamirPay en mémoire ;
- *  - entrées par ticket_scan (code dynamique calculé comme la route), encaissements par
- *    ticket_cash_checkin, caisses par shift_open, ventes au guichet par counter_sale (C7),
+ *  - entrées par ticket_scan (code dynamique calculé comme la route),
+ *    caisses par shift_open, ventes au guichet par counter_sale (C7),
  *    clôtures par la route POST /api/controller/shifts/close (C2), incidents par la route
  *    POST /api/controller/scan/incidents (C8), remboursements par event_cancel puis le module de
  *    cashout (versé, en cours, en vérification).
@@ -169,7 +169,7 @@ const LOT5_FUNCTIONS: Array<[string, string]> = [
     ['pilotage_compute_overview', 'I — chiffres du pilotage (invariant l)'],
     ['pilotage_compute_cash', 'I — caisses du pilotage (invariant l)'],
 ];
-const EXISTING_FUNCTIONS = ['checkout_create_payment', 'payment_confirm', 'ticket_scan', 'shift_open', 'ticket_cash_checkin', 'counter_sale', 'refund_request'];
+const EXISTING_FUNCTIONS = ['checkout_create_payment', 'payment_confirm', 'ticket_scan', 'shift_open', 'counter_sale', 'refund_request'];
 const LOT5_TABLES: Array<[string, string]> = [
     ['event_status_history', 'D1 — journal des statuts'],
     ['event_status_transitions', 'D1 — table des transitions'],
@@ -892,13 +892,6 @@ async function payOnSiteTickets(ev: CreatedEvent, buyer: Account, category: stri
     return tickets.map((t) => t.id as string);
 }
 
-async function cashCheckin(ev: CreatedEvent, ctrl: Account, ticketId: string): Promise<void> {
-    const required = await scanQr(ctrl.userId, ev.id, ticketId, 'cash_required');
-    const { data, error } = await service.rpc('ticket_cash_checkin', { p: { scan_id: required.scan_id, scanner_id: ctrl.userId, event_id: ev.id } });
-    if (error) fail('ticket_cash_checkin', error);
-    if ((data as { result?: string } | null)?.result !== 'valid') fail('ticket_cash_checkin', `refusé : ${JSON.stringify(data)}`);
-}
-
 interface RouteResult { status: number; body: Record<string, unknown> }
 
 async function callRoute(modulePath: string, urlPath: string, token: string, body: unknown): Promise<RouteResult> {
@@ -1209,10 +1202,8 @@ async function main(): Promise<void> {
     }
     const manualTicket = { id: String(t5.id), number: String(t5.ticket_number) };
 
-    // Billets « à régler sur place » : deux encaissés au scan, un absent
-    const payOnSite = await payOnSiteTickets(ceSoir, pick(buyers), 'Standard', 3);
-    await cashCheckin(ceSoir, c1, payOnSite[0]);
-    await cashCheckin(ceSoir, c1, payOnSite[1]);
+    // Billet « à régler sur place » : resté impayé, porteur absent (L47)
+    await payOnSiteTickets(ceSoir, pick(buyers), 'Standard', 1);
 
     // Guichet : vente = entrée immédiate (C7), reçu SMS pour certaines ventes
     for (const [ctrl, category, qty, phone] of [
@@ -1221,6 +1212,8 @@ async function main(): Promise<void> {
         [c3, 'Standard', 1, undefined], [c3, 'Standard', 2, '700000304'],
         // Lot 8 : catégorie non vendue en ligne, vendue au guichet (décision de vente figée, invariant (t2))
         [c1, 'Carré presse', 1, undefined],
+        // Lot 9 (A16, L47) : remplace les deux billets encaissés au scan, même caisse, même montant, mêmes entrées
+        [c1, 'Standard', 2, undefined],
     ] as Array<[Account, string, number, string | undefined]>) {
         await counterSale(ceSoir, ctrl, category, qty, phone);
     }
