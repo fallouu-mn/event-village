@@ -30,7 +30,7 @@ export type AdminPermission =
     | 'events.read' | 'partners.read' | 'refunds.manage' | 'payments.read' | 'notifications.read';
 
 /** Types journalisés seulement (OTP et invitation d'un contrôleur) : le code n'est jamais stocké. */
-export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE';
+export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE';
 
 /** Données d'un événement, présentes pour tout type lié à un événement. */
 export interface EventData {
@@ -66,6 +66,8 @@ export interface TemplateData {
     PURCHASE_CONFIRMED: EventData & { payment_id: string; ticket_count: number; service_fee: number; total: number } & TicketLinesData;
     FREE_TICKETS_CONFIRMED: EventData & { ticket_count: number; ticket_id?: string } & TicketLinesData;
     COUNTER_RECEIPT: EventData & { payment_id: string; ticket_count: number; amount: number; reference: string };
+    /** Lot 9 (9.0, L10) : `ticket_count` = billets de ce numéro, `ticket_id` = premier billet de l'envoi. */
+    INVITATION_RECEIVED: EventData & { ticket_count: number; ticket_id?: string };
     TRANSFER_OFFERED: EventData & { transfer_id: string; ticket_id: string; expires_at: string; recipient_kind?: string };
     TRANSFER_CANCELLED: EventData & { transfer_id: string; ticket_id: string };
     TRANSFER_EXPIRED: EventData & { transfer_id: string; ticket_id: string };
@@ -87,6 +89,8 @@ export interface TemplateData {
     REFUND_REQUESTED: EventData & { cashout_id: string; amount: number };
     REFUND_PAID: OptionalEventData & MoneyData;
     PASSWORD_CHANGED: Record<string, never>;
+    /** Lot 9 (9.2, L30) : SMS à l'ancien numéro, aucune donnée. */
+    PHONE_CHANGED: Record<string, never>;
     PUSH_TEST: Record<string, never>;
     EVENT_VALIDATED: EventData;
     EVENT_REJECTED: EventData & { reason: string };
@@ -142,6 +146,7 @@ export interface TemplateData {
     OTP_REGISTER: { purpose?: string };
     OTP_PASSWORD_RESET: { purpose?: string };
     OTP_WITHDRAWAL: { purpose?: string };
+    OTP_PHONE_CHANGE: { purpose?: string };
     OTP_AUTH_HOOK: { purpose?: string };
     CONTROLLER_INVITE: { purpose?: string };
 }

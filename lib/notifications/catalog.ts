@@ -559,6 +559,13 @@ const CATALOG = {
         sms: (d) => `${SMS_PREFIX}achat au guichet pour ${smsVar(text(d, 'title'), 30)}, ${plural(count(d, 'ticket_count'), 'billet', 'billets')}, ${smsAmount(num(d, 'amount'))}. Entrée validée. Réf. ${smsVar(text(d, 'reference'), 12)}.`,
         sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, ticket_count: 2, amount: 10_000, reference: '1F6E2B9C' },
     }),
+    // Lot 9 (9.0, L10) : SMS seul, au numéro invité, lien vers Mes billets dans le texte. Pire cas (10 invitations,
+    // titre tronqué à 28, date la plus longue, URL de 27 caractères) : 158 septets, un segment GSM-7.
+    INVITATION_RECEIVED: define('INVITATION_RECEIVED', {
+        label: 'Invitation reçue', channels: ['SMS'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null, link: null,
+        sms: (d, ctx) => `${SMS_PREFIX}${plural(count(d, 'ticket_count'), 'invitation', 'invitations')} pour ${smsVar(text(d, 'title'), 28)} le ${smsDateTime(iso(d, 'start_at'))}. Connectez-vous avec ce numéro : ${appLink(ctx, '/tickets')}`,
+        sample: { ...SAMPLE_EVENT, ticket_count: 2, ticket_id: SAMPLE_ID.ticket },
+    }),
     TRANSFER_OFFERED: define('TRANSFER_OFFERED', {
         label: 'Billet transféré (offre)', channels: ['SMS', 'IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
         link: () => '/tickets?tab=recus',
@@ -715,6 +722,12 @@ const CATALOG = {
             content: 'Le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.',
         }),
         sms: () => `${SMS_PREFIX}le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous, contactez le support.`,
+        sample: {},
+    }),
+    // Lot 9 (9.2, L30) : SMS seul, à l'ancien numéro, sans lien ni compte.
+    PHONE_CHANGED: define('PHONE_CHANGED', {
+        label: 'Numéro de téléphone modifié', channels: ['SMS'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null, link: null,
+        sms: () => `${SMS_PREFIX}le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support.`,
         sample: {},
     }),
     PUSH_TEST: define('PUSH_TEST', {
@@ -1131,6 +1144,7 @@ const CATALOG = {
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),
     OTP_WITHDRAWAL: defineSync('OTP_WITHDRAWAL', 'Code de confirmation d’un retrait'),
+    OTP_PHONE_CHANGE: defineSync('OTP_PHONE_CHANGE', 'Code de changement de numéro'),
     OTP_AUTH_HOOK: defineSync('OTP_AUTH_HOOK', 'Code de connexion (Supabase)'),
     CONTROLLER_INVITE: defineSync('CONTROLLER_INVITE', 'Invitation d’un contrôleur'),
 } satisfies { readonly [T in NotificationType]: NotificationTemplate<TemplateData[T]> };
@@ -1238,6 +1252,7 @@ export function renderSyncSms(type: SyncType, data: { code: string; firstName?: 
         case 'OTP_LOGIN':
         case 'OTP_REGISTER':
         case 'OTP_WITHDRAWAL':
+        case 'OTP_PHONE_CHANGE':
         case 'OTP_AUTH_HOOK':
             return `Votre code de verification Event Village est : ${code}. Valable 10 minutes.`;
         case 'OTP_PASSWORD_RESET':

@@ -35,13 +35,14 @@ export type MTargetSendResult = SmsSendResult & {
 };
 
 /** Objet d'un code à usage unique : fixe le texte (réinitialisation) et le type du journal. */
-export type OtpSmsPurpose = 'LOGIN' | 'REGISTER' | 'PASSWORD_RESET' | 'WITHDRAWAL' | 'AUTH_HOOK';
+export type OtpSmsPurpose = 'LOGIN' | 'REGISTER' | 'PASSWORD_RESET' | 'WITHDRAWAL' | 'PHONE_CHANGE' | 'AUTH_HOOK';
 
 const OTP_TYPE_BY_PURPOSE: Readonly<Record<OtpSmsPurpose, SyncSmsType>> = {
     LOGIN: 'OTP_LOGIN',
     REGISTER: 'OTP_REGISTER',
     PASSWORD_RESET: 'OTP_PASSWORD_RESET',
     WITHDRAWAL: 'OTP_WITHDRAWAL',
+    PHONE_CHANGE: 'OTP_PHONE_CHANGE',
     AUTH_HOOK: 'OTP_AUTH_HOOK',
 };
 

@@ -98,6 +98,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     PURCHASE_CONFIRMED: 'Confirmation d’achat',
     FREE_TICKETS_CONFIRMED: 'Billets gratuits confirmés',
     COUNTER_RECEIPT: 'Reçu de vente au guichet',
+    INVITATION_RECEIVED: 'Invitation reçue',
     TRANSFER_OFFERED: 'Billet transféré',
     TRANSFER_CANCELLED: 'Transfert annulé',
     TRANSFER_EXPIRED: 'Transfert expiré',
@@ -113,6 +114,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     REFUND_REQUESTED: 'Remboursement demandé',
     REFUND_PAID: 'Remboursement versé',
     PASSWORD_CHANGED: 'Mot de passe modifié',
+    PHONE_CHANGED: 'Numéro de téléphone modifié',
     PUSH_TEST: "Notification d'essai",
     EVENT_VALIDATED: 'Événement validé',
     EVENT_REJECTED: 'Événement non validé',
@@ -163,6 +165,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     OTP_REGISTER: "Code d'inscription",
     OTP_PASSWORD_RESET: 'Code de réinitialisation du mot de passe',
     OTP_WITHDRAWAL: 'Code de confirmation de retrait',
+    OTP_PHONE_CHANGE: 'Code de changement de numéro',
     OTP_AUTH_HOOK: 'Code de connexion (authentification)',
     CONTROLLER_INVITE: "Invitation d'un contrôleur",
 };
