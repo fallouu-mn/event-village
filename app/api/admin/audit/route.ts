@@ -7,6 +7,8 @@ export const dynamic = 'force-dynamic';
 
 const AUDIT_FALLBACK = { message: 'Journal d’audit momentanément indisponible.', code: 'AUDIT_UNAVAILABLE' };
 
+type AuditRow = Record<string, unknown> & { actor: { first_name: string | null; last_name: string | null; role: string | null } | null };
+
 /**
  * GET /api/admin/audit
  * Consultation et exploration du journal d'audit inaltérable (§134, §156)
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
 
         let query = supabase
             .from('audit_logs')
-            .select('*')
+            .select('*, actor:users(first_name,last_name,role)')
             .order('created_at', { ascending: false })
             .limit(limit);
 
@@ -49,10 +51,18 @@ export async function GET(req: NextRequest) {
 
         if (error) return apiFailure('GET /api/admin/audit', error, AUDIT_FALLBACK);
 
+        // Lot 9 (A38) : nom et rôle courant de l'auteur, aplatis ; la jointure brute ne sort pas.
+        const rows = (logs ?? []) as unknown as AuditRow[];
+        const flattened = rows.map(({ actor, ...log }) => ({
+            ...log,
+            actor_name: [actor?.first_name, actor?.last_name].filter(Boolean).join(' ').trim() || null,
+            actor_role: actor?.role ?? null,
+        }));
+
         return NextResponse.json({
             success: true,
-            logs: logs || [],
-            total: logs?.length || 0,
+            logs: flattened,
+            total: flattened.length,
         });
     } catch (err: unknown) {
         return apiFailure('GET /api/admin/audit', err, AUDIT_FALLBACK);
