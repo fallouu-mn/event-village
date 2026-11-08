@@ -918,3 +918,12 @@ describe('8.2 p — commissionAmount retiré, jamais un 0 en dur (contrat 10.4, 
         assert.deepEqual(removedKeysIn(finance), [], 'zéros en dur encore servis par /api/partner/finance');
     });
 });
+
+describe('A21 — port du SCENARIO 15, sans rien de plus', () => {
+    // L'original ne prouve que la présence d'un mot dans la source de la page : ni l'abonnement, ni le rendu de l'état.
+    // Le mot présent aujourd'hui est `connected` (lu de usePartnerOrders) ; l'import du hook est gardé par le test « garde-fou » de 7.4.
+    test(`tableau de bord (${DASHBOARD_PAGE}) : le code mentionne toujours Realtime ou connected`, () => {
+        const code = codeOf(DASHBOARD_PAGE);
+        assert.ok(code.includes('Realtime') || code.includes('connected'), `${DASHBOARD_PAGE} ne mentionne plus l’état de la connexion aux commandes en direct`);
+    });
+});

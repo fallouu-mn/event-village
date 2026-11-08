@@ -149,4 +149,29 @@ describe('Webhook SamirPay', () => {
         const leaks = lines.filter((l) => l.includes(phone9));
         assert.deepEqual(leaks, [], 'numéro payeur absent des journaux');
     });
+
+    // Port A21 du SCENARIO 6 & 7 : seule preuve de la branche « corps non form-urlencoded » de lib/payments/webhook.service.ts.
+    // Jeton et champs sont valides : seul le format du corps arrête ce webhook. Le corps n'étant pas lu, order_id reste
+    // vide en base : la ligne se retrouve par son corps brut, propre à ce paiement.
+    test('corps multipart : 200, received: true, REJECTED_INVALID_PAYLOAD « corps non form-urlencoded », aucun billet', async () => {
+        const { buyer, payment } = await initiated('multipart');
+        providerSays(payment, 'SUCCESS');
+        const rawBody = [
+            ['transaction_id', payment.external_transaction_id!],
+            ['order_id', payment.external_order_id!],
+            ['status', 'success'],
+        ].map(([name, value]) => `--frontiere\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`).join('') + '--frontiere--\r\n';
+        const res = await deliverWebhook(payment, { rawBody, contentType: 'multipart/form-data' });
+        assert.equal(res.status, 200);
+        assert.equal((await res.json()).received, true);
+        const { data, error } = await service.from('payment_webhook_events').select('*').eq('raw_body', rawBody);
+        assert.equal(error, null, `journal des webhooks : ${error?.message}`);
+        const evts = data ?? [];
+        assert.equal(evts.length, 1, 'webhook enregistré');
+        assert.equal(evts[0].result, 'REJECTED_INVALID_PAYLOAD');
+        assert.equal(evts[0].result_detail, 'corps non form-urlencoded', 'branche du format du corps, pas celle des identifiants invalides');
+        assert.equal(evts[0].order_id, null, 'champs du corps non lus');
+        assert.equal(await ticketsFor(buyer), 0, 'aucun billet');
+        assert.equal((await paymentById(payment.id)).status, 'PENDING');
+    });
 });
