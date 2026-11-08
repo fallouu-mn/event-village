@@ -67,10 +67,10 @@ before(async () => {
 // ── Outils locaux ──────────────────────────────────────────────────────────
 
 const usedOffsets = new Set<number>();
-/** Jour D futur tiré au hasard (J+120 à J+1 800), distinct des autres cas à ±2 jours près. */
+/** Jour D futur tiré au hasard (J+2 000 à J+3 680, hors des jours tirés par les autres suites), distinct des autres cas à ±2 jours près. */
 function randomEventDay(): string {
     for (;;) {
-        const offset = 120 + randomInt(0, 1680);
+        const offset = 2000 + randomInt(0, 1680);
         if ([-2, -1, 0, 1, 2].some((d) => usedOffsets.has(offset + d))) continue;
         usedOffsets.add(offset);
         return dakarDay(offset);
