@@ -1,6 +1,6 @@
 /**
- * R7 — Lot 1B.2 : par l'API REST, un utilisateur ne modifie de son profil que prénom, nom
- * et photo. status, role, referral_status, referral_code, phone et email sont refusés.
+ * R7 — Lot 1B.2, renforcé au lot 9 (L32, AR3) : par l'API REST, un utilisateur ne modifie plus rien de son profil.
+ * status, role, referral_status, referral_code, phone, email, et désormais prénom, nom et photo sont refusés.
  * (Clé anon + signUp / signInWithPassword uniquement.)
  */
 import '../helpers/env';
@@ -43,11 +43,11 @@ describe('R7 — colonnes protégées de public.users', () => {
         }
     });
 
-    test('CLIENT qui change son prénom, son nom et sa photo → accepté', async () => {
+    test('CLIENT qui change son prénom, son nom et sa photo par REST → refusé, la route est seule à écrire', async () => {
         const client = await signUpAttacker('r7-ok');
         const patch = { first_name: 'Prénom-R7', last_name: 'Nom-R7', avatar_url: 'https://example.invalid/avatar-r7.png' };
-        const { data, error } = await client.client.from('users').update(patch).eq('id', client.userId).select('first_name, last_name, avatar_url');
-        assert.equal(error, null, `mise à jour autorisée refusée : ${error?.message}`);
-        assert.deepEqual(data, [patch]);
+        const { error } = await client.client.from('users').update(patch).eq('id', client.userId).select('first_name, last_name, avatar_url');
+        assertDenied(error, 'modification du prénom, du nom et de la photo par REST');
+        const { data: after, error: readErr } = await client.client.from('users').select('first_name').eq('id', client.userId).single(); assert.ok(!readErr && after && after.first_name !== patch.first_name, `prénom modifié ou illisible : ${readErr?.message ?? after?.first_name}`);
     });
 });
