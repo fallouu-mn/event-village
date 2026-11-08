@@ -106,7 +106,8 @@ function paymentRow(buyer: Buyer | null, spec: PaymentSpec): Record<string, unkn
         status: spec.status ?? 'SUCCESS',
         operator: spec.operator === undefined ? 'WAVE' : spec.operator,
         event_id: spec.eventId ?? null,
-        ...(spec.createdAt ? { created_at: spec.createdAt } : {}),
+        // Insertion par lot : PostgREST complète les clés absentes par NULL, created_at est donc toujours fourni
+        created_at: spec.createdAt ?? new Date().toISOString(),
         ...(spec.extra ?? {}),
     };
 }
