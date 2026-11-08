@@ -7,8 +7,8 @@
  *  - aucune suite qui ne prouve rien n'est citée (AR14, L92, A21) ;
  *  - « fait » a au moins un test, « partiel » et « non fait » disent ce qui manque ;
  *  - la colonne CI dit la même chose que la colonne Test ;
- *  - A1 à A41 une fois chacune, avec gravité, état et référence ;
- *  - les essais 1 à 61 ont leurs étapes, leur résultat attendu, leur case et aucun nom de route ni de table.
+ *  - A1 à A41, PO3, PO4 et PO10 une fois chacune, avec gravité, état et référence ;
+ *  - les essais 1 à 69 ont leurs étapes, leur résultat attendu, leur case et aucun nom de route ni de table.
  * Un test cité qui bouge rend cette suite rouge : reprendre le numéro de ligne dans le document.
  */
 import '../helpers/env';
@@ -31,10 +31,11 @@ const SUITES_INTERDITES = [
     'tests/partner-auth-complete.test.ts',
     'tests/payment.test.ts',
 ];
-const CORRIGEES = ['A1', 'A2', 'A3', 'A4', 'A13', 'A20', 'A23', 'A29', 'A35', 'A36', 'A41'];
+const CORRIGEES = ['A1', 'A2', 'A3', 'A4', 'A6', 'A7', 'A13', 'A16', 'A17', 'A20', 'A21', 'A23', 'A24', 'A25', 'A26', 'A27', 'A28', 'A29', 'A32', 'A33', 'A34', 'A35', 'A36', 'A38', 'A39', 'A40', 'A41', 'PO3', 'PO4', 'PO10'];
+const POINTS_OUVERTS = ['PO3', 'PO4', 'PO10'];
 const PREUVES = ['A11', 'A14', 'A15'];
 const ECARTS = ['Voix Wolof', 'Audio du scanner', 'Wallet', 'panier multi-événements', 'billets à régler sur place'];
-const NOMBRE_ESSAIS = 61;
+const NOMBRE_ESSAIS = 69;
 const CI_RE = /^(?:vert au run \d+|à prouver au run après|vert au run \d+, le reste à prouver au run après|sans objet)$/;
 const PATH_RE = /^(?:M\/|tests\/|e2e\/|app\/|lib\/|components\/|docs\/|supabase\/|scripts\/|public\/|middleware\.ts|playwright\.config\.ts)/;
 const TEST_LINE_RE = /^\s*(?:await\s+)?(?:test|it)(?:\.\w+)?\(/;
@@ -142,13 +143,19 @@ function auditMatrix(text: string): string[] {
 
 function auditAnomalies(text: string): string[] {
     const faults: string[] = [];
-    const rows = tableRows(section(text, /^## 5\./)).filter((c) => /^A\d+$/.test(c[0]));
+    const rows = tableRows(section(text, /^## 5\./)).filter((c) => /^(?:A|PO)\d+$/.test(c[0]));
     const ids = rows.map((c) => c[0]);
     for (let i = 1; i <= 41; i++) {
         const n = ids.filter((id) => id === `A${i}`).length;
         if (n !== 1) faults.push(`A${i} présente ${n} fois`);
     }
-    for (const id of ids) if (Number(id.slice(1)) > 41) faults.push(`anomalie inconnue : ${id}`);
+    for (const po of POINTS_OUVERTS) {
+        const n = ids.filter((id) => id === po).length;
+        if (n !== 1) faults.push(`${po} présente ${n} fois`);
+    }
+    for (const id of ids) {
+        if (id.startsWith('PO') ? !POINTS_OUVERTS.includes(id) : Number(id.slice(1)) > 41) faults.push(`anomalie inconnue : ${id}`);
+    }
     for (const cells of rows) {
         const id = cells[0];
         if (cells.length !== 8) {
@@ -207,11 +214,11 @@ describe('8.3 — docs/recette-billetterie.md', () => {
         assert.deepEqual(auditCitations(doc), []);
     });
 
-    test('8.3 d : A1 à A41, gravité, état, référence', () => {
+    test('8.3 d : A1 à A41, PO3, PO4, PO10, gravité, état, référence', () => {
         assert.deepEqual(auditAnomalies(doc), []);
     });
 
-    test('8.3 c : essais 1 à 61, écrits pour un non-développeur', () => {
+    test('8.3 c : essais 1 à 69, écrits pour un non-développeur', () => {
         assert.deepEqual(auditCahier(doc), []);
     });
 });
@@ -229,7 +236,8 @@ describe('8.3 — le contrôle se vérifie lui-même', () => {
         ['partiel sans manque', (t) => t.replace(/\| partiel \| ([^|]*) \| ([^|]*) \| ([^|]*) \| [^|]* \|\n/, '| partiel | $1 | $2 | $3 | — |\n'), /sans dire ce qui manque/],
         ['A28 retirée', (t) => t.replace(/^\| A28 \|.*\n/m, ''), /A28 présente 0 fois/],
         ['A1 redevenue listée', (t) => t.replace(/^(\| A1 \|.*?)\| corrigée \|/m, '$1| listée |'), /A1 : attendue corrigée/],
-        ['essai 61 retiré', (t) => t.replace(/^#### Essai 61\.[\s\S]*$/m, ''), /essais : /],
+        ['essai 69 retiré', (t) => t.replace(/^#### Essai 69\.[\s\S]*$/m, ''), /essais : /],
+        ['PO3 retiré', (t) => t.replace(/^\| PO3 \|.*\n/m, ''), /PO3 présente 0 fois/],
         ['case retirée', (t) => t.replace(/(#### Essai 3\.[\s\S]*?)- \[ \] Anomalie/, '$1'), /essai 3 : « - \[ \] Anomalie » absent/],
         ['nom de route dans un essai', (t) => t.replace(/(#### Essai 3\.[\s\S]*?)Ouvrez l’accueil\./, '$1Ouvrez /api/events.'), /essai 3 : vocabulaire technique/],
     ];
