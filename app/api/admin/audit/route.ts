@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
         const action = searchParams.get('action');
         const objectType = searchParams.get('objectType');
         const userRole = searchParams.get('userRole');
-        const limit = parseInt(searchParams.get('limit') || '50', 10);
+        // Lot 9 (A25) : 100 au plus ; valeur illisible, nulle ou négative : 50.
+        const n = Number.parseInt(searchParams.get('limit') ?? '', 10);
+        const limit = Number.isFinite(n) && n >= 1 ? Math.min(n, 100) : 50;
 
         const supabase = getServiceRoleClient();
 
