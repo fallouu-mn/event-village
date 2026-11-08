@@ -40,7 +40,7 @@ import { scanReasonLabel } from '../../lib/scan/scan-result';
 import { newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
 import {
-    authed, cashCheckin, createCashOrderTickets, createTimedEvent, newController, newScanKey, openShift, scan, scansOf, ticketPayload, ticketRow,
+    authed, createTimedEvent, newController, openShift, scan, scansOf, ticketPayload, ticketRow,
     withAccessSettings, type RouteResult,
 } from './acces-helpers';
 import { routeHandler } from './pilotage-helpers';
@@ -59,7 +59,6 @@ let partner: TestPartner;
 let ev: SaleEvent;
 let otherEv: SaleEvent;
 let holder: Buyer;
-let cashBuyer: Buyer;
 
 before(async () => {
     partner = await newPartner('scan-stats');
@@ -71,7 +70,6 @@ before(async () => {
     ], { startsInHours: 1, durationHours: 6 });
     otherEv = await createTimedEvent(partner.partnerId, 'scan-stats-autre', [{ name: FREE, price: 0, total: 20 }], { startsInHours: 1, durationHours: 6 });
     holder = await newBuyer('stats-porteur', { firstName: HOLDER_FIRST, lastName: HOLDER_LAST });
-    cashBuyer = await newBuyer('stats-especes');
 });
 
 after(async () => {
@@ -149,6 +147,12 @@ async function counterSaleInfo(user: Buyer, eventId: string): Promise<RouteReply
 async function counterSaleQuote(user: Buyer, body: Row): Promise<RouteReply> {
     const POST = await routeHandler('../../app/api/controller/counter-sale/quote/route', 'POST', 'POST /api/controller/counter-sale/quote (contrat 3.3, D53, fix(7.2s))');
     return invoke(POST, authed('/api/controller/counter-sale/quote', 'POST', user, body, { 'idempotency-key': randomUUID() }));
+}
+
+/** Vente au guichet (POST /api/controller/counter-sale, contrat C7) : billets réglés en espèces, crédités à la caisse. */
+async function counterSale(user: Buyer, eventId: string, items: Array<{ categoryId: string; quantity: number }>): Promise<RouteReply> {
+    const POST = await routeHandler('../../app/api/controller/counter-sale/route', 'POST', 'POST /api/controller/counter-sale (contrat C7)');
+    return invoke(POST, authed('/api/controller/counter-sale', 'POST', user, { eventId, items }, { 'idempotency-key': randomUUID() }));
 }
 
 async function setEntryPoint(eventId: string, userId: string, entryPoint: string): Promise<void> {
@@ -432,15 +436,16 @@ describe('7.2 — POST /api/controller/scan/lookup : vérification sans composta
 // ── Caisse : total attendu servi ───────────────────────────────────────────
 
 describe('7.2 — GET /api/controller/shifts/active : total attendu servi par le serveur (D46)', () => {
-    test('fonds de 2 500 F + un encaissement de 5 000 F → expected_cash_in_drawer = 7 500', async () => {
+    test('fonds de 2 500 F + une vente au guichet de 5 000 F → expected_cash_in_drawer = 7 500', async () => {
         const ctrl = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'caisse-active' });
         const opened = await openShift(ctrl, ev.eventId, 2500);
         assert.equal(opened.status, 200, `ouverture : ${show(opened)}`);
-        const order = await createCashOrderTickets(cashBuyer, partner, ev, STANDARD, 1);
-        const s = await scan(ctrl, { eventId: ev.eventId, payload: await ticketPayload(order.ticketIds[0]) }, { idempotencyKey: newScanKey() });
-        assert.equal(s.body.result, 'cash_required', show(s));
-        const paid = await cashCheckin(ctrl, { scanId: String(s.body.scan_id), eventId: ev.eventId });
-        assert.equal(paid.body.result, 'valid', show(paid));
+        // Lot 9 (A16) : la caisse est créditée par une vente au guichet, seul encaissement restant (même assertion 2500 + PRICE).
+        await withAccessSettings({ 'access.counter_sale_enabled': true }, async () => {
+            const sold = await counterSale(ctrl, ev.eventId, [{ categoryId: ev.categories[STANDARD].id, quantity: 1 }]);
+            assert.equal(sold.status, 200, show(sold));
+            assert.equal(sold.body.ok, true, show(sold));
+        });
         const r = await activeShift(ctrl, ev.eventId);
         assert.equal(r.status, 200, show(r));
         const shift = (r.body.shift ?? null) as Row | null;

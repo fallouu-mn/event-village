@@ -20,7 +20,7 @@
  * que le succès) ; lib/scan/scan-result.ts n'existe pas ; limiteur en mémoire 5/s (route.ts:41-57),
  * SCAN_PER_SCANNER_10S absent de .env.test.example ; app/controller/scanner/page.tsx:483 et :548
  * (`|| 'invalid'`), :418-421 (voix INVALID par défaut), :452-457 (refus comptés sans exclure les erreurs
- * techniques), :475-488 (statut HTTP ignoré), :1060-1065 (caméra active pendant cash_required).
+ * techniques), :475-488 (statut HTTP ignoré), :1060-1065 (caméra active pendant un encaissement).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -43,7 +43,7 @@ type Row = Record<string, unknown>;
 const ROOT = process.cwd();
 const CONTRACT_RESULTS = [
     'valid', 'already_used', 'invalid', 'cancelled', 'refunded', 'wrong_event', 'event_cancelled', 'event_ended',
-    'event_suspended', 'event_not_open', 'payment_required', 'cash_required', 'qr_expired', 'dynamic_qr_required',
+    'event_suspended', 'event_not_open', 'payment_required', 'qr_expired', 'dynamic_qr_required',
     'manual_entry_refused', 'rate_limited', 'network_error', 'server_error', 'not_processed',
 ];
 

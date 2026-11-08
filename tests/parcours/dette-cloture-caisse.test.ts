@@ -37,13 +37,14 @@
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { inspect } from '../helpers/db';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { routeContext } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { authed, cashCheckin, createCashOrderTickets, createTimedEvent, newController, openShift, scan, shiftRow, ticketPayload, type RouteResult } from './acces-helpers';
+import { authed, createTimedEvent, newController, openShift, shiftRow, withAccessSettings, type RouteResult } from './acces-helpers';
 import { flushNotifications, outboxRows } from './notif-helpers';
 
 const CLOSE_ROUTE = '../../app/api/controller/shifts/close/route';
@@ -245,15 +246,17 @@ describe('C2 — clôture de caisse par la route', () => {
 
     test('écart négatif (espèces manquantes) : JUSTIFICATION_REQUIRED puis PIN_REQUIRED portent expected, declared et discrepancy = −1000 ; caisse OUVERT', async () => {
         const c = await newCashier('cl-ecart-negatif');
-        // Un total attendu positif ne vient que d'un encaissement réel (invariant (h) : somme des paiements rattachés)
-        const buyer = await newBuyer('cl-ecart-negatif');
-        const order = await createCashOrderTickets(buyer, partner, ev, 'Standard', 1);
-        const scanned = await scan(c.ctrl, { eventId: ev.eventId, payload: await ticketPayload(order.ticketIds[0]) });
-        assert.equal(scanned.body.result, 'cash_required', `billet à régler sur place : ${show(scanned)}`);
-        const paid = await cashCheckin(c.ctrl, { scanId: scanned.body.scan_id, eventId: ev.eventId });
-        assert.equal(paid.body.result, 'valid', `encaissement : ${show(paid)}`);
+        // Un total attendu positif ne vient que d'une vente réelle au guichet (invariant (h) : somme des paiements rattachés)
+        const sold = await withAccessSettings({ 'access.counter_sale_enabled': true }, async () => {
+            const { POST } = await importModule('../../app/api/controller/counter-sale/route');
+            return invoke(POST as Handler, authed('/api/controller/counter-sale', 'POST', c.ctrl,
+                { eventId: ev.eventId, items: [{ categoryId: ev.categories.Standard.id, quantity: 1 }] },
+                { 'idempotency-key': randomUUID() }));
+        });
+        assert.equal(sold.status, 200, `vente au guichet : ${show(sold)}`);
+        assert.equal(sold.body.ok, true, `vente au guichet : ${show(sold)}`);
         const expected = Number((await shiftRow(c.shiftId)).expected_cash_total);
-        assert.equal(expected, c.expected + 5000, 'total attendu après l’encaissement');
+        assert.equal(expected, c.expected + 5000, 'total attendu après la vente au guichet');
         const declared = expected - 1000;
 
         const noReason = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: declared, regisseurPin: pin });

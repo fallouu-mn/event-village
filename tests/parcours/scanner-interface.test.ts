@@ -13,7 +13,7 @@
  *     test), valeurs identiques en clair et en sombre (D51) ; CombatFlashOverlay n'utilise que ces jetons, sans
  *     backdrop-blur, drop-shadow, zoom-, animate-bounce ni texte à opacité réduite ;
  *  3. lib/hardware/feedback.ts : vibrationPattern(catégorie) = [60] pour accepte, [120,60,120,60,120] pour
- *     deja_utilise, refuse et evenement_annule, [250,100,250] pour a_encaisser et hors_fenetre, null pour
+ *     deja_utilise, refuse et evenement_annule, [250,100,250] pour hors_fenetre, null pour
  *     technique (D47, D50) ; plus aucune vibration à la lecture dans CameraQrScanner.tsx ;
  *  4. components/scan/scan-client.ts : une clé crypto.randomUUID() par lecture envoyée dans Idempotency-Key,
  *     délais d'annulation (AbortController) de 4 000, 6 000 et 8 000 ms, relance avec la même clé sur coupure
@@ -268,7 +268,7 @@ describe('7.2 — jetons --scan-* : texte ≥ 7:1, identiques en clair et en som
 // ── 3. Vibrations ──────────────────────────────────────────────────────────
 
 describe('7.2 — vibrations distinctes, aucune pour un incident technique (D47, D50)', () => {
-    test('vibrationPattern : accepte [60] ; deja_utilise, refuse, evenement_annule [120,60,120,60,120] ; a_encaisser, hors_fenetre [250,100,250] ; technique null', async () => {
+    test('vibrationPattern : accepte [60] ; deja_utilise, refuse, evenement_annule [120,60,120,60,120] ; hors_fenetre [250,100,250] ; technique null', async () => {
         const mod = await importModule('../../lib/hardware/feedback');
         assert.equal(typeof mod.vibrationPattern, 'function', `${FEEDBACK} : vibrationPattern(catégorie) exportée (contrat 6.1, test 3)`);
         const expected: Record<string, number[] | null> = {
@@ -276,7 +276,6 @@ describe('7.2 — vibrations distinctes, aucune pour un incident technique (D47,
             deja_utilise: [120, 60, 120, 60, 120],
             refuse: [120, 60, 120, 60, 120],
             evenement_annule: [120, 60, 120, 60, 120],
-            a_encaisser: [250, 100, 250],
             hors_fenetre: [250, 100, 250],
             technique: null,
         };

@@ -1,5 +1,5 @@
 /**
- * Lot 7, tâche 7.2 (serveur) — clé d'idempotence du scan et de l'encaissement (contrat, sections 3.3, 6.1 et M5 ;
+ * Lot 7, tâche 7.2 (serveur) — clé d'idempotence du scan (contrat, sections 3.3, 6.1 et M5 ;
  * décisions D39, D40).
  *  - POST /api/controller/scan exige l'en-tête Idempotency-Key (^[A-Za-z0-9_-]{8,100}$) : sans clé ou clé
  *    invalide → 400 IDEMPOTENCY_KEY_REQUIRED, sans aucun effet (ni ligne ticket_scans, ni compostage) ;
@@ -8,14 +8,11 @@
  *    simultanés de la même clé → une seule ligne, mêmes réponses ;
  *  - clés différentes, même code → `valid` puis `already_used` avec `ticket.checked_in_by_me: true` ;
  *  - même clé, autre scanneur → nouveau scan (la clé est propre au scanneur) ;
- *  - encaissement (PUT) rejoué par le même scanneur → 200 `valid`, `replayed: true`, un seul paiement
- *    CASH_CHECKIN, total attendu de la caisse incrémenté une seule fois ; rejoué par un autre scanneur → refus ;
  *  - ticket_scans.client_key et ticket_scans.secret_version écrits (M5).
  * Rouge avant correctif (fix(7.2s)) : app/api/controller/scan/route.ts ne lit aucun en-tête Idempotency-Key
  * (:81-133), ticket_scan ne connaît ni client_key ni rejeu (20261102000002_lot5_dette.sql:743-861 : le second
- * envoi répond already_used et ajoute une ligne de refus), ticket_cash_checkin répond 409
- * CASH_ALREADY_PROCESSED au rejeu (20261101000011_lot4_caisse.sql:120), colonnes client_key et
- * secret_version absentes de ticket_scans.
+ * envoi répond already_used et ajoute une ligne de refus), colonnes client_key et secret_version absentes
+ * de ticket_scans. Lot 9 (A16) : le cas de l'encaissement rejoué est supprimé avec le PUT et ticket_cash_checkin.
  * Couverture ajoutée, déjà verte (V) : « jamais deux entrées » (relance 5 fois), garanti aujourd'hui par
  * uq_ticket_scans_one_accepted et le compostage conditionnel ; son garde-fou est le compte des lignes acceptées
  * lu en base (une double entrée le ferait échouer).
@@ -25,10 +22,10 @@ import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
+import { newBuyer, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
 import {
-    cashCheckin, createCashOrderTickets, createTimedEvent, newController, newScanKey, openShift, scansOf, shiftRow, ticketPayload, ticketRow,
+    createTimedEvent, newController, newScanKey, scansOf, ticketPayload, ticketRow,
     type RouteResult,
 } from './acces-helpers';
 import { assertTerrainInvariants, issueFreeTicket, scanWithKey } from './terrain-helpers';
@@ -40,7 +37,6 @@ const PRICE = 5000;
 let partner: TestPartner;
 let ev: SaleEvent;
 let holder: Buyer;
-let cashBuyer: Buyer;
 
 before(async () => {
     partner = await newPartner('scan-idempotence');
@@ -49,7 +45,6 @@ before(async () => {
         { name: STANDARD, price: PRICE, total: 20 },
     ], { startsInHours: 1, durationHours: 6 });
     holder = await newBuyer('idem-porteur', { firstName: 'Mariama', lastName: 'Porteuse' });
-    cashBuyer = await newBuyer('idem-especes');
 });
 
 after(async () => {
@@ -215,60 +210,6 @@ describe('7.2 — rejeu d’un scan par sa clé (D40, M5 étape 1 bis)', () => {
         assert.equal(rowsB.length, 1, `une ligne pour le scanneur B (trouvé ${rowsB.length})`);
         assertKeyColumns(rowsB[0], 'ligne du scanneur B');
         assert.equal(rowsB[0].client_key, key, 'ligne du scanneur B : client_key = clé envoyée');
-    });
-});
-
-// ── 7. Encaissement rejoué ─────────────────────────────────────────────────
-
-describe('7.2 — encaissement (PUT) idempotent par scan_id (D40, M5 ticket_cash_checkin)', () => {
-    test('rejeu par le même scanneur : 200 valid, replayed, même paiement ; un seul paiement CASH_CHECKIN ; total attendu incrémenté une fois ; rejeu par un autre scanneur refusé', async () => {
-        const ctrl = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'idem-caisse' });
-        const other = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'idem-caisse-autre' });
-        for (const u of [ctrl, other]) {
-            const o = await openShift(u, ev.eventId);
-            assert.equal(o.status, 200, `ouverture de caisse : ${show(o)}`);
-        }
-        const shiftOf = async (u: Buyer): Promise<string> => {
-            const { data, error } = await service.from('controller_shifts').select('id').eq('controller_id', u.userId).eq('event_id', ev.eventId).eq('status', 'OUVERT');
-            assert.equal(error, null, `caisse ouverte : ${error?.message}`);
-            assert.equal((data ?? []).length, 1, 'une caisse OUVERT');
-            return String(data![0].id);
-        };
-        const shiftId = await shiftOf(ctrl);
-        const otherShift = await shiftOf(other);
-        const start = Number((await shiftRow(shiftId)).expected_cash_total);
-
-        const order = await createCashOrderTickets(cashBuyer, partner, ev, STANDARD, 1);
-        const ticketId = order.ticketIds[0];
-        const scanned = await scanWithKey(ctrl, await camera(ticketId), newScanKey());
-        assert.equal(scanned.body.result, 'cash_required', `scan d’un billet à régler sur place : ${show(scanned)}`);
-        const scanId = String(scanned.body.scan_id);
-
-        const first = await cashCheckin(ctrl, { scanId, eventId: ev.eventId });
-        assert.equal(first.status, 200, `encaissement : ${show(first)}`);
-        assert.equal(first.body.result, 'valid', `encaissement : ${show(first)}`);
-        const replay = await cashCheckin(ctrl, { scanId, eventId: ev.eventId });
-        assert.equal(replay.status, 200, `rejeu de l’encaissement par le même scanneur : 200 (jamais 409), ${show(replay)}`);
-        assert.equal(replay.body.result, 'valid', `rejeu : valid, ${show(replay)}`);
-        assert.equal(replay.body.replayed, true, `rejeu : replayed = true, ${show(replay)}`);
-        assert.equal(Number(replay.body.amount), PRICE, `rejeu : montant encaissé, ${show(replay)}`);
-        assert.equal(replay.body.payment_id, first.body.payment_id, `rejeu : même paiement, ${show(replay)}`);
-        assert.equal(replay.body.scan_id, first.body.scan_id, `rejeu : scan_id de la ligne acceptée d’origine, ${show(replay)}`);
-        assert.equal(replay.body.shift_id, shiftId, `rejeu : caisse du scanneur, ${show(replay)}`);
-
-        const { data: pays, error } = await service.from('payments').select('id, metadata').eq('ticket_id', ticketId);
-        assert.equal(error, null, `paiements du billet : ${error?.message}`);
-        const cash = (pays ?? []).filter((p) => (p.metadata as Row | null)?.source === 'CASH_CHECKIN');
-        assert.equal(cash.length, 1, `un seul paiement CASH_CHECKIN pour le billet (trouvé ${cash.length})`);
-        assert.equal(Number((await shiftRow(shiftId)).expected_cash_total), start + PRICE, 'total attendu de la caisse incrémenté une seule fois');
-        assert.equal(accepted(await scansOf(ticketId)).length, 1, 'une seule entrée acceptée');
-
-        const byOther = await cashCheckin(other, { scanId, eventId: ev.eventId });
-        assert.ok(byOther.status >= 400 && byOther.status < 500, `rejeu par un autre scanneur : refus 4xx attendu, ${show(byOther)}`);
-        assert.notEqual(byOther.body.result, 'valid', `rejeu par un autre scanneur : jamais valid, ${show(byOther)}`);
-        assert.notEqual(byOther.body.replayed, true, `rejeu par un autre scanneur : pas un rejeu, ${show(byOther)}`);
-        assert.equal(Number((await shiftRow(otherShift)).expected_cash_total), 0, 'caisse de l’autre scanneur inchangée');
-        assert.equal(Number((await shiftRow(shiftId)).expected_cash_total), start + PRICE, 'caisse du scanneur inchangée par le refus');
     });
 });
 

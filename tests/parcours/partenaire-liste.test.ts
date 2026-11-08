@@ -41,6 +41,7 @@
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
@@ -49,7 +50,7 @@ import { inspect } from '../helpers/db';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { importModule, newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
 import { buyConfirmed, jsonRequest, newPartner, type TestPartner } from './finance-helpers';
-import { cashCheckin, createCashOrderTickets, openShift, scan, ticketPayload } from './acces-helpers';
+import { authed, newController, openShift, withAccessSettings } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, createEventInStatus, EVENT_STATUSES, type DraftEvent, type EventStatus } from './cycle-helpers';
 
 const PRICE = 5000;
@@ -179,15 +180,24 @@ function listItems(r: RouteResult, what: string): Array<Record<string, unknown>>
     return items as Array<Record<string, unknown>>;
 }
 
-/** Vente espèces par le partenaire propriétaire (contrat E du lot 4) : caisse, scan cash_required, encaissement. */
-async function cashSale(p: TestPartner, ev: DraftEvent, buyer: Buyer): Promise<void> {
-    const shift = await openShift(p, ev.eventId);
+/**
+ * Lot 9 (A16) : la vente en espèces passe par le guichet. counter_sale exige un contrôleur affecté (NOT_ASSIGNED sinon) :
+ * contrôleur, caisse ouverte, puis un billet « Sur place » vendu, réglé en espèces et composté dans la même transaction.
+ */
+async function cashSale(p: TestPartner, ev: DraftEvent): Promise<void> {
+    const seller = await newController(p, ev.eventId, { canAcceptCash: true, label: 'liste-guichet' });
+    const shift = await openShift(seller, ev.eventId);
     assert.equal(shift.status, 200, `ouverture de caisse : HTTP ${shift.status} ${JSON.stringify(shift.body)}`);
-    const order = await createCashOrderTickets(buyer, p, ev, 'Sur place', 1);
-    const scanned = await scan(p, { eventId: ev.eventId, payload: await ticketPayload(order.ticketIds[0]) });
-    assert.equal(scanned.body.result, 'cash_required', `scan à régler sur place : HTTP ${scanned.status} ${JSON.stringify(scanned.body)}`);
-    const paid = await cashCheckin(p, { scanId: scanned.body.scan_id, eventId: ev.eventId });
-    assert.equal(paid.body.result, 'valid', `encaissement : HTTP ${paid.status} ${JSON.stringify(paid.body)}`);
+    const sold = await withAccessSettings({ 'access.counter_sale_enabled': true }, async () => {
+        const mod = await importModule('../../app/api/controller/counter-sale/route');
+        const res = await (mod.POST as Handler)(authed('/api/controller/counter-sale', 'POST', seller,
+            { eventId: ev.eventId, items: [{ categoryId: ev.categories['Sur place'].id, quantity: 1 }] },
+            { 'idempotency-key': randomUUID() }));
+        const text = await res.text();
+        return { status: res.status, body: JSON.parse(text) as Record<string, unknown> };
+    });
+    assert.equal(sold.status, 200, `vente au guichet : HTTP ${sold.status} ${JSON.stringify(sold.body)}`);
+    assert.equal(sold.body.ok, true, `vente au guichet : ${JSON.stringify(sold.body)}`);
 }
 
 // ── 5.11 : indicateurs sur tous les événements ─────────────────────────────
@@ -203,14 +213,13 @@ describe('5.11 — partner_events_overview : indicateurs calculés sur TOUS les 
         other = await newPartner('liste-autre');
         client = await newBuyer('liste-client');
         const buyer = await newBuyer('liste-acheteur');
-        const cashBuyer = await newBuyer('liste-especes');
 
         byStatus.BROUILLON = await createDraftEvent(partner, 'liste BROUILLON', CATS);
         byStatus.EN_ATTENTE = await createEventInStatus(partner, 'liste EN_ATTENTE', CATS, 'EN_ATTENTE');
         byStatus.VALIDE = await createEventInStatus(partner, 'liste VALIDE', CATS, 'VALIDE');
         byStatus.PUBLIE = await createEventInStatus(partner, 'liste PUBLIE', CATS, 'PUBLIE');
         await buyConfirmed(buyer, byStatus.PUBLIE, [['Standard', 2]]);
-        await cashSale(partner, byStatus.PUBLIE, cashBuyer);
+        await cashSale(partner, byStatus.PUBLIE);
         byStatus.SUSPENDU = await createEventInStatus(partner, 'liste SUSPENDU', CATS, 'PUBLIE');
         await buyConfirmed(buyer, byStatus.SUSPENDU, [['Standard', 1]]);
         await advanceEventTo(byStatus.SUSPENDU.eventId, 'SUSPENDU');

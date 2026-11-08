@@ -43,13 +43,12 @@ import { getFakes } from '../fakes';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { authed, cashCheckin, createCashOrderTickets, createTimedEvent, liveCode, newController, scan, type RouteResult } from './acces-helpers';
+import { authed, createCashOrderTickets, createTimedEvent, liveCode, newController, scan, type RouteResult } from './acces-helpers';
 
 // ── Environnement : limites larges par défaut, petites limites par test ────
 
 const BASE_LIMITS: Record<string, string> = {
     SCAN_PER_SCANNER_10S: '1000',
-    CASH_COLLECT_PER_SCANNER_MIN: '1000',
     LIVE_CODE_PER_USER_MIN: '1000',
     RESOLVE_PHONE_PER_IP_HOUR: '1000',
     VERIFY_OTP_PER_PHONE_15MIN: '1000',
@@ -228,16 +227,6 @@ describe('4.8 — scan : quota par scanneur en base', () => {
 // ── Quotas par route ───────────────────────────────────────────────────────
 
 describe('4.8 — quotas en base sur chaque route', () => {
-    test('encaissement (PUT /api/controller/scan) : CASH_COLLECT_PER_SCANNER_MIN par scanneur', async () => {
-        await withEnv({ CASH_COLLECT_PER_SCANNER_MIN: '2' }, async () => {
-            const scanner = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'caisse' });
-            await alignWindow(60, 8000);
-            const results: RouteResult[] = [];
-            for (let i = 0; i < 3; i += 1) results.push(await cashCheckin(scanner, { scanId: randomUUID(), eventId: ev.eventId }));
-            assertLimitedAfter(results, 2, 'encaissement');
-        });
-    });
-
     test('live-code : LIVE_CODE_PER_USER_MIN par utilisateur', async () => {
         await withEnv({ LIVE_CODE_PER_USER_MIN: '2' }, async () => {
             const holder = await newBuyer('lim-live');
@@ -342,7 +331,7 @@ describe('4.8 — quotas en base sur chaque route', () => {
 // ── Refus si la garde ne répond pas ────────────────────────────────────────
 
 describe('4.8 — garde de quota indisponible : refus (fail-closed)', () => {
-    test('EXECUTE retiré sur quota_reserve → 503 sur scan, encaissement, live-code, resolve-phone, verify-otp, setup, register, invitation', async () => {
+    test('EXECUTE retiré sur quota_reserve → 503 sur scan, live-code, resolve-phone, verify-otp, setup, register, invitation', async () => {
         const scanner = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'garde' });
         const holder = await newBuyer('lim-garde');
         const { ticketIds } = await createCashOrderTickets(holder, partner, ev, 'Standard', 1);
@@ -361,7 +350,6 @@ describe('4.8 — garde de quota indisponible : refus (fail-closed)', () => {
         try {
             await db.query('REVOKE EXECUTE ON FUNCTION public.quota_reserve(jsonb) FROM service_role');
             outcomes.push(['scan', await scan(scanner, unknownPayload())]);
-            outcomes.push(['encaissement', await cashCheckin(scanner, { scanId: randomUUID(), eventId: ev.eventId })]);
             outcomes.push(['live-code', await liveCode(holder, ticketIds[0])]);
             outcomes.push(['resolve-phone', await resolvePhone(freshIp(), randomSenegalPhone('78'))]);
             outcomes.push(['verify-otp', await verifyOtp(freshIp(), randomSenegalPhone('78'))]);
@@ -459,7 +447,6 @@ describe('4.8 — anti-abus SMS', () => {
 
 const QUOTA_VARIABLES: Record<string, string> = {
     SCAN_PER_SCANNER_10S: '30',
-    CASH_COLLECT_PER_SCANNER_MIN: '20',
     LIVE_CODE_PER_USER_MIN: '60',
     RESOLVE_PHONE_PER_IP_HOUR: '30',
     VERIFY_OTP_PER_PHONE_15MIN: '10',

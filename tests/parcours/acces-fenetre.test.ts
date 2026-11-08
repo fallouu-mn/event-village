@@ -6,14 +6,16 @@
  *  - statut : autre que PUBLIE (VALIDE non publié, BROUILLON) → event_not_open, ANNULE → event_cancelled,
  *    SUSPENDU → event_suspended, TERMINE → event_ended ; billet jamais composté ;
  *  - fenêtre réglable par les réglages access.* (finance_setting_set) ;
- *  - encaissement espèces refusé sur un événement ANNULE (billet « à régler sur place » scanné
- *    cash_required avant l'annulation, caisse ouverte) : ni paiement, ni compostage, commande impayée.
+ *  - lot 9 (A16) : le parcours « à régler sur place » est retiré, son cas sur événement annulé avec lui
+ *    (encaissement au scan, ticket_cash_checkin, PUT de la route) ; la fenêtre de scan et le statut de
+ *    l’événement restent prouvés ici sur des billets gratuits ; le billet impayé tombe sur payment_required
+ *    (tests/parcours/nettoyage-sur-place.test.ts).
  * Billets gratuits émis directement (prix 0, aucun contrôle de paiement) pour isoler la règle de date :
  * le checkout refuse un événement passé.
  * Rouge avant correctif : app/api/controller/scan/route.ts:165-193 ne lit aucune date et accepte
  * VALIDE (lib/events/event-status.ts:14), L14-16 n'accepte pas le corps du contrat ; les réglages
- * access.* n'existent pas (finance_setting_set refuse la clé) ; PUT L466-469 n'arrête que TERMINE et
- * SUSPENDU ; generateTicketCode n'existe pas (lib/security/totp.ts).
+ * access.* n'existent pas (finance_setting_set refuse la clé) ; generateTicketCode n'existe pas
+ * (lib/security/totp.ts).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -23,12 +25,10 @@ import { assertAccessInvariants } from '../helpers/access-invariants';
 import { newPartner, type TestPartner } from './finance-helpers';
 import { newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import {
-    assignController, cashCheckin, createCashOrderTickets, createTimedEvent, newController, openShift, scan, scansOf,
-    shiftRow, ticketPayload, ticketRow, withAccessSettings, type RouteResult,
+    assignController, createTimedEvent, newController,
+    scan, scansOf, ticketPayload, ticketRow,
+    withAccessSettings, type RouteResult,
 } from './acces-helpers';
-import { advanceEventTo } from './cycle-helpers';
-
-type Row = Record<string, unknown>;
 
 let partner: TestPartner;
 let controller: Buyer;
@@ -133,50 +133,5 @@ describe('4.4 Fenêtre réglable', () => {
         const ev = await freeEvent('reglageapres', { startsInHours: -7, durationHours: 4 });
         await withAccessSettings({ 'access.scan_window_after_hours': 2 }, () => expectRefused(ev, 'event_ended', 'fenêtre de 2 h après'));
         await withAccessSettings({ 'access.scan_window_after_hours': 6 }, () => expectValid(ev, 'fenêtre de 6 h après'));
-    });
-});
-
-describe('4.4 Encaissement sur un événement annulé', () => {
-    test('billet « à régler sur place » scanné cash_required, puis événement ANNULE → encaissement refusé, rien d’écrit', async () => {
-        const ev = await createTimedEvent(partner.partnerId, 'caisseannule', [{ name: 'Tribune', price: 3000, total: 10 }]);
-        const cashier = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'caisseannule' });
-        const order = await createCashOrderTickets(buyer, partner, ev, 'Tribune', 1);
-        const ticketId = order.ticketIds[0];
-
-        const opened = await openShift(cashier, ev.eventId);
-        assert.equal(opened.status, 200, `ouverture de caisse : ${show(opened)}`);
-        const { data: shifts, error: shErr } = await service.from('controller_shifts').select('id')
-            .eq('controller_id', cashier.userId).eq('event_id', ev.eventId).eq('status', 'OUVERT');
-        assert.equal(shErr, null, shErr?.message);
-        assert.equal(shifts?.length, 1, 'une caisse ouverte');
-        const shiftId = String(shifts![0].id);
-
-        const scanned = await scan(cashier, { eventId: ev.eventId, payload: await ticketPayload(ticketId) });
-        assert.equal(scanned.body.result, 'cash_required', `scan avant annulation : ${show(scanned)}`);
-        assert.equal(Number(scanned.body.amount_due ?? (scanned.body.ticket as Row | undefined)?.amount_due), 3000, `montant dû = prix du billet : ${show(scanned)}`);
-        assert.equal(typeof scanned.body.scan_id, 'string', 'scan_id du scan cash_required');
-
-        // Lot 5 (contrats D3 et D6) : le statut ne change plus par UPDATE ; l'annulation réelle (event_cancel)
-        // annule aussi, dans la même transaction, le billet « à régler sur place » jamais payé.
-        await advanceEventTo(ev.eventId, 'ANNULE');
-
-        const r = await cashCheckin(cashier, { scanId: scanned.body.scan_id, eventId: ev.eventId });
-        assert.ok(r.status < 500, `refus métier, pas une erreur serveur : ${show(r)}`);
-        assert.notEqual(r.body.result, 'valid', `encaissement sur un événement annulé : ${show(r)}`);
-        assert.ok(['event_cancelled', 'cancelled'].includes(String(r.body.result)) || /CANCEL/.test(String(r.body.code ?? '')), `refus motivé par l’annulation : ${show(r)}`);
-
-        const t = await ticketRow(ticketId);
-        assert.equal(t.status, 'ANNULE', 'billet annulé par l’annulation, jamais composté');
-        assert.equal(t.payment_id, null, 'aucun paiement rattaché au billet');
-        const { data: orderRow } = await service.from('orders').select('payment_status, paid_amount').eq('id', order.orderId).single();
-        assert.notEqual(orderRow?.payment_status, 'SUCCESS', 'commande toujours impayée');
-        assert.equal(Number(orderRow?.paid_amount ?? 0), 0, 'rien d’encaissé sur la commande');
-        const { data: pays, error: payErr } = await service.from('payments').select('id').eq('shift_id', shiftId);
-        assert.equal(payErr, null, payErr?.message);
-        assert.deepEqual(pays, [], 'aucun paiement hors plateforme rattaché à la caisse');
-        assert.equal(Number((await shiftRow(shiftId)).expected_cash_total), 0, 'total attendu de la caisse inchangé');
-
-        const again = await scan(cashier, { eventId: ev.eventId, payload: await ticketPayload(ticketId) });
-        assert.equal(again.body.result, 'event_cancelled', `scan après annulation : ${show(again)}`);
     });
 });

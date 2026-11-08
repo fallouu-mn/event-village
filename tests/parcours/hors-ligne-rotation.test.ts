@@ -21,7 +21,6 @@
  *  7. VALIDE → UTILISE ne fait pas tourner la version : second scan du même code → already_used ;
  *  8. trigger : UPDATE de totp_secret → version + 1 (secret posé gardé) ; security_version + 2 → TK409 ;
  *     security_version + 1 → nouveau secret tiré ;
- *  9. scan cash_required, transfert, encaissement (PUT) → 409 CASH_QR_OUTDATED (qr_expired), rien d'encaissé ;
  * 10. reprise : chaque billet de la base a une ligne d'historique de sa version courante.
  *
  * Pourquoi rouge aujourd'hui :
@@ -33,8 +32,7 @@
  *  - 6 : app/api/controller/scan/route.ts:109-111 lit totp_secret sans verrou et n'envoie que totp_ok ;
  *    ticket_scan verrouille ensuite le billet (:798), le trouve VALIDE et l'accepte avec un code de
  *    l'ancienne version (violation de (p)) ;
- *  - 8 : aucun trigger sur tickets ; 9 : ticket_cash_checkin (20261101000011_lot4_caisse.sql:95-181) ne
- *    compare aucune version (encaissement accepté) ; 10 : table d'historique absente ;
+ *  - 8 : aucun trigger sur tickets ; 10 : table d'historique absente ;
  *  - 7 : VERT dès l'écriture (couverture ajoutée) : garde-fou qui détecte un trigger qui tournerait au
  *    compostage (le second scan donnerait qr_expired au lieu de already_used).
  * Fin de suite : assertTerrainInvariants (rouge tant que M4 et M5 manquent, objets nommés).
@@ -49,7 +47,7 @@ import { advanceEventTo } from './cycle-helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { buyConfirmed } from './finance-helpers';
 import {
-    cashCheckin, createCashOrderTickets, newController, newScanKey, openShift, scan, scansOf, shiftRow, ticketPayload, ticketRow,
+    newController, newScanKey, scan, scansOf, ticketPayload, ticketRow,
     type RouteResult,
 } from './acces-helpers';
 import {
@@ -384,37 +382,6 @@ describe('7.1 Trigger de rotation et reprise (M4.2, M4.3)', () => {
         assert.match(String(step.data!.totp_secret), /^[0-9a-f]{64}$/, 'secret de 64 hexadécimaux');
         assert.notEqual(step.data!.totp_secret, posed, 'nouveau secret tiré quand seule la version avance');
         await assertRotated(ticketId, 3, 'REGENERATE', off.holder!.userId, 'version avancée');
-    });
-
-    test('9. scan cash_required, transfert, encaissement → 409 CASH_QR_OUTDATED (qr_expired), rien d’encaissé', async () => {
-        const off = await createOfflineEvent('caisse', { categories: [{ name: 'Sur place', price: 2000, total: 20 }], holder: null });
-        const cashier = await newController(off.partner, off.eventId, { canAcceptCash: true, label: 'hl-caisse' });
-        const opened = await openShift(cashier, off.eventId);
-        assert.equal(opened.status, 200, `ouverture de caisse : ${show(opened)}`);
-        const { data: shifts, error: shErr } = await service.from('controller_shifts').select('id').eq('controller_id', cashier.userId).eq('event_id', off.eventId).eq('status', 'OUVERT');
-        assert.equal(shErr, null, `caisse : ${shErr?.message}`);
-        assert.equal((shifts ?? []).length, 1, 'une caisse ouverte');
-        const shiftId = String(shifts![0].id);
-        const before = Number((await shiftRow(shiftId)).expected_cash_total);
-        const buyer = await newBuyer('hl-caisse');
-        const order = await createCashOrderTickets(buyer, off.partner, off.ev, 'Sur place', 1);
-        const ticketId = order.ticketIds[0];
-
-        const first = await camera(cashier, off.eventId, await ticketPayload(ticketId));
-        assert.equal(first.body.result, 'cash_required', show(first));
-        const scanId = String(first.body.scan_id);
-        await transferTo(ticketId, buyer, 'caisse');
-        assert.equal(await securityVersion(ticketId), 2, 'précondition : billet transféré en version 2');
-
-        const res = await cashCheckin(cashier, { scanId, eventId: off.eventId });
-        assert.equal(res.status, 409, `encaissement d’un scan de l’ancienne version : ${show(res)}`);
-        assert.deepEqual({ code: res.body.code, result: res.body.result }, { code: 'CASH_QR_OUTDATED', result: 'qr_expired' }, show(res));
-        await assertNotConsumed(ticketId, 'VALIDE', 'encaissement refusé');
-        assert.equal((await ticketRow(ticketId)).payment_id, null, 'aucun paiement rattaché au billet');
-        const { data: pays, error: pErr } = await service.from('payments').select('id').eq('ticket_id', ticketId);
-        assert.equal(pErr, null, `paiements : ${pErr?.message}`);
-        assert.deepEqual(pays ?? [], [], 'aucun paiement espèces créé');
-        assert.equal(Number((await shiftRow(shiftId)).expected_cash_total), before, 'caisse non créditée');
     });
 
     test('10. reprise : chaque billet a une ligne d’historique de sa version courante', async () => {

@@ -120,7 +120,7 @@ export async function ticketRow(id: string): Promise<Record<string, unknown>> {
 
 export interface CashOrder { orderId: string; ticketIds: string[] }
 
-/** Commande impayée « à régler sur place » et ses billets (comme un paiement à l'entrée). */
+/** Commande impayée et ses billets : billet payant sans paiement rattaché (fixture du filet payment_required, lot 9 A16 ; nom conservé, L48). */
 export async function createCashOrderTickets(buyer: Buyer, partner: TestPartner, ev: SaleEvent, category: string, count: number): Promise<CashOrder> {
     const cat = ev.categories[category];
     const total = cat.price * count;
@@ -192,11 +192,6 @@ export async function scan(user: Buyer, body: Record<string, unknown>, opts: Sca
     const key = opts.idempotencyKey === undefined ? newScanKey() : opts.idempotencyKey;
     const headers: Record<string, string> = key === null ? {} : { 'idempotency-key': key };
     return call(POST, authed('/api/controller/scan', 'POST', user, body, headers));
-}
-
-export async function cashCheckin(user: Buyer, body: Record<string, unknown>): Promise<RouteResult> {
-    const { PUT } = await importModule('../../app/api/controller/scan/route');
-    return call(PUT, authed('/api/controller/scan', 'PUT', user, body));
 }
 
 export async function openShift(user: Buyer, eventId: string, openingFloat = 0): Promise<RouteResult> {

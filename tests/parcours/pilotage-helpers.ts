@@ -13,8 +13,9 @@
  *      billet de P4 remboursé (ticket_refund_request, versement confirmé) ;
  *    - un panier en cours de paiement : Standard ×3 (Ndeye Faye), paiement PENDING, réservation ACTIVE ;
  *    - une invitation : billet VIP à 0 F, canal INVITATION (Mariama Cisse), stock vendu + 1 ;
- *    - une vente espèces au scan : commande « à régler sur place » de 2 billets Standard (Ousmane Ba),
- *      le premier encaissé au scan puis composté (caisse S1), le second laissé impayé ;
+ *    - une vente espèces au scan (données historiques, lot 9 A16 : legacyCashCheckin reproduit en base ce que
+ *      l'encaissement retiré laissait) : commande impayée de 2 billets Standard (Ousmane Ba), le premier encaissé au
+ *      scan puis composté (caisse S1), le second laissé impayé ;
  *    - ventes au guichet (contrat C7 : billet vendu ET composté, scan COUNTER) : Étudiant ×1 sur S1,
  *      Standard ×2 sur S2 ;
  *    - contrôleurs : C1 Ibrahima Ndiaye (« Porte Nord », espèces), C2 Fatou Sarr (« Porte Sud »,
@@ -22,7 +23,7 @@
  *      affecté C3 Lamine Diallo (tentative refusée forbidden) ;
  *    - scans : C1 composte P1-a, C1 puis C2 retentent P1-a (already_used ×2 : le billet tenté 3 fois),
  *      C2 composte P2, C2 présente P3-b avec un code de plus de 40 s (qr_expired), C3 tente P3-a
- *      (forbidden), C1 composte l'invitation, C1 encaisse et composte le billet à régler sur place ;
+ *      (forbidden), C1 composte l'invitation ; ligne historique : C1 a encaissé et composté le billet ESP-a ;
  *    - incidents techniques (scan_incidents, contrat C8) : C1 NETWORK ×2, C2 TIMEOUT ×1 et
  *      RATE_LIMITED ×1 ;
  *    - caisses : S1 (C1, fonds 10 000 F) encaisse 5 000 F au scan et 2 000 F au guichet, clôturée par
@@ -67,11 +68,12 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { CashoutService } from '../../lib/payments/cashout.service';
+import { openConcurrentClient } from '../helpers/db';
 import { routeContext } from './helpers';
 import { cart, checkout, importModule, newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
 import { buyConfirmed, jsonRequest, newPartner, withSettings, type Purchase, type TestPartner } from './finance-helpers';
 import {
-    authed, cashCheckin, createCashOrderTickets, newController, openShift, scan, ticketPayload, ticketRow, type RouteResult,
+    authed, createCashOrderTickets, newController, openShift, scan, ticketPayload, ticketRow, type RouteResult,
 } from './acces-helpers';
 import { createEventInStatus, type DraftEvent } from './cycle-helpers';
 
@@ -126,10 +128,10 @@ export const ENTRY_POINTS = { c1: 'Porte Nord', c2: 'Porte Sud', c4: 'Entrée VI
  * remboursé = 5 000 en ligne + 0 espèces à rembourser par l'organisateur.
  * entrées = P1-a, P2, INV, ESP-a, G1, G2-a, G2-b = 7, dont guichet 3 ; taux = 7 / (10 + 1).
  * refus = already_used ×2 (P1-a par C1 puis C2), qr_expired ×1 (P3-b), forbidden ×1 (C3) = 4 ; la
- *   ligne cash_required consommée par l'encaissement d'ESP-a n'est pas un refus (billet encaissé puis composté).
+ *   ligne cash_required consommée d'ESP-a n'est pas un refus (donnée historique, lot 9 A16 : billet encaissé puis composté).
  * par contrôleur : C1 entrées 4 (P1-a, INV, ESP-a, G1), refus 1 ; C2 entrées 3 (P2, G2-a, G2-b), refus 2.
  * par point d'entrée : Porte Nord 4, Porte Sud 3. par catégorie : Standard 4, VIP 2, Étudiant 1.
- * tentatives multiples : P1-a seul (3 tentatives, dernière already_used) ; le couple cash_required →
+ * tentatives multiples : P1-a seul (3 tentatives, dernière already_used) ; le couple historique cash_required →
  *   valid d'ESP-a est exclu.
  * caisses : S1 fonds 10 000, encaissé 5 000 (scan) + 2 000 (guichet) = 7 000, déclaré 6 500, écart −500 ;
  *   S2 fonds 0, encaissé 10 000, ouverte.
@@ -420,7 +422,7 @@ export async function eventTicketRows(eventId: string): Promise<Row[]> {
     return (data ?? []) as Row[];
 }
 
-/** Règle des suites : une ligne non acceptée est un refus, sauf le cash_required consommé par un encaissement. */
+/** Règle des suites : une ligne non acceptée est un refus, sauf le cash_required historique consommé par un encaissement. */
 export function isRefusal(scanRow: Row): boolean {
     if (scanRow.accepted === true) return false;
     return !(scanRow.result === 'cash_required' && scanRow.consumed_at !== null && scanRow.consumed_at !== undefined);
@@ -446,6 +448,70 @@ export async function logRefusedAttempt(eventId: string, scannerId: string): Pro
     });
     assert.equal(error, null, `journal d’une tentative : ${error?.message}`);
     return hash;
+}
+
+/**
+ * Lot 9 (A16, L46, X5) : l'encaissement au scan est retiré, mais ses lignes restent en base sur les anciennes données et les
+ * filtres du pilotage continuent de les lire. Ce jeu les reproduit donc telles que ticket_cash_checkin les laissait
+ * (M/20261105000005_lot7_scan.sql:335-360), sur une connexion directe (rôle postgres) et en une transaction : scan
+ * cash_required consommé, paiement ESPECES hors plateforme CASH_CHECKIN, billet UTILISE avec payment_id, commande créditée,
+ * total attendu de la caisse crédité, scan valid accepté. Une vente au guichet ne convient pas : elle n'a pas de porteur
+ * (pilotage-cloture-export attend ESP-a au nom de l'acheteur). Renvoie l'identifiant du paiement.
+ */
+async function legacyCashCheckin(eventId: string, scanner: Buyer, shiftId: string, ticketId: string): Promise<string> {
+    const db = await openConcurrentClient({ applicationName: 'ev-test-pilotage-historique' });
+    try {
+        const { rows: [t] } = await db.query<{ price: string; security_version: number; order_id: string; user_id: string }>(
+            'SELECT price, security_version, order_id, user_id FROM public.tickets WHERE id = $1 FOR UPDATE', [ticketId]);
+        assert.ok(t, `billet à encaisser ${ticketId} introuvable`);
+        assert.ok(t.order_id, 'billet à encaisser : commande impayée attendue (order_id)');
+        const amount = Number(t.price);
+        const hash = randomBytes(32).toString('hex');
+        const required = await db.query<{ id: string }>(
+            `INSERT INTO public.ticket_scans (ticket_id, event_id, scanner_id, result, accepted, method, identity_verified, payload_hash,
+                                              amount_due, secret_version, consumed_at, created_at)
+             VALUES ($1, $2, $3, 'cash_required', FALSE, 'QR', FALSE, $4, $5, $6, now(), now() - interval '1 second')
+             RETURNING id`, [ticketId, eventId, scanner.userId, hash, amount, t.security_version]);
+        const scanId = required.rows[0].id;
+        const payment = await db.query<{ id: string }>(
+            `INSERT INTO public.payments (transaction_id, client_id, partner_id, order_id, ticket_id, event_id, payment_target, amount, currency,
+                                          payment_method, is_platform_payment, offline_payment_method, aggregator, facial_amount,
+                                          aggregator_fee, service_fee, gross_event_village_revenue, net_event_village_revenue,
+                                          partner_payout_amount, status, paid_at, shift_id, metadata)
+             VALUES ('TX-CASH-' || upper(replace(gen_random_uuid()::text, '-', '')), $1, (SELECT partner_id FROM public.events WHERE id = $4::uuid), $2, $3, $4, 'TICKET',
+                     $5, 'XOF', 'ESPECES', FALSE, 'ESPECES', NULL, $5, 0, 0, 0, 0, 0, 'SUCCESS', now(), $6,
+                     jsonb_build_object('source', 'CASH_CHECKIN', 'scan_id', $7::text))
+             RETURNING id`, [t.user_id, t.order_id, ticketId, eventId, amount, shiftId, scanId]);
+        const paymentId = payment.rows[0].id;
+        const ticket = await db.query(
+            `UPDATE public.tickets
+                SET payment_id = $1, status = 'UTILISE', checked_in_at = now(), checked_in_by = $2, updated_at = now()
+              WHERE id = $3 AND status = 'VALIDE'`, [paymentId, scanner.userId, ticketId]);
+        assert.equal(ticket.rowCount, 1, 'billet encaissé puis composté');
+        const order = await db.query(
+            `UPDATE public.orders
+                SET paid_amount = paid_amount + $1::numeric,
+                    balance_amount = GREATEST(total_amount - (paid_amount + $1::numeric), 0),
+                    payment_status = CASE WHEN NOT EXISTS (
+                            SELECT 1 FROM public.tickets x WHERE x.order_id = $2::uuid AND x.payment_id IS NULL AND x.id <> $3::uuid)
+                        THEN 'SUCCESS'::payment_status_enum ELSE 'PARTIAL'::payment_status_enum END,
+                    updated_at = now()
+              WHERE id = $2::uuid`, [amount, t.order_id, ticketId]);
+        assert.equal(order.rowCount, 1, 'commande créditée');
+        const shift = await db.query(
+            `UPDATE public.controller_shifts SET expected_cash_total = expected_cash_total + $1::numeric, updated_at = now()
+              WHERE id = $2 AND status = 'OUVERT'`, [amount, shiftId]);
+        assert.equal(shift.rowCount, 1, 'caisse OUVERT créditée');
+        await db.query(
+            `INSERT INTO public.ticket_scans (ticket_id, event_id, scanner_id, result, accepted, method, identity_verified, payload_hash,
+                                              shift_id, amount_due, secret_version)
+             VALUES ($1, $2, $3, 'valid', TRUE, 'QR', FALSE, $4, $5, $6, $7)`,
+            [ticketId, eventId, scanner.userId, hash, shiftId, amount, t.security_version]);
+        await db.commit();
+        return paymentId;
+    } finally {
+        await db.close();
+    }
 }
 
 // ── Construction du jeu ────────────────────────────────────────────────────
@@ -556,15 +622,12 @@ export async function buildKnownDataset(label: string): Promise<KnownDataset> {
     await scanExpect(c3, eventId, p3a, 'forbidden', 'C3 non affecté tente P3-a');
     await scanExpect(c1, eventId, String(inv.id), 'valid', 'C1 composte l’invitation');
 
-    // Encaissement au scan du premier billet à régler sur place, par C1 (caisse S1)
+    // Encaissement au scan historique du premier billet (lot 9, A16), par C1 (caisse S1)
     const [cashPaid, cashUnpaid] = cashOrder.ticketIds;
-    const cashScan = await scanExpect(c1, eventId, cashPaid, 'cash_required', 'C1 scanne le billet à régler sur place');
-    const checkin = await cashCheckin(c1, { scanId: cashScan.body.scan_id, eventId });
-    assert.equal(checkin.status, 200, `encaissement au scan : ${show(checkin)}`);
-    assert.equal(checkin.body.result, 'valid', `encaissement au scan accepté : ${show(checkin)}`);
+    const cashCheckinPayment = await legacyCashCheckin(eventId, c1, s1, cashPaid);
     const cashTicket = await ticketRow(cashPaid);
     assert.equal(cashTicket.status, 'UTILISE', 'billet encaissé puis composté');
-    const cashCheckinPayment = String(cashTicket.payment_id);
+    assert.equal(String(cashTicket.payment_id), cashCheckinPayment, 'paiement historique rattaché au billet');
 
     // Ventes au guichet (contrat C7 : billets compostés dans la même transaction)
     const saleS1 = await counterSale(c1, eventId, [[categoryIds[ETUDIANT], 1]]);

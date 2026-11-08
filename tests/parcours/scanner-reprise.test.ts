@@ -207,7 +207,7 @@ describe('A10 — scan en attente de verdict (même clé au retour, 2 minutes au
         const base = { message: 'm', httpStatus: 200 } as const;
         assert.equal(mod.isVerdictReceived({ ...base, result: 'valid' }), true);
         assert.equal(mod.isVerdictReceived({ ...base, result: 'already_used' }), true);
-        assert.equal(mod.isVerdictReceived({ ...base, result: 'cash_required' }), true);
+        assert.equal(mod.isVerdictReceived({ ...base, result: 'payment_required' }), true);
         for (const failure of ['bad_request', 'forbidden', 'rate_limited', 'auth'] as const) {
             assert.equal(mod.isVerdictReceived({ ...base, result: 'server_error', failure }), true, `${failure} : rien n’a été traité, rien à renvoyer`);
         }
