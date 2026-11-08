@@ -164,6 +164,7 @@ const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendController
     'app/api/auth/send-otp/route.ts': { method: 'sendOtp', why: 'code de connexion, inscription, réinitialisation' },
     'app/api/auth/sms-hook/route.ts': { method: 'sendOtp', why: 'hook « Send SMS » de Supabase Auth' },
     'app/api/withdrawals/otp/route.ts': { method: 'sendOtp', why: 'code de retrait' },
+    'app/api/account/phone/start/route.ts': { method: 'sendOtp', why: 'code de changement de numéro (lot 9, 9.2)' },
     'app/api/partner/register/route.ts': { method: 'sendOtp', why: "code d'inscription partenaire" },
     'app/api/partner/team/invite/route.ts': { method: 'sendControllerInvite', why: "code d'activation d'un nouveau contrôleur" },
 };
