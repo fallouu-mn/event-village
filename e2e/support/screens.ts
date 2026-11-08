@@ -816,7 +816,7 @@ export const SCREENS: readonly Screen[] = [
             const recorded = Number((await dialog.locator('dd').nth(1).innerText()).replace(/\D/g, ''));
             await dialog.getByLabel(/^espèces encaissées comptées/i).fill(String(recorded - 2000));
             await dialog.getByRole('button', { name: /^clôturer la caisse$/i }).click();
-            await expect(dialog.getByText(/^écart constaté par le serveur$/i)).toBeVisible();
+            await expect(dialog.getByText(/^écart constaté$/i)).toBeVisible();
             await expect(dialog.getByLabel(/^justification de l.écart/i)).toBeVisible();
         },
     },

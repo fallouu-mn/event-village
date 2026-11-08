@@ -955,7 +955,7 @@ test('12. clôture de caisse avec écart, sans réponse imposée : refus 400, é
         const refusedBody = (await refused.json()) as Record<string, unknown>;
         expect(refused.status(), `clôture avec écart : ${JSON.stringify(refusedBody)}`).toBe(400);
         expect(refusedBody.code, `clôture avec écart : ${JSON.stringify(refusedBody)}`).toBe('JUSTIFICATION_REQUIRED');
-        await expect(dialog.getByText(/^écart constaté par le serveur$/i)).toBeVisible();
+        await expect(dialog.getByText(/^écart constaté$/i)).toBeVisible();
         // Soft : la caisse est fermée ensuite, même quand l'écart n'est pas affiché
         expect.soft(refusedBody.discrepancy, 'écart renvoyé par le serveur (contrat 3.6)').toBe(1000);
         await expect.soft(dialog.getByText(/écart de\s1\s000\sF\sCFA/i), 'texte « Écart de 1 000 F CFA » à l’écran').toBeVisible();
