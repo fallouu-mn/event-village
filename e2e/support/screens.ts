@@ -536,7 +536,7 @@ export const SCREENS: readonly Screen[] = [
             const card = categorySections(page).filter({ hasText: 'Invitations seulement' });
             await expect(card.getByRole('checkbox', { name: ONLINE_BOX })).not.toBeChecked();
             await expect(card.getByRole('checkbox', { name: COUNTER_BOX })).not.toBeChecked();
-            await expect(card.getByText('Cette catégorie n’est vendue ni en ligne ni au guichet. L’application n’envoie pas encore d’invitations : aucun billet ne sera distribué pour le moment.')).toBeVisible();
+            await expect(card.getByText('Cette catégorie n’est vendue ni en ligne ni au guichet. Distribuez ses billets depuis l’onglet Invitations du pilotage.')).toBeVisible();
             await revealCenter(card.getByRole('checkbox', { name: ONLINE_BOX }));
         },
     },

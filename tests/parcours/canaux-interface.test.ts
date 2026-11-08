@@ -31,8 +31,8 @@ const CHANNELS_MODULE = '../../lib/events/category-channels';
 const TICKETING_MODULE = '../../components/events/EventTicketing';
 const VALIDATION_MODULE = '../../lib/validations/event';
 
-/** Aide de `none`, mot pour mot (contrat 4.1, AR8, L11). */
-const NONE_HELP = 'Cette catégorie n’est vendue ni en ligne ni au guichet. L’application n’envoie pas encore d’invitations : aucun billet ne sera distribué pour le moment.';
+/** Aide de `none`, mot pour mot (contrat 4.1, AR8, L11, AM6 du lot 9). */
+const NONE_HELP = 'Cette catégorie n’est vendue ni en ligne ni au guichet. Distribuez ses billets depuis l’onglet Invitations du pilotage.';
 
 const CASES: Array<[boolean, boolean, string]> = [
     [true, true, 'En ligne et au guichet'],
