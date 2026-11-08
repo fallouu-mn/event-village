@@ -555,3 +555,14 @@ $$;
 
 REVOKE ALL ON FUNCTION public.ticket_category_guard(uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ticket_category_guard(uuid, uuid) TO service_role;
+
+
+-- ============================================================================
+-- A27 — le trigger anti-boucle du parrainage couvre aussi l'UPDATE, quel que soit le rôle (L42)
+-- Trigger seul : check_no_circular_referral n'est pas recopiée, son search_path posé par
+-- 20261031000001_functions_search_path.sql:25 est conservé. UPDATE OF : is_active et expires_at passent sans coût.
+-- ============================================================================
+DROP TRIGGER IF EXISTS trg_check_circular_referral ON public.referral_relationships;
+CREATE TRIGGER trg_check_circular_referral
+    BEFORE INSERT OR UPDATE OF sponsor_id, referred_id ON public.referral_relationships
+    FOR EACH ROW EXECUTE FUNCTION public.check_no_circular_referral();
