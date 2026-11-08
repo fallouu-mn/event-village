@@ -701,3 +701,13 @@ $$;
 
 REVOKE ALL ON FUNCTION public.partner_register_finalize(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.partner_register_finalize(jsonb) TO service_role;
+
+
+-- ============================================================================
+-- A24 — lecture du journal d'audit réservée au SUPERADMIN, en base aussi.
+-- La politique portait ce nom, mais sa condition était is_admin() (0003_rls.sql:355), vraie pour un ADMIN :
+-- la route refusait, PostgREST non. Tous les lecteurs de l'application passent par le service_role, aucun ne change.
+-- ============================================================================
+DROP POLICY IF EXISTS "audit_logs_superadmin_read" ON public.audit_logs;
+CREATE POLICY "audit_logs_superadmin_read" ON public.audit_logs
+    FOR SELECT USING (public.is_superadmin());
