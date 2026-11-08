@@ -12,6 +12,7 @@ import {
   Moon,
   Phone,
   QrCode,
+  ReceiptText,
   Shield,
   Sparkles,
   Sun,
@@ -27,6 +28,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/components/ui/cn';
 import { TONE_ICON, type Tone } from '@/components/ui/tones';
+import { ProfileForm } from '@/components/profile/ProfileForm';
+import { isDeliverableEmail } from '@/lib/notifications/channels';
 
 /**
  * Profil et réglages du compte (lot 6, contrat H4 : migré sur le système de design pour recevoir le lien
@@ -152,6 +155,13 @@ export default function ProfilePage() {
 
   const shortcuts: Shortcut[] = [
     {
+      href: '/profile/payments',
+      title: 'Mes paiements',
+      description: 'L’historique de vos paiements et de vos remboursements',
+      icon: ReceiptText,
+      tone: 'brand',
+    },
+    {
       href: '/wallet',
       title: 'Portefeuille et parrainage',
       description: 'Vos gains de parrainage et vos demandes de retrait',
@@ -216,7 +226,7 @@ export default function ProfilePage() {
               </dt>
               <dd className="text-fg tabular-nums">{profile.phone || 'Non renseigné'}</dd>
             </div>
-            {profile.email && (
+            {isDeliverableEmail(profile.email) && (
               <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
                 <dt className="flex items-center gap-1.5">
                   <Mail size={16} aria-hidden="true" />
@@ -239,6 +249,8 @@ export default function ProfilePage() {
           </dl>
         </div>
       </section>
+
+      <ProfileForm profile={profile} />
 
       <section aria-labelledby="profil-raccourcis" className="space-y-3">
         <h2 id="profil-raccourcis" className="text-base font-semibold text-fg">Réglages et espaces</h2>

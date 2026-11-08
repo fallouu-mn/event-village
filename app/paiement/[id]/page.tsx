@@ -288,6 +288,15 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         description: `Ce paiement n’a pas pu être honoré : ${amount} vous est reversé sur le compte ${label ?? 'Mobile Money'} qui a payé.`,
         icon: RotateCcw,
       };
+    case 'PARTIAL':
+      return {
+        badge: 'Confirmé',
+        chip: 'Remboursé en partie',
+        tone: 'success',
+        title: 'Paiement remboursé en partie',
+        description: `Une partie de ce paiement a été reversée sur le compte ${label ?? 'Mobile Money'} qui a payé.`,
+        icon: CheckCircle2,
+      };
     case 'REFUNDED':
       return {
         badge: 'Échoué',
