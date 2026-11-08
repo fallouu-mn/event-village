@@ -28,6 +28,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/components/ui/cn';
 import { TONE_ICON, type Tone } from '@/components/ui/tones';
+import { AvatarEditor } from '@/components/profile/AvatarEditor';
 import { ProfileForm } from '@/components/profile/ProfileForm';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
@@ -205,9 +206,7 @@ export default function ProfilePage() {
       />
 
       <section aria-labelledby="profil-identite" className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-5 text-center sm:flex-row sm:items-start sm:text-left">
-        <span className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl border border-brand-fg/30 bg-brand-bg text-xl font-bold text-brand-fg" aria-hidden="true">
-          {initials}
-        </span>
+        <AvatarEditor avatarUrl={profile.avatar_url} initials={initials} />
         <div className="min-w-0 flex-1 space-y-2">
           <h2 id="profil-identite" className="break-words text-lg font-semibold text-fg">{fullName}</h2>
           <div className="flex flex-wrap justify-center gap-2 sm:justify-start">

@@ -35,6 +35,7 @@ import {
   Search,
   type LucideIcon,
 } from 'lucide-react';
+import { Avatar } from '@/components/ui/Avatar';
 import { Logo } from '@/components/ui/Logo';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { IconButton } from '@/components/ui/IconButton';
@@ -43,6 +44,7 @@ import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
+import { isDeliverableEmail } from '@/lib/notifications/channels';
 
 /** Interrupteur SUPERADMIN d'un service (features.halls_enabled, features.tables_enabled, features.orders_enabled). */
 type FeatureKey = keyof ClientFeatureFlags;
@@ -304,23 +306,21 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const userFirst = profile?.first_name || (user?.user_metadata?.first_name as string) || '';
   const userLast = profile?.last_name || (user?.user_metadata?.last_name as string) || '';
+  // Lot 9 (9.2) : l'adresse technique d'un compte par téléphone ne sert ni de nom ni d'initiales.
+  const userEmail = isDeliverableEmail(user?.email) ? user.email : null;
   const displayName = userFirst || userLast
     ? `${userFirst} ${userLast}`.trim()
-    : user?.email?.split('@')[0] || 'Mon compte';
+    : userEmail?.split('@')[0] || 'Mon compte';
 
   const initials = userFirst || userLast
     ? `${userFirst[0] || 'U'}${userLast[0] || 'E'}`.toUpperCase()
-    : user?.email
-    ? user.email.slice(0, 2).toUpperCase()
+    : userEmail
+    ? userEmail.slice(0, 2).toUpperCase()
     : 'EV';
 
   const accountSubtitle = isAmbassador ? 'Ambassadeur' : roleLabel(profile?.role);
 
-  const avatar = (
-    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-border bg-brand-bg text-sm font-bold text-brand-fg" aria-hidden="true">
-      {initials}
-    </span>
-  );
+  const avatar = <Avatar src={profile?.avatar_url} initials={initials} />;
 
   // Les routes /controller/* ont leur propre layout — ne pas injecter AppLayout. Le billet hors ligne
   // (/billet/hors-ligne, D26) est rendu nu : page statique servie sans réseau, sans en-tête ni navigation.
