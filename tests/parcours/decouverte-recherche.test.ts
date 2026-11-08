@@ -9,8 +9,8 @@
  *  5. un événement non public n'est jamais trouvé, même par son titre exact ; une fiche n'expose aucun stock.
  *
  * Les événements portent des marques propres à la suite : chaque comparaison ne lit que ses lignes.
- * Limite signalée : les écrans n'appellent pas ces paramètres, app/explore/page.tsx filtre côté navigateur la liste
- * complète (lib/events/catalog-client.ts:62). Cette suite prouve donc la route, pas l'écran de recherche.
+ * Lot 9 (A28) : les écrans appellent désormais ces paramètres (readCatalog dans app/explore/page.tsx et app/page.tsx).
+ * Cette suite prouve la route ; le branchement des écrans est prouvé par decouverte-ecrans.test.ts et les e2e.
  * Suite qui écrit, annoncée verte : assertTerrainInvariants (Conventions).
  */
 import '../helpers/env';
