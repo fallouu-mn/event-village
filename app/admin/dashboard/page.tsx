@@ -35,6 +35,7 @@ import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { toastMessages } from '@/lib/messages/toast-messages';
 import { formatDateTime, formatFcfa, formatInteger, toDakarDateTimeLocal } from '@/lib/format';
@@ -146,6 +147,7 @@ function PartnersSkeleton() {
 
 export default function AdminDashboardPage() {
   const toast = useToast();
+  const { hasRole } = useAuth();
 
   const [kpis, setKpis] = useState<AdminKPIs | null>(null);
   const [metricsPhase, setMetricsPhase] = useState<Phase>('loading');
@@ -586,9 +588,11 @@ export default function AdminDashboardPage() {
           <LinkButton href="/admin/referral" variant="secondary" leftIcon={<Award size={16} />}>
             Parrainage et ambassadeurs
           </LinkButton>
-          <LinkButton href="/admin/audit" variant="secondary" leftIcon={<Activity size={16} />}>
-            Journal d’audit
-          </LinkButton>
+          {hasRole('SUPERADMIN') && (
+            <LinkButton href="/admin/audit" variant="secondary" leftIcon={<Activity size={16} />}>
+              Journal d’audit
+            </LinkButton>
+          )}
           <LinkButton href="/admin/services" variant="secondary" leftIcon={<Building2 size={16} />}>
             Catalogues et services
           </LinkButton>

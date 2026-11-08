@@ -14,7 +14,7 @@ import {
   FileCode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { ErrorState } from '@/components/ui/EmptyState';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 
 interface AuditItem {
@@ -37,6 +37,8 @@ export default function AdminAuditLogPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState<AuditItem | null>(null);
   const [loadError, setLoadError] = useState(false);
+  // Lot 9 (A24) : un 403 est un refus de droits, pas une panne : ni « Réessayer » ni message technique.
+  const [forbidden, setForbidden] = useState(false);
   // Deux filtres changés de suite : seule la dernière lecture décide de ce qui est affiché.
   const lastRequest = useRef(0);
 
@@ -44,12 +46,17 @@ export default function AdminAuditLogPage() {
     const request = ++lastRequest.current;
     setIsLoading(true);
     setLoadError(false);
+    setForbidden(false);
     try {
       let url = `/api/admin/audit?limit=100`;
       if (actionFilter !== 'ALL') url += `&action=${actionFilter}`;
       if (objectFilter !== 'ALL') url += `&objectType=${objectFilter}`;
 
       const res = await fetch(url);
+      if (res.status === 403) {
+        if (request === lastRequest.current) setForbidden(true);
+        return;
+      }
       if (!res.ok) throw new Error(`lecture refusée, HTTP ${res.status}`);
       const data = await res.json();
       if (!Array.isArray(data.logs)) throw new Error('réponse sans journal');
@@ -103,19 +110,30 @@ export default function AdminAuditLogPage() {
           </div>
         </div>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => fetchLogs()}
-          disabled={isLoading}
-          className="flex items-center gap-1.5"
-        >
-          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-          <span>Actualiser</span>
-        </Button>
+        {!forbidden && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => fetchLogs()}
+            disabled={isLoading}
+            className="flex items-center gap-1.5"
+          >
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+            <span>Actualiser</span>
+          </Button>
+        )}
       </div>
 
-      {/* Filtres */}
+      {forbidden ? (
+        <EmptyState
+          icon={<Shield size={28} />}
+          title="Réservé au superadmin"
+          description="Seul un compte superadmin peut consulter le journal d’audit. Si vous en avez besoin, adressez-vous à votre superadmin."
+          actionLabel="Retour au tableau de bord"
+          actionHref="/admin/dashboard"
+        />
+      ) : (
+      /* Filtres */
       <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -223,6 +241,7 @@ export default function AdminAuditLogPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Modal Détails JSON Diff */}
       {selectedLog && (
