@@ -11,7 +11,7 @@
  *
  * Rouge aujourd'hui :
  *  - admin/communications, admin/promotions, partner/halls renvoient le texte de la base ;
- *  - partner/events/[id] répond déjà en français, sans le texte de la base : rouge seulement par l'absence de code ;
+ *  - partner/events/[id] (A26, lot 9) : une panne répond 500 EVENT_UNAVAILABLE, plus jamais 404 « introuvable » ;
  *  - GET controller/profile répond 200 et assignments: [] sur panne des affectations, 404 sur panne du profil ;
  *  - PATCH controller/profile répond 404 sur panne de lecture, et n'a aucun journal sur panne d'auth.admin ;
  *  - after : le schéma du lot n'est pas livré (assertRecetteInvariants).
@@ -158,11 +158,11 @@ describe('8.2 i — routes témoins sous panne de la base', () => {
         assert.equal(result.body.error, 'Mises en avant momentanément indisponibles.');
     });
 
-    test('partner/events/[id] : statut 404 conservé (section 9), code stable, message français', async () => {
+    test('partner/events/[id] : 500 EVENT_UNAVAILABLE (A26, lot 9), une panne n\'est pas une absence, message français', async () => {
         const { result } = await during(table('events'), async () => reply(await getPartnerEvent(partner, ev.eventId)));
         assertClean(result, 'partner/events/[id]');
-        assert.equal(result.status, 404);
-        assert.match(String(result.body.error), /introuvable/i);
+        assert.deepEqual([result.status, result.body.code], [500, 'EVENT_UNAVAILABLE'], result.text.slice(0, 300));
+        assert.match(String(result.body.error), /momentanément indisponible/i);
     });
 
     test('partner/halls : 500, code *_UNAVAILABLE, message français', async () => {

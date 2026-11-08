@@ -1,7 +1,7 @@
 /**
  * Lot 8, tâche 8.3 d, anomalie A13 (contrat 13.4 ; CDC §134) — journal d'activité : GET /api/admin/audit n'avait aucun
  * test, et app/admin/audit/page.tsx:47-50 affiche « Aucun enregistrement » quand la lecture échoue.
- *  1. droits : 401 sans session ; 403 client, partenaire, contrôleur ; 403 ADMIN SUSPENDU ; 200 ADMIN et SUPERADMIN ;
+ *  1. droits : 401 sans session ; 403 client, partenaire, contrôleur ; 403 ADMIN (lot 9, A24) ; 403 ADMIN SUSPENDU ; 200 SUPERADMIN ;
  *     une tentative refusée est elle-même tracée dans le journal ;
  *  2. filtres action, objectType, userRole, valeur ALL, limit, ordre du plus récent au plus ancien ;
  *  3. champs de §134 servis par l'API (utilisateur, rôle, date et heure, action, objet, ancienne et nouvelle valeur) ;
@@ -104,7 +104,7 @@ after(async () => {
 // ── 1. Droits (verts dès l'écriture) ───────────────────────────────────────
 
 describe('A13 — GET /api/admin/audit : droits', () => {
-    test('sans session 401 ; partenaire et contrôleur 403 ; ADMIN et SUPERADMIN 200', async () => {
+    test('sans session 401 ; partenaire et contrôleur 403 ; ADMIN 403 (A24, lot 9) ; SUPERADMIN 200', async () => {
         const anonymous = await audit(null);
         assert.equal(anonymous.status, 401, `sans session : ${show(anonymous)}`);
         assert.equal(anonymous.body.logs, undefined, 'aucune ligne sans session');
@@ -116,11 +116,11 @@ describe('A13 — GET /api/admin/audit : droits', () => {
             assert.equal(r.body.logs, undefined, `${key} : aucune ligne`);
         }
 
-        for (const key of ['ADMIN', 'SUPERADMIN'] as const) {
+        for (const [key, expected] of [['ADMIN', 403], ['SUPERADMIN', 200]] as const) {
             const user = await signInAs(key);
             const r = await audit(user.accessToken, '?limit=1');
-            assert.equal(r.status, 200, `${key} : ${show(r)}`);
-            assert.equal(r.body.success, true, `${key} : ${show(r)}`);
+            assert.equal(r.status, expected, `${key} : ${show(r)}`);
+            assert.equal(r.body.success, expected === 200 ? true : undefined, `${key} : ${show(r)}`);
         }
     });
 
