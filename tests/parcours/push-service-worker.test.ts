@@ -178,7 +178,7 @@ describe('6.2 public/sw.js : push et clics (contrat F5, décision 3) ; lot 7 : c
         }
         const src = fs.readFileSync(SW_FILE, 'utf8');
         assert.doesNotMatch(src, /importScripts\s*\(/, 'aucun importScripts');
-        assert.match(src, /event-village-v1/, 'l’ancien cache est nommé pour être supprimé (tests/e2e-scenarios.test.ts:171-173 reste vrai)');
+        assert.match(src, /event-village-v1/, 'l’ancien cache est nommé pour être supprimé');
         // Lot 7 (T12) : « aucun cache ni réponse interceptée » devient la liste blanche du contrat 5.3, vérifiée cas par cas
         // dans tests/parcours/hors-ligne-service-worker.test.ts ; ici, l'API du push reste servie par le réseau.
         for (const url of [`${ORIGIN}/api/push/config`, `${ORIGIN}/api/push/subscriptions`, `${ORIGIN}/api/auth/me`]) {

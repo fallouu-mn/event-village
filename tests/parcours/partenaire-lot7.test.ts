@@ -780,7 +780,7 @@ describe('7.4 Écrans partenaire : chiffres servis par le serveur, états, conte
         assert.ok(importsFrom(files, 'useFeatureFlags', /lib\/features\/client$/) && calls(files, 'useFeatureFlags'), 'bloc « Commandes » non masqué par features.orders_enabled (useFeatureFlags, D69)');
     });
 
-    test('tableau de bord : usePartnerOrders toujours importé (SCENARIO 15, tests/e2e-scenarios.test.ts:119-126) — garde-fou', () => {
+    test('tableau de bord : usePartnerOrders toujours importé (SCENARIO 15) — garde-fou', () => {
         assert.ok(bindingsOf(DASHBOARD_PAGE).some((b) => b.imported === 'usePartnerOrders' && /hooks\/usePartnerOrders$/.test(b.spec)), 'usePartnerOrders n’est plus importé par le tableau de bord (D69 : bloc masqué, import gardé)');
     });
 

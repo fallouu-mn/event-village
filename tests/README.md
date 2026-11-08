@@ -26,7 +26,7 @@ Autres commandes :
 
 - `npm run test:security` — suites de `tests/security/` (vide pour l'instant).
 - `node scripts/run-tests.mjs --filter scan` — sous-ensemble par nom.
-- `node scripts/run-tests.mjs tests/payment.test.ts` — une suite précise.
+- `node scripts/run-tests.mjs tests/samirpay-contrat.test.ts` — une suite précise.
 - `npm run verify` — typecheck → lint → test → build, avec `.env.test` chargé.
 
 Les sorties brutes de chaque suite sont conservées dans `.test-logs/` (ignoré par git).

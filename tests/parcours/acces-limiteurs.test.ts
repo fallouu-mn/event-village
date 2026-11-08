@@ -504,3 +504,24 @@ describe('4.8 — contrôles statiques', () => {
         assert.deepEqual(missing, [], `variables absentes :\n${missing.join('\n')}`);
     });
 });
+
+// ── Lot 9 (A21) : porté de la suite partner-auth, cas 22 ──────────────────
+
+describe('A21 — reserveQuota : refus motivé', () => {
+    test('5 tentatives acceptées, la 6e refusée EXCEEDED avec retryAfterSeconds > 0 ; compteur en base (T15)', async () => {
+        const { reserveQuota } = await import('../../lib/security/quota');
+        const bucket = `test-brute-force-${randomUUID()}`;
+        const rule = { scope: 'test_brute_force', bucket, windowSecs: 900, max: 5 };
+        await alignWindow(900, 8000);
+        for (let i = 1; i <= 5; i += 1) {
+            const res = await reserveQuota([rule], 'test du lot 9');
+            assert.equal(res.allowed, true, `tentative ${i} : ${JSON.stringify(res)}`);
+        }
+        const sixth = await reserveQuota([rule], 'test du lot 9');
+        assert.equal(sixth.allowed, false, `6e tentative : ${JSON.stringify(sixth)}`);
+        assert.ok(!sixth.allowed && sixth.reason === 'EXCEEDED' && sixth.retryAfterSeconds > 0, `refus attendu (EXCEEDED) : ${JSON.stringify(sixth)}`);
+        const { data, error } = await service.from('quota_counters').select('hits').eq('scope', 'test_brute_force').eq('bucket', bucket);
+        assert.equal(error, null, `compteur en base : ${error?.message}`);
+        assert.ok((data ?? []).length > 0 && (data ?? []).every((r) => Number(r.hits) >= 5), `compteur en base : ${JSON.stringify(data)}`);
+    });
+});
