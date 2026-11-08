@@ -57,7 +57,7 @@ export async function requireActiveSession(
         console.warn(`[requireActiveSession] accès refusé à ${new URL(req.url).pathname} : compte ${user.id} au statut ${user.status}`);
         return {
             response: NextResponse.json(
-                { error: `Votre compte n'est pas actif (statut ${user.status}). Contactez le support.`, code: 'ACCOUNT_NOT_ACTIVE' },
+                { error: "Votre compte n'est pas actif. Contactez le support.", code: 'ACCOUNT_NOT_ACTIVE' },
                 { status: 403 }
             ),
         };

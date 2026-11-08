@@ -12,7 +12,8 @@ const AUDIT_FALLBACK = { message: 'Journal d’audit momentanément indisponible
  * Consultation et exploration du journal d'audit inaltérable (§134, §156)
  */
 export async function GET(req: NextRequest) {
-    const auth = await verifyAdminAuth(req);
+    // Lot 9 (A24) : réservé au SUPERADMIN, comme la RLS (audit_logs_superadmin_read).
+    const auth = await verifyAdminAuth(req, { requireSuperadmin: true });
     if (!auth.authorized) return auth.errorResponse!;
 
     try {
