@@ -1,6 +1,7 @@
 /**
  * Lot 8 (contrat 3.13, L20) — POST /api/dev/samirpay/[action] : valider ou refuser un paiement simulé.
- * Corps `{ transactionId }` ; réponse `{ ok: true, status }` ou `{ error, code }`.
+ * Corps `{ transactionId }` ; réponse `{ ok: true, status }`, `{ error, code }` ou, webhook en échec (lot 9, A40),
+ * `{ ok: false, status, code, error, message }` en 502.
  *
  * Fichier `.dev.ts` : route présente sous `next dev` seulement (premier verrou, next.config.mjs). Deuxième
  * verrou : middleware.ts. Troisième : le contrôle ci-dessous. La route n'appelle que le faux service local,
@@ -48,7 +49,13 @@ export async function POST(req: NextRequest, { params }: { params: { action: str
     }
 
     if (res.ok) {
-        const done = (await res.json()) as { status?: string };
+        const done = (await res.json()) as { status?: string; webhookStatus?: number };
+        // Lot 9 (A40) : le faux service répond 200 même si le webhook de l'application échoue.
+        if (typeof done.webhookStatus === 'number' && (done.webhookStatus < 200 || done.webhookStatus >= 300)) {
+            console.error(`[dev/samirpay] webhook de l'application en échec : HTTP ${done.webhookStatus}`);
+            const message = 'L’application a refusé la confirmation du paiement simulé.';
+            return NextResponse.json({ ok: false, status: done.status ?? null, code: 'FAKE_SERVICE_ERROR', error: message, message }, { status: 502 });
+        }
         return NextResponse.json({ ok: true, status: done.status ?? null });
     }
     console.error(`[dev/samirpay] ${params.action} refusé par le faux service : HTTP ${res.status}`);
