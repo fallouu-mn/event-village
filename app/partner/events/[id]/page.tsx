@@ -23,6 +23,7 @@ import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
 import { OverviewTab } from '@/components/partner/pilotage/OverviewTab';
 import { SalesTab } from '@/components/partner/pilotage/SalesTab';
+import { InvitationsTab } from '@/components/partner/pilotage/InvitationsTab';
 import { EntriesTab } from '@/components/partner/pilotage/EntriesTab';
 import { TeamTab } from '@/components/partner/pilotage/TeamTab';
 import { CashTab } from '@/components/partner/pilotage/CashTab';
@@ -32,19 +33,20 @@ import type { EventAction, PilotageOverview } from '@/components/partner/pilotag
 
 /**
  * Lot 5, tâche 5.10 (contrat I) — page de pilotage d'un événement par son organisateur.
- *  - Onglets dans `?tab=` : Aperçu, Ventes, Entrées, Équipe, Caisse, Clôture (les anciennes pages
- *    …/team et …/caisse redirigent ici).
+ *  - Onglets dans `?tab=` : Aperçu, Ventes, Invitations (lot 9), Entrées, Équipe, Caisse, Clôture (les anciennes
+ *    pages …/team et …/caisse redirigent ici).
  *  - Une seule source de vérité : les routes …/pilotage/* (RPC pilotage_*), jamais de calcul ici.
  *  - En direct : ticket_scans, scan_incidents, controller_shifts et l'historique des statuts de CET
  *    événement (filtre event_id) déclenchent le rechargement de l'en-tête et de l'onglet affiché.
  *  - Annulation (tâche 5.8) : « Annuler l'événement » selon can_cancel, puis avancement des remboursements.
  */
 
-const TAB_IDS = ['apercu', 'ventes', 'entrees', 'equipe', 'caisse', 'cloture'] as const;
+const TAB_IDS = ['apercu', 'ventes', 'invitations', 'entrees', 'equipe', 'caisse', 'cloture'] as const;
 type PilotageTabId = (typeof TAB_IDS)[number];
 const TABS: TabItem[] = [
     { id: 'apercu', label: 'Aperçu' },
     { id: 'ventes', label: 'Ventes' },
+    { id: 'invitations', label: 'Invitations' },
     { id: 'entrees', label: 'Entrées' },
     { id: 'equipe', label: 'Équipe' },
     { id: 'caisse', label: 'Caisse' },
@@ -242,6 +244,7 @@ export default function PartnerEventPilotagePage() {
                 <TabPanel idPrefix={TABS_PREFIX} tabIdValue={activeTab}>
                     {activeTab === 'apercu' && <OverviewTab data={ov} saleStopped={ov.status === 'ANNULE'} />}
                     {activeTab === 'ventes' && <SalesTab eventId={eventId} signal={signal} />}
+                    {activeTab === 'invitations' && <InvitationsTab eventId={eventId} eventStatus={ov.status} signal={signal} />}
                     {activeTab === 'entrees' && <EntriesTab eventId={eventId} signal={signal} />}
                     {activeTab === 'equipe' && <TeamTab eventId={eventId} eventStatus={ov.status} signal={signal} />}
                     {activeTab === 'caisse' && <CashTab eventId={eventId} signal={signal} />}
