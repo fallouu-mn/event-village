@@ -20,7 +20,8 @@
  *  - projets mobile et desktop seulement : drapeau LangAttributeAwareFormControlUI (L66), pour que les champs de date
  *    suivent l'attribut lang de la page (dd/mm/yyyy et 24 h). `locale: 'fr-FR'` n'a aucun effet sur ces champs. Limité
  *    aux captures : le drapeau rend aussi le champ `number` sensible à la langue. `launchOptions` d'un projet REMPLACE
- *    celui de `use` : la résolution forcée en IPv4 y est donc répétée ;
+ *    celui de `use` : la résolution forcée en IPv4 y est donc répétée. Lot 9 (relecture du run 111) : `--lang=fr-FR` en
+ *    plus, le drapeau seul laissant les `datetime-local` en mm/dd/yyyy dans le Chromium Linux de la CI (écart du lot 8) ;
  *  - dev-page (e2e/dev-page.spec.ts, phase courte) : rendu statique de la page de développement, sans serveur (L75) ;
  *  - recette (e2e/recette.spec.ts, vague F) : parcours enchaînés, un seul worker. Sans ce fichier, le projet est vide.
  */
@@ -33,7 +34,7 @@ e2eConfig();
 /** Résolution forcée en IPv4 : voir `launchOptions` de `use`. */
 const HOST_RESOLVER_RULES = '--host-resolver-rules=MAP localhost 127.0.0.1';
 /** Lot 8 (L66) : lanceur des projets de capture. Remplace celui de `use`, d'où la répétition de la première règle. */
-const CAPTURE_LAUNCH = { args: [HOST_RESOLVER_RULES, '--enable-blink-features=LangAttributeAwareFormControlUI'] };
+const CAPTURE_LAUNCH = { args: [HOST_RESOLVER_RULES, '--enable-blink-features=LangAttributeAwareFormControlUI', '--lang=fr-FR'] };
 
 const phase = (process.env.E2E_PHASE || 'complet').replace(/[^a-z0-9-]/gi, '');
 

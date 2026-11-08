@@ -119,7 +119,7 @@ export default function PaymentsPage() {
                       <time dateTime={item.created_at} className="tabular-nums">{formatDateTime(item.created_at)}</time>
                     </span>
                     <span className="block text-sm text-fg-muted">{item.operator_label}</span>
-                    {item.refunded_amount > 0 && (
+                    {item.refunded_amount > 0 && item.refunded_amount !== item.amount && (
                       <span className="block text-sm text-fg-muted tabular-nums">{`Remboursé : ${formatFcfa(item.refunded_amount)}`}</span>
                     )}
                   </span>

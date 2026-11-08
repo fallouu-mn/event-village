@@ -235,7 +235,7 @@ export default function AdminFinanceReconciliationPage() {
           <div>
             <h2 id={`${fieldId}-lignes`} className="text-lg font-semibold text-fg">Paiements rapprochés</h2>
             <p className="text-sm text-fg-muted mt-0.5 leading-relaxed">
-              Contrôle du serveur, paiement par paiement : total débité = reversement partenaire + frais de service ; frais de service = frais agrégateur + revenu net Event Village.
+              Contrôle automatique, paiement par paiement : total débité = reversement partenaire + frais de service ; frais de service = frais agrégateur + revenu net Event Village.
             </p>
           </div>
 

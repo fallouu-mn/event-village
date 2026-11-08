@@ -153,6 +153,7 @@ interface CloseShiftModalProps {
 }
 
 export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: CloseShiftModalProps) {
+    const formId = useId();
     const countId = useId();
     const justificationId = useId();
     const pinId = useId();
@@ -226,8 +227,16 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
             subtitle="Décompte des espèces avec le régisseur"
             icon={<Receipt size={20} />}
             maxWidth="md"
+            footer={(
+                <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:justify-end">
+                    <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Annuler</Button>
+                    <Button type="submit" form={formId} variant="primary" isLoading={loading}>
+                        {cosign ? 'Clôturer avec l’écart' : 'Clôturer la caisse'}
+                    </Button>
+                </div>
+            )}
         >
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+            <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
                 <dl className="flex flex-col gap-1.5 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
                     <div className="flex justify-between gap-3">
                         <dt className="text-fg-muted">Fonds de caisse</dt>
@@ -247,7 +256,7 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
 
                 <TextInput
                     id={countId}
-                    label="Espèces encaissées comptées, hors fonds de caisse (F CFA)"
+                    label="Espèces encaissées comptées, hors fonds de caisse (F&nbsp;CFA)"
                     hint="Comptez les espèces avec le régisseur, mettez de côté le fonds de caisse, puis saisissez le reste."
                     inputMode="numeric"
                     autoComplete="off"
@@ -260,7 +269,7 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
 
                 {cosign && (
                     <>
-                        <StatusBanner tone="warning" title="Écart constaté par le serveur" announce="alert" className="tabular-nums">
+                        <StatusBanner tone="warning" title="Écart constaté" announce="alert" className="tabular-nums">
                             {cosign.discrepancy !== null
                                 ? `Écart de ${formatFcfa(cosign.discrepancy)} avec les encaissements enregistrés. `
                                 : 'Le montant compté ne correspond pas aux encaissements enregistrés. '}
@@ -295,13 +304,6 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
                         </Field>
                     </>
                 )}
-
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Annuler</Button>
-                    <Button type="submit" variant="primary" isLoading={loading}>
-                        {cosign ? 'Clôturer avec l’écart' : 'Clôturer la caisse'}
-                    </Button>
-                </div>
             </form>
         </Modal>
     );

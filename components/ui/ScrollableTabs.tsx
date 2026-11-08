@@ -83,7 +83,7 @@ export function ScrollableTabs(props: TabsProps) {
             <span
                 aria-hidden="true"
                 className={cn(
-                    'pointer-events-none absolute inset-y-0 -left-4 flex w-8 items-center justify-start bg-gradient-to-r from-surface-sunken via-surface-sunken/90 to-surface-sunken/0 text-fg-muted transition-opacity duration-200 sm:left-0',
+                    'pointer-events-none absolute inset-y-0 -left-4 flex w-8 items-center justify-start bg-gradient-to-r from-surface-sunken from-60% to-surface-sunken/0 text-fg-muted transition-opacity duration-200 sm:left-0',
                     edges.start ? 'opacity-100' : 'opacity-0',
                 )}
             >
@@ -92,7 +92,7 @@ export function ScrollableTabs(props: TabsProps) {
             <span
                 aria-hidden="true"
                 className={cn(
-                    'pointer-events-none absolute inset-y-0 -right-4 flex w-8 items-center justify-end bg-gradient-to-l from-surface-sunken via-surface-sunken/90 to-surface-sunken/0 text-fg-muted transition-opacity duration-200 sm:right-0',
+                    'pointer-events-none absolute inset-y-0 -right-4 flex w-8 items-center justify-end bg-gradient-to-l from-surface-sunken from-60% to-surface-sunken/0 text-fg-muted transition-opacity duration-200 sm:right-0',
                     edges.end ? 'opacity-100' : 'opacity-0',
                 )}
             >

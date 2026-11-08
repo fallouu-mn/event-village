@@ -210,7 +210,11 @@ export function CounterSalePanel({ eventId, onOpenShift, onSold, onSessionExpire
                                 <span className="flex min-w-0 flex-1 flex-col">
                                     <span className="break-words text-base font-semibold text-fg">{c.name}</span>
                                     {c.on_site_only && <span className="text-sm font-medium text-brand-fg">Sur place uniquement</span>}
-                                    <span className="text-sm text-fg-muted tabular-nums">{formatFcfa(c.price)} · <span className="whitespace-nowrap">{formatInteger(c.available)} disponible{c.available > 1 ? 's' : ''}</span></span>
+                                    <span className="text-sm text-fg-muted tabular-nums">
+                                        <span className="block whitespace-nowrap sm:inline">{formatFcfa(c.price)}</span>
+                                        <span className="hidden sm:inline"> · </span>
+                                        <span className="block whitespace-nowrap sm:inline">{formatInteger(c.available)} disponible{c.available > 1 ? 's' : ''}</span>
+                                    </span>
                                 </span>
                                 <IconButton aria-label={`Retirer un billet ${c.name}`} variant="secondary" disabled={q === 0 || selling} onClick={() => setQuantity(c.id, q - 1)}>
                                     <Minus size={18} />

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import {
+  BadgeCheck,
   Bell,
   Briefcase,
   ChevronRight,
@@ -55,6 +56,12 @@ const ACCOUNT_STATUS_LABELS: Record<string, string> = {
   EN_ATTENTE: 'Compte en attente de validation',
   SUSPENDU: 'Compte suspendu',
 };
+
+/** « +221771234567 » s'affiche « +221 77 123 45 67 » ; une autre forme reste telle quelle. */
+function displayPhone(phone: string): string {
+  const parts = /^\+221(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(phone);
+  return parts ? `+221 ${parts[1]} ${parts[2]} ${parts[3]} ${parts[4]}` : phone;
+}
 
 const THEMES: Array<{ id: 'light' | 'dark' | 'system'; label: string; icon: React.ElementType }> = [
   { id: 'light', label: 'Clair', icon: Sun },
@@ -223,7 +230,7 @@ export default function ProfilePage() {
                 <Phone size={16} aria-hidden="true" />
                 <span className="sr-only">Téléphone</span>
               </dt>
-              <dd className="text-fg tabular-nums">{profile.phone || 'Non renseigné'}</dd>
+              <dd className="text-fg tabular-nums">{profile.phone ? displayPhone(profile.phone) : 'Non renseigné'}</dd>
             </div>
             {isDeliverableEmail(profile.email) && (
               <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
@@ -242,7 +249,10 @@ export default function ProfilePage() {
               <dd className="text-fg">{roleText.join(', ')}</dd>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
-              <dt className="sr-only">Statut du compte</dt>
+              <dt className="flex items-center gap-1.5">
+                <BadgeCheck size={16} aria-hidden="true" />
+                <span className="sr-only">Statut du compte</span>
+              </dt>
               <dd className="text-fg">{statusText}</dd>
             </div>
           </dl>

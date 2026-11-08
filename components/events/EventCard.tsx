@@ -61,7 +61,8 @@ export const EventCard: React.FC<EventCardProps> = ({
   priority = false,
 }) => {
   const onSaleSoon = price === null || !Number.isFinite(price);
-  const place = [venue, cityLabel(city)].filter(Boolean).join(', ');
+  // Ville d'abord : c'est le lieu qui se tronque (relecture du run 111). Budget JS de / : pas d'élément de plus.
+  const place = [cityLabel(city), venue].filter(Boolean).join(' · ');
   const when = timeFormatted ? `${dateFormatted} à ${timeFormatted}` : dateFormatted;
 
   return (

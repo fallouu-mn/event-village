@@ -461,7 +461,7 @@ export function NotificationBell() {
                                                         </span>
                                                     )}
                                                     {notif.content && notif.content !== notif.title && (
-                                                        <span className="line-clamp-2 text-sm text-fg-muted">{notif.content}</span>
+                                                        <span className="line-clamp-3 text-sm text-fg-muted">{notif.content}</span>
                                                     )}
                                                     {notif.actionUrl && (
                                                         <span className="inline-flex items-center gap-1 pt-1 text-sm font-semibold text-brand-fg">

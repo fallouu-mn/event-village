@@ -23,7 +23,8 @@ const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis r�
 const SAVE_FAILED_MESSAGE = 'La ville n’a pas pu être enregistrée. Réessayez dans un instant.';
 
 const TITLE = 'text-2xl font-bold tracking-tight text-fg';
-const RAIL = 'flex snap-x gap-4 overflow-x-auto pb-2 sm:grid sm:snap-none sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:pb-0 lg:grid-cols-3 xl:grid-cols-4';
+// Sur mobile, la liste défile jusqu'aux bords de l'écran (-mx-4 annule la gouttière de la page).
+const RAIL = '-mx-4 flex snap-x scroll-px-4 gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:snap-none sm:scroll-px-0 sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-4';
 const RAIL_ITEM = 'w-[82%] flex-none snap-start sm:w-auto';
 
 function EventRail({ events, busy = false }: { events: CatalogEvent[]; busy?: boolean }) {

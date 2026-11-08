@@ -85,6 +85,8 @@ export interface Screen {
     actions?: (c: ScreenContext) => Promise<void>;
     /** Réponse d'API remplacée par une erreur 500 : capture de l'état d'erreur avec « Réessayer ». */
     injectError?: RegExp;
+    /** Lot 9 : texte de cette erreur quand l'écran l'affiche tel quel, celui du repli de la route (sinon texte générique). */
+    injectErrorMessage?: string;
     /** Lot 6 : réponse d'API remplacée par une réponse valide (calqué sur injectError), ex. liste vide. */
     stubResponse?: { url: RegExp; status: number; body: unknown };
     /** Lot 6 : état du push simulé avant le chargement (e2e/support/fake-push.ts). */
@@ -992,6 +994,7 @@ export const SCREENS: readonly Screen[] = [
     {
         id: 'accueil-populaires-erreur', titre: 'Accueil — Populaires, état d’erreur (Réessayer)', role: 'anonyme', needsIds: false, path: () => '/',
         injectError: /\/api\/events\/popular/,
+        injectErrorMessage: 'Populaires momentanément indisponibles.',
         // Section sous « À l'affiche » : hors de l'image sans défilement
         ready: async (c) => {
             await expectRetry(c);

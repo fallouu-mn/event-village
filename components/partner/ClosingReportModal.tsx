@@ -206,7 +206,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({ isOpen, 
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-fg-muted">Document généré par Event Village</p>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
                 variant="outline"
                 size="sm"

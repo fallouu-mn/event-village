@@ -561,8 +561,9 @@ export function EventTicketingManager({ eventId, initialCategories }: EventTicke
                                         : sales
                                             ? `${plural(draft.sold, 'billet vendu', 'billets vendus')}${draft.held > 0 ? `, ${formatInteger(draft.held)} en cours de paiement` : ''}`
                                             : 'Aucun billet vendu'}
-                                    {!isNew && !draft.is_active ? ' · hors vente' : ''}
-                                    {item.base ? ` · ${categoryChannelLabel(item.base)}` : ''}
+                                    {!isNew && !draft.is_active
+                                        ? ' · Vente fermée'
+                                        : item.base ? ` · ${categoryChannelLabel(item.base)}` : ''}
                                 </p>
                             </div>
                             {(isNew || !sales) && (

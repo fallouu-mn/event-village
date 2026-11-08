@@ -203,7 +203,7 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
                 await page.route(screen.injectError, (route) => route.fulfill({
                     status: 500,
                     contentType: 'application/json; charset=utf-8',
-                    body: JSON.stringify({ error: 'Erreur simulée par les tests de bout en bout.', code: 'E2E_SIMULATED_ERROR' }),
+                    body: JSON.stringify({ error: screen.injectErrorMessage ?? 'Erreur simulée par les tests de bout en bout.', code: 'E2E_SIMULATED_ERROR' }),
                 }));
             }
             const stubs: StubResponse[] = [...(screen.stubResponse ? [screen.stubResponse] : []), ...(screen.stubResponses ?? [])];

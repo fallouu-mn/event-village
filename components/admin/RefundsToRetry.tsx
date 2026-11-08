@@ -209,14 +209,14 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
   const renderCard = (item: RefundItem) => (
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 break-words">
-          <p className="text-base font-semibold tabular-nums text-fg">{formatFcfa(item.amount)}</p>
-          <p className="text-sm text-fg">{eventOf(item)}</p>
-          <p className="text-sm text-fg-muted">{KIND_LABELS[item.kind] ?? 'Remboursement'}</p>
-        </div>
+        <p className="text-base font-semibold tabular-nums text-fg">{formatFcfa(item.amount)}</p>
         <div className="flex-shrink-0">
           <Badge variant={stateOf(item).variant} size="sm">{stateOf(item).label}</Badge>
         </div>
+      </div>
+      <div className="min-w-0 break-words">
+        <p className="text-sm text-fg">{eventOf(item)}</p>
+        <p className="text-sm text-fg-muted">{KIND_LABELS[item.kind] ?? 'Remboursement'}</p>
       </div>
       {item.reason_label && <p className="text-sm text-fg-muted">{item.reason_label}</p>}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">

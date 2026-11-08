@@ -47,7 +47,7 @@ export function offlineStateText(state: OfflineIndicatorState, availableFrom?: s
       return busy ? 'Enregistrement du billet sur ce téléphone…' : 'Ouvrez ce billet avec du réseau avant d’arriver';
     case 'not_yet':
       return availableFrom
-        ? `Disponible hors ligne à partir du ${formatDateTime(availableFrom)}`
+        ? `Disponible hors ligne à partir du ${formatDateTime(availableFrom).replace(' à ', ' à ')}`
         : 'Disponible hors ligne la veille de l’événement';
     case 'offline_missing':
       return 'Ce billet n’est pas enregistré sur ce téléphone. Reconnectez-vous au réseau, ou présentez votre numéro de billet et votre pièce d’identité au contrôle.';

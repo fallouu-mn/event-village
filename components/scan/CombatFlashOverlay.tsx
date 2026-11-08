@@ -128,6 +128,14 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     const Icon = status === 'event_suspended' ? Ban : status === 'not_processed' ? ScanLine : look.Icon;
     const heading = title ?? titleOf(status, cat);
     const ticketLine = [category, ticketNumber].filter(Boolean).join(' · ');
+    // Le numéro ne se coupe pas à ses tirets (relecture du run 111).
+    const ticketLineNode = (
+        <>
+            {category}
+            {category && ticketNumber ? ' · ' : ''}
+            {ticketNumber && <span className="min-[375px]:whitespace-nowrap">{ticketNumber}</span>}
+        </>
+    );
     // Message masqué s'il redit le titre, y compris quand le titre le complète (relecture du run 77).
     const detail = status === 'not_processed' ? NOT_PROCESSED_DETAIL : message;
     const showMessage = Boolean(detail) && !repeatsHeading(detail ?? '', heading);
@@ -169,7 +177,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
                     <p data-testid="combat-holder-name" className="break-words text-5xl font-black leading-none tracking-tight sm:text-6xl">
                         {holderName || 'Porteur non renseigné'}
                     </p>
-                    {ticketLine && <p className="text-xl font-bold tabular-nums sm:text-2xl">{ticketLine}</p>}
+                    {ticketLine && <p className="text-xl font-bold tabular-nums sm:text-2xl">{ticketLineNode}</p>}
                 </div>
             )}
 
@@ -182,7 +190,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             {showMessage && <p className="max-w-2xl text-xl font-semibold leading-snug sm:text-2xl">{detail}</p>}
 
             {status !== 'valid' && ticketLine && (
-                <p className="text-lg font-semibold tabular-nums sm:text-xl">Billet : {ticketLine}</p>
+                <p className="text-lg font-semibold tabular-nums sm:text-xl">Billet : {ticketLineNode}</p>
             )}
 
             {cat === 'technique' && (
@@ -194,7 +202,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             {onDismiss && (
                 // Retour automatique (consigne 7.2 : aucun clic nécessaire) : le toucher ne fait que l'avancer. « Touchez
                 // l'écran pour… » laissait croire qu'il fallait toucher ; gardé seulement sans retour automatique.
-                <p className="text-base font-semibold">
+                <p className="text-balance text-base font-semibold">
                     {effectiveDuration > 0 ? 'Retour automatique au scan · touchez pour passer'
                         : cat === 'technique' ? 'Touchez l’écran pour reprendre le scan' : 'Touchez l’écran pour scanner le billet suivant'}
                 </p>

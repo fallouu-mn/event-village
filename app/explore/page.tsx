@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, RotateCcw, Search } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { RefreshCw, RotateCcw, Search, SlidersHorizontal } from 'lucide-react';
 import { EventCard, cityLabel } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
@@ -76,6 +76,8 @@ export default function ExplorePage() {
   const [category, setCategory] = useState<string>(ALL);
   const [city, setCity] = useState<string>(ALL);
   const [sortBy, setSortBy] = useState<SortKey>('date');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersPanelId = useId();
 
   /** Filtres courants, lus par load : un signal temps réel recharge avec les filtres en cours. */
   const filtersRef = useRef({ q: '', city: ALL, category: ALL });
@@ -166,6 +168,8 @@ export default function ExplorePage() {
 
   const serverFiltersActive = Boolean(serverQuery) || category !== ALL || city !== ALL;
   const filtersActive = query.trim() !== '' || serverFiltersActive || sortBy !== 'date';
+  /** Choix rangés sous « Filtres et tri » : le bouton les annonce quand le panneau est replié. */
+  const choiceCount = [city !== ALL, category !== ALL, sortBy !== 'date'].filter(Boolean).length;
 
   const resetFilters = () => {
     setQuery('');
@@ -187,7 +191,7 @@ export default function ExplorePage() {
         actions={<LiveIndicator status={liveStatus} />}
       />
 
-      <section aria-label="Recherche et filtres" className="space-y-4 rounded-3xl border border-border bg-surface p-4 shadow-sm sm:p-5">
+      <section aria-label="Recherche et filtres" className="rounded-3xl border border-border bg-surface p-4 shadow-sm sm:p-5">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <div className="relative">
             <TextInput
@@ -203,41 +207,57 @@ export default function ExplorePage() {
             />
             <Search size={18} className="pointer-events-none absolute bottom-3 left-3.5 text-fg-muted" aria-hidden="true" />
           </div>
-          <Select
-            label="Ville"
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-            options={[{ value: ALL, label: 'Toutes les villes' }, ...cityOptions]}
-          />
-          <Select
-            label="Trier par"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortKey)}
-            options={SORT_OPTIONS}
-          />
-        </div>
 
-        <div role="group" aria-label="Catégorie" className="flex flex-wrap gap-2">
-          {[{ id: ALL, label: 'Toutes les catégories' }, ...EVENT_CATEGORIES].map((c) => {
-            const active = category === c.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setCategory(c.id)}
-                className={cn(
-                  'inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 text-sm font-semibold transition-colors duration-200',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
-                  active
-                    ? 'border-brand bg-brand text-on-brand'
-                    : 'border-border bg-surface text-fg hover:border-border-strong hover:bg-surface-sunken',
-                )}
-              >
-                {c.label}
-              </button>
-            );
-          })}
+          {/* Mobile : ville, tri et catégories repliés, pour que les événements soient sur le premier écran (relecture du run 111). */}
+          <Button
+            variant="secondary"
+            fullWidth
+            className="md:hidden"
+            leftIcon={<SlidersHorizontal size={18} aria-hidden="true" />}
+            aria-expanded={filtersOpen}
+            aria-controls={filtersPanelId}
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            {choiceCount > 0 ? `Filtres et tri (${choiceCount})` : 'Filtres et tri'}
+          </Button>
+
+          <div id={filtersPanelId} className={cn('grid-cols-1 gap-4 md:contents', filtersOpen ? 'grid' : 'hidden')}>
+            <Select
+              label="Ville"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              options={[{ value: ALL, label: 'Toutes les villes' }, ...cityOptions]}
+            />
+            <Select
+              label="Trier par"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortKey)}
+              options={SORT_OPTIONS}
+            />
+
+            <div role="group" aria-label="Catégorie" className="flex flex-wrap gap-2 md:col-span-3">
+              {[{ id: ALL, label: 'Toutes les catégories' }, ...EVENT_CATEGORIES].map((c) => {
+                const active = category === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setCategory(c.id)}
+                    className={cn(
+                      'inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 text-sm font-semibold transition-colors duration-200',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+                      active
+                        ? 'border-brand bg-brand text-on-brand'
+                        : 'border-border bg-surface text-fg hover:border-border-strong hover:bg-surface-sunken',
+                    )}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </section>
 
