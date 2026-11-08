@@ -230,7 +230,7 @@ describe('5.10 Export des participants : POST …/participants-export', () => {
     test('sans contacts : CSV UTF-8 avec BOM, en-têtes français, nom / catégorie / statut (libellé) / heure d’entrée, sans paiement, numéro, téléphone ni email', async () => {
         const res = await participantsExport(ds.partner, ds.eventId, { includeContacts: false });
         const csv = assertCsv(res, 'export sans contacts');
-        assert.equal(csv.header.length, 4, `quatre colonnes sans les contacts : ${JSON.stringify(csv.header)}`);
+        assert.equal(csv.header.length, 5, `cinq colonnes sans les contacts (Canal ajouté, lot 9) : ${JSON.stringify(csv.header)}`);
         const nameCol = columnIndex(csv.header, HEADER_PATTERNS.name, 'export');
         const catCol = columnIndex(csv.header, HEADER_PATTERNS.category, 'export');
         const statusCol = columnIndex(csv.header, HEADER_PATTERNS.status, 'export');
@@ -294,7 +294,7 @@ describe('5.10 Export des participants : POST …/participants-export', () => {
         for (const purpose of ['URGENT_EVENT_INFO', 'SAFETY_AND_RECEPTION']) {
             const res = await participantsExport(ds.partner, ds.eventId, { includeContacts: true, purpose });
             const csv = assertCsv(res, `export avec contacts (${purpose})`);
-            assert.equal(csv.header.length, 6, `${purpose} : six colonnes avec téléphone et email : ${JSON.stringify(csv.header)}`);
+            assert.equal(csv.header.length, 7, `${purpose} : sept colonnes avec téléphone et email (Canal ajouté, lot 9) : ${JSON.stringify(csv.header)}`);
             const nameCol = columnIndex(csv.header, HEADER_PATTERNS.name, purpose);
             const phoneCol = columnIndex(csv.header, HEADER_PATTERNS.phone, purpose);
             const emailCol = columnIndex(csv.header, HEADER_PATTERNS.email, purpose);
