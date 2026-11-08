@@ -25,7 +25,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 export const OTP_MAX_ATTEMPTS = 5;
 const OTP_HASH_DOMAIN = 'event-village:otp:v1';
 
-export const OTP_PURPOSES = ['LOGIN', 'REGISTER', 'PASSWORD_RESET', 'CONTROLLER_SETUP', 'WITHDRAWAL'] as const;
+export const OTP_PURPOSES = ['LOGIN', 'REGISTER', 'PASSWORD_RESET', 'CONTROLLER_SETUP', 'WITHDRAWAL', 'PHONE_CHANGE'] as const;
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
 /** Objets acceptés par la vérification du parcours de compte (/api/auth/verify-otp). */
 export const ACCOUNT_OTP_PURPOSES: readonly OtpPurpose[] = ['LOGIN', 'REGISTER', 'PASSWORD_RESET'];

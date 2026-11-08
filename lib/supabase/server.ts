@@ -29,8 +29,6 @@ export function getServiceRoleClient() {
  * Gere les cookies chunkes de @supabase/ssr et le header Authorization Bearer.
  */
 export async function getAuthenticatedUser(req: NextRequest): Promise<{ id: string; email?: string } | null> {
-    const env = getServerEnv();
-
     const authHeader = req.headers.get('authorization');
     if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.substring(7);
@@ -39,7 +37,13 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<{ id: stri
         if (!error && data?.user) return { id: data.user.id, email: data.user.email };
     }
 
-    const ssrClient = createServerClient(
+    const { data: { user } } = await cookieClient(req).auth.getUser();
+    return user ? { id: user.id, email: user.email } : null;
+}
+
+function cookieClient(req: NextRequest) {
+    const env = getServerEnv();
+    return createServerClient(
         env.NEXT_PUBLIC_SUPABASE_URL,
         env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
         {
@@ -50,8 +54,63 @@ export async function getAuthenticatedUser(req: NextRequest): Promise<{ id: stri
             global: { fetch: noStoreFetch },
         }
     );
-    const { data: { user } } = await ssrClient.auth.getUser();
-    return user ? { id: user.id, email: user.email } : null;
+}
+
+export interface AuthenticatedSession {
+    userId: string;
+    accessToken: string;
+    sessionId: string;
+}
+
+const SESSION_ID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `session_id` de la charge d'un jeton DÉJÀ validé par GoTrue, ou null s'il est absent ou n'est pas un uuid. */
+function sessionIdOf(accessToken: string): string | null {
+    try {
+        const claims = JSON.parse(Buffer.from(accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { session_id?: unknown };
+        return typeof claims.session_id === 'string' && SESSION_ID_FORMAT.test(claims.session_id) ? claims.session_id : null;
+    } catch (err) {
+        console.error('[getAuthenticatedSession] charge du jeton illisible :', err instanceof Error ? err.message : String(err));
+        return null;
+    }
+}
+
+/**
+ * Lot 9 (9.2, AR2) : compte ET session courante d'une requête, pour révoquer « toutes les sessions sauf celle-ci ».
+ * Même précédence que getAuthenticatedUser (Bearer valide, sinon cookies). Le jeton est toujours validé par GoTrue
+ * avant la lecture de sa charge. Rend null si `session_id` manque : l'appelant refuse (401), jamais de révocation
+ * totale par défaut.
+ */
+export async function getAuthenticatedSession(req: NextRequest): Promise<AuthenticatedSession | null> {
+    const supabase = getServiceRoleClient();
+    const authHeader = req.headers.get('authorization');
+    let accessToken: string | undefined;
+    let userId: string | undefined;
+
+    if (authHeader?.startsWith('Bearer ')) {
+        const bearer = authHeader.substring(7);
+        const { data, error } = await supabase.auth.getUser(bearer);
+        if (!error && data?.user) {
+            accessToken = bearer;
+            userId = data.user.id;
+        }
+    }
+
+    if (!accessToken) {
+        const { data, error } = await cookieClient(req).auth.getSession();
+        if (error) {
+            console.error('[getAuthenticatedSession] session des cookies illisible :', error.message);
+            return null;
+        }
+        if (!data.session) return null;
+        const validated = await supabase.auth.getUser(data.session.access_token);
+        if (validated.error || !validated.data?.user) return null;
+        accessToken = data.session.access_token;
+        userId = validated.data.user.id;
+    }
+
+    const sessionId = sessionIdOf(accessToken);
+    return sessionId && userId ? { userId, accessToken, sessionId } : null;
 }
 
 /**
