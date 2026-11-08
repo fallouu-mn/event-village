@@ -28,8 +28,8 @@ export async function GET(
 
         return NextResponse.json({ success: true, event });
     } catch (error: unknown) {
-        // A26 (AM7) : statut 404 conservé, une panne de lecture reste présentée comme un événement introuvable.
-        return apiFailure('GET /api/partner/events/[id]', error, { message: 'Événement introuvable.', code: 'EVENT_NOT_FOUND', status: 404 });
+        // Lot 9 (A26) : l'absence est un 404 levé par getEventById ; ce repli ne vaut plus que pour une panne.
+        return apiFailure('GET /api/partner/events/[id]', error, { message: 'Événement momentanément indisponible.', code: 'EVENT_UNAVAILABLE', status: 500 });
     }
 }
 
