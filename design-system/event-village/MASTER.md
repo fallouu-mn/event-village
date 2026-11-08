@@ -67,14 +67,13 @@ opaques posés sur l'image de la caméra.
 | `accept` (accepte) | valid | `#4ADE80` / `#000000` | 12,05:1 | `[60]` |
 | `used` (deja_utilise) | already_used | `#7C2D12` / `#FFFFFF` | 9,37:1 | `[120, 60, 120, 60, 120]` |
 | `refuse` (refuse, evenement_annule) | invalid, cancelled, refunded, wrong_event, qr_expired, dynamic_qr_required, manual_entry_refused, payment_required ; event_cancelled, event_suspended (icône distincte) | `#7F1D1D` / `#FFFFFF` | 10,02:1 | `[120, 60, 120, 60, 120]` |
-| `cash` (a_encaisser) | cash_required (attend une action) | `#1E3A8A` / `#FFFFFF` | 10,36:1 | `[250, 100, 250]` |
 | `window` (hors_fenetre) | event_not_open, event_ended | `#FBBF24` / `#000000` | 12,58:1 | `[250, 100, 250]` |
 | `tech` (technique) | rate_limited, network_error, server_error, hors ligne, délai dépassé | `#27272A` / `#FFFFFF` | 14,89:1 | aucune (D47) |
 
 Règles du plein écran : icône ≥ 96 px, titre ≥ 40 px sur mobile, un seul `role="alert"`, jamais la couleur
 seule (icône et titre propres à chaque catégorie) ; ni flou, ni ombre portée, ni zoom, ni rebond, ni texte
 atténué ; aucun son. Retour automatique au scan : entrée validée selon le réglage de l'appareil (1 / 1,5 /
-2 / 3 s, défaut 1,5 s), refus, hors fenêtre et incident 3 s ; encaissement : attend une action ; un toucher
+2 / 3 s, défaut 1,5 s), refus, hors fenêtre et incident 3 s ; un toucher
 ferme tout de suite. Thème sombre forcé sur `/controller/*` (D45).
 
 #### Opérateurs de paiement (lot 7, D59)

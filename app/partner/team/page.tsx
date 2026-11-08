@@ -681,7 +681,7 @@ export default function PartnerTeamPage() {
                     )}
                     <Switch
                         label="Autoriser l’encaissement des espèces"
-                        description="Le contrôleur peut encaisser un billet payable à l’entrée et vendre au guichet."
+                        description="Le contrôleur peut vendre des billets au guichet."
                         checked={editCanCash}
                         onChange={setEditCanCash}
                         disabled={updatingAssignments}
@@ -749,7 +749,7 @@ export default function PartnerTeamPage() {
 
                     <Switch
                         label="Encaissement des espèces"
-                        description="Autorise l’encaissement à l’entrée et la vente au guichet."
+                        description="Autorise la vente de billets au guichet."
                         checked={invCanCash}
                         onChange={setInvCanCash}
                         disabled={inviting}

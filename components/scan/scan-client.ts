@@ -2,7 +2,7 @@
  * Appel de la voie unique de contrôle (/api/controller/scan) depuis les écrans de scan (scanner contrôleur
  * et scan partenaire) et lecture de la réponse HTTP.
  *
- * Règle du lot 4 : seul un résultat métier renvoyé en 200 (ou 409 pour un refus d'encaissement) est un
+ * Règle du lot 4 : seul un résultat métier renvoyé en 200 ou en 409 est un
  * verdict sur le billet. 401 (session expirée), 403 (contrôle non autorisé), 429 (cadence), 4xx inattendu,
  * 5xx, délai dépassé, hors ligne et coupure réseau sont des incidents techniques : jamais présentés comme
  * un billet invalide, sans vibration ni compteur de refus.
@@ -58,10 +58,6 @@ export interface ScanOutcome {
     failure?: ScanFailure;
     scanId?: string;
     ticket?: ScanTicketInfo;
-    /** Montant à encaisser (cash_required). */
-    amountDue?: number;
-    /** Montant encaissé (encaissement confirmé). */
-    amount?: number;
     code?: string;
     /** Verdict d'origine rendu pour une clé déjà traitée (D40). */
     replayed?: boolean;
@@ -84,12 +80,6 @@ export interface SendOptions {
 
 function text(v: unknown): string | undefined {
     return typeof v === 'string' && v.trim() !== '' ? v : undefined;
-}
-
-function amountOf(v: unknown): number | undefined {
-    if (v === null || v === undefined || v === '') return undefined;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : undefined;
 }
 
 function ticketOf(v: unknown): ScanTicketInfo | undefined {
@@ -116,7 +106,7 @@ export function newIdempotencyKey(): string {
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-/** Interprète une réponse de /api/controller/scan (POST ou PUT). */
+/** Interprète une réponse de POST /api/controller/scan. */
 export async function readScanResponse(res: Response): Promise<ScanOutcome> {
     let body: Record<string, unknown> = {};
     try {
@@ -148,8 +138,6 @@ export async function readScanResponse(res: Response): Promise<ScanOutcome> {
             message: serverMessage ?? SCAN_RESULT_LABELS[body.result],
             scanId: text(body.scan_id),
             ticket: ticketOf(body.ticket),
-            amountDue: amountOf(body.amount_due),
-            amount: amountOf(body.amount),
             code: text(body.code),
             replayed: body.replayed === true,
         };
@@ -191,7 +179,7 @@ const OFFLINE_OUTCOME: ScanOutcome = {
  * Envoi avec délai maximal par essai et relances (même clé). Réseau, délai et 5xx : relance ;
  * toute autre réponse : rendue telle quelle.
  */
-async function sendWithRetry(method: 'POST' | 'PUT', body: Record<string, unknown>, key: string | null, opts: SendOptions = {}): Promise<ScanOutcome> {
+async function sendWithRetry(body: Record<string, unknown>, key: string, opts: SendOptions = {}): Promise<ScanOutcome> {
     if (isOffline()) return { ...OFFLINE_OUTCOME };
     let last: ScanOutcome | null = null;
     for (let i = 0; i < SCAN_ATTEMPT_TIMEOUTS_MS.length; i++) {
@@ -202,18 +190,17 @@ async function sendWithRetry(method: 'POST' | 'PUT', body: Record<string, unknow
         const timer = setTimeout(() => controller.abort(), SCAN_ATTEMPT_TIMEOUTS_MS[i]);
         let pause = RETRY_BASE_DELAY_MS * attempt;
         try {
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (key) headers['Idempotency-Key'] = key;
-            const res = await fetch(SCAN_ENDPOINT, { method, headers, body: JSON.stringify(body), cache: 'no-store', signal: controller.signal });
+            const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Idempotency-Key': key };
+            const res = await fetch(SCAN_ENDPOINT, { method: 'POST', headers, body: JSON.stringify(body), cache: 'no-store', signal: controller.signal });
             const outcome = { ...(await readScanResponse(res)), attempts: attempt };
             if (res.status < 500) return outcome;
             last = outcome;
             const after = retryAfterMs(res);
             if (after !== null) pause = Math.max(pause, after);
-            console.warn(`[scan] ${method} ${SCAN_ENDPOINT} : HTTP ${res.status} à l'essai ${attempt}${attempt < SCAN_ATTEMPT_TIMEOUTS_MS.length ? ', nouvel essai avec la même clé' : ''}`);
+            console.warn(`[scan] POST ${SCAN_ENDPOINT} : HTTP ${res.status} à l'essai ${attempt}${attempt < SCAN_ATTEMPT_TIMEOUTS_MS.length ? ', nouvel essai avec la même clé' : ''}`);
         } catch (err) {
             const timedOut = controller.signal.aborted;
-            console.warn(`[scan] ${method} ${SCAN_ENDPOINT} : ${timedOut ? `délai de ${SCAN_ATTEMPT_TIMEOUTS_MS[i]} ms dépassé` : 'réseau indisponible'} à l'essai ${attempt}`,
+            console.warn(`[scan] POST ${SCAN_ENDPOINT} : ${timedOut ? `délai de ${SCAN_ATTEMPT_TIMEOUTS_MS[i]} ms dépassé` : 'réseau indisponible'} à l'essai ${attempt}`,
                 err instanceof Error ? err.message : String(err));
             last = timedOut
                 ? { result: 'network_error', failure: 'timeout', httpStatus: null, attempts: attempt, message: 'Réseau trop lent : rien n’est validé. Faites patienter et réessayez.' }
@@ -233,15 +220,7 @@ async function sendWithRetry(method: 'POST' | 'PUT', body: Record<string, unknow
  */
 export function postScan(request: ScanRequest, opts: SendOptions = {}): Promise<ScanOutcome> {
     const body: Record<string, unknown> = opts.replayOnly === true ? { eventId: request.eventId, replayOnly: true } : request;
-    return sendWithRetry('POST', body, opts.key ?? newIdempotencyKey(), opts);
-}
-
-/**
- * Encaissement espèces d'un scan cash_required puis compostage (tout ou rien côté serveur). Idempotent par
- * le scan (D39) : une relance après une réponse perdue rend `valid` et `replayed` (D40).
- */
-export function confirmCashCheckin(scanId: string, eventId: string): Promise<ScanOutcome> {
-    return sendWithRetry('PUT', { scanId, eventId }, null);
+    return sendWithRetry(body, opts.key ?? newIdempotencyKey(), opts);
 }
 
 // ── Saisie manuelle, premier temps (D43) ───────────────────────────────────
@@ -334,21 +313,18 @@ const TICKET_REFUSALS: ReadonlySet<ScanResult> = new Set<ScanResult>([
 
 /**
  * Refus du billet présenté. Exclus : les incidents techniques (rate_limited, server_error, network_error,
- * 401, 403), les états de l'événement (event_*), la saisie manuelle refusée (droit du scanneur) et
- * l'encaissement en attente.
+ * 401, 403), les états de l'événement (event_*) et la saisie manuelle refusée (droit du scanneur).
  */
 export function isTicketRefusal(outcome: ScanOutcome): boolean {
     return !isTechnicalOutcome(outcome) && TICKET_REFUSALS.has(outcome.result);
 }
 
-export type ScanTone = 'success' | 'danger' | 'warning' | 'info' | 'neutral';
+export type ScanTone = 'success' | 'danger' | 'warning' | 'neutral';
 
 export function toneFor(outcome: ScanOutcome): ScanTone {
     switch (categoryFor(outcome)) {
         case 'accepte':
             return 'success';
-        case 'a_encaisser':
-            return 'info';
         case 'deja_utilise':
         case 'refuse':
         case 'evenement_annule':

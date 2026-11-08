@@ -24,14 +24,14 @@ export interface ManualEntryFormProps {
     onValidate: (ticketNumber: string, idempotencyKey: string) => Promise<void>;
     isSubmitting: boolean;
     disabled?: boolean;
-    /** Raison affichée quand la saisie est suspendue (ex. encaissement en attente). */
+    /** Raison affichée quand la saisie est suspendue (ex. hors ligne). */
     disabledReason?: string;
     /** Session expirée pendant la vérification (HTTP 401). */
     onSessionExpired?: () => void;
 }
 
-/** Résultats prévus qui permettent de valider l'entrée (l'encaissement se fait ensuite sur l'écran plein). */
-const ADMISSIBLE = new Set(['valid', 'cash_required']);
+/** Résultats prévus qui permettent de valider l'entrée. */
+const ADMISSIBLE = new Set(['valid']);
 
 export function ManualEntryForm({ eventId, onValidate, isSubmitting, disabled = false, disabledReason, onSessionExpired }: ManualEntryFormProps) {
     const numberId = useId();

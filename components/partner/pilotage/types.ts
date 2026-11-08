@@ -75,7 +75,6 @@ export interface PilotageEntries {
     total: number;
     counter: number;
     refused: number;
-    cash_pending: number;
     by_scanner: Array<{
         scanner_id: string;
         name: string;

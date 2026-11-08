@@ -12,14 +12,13 @@
  *  | accepte           | scan-accept       | valid                                                   |
  *  | deja_utilise      | scan-used         | already_used                                            |
  *  | refuse            | scan-refuse       | invalid, cancelled, refunded, wrong_event, qr_expired…  |
- *  | a_encaisser       | scan-cash         | cash_required (attend une action : enfants)             |
  *  | hors_fenetre      | scan-window       | event_not_open, event_ended                             |
  *  | evenement_annule  | scan-refuse       | event_cancelled, event_suspended (icône distincte)      |
  *  | technique         | scan-tech         | rate_limited, network_error, server_error, hors ligne,  |
  *  |                   |                   | not_processed (icône distincte : le réseau répond)      |
  *
- * Un seul role="alert". Un toucher ferme tout de suite (sauf encaissement, qui attend une action) ;
- * sinon retour automatique après `durationMs`. Le conteneur porte data-scan-result (résultat) et
+ * Un seul role="alert". Un toucher ferme tout de suite ; sinon retour automatique après `durationMs`
+ * (0 : attend un toucher, résultat d'un scan repris). Le conteneur porte data-scan-result (résultat) et
  * data-scan-state="result" (mesures et tests de bout en bout).
  *
  * Amendement A10 : un scan renvoyé au retour dans l'application (même clé d'idempotence, verdict d'origine rendu
@@ -32,10 +31,10 @@
  */
 import React, { useEffect } from 'react';
 import {
-    Ban, Banknote, CalendarX2, CheckCircle2, Clock, OctagonX, RotateCcw, ScanLine, WifiOff, type LucideIcon,
+    Ban, CalendarX2, CheckCircle2, Clock, OctagonX, RotateCcw, ScanLine, WifiOff, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
-import { formatFcfa, formatTime } from '@/lib/format';
+import { formatTime } from '@/lib/format';
 import { isScanResult, NOT_PROCESSED_DETAIL, SCAN_RESULT_LABELS, scanCategoryOf, type ScanCategory, type ScanResult } from '@/lib/scan/scan-result';
 
 export interface CombatFlashOverlayProps {
@@ -54,15 +53,11 @@ export interface CombatFlashOverlayProps {
     checkedInAt?: string | null;
     /** Billet composté par ce scanneur il y a moins de 30 s (D41). */
     checkedInByMe?: boolean;
-    /** Montant à encaisser (cash_required). */
-    amountDue?: number;
-    /** Retour automatique (ms) ; 0 ou absent avec des enfants : attend une action. */
+    /** Retour automatique (ms) ; 0 : attend un toucher. */
     durationMs?: number;
     onDismiss?: () => void;
     /** Heure de la lecture d'origine d'un scan renvoyé au retour dans l'application (A10) ; sinon absent. */
     recoveredAt?: number | null;
-    /** Actions (encaissement) : le toucher de l'écran ne ferme plus. */
-    children?: React.ReactNode;
 }
 
 interface Look {
@@ -76,17 +71,14 @@ const LOOKS: Record<ScanCategory, Look> = {
     accepte: { surface: 'bg-scan-accept-bg text-scan-accept-fg', Icon: CheckCircle2, title: 'Entrée validée' },
     deja_utilise: { surface: 'bg-scan-used-bg text-scan-used-fg', Icon: RotateCcw, title: 'Billet déjà utilisé' },
     refuse: { surface: 'bg-scan-refuse-bg text-scan-refuse-fg', Icon: OctagonX, title: 'Entrée refusée' },
-    a_encaisser: { surface: 'bg-scan-cash-bg text-scan-cash-fg', Icon: Banknote, title: 'Encaissement requis' },
     hors_fenetre: { surface: 'bg-scan-window-bg text-scan-window-fg', Icon: Clock, title: 'Contrôle fermé' },
     evenement_annule: { surface: 'bg-scan-refuse-bg text-scan-refuse-fg', Icon: CalendarX2, title: 'Événement annulé' },
     technique: { surface: 'bg-scan-tech-bg text-scan-tech-fg', Icon: WifiOff, title: 'Vérification impossible' },
 };
 
 /** Titre précis d'un résultat (libellé du contrat), sinon celui de la catégorie. */
-function titleOf(status: ScanResult, category: ScanCategory, amountDue?: number): string {
+function titleOf(status: ScanResult, category: ScanCategory): string {
     switch (status) {
-        case 'cash_required':
-            return amountDue !== undefined ? `Encaissement requis : ${formatFcfa(amountDue)}` : LOOKS.a_encaisser.title;
         case 'event_suspended':
             return 'Événement suspendu';
         case 'event_cancelled':
@@ -118,14 +110,11 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     ticketNumber,
     checkedInAt,
     checkedInByMe,
-    amountDue,
     durationMs,
     onDismiss,
     recoveredAt,
-    children,
 }) => {
-    const waitsForAction = Boolean(children);
-    const effectiveDuration = durationMs ?? (waitsForAction ? 0 : status === 'valid' ? 1500 : 3000);
+    const effectiveDuration = durationMs ?? (status === 'valid' ? 1500 : 3000);
 
     useEffect(() => {
         if (!status || effectiveDuration <= 0 || !onDismiss) return;
@@ -137,17 +126,14 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     const cat = kind ?? scanCategoryOf(status);
     const look = LOOKS[cat];
     const Icon = status === 'event_suspended' ? Ban : status === 'not_processed' ? ScanLine : look.Icon;
-    const heading = title ?? titleOf(status, cat, amountDue);
+    const heading = title ?? titleOf(status, cat);
     const ticketLine = [category, ticketNumber].filter(Boolean).join(' · ');
-    // Message masqué s'il redit le titre, y compris quand le titre le complète (« Encaissement requis : 5 000 F CFA »
-    // suivi de « Encaissement requis », relecture du run 77).
+    // Message masqué s'il redit le titre, y compris quand le titre le complète (relecture du run 77).
     const detail = status === 'not_processed' ? NOT_PROCESSED_DETAIL : message;
     const showMessage = Boolean(detail) && !repeatsHeading(detail ?? '', heading);
     const usedLine = status === 'already_used' && checkedInAt
         ? (checkedInByMe ? `Déjà validé par vous à ${formatTime(checkedInAt)}` : `Entré à ${formatTime(checkedInAt)}`)
         : null;
-
-    const dismissOnTap = !waitsForAction && onDismiss ? onDismiss : undefined;
 
     return (
         <div
@@ -156,10 +142,10 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             data-scan-state="result"
             data-scan-category={cat}
             data-scan-recovered={recoveredAt ? 'true' : undefined}
-            onClick={dismissOnTap}
+            onClick={onDismiss}
             className={cn(
                 'fixed inset-0 z-50 flex select-none flex-col items-center justify-center gap-4 overflow-y-auto p-6 text-center',
-                dismissOnTap && 'cursor-pointer',
+                onDismiss && 'cursor-pointer',
                 look.surface,
             )}
             role="alert"
@@ -205,13 +191,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
                 </p>
             )}
 
-            {children && (
-                <div className="flex w-full max-w-md flex-col gap-3" onClick={(e) => e.stopPropagation()}>
-                    {children}
-                </div>
-            )}
-
-            {dismissOnTap && (
+            {onDismiss && (
                 // Retour automatique (consigne 7.2 : aucun clic nécessaire) : le toucher ne fait que l'avancer. « Touchez
                 // l'écran pour… » laissait croire qu'il fallait toucher ; gardé seulement sans retour automatique.
                 <p className="text-base font-semibold">

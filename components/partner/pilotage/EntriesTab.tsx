@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Ban, DoorOpen, HandCoins, Store } from 'lucide-react';
+import { Ban, DoorOpen, Store } from 'lucide-react';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
@@ -54,8 +54,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
 
     if (loading) {
         return (
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement des entrées">
-                <KpiCardSkeleton />
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-3" role="status" aria-busy="true" aria-label="Chargement des entrées">
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
@@ -73,11 +72,10 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
 
     return (
         <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
                 <KpiCard label="Entrées validées" value={formatInteger(data.total)} hint="Scans acceptés, guichet compris" tone="success" icon={<DoorOpen size={18} />} />
                 <KpiCard label="Au guichet" value={formatInteger(data.counter)} hint="Billets vendus et validés sur place" tone="info" icon={<Store size={18} />} />
                 <KpiCard label="Refus" value={formatInteger(data.refused)} hint="Tentatives refusées au contrôle" tone="danger" icon={<Ban size={18} />} />
-                <KpiCard label="Encaissements en attente" value={formatInteger(data.cash_pending)} hint="Billets à régler sur place présentés, pas encore encaissés" tone="warning" icon={<HandCoins size={18} />} />
             </div>
 
             {data.repeated_attempts.length > 0 && (

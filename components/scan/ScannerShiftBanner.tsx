@@ -5,7 +5,7 @@
  * design. Reprend le comportement du bandeau du lot 4 (components/shifts/ShiftModals, ShiftStatusBanner) :
  *  - caisse ouverte : heure d'ouverture, fonds de caisse, espèces encaissées, total attendu en main,
  *    bouton de clôture (Z de caisse) ;
- *  - caisse fermée : encaissement espèces bloqué, bouton « Ouvrir ma caisse ».
+ *  - caisse fermée : vente au guichet bloquée, bouton « Ouvrir ma caisse ».
  * Les montants viennent de la session de caisse renvoyée par le serveur ; formats de lib/format.
  * Lot 7 (D46) : le total attendu en caisse (fonds + encaissé) est servi par le serveur
  * (`expected_cash_in_drawer` de GET /api/controller/shifts/active) ; le navigateur n'additionne rien.
@@ -87,7 +87,7 @@ export function ScannerShiftBanner({ canAcceptCash, activeShift, onOpenShiftClic
                         <span className="text-sm font-medium text-warning-fg">Encaissement en espèces bloqué</span>
                     </p>
                     <p className="mt-1 text-sm leading-relaxed text-fg">
-                        Ouvrez votre caisse avec le régisseur avant d’encaisser des billets réglés sur place.
+                        Ouvrez votre caisse avec le régisseur avant de vendre au guichet.
                     </p>
                 </div>
             </div>

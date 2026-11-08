@@ -4,8 +4,7 @@
  * Scan partenaire (lot 4) — même voie que le scanner contrôleur (/api/controller/scan) et même
  * carte de résultat. Le partenaire propriétaire choisit l'un de ses événements ; la saisie manuelle
  * exige la vérification d'une pièce d'identité et n'est acceptée que si le réglage
- * access.manual_entry_scope l'autorise (sinon : « saisie manuelle refusée »). Les encaissements
- * espèces se font depuis le scanner de caisse (contrôleur affecté, caisse ouverte).
+ * access.manual_entry_scope l'autorise (sinon : « saisie manuelle refusée »).
  * Lot 7 (7.2) : clé d'idempotence par lecture et relances (components/scan/scan-client), aucun son ; la
  * caméra lit `onScan` par une ref et s'arrête pendant l'envoi et l'affichage du résultat (aucune boucle
  * orpheline) ; une lecture ignorée est tracée ; saisie manuelle en deux temps (vérifier, puis valider).
@@ -453,13 +452,7 @@ export default function PartnerScanPage() {
                     )}
 
                     {outcome && (
-                        <ScanResultPanel outcome={outcome} recoveredAt={shown?.recoveredAt ?? null}>
-                            {outcome.result === 'cash_required' && (
-                                <p className="text-sm font-semibold text-fg">
-                                    Encaissement à faire depuis le scanner de caisse (contrôleur habilité, caisse ouverte). Le billet n’est pas validé.
-                                </p>
-                            )}
-                        </ScanResultPanel>
+                        <ScanResultPanel outcome={outcome} recoveredAt={shown?.recoveredAt ?? null} />
                     )}
 
                     <div className="rounded-3xl border border-border bg-surface p-5">

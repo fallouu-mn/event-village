@@ -10,13 +10,12 @@
  * (ligne « Résultat retrouvé » avec l'heure de la lecture, attribut data-scan-recovered). Lot 8 (8.2 e) : jamais pour
  * `not_processed`, rien n'a été retrouvé.
  */
-import React from 'react';
 import {
     AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ScanLine, ServerCrash, ShieldAlert, WifiOff, XCircle,
     type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
-import { formatFcfa, formatTime } from '@/lib/format';
+import { formatTime } from '@/lib/format';
 import { NOT_PROCESSED_DETAIL } from '@/lib/scan/scan-result';
 import { isTechnicalOutcome, titleFor, toneFor, type ScanOutcome, type ScanTone } from './scan-client';
 
@@ -25,7 +24,6 @@ const TONE_CLASSES: Record<ScanTone, { box: string; title: string; body: string;
     success: { box: 'bg-success-bg border-success-border', title: 'text-success-fg', body: 'text-fg', icon: 'text-success-fg' },
     danger: { box: 'bg-danger-bg border-danger-border', title: 'text-danger-fg', body: 'text-fg', icon: 'text-danger-fg' },
     warning: { box: 'bg-warning-bg border-warning-border', title: 'text-warning-fg', body: 'text-fg', icon: 'text-warning-fg' },
-    info: { box: 'bg-info-bg border-info-border', title: 'text-info-fg', body: 'text-fg', icon: 'text-info-fg' },
     neutral: { box: 'bg-surface-sunken border-border-strong', title: 'text-fg', body: 'text-fg', icon: 'text-fg-muted' },
 };
 
@@ -37,7 +35,6 @@ function iconFor(outcome: ScanOutcome): LucideIcon {
     switch (outcome.result) {
         case 'valid':
             return CheckCircle2;
-        case 'cash_required':
         case 'payment_required':
             return Banknote;
         case 'qr_expired':
@@ -55,15 +52,13 @@ function iconFor(outcome: ScanOutcome): LucideIcon {
 
 export interface ScanResultPanelProps {
     outcome: ScanOutcome;
-    /** Titre imposé (ex. « Encaissement non enregistré »), sinon le libellé du résultat. */
+    /** Titre imposé, sinon le libellé du résultat. */
     title?: string;
     /** Heure de la lecture d'origine d'un scan renvoyé au retour dans l'application (A10). */
     recoveredAt?: number | null;
-    /** Actions explicites sous le résultat (encaissement, réessai, abandon). */
-    children?: React.ReactNode;
 }
 
-export function ScanResultPanel({ outcome, title, recoveredAt, children }: ScanResultPanelProps) {
+export function ScanResultPanel({ outcome, title, recoveredAt }: ScanResultPanelProps) {
     const tone = toneFor(outcome);
     const classes = TONE_CLASSES[tone];
     const Icon = iconFor(outcome);
@@ -96,9 +91,6 @@ export function ScanResultPanel({ outcome, title, recoveredAt, children }: ScanR
                             Incident technique : le billet n’est pas en cause. Ne refusez pas le spectateur pour ce motif, réessayez.
                         </p>
                     )}
-                    {outcome.result === 'cash_required' && outcome.amountDue !== undefined && (
-                        <p className={cn('text-lg font-bold tabular-nums', classes.title)}>À encaisser : {formatFcfa(outcome.amountDue)}</p>
-                    )}
                     {ticket && (ticket.ticket_number || ticket.holder || ticket.category) && (
                         <dl className={cn('grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 pt-1 text-sm', classes.body)}>
                             {ticket.holder && (<><dt className="font-semibold">Titulaire</dt><dd className="truncate">{ticket.holder}</dd></>)}
@@ -113,8 +105,6 @@ export function ScanResultPanel({ outcome, title, recoveredAt, children }: ScanR
                     )}
                 </div>
             </div>
-
-            {children}
         </div>
     );
 }

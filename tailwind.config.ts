@@ -82,8 +82,6 @@ const config: Config = {
           'used-fg': tone('scan-used-fg'),
           'refuse-bg': tone('scan-refuse-bg'),
           'refuse-fg': tone('scan-refuse-fg'),
-          'cash-bg': tone('scan-cash-bg'),
-          'cash-fg': tone('scan-cash-fg'),
           'window-bg': tone('scan-window-bg'),
           'window-fg': tone('scan-window-fg'),
           'tech-bg': tone('scan-tech-bg'),

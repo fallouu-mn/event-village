@@ -12,7 +12,7 @@
  * Une lecture : « Envoi… » au rendu suivant, « Réseau lent » après 1,5 s (nouvel essai automatique, même clé
  * d'idempotence), puis résultat plein écran (jetons --scan-*), une vibration distincte par catégorie (aucune
  * pour un incident technique), aucun son, et retour automatique au scan (délai réglable sur l'appareil pour
- * une entrée validée ; 3 s pour un refus ; l'encaissement attend une action). Hors ligne : bandeau
+ * une entrée validée ; 3 s pour un refus). Hors ligne : bandeau
  * permanent, jamais de validation. Statut HTTP lu (components/scan/scan-client) : 401 renvoie à la connexion ;
  * 403, 429, 5xx, délai et réseau sont des incidents techniques (écran neutre, jamais un refus).
  *
@@ -43,7 +43,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Banknote, Calendar, Camera, Keyboard, Loader2, LogOut, Settings2 } from 'lucide-react';
+import { Calendar, Camera, Keyboard, Loader2, LogOut, Settings2 } from 'lucide-react';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { detachPushSubscription } from '@/lib/push/client';
 import { Button } from '@/components/ui/Button';
@@ -58,7 +58,7 @@ import { ScanStatusBar } from '@/components/scan/ScanStatusBar';
 import { ScanHistoryList, type ServedRefusal, type ServedScan } from '@/components/scan/ScanHistoryList';
 import { ScannerStartScreen, type StartChoice } from '@/components/scan/ScannerStartScreen';
 import {
-    categoryFor, confirmCashCheckin, isTechnicalOutcome, newIdempotencyKey, postScan, recoveredTimeOf, SCAN_INCIDENTS_ENDPOINT,
+    categoryFor, isTechnicalOutcome, newIdempotencyKey, postScan, recoveredTimeOf, SCAN_INCIDENTS_ENDPOINT,
     titleFor, type ScanOutcome, type ScanRequest,
 } from '@/components/scan/scan-client';
 import {
@@ -68,7 +68,7 @@ import {
 } from '@/lib/scan/scan-session';
 import { deferredPart, useDeferredPart } from '@/lib/scan/deferred-part';
 import { EVENT_STATUS_META, isEventEligibleForController, isEventStatus } from '@/lib/events/event-status';
-import { formatEventDateTime, formatFcfa, formatTime } from '@/lib/format';
+import { formatEventDateTime, formatTime } from '@/lib/format';
 import { triggerHapticFeedback } from '@/lib/hardware/feedback';
 import type { ShiftSummary } from '@/lib/shifts/shift.service';
 
@@ -211,8 +211,6 @@ export default function ControllerScannerPage() {
     const [stage, setStage] = useState<Stage>('idle');
     const [attempt, setAttempt] = useState(1);
     const [shown, setShown] = useState<Shown | null>(null);
-    const [cashConfirming, setCashConfirming] = useState(false);
-    const [cashError, setCashError] = useState<ScanOutcome | null>(null);
     const [ignoredNotice, setIgnoredNotice] = useState<string | null>(null);
     const [online, setOnline] = useState(true);
     const [autoReturnMs, setAutoReturnMs] = useState(DEFAULT_ACCEPT_RETURN_MS);
@@ -546,7 +544,6 @@ export default function ControllerScannerPage() {
 
     const dismissResult = useCallback(() => {
         setShown(null);
-        setCashError(null);
         setStage('idle');
         busyRef.current = false;
     }, []);
@@ -566,7 +563,6 @@ export default function ControllerScannerPage() {
         inFlightRef.current = true;
         awayRef.current = document.visibilityState === 'hidden';
         setPendingNotice(null);
-        setCashError(null);
         setShown(null);
         setAttempt(1);
         setStage('pending');
@@ -681,37 +677,6 @@ export default function ControllerScannerPage() {
         mark('ev-scan:read');
         await runScanRef.current({ eventId: id, manualTicketNumber, identityVerified: true }, null, key);
     }, []);
-
-    // ── Encaissement espèces (PUT, tout ou rien côté serveur, idempotent) ──
-    const handleConfirmCash = async () => {
-        const id = eventIdRef.current;
-        const pending = shown?.outcome;
-        if (!pending?.scanId || !id) return;
-        if (!activeShift) {
-            // L'écran d'encaissement reste affiché : l'encaissement reprend une fois la caisse ouverte
-            setShowOpenShift(true);
-            return;
-        }
-        setCashConfirming(true);
-        try {
-            const outcome = await confirmCashCheckin(pending.scanId, id);
-            if (redirectIfSessionExpired(outcome)) return;
-            if (outcome.result === 'valid' && !outcome.failure) {
-                setCashError(null);
-                presentOutcome({
-                    ...outcome,
-                    ticket: pending.ticket,
-                    message: outcome.amount !== undefined ? `Encaissé : ${formatFcfa(outcome.amount)}. Entrée validée.` : outcome.message,
-                }, shown?.payload ?? null);
-                void fetchActiveShift();
-            } else {
-                // Refus du serveur : rien n'est encaissé ni composté ; l'écran reste jusqu'à une action explicite
-                setCashError(outcome);
-            }
-        } finally {
-            setCashConfirming(false);
-        }
-    };
 
     const handleLogout = async () => {
         // A10 : la mémoire du contrôle (événement, mode, scan en attente) ne survit pas à la déconnexion
@@ -856,7 +821,6 @@ export default function ControllerScannerPage() {
     const canCash = selected.can_accept_cash;
     const showCounter = canCash && selected.counter_sale_enabled;
     const outcome = shown?.outcome ?? null;
-    const cashPending = outcome?.result === 'cash_required' && !isTechnicalOutcome(outcome);
     const modalOpen = showOpenShift || showCloseShift || zSummary !== null;
     // Hors ligne, la caméra continue de lire : chaque lecture affiche « Hors ligne : rien n'est validé »
     const cameraPaused = stage !== 'idle' || modalOpen;
@@ -901,11 +865,10 @@ export default function ControllerScannerPage() {
                 </StatusBanner>
             ) : (
                 <>
-                    {/* Caméra gardée ouverte mais en pause pendant un encaissement (décision attendue) */}
                     {inputMode === 'camera' && (CameraQrScanner ? (
                         <CameraQrScanner
                             onScan={handleCameraRead}
-                            paused={cameraPaused || cashPending}
+                            paused={cameraPaused}
                             onSwitchToManual={() => chooseMode('manual')}
                             overlay={pendingLayer}
                             autoStart={!resumeGate}
@@ -926,8 +889,8 @@ export default function ControllerScannerPage() {
                                 eventId={selected.events.id}
                                 onValidate={handleManualValidate}
                                 isSubmitting={stage === 'pending' || stage === 'slow'}
-                                disabled={cashPending || !online}
-                                disabledReason={!online ? 'Hors ligne : la saisie manuelle reprendra au retour du réseau.' : 'Saisie en pause : tranchez d’abord l’encaissement en cours.'}
+                                disabled={!online}
+                                disabledReason="Hors ligne : la saisie manuelle reprendra au retour du réseau."
                                 onSessionExpired={goToLogin}
                             />
                         </div>
@@ -989,7 +952,7 @@ export default function ControllerScannerPage() {
                     <Select
                         id="scanner-auto-return"
                         label="Retour au scan après une entrée validée"
-                        hint="Un refus reste affiché 3 secondes ; un encaissement attend votre décision. Touchez l’écran pour revenir tout de suite."
+                        hint="Un refus reste affiché 3 secondes. Touchez l’écran pour revenir tout de suite."
                         value={String(autoReturnMs)}
                         onChange={(e) => changeAutoReturn(Number(e.target.value))}
                         options={ACCEPT_RETURN_CHOICES.map((ms) => ({ value: String(ms), label: `${String(ms / 1000).replace('.', ',')} s` }))}
@@ -1014,11 +977,10 @@ export default function ControllerScannerPage() {
         </div>
     );
 
-    // Durée du plein écran : entrée validée = préférence de l'appareil ; encaissement = attend une action ; résultat
+    // Durée du plein écran : entrée validée = préférence de l'appareil ; résultat
     // d'un scan repris au retour dans l'application (A10), verdict retrouvé ou scan non traité = attend un toucher (le
     // contrôleur revient et doit le voir ; un scan non traité se perdrait en 3 s alors que le billet reste à rescanner)
     const overlayDuration = !outcome ? 0
-        : cashPending ? 0
         : shown?.resumed ? 0
         : outcome.result === 'valid' && !isTechnicalOutcome(outcome) ? autoReturnMs
         : REFUSAL_RETURN_MS;
@@ -1081,35 +1043,10 @@ export default function ControllerScannerPage() {
                     ticketNumber={outcome.ticket?.ticket_number}
                     checkedInAt={outcome.ticket?.checked_in_at ?? null}
                     checkedInByMe={recentByMe}
-                    amountDue={outcome.amountDue}
                     durationMs={overlayDuration}
                     onDismiss={dismissResult}
                     recoveredAt={shown?.recoveredAt ?? null}
-                >
-                    {cashPending ? (
-                        canCash ? (
-                            <>
-                                {cashError && (
-                                    <StatusBanner tone="danger" title="Encaissement non enregistré" announce="alert">
-                                        {titleFor(cashError)}. Rien n’a été encaissé ni validé : ne laissez pas entrer le spectateur.
-                                    </StatusBanner>
-                                )}
-                                <Button variant="primary" size="lg" fullWidth className="tabular-nums" isLoading={cashConfirming} onClick={() => void handleConfirmCash()} leftIcon={<Banknote size={18} />}>
-                                    {!activeShift ? 'Ouvrir ma caisse pour encaisser'
-                                        : outcome.amountDue !== undefined ? `J’ai reçu ${formatFcfa(outcome.amountDue)} : valider l’entrée` : 'J’ai reçu les espèces : valider l’entrée'}
-                                </Button>
-                                <Button variant="secondary" size="lg" fullWidth onClick={dismissResult} disabled={cashConfirming}>
-                                    Annuler : le spectateur ne paie pas
-                                </Button>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-lg font-semibold">Vous n’êtes pas habilité à encaisser : orientez le spectateur vers la caisse de l’événement.</p>
-                                <Button variant="secondary" size="lg" fullWidth onClick={dismissResult}>Fermer et reprendre le scan</Button>
-                            </>
-                        )
-                    ) : undefined}
-                </CombatFlashOverlay>
+                />
             )}
 
             {canCash && (
