@@ -37,7 +37,7 @@
  * jusqu'à fix(8.2e-s).
  * Interprétations (contrat muet, à reprendre au rapport) :
  *  - les jetons de texte se nomment --scan-<x>-fg, en face de --scan-<x>-bg (convention -fg / -bg des jetons
- *    du lot 5, app/globals.css:52-67) ; les six fonds attendus : accept, used, refuse, cash, window, tech ;
+ *    du lot 5, app/globals.css:52-67) ; les cinq fonds attendus : accept, used, refuse, window, tech (cash retiré par A16, lot 9) ;
  *  - vibrationPattern reçoit le nom de catégorie du tableau du contrat (§6.2) ;
  *  - aucune vibration ailleurs que dans lib/hardware/feedback.ts (D50 : la vibration de lecture est supprimée).
  */
@@ -216,10 +216,10 @@ function scanTokens(): Map<string, string[]> {
     return out;
 }
 
-const SCAN_TONES = ['accept', 'used', 'refuse', 'cash', 'window', 'tech'] as const;
+const SCAN_TONES = ['accept', 'used', 'refuse', 'window', 'tech'] as const;
 
 describe('7.2 — jetons --scan-* : texte ≥ 7:1, identiques en clair et en sombre (D51)', () => {
-    test('les six paires --scan-<x>-fg / --scan-<x>-bg existent et chacune atteint 7:1', () => {
+    test('les cinq paires --scan-<x>-fg / --scan-<x>-bg existent et chacune atteint 7:1', () => {
         const tokens = scanTokens();
         const ratios: string[] = [];
         for (const tone of SCAN_TONES) {
