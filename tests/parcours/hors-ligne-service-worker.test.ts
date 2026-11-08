@@ -582,7 +582,7 @@ describe('7.1 public/sw.js : source (contrat 5.3)', () => {
     test('un seul .put( dans cachePut, pas d’addAll ; règle /api/ avant tout respondWith ; aucun motif interdit ; constantes', () => {
         const src = stripComments(fs.readFileSync(SW_FILE, 'utf8'));
         assert.match(src, /SW_VERSION\s*=\s*['"]lot7-1['"]/, 'SW_VERSION = \'lot7-1\'');
-        assert.match(src, /LEGACY_CACHES\s*=\s*\[[^\]]*['"]event-village-v1['"]/, 'LEGACY_CACHES garde event-village-v1 (tests/e2e-scenarios.test.ts:171-173)');
+        assert.match(src, /LEGACY_CACHES\s*=\s*\[[^\]]*['"]event-village-v1['"]/, 'LEGACY_CACHES garde event-village-v1 (ancien cache purgé à l’activation, public/sw.js)');
         assert.match(src, /OFFLINE_PATH\s*=\s*['"]\/billet\/hors-ligne['"]/, 'OFFLINE_PATH = \'/billet/hors-ligne\'');
         // Constantes qui valent '/api/' (ex. const API_PREFIX = '/api/') : acceptées à la place du littéral.
         const apiNames = Array.from(src.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*['"`]\/api\/['"`]/g)).map((m) => m[1]);
