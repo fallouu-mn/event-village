@@ -6,17 +6,22 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
-import { AdminService } from '@/lib/admin/admin.service';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { storeOtp } from '@/lib/auth/otp-store';
 import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
 import { findExistingAccount } from '@/lib/auth/existing-account';
-import { claimRegistrationUploads, resolveRegistrationUploads } from '@/lib/partners/documents';
+import { resolveRegistrationUploads } from '@/lib/partners/documents';
 import { grantUserRoles } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
+
+/** Compte de connexion sans dossier : retiré pour que le numéro puisse se réinscrire. Un échec est journalisé. */
+async function removeIncompleteAccount(supabase: ReturnType<typeof getServiceRoleClient>, userId: string): Promise<void> {
+    const { error } = await supabase.auth.admin.deleteUser(userId);
+    if (error) console.error(`[API /api/partner/register] retrait du compte incomplet ${userId} impossible :`, error.message);
+}
 
 /**
  * POST /api/partner/register
@@ -140,88 +145,54 @@ export async function POST(req: NextRequest) {
             await grantUserRoles(userId, ['PARTENAIRE']);
         } catch (roleErr) {
             console.error('[API /api/partner/register] Attribution du rôle PARTENAIRE impossible:', roleErr);
+            await removeIncompleteAccount(supabase, userId);
             return NextResponse.json({ error: 'Erreur lors de la configuration du compte partenaire.' }, { status: 500 });
         }
 
-        // 2. Synchronisation dans public.users avec rôle PARTENAIRE et statut EN_ATTENTE
-        await supabase.from('users').upsert({
-            id: userId,
-            first_name: data.firstName.trim(),
-            last_name: data.lastName.trim(),
-            phone: normalizedPhone,
-            email: effectiveEmail,
-            role: 'PARTENAIRE',
-            status: 'EN_ATTENTE',
-            referral_status: 'STANDARD',
-            updated_at: new Date().toISOString(),
-        });
-
-        // 3. Création du profil Entreprise dans public.partners
-        const { data: partnerRow, error: partnerError } = await supabase
-            .from('partners')
-            .insert({
+        // 3. Lot 9 (A33) : profil, fiche, activités, rattachement des pièces (usage unique des jetons) et audit dans
+        //    une transaction. L'accusé de réception (in-app et email, plus de SMS : doublon du code d'inscription) et
+        //    l'alerte aux administrateurs partent par le trigger trg_partners_notify, dans la même transaction.
+        //    Le code OTP a été enregistré en base avant l'envoi du SMS (lot 1B.7).
+        const { data: finalized, error: finalizeError } = await supabase.rpc('partner_register_finalize', {
+            p: {
                 user_id: userId,
-                company_name: data.companyName.trim(),
-                commercial_name: data.commercialName?.trim() || data.companyName.trim(),
-                description: data.description?.trim() || null,
-                address: data.address?.trim() || null,
-                city: data.city?.trim() || 'Dakar',
+                first_name: data.firstName.trim(),
+                last_name: data.lastName.trim(),
                 phone: normalizedPhone,
                 email: effectiveEmail,
-                id_card_url: documents.uploads.id_card.object_path,
-                business_doc_url: documents.uploads.business_doc.object_path,
-                status: 'EN_ATTENTE',
-                is_verified: false,
-                phone_verified: false,
-            })
-            .select()
-            .single();
-
-        if (partnerError) {
-            console.error('[API /api/partner/register] Erreur création partner:', partnerError);
-            return NextResponse.json({ error: 'Erreur lors de la création de la fiche partenaire.' }, { status: 500 });
-        }
-
-        const partnerId = partnerRow.id;
-
-        // Lot 1C.2 : rattachement des pièces au dossier (usage unique des jetons)
-        try {
-            await claimRegistrationUploads(partnerId, documents.uploads);
-        } catch (claimErr) {
-            console.error('[API /api/partner/register] rattachement des pièces :', claimErr instanceof Error ? claimErr.message : claimErr);
-            return NextResponse.json({ error: 'Pièces justificatives déjà utilisées ou expirées : déposez-les à nouveau.', code: 'INVALID_DOCUMENT_UPLOAD' }, { status: 409 });
-        }
-
-        // 4. Enregistrement des activités dans public.partner_activities
-        if (data.activities && data.activities.length > 0) {
-            const activitiesPayload = data.activities.map((act) => ({
-                partner_id: partnerId,
-                activity_type: act,
-                is_active: true,
-            }));
-            await (supabase.from('partner_activities') as any).insert(activitiesPayload);
-        }
-
-        // 5. Journalisation d'audit inaltérable
-        await AdminService.logAudit({
-            userId: userId,
-            userRole: 'PARTENAIRE',
-            action: 'PARTNER_REGISTRATION',
-            objectType: 'partners',
-            objectId: partnerId,
-            newValue: {
-                company_name: data.companyName.trim(),
-                status: 'EN_ATTENTE',
+                partner: {
+                    company_name: data.companyName.trim(),
+                    commercial_name: data.commercialName?.trim() || data.companyName.trim(),
+                    description: data.description?.trim() || null,
+                    address: data.address?.trim() || null,
+                    city: data.city?.trim() || 'Dakar',
+                    phone: normalizedPhone,
+                    email: effectiveEmail,
+                    id_card_url: documents.uploads.id_card.object_path,
+                    business_doc_url: documents.uploads.business_doc.object_path,
+                },
                 activities: data.activities,
+                upload_ids: [documents.uploads.id_card.id, documents.uploads.business_doc.id],
+                ip: clientIp ?? 'inconnue',
             },
-            metadata: { ip: clientIp ?? 'inconnue' },
         });
 
-        // 6. (Lot 1B.7) Le code OTP a été enregistré en base avant l'envoi du SMS.
+        // Sans fiche, le compte de connexion est retiré : sinon le numéro resterait pris au nouvel essai (409).
+        if (finalizeError) {
+            await removeIncompleteAccount(supabase, userId);
+            return apiFailure('POST /api/partner/register, enregistrement du dossier', finalizeError, { message: 'Inscription momentanément impossible. Réessayez.', code: 'PARTNER_REGISTER_FAILED' });
+        }
 
-        // 7. Lot 6 (J2.5, décision 14) : l'accusé de réception (in-app et email, plus de SMS : doublon du
-        //    code d'inscription) et l'alerte aux administrateurs sont mis en file par le trigger
-        //    trg_partners_notify dans la transaction de l'insertion de la fiche (étape 3).
+        const outcome = finalized as { ok: boolean; code?: string; partner_id?: string };
+        if (!outcome.ok || !outcome.partner_id) {
+            await removeIncompleteAccount(supabase, userId);
+            if (outcome.code === 'INVALID_DOCUMENT_UPLOAD') {
+                return NextResponse.json({ error: 'Pièces justificatives déjà utilisées ou expirées : déposez-les à nouveau.', code: outcome.code }, { status: 409 });
+            }
+            return apiFailure('POST /api/partner/register, enregistrement du dossier', new Error(`refus inattendu : ${outcome.code}`), { message: 'Inscription momentanément impossible. Réessayez.', code: 'PARTNER_REGISTER_FAILED' });
+        }
+
+        const partnerId = outcome.partner_id;
 
         return NextResponse.json({
             success: true,

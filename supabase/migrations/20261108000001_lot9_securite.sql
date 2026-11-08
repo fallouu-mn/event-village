@@ -5,6 +5,7 @@
 --   ticket_refund_request(uuid, uuid, text) : 20261101000005_lot3_remboursements.sql:85-191
 --   event_update(jsonb)                     : 20261103000005_lot6_billetterie.sql:1339-1702
 --   ticket_category_guard(uuid, uuid)       : 20261102000004_lot5_edition.sql:809-845
+-- Trigger : trg_check_circular_referral (A27). Nouvelles : admin_permissions_set, partner_register_finalize (A33).
 -- Sans BEGIN ni COMMIT, rejouable, aucune reprise de données.
 -- ============================================================================
 
@@ -566,3 +567,137 @@ DROP TRIGGER IF EXISTS trg_check_circular_referral ON public.referral_relationsh
 CREATE TRIGGER trg_check_circular_referral
     BEFORE INSERT OR UPDATE OF sponsor_id, referred_id ON public.referral_relationships
     FOR EACH ROW EXECUTE FUNCTION public.check_no_circular_referral();
+
+
+-- ============================================================================
+-- A33 — admin_permissions_set (nouvelle, L39)
+-- p : { admin_id, permissions[], actor_id } → { ok, permissions, before } ou { ok:false, code, message }.
+-- Avant, la route supprimait puis insérait sans lire les erreurs : un échec de l'insertion laissait l'administrateur
+-- sans droits et répondait success. Suppression, insertion et audit vont ensemble, sous le verrou de la cible : deux
+-- POST simultanés ne heurtent plus uq_admin_user_permission. Cible contrôlée sur users.role, comme la route le faisait.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.admin_permissions_set(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_admin uuid := public.try_uuid(p->>'admin_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_target record;
+    v_before text[];
+    v_after text[];
+BEGIN
+    IF v_actor IS NULL OR jsonb_typeof(p->'permissions') IS DISTINCT FROM 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Changement de permissions incomplet.');
+    END IF;
+
+    SELECT id, role::text AS role, email INTO v_target FROM public.users WHERE id = v_admin FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TARGET_NOT_FOUND', 'message', 'Administrateur cible introuvable.');
+    END IF;
+    IF v_target.role = 'SUPERADMIN' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TARGET_IS_SUPERADMIN', 'message', 'Le Superadmin dispose de toutes les permissions par défaut.');
+    END IF;
+
+    SELECT COALESCE(array_agg(permission ORDER BY permission), ARRAY[]::text[]) INTO v_before
+      FROM public.admin_permissions WHERE user_id = v_admin;
+    SELECT COALESCE(array_agg(DISTINCT x ORDER BY x), ARRAY[]::text[]) INTO v_after
+      FROM jsonb_array_elements_text(p->'permissions') AS x;
+
+    DELETE FROM public.admin_permissions WHERE user_id = v_admin;
+    INSERT INTO public.admin_permissions (user_id, permission, granted_by)
+    SELECT v_admin, x, v_actor FROM unnest(v_after) AS x;
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+    VALUES (v_actor, 'SUPERADMIN', 'UPDATE_PERMISSIONS', 'admin_permissions', v_admin,
+            jsonb_build_object('permissions', to_jsonb(v_before)),
+            jsonb_build_object('permissions', to_jsonb(v_after)),
+            jsonb_build_object('target_email', v_target.email));
+
+    RETURN jsonb_build_object('ok', true, 'permissions', to_jsonb(v_after), 'before', to_jsonb(v_before));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_permissions_set(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_permissions_set(jsonb) TO service_role;
+
+
+-- ============================================================================
+-- A33 — partner_register_finalize (nouvelle, L39)
+-- p : { user_id, first_name, last_name, phone, email, partner: { company_name, commercial_name, description, address,
+--       city, phone, email, id_card_url, business_doc_url }, activities[], upload_ids[], ip } → { ok, partner_id } ou
+--     { ok:false, code:'INVALID_DOCUMENT_UPLOAD', message }.
+-- Profil, fiche, activités, rattachement des deux pièces et audit vont ensemble : trg_partners_notify part dans la
+-- même transaction, l'accusé n'est émis que si tout est passé. Une pièce consommée entre-temps annule le tout par
+-- le bloc d'exception ; toute autre erreur remonte, et la route retire le compte de connexion.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.partner_register_finalize(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_partner jsonb := p->'partner';
+    v_partner_id uuid;
+    v_activities text[];
+    v_upload_ids uuid[];
+    v_claimed integer;
+BEGIN
+    IF v_user IS NULL OR jsonb_typeof(v_partner) IS DISTINCT FROM 'object'
+       OR jsonb_typeof(p->'activities') IS DISTINCT FROM 'array'
+       OR jsonb_typeof(p->'upload_ids') IS DISTINCT FROM 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Inscription partenaire incomplète.');
+    END IF;
+
+    SELECT COALESCE(array_agg(DISTINCT x ORDER BY x), ARRAY[]::text[]) INTO v_activities
+      FROM jsonb_array_elements_text(p->'activities') AS x;
+    SELECT COALESCE(array_agg(public.try_uuid(x)), ARRAY[]::uuid[]) INTO v_upload_ids
+      FROM jsonb_array_elements_text(p->'upload_ids') AS x;
+
+    BEGIN
+        INSERT INTO public.users (id, first_name, last_name, phone, email, role, status, referral_status, updated_at)
+        VALUES (v_user, p->>'first_name', p->>'last_name', p->>'phone', p->>'email',
+                'PARTENAIRE'::public.user_role, 'EN_ATTENTE'::public.user_status, 'STANDARD'::public.referral_status, now())
+        ON CONFLICT (id) DO UPDATE
+           SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, phone = EXCLUDED.phone, email = EXCLUDED.email,
+               role = EXCLUDED.role, status = EXCLUDED.status, referral_status = EXCLUDED.referral_status, updated_at = EXCLUDED.updated_at;
+
+        INSERT INTO public.partners (user_id, company_name, commercial_name, description, address, city, phone, email,
+                                     id_card_url, business_doc_url, status, is_verified, phone_verified)
+        VALUES (v_user, v_partner->>'company_name', v_partner->>'commercial_name', v_partner->>'description', v_partner->>'address',
+                v_partner->>'city', v_partner->>'phone', v_partner->>'email', v_partner->>'id_card_url', v_partner->>'business_doc_url',
+                'EN_ATTENTE'::public.partner_status, FALSE, FALSE)
+        RETURNING id INTO v_partner_id;
+
+        INSERT INTO public.partner_activities (partner_id, activity_type, is_active)
+        SELECT v_partner_id, x::public.partner_activity_type, TRUE FROM unnest(v_activities) AS x;
+
+        UPDATE public.partner_document_uploads
+           SET claimed_partner_id = v_partner_id, claimed_at = now()
+         WHERE id = ANY (v_upload_ids) AND claimed_at IS NULL AND expires_at > now();
+        GET DIAGNOSTICS v_claimed = ROW_COUNT;
+        IF v_claimed <> 2 THEN
+            RAISE EXCEPTION USING ERRCODE = 'EV409', MESSAGE = 'Pièces justificatives déjà utilisées ou expirées.';
+        END IF;
+
+        INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value, metadata)
+        VALUES (v_user, 'PARTENAIRE', 'PARTNER_REGISTRATION', 'partners', v_partner_id,
+                jsonb_build_object('company_name', v_partner->>'company_name', 'status', 'EN_ATTENTE', 'activities', to_jsonb(v_activities)),
+                jsonb_build_object('ip', COALESCE(p->>'ip', 'inconnue')));
+    EXCEPTION WHEN SQLSTATE 'EV409' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_DOCUMENT_UPLOAD',
+                                  'message', 'Pièces justificatives déjà utilisées ou expirées : déposez-les à nouveau.');
+    END;
+
+    RETURN jsonb_build_object('ok', true, 'partner_id', v_partner_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.partner_register_finalize(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.partner_register_finalize(jsonb) TO service_role;

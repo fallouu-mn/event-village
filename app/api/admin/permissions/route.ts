@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth, ADMIN_PERMISSIONS, AdminPermission } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { AdminService } from '@/lib/admin/admin.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,50 +61,28 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'adminId et tableau de permissions requis.' }, { status: 400 });
         }
 
-        const supabase = getServiceRoleClient();
-
-        // 1. Vérifier que la cible est bien un ADMIN (un Superadmin a déjà tous les droits)
-        const { data: targetUser } = await supabase
-            .from('users')
-            .select('id, role, email')
-            .eq('id', adminId)
-            .maybeSingle();
-
-        if (!targetUser) {
-            return NextResponse.json({ error: 'Administrateur cible introuvable.' }, { status: 404 });
-        }
-
-        if (targetUser.role === 'SUPERADMIN') {
-            return NextResponse.json({ error: 'Le Superadmin dispose de toutes les permissions par défaut.' }, { status: 400 });
-        }
-
-        // 2. Suppression des anciennes permissions
-        await supabase.from('admin_permissions').delete().eq('user_id', adminId);
-
-        // 3. Insertion des nouvelles permissions valides
         const validPermissions = permissions.filter((p) =>
             (ADMIN_PERMISSIONS as readonly string[]).includes(p)
         );
 
-        if (validPermissions.length > 0) {
-            const rowsToInsert = validPermissions.map((perm) => ({
-                user_id: adminId,
-                permission: perm,
-                granted_by: auth.user!.id,
-            }));
-            await supabase.from('admin_permissions').insert(rowsToInsert);
+        // Lot 9 (A33) : garde de la cible, remplacement et audit dans une transaction ; un échec laisse les droits intacts.
+        const { data, error } = await getServiceRoleClient().rpc('admin_permissions_set', {
+            p: { admin_id: adminId, permissions: validPermissions, actor_id: auth.user!.id },
+        });
+        if (error) {
+            return apiFailure('POST /api/admin/permissions', error, { message: 'Permissions non enregistrées. Réessayez.', code: 'PERMISSIONS_SAVE_FAILED' });
         }
 
-        // 4. Audit Log
-        await AdminService.logAudit({
-            userId: auth.user!.id,
-            userRole: 'SUPERADMIN',
-            action: 'UPDATE_PERMISSIONS',
-            objectType: 'admin_permissions',
-            objectId: adminId,
-            newValue: { permissions: validPermissions },
-            metadata: { target_email: targetUser.email },
-        });
+        const outcome = data as { ok: boolean; code?: string };
+        if (!outcome.ok) {
+            if (outcome.code === 'TARGET_NOT_FOUND') {
+                return NextResponse.json({ error: 'Administrateur cible introuvable.', code: outcome.code }, { status: 404 });
+            }
+            if (outcome.code === 'TARGET_IS_SUPERADMIN') {
+                return NextResponse.json({ error: 'Le Superadmin dispose de toutes les permissions par défaut.', code: outcome.code }, { status: 400 });
+            }
+            return apiFailure('POST /api/admin/permissions', new Error(`refus inattendu : ${outcome.code}`), { message: 'Permissions non enregistrées. Réessayez.', code: 'PERMISSIONS_SAVE_FAILED' });
+        }
 
         return NextResponse.json({
             success: true,
