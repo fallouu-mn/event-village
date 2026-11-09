@@ -184,7 +184,7 @@ Existants : Essais 44, 45, 46 (voir l'avertissement), 58, 60 ; `docs/essai-local
 
 | N° | Préparation | Actions | Résultat attendu | Messages attendus | OK / anomalie |
 |---|---|---|---|---|---|
-| P14.1 | Aïda annule un événement avec ventes | `/admin/events/{id}` | Remboursements lancés ; **partenaire sans message** (R15) | F2 : « Event Village : {title} du {start_at} est annulé. Remboursement automatique en cours. {APP_URL}/tickets » | ☐ OK ☐ anomalie |
+| P14.1 | Aïda annule un événement avec ventes | `/admin/events/{id}` | Remboursements lancés ; **partenaire sans message sur le moment**, puis « Remboursements terminés » ou « Remboursements en attente » s’il y a des versements en ligne (R15) | F2 : « Event Village : {title} du {start_at} est annulé. Remboursement automatique en cours. {APP_URL}/tickets » | ☐ OK ☐ anomalie |
 | P14.2 | Billet transféré à Lamine | Annuler | Lamine lit le remboursement, l'argent va à Fatou (R13) | Cloche de Lamine : « Événement annulé » | ☐ OK ☐ anomalie |
 | P14.3 | Caisse ouverte | Annuler | La caisse reste ouverte | Aucun | ☐ OK ☐ anomalie |
 
