@@ -204,4 +204,20 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/profile/AvatarEditor.tsx',
     'app/profile/payments/page.tsx',
     'app/profile/payments/loading.tsx',
+    // ── Lot 9 bis (contrat, section 8.2 ; T3) ──
+    // Fichiers créés par le lot (aucun autre nouveau .tsx n'est permis). Absents tant que l'écran n'est pas écrit :
+    // la suite design-systeme est rouge jusqu'aux commits d'écran (fix(9b.48e), fix(9b.26e), fix(9b.13e),
+    // fix(9b.42e), fix(9b.15e), fix(9b.4e)).
+    // G (48) : page de validation du lien de vérification d'email (E-G)
+    'app/verify-email/page.tsx',
+    // C (26, R37) : invitations de contrôleur reçues, acceptées par le titulaire (E-C)
+    'app/invitations/page.tsx',
+    // B (13, R57) : saisie récente du mot de passe avant une action sensible (E-B)
+    'components/auth/PasswordConfirmDialog.tsx',
+    // E (42, R85) : « Changer mon mot de passe » une fois connecté (E-E)
+    'components/profile/PasswordChangeDialog.tsx',
+    // B (15, R6, R55) : « Suspendre » et « Réactiver » sur la fiche partenaire, motif obligatoire (E-B)
+    'components/admin/PartnerStatusDialog.tsx',
+    // A (4, R20) : « Espèces à rembourser par l'organisateur » (E-A)
+    'components/partner/pilotage/CashRefundsList.tsx',
 ];
