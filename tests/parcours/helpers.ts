@@ -5,6 +5,7 @@
 import '../helpers/env';
 import { randomBytes } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { getFakes } from '../fakes';
 
 export const BASE_URL = 'http://127.0.0.1:3000';
 
@@ -112,4 +113,111 @@ export async function uploadRegistrationDocuments(): Promise<RegistrationDocumen
         idCardUrl: out.id_card,
         businessDocUrl: out.business_doc,
     };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Lot 9 bis (R53, tâche 17) : inscription partenaire en deux appels de la même route.
+// ---------------------------------------------------------------------------------------------------------
+
+/** Réponse d'un appel de route, lue une fois. */
+export interface RouteReply {
+    status: number;
+    body: Record<string, unknown>;
+    /** En-têtes Set-Cookie (appel 2 : connexion côté serveur). */
+    setCookies: string[];
+}
+
+export interface PartnerRegistration {
+    /** Appel 1, sans `otpCode` : contrat 4, 200 `{ otpSent: true, phone }` et rien de créé. */
+    first: RouteReply;
+    /** Code lu dans le faux SMS envoyé au numéro par l'appel 1 (null si l'appel 1 est refusé). */
+    code: string | null;
+    /** SMS enregistrés par le faux adaptateur pour ce numéro pendant l'appel 1, toutes issues confondues. */
+    smsDuringFirst: number;
+    /** Appel 2, même corps plus `otpCode` : 201, compte et fiche créés. Null si l'appel 1 est refusé ou `stopAfterFirst`. */
+    second: RouteReply | null;
+}
+
+export interface PartnerRegistrationOptions {
+    /** En-têtes des deux appels (par exemple l'IP vue par getClientIp). */
+    headers?: Record<string, string>;
+    /** Code envoyé à l'appel 2 à la place du code reçu (cas « mauvais code »). */
+    otpCode?: string;
+    /** N'envoie que l'appel 1 (cas « appel sans code : rien n'est créé »). */
+    stopAfterFirst?: boolean;
+}
+
+async function readReply(res: Response): Promise<RouteReply> {
+    const body = (await res.json()) as Record<string, unknown>;
+    return { status: res.status, body, setCookies: res.headers.getSetCookie() };
+}
+
+/** Codes à 6 chiffres des SMS reçus par `phone` après les `since` premiers enregistrements. */
+function otpCodesSince(phone: string, since: number): { count: number; codes: string[] } {
+    const received = getFakes().sms.messagesTo(phone).slice(since);
+    const codes = received.map((m) => m.message.match(/\b(\d{6})\b/)?.[1]).filter((c): c is string => Boolean(c));
+    return { count: received.length, codes };
+}
+
+/**
+ * Inscription partenaire en deux appels de `POST /api/partner/register` (contrat lot 9 bis, section 4, R53) :
+ *  1. le corps sans `otpCode` : le serveur envoie le code par SMS et ne crée rien ;
+ *  2. le même corps plus `otpCode`, lu dans le faux SMS envoyé par l'appel 1 (comptage par numéro neuf) :
+ *     le serveur vérifie le code, crée le compte et la fiche, et ouvre la session.
+ * Les réponses sont rendues telles quelles : chaque suite garde ses propres assertions. Un refus à l'appel 1
+ * (400, 409, 429, 503) arrête là, sans appel 2. Un appel 1 accepté sans SMS de code lève une erreur.
+ *
+ * Avant le correctif `fix(9b.17)`, l'appel 1 crée déjà le compte et la fiche, puis l'appel 2 est refusé en
+ * 409 (« déjà associé à un compte ») : une suite qui attend 201 à l'appel 2 est rouge pour cette raison.
+ */
+export async function registerPartnerTwoStep(body: Record<string, unknown>, opts: PartnerRegistrationOptions = {}): Promise<PartnerRegistration> {
+    if ('otpCode' in body) throw new Error('registerPartnerTwoStep : le corps de l’appel 1 ne doit pas contenir otpCode (passez opts.otpCode)');
+    const { POST: register } = await import('../../app/api/partner/register/route');
+    const headers = opts.headers ?? {};
+    const phone = typeof body.phone === 'string' ? body.phone : null;
+    const before = phone ? getFakes().sms.messagesTo(phone).length : 0;
+
+    const first = await readReply(await register(jsonRequest('/api/partner/register', body, headers)));
+    if (first.status !== 200 || !phone) return { first, code: null, smsDuringFirst: phone ? otpCodesSince(phone, before).count : 0, second: null };
+
+    const sent = otpCodesSince(phone, before);
+    const code = sent.codes.length > 0 ? sent.codes[sent.codes.length - 1] : null;
+    if (opts.stopAfterFirst) return { first, code, smsDuringFirst: sent.count, second: null };
+    if (!code && opts.otpCode === undefined) {
+        throw new Error(`registerPartnerTwoStep : appel 1 accepté (HTTP ${first.status} ${JSON.stringify(first.body)}) mais aucun SMS de code reçu au ${phone}`);
+    }
+    const otpCode = opts.otpCode ?? (code as string);
+    const second = await readReply(await register(jsonRequest('/api/partner/register', { ...body, otpCode }, headers)));
+    return { first, code, smsDuringFirst: sent.count, second };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Lot 9 bis (R57, tâche 13) : mot de passe saisi depuis moins de 10 minutes.
+// ---------------------------------------------------------------------------------------------------------
+
+/** Compte connecté : sa session est celle de son jeton d'accès (Bearer), comme `Buyer` de paiement-helpers. */
+export interface SessionHolder {
+    accessToken: string;
+}
+
+// Import dynamique : la route n'existe pas avant le correctif fix(9b.13), et le typecheck passe avant les tests.
+const PASSWORD_CONFIRM_ROUTE = '../../app/api/account/password-confirm/route';
+
+/**
+ * Confirme le mot de passe pour la session de `client` (`POST /api/account/password-confirm` `{ password }`,
+ * contrat lot 9 bis, section 4) : étape à placer juste avant un transfert, `phone/start`, `phone/confirm` ou un
+ * changement d'email. Lève si la route est absente ou si la réponse n'est pas 200 `{ ok: true }`.
+ */
+export async function confirmPassword(client: SessionHolder, password: string): Promise<void> {
+    let mod: { POST: (req: NextRequest) => Promise<Response> };
+    try {
+        mod = (await import(PASSWORD_CONFIRM_ROUTE)) as typeof mod;
+    } catch (err) {
+        throw new Error(`confirmPassword : route /api/account/password-confirm absente (R57, fix(9b.13)) : ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const res = await mod.POST(jsonRequest('/api/account/password-confirm', { password }, { authorization: `Bearer ${client.accessToken}` }));
+    const body = (await res.json()) as Record<string, unknown>;
+    if (res.status !== 200 || body.ok !== true) {
+        throw new Error(`confirmPassword : HTTP ${res.status} ${JSON.stringify(body)} (attendu 200 { ok: true })`);
+    }
 }
