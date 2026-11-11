@@ -205,7 +205,7 @@ describe('9b.34 R22 : TICKET_CANCELLED au détenteur d\'une invitation, d\'un bi
 
 describe('9b.34 R23 : destinataire d\'un transfert révoqué par l\'annulation prévenu par SMS', () => {
     test('transfert PENDING vers un numéro, annulation : EVENT_CANCELLED au numéro, sans compte, texte exact', async () => {
-        const ev = await publishedEvent('Transfert revoque');
+        const ev = await publishedEvent('Transf revoque'); // 14 caractères : avec le suffixe de 5, 19 au plus (shortTitle, :73)
         const holder = await newBuyer('cpt-expediteur');
         const purchase = await buyConfirmed(holder, ev, [[STANDARD, 1]]);
         const ticketId = String(purchase.tickets[0].id);
