@@ -504,7 +504,7 @@ async function purchaseRows(paymentId: string): Promise<OutboxRow[]> {
 
 /** Contrôles communs d'un achat réel : instantané figé, email remis, cloche, SMS. */
 async function checkRealPurchase(label: string, buyer: Buyer, items: Array<[string, number]>, expectMore: string | null): Promise<{ tickets: TicketInfo[]; delivered: Delivered }> {
-    const purchase = await buyConfirmed(buyer, ev, items);
+    await markEmailVerified(buyer); const purchase = await buyConfirmed(buyer, ev, items); // lot 9 bis (G.49, T59) : adresse vérifiée avant l'achat
     const paymentId = String(purchase.payment.id);
     const tickets = sortTickets(await ticketsWhere('payment_id', [paymentId], ev));
     const count = items.reduce((s, [, q]) => s + q, 0);
@@ -605,6 +605,7 @@ describe('7.9 — confirmation d\'achat réelle : données figées à l\'émissi
 describe('7.9 — billets gratuits (FREE_TICKETS_CONFIRMED) : mêmes blocs, aucun montant', () => {
     test('2 « Entree libre » + 1 « Invitation » : catégories et numéros figés, email complet sans montant (texte et HTML), in-app « Vos billets sont dans Mes billets. »', async () => {
         const guest = await newBuyer('conf-gratuit');
+        await markEmailVerified(guest); // lot 9 bis (G.49, T59) : seule une adresse vérifiée reçoit un email
         const { data: claimed, error } = await service.rpc('free_tickets_claim', {
             p_user_id: guest.userId, p_event_id: freeEv.eventId,
             p_items: [{ category_id: freeEv.categories[FREE_B].id, quantity: 1 }, { category_id: freeEv.categories[FREE_A].id, quantity: 2 }],
@@ -644,6 +645,7 @@ describe('7.9 — billet reçu par transfert (TRANSFER_RECEIVED, D88, D91)', () 
     test('acceptation : ligne EMAIL créée, template_data.ticket_number = NOUVEAU numéro et catégorie ; email avec catégorie, numéro, P1, P2, P3, sans montant ; in-app avec le numéro', async () => {
         const owner = await newBuyer('conf-transf-exp');
         const to = await newBuyer('conf-transf-dest', { firstName: 'Fatou', lastName: 'Ndiaye' });
+        await markEmailVerified(to); // lot 9 bis (G.49, T59) : seule une adresse vérifiée reçoit un email
         await markPhoneVerified(to.userId);
         const { tickets } = await buyConfirmed(owner, ev, [[VIP, 1]]);
         const ticketId = String(tickets[0].id);
@@ -1005,3 +1007,13 @@ describe('8.2 v — GET /api/tickets : billet composté (cas T13 porté)', () =>
 assert.equal(new Set(NUMBERS).size, NUMBERS.length, 'numéros d\'exemple distincts');
 assert.deepEqual([...NUMBERS].sort(), NUMBERS, 'numéros d\'exemple dans l\'ordre binaire');
 assert.ok(NUMBERS.every((n) => /^TCK-\d{8}-[0-9A-F]{10}$/.test(n)), 'numéros d\'exemple au format réel');
+
+/**
+ * Lot 9 bis (G.49, B96, T59) : un message n'est envoyé par email qu'à une adresse vérifiée (users.email_verified_at, M10).
+ * L'acheteur de test a une adresse réelle saisie à la création du compte : elle est marquée vérifiée avant l'action.
+ */
+async function markEmailVerified(user: Buyer): Promise<void> {
+    const { data, error } = await service.from('users').update({ email_verified_at: new Date().toISOString() }).eq('id', user.userId).select('id');
+    assert.equal(error, null, `adresse vérifiée de ${user.email} : ${error?.message} (colonne users.email_verified_at, migration M10 du lot 9 bis)`);
+    assert.equal((data ?? []).length, 1, `compte ${user.userId} introuvable`);
+}
