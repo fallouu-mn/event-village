@@ -32,6 +32,9 @@
 --     VOLATILE écrit (défaut de la base). Changement : ajout OU retrait du rôle ADMIN par un acteur non SUPERADMIN →
 --     ADMIN_ROLE_SUPERADMIN_ONLY, rien d'écrit (R71, décision D3).
 -- Verrous : aucun nouveau (lectures sans verrou de user_roles et admin_permissions).
+--
+-- Tâche 13 (R57 ; B35, D4) :
+--  9. Table password_confirmations (session_id clé primaire, user_id, confirmed_at), service_role seul.
 -- ============================================================================
 
 
@@ -374,6 +377,27 @@ BEGIN
         'removed', COALESCE((SELECT jsonb_agg(x ORDER BY x) FROM unnest(v_before) x WHERE NOT (x = ANY (v_target))), '[]'::jsonb));
 END;
 $$;
+
+
+-- ============================================================================
+-- Tâche 13 (R57 ; B35, D4) — 9. Table password_confirmations
+-- ============================================================================
+-- Saisie du mot de passe liée à une session GoTrue (session_id du jeton, validé par GoTrue avant lecture) : écrite
+-- par POST /api/account/password-confirm et par POST /api/auth/login, lue par requireRecentPassword (10 min). Aucune
+-- clé étrangère vers auth.sessions (schéma de GoTrue) : une ligne d'une session fermée ne sert plus à rien, elle ne
+-- donne aucun accès. Clé étrangère vers users : FOR KEY SHARE sur le compte à l'écriture, seul verrou de la transaction.
+-- service_role seul (RLS activée, aucune politique).
+CREATE TABLE IF NOT EXISTS public.password_confirmations (
+    session_id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    confirmed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_password_confirmations_user ON public.password_confirmations (user_id);
+ALTER TABLE public.password_confirmations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.password_confirmations FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.password_confirmations TO service_role;
+COMMENT ON TABLE public.password_confirmations IS
+    'Lot 9 bis (R57) : dernière saisie du mot de passe par session ; une action sensible exige moins de 10 minutes.';
 
 
 -- ============================================================================

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
 import { normalizeRecipient } from '@/lib/validations/transfer';
 import { TicketTransferService, TRANSFER_PHONE, type TransferRefusal } from '@/lib/tickets/ticket-transfer.service';
@@ -17,7 +18,8 @@ const BodySchema = z.object({
  * POST /api/tickets/[id]/transfer — lot 6, contrat B4 avec l'amendement 2 (transfert vers un numéro
  * seulement, sans jeton ni lien) : transfert PENDING, verrou du billet et offre au destinataire (SMS au
  * numéro, cloche et push au compte dont le numéro vérifié est la cible) dans la même transaction (RPC
- * ticket_transfer_initiate). Une adresse email est refusée (400 RECIPIENT_PHONE_REQUIRED).
+ * ticket_transfer_initiate). Une adresse email est refusée (400 RECIPIENT_PHONE_REQUIRED). Lot 9 bis (R57) : mot de passe
+ * récent exigé (403 PASSWORD_CONFIRMATION_REQUIRED).
  */
 export async function POST(
     req: NextRequest,
@@ -26,6 +28,9 @@ export async function POST(
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
     const user = activeSession.user;
+    // Lot 9 bis (R57, B35) : mot de passe saisi depuis moins de 10 minutes sur cette session, avant tout verrou ou SMS.
+    const recent = await requireRecentPassword(req, user.id);
+    if (recent) return recent;
 
     const resolvedParams = await Promise.resolve(context?.params);
     const ticketId = resolvedParams?.id;

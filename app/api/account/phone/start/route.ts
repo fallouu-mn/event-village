@@ -4,6 +4,7 @@ import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { noStore } from '@/lib/auth/account-sync';
 import { findExistingAccount } from '@/lib/auth/existing-account';
 import { storeOtp } from '@/lib/auth/otp-store';
+import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
 import { getClientIp } from '@/lib/security/client-ip';
@@ -28,6 +29,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const { user } = session;
+    // Lot 9 bis (R57, B35) : mot de passe saisi depuis moins de 10 minutes sur cette session, avant tout SMS facturé.
+    const recent = await requireRecentPassword(req, user.id);
+    if (recent) return recent;
 
     let body: unknown;
     try {
@@ -84,7 +88,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
 /**
  * POST /api/account/phone/start — code au NOUVEAU numéro, objet PHONE_CHANGE (lot 9, 9.2, contrat 4.3, L26).
- * Le compte vient de la session ; aucun SMS à l'ancien numéro à ce stade.
+ * Le compte vient de la session ; aucun SMS à l'ancien numéro à ce stade. Lot 9 bis (R57) : mot de passe récent exigé
+ * (403 PASSWORD_CONFIRMATION_REQUIRED avant tout SMS).
  */
 export async function POST(req: NextRequest) {
     return noStore(await handle(req));

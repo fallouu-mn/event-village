@@ -9,6 +9,7 @@ import {
     technicalEmailOf,
 } from '@/lib/auth/account-sync';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
+import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
@@ -38,6 +39,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     if (!current || current.userId !== user.id) {
         return refuse(new PublicError('Votre session ne permet pas ce changement. Reconnectez-vous puis recommencez.', 'SESSION_REQUIRED', 401));
     }
+    // Lot 9 bis (R57, B35) : l'acte réel exige lui aussi un mot de passe saisi depuis moins de 10 minutes sur cette session.
+    const recent = await requireRecentPassword(req, user.id);
+    if (recent) return recent;
 
     let body: unknown;
     try {
