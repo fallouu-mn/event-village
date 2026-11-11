@@ -18,6 +18,13 @@
  *  - Réseau coupé pendant l'affichage : le QR vient du lot local, au code de l'heure du serveur (écart mesuré),
  *    renouvelé à chaque pas ; la règle liveCodeStale est conservée (jamais de QR figé).
  *  - Chaque réponse réussie du live-code remesure l'écart d'horloge (server_time) et met le lot à jour.
+ *
+ * Lot 9 bis : la carte ne montre que ce que le serveur accepterait (GET /api/tickets, ticket_card_states).
+ *  - R25, R66 (B58) : QR, live-code et billet hors ligne seulement si `codeVisible` ; sinon `eventNotice` à la place
+ *    (« Événement suspendu : … », « Événement terminé. ») ; « Transférer » seulement si `transferAllowed` ; « Prix »
+ *    (« Gratuit », « Invitation » ou le montant) et « Frais de service » (> 0) ; pastille de l'événement hors PUBLIE.
+ *  - B9 : « Remboursement retardé, l’équipe Event Village s’en occupe. » quand `refundDelayed`.
+ *  - R32 (B23) : `postponementRefund` ouvre « Me faire rembourser » (confirmation, POST /api/tickets/[id]/refund).
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
@@ -44,7 +51,8 @@ import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { TONE_SOFT } from '@/components/ui/tones';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatFcfa } from '@/lib/format';
+import { REFUND_DELAYED_LABEL } from '@/lib/payments/payment-labels';
 import { TICKET_STATUS_META, type TicketStatus } from '@/lib/tickets/ticket-status';
 import {
   offlineIndicator,
@@ -79,6 +87,19 @@ export interface TicketCardProps {
   } | null;
   /** Lot 7 (7.1, contrat 3.2) : disponibilité hors ligne décidée par le serveur (GET /api/tickets). */
   offline?: OfflineAvailability | null;
+  /** Lot 9 bis (R25, R66) : champs servis par GET /api/tickets ; absents, rien n'est montré par défaut. */
+  price?: number;
+  serviceFee?: number;
+  saleChannel?: string | null;
+  /** Statut de l'événement (pastille hors PUBLIE, libellés de EVENT_STATUS_META). */
+  eventStatus?: string;
+  codeVisible?: boolean;
+  transferAllowed?: boolean;
+  eventNotice?: string | null;
+  refundDelayed?: boolean;
+  postponementRefund?: { amount: number; until: string; toOriginalBuyer: boolean } | null;
+  /** Remboursement demandé (R32) : la liste est relue. */
+  onRefunded?: () => void;
   onTransferClick?: () => void;
   onCancelTransferSuccess?: () => void;
   onOpenExplainer?: () => void;
@@ -122,6 +143,16 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   isTransferLocked = false,
   activeTransfer = null,
   offline = null,
+  price,
+  serviceFee = 0,
+  saleChannel = null,
+  eventStatus,
+  codeVisible = false,
+  transferAllowed = false,
+  eventNotice = null,
+  refundDelayed = false,
+  postponementRefund = null,
+  onRefunded,
   onTransferClick,
   onCancelTransferSuccess,
   onOpenExplainer,
@@ -132,6 +163,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const userId = user?.id ?? null;
   const isActive = status === 'VALIDE';
   const meta = TICKET_STATUS_META[status];
+  // R25, R66 : code d'entrée montré seulement si le serveur accepterait le scan (suspendu, annulé, fenêtre fermée : non)
+  const showCode = isActive && codeVisible;
+  const priceLabel = saleChannel === 'INVITATION' ? 'Invitation' : price === 0 ? 'Gratuit' : price !== undefined ? formatFcfa(price) : null;
 
   // QR dynamique : payload du live-code uniquement (aucune valeur statique de repli)
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
@@ -141,9 +175,11 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState<boolean>(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
+  const [isRefundOpen, setIsRefundOpen] = useState<boolean>(false);
+  const [isRefunding, setIsRefunding] = useState<boolean>(false);
 
   // Lot 7 (7.1) : lot de codes hors ligne enregistré sur ce téléphone
-  const offlineEligible = isActive && !isTransferLocked && Boolean(userId);
+  const offlineEligible = showCode && !isTransferLocked && Boolean(userId);
   const [offlineLot, setOfflineLot] = useState<OfflineLot | null>(null);
   const [shellCached, setShellCached] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -206,7 +242,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   }, [offlineEligible, userId, id, offline, refreshOffline]);
 
   useEffect(() => {
-    if (!isActive || isTransferLocked || !id) {
+    if (!showCode || isTransferLocked || !id) {
       setLiveCode(null);
       return;
     }
@@ -287,7 +323,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [id, isActive, isTransferLocked, accessToken, userId]);
+  }, [id, showCode, isTransferLocked, accessToken, userId]);
 
   // Horloge du compte à rebours (affichage seulement : le rafraîchissement suit expires_in) ; aussi pour le
   // QR du lot local, renouvelé à chaque pas de l'heure du serveur.
@@ -342,6 +378,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       toast.error(meta.description);
       return;
     }
+    if (!codeVisible) {
+      toast.error(eventNotice ?? 'Le billet n’est pas présentable à l’entrée pour le moment.');
+      return;
+    }
     if (isTransferLocked) {
       toast.error('Ce billet est en cours de transfert : le PDF sera disponible si le transfert est annulé.');
       return;
@@ -374,6 +414,31 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       toast.error('Connexion impossible : le PDF n’a pas été téléchargé. Vérifiez votre réseau, puis réessayez.');
     } finally {
       setIsDownloadingPdf(false);
+    }
+  };
+
+  /** R32 : remboursement total ouvert par un report de plus de 24 h ; refus du serveur dit tel quel. */
+  const handleRefund = async () => {
+    setIsRefunding(true);
+    try {
+      const res = await fetch(`/api/tickets/${id}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        body: JSON.stringify({ confirm: true }),
+      });
+      if (res.ok) {
+        toast.success('Remboursement demandé : vous recevrez un SMS dès qu’il est versé.');
+        setIsRefundOpen(false);
+        onRefunded?.();
+        return;
+      }
+      const message = await readErrorMessage(res, 'remboursement');
+      toast.error(message ?? `Le remboursement n’a pas pu être demandé (erreur ${res.status}).`);
+    } catch (err) {
+      console.error('[TicketCard] demande de remboursement impossible :', err instanceof Error ? err.message : String(err));
+      toast.error('Connexion impossible : le remboursement n’a pas été demandé. Vérifiez votre réseau, puis réessayez.');
+    } finally {
+      setIsRefunding(false);
     }
   };
 
@@ -431,6 +496,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             ) : (
               <StatusBadge domain="ticket" status={status} size="sm" />
             )}
+            {eventStatus && eventStatus !== 'PUBLIE' && (
+              <StatusBadge domain="event" status={eventStatus} size="sm" />
+            )}
           </div>
 
         </div>
@@ -468,7 +536,33 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               <dt className="text-sm font-medium text-fg-muted">Catégorie</dt>
               <dd className="mt-0.5 truncate text-base font-semibold text-fg">{seat}</dd>
             </div>
+            {priceLabel && (
+              <div className="min-w-0">
+                <dt className="text-sm font-medium text-fg-muted">Prix</dt>
+                <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg">{priceLabel}</dd>
+              </div>
+            )}
+            {serviceFee > 0 && (
+              <div className="min-w-0 text-right">
+                <dt className="text-sm font-medium text-fg-muted">Frais de service</dt>
+                <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg">{formatFcfa(serviceFee)}</dd>
+              </div>
+            )}
           </dl>
+
+          {refundDelayed && (
+            <p role="status" className={cn('rounded-xl border p-3 text-sm font-medium', TONE_SOFT.warning)}>{REFUND_DELAYED_LABEL}</p>
+          )}
+          {postponementRefund && isActive && !isTransferLocked && (
+            <div className={cn('space-y-2 rounded-xl border p-3 text-sm', TONE_SOFT.info)}>
+              <p className="font-medium tabular-nums">
+                L’événement a été reporté de plus de 24 h : remboursement total possible ({formatFcfa(postponementRefund.amount)}, frais de service compris) jusqu’au {formatDateTime(postponementRefund.until)}.
+              </p>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setIsRefundOpen(true)} leftIcon={<RotateCcw size={16} aria-hidden="true" />}>
+                Me faire rembourser
+              </Button>
+            </div>
+          )}
 
           <div aria-hidden="true" className="border-t-2 border-dashed border-border" />
 
@@ -497,6 +591,11 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 </Button>
               )}
             </div>
+          ) : isActive && !showCode ? (
+            /* R25, R66 : le serveur refuserait le scan (événement suspendu, terminé) : son message à la place du QR */
+            <p role="status" className={cn('rounded-xl border p-3 text-center text-sm font-medium', TONE_SOFT.warning)}>
+              {eventNotice ?? 'Le code d’entrée n’est pas disponible pour le moment.'}
+            </p>
           ) : isActive ? (
             /* QR dynamique : payload du live-code, renouvelé à chaque pas */
             <div className="flex flex-col items-center pt-1">
@@ -618,7 +717,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
       {/* 2. Actions : transférer, partager l'événement, billet PDF, aide */}
       <div className="mt-4 grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-        {isActive && !isTransferLocked && onTransferClick && (
+        {isActive && !isTransferLocked && transferAllowed && onTransferClick && (
           <Button
             variant="primary"
             size="sm"
@@ -655,7 +754,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           size="sm"
           onClick={() => { void handleDownloadPdf(); }}
           isLoading={isDownloadingPdf}
-          disabled={!isActive || isTransferLocked}
+          disabled={!showCode || isTransferLocked}
           leftIcon={<Download size={16} aria-hidden="true" />}
           aria-label="Télécharger le billet en PDF"
         >
@@ -673,6 +772,22 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           </Button>
         )}
       </div>
+
+      {postponementRefund && (
+        <ConfirmDialog
+          isOpen={isRefundOpen}
+          onClose={() => setIsRefundOpen(false)}
+          onConfirm={() => { void handleRefund(); }}
+          title="Me faire rembourser ?"
+          message={postponementRefund.toOriginalBuyer
+            ? `Remboursement de ${formatFcfa(postponementRefund.amount)}, frais de service compris. Le remboursement est versé à l’acheteur d’origine. Votre billet sera annulé.`
+            : `Remboursement de ${formatFcfa(postponementRefund.amount)}, frais de service compris, sur le compte Mobile Money qui a payé. Votre billet sera annulé.`}
+          confirmLabel="Me faire rembourser"
+          cancelLabel="Garder mon billet"
+          variant="warning"
+          isLoading={isRefunding}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={isCancelConfirmOpen}
