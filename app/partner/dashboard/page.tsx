@@ -9,7 +9,7 @@
  *    donnée) ; états vides explicites.
  *  - Bandeaux du compte : en attente, refusé (avec le motif servi), suspendu (avec le motif servi). Lot 9 bis (R5, B16,
  *    contrat 5.2) : le bandeau de la suspension dit ce qui se passe vraiment (événements en ligne suspendus par la
- *    cascade, fonds gelés jusqu'à la réactivation), au lieu de « ne sont plus visibles du public ».
+ *    cascade, fonds gelés jusqu'à la réactivation) ; l'ancien texte, faux, est retiré.
  *  - Bloc « Commandes en direct » affiché seulement si features.orders_enabled est ouvert (useFeatureFlags) ;
  *    usePartnerOrders reste importé (SCENARIO 15) mais ne s'abonne que si le service est ouvert.
  *  - Le rapport de clôture est une modale chargée à la demande (next/dynamic).
