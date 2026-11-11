@@ -1,332 +1,44 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import {
-  ChevronLeft,
-  Sliders,
-  DollarSign,
-  Package,
-  CreditCard,
-  MessageSquare,
-  RefreshCw,
-  AlertCircle,
-  CheckCircle2,
-  Save,
-} from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { useToast } from '@/components/ui/Toast';
+/**
+ * /admin/pricing — « Tarification ».
+ *
+ * Lot 9 bis, tâche 41 (R21 ; contrat 5.41, B92, D-txt E.41) : les trois sections d'avant (packs d'abonnement, frais
+ * des moyens de paiement, tarifs de communication) enregistraient des clés que rien ne relit (`subscription_packs`,
+ * `aggregator_fees`, `communication_tariffs`) et affichaient des taux faux (1,0 % pour un opérateur quand le moteur
+ * applique 1,5 %). La page ne garde qu'un renvoi : les frais de service, les taux des opérateurs et les règles de
+ * retrait se règlent dans les Réglages de la plateforme (`/admin/finance-settings`, historisés, SUPERADMIN pour la
+ * modification). La route `/api/admin/pricing` reste en place (garanties de sécurité testées par plusieurs suites).
+ */
 
-export default function AdminPricingSettingsPage() {
-  const toast = useToast();
-  const [settings, setSettings] = useState<Record<string, any>>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+import React from 'react';
+import { ArrowRight, Settings2 } from 'lucide-react';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 
-  // États locaux éditables
-  const [packs, setPacks] = useState<any>({
-    starter: { name: 'Starter', price: 0, commission_rate: 0, max_events: 2 },
-    business: { name: 'Business', price: 0, commission_rate: 0, max_events: 10 },
-    premium: { name: 'Premium', price: 0, commission_rate: 0, max_events: 999 },
-  });
-
-  const [aggFees, setAggFees] = useState<any>({
-    WAVE: { rate: 1.0, fixed: 0 },
-    ORANGE_MONEY: { rate: 1.5, fixed: 0 },
-    FREE_MONEY: { rate: 1.5, fixed: 0 },
-    CARTE_BANCAIRE: { rate: 2.5, fixed: 100 },
-  });
-
-  const [commTariffs, setCommTariffs] = useState<any>({
-    SMS: { cost: 8, price: 15, margin: 7 },
-    WHATSAPP: { cost: 15, price: 30, margin: 15 },
-    EMAIL: { cost: 1, price: 3, margin: 2 },
-  });
-
-  const [withdrawalRules, setWithdrawalRules] = useState<any>({
-    min_amount: 5000,
-    fee_rate: 1.0,
-    auto_approval_threshold: 50000,
-  });
-
-  const fetchSettings = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/admin/pricing');
-      const data = await res.json();
-      if (res.ok && data.settings) {
-        setSettings(data.settings);
-        if (data.settings.subscription_packs) setPacks(data.settings.subscription_packs);
-        if (data.settings.aggregator_fees) setAggFees(data.settings.aggregator_fees);
-        if (data.settings.communication_tariffs) setCommTariffs(data.settings.communication_tariffs);
-        if (data.settings.withdrawal_rules) setWithdrawalRules(data.settings.withdrawal_rules);
-      }
-    } catch (err) {
-      console.error('[AdminPricing] Erreur chargement:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
-
-  const handleSaveSection = async (key: string, value: any, label: string) => {
-    setIsSaving(true);
-
-    try {
-      const res = await fetch('/api/admin/pricing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, value }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de la sauvegarde.');
-
-      toast.success(`La configuration « ${label} » a été enregistrée avec succès.`);
-      await fetchSettings();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la sauvegarde.';
-      toast.error(msg);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
+export default function AdminPricingPage() {
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/dashboard"
-            className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-          >
-            <ChevronLeft size={20} />
-          </Link>
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
-              Console Superadmin HQ
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Tarifs, Packs Partenaires & Monétisation (§117-§126)
-            </h1>
-          </div>
-        </div>
+    <div className="mx-auto max-w-3xl space-y-6 pb-16">
+      <PageHeader
+        title="Tarification"
+        description="Les montants appliqués aux ventes et aux retraits ont une seule source : les Réglages de la plateforme."
+        back={{ href: '/admin/dashboard', label: 'Tableau de bord' }}
+      />
 
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => fetchSettings()}
-          disabled={isLoading}
-          className="flex items-center gap-1.5"
-        >
-          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-          <span>Actualiser</span>
-        </Button>
-      </div>
-
-      {/* 1. Packs Partenaires B2B (§117) */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
-          <div className="flex items-center gap-2.5">
-            <Package size={20} className="text-[#FF5722]" />
-            <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
-              Packs d&apos;Abonnement Partenaires (§117)
-            </h2>
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => handleSaveSection('subscription_packs', packs, 'Packs Partenaires')}
-            disabled={isSaving}
-            leftIcon={<Save size={14} />}
-          >
-            <span>Enregistrer Packs</span>
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {Object.keys(packs).map((planKey) => {
-            const plan = packs[planKey];
-            return (
-              <div
-                key={planKey}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 space-y-3"
-              >
-                <h4 className="text-sm font-black uppercase text-[#FF5722]">{plan.name}</h4>
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <label className="block text-slate-500 font-bold mb-1">Prix mensuel (FCFA)</label>
-                    <input
-                      type="number"
-                      value={plan.price}
-                      onChange={(e) =>
-                        setPacks({
-                          ...packs,
-                          [planKey]: { ...plan, price: Number(e.target.value) },
-                        })
-                      }
-                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-black text-slate-900 dark:text-white text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-500 font-bold mb-1">Commission billetterie (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={plan.commission_rate}
-                      onChange={(e) =>
-                        setPacks({
-                          ...packs,
-                          [planKey]: { ...plan, commission_rate: Number(e.target.value) },
-                        })
-                      }
-                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-slate-900 dark:text-white text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-500 font-bold mb-1">Événements simultanés max</label>
-                    <input
-                      type="number"
-                      value={plan.max_events}
-                      onChange={(e) =>
-                        setPacks({
-                          ...packs,
-                          [planKey]: { ...plan, max_events: Number(e.target.value) },
-                        })
-                      }
-                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-slate-900 dark:text-white text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. Frais Agrégateur SamirPay (§118) */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
-          <div className="flex items-center gap-2.5">
-            <CreditCard size={20} className="text-[#FF5722]" />
-            <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
-              Frais Agrégateur & Moyens de Paiement (§118)
-            </h2>
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => handleSaveSection('aggregator_fees', aggFees, 'Frais Agrégateur')}
-            disabled={isSaving}
-            leftIcon={<Save size={14} />}
-          >
-            <span>Enregistrer Frais</span>
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Object.keys(aggFees).map((method) => {
-            const fee = aggFees[method];
-            return (
-              <div
-                key={method}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 space-y-2 text-xs"
-              >
-                <h4 className="font-bold text-slate-800 dark:text-zinc-200">{method}</h4>
-                <div>
-                  <label className="block text-slate-400 font-medium mb-1">Taux (%)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={fee.rate}
-                    onChange={(e) =>
-                      setAggFees({
-                        ...aggFees,
-                        [method]: { ...fee, rate: Number(e.target.value) },
-                      })
-                    }
-                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold"
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. Tarifs Communication & Marges (§119, §126) */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-5">
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-3">
-          <div className="flex items-center gap-2.5">
-            <MessageSquare size={20} className="text-[#FF5722]" />
-            <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
-              Canaux de Communication & Marges (§119, §126)
-            </h2>
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => handleSaveSection('communication_tariffs', commTariffs, 'Tarifs Communication')}
-            disabled={isSaving}
-            leftIcon={<Save size={14} />}
-          >
-            <span>Enregistrer Tarifs</span>
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {Object.keys(commTariffs).map((channel) => {
-            const tariff = commTariffs[channel];
-            return (
-              <div
-                key={channel}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 space-y-3 text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-slate-800 dark:text-zinc-200">{channel}</h4>
-                  <span className="font-bold tabular-nums text-emerald-600">
-                    Marge: +{tariff.price - tariff.cost} FCFA
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-slate-400 font-medium mb-1">Coût (FCFA)</label>
-                    <input
-                      type="number"
-                      value={tariff.cost}
-                      onChange={(e) =>
-                        setCommTariffs({
-                          ...commTariffs,
-                          [channel]: { ...tariff, cost: Number(e.target.value) },
-                        })
-                      }
-                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 font-medium mb-1">Prix Vente (FCFA)</label>
-                    <input
-                      type="number"
-                      value={tariff.price}
-                      onChange={(e) =>
-                        setCommTariffs({
-                          ...commTariffs,
-                          [channel]: { ...tariff, price: Number(e.target.value) },
-                        })
-                      }
-                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-[#FF5722]"
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <StatusBanner
+        tone="neutral"
+        icon={<Settings2 size={20} aria-hidden="true" />}
+        title="Réglages de la plateforme"
+        action={
+          <LinkButton href="/admin/finance-settings" variant="primary" rightIcon={<ArrowRight size={18} aria-hidden="true" />}>
+            Ouvrir les Réglages de la plateforme
+          </LinkButton>
+        }
+      >
+        Les frais de service, les taux des opérateurs et les règles de retrait se règlent dans les Réglages de la
+        plateforme. Chaque modification y est historisée et ne s’applique qu’aux opérations futures.
+      </StatusBanner>
     </div>
   );
 }

@@ -193,7 +193,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     proItems.push({ name: 'Catalogues et services', href: '/admin/services', icon: Building2 });
     proItems.push({ name: 'Finance et rapprochement', href: '/admin/finance', icon: DollarSign });
     proItems.push({ name: 'Parrainage et ambassadeurs', href: '/admin/referral', icon: ShieldAlert });
-    proItems.push({ name: 'Tarifs et monétisation', href: '/admin/pricing', icon: Sliders });
+    proItems.push({ name: 'Tarification', href: '/admin/pricing', icon: Sliders });
     proItems.push({ name: 'Communications et campagnes', href: '/admin/communications', icon: Radio });
     if (isSuperAdmin) proItems.push({ name: 'Journal d’audit', href: '/admin/audit', icon: Activity });
     proItems.push({ name: 'Notifications', href: '/admin/notifications', icon: BellRing });
