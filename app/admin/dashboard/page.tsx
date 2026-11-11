@@ -14,7 +14,9 @@ import {
   FileText,
   Mail,
   MapPin,
+  PauseCircle,
   Phone,
+  PlayCircle,
   RefreshCw,
   TrendingUp,
   Users,
@@ -36,6 +38,7 @@ import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { PartnerStatusDialog, type PartnerStatusResult, type PartnerStatusTarget } from '@/components/admin/PartnerStatusDialog';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { toastMessages } from '@/lib/messages/toast-messages';
 import { formatDateTime, formatFcfa, formatInteger, toDakarDateTimeLocal } from '@/lib/format';
@@ -47,6 +50,10 @@ import { formatDateTime, formatFcfa, formatInteger, toDakarDateTimeLocal } from 
  *  - File de validation des partenaires (GET /api/admin/partners), validation confirmée, refus motivé.
  *  - En direct : une inscription de partenaire ou une soumission d'événement (admin_signals) recharge
  *    les compteurs et la file, sans recharger la page.
+ * Lot 9 bis (R6, R55, R51 ; contrat 5.12, 5.15) : la fiche « Dossier du partenaire » propose « Valider » et « Refuser »
+ * pour un dossier EN_ATTENTE seulement (partners.validate), « Suspendre » pour un partenaire VALIDE
+ * (partners.suspend) et « Réactiver » pour un SUSPENDU (partners.validate), tous deux avec un motif
+ * (PartnerStatusDialog). Lien profond `?partenaires=ALL&dossier=<partnerId>` (depuis /admin/users) : la fiche s'ouvre.
  */
 
 interface PartnerActivity {
@@ -150,6 +157,7 @@ export default function AdminDashboardPage() {
   const { hasRole, hasPermission } = useAuth();
   // Lot 9 bis (R51, B34) : « Valider » et « Refuser » seulement avec partners.validate (la route décide toujours).
   const canValidate = hasPermission('partners.validate');
+  const canSuspend = hasPermission('partners.suspend');
 
   const [kpis, setKpis] = useState<AdminKPIs | null>(null);
   const [metricsPhase, setMetricsPhase] = useState<Phase>('loading');
@@ -170,8 +178,11 @@ export default function AdminDashboardPage() {
   const [partnerToReject, setPartnerToReject] = useState<PartnerItem | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [rejectError, setRejectError] = useState<string | null>(null);
+  const [statusChange, setStatusChange] = useState<{ partner: PartnerItem; target: PartnerStatusTarget } | null>(null);
 
   const partnersSeq = useRef(0);
+  /** Lien profond ?dossier= : lu une fois, puis la fiche s'ouvre quand la liste est chargée. */
+  const deepLinkRef = useRef<string | null | undefined>(undefined);
 
   // Visionneuse sécurisée de documents KYC
   // Lot 1C.2 : URL demandée par dossier et type de pièce ; le chemin est lu côté serveur.
@@ -283,7 +294,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const updatePartnerStatus = async (partner: PartnerItem, payload: { status: string; rejectionReason?: string }): Promise<string | null> => {
+  const updatePartnerStatus = async (partner: PartnerItem, payload: { status: string; reason?: string }): Promise<string | null> => {
     try {
       const res = await fetch(`/api/admin/partners/${partner.id}/status`, {
         method: 'PATCH',
@@ -320,7 +331,7 @@ export default function AdminDashboardPage() {
     if (!partner) return;
     setIsActionLoading(true);
     setRejectError(null);
-    const error = await updatePartnerStatus(partner, { status: 'REJETE', rejectionReason: reason });
+    const error = await updatePartnerStatus(partner, { status: 'REJETE', reason });
     setIsActionLoading(false);
     if (error) {
       setRejectError(error);
@@ -348,6 +359,40 @@ export default function AdminDashboardPage() {
     setPartnerToReject(partner);
   };
 
+  const askStatusChange = (partner: PartnerItem, target: PartnerStatusTarget): void => {
+    setIsDetailsModalOpen(false);
+    setStatusChange({ partner, target });
+  };
+
+  const statusChanged = async (result: PartnerStatusResult): Promise<void> => {
+    const name = statusChange?.partner.company_name ?? 'Le partenaire';
+    setStatusChange(null);
+    if (result.status === 'SUSPENDU') {
+      toast.success(`${name} est suspendu. Événements suspendus avec le compte : ${formatInteger(result.eventsSuspended)}.`);
+    } else {
+      const left = result.eventsLeftSuspended > 0 ? ` Restés suspendus : ${formatInteger(result.eventsLeftSuspended)}.` : '';
+      toast.success(`${name} est réactivé. Événements remis en ligne : ${formatInteger(result.eventsRestored)}.${left}`);
+    }
+    await refreshAll();
+  };
+
+  // Lien profond ?dossier=<partnerId> (R6) : la fiche s'ouvre une fois la liste chargée ; un identifiant inconnu est dit.
+  useEffect(() => {
+    if (deepLinkRef.current === undefined) {
+      deepLinkRef.current = new URLSearchParams(window.location.search).get('dossier');
+    }
+    const wanted = deepLinkRef.current;
+    if (!wanted || partnersPhase !== 'ready') return;
+    deepLinkRef.current = null;
+    const found = partners.find((p) => p.id === wanted);
+    if (found) {
+      setSelectedPartner(found);
+      setIsDetailsModalOpen(true);
+    } else {
+      toast.error('Ce partenaire n’apparaît pas dans la liste affichée. Choisissez l’onglet « Tous » puis ouvrez son dossier.');
+    }
+  }, [partners, partnersPhase, toast]);
+
   const tabs: TabItem[] = useMemo(() => [
     { id: 'EN_ATTENTE', label: 'En attente', count: kpis?.pendingPartners },
     { id: 'VALIDE', label: 'Validés', count: kpis?.validatedPartners },
@@ -360,12 +405,12 @@ export default function AdminDashboardPage() {
       <Button variant="secondary" size="sm" leftIcon={<Eye size={16} />} onClick={() => openDetails(partner)}>
         Dossier
       </Button>
-      {canValidate && partner.status !== 'VALIDE' && (
+      {canValidate && partner.status === 'EN_ATTENTE' && (
         <Button variant="primary" size="sm" leftIcon={<CheckCircle2 size={16} />} onClick={() => askValidate(partner)} disabled={isActionLoading}>
           Valider
         </Button>
       )}
-      {canValidate && partner.status !== 'REJETE' && (
+      {canValidate && partner.status === 'EN_ATTENTE' && (
         <Button variant="ghost" size="sm" leftIcon={<XCircle size={16} />} onClick={() => askReject(partner)} disabled={isActionLoading} className="text-danger-fg">
           Refuser
         </Button>
@@ -614,12 +659,22 @@ export default function AdminDashboardPage() {
               <Button variant="secondary" onClick={() => setIsDetailsModalOpen(false)} className="flex-1 sm:flex-none">
                 Fermer
               </Button>
-              {canValidate && selectedPartner.status !== 'REJETE' && (
+              {canSuspend && selectedPartner.status === 'VALIDE' && (
+                <Button variant="danger" leftIcon={<PauseCircle size={16} />} onClick={() => askStatusChange(selectedPartner, 'SUSPENDU')} className="flex-1 sm:flex-none">
+                  Suspendre
+                </Button>
+              )}
+              {canValidate && selectedPartner.status === 'SUSPENDU' && (
+                <Button variant="primary" leftIcon={<PlayCircle size={16} />} onClick={() => askStatusChange(selectedPartner, 'VALIDE')} className="flex-1 sm:flex-none">
+                  Réactiver
+                </Button>
+              )}
+              {canValidate && selectedPartner.status === 'EN_ATTENTE' && (
                 <Button variant="ghost" leftIcon={<XCircle size={16} />} onClick={() => askReject(selectedPartner)} className="flex-1 text-danger-fg sm:flex-none">
                   Refuser
                 </Button>
               )}
-              {canValidate && selectedPartner.status !== 'VALIDE' && (
+              {canValidate && selectedPartner.status === 'EN_ATTENTE' && (
                 <Button variant="primary" leftIcon={<CheckCircle2 size={16} />} onClick={() => askValidate(selectedPartner)} className="flex-1 sm:flex-none">
                   Valider la candidature
                 </Button>
@@ -758,6 +813,13 @@ export default function AdminDashboardPage() {
           </div>
         </Modal>
       )}
+
+      <PartnerStatusDialog
+        partner={statusChange?.partner ?? null}
+        target={statusChange?.target ?? 'SUSPENDU'}
+        onClose={() => setStatusChange(null)}
+        onDone={(result) => void statusChanged(result)}
+      />
 
       <ConfirmDialog
         isOpen={!!partnerToValidate}

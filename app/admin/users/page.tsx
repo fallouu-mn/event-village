@@ -31,6 +31,8 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { ReasonDialog } from '@/components/ui/ReasonDialog';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -61,6 +63,10 @@ function refusalOf(data: unknown, fallback: string): string {
  * Lot 9 bis (R51, B34 ; contrat 5.12) : les boutons qui écrivent ne s'affichent qu'avec la permission users.write
  * (création, suspension, réactivation, anonymisation) ; « Permissions » et toute action sur un compte ADMIN restent
  * au SUPERADMIN (R71, B33), comme côté serveur. Un refus éventuel de la route est affiché tel quel (texte français).
+ * Lot 9 bis (R6, R59, B38, B74 ; contrat 4.2, 5.15) : le statut d'un compte partenaire ne se change pas ici : la ligne
+ * propose « Voir la fiche partenaire » (/admin/dashboard?partenaires=ALL&dossier=<partnerId>, identifiant lu sur
+ * GET /api/admin/partners avec partners.read). Suspendre ou réactiver un autre compte demande un motif (ReasonDialog),
+ * repris dans l'avis au titulaire (ACCOUNT_SUSPENDED, ACCOUNT_REACTIVATED).
  */
 export default function AdminUsersManagementPage() {
   const toast = useToast();
@@ -72,6 +78,14 @@ export default function AdminUsersManagementPage() {
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  /** Fiche partenaire de chaque compte partenaire (user_id → partners.id), lue avec partners.read. */
+  const [partnerIdByUser, setPartnerIdByUser] = useState<Record<string, string>>({});
+  const canReadPartners = hasPermission('partners.read');
+
+  // Changement de statut d'un compte non partenaire, avec motif (R59)
+  const [statusTarget, setStatusTarget] = useState<UserItem | null>(null);
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // Modal Création Utilisateur / Admin
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -121,6 +135,33 @@ export default function AdminUsersManagementPage() {
     fetchUsers();
   }, [fetchUsers]);
 
+  // Lot 9 bis (R6) : identifiant de la fiche de chaque partenaire, pour le lien « Voir la fiche partenaire ».
+  useEffect(() => {
+    if (!canReadPartners) return undefined;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/partners?status=ALL', { cache: 'no-store' });
+        const data: unknown = await res.json().catch(() => null);
+        const list = data && typeof data === 'object' ? (data as { partners?: unknown }).partners : undefined;
+        if (!res.ok || !Array.isArray(list)) {
+          console.error(`[AdminUsers] fiches partenaires non lues (HTTP ${res.status})`);
+          return;
+        }
+        const map: Record<string, string> = {};
+        for (const row of list as Array<{ id?: unknown; user_id?: unknown }>) {
+          if (typeof row.id === 'string' && typeof row.user_id === 'string') map[row.user_id] = row.id;
+        }
+        if (active) setPartnerIdByUser(map);
+      } catch (err) {
+        console.error('[AdminUsers] fiches partenaires non lues :', err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [canReadPartners]);
+
   // Création d'un nouvel utilisateur ou administrateur
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,9 +200,11 @@ export default function AdminUsersManagementPage() {
     }
   };
 
-  // Suspension ou Réactivation
-  const handleToggleStatus = async (user: UserItem) => {
+  // Suspension ou réactivation d'un compte non partenaire, avec motif (lot 9 bis, R59 ; refus dits dans la boîte)
+  const handleToggleStatus = async (user: UserItem, reason: string) => {
     const newStatus = user.status === 'SUSPENDU' ? 'ACTIF' : 'SUSPENDU';
+    setIsChangingStatus(true);
+    setStatusError(null);
     try {
       const res = await fetch('/api/admin/users', {
         method: 'PATCH',
@@ -169,21 +212,28 @@ export default function AdminUsersManagementPage() {
         body: JSON.stringify({
           userId: user.id,
           status: newStatus,
+          reason,
         }),
       });
 
       const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors du changement de statut.'));
+      if (!res.ok) {
+        setStatusError(refusalOf(data, 'Erreur lors du changement de statut.'));
+        return;
+      }
 
       toast.success(
         newStatus === 'ACTIF'
           ? `Le compte de ${user.first_name} ${user.last_name} a été réactivé avec succès.`
           : `Le compte de ${user.first_name} ${user.last_name} a été suspendu.`
       );
+      setStatusTarget(null);
       await fetchUsers();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de l\'opération.';
-      toast.error(msg);
+      console.error('[AdminUsers] changement de statut en échec :', err);
+      setStatusError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+    } finally {
+      setIsChangingStatus(false);
     }
   };
 
@@ -367,6 +417,8 @@ export default function AdminUsersManagementPage() {
               const isAdmin = user.role === 'ADMIN';
               const isSuspended = user.status === 'SUSPENDU';
               const isDeleted = user.status === 'SUPPRIME';
+              const partnerId = partnerIdByUser[user.id];
+              const isPartner = user.role === 'PARTENAIRE' || partnerId !== undefined;
 
               return (
                 <div
@@ -443,12 +495,31 @@ export default function AdminUsersManagementPage() {
                     )}
 
                     {/* Suspension / Réactivation / Suppression */}
+                    {/* Lot 9 bis (R6) : une partenaire se suspend ou se réactive depuis sa fiche, avec un motif */}
+                    {isPartner && !isDeleted && (
+                      partnerId !== undefined ? (
+                        <LinkButton
+                          href={`/admin/dashboard?partenaires=ALL&dossier=${encodeURIComponent(partnerId)}`}
+                          variant="secondary"
+                          size="sm"
+                        >
+                          Voir la fiche partenaire
+                        </LinkButton>
+                      ) : (
+                        <span className="text-sm text-fg-muted">Statut géré depuis la fiche partenaire</span>
+                      )
+                    )}
+
                     {!isSuper && !isDeleted && canWrite && (!isAdmin || isSuperadmin) && (
                       <>
+                        {!isPartner && (
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleToggleStatus(user)}
+                          onClick={() => {
+                            setStatusError(null);
+                            setStatusTarget(user);
+                          }}
                           className={`text-xs ${
                             isSuspended
                               ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
@@ -457,6 +528,7 @@ export default function AdminUsersManagementPage() {
                         >
                           {isSuspended ? 'Réactiver' : 'Suspendre'}
                         </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -821,6 +893,30 @@ export default function AdminUsersManagementPage() {
           </div>
         </Modal>
       )}
+
+      {/* Lot 9 bis (R59) : motif de la suspension ou de la réactivation, repris dans l'avis au titulaire */}
+      <ReasonDialog
+        isOpen={statusTarget !== null}
+        onClose={() => {
+          if (!isChangingStatus) setStatusTarget(null);
+        }}
+        onConfirm={(reason) => {
+          if (statusTarget) void handleToggleStatus(statusTarget, reason);
+        }}
+        title={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+        description={statusTarget
+          ? statusTarget.status === 'SUSPENDU'
+            ? `${statusTarget.first_name} ${statusTarget.last_name} retrouvera l’accès à son compte. Il est prévenu avec votre motif.`
+            : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. Il est prévenu avec votre motif.`
+          : undefined}
+        label={statusTarget?.status === 'SUSPENDU' ? 'Motif de la réactivation' : 'Motif de la suspension'}
+        hint="Au moins 3 caractères. Ce motif est communiqué au titulaire du compte."
+        confirmLabel={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+        variant={statusTarget?.status === 'SUSPENDU' ? 'primary' : 'danger'}
+        isLoading={isChangingStatus}
+        error={statusError ?? undefined}
+        maxLength={500}
+      />
 
       {/* ConfirmDialog Anonymisation RGPD */}
       <ConfirmDialog
