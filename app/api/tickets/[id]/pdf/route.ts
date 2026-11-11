@@ -55,7 +55,8 @@ export async function GET(
 
         // 4. Contrôle de validité du billet
         if (ticket.status === 'ANNULE' || ticket.status === 'REMBOURSE' || ticket.status === 'REMBOURSEMENT_EN_COURS') {
-            throw new PublicError('Ce billet n’est plus valide et ne peut pas être téléchargé.', 'TICKET_NOT_VALID', 400);
+            // Reste S3 : texte du lot 8 gardé à l'apostrophe droite (legacy-billet-pdf:39, T5, verte dès l'écriture).
+            throw new PublicError('Ce billet n\'est plus valide et ne peut pas être téléchargé.', 'TICKET_NOT_VALID', 400);
         }
         if (ticket.transfer_locked === true) {
             throw new PublicError('Ce billet est actuellement engagé dans un transfert en attente et son accès est verrouillé.', 'TRANSFER_PENDING', 400);
