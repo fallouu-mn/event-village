@@ -22,7 +22,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { getBrowserClient } from '@/lib/supabase/client';
-import { normalizePhoneNumber } from '@/lib/validations/auth';
+import { INVALID_SN_PHONE_MESSAGE, normalizePhoneNumber } from '@/lib/validations/auth';
 
 /**
  * Mot de passe oublié (lot 6, contrat A5 : écran sur le système de design, logique inchangée).
@@ -33,7 +33,16 @@ import { normalizePhoneNumber } from '@/lib/validations/auth';
  *    /reset-password.
  *  - Verrou du navigateur (clés ev_recovery_lockout_until / ev_recovery_failed_attempts) en plus du 429 du
  *    serveur.
+ * Lot 9 bis (tâche 41 ; contrat 5.41, D-txt E.41) :
+ *  - R84 : un numéro sans compte reçoit la même réponse que les autres (200, aucun SMS) ; l'écran dit donc « Si un
+ *    compte est associé à ce numéro… », comme pour l'email, et ouvre la saisie du code dans les deux cas ;
+ *  - R88 : le code est consommé par /api/auth/verify-otp avant l'ouverture de la session ; si verifyOtp échoue (ou si
+ *    le serveur ne rend pas de jeton), l'écran le dit, ne pose aucun drapeau et ne navigue pas : nouveau code à demander ;
+ *  - R76 : numéro invalide par la constante commune INVALID_SN_PHONE_MESSAGE.
  */
+
+/** R88 : le code est accepté mais la session de récupération n'a pas pu s'ouvrir (même texte qu'à la connexion). */
+const RECOVERY_SESSION_FAILED = 'Code accepté, mais la connexion n’a pas pu s’ouvrir. Demandez un nouveau code et réessayez.';
 
 // Verrou du navigateur contre les essais répétés (le serveur reste l'autorité : 429 avec remainingSeconds)
 const MAX_FAILED_ATTEMPTS = 5;
@@ -237,7 +246,7 @@ export default function ForgotPasswordPage() {
 
         const normalizedPhone = normalizePhoneNumber(identifier.trim());
         if (!/^\+221[7][05678]\d{7}$/.test(normalizedPhone)) {
-            setErrorMessage('Veuillez saisir un numéro de téléphone sénégalais valide (ex: 77 123 45 67).');
+            setErrorMessage(INVALID_SN_PHONE_MESSAGE);
             return;
         }
 
@@ -266,7 +275,8 @@ export default function ForgotPasswordPage() {
             setStep(2);
             setCountdown(60);
             setOtpCode('');
-            setSuccessMessage(`Code de récupération envoyé par SMS au ${normalizedPhone}.`);
+            // R84 : même réponse pour un numéro sans compte (aucun SMS ne part alors) : rien n'en est révélé ici.
+            setSuccessMessage('Si un compte est associé à ce numéro, un code de récupération vient de lui être envoyé par SMS.');
         } catch (err: unknown) {
             console.error('[ForgotPassword] envoi du code SMS en échec :', err);
             setErrorMessage("Impossible d'envoyer le code SMS. Vérifiez votre réseau, puis réessayez.");
@@ -321,13 +331,27 @@ export default function ForgotPasswordPage() {
                 return;
             }
 
-            // OTP valide — créer la session Supabase pour permettre updateUser
-            if (data.token_hash) {
-                const supabase = getBrowserClient();
-                await supabase.auth.verifyOtp({
-                    token_hash: data.token_hash,
-                    type: 'magiclink',
-                });
+            // Code valide (consommé par le serveur) : ouvrir la session Supabase qui permet updateUser sur /reset-password.
+            // R88 : sans jeton ou sans session, rien n'est posé et l'écran reste ici ; un nouveau code est nécessaire.
+            if (typeof data.token_hash !== 'string' || !data.token_hash) {
+                console.error('[ForgotPassword] code accepté sans jeton de session');
+                setErrorMessage(RECOVERY_SESSION_FAILED);
+                setOtpCode('');
+                setCountdown(0);
+                return;
+            }
+            const supabase = getBrowserClient();
+            const { data: verified, error: sessionError } = await supabase.auth.verifyOtp({
+                token_hash: data.token_hash,
+                type: 'magiclink',
+            });
+            if (sessionError || !verified.session) {
+                console.error('[ForgotPassword] session de récupération non ouverte après le code :',
+                    sessionError ? `${sessionError.code ?? sessionError.status ?? ''} ${sessionError.message}` : 'aucune session');
+                setErrorMessage(RECOVERY_SESSION_FAILED);
+                setOtpCode('');
+                setCountdown(0);
+                return;
             }
 
             // Poser le flag de recovery avant navigation
@@ -503,7 +527,7 @@ export default function ForgotPasswordPage() {
                     {step === 2 && (
                         <form onSubmit={handleVerifyOtp} className="space-y-5">
                             <p id="recuperation-otp-aide" className="text-center text-sm font-semibold text-fg">
-                                Code envoyé au <span className="whitespace-nowrap tabular-nums text-brand-fg">{normalizePhoneNumber(identifier.trim())}</span>
+                                Code demandé pour le <span className="whitespace-nowrap tabular-nums text-brand-fg">{normalizePhoneNumber(identifier.trim())}</span>
                             </p>
 
                             <OtpInput
