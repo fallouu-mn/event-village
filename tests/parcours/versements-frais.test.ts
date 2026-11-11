@@ -333,3 +333,49 @@ describe('H7 — transferts sortants : 409 incertain, 400 lisibles, frais imput�
         }
     });
 });
+
+// ── H6 : frais réels ───────────────────────────────────────────────────────
+
+describe('H6 — frais réels SamirPay enregistrés et comparés à l’estimation', () => {
+    test('H6-a : retrait confirmé de 15 000 F (frais 225) : samirpay_fees 225, samirpay_net_amount 15 225, référence et refOperator enregistrés', async () => {
+        const w = await withdrawal('h6', 15_000, 0);
+        assert.equal(Number((await cashoutRow(w.cashoutId)).amount), 15_000, 'précondition : versement de 15 000 F (frais de retrait à 0)');
+        assert.equal((await CashoutService.send(w.cashoutId)).status, 'CONFIRME', 'précondition : versement confirmé');
+        const f = await feesOf(w.cashoutId);
+        assert.deepEqual({ fees: Number(f.samirpay_fees), net: Number(f.samirpay_net_amount) }, { fees: 225, net: 15_225 }, 'frais réels et débit total, en valeur absolue (X2)');
+        assert.ok(typeof f.samirpay_ref_operator === 'string' && f.samirpay_ref_operator.length > 0, `référence de l’opérateur : ${JSON.stringify(f.samirpay_ref_operator)}`);
+        assert.ok(typeof f.samirpay_reference === 'string' && f.samirpay_reference.length > 0, `référence SamirPay : ${JSON.stringify(f.samirpay_reference)}`);
+    });
+
+    test('H6-b : GET /api/admin/finance/reconciliation : frais réels, estimés, écart ; encaissements « non fournis », jamais 0 ; sans payments.read 403', async () => {
+        let mod: { GET?: Handler };
+        try {
+            mod = await importModule('../../app/api/admin/finance/reconciliation/route');
+        } catch (err) {
+            assert.fail(`GET /api/admin/finance/reconciliation absente (contrat 4.1, H6) — ${String((err as Error).message).split('\n')[0]}`);
+        }
+        assert.equal(typeof mod.GET, 'function', 'app/api/admin/finance/reconciliation/route.ts : GET non exporté');
+        const res = await asResult(await mod.GET!(authed('/api/admin/finance/reconciliation', 'GET', refundAdmin)));
+        assert.equal(res.status, 200, show(res));
+        const b = res.body;
+        assert.ok(typeof b.cashoutFeesReal === 'number' && b.cashoutFeesReal >= 225, `frais de versement réels (H6-a compris) : ${show(res)}`);
+        assert.equal(typeof b.cashoutFeesEstimated, 'number', `frais estimés au taux réglé : ${show(res)}`);
+        assert.equal(round2(Number(b.gap)), round2(Number(b.cashoutFeesReal) - Number(b.cashoutFeesEstimated)), `écart = réels − estimés : ${show(res)}`);
+        assert.equal(b.cashinFeesReal, null, 'encaissements : frais réels inconnus, jamais 0 (v1.2 : aucun frais dans le Cashin Direct)');
+        assert.ok(typeof b.cashinNote === 'string' && b.cashinNote.length > 0, `encaissements : mention « non fournis » : ${show(res)}`);
+        const denied = await newAdminWith(['refunds.manage'], { label: 'v9b-frais-sans' });
+        const r403 = await asResult(await mod.GET!(authed('/api/admin/finance/reconciliation', 'GET', denied)));
+        const { error } = await service.from('users').update({ status: 'SUSPENDU' }).eq('id', denied.userId);
+        assert.equal(error, null, `administrateur sans permission suspendu : ${error?.message}`);
+        assert.equal(r403.status, 403, `sans payments.read : ${show(r403)}`);
+    });
+
+    test('H6-c : encaissement confirmé : payments.samirpay_fees, samirpay_net_amount et samirpay_ref_operator NULL (non fournis par SamirPay)', async () => {
+        const partner = await newPartner('v9b-frais-encaissement');
+        const ev = await createPartnerEvent(partner.partnerId, 'v9b frais encaissement', [{ name: 'Standard', price: 3_000, total: 5 }]);
+        const p = await buyConfirmed(await newBuyer('v9b-frais-encaissement'), ev, [['Standard', 1]]);
+        const { data, error } = await service.from('payments').select('samirpay_fees, samirpay_net_amount, samirpay_ref_operator').eq('id', p.payment.id).single();
+        assert.equal(error, null, `colonnes samirpay_* de payments (M05, A5) : ${error?.message}`);
+        assert.deepEqual(data, { samirpay_fees: null, samirpay_net_amount: null, samirpay_ref_operator: null }, 'frais d’encaissement inconnus : NULL, jamais 0');
+    });
+});
