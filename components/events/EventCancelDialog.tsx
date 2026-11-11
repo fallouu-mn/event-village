@@ -21,6 +21,9 @@ import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-js
  * Lot 9 bis (R20, B22, contrat 5.4) : l'impact sert `counter { sales, tickets, total }` ; la fenêtre dit « Ventes au
  * guichet : {n} billets, {montant} » et « Espèces à rembourser par l’organisateur (jamais par Event Village) », le
  * même montant que la liste des espèces du pilotage (CashRefundsList) après l'annulation.
+ * Lot 9 bis (R48, B65, contrat 5.27) : si l'impact dit `in_progress`, avertissement « L’événement a commencé : {n}
+ * billets déjà utilisés à l’entrée sont aussi remboursés… » (lu dans `used_online`) et case « J’ai compris » exigée
+ * avant la confirmation.
  */
 
 export interface EventCancelDialogProps {
@@ -39,6 +42,10 @@ interface CancellationImpact {
     pending_payments: number;
     /** Lot 9 bis (R20, B22) : ventes au guichet (hors plateforme), jamais remboursées par Event Village. */
     counter: { sales: number; tickets: number; total: number };
+    /** Lot 9 bis (R48, B65) : l'événement a commencé (début passé, à l'horloge du serveur). */
+    in_progress: boolean;
+    /** Billets payés en ligne déjà utilisés à l'entrée, aussi remboursés (compris dans online_refund_total). */
+    used_online: { tickets: number; amount: number };
 }
 
 interface CancelResponse {
@@ -54,6 +61,17 @@ const MAX_TEXT = 2000;
 /** « 0 billet », « 1 billet », « 3 billets ». */
 function ticketsLabel(n: number): string {
     return n > 1 ? `${formatInteger(n)} billets` : `${formatInteger(n)} billet`;
+}
+
+/** Avertissement d'une annulation en cours d'événement (R48, contrat 5.27), accordé au nombre de billets utilisés. */
+function startedWarning(used: { tickets: number; amount: number }): string {
+    if (used.tickets <= 0) {
+        return 'L’événement a commencé : aucun billet payé en ligne n’a encore été utilisé à l’entrée. Tous les billets payés en ligne sont remboursés.';
+    }
+    if (used.tickets === 1) {
+        return `L’événement a commencé : 1 billet déjà utilisé à l’entrée est aussi remboursé, pour ${formatFcfa(used.amount)}, compris dans le total ci-dessus.`;
+    }
+    return `L’événement a commencé : ${formatInteger(used.tickets)} billets déjà utilisés à l’entrée sont aussi remboursés, pour ${formatFcfa(used.amount)}, compris dans le total ci-dessus.`;
 }
 
 function ImpactLine({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
@@ -73,6 +91,7 @@ export function EventCancelDialog({ eventId, eventTitle, scope, open, onClose, o
     const [publicNotice, setPublicNotice] = useState('');
     const [internalReason, setInternalReason] = useState('');
     const [touched, setTouched] = useState(false);
+    const [understood, setUnderstood] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -100,6 +119,7 @@ export function EventCancelDialog({ eventId, eventTitle, scope, open, onClose, o
         setPublicNotice('');
         setInternalReason('');
         setTouched(false);
+        setUnderstood(false);
         setSubmitError(null);
         void loadImpact();
     }, [open, loadImpact]);
@@ -109,10 +129,12 @@ export function EventCancelDialog({ eventId, eventTitle, scope, open, onClose, o
     const noticeError = touched && notice.length < MIN_NOTICE ? `L’avis public doit contenir au moins ${MIN_NOTICE} caractères.` : undefined;
     const reasonError = touched && reason.length < MIN_REASON ? `Le motif interne doit contenir au moins ${MIN_REASON} caractères.` : undefined;
     const formValid = notice.length >= MIN_NOTICE && reason.length >= MIN_REASON;
+    // R48 : un événement commencé exige la case « J’ai compris » (les billets déjà utilisés sont aussi remboursés).
+    const acknowledged = !impact?.in_progress || understood;
 
     const submit = async (): Promise<void> => {
         setTouched(true);
-        if (!formValid || !impact || submitting) return;
+        if (!formValid || !impact || !acknowledged || submitting) return;
         setSubmitting(true);
         setSubmitError(null);
         const payload = { publicNotice: notice, internalReason: reason, confirmTitle: eventTitle.trim() };
@@ -145,7 +167,7 @@ export function EventCancelDialog({ eventId, eventTitle, scope, open, onClose, o
             isLoading={submitting}
             requireText={eventTitle}
             requireTextLabel={`Pour confirmer, saisissez le titre exact de l’événement : « ${eventTitle} »`}
-            confirmDisabled={!impact || impactLoading || !formValid}
+            confirmDisabled={!impact || impactLoading || !formValid || !acknowledged}
             maxWidth="lg"
         >
             <section aria-labelledby="annulation-impact" className="flex flex-col gap-2">
@@ -177,6 +199,21 @@ export function EventCancelDialog({ eventId, eventTitle, scope, open, onClose, o
                             <ImpactLine label="Paiements en cours (refusés puis remboursés)" value={formatInteger(impact.pending_payments)} />
                         )}
                     </dl>
+                )}
+                {!impactLoading && impact?.in_progress && (
+                    <StatusBanner tone="warning" title="Annulation en cours d’événement">
+                        <p className="tabular-nums">{startedWarning(impact.used_online)}</p>
+                        <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-fg">
+                            <input
+                                type="checkbox"
+                                checked={understood}
+                                onChange={(e) => setUnderstood(e.target.checked)}
+                                disabled={submitting}
+                                className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-border-strong accent-brand"
+                            />
+                            J’ai compris
+                        </label>
+                    </StatusBanner>
                 )}
             </section>
 
