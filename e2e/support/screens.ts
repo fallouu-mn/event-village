@@ -47,10 +47,24 @@
  * Lot 9 (contrat section 7 ; T26) : scanner-a-encaisser retirée (A16 : plus d'encaissement au scan) ; accueil attend Populaires ;
  * sept captures ajoutées, rouges jusqu'à leurs écrans (fix(9.0e), fix(9.1e), fix(9.2e)) : invitations-onglet,
  * invitations-confirmation, mes-paiements, profil, changement-numero, accueil-ville, accueil-populaires-erreur.
+ *
+ * Lot 9 bis (contrat 7.3, T9 ; commit test(9b.e2e), vague R) : dix écrans ajoutés, rouges jusqu'à leurs écrans et aux
+ * données du seed de la vague F (fix(9b.seed)) : admin-versements-marquer-verse, pilotage-especes-a-rembourser,
+ * admin-fiche-partenaire-suspendre, profil-email-non-verifie, profil-mot-de-passe, confirmation-mot-de-passe,
+ * invitation-controleur, mes-billets-recus-refuser, scanner-transfert-en-cours, verification-email. Aucun n'envoie
+ * d'action qui écrit : les boîtes sont ouvertes puis capturées, jamais confirmées ; le transfert de
+ * confirmation-mot-de-passe reçoit une réponse imposée (403 PASSWORD_CONFIRMATION_REQUIRED, contrat 4.2), il ne part
+ * jamais au serveur. Modifications signalées (aucun seuil relâché) :
+ *  - admin-remboursements-a-reprendre : passe sous fumee-superadmin (B114 : le compte admin de démonstration n'a pas
+ *    refunds.manage et, avec R51, les boutons y seraient masqués) ; réponse imposée au format du contrat 4.1
+ *    (can_resend, can_mark_paid, retrait compris) ; « Relancer » (2 attendus) devient « Renvoyer » et « Marquer versé »,
+ *    comptés ligne par ligne selon can_resend et can_mark_paid ; titre « Versements à reprendre », ligne « Retrait »,
+ *    conseil exact d'un versement incertain sans identifiant ; plus aucun « Relancer » ;
+ *  - caisse-ouverture : PIN obligatoire (R42, A11) : champ du PIN requis (aria-required), plus aucun « facultatif ».
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { DemoIds } from './demo-ids';
+import type { DemoAccountKey, DemoIds } from './demo-ids';
 import type { FakePushCounters, FakePushMode } from './fake-push';
 import type { CaptureRole } from './fixtures';
 import type { PageGuard } from './network';
@@ -307,24 +321,46 @@ function categorySections(page: Page): Locator {
 
 const REFUNDS_URL = /\/api\/admin\/refunds(\?.*)?$/;
 const RECONCILIATION_URL = /\/api\/admin\/finance\/reconciliation(\?.*)?$/;
-/** Réponse du contrat 3.10 : deux lignes relançables, une à vérifier auprès de SamirPay, sans bouton. */
-const REFUNDS_TO_RETRY = {
+/** Lot 9 bis (B2, D-ver D1) : conseil exact d'un versement incertain sans identifiant SamirPay (seul « Marquer versé »). */
+const ADVICE_UNCERTAIN_NO_ID = 'Vérifiez auprès du support SamirPay. Si le versement est parti, marquez-le versé avec sa référence.';
+/**
+ * Lot 9 bis (contrat 4.1, B1, B2 ; tableau « Renvoyer / Marquer versé » de la découverte D-ver) : réponse de
+ * GET /api/admin/refunds?state=to_retry, du plus ancien au plus récent. Cinq versements, retrait compris :
+ * « Renvoyer » sur 3 lignes (can_resend 'NOW' ou 'AFTER_CHECK'), « Marquer versé » sur les 5 (can_mark_paid).
+ * Identifiants inconnus de la base : une action envoyée par erreur ne toucherait aucun versement réel.
+ */
+const CASHOUTS_TO_RESUME = {
     items: [
         {
-            refund_id: 'e6a7b3a9-17de-42fa-8dc0-afbec12d3f39', cashout_id: 'f7b8c4ba-28ef-43ab-9ed1-b0cfd23e4a4a', kind: 'TICKET_REFUND', amount: 5250, state: 'ECHOUE',
-            reason_label: 'Refus de l’opérateur', event_title: 'Croisière musicale vers Gorée', phone_masked: '77 ••• •• 34', created_at: '2026-11-04T18:30:00.000Z', can_retry: true,
+            id: 'f7b8c4ba-28ef-43ab-9ed1-b0cfd23e4a4a', kind: 'TICKET_REFUND', kind_label: 'Remboursement d’un billet', state: 'ECHOUE', state_label: 'Envoi en échec',
+            since: '2026-11-04T18:30:00.000Z', amount: 5250, beneficiary: '77 ••• •• 34', event_title: 'Croisière musicale vers Gorée',
+            block_label: 'Refusé par l’opérateur Mobile Money', can_resend: 'NOW', can_mark_paid: true, advice: null,
         },
         {
-            refund_id: '08c9d5cb-39fa-44bc-8fe2-c1d0e34f5b5b', cashout_id: '19dae6dc-4a0b-45cd-9af3-d2e1f4506c6c', kind: 'TICKET_REFUND', amount: 15750, state: 'BLOQUE',
-            reason_label: 'Solde SamirPay insuffisant', event_title: 'Croisière musicale vers Gorée', phone_masked: '76 ••• •• 18', created_at: '2026-11-04T19:05:00.000Z', can_retry: true,
+            id: '19dae6dc-4a0b-45cd-9af3-d2e1f4506c6c', kind: 'WITHDRAWAL', kind_label: 'Retrait', state: 'BLOQUE', state_label: 'Bloqué',
+            since: '2026-11-04T19:05:00.000Z', amount: 48500, beneficiary: '76 ••• •• 18', event_title: null,
+            block_label: 'Solde SamirPay insuffisant', can_resend: 'NOW', can_mark_paid: true, advice: null,
         },
         {
-            refund_id: '2aebf7ed-5b1c-46de-8b04-e3f205617d7d', cashout_id: '3bfc08fe-6c2d-47ef-9c15-f40316728e8e', kind: 'TICKET_REFUND', amount: 3150, state: 'INCERTAIN',
-            reason_label: null, event_title: 'Festival Jazz sur le Fleuve', phone_masked: '78 ••• •• 52', created_at: '2026-11-04T20:40:00.000Z', can_retry: false,
+            id: '3bfc08fe-6c2d-47ef-9c15-f40316728e8e', kind: 'EVENT_CANCELLATION_REFUND', kind_label: 'Annulation d’événement', state: 'INCERTAIN', state_label: 'Issue incertaine',
+            since: '2026-11-04T20:40:00.000Z', amount: 3150, beneficiary: '78 ••• •• 52', event_title: 'Festival Jazz sur le Fleuve',
+            block_label: null, can_resend: false, can_mark_paid: true, advice: ADVICE_UNCERTAIN_NO_ID,
+        },
+        {
+            id: '4c0d19ef-7d3e-48fa-8d26-a51827839f9f', kind: 'REFUND', kind_label: 'Remboursement d’un paiement', state: 'ENVOYE_NON_CONFIRME', state_label: 'Envoyé, non confirmé',
+            since: '2026-11-04T21:10:00.000Z', amount: 10500, beneficiary: '70 ••• •• 61', event_title: 'Nuit du Sabar — édition d’automne',
+            block_label: null, can_resend: 'AFTER_CHECK', can_mark_paid: true, advice: null,
+        },
+        {
+            id: '5d1e2a0f-8e4f-49ab-9e37-b62938940aa0', kind: 'TICKET_REFUND', kind_label: 'Remboursement d’un billet', state: 'BLOQUE', state_label: 'Bloqué',
+            since: '2026-11-04T21:45:00.000Z', amount: 7350, beneficiary: '77 ••• •• 09', event_title: 'Croisière musicale vers Gorée',
+            block_label: 'Opérateur Mobile Money inconnu', can_resend: false, can_mark_paid: true, advice: null,
         },
     ],
-    truncated: false,
+    total: 5,
 };
+const CASHOUTS_RESENDABLE = CASHOUTS_TO_RESUME.items.filter((i) => i.can_resend !== false).length;
+const CASHOUTS_MARKABLE = CASHOUTS_TO_RESUME.items.filter((i) => i.can_mark_paid).length;
 const EMPTY_RECONCILIATION = {
     summary: {
         period: 'Tout', totalTransactionsCount: 0, totalGrossVolume: 0, totalServiceFees: 0, totalAggregatorFees: 0, totalPlatformNetRevenue: 0,
@@ -332,6 +368,29 @@ const EMPTY_RECONCILIATION = {
     },
     items: [],
 };
+/** Lot 9 bis : réponses imposées des deux écrans « Versements à reprendre » (fumee-superadmin, B114). */
+const CASHOUTS_STUBS: StubResponse[] = [
+    { url: RECONCILIATION_URL, method: 'GET', status: 200, body: EMPTY_RECONCILIATION },
+    { url: REFUNDS_URL, method: 'GET', status: 200, body: CASHOUTS_TO_RESUME },
+];
+
+/**
+ * Lot 9 bis : « Versements à reprendre » de /admin/finance (RefundsToRetry, contrat 5.1) chargé : titre exact, ligne
+ * « Retrait » (retraits compris, R10), conseil exact d'un versement incertain sans identifiant (B2), puis un bouton
+ * « Renvoyer » par ligne où can_resend n'est pas faux et un « Marquer versé » par ligne où can_mark_paid est vrai
+ * (R51 : boutons conditionnés), et plus aucun « Relancer » (route retry supprimée, B4).
+ */
+async function cashoutsReady(page: Page): Promise<{ resend: Locator; markPaid: Locator }> {
+    await expect(page.getByRole('heading', { name: /^versements à reprendre$/i })).toBeVisible();
+    await expect(page.getByText(/^retrait$/i).filter({ visible: true }).first(), 'ligne « Retrait » (retraits compris, R10)').toBeVisible();
+    await expect(page.getByText(ADVICE_UNCERTAIN_NO_ID).filter({ visible: true }).first(), 'conseil d’un versement incertain sans identifiant (B2)').toBeVisible();
+    const resend = page.getByRole('button', { name: /^renvoyer/i }).filter({ visible: true });
+    const markPaid = page.getByRole('button', { name: /^marquer versé/i }).filter({ visible: true });
+    await expect(resend, 'un bouton « Renvoyer » par ligne où can_resend n’est pas faux').toHaveCount(CASHOUTS_RESENDABLE);
+    await expect(markPaid, 'un bouton « Marquer versé » par ligne où can_mark_paid est vrai').toHaveCount(CASHOUTS_MARKABLE);
+    await expect(page.getByRole('button', { name: /^relancer/i }), 'plus aucun « Relancer » (B4)').toHaveCount(0);
+    return { resend, markPaid };
+}
 
 // ── Lot 9 : invitations, découverte, compte ─────────────────────────────────
 
@@ -344,6 +403,49 @@ async function invitationsReady(page: Page): Promise<void> {
 /** Section « Près de chez vous » de l'accueil (contrat 5.2). */
 function nearbySection(page: Page): Locator {
     return page.locator('section').filter({ has: page.getByRole('heading', { name: /^près de chez vous/i }) });
+}
+
+// ── Lot 9 bis : versements, droits, transferts, email (contrat 7.3) ─────────
+
+const TRANSFER_URL = /\/api\/tickets\/[^/]+\/transfer$/;
+/** Contrat 4.2 : refus d'une action sensible sans mot de passe saisi depuis moins de 10 minutes (R57). */
+const PASSWORD_CONFIRMATION_REQUIRED = {
+    error: 'Par sécurité, saisissez votre mot de passe pour continuer.', code: 'PASSWORD_CONFIRMATION_REQUIRED',
+};
+/** Aide exacte de PasswordChangeDialog (contrat 5.42). */
+const PASSWORD_RULES_HELP = '8 caractères au moins, dont une majuscule, un chiffre et un caractère spécial.';
+/** Jeton factice de /verify-email : la page ne valide rien au chargement (contrat 4.6), il n'est jamais envoyé. */
+const VERIFY_EMAIL_TOKEN = 'e2e-jeton-factice-jamais-envoye-0123456789abcdef';
+const VERIFY_EMAIL_API = '/api/account/email/verify';
+
+/** Boîte de dialogue ouverte, modale simple ou de confirmation (ConfirmDialog). */
+function anyDialog(page: Page, name?: RegExp): Locator {
+    return name
+        ? page.getByRole('dialog', { name }).or(page.getByRole('alertdialog', { name }))
+        : page.getByRole('dialog').or(page.getByRole('alertdialog'));
+}
+
+/** Fiche partenaire d'un compte organisateur du seed de démonstration (erreur explicite si le seed ne l'a pas écrite). */
+function partnerIdOf(i: DemoIds | null, key: DemoAccountKey): string {
+    const id = ids(i).accounts[key].partnerId;
+    if (!id) throw new Error(`[e2e] demo-ids.json : accounts.${key}.partnerId absent (fiche partenaire du seed de démonstration)`);
+    return id;
+}
+
+/** Écran existant prolongé d'un contrôle après ses propres actions. */
+function withExtraActions(screen: Screen, extra: (c: ScreenContext) => Promise<void>): Screen {
+    return {
+        ...screen,
+        actions: async (c) => {
+            if (screen.actions) await screen.actions(c);
+            await extra(c);
+        },
+    };
+}
+
+/** Requêtes déjà parties vers un chemin d'API, lues dans le minutage des ressources de la page. */
+async function requestsTo(page: Page, pathname: string): Promise<number> {
+    return page.evaluate((p) => performance.getEntriesByType('resource').filter((e) => new URL(e.name).pathname === p).length, pathname);
 }
 
 function tabScreen(id: string, titre: string, tab: RegExp): Screen {
@@ -649,17 +751,13 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'admin-remboursements-a-reprendre', titre: 'Administration — finances : remboursements à reprendre (réponses imposées)', role: 'admin', needsIds: true,
-        path: () => '/admin/finance',
-        stubResponses: [
-            { url: RECONCILIATION_URL, method: 'GET', status: 200, body: EMPTY_RECONCILIATION },
-            { url: REFUNDS_URL, method: 'GET', status: 200, body: REFUNDS_TO_RETRY },
-        ],
+        // Lot 9 bis (7.3, B114) : sous fumee-superadmin, réponse au format du contrat 4.1 ; voir l'en-tête du fichier
+        id: 'admin-remboursements-a-reprendre', titre: 'Administration — finances : versements à reprendre (Renvoyer, Marquer versé ; réponses imposées)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => {
-            const retry = page.getByRole('button', { name: /^relancer/i }).filter({ visible: true });
-            await expect(retry, 'un bouton « Relancer » par ligne relançable').toHaveCount(2);
-            await expect(page.getByText(/à vérifier auprès de samirpay/i).filter({ visible: true }).first()).toBeVisible();
-            await revealCenter(retry.first());
+            const { resend } = await cashoutsReady(page);
+            await revealCenter(resend.first());
         },
     },
     // ── Contrôle d'accès ────────────────────────────────────────────────────
@@ -788,14 +886,18 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'caisse-ouverture', titre: 'Caisse — ouverture (fonds de caisse, PIN facultatif)', role: 'controleur', needsIds: true,
+        id: 'caisse-ouverture', titre: 'Caisse — ouverture (fonds de caisse, PIN obligatoire)', role: 'controleur', needsIds: true,
         path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: true,
         stubResponses: [{ url: /\/api\/controller\/shifts\/active(\?.*)?$/, method: 'GET', status: 200, body: { success: true, shift: null, expected_cash_in_drawer: null } }],
         ready: async ({ page }) => startScanner(page),
         actions: async ({ page }) => {
             await openTab(page, /^caisse$/i);
             await page.getByRole('button', { name: /^ouvrir ma caisse$/i }).click();
-            await expect(page.getByRole('dialog', { name: /^ouvrir ma caisse$/i })).toBeVisible();
+            const dialog = page.getByRole('dialog', { name: /^ouvrir ma caisse$/i });
+            await expect(dialog).toBeVisible();
+            // Lot 9 bis (R42, A11, contrat 4.3 PIN_REQUIRED) : le PIN du régisseur est obligatoire à l'ouverture
+            await expect(dialog.getByLabel(/^code pin du régisseur/i), 'PIN du régisseur obligatoire à l’ouverture (R42)').toHaveAttribute('aria-required', 'true');
+            await expect(dialog.getByText(/facultatif/i), 'plus aucune mention « facultatif » du PIN (R42)').toHaveCount(0);
         },
     },
     {
@@ -999,6 +1101,136 @@ export const SCREENS: readonly Screen[] = [
         ready: async (c) => {
             await expectRetry(c);
             await revealCenter(c.page.getByRole('button', { name: /réessayer/i }));
+        },
+    },
+    // ── Lot 9 bis : versements, droits, transferts, email (contrat 7.3, T9) ──
+    // Rouges jusqu'à leurs écrans (vague E) et aux données du seed (fix(9b.seed)) ; aucune boîte n'est confirmée.
+    {
+        id: 'admin-versements-marquer-verse', titre: 'Administration — versements à reprendre : boîte « Marquer versé » (justification, référence ; réponses imposées)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: CASHOUTS_STUBS,
+        ready: async ({ page }) => { await cashoutsReady(page); },
+        actions: async ({ page }) => {
+            // Ligne incertaine sans identifiant SamirPay : « Marquer versé » seul, avec la référence (B2)
+            const row = page.locator('tr, li, article').filter({ hasText: 'Festival Jazz sur le Fleuve' });
+            await row.getByRole('button', { name: /^marquer versé/i }).filter({ visible: true }).first().click();
+            const dialog = anyDialog(page, /marquer/i);
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByLabel(/justification/i), 'justification obligatoire (contrat 5.1)').toBeVisible();
+            await expect(dialog.getByLabel(/référence/i), 'référence SamirPay du versement (contrat 4.1, REFERENCE_REQUIRED)').toBeVisible();
+        },
+    },
+    {
+        id: 'pilotage-especes-a-rembourser', titre: 'Événement annulé — espèces à rembourser par l’organisateur (ventes au guichet)', role: 'organisateur', needsIds: true,
+        path: pilotage('annule'),
+        ready: async ({ page }) => {
+            const heading = page.getByRole('heading', { name: /^espèces à rembourser par l[’']organisateur/i });
+            await expect(heading, 'section des ventes au guichet d’un événement annulé (R20)').toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('checkbox', { name: /remboursé/i }).first(), 'case « Remboursé » d’une vente au guichet du seed').toBeVisible();
+            await revealCenter(heading);
+        },
+    },
+    {
+        id: 'admin-fiche-partenaire-suspendre', titre: 'Administration — fiche d’un partenaire validé : boîte « Suspendre » (motif)', role: 'fumee-superadmin', needsIds: true,
+        path: (i) => `/admin/dashboard?partenaires=ALL&dossier=${encodeURIComponent(partnerIdOf(i, 'organisateur'))}`,
+        ready: async ({ page }) => {
+            await expect(page.getByRole('dialog', { name: /^dossier du partenaire/i }), 'fiche ouverte par le lien profond ?dossier= (R6)').toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            const dossier = page.getByRole('dialog', { name: /^dossier du partenaire/i });
+            // Partenaire VALIDE : « Valider » et « Refuser » réservés à un dossier en attente, « Réactiver » à un suspendu (5.15)
+            await expect(dossier.getByRole('button', { name: /^valider/i }), '« Valider » sur un partenaire validé').toHaveCount(0);
+            await expect(dossier.getByRole('button', { name: /^refuser/i }), '« Refuser » sur un partenaire validé').toHaveCount(0);
+            await expect(dossier.getByRole('button', { name: /^réactiver/i }), '« Réactiver » sur un partenaire validé').toHaveCount(0);
+            await dossier.getByRole('button', { name: /^suspendre/i }).click();
+            const box = anyDialog(page, /^suspendre/i);
+            await expect(box).toBeVisible();
+            await expect(box.getByLabel(/^motif/i), 'motif obligatoire de la suspension (R55)').toBeVisible();
+        },
+    },
+    {
+        id: 'profil-email-non-verifie', titre: 'Profil du client — adresse email en attente de vérification (Renvoyer le lien)', role: 'client', needsIds: true, path: () => '/profile',
+        ready: async ({ page }) => {
+            await expect(page.getByText('Email non vérifié', { exact: true }).first(), 'adresse en attente du client du seed (email_pending, R87)').toBeVisible();
+            const resend = page.getByRole('button', { name: /^renvoyer le lien$/i });
+            await expect(resend).toBeVisible();
+            await revealCenter(resend);
+        },
+    },
+    {
+        id: 'profil-mot-de-passe', titre: 'Profil du client — « Changer de mot de passe » ouvert (trois champs, règle)', role: 'client', needsIds: true, path: () => '/profile',
+        ready: async ({ page }) => {
+            await expect(page.getByText('Les autres appareils seront déconnectés.', { exact: true }), 'bloc « Mot de passe » du profil (5.42)').toBeVisible();
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^changer de mot de passe$/i }).click();
+            const dialog = anyDialog(page, /mot de passe/i);
+            await expect(dialog).toBeVisible();
+            await expect(dialog.locator('input[type="password"]'), 'mot de passe actuel, nouveau et confirmation (R85)').toHaveCount(3);
+            await expect(dialog.getByText(PASSWORD_RULES_HELP, { exact: true })).toBeVisible();
+        },
+    },
+    {
+        id: 'confirmation-mot-de-passe', titre: 'Mes billets — transfert : boîte « mot de passe » avant l’envoi (réponse imposée, rien ne part)', role: 'client', needsIds: true,
+        path: () => '/tickets',
+        // Le transfert ne part jamais au serveur : réponse 403 du contrat 4.2 imposée (le seed reste intact)
+        stubResponses: [{ url: TRANSFER_URL, method: 'POST', status: 403, body: PASSWORD_CONFIRMATION_REQUIRED }],
+        allowFailures: [TRANSFER_URL],
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^transférer$/i }).filter({ visible: true }).first().click();
+            const transfer = page.getByRole('dialog', { name: /^transférer ce billet$/i });
+            await expect(transfer).toBeVisible();
+            await transfer.getByLabel(/^numéro de téléphone du destinataire/i).fill('771234567');
+            await transfer.getByRole('button', { name: /^envoyer le billet$/i }).click();
+            const confirm = anyDialog(page, /mot de passe/i);
+            await expect(confirm, 'boîte « mot de passe » ouverte par PASSWORD_CONFIRMATION_REQUIRED (R57)').toBeVisible();
+            await expect(confirm.locator('input[type="password"]'), 'un seul champ : le mot de passe du compte').toHaveCount(1);
+        },
+        masks: (page) => [page.getByRole('img', { name: /QR/i })],
+    },
+    {
+        id: 'invitation-controleur', titre: 'Invitations — invitation de contrôleur en attente (Accepter, Refuser)', role: 'client', needsIds: true,
+        path: () => '/invitations', expectStatus: 200,
+        ready: async ({ page }) => {
+            await expectPageTitle(page);
+            await expect(page.getByRole('button', { name: /^accepter/i }).first(), 'invitation en attente du seed (R37)').toBeVisible();
+            await expect(page.getByRole('button', { name: /^refuser/i }).first()).toBeVisible();
+        },
+    },
+    {
+        id: 'mes-billets-recus-refuser', titre: 'Mes billets — Reçus : confirmation « Refuser » d’un transfert entrant', role: 'client', needsIds: true,
+        path: () => '/tickets?tab=recus',
+        ready: async ({ page }) => {
+            await expect(page.getByRole('tab', { name: /^reçus/i })).toHaveAttribute('aria-selected', 'true');
+            await expect(page.getByRole('button', { name: /^accepter le billet$/i }).first()).toBeVisible();
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^refuser/i }).filter({ visible: true }).first().click();
+            const confirm = anyDialog(page);
+            await expect(confirm, 'confirmation du refus (R46)').toBeVisible();
+            await expect(confirm.getByRole('button', { name: /^refuser/i })).toBeVisible();
+        },
+    },
+    withExtraActions(
+        scanResultScreen('scanner-transfert-en-cours', 'Scanner — billet en cours de transfert (plein écran « Transfert en cours »)', {
+            result: 'transfer_pending', scan_id: 'c6e1f2a3-b4c5-4d6e-8f70-81a2b3c4d5e6', ticket: SCAN_TICKET,
+        }),
+        async ({ page }) => {
+            await expect(page.locator('[data-scan-state="result"]').getByText(/^transfert en cours/i).first(), 'libellé du résultat transfer_pending (R19)').toBeVisible();
+        },
+    ),
+    {
+        id: 'verification-email', titre: 'Vérification d’une adresse email — « Confirmer mon adresse » (rien n’est validé au chargement)', role: 'anonyme', needsIds: false,
+        path: () => `/verify-email?t=${VERIFY_EMAIL_TOKEN}`, expectStatus: 200,
+        ready: async ({ page }) => {
+            await expectHeading(page, /^vérifier mon adresse email$/i);
+            await expect(page.getByRole('button', { name: /^confirmer mon adresse$/i })).toBeVisible();
+        },
+        actions: async ({ page }) => {
+            await expect.poll(() => new URL(page.url()).searchParams.has('t'), { message: 'jeton effacé de l’adresse (history.replaceState, contrat 4.6)' }).toBe(false);
+            const referrers = await page.evaluate(() => Array.from(document.querySelectorAll('meta[name="referrer"]'), (m) => m.getAttribute('content')));
+            expect(referrers, 'politique de référent de la page (contrat 4.6)').toEqual(['no-referrer']);
+            expect(await requestsTo(page, VERIFY_EMAIL_API), `aucun appel à ${VERIFY_EMAIL_API} au chargement (contrat 4.6)`).toBe(0);
         },
     },
 ];
