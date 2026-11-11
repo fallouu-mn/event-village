@@ -15,6 +15,9 @@
  * de la base. La route de cron appelle dispatchNotifications() sans argument (aucune heure venue d'une
  * requête).
  *
+ * Lot 9 bis (G.52, B99) : les lignes réservées partent par un groupe de 5 places par canal (IN_APP, PUSH, EMAIL,
+ * SMS en parallèle) : un email lent ne retarde jamais un SMS du même lot.
+ *
  * Aucune erreur avalée : une RPC en erreur lève (la route répond 500) ; un échec d'envoi devient un statut
  * explicite (RETRY, FAILED, SKIPPED, UNCERTAIN avec motif). Un SMS dont l'issue est inconnue n'est jamais
  * renvoyé (UNCERTAIN).
@@ -514,6 +517,26 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise
     return out;
 }
 
+/**
+ * Lot 9 bis (G.52, B99) : un groupe d'envoi de CONCURRENCY places par canal, tous en parallèle. Un email lent (jusqu'à
+ * 15 s chez Resend) n'occupe plus la place d'un SMS ; un échec reste un statut par ligne (deliver ne lève pas).
+ * Résultats rendus dans l'ordre des lignes réservées.
+ */
+async function deliverByChannel(items: ClaimedItem[], fn: (item: ClaimedItem) => Promise<MarkResult>): Promise<MarkResult[]> {
+    const groups = new Map<Channel, number[]>();
+    items.forEach((item, i) => {
+        const group = groups.get(item.channel);
+        if (group) group.push(i);
+        else groups.set(item.channel, [i]);
+    });
+    const out = new Array<MarkResult>(items.length);
+    await Promise.all(Array.from(groups.values()).map(async (indexes) => {
+        const results = await mapPool(indexes, CONCURRENCY, (i) => fn(items[i]));
+        indexes.forEach((itemIndex, k) => { out[itemIndex] = results[k]; });
+    }));
+    return out;
+}
+
 // ── Boucle de l'envoyeur ───────────────────────────────────────────────────
 
 function emptyReport(): DispatchReport {
@@ -557,7 +580,7 @@ export async function dispatchNotifications(opts: DispatchOptions = {}): Promise
 
         if (items.length > 0) {
             const clock = opts.now ?? new Date();
-            const results = await mapPool(items, CONCURRENCY, (item) => deliver(item, ctx, clock));
+            const results = await deliverByChannel(items, (item) => deliver(item, ctx, clock));
             const markArgs: Record<string, unknown> = { results };
             if (nowIso) markArgs.now = nowIso;
             // Marquage rejouable sans risque : une ligne déjà marquée est ignorée (stale).
