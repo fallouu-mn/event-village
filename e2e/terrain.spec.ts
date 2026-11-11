@@ -921,6 +921,24 @@ async function allowControllerCash(ev: TerrainEvent): Promise<void> {
     if ((data ?? []).length !== 1) throw new Error(`affectation du contrôleur A sur ${ev.eventId} introuvable`);
 }
 
+/**
+ * Lot 9 bis (R42, A11) : PIN régisseur de l'événement, généré par l'organisateur A comme à l'écran du pilotage
+ * (POST /api/partner/events/[id]/regisseur-pin, { confirm: true }), lu une fois dans la réponse.
+ */
+async function regisseurPinOf(s: Session, eventId: string): Promise<string> {
+    const organizer = await s.holder('fumee-organisateur');
+    const out = await organizer.evaluate(async (id) => {
+        const res = await fetch(`/api/partner/events/${id}/regisseur-pin`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }), cache: 'no-store',
+        });
+        return { status: res.status, text: await res.text() };
+    }, eventId);
+    if (out.status !== 200) throw new Error(`PIN régisseur de ${eventId} : HTTP ${out.status} ${out.text.slice(0, 200)}`);
+    const pin = String((JSON.parse(out.text) as { pin?: unknown }).pin ?? '');
+    if (!/^\d{4,8}$/.test(pin)) throw new Error(`PIN régisseur de ${eventId} : réponse sans PIN lisible`);
+    return pin;
+}
+
 test('12. clôture de caisse avec écart, sans réponse imposée : refus 400, écart du serveur affiché, puis clôture juste', async ({ browser }, testInfo) => {
     test.setTimeout(3 * 60_000);
     const s = new Session(browser, testInfo);
@@ -928,6 +946,8 @@ test('12. clôture de caisse avec écart, sans réponse imposée : refus 400, é
     try {
         ev = prepareTerrainEvent('ecart de caisse', 'client-bis', 1);
         await allowControllerCash(ev);
+        // Lot 9 bis (R42, A11, T8) : PIN régisseur obligatoire à l'ouverture, généré par l'organisateur A (route du pilotage)
+        const pin = await regisseurPinOf(s, ev.eventId);
         const ctl = await s.open('fumee-controleur', { probe: true });
         const page = ctl.page;
         await openScanner(page, ev.title);
@@ -936,6 +956,7 @@ test('12. clôture de caisse avec écart, sans réponse imposée : refus 400, é
         await page.getByRole('button', { name: /^ouvrir ma caisse$/i }).click();
         const opening = page.getByRole('dialog', { name: /^ouvrir ma caisse$/i });
         await expect(opening).toBeVisible();
+        await opening.getByLabel(/^code pin du régisseur/i).fill(pin);
         const opened = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/controller/shifts/open' && r.request().method() === 'POST');
         await opening.getByRole('button', { name: /^ouvrir la caisse$/i }).click();
         const openedRes = await opened;

@@ -42,6 +42,29 @@ export async function userIdByEmail(email: string): Promise<string> {
     return String(data.id);
 }
 
+/**
+ * Lot 9 bis (R87, contrat 7.1 acte 2, T10) : identifiant du compte (public.users) d'un numéro, au format +221… ou 221….
+ * Un compte inscrit à l'écran porte l'adresse technique dans users.email : l'adresse saisie attend sa vérification
+ * (users.email_pending), la lecture se fait donc par le numéro, unique.
+ */
+export async function userIdByPhone(phone: string): Promise<string> {
+    const digits = phone.replace(/^\+/, '');
+    const { data, error } = await serviceClient().from('users').select('id').in('phone', [`+${digits}`, digits]);
+    if (error) throw new Error(`[e2e] compte du numéro ${phone} : ${error.message}`);
+    if ((data ?? []).length !== 1) throw new Error(`[e2e] compte du numéro ${phone} : ${(data ?? []).length} compte(s) au lieu d'un`);
+    return String(data![0].id);
+}
+
+/**
+ * Lot 9 bis (R57, B35) : saisies récentes du mot de passe d'un compte effacées (table password_confirmations, base
+ * LOCALE) : l'action sensible qui suit demande le mot de passe quelle que soit l'heure de la connexion du rôle
+ * (la connexion par mot de passe compte comme une saisie pendant 10 minutes). Préparation, jamais une route.
+ */
+export async function clearPasswordConfirmations(userId: string): Promise<void> {
+    const { error } = await serviceClient().from('password_confirmations').delete().eq('user_id', userId);
+    if (error) throw new Error(`[e2e] saisies récentes du mot de passe de ${userId} : ${error.message}`);
+}
+
 export interface PublishedEventInput {
     partnerUserId: string;
     superadminId: string;

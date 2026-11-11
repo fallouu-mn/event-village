@@ -19,12 +19,27 @@
  * billets payants encore valables pour le remboursement à l'écran (acte 6, A4) et le remboursement bloqué (acte 8, A3) :
  * ceux de C1 sont consommés par le scan hors ligne et par le transfert.
  *
- * Invariants (a) à (t) (L79) : fin des actes 4, 5, 6, 8 et 9, boîte d'envoi vidée par la vraie route, 0 ligne restée due
- * exigée, [INVARIANT-RECETTE] dans e2e.log. Jamais pendant un paiement en cours.
+ * Invariants (a) à (w) (L79 ; (u) à (v) au lot 9, (w1) à (w21) au lot 9 bis, T5) : fin des actes 4, 5, 6, 8 et 9, boîte
+ * d'envoi vidée par la vraie route, 0 ligne restée due exigée, [INVARIANT-…] dans e2e.log. Jamais pendant un paiement en cours.
  *
  * Preuves portées ici et absentes ailleurs : A15 (programme et infos pratiques affichés sur la fiche), A3 et A4 de bout en
  * bout sur les vrais écrans, inscription du partenaire et du client à l'écran, activation d'un contrôleur par son SMS.
  * Les erreurs du navigateur sont imprimées et jointes, sans bloquer, comme la fumée.
+ *
+ * Lot 9 bis (contrat 7.1, T7, X25 ; commit fix(9b.e2e), avec les correctifs), aucun acte nouveau, adaptations signalées :
+ *  1 : l'ADMIN lit les réglages sans bouton « Modifier » (R51, B34) ; sa modification envoyée directement est refusée (403) ;
+ *  2 : dossier du partenaire en deux appels (R53 : code envoyé, aucun compte créé ; puis 201), « Compte en cours de
+ *      vérification » lu avant la validation (R7), connexion de P1 par son numéro et compte relu par numéro (R87 : l'adresse
+ *      saisie attend sa vérification) ;
+ *  4 : carte du billet avec prix et frais servis (R66) ; transfert avec mot de passe récent (R57 : refus 403, boîte
+ *      « mot de passe », puis le transfert repart) ;
+ *  5 : PIN régisseur saisi à l'ouverture de la caisse (R42, A11) ; aide du numéro de l'acheteur au guichet (R12) ;
+ *  6 : minimum, frais et « Vous recevrez 5 940 F CFA » lus avant le code (R62) ; tableau « Par canal » (R50) ;
+ *  7 : ligne « Ventes au guichet » à 0 dans la fenêtre d'annulation (R20) ; aucun avertissement « en cours » (R48) ;
+ *  9 : /tickets sans paramètre ouvre « Reçus » quand l'invitation attend (R45, A10) ;
+ *  8 : « Versements à reprendre », « Renvoyer » avec justification par POST /api/admin/cashouts/[id]/resend (R1, R9, R10,
+ *      B4 : route retry supprimée) ; suspension de P1 depuis sa fiche partenaire avec motif (R6, R55), lien « Voir la fiche
+ *      partenaire » de /admin/users, partners.status et trace de cascade sur E3 publié (R5), E1 déjà suspendu hors cascade.
  */
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -39,7 +54,9 @@ import {
     openTab, payloadFromLot, readStoredLots, restoreSetting, settingValue, smsCode, smsSeen, type StoredLot,
 } from './support/parcours';
 import { posterHtml, POSTER_SIZE } from './support/poster';
-import { createPublishedEvent, eventImageUrl, outboxOfEvent, serviceClient, ticketNumbers, userIdByEmail } from './support/service';
+import {
+    clearPasswordConfirmations, createPublishedEvent, eventImageUrl, outboxOfEvent, serviceClient, ticketNumbers, userIdByEmail, userIdByPhone,
+} from './support/service';
 import { installScanProbe, livePayload, openScanner, presentPayload, verifyHolderPhone } from './support/terrain';
 import { FIXTURE_USERS, TEST_PASSWORD } from '../tests/helpers/fixture-data';
 
@@ -77,6 +94,8 @@ interface Recette {
     bisPhone: string;
     e1: { id: string; title: string; categories: Record<string, string> };
     e2: { id: string; title: string };
+    /** Lot 9 bis (R5) : événement publié de P1 créé à l'acte 8, suspendu par la cascade de la suspension de P1. */
+    e3: { id: string; title: string };
     pin: string;
     /** Billets : Std1 scanné hors ligne, Std2 transféré puis saisi à la main, free scanné en ligne, e2 remboursé par l'annulation. */
     tickets: { std1: string; std2: string; free: string; e2: string; refundShown: string; refundBlocked: string };
@@ -94,6 +113,7 @@ const r: Recette = {
     bisPhone: FIXTURE_USERS.CLIENT_BIS.phone.replace(/^\+221/, ''),
     e1: { id: '', title: `Recette — Nuit de Ngor ${STAMP}`, categories: {} },
     e2: { id: '', title: `Recette — Concert annulé ${STAMP}` },
+    e3: { id: '', title: `Recette — Concert suspendu par la cascade ${STAMP}` },
     pin: '',
     tickets: { std1: '', std2: '', free: '', e2: '', refundShown: '', refundBlocked: '' },
     numbers: {},
@@ -137,6 +157,17 @@ async function asNew(browser: Browser, testInfo: TestInfo, who: string, opts: { 
 
 function pathOf(url: string): string {
     return new URL(url).pathname;
+}
+
+/** Montant affiché par formatFcfa (« 6 000 F CFA », espaces insécables admises), ancré. */
+function fcfa(amount: number): RegExp {
+    const digits = String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return new RegExp(`^${digits.replace(/ /g, '\\s')}\\sF\\sCFA$`);
+}
+
+/** Valeur d'une ligne « libellé : valeur » (dt, dd) d'une carte ou d'une fenêtre. */
+function definition(scope: Locator, label: string): Locator {
+    return scope.locator('div').filter({ has: scope.page().locator('dt', { hasText: new RegExp(`^${escapeRe(label)}$`) }) }).last().locator('dd');
 }
 
 /** Réponse d'une route, attendue autour d'une action : statut exigé, corps cité dans le message d'échec. */
@@ -310,12 +341,21 @@ test('acte 1 [admin] : délai de garde coupé à l’écran, motif exigé, histo
         expect(await settingValue(SCAN_WINDOW_KEY), `${SCAN_WINDOW_KEY} en base`).toBe(24);
     });
 
-    await test.step('un ADMIN lit les réglages, sa modification est refusée', async () => {
+    await test.step('un ADMIN lit les réglages sans « Modifier » (R51), sa modification envoyée directement est refusée', async () => {
         const admin = await asRole(browser, testInfo, 'admin');
         await admin.goto('/admin/finance-settings');
-        const row = await editSetting(admin, hold, (l) => l.getByLabel(/^nouvelle valeur/i).selectOption('true'), 'Tentative d’un ADMIN sans le droit');
-        await expectRoute(admin, 'PUT', '/api/admin/finance-settings', () => row.getByRole('button', { name: /^enregistrer$/i }).click(), 403, 'modification par un ADMIN');
-        await expect(row.getByText('Réglage non enregistré'), 'refus affiché').toBeVisible();
+        await expect(admin.getByText(/^lecture seule : seul un superadministrateur peut modifier ces réglages\./i), 'lecture seule annoncée').toBeVisible();
+        await expect(settingRow(admin, hold).getByText('Désactivé', { exact: true }), 'réglage lu par un ADMIN').toBeVisible();
+        await expect(admin.getByRole('button', { name: /^modifier /i }), 'aucun bouton « Modifier » sans le droit (R51, B34)').toHaveCount(0);
+        // Le serveur reste juge : la même modification envoyée sans l'écran est refusée
+        const status = await admin.evaluate(async (key) => {
+            const res = await fetch('/api/admin/finance-settings', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, value: true, reason: 'Tentative d’un ADMIN sans le droit' }),
+            });
+            return res.status;
+        }, HOLD_KEY);
+        expect(status, 'modification par un ADMIN').toBe(403);
         expect(await settingValue(HOLD_KEY), `${HOLD_KEY} inchangé après le refus`).toBe(false);
     });
 });
@@ -339,11 +379,23 @@ test('acte 2 [partenaire] [admin] : inscription avec pièces, validation, E1 et 
         await partner.locator('#partenaire-piece-identite').setInputFiles(pdfDocument('piece-identite.pdf'));
         await partner.locator('#partenaire-document-entreprise').setInputFiles(pdfDocument('rccm.pdf'));
         const seen = await smsSeen(r.p1.phone);
-        await expectRoute(partner, 'POST', '/api/partner/register', () => partner.getByRole('button', { name: /^envoyer mon dossier$/i }).click(), 200, 'dépôt du dossier');
+        // Lot 9 bis (R53, B40) : appel 1, code envoyé, rien n'est créé tant que le code n'est pas saisi
+        await expectRoute(partner, 'POST', '/api/partner/register', () => partner.getByRole('button', { name: /^envoyer mon dossier$/i }).click(), 200, 'dossier, appel 1 : envoi du code');
         await expect(partner.getByRole('heading', { name: /^vérifiez votre numéro$/i })).toBeVisible();
+        const { data: early, error: earlyErr } = await serviceClient().from('users').select('id').in('phone', [r.p1.phone, r.p1.phone.slice(1)]);
+        if (earlyErr) throw new Error(`[e2e] compte de P1 avant le code : ${earlyErr.message}`);
+        expect(early ?? [], 'aucun compte créé avant le code (R53)').toEqual([]);
         await fillOtp(partner, await smsCode(r.p1.phone, seen, 'inscription du partenaire'));
-        await partner.getByRole('button', { name: /^vérifier le code$/i }).click();
+        await expectRoute(partner, 'POST', '/api/partner/register', () => partner.getByRole('button', { name: /^vérifier le code$/i }).click(), 201, 'dossier, appel 2 : compte et fiche créés');
         await expect(partner.getByRole('heading', { name: /^dossier reçu$/i })).toBeVisible();
+    });
+
+    await test.step('R7 : espace partenaire en attente, « Compte en cours de vérification » avant la validation', async () => {
+        await partner.getByRole('button', { name: /^ouvrir mon espace partenaire$/i }).click();
+        await partner.waitForURL(/\/partner\/dashboard/, { timeout: 30_000 });
+        await expect(partner.getByText('Compte en cours de vérification', { exact: true }).first(), 'bandeau du compte en attente (R7)').toBeVisible();
+        // Session de l'inscription refermée : la connexion de P1 par son numéro est prouvée après la validation
+        await partner.context().clearCookies();
     });
 
     await test.step('validation par le SUPERADMIN, après consultation d’une pièce', async () => {
@@ -366,8 +418,9 @@ test('acte 2 [partenaire] [admin] : inscription avec pièces, validation, E1 et 
     });
 
     await test.step('P1 se connecte, crée E1 : affiche, programme, infos pratiques, 4 catégories et leurs canaux', async () => {
-        await signIn(partner, r.p1.email, /^\/partner(\/|$)/);
-        r.p1.userId = await userIdByEmail(r.p1.email);
+        // Lot 9 bis (R87) : l'adresse saisie attend sa vérification, P1 se connecte par son numéro
+        await signIn(partner, r.p1.local, /^\/partner(\/|$)/);
+        r.p1.userId = await userIdByPhone(r.p1.phone);
 
         const start = new Date(Date.now() + 20 * 3600_000);
         start.setUTCSeconds(0, 0);
@@ -581,11 +634,34 @@ test('acte 4 [client] : découverte, fiche, refus direct, inscription depuis l�
         console.log(`[e2e][recette] numéro du second client ${recipient.changed ? 'marqué vérifié' : 'déjà vérifié'}`);
         await client.goto('/tickets');
         const card = client.locator('li, article').filter({ hasText: r.numbers.std2 }).last();
+        // Lot 9 bis (R66, §20) : prix et frais de service lus tels que le serveur les sert à la carte
+        const served = await client.evaluate(async (id) => {
+            const res = await fetch('/api/tickets', { cache: 'no-store' });
+            const body = (await res.json()) as { tickets?: Array<{ id: string; price?: number; serviceFee?: number }> };
+            return (body.tickets ?? []).find((t) => t.id === id) ?? null;
+        }, r.tickets.std2);
+        expect(served?.price, 'prix du billet servi à la carte').toBe(6000);
+        await expect(definition(card, 'Prix'), 'prix sur la carte (R66)').toHaveText(fcfa(6000));
+        const fee = Number(served?.serviceFee ?? 0);
+        if (fee > 0) await expect(definition(card, 'Frais de service'), 'frais de service sur la carte (R66)').toHaveText(fcfa(fee));
+        else await expect(card.locator('dt', { hasText: /^Frais de service$/ }), 'aucun frais servi, aucune ligne de frais').toHaveCount(0);
+
         await card.getByRole('button', { name: /^transférer$/i }).click();
         const dialog = client.getByRole('dialog', { name: /^transférer ce billet$/i });
         await expect(dialog).toBeVisible();
         await dialog.getByLabel(/^numéro de téléphone du destinataire/i).fill(r.bisPhone);
-        await expectRoute(client, 'POST', `/api/tickets/${r.tickets.std2}/transfer`, () => dialog.getByRole('button', { name: /^envoyer le billet$/i }).click(), 200, 'transfert du billet');
+        // Lot 9 bis (R57, B35) : sans mot de passe saisi depuis moins de 10 min, refus, boîte « mot de passe », puis le
+        // même transfert repart ; les saisies de C1 sont effacées d'abord pour que l'étape ne dépende pas de l'heure
+        await clearPasswordConfirmations(r.c1.userId);
+        const refused = await expectRoute(client, 'POST', `/api/tickets/${r.tickets.std2}/transfer`, () => dialog.getByRole('button', { name: /^envoyer le billet$/i }).click(), 403, 'transfert sans mot de passe récent');
+        expect(refused.code, 'refus du transfert (R57)').toBe('PASSWORD_CONFIRMATION_REQUIRED');
+        const confirmBox = client.getByRole('dialog', { name: /^confirmez votre mot de passe$/i });
+        await expect(confirmBox, 'boîte « mot de passe » ouverte par le refus').toBeVisible();
+        await confirmBox.getByLabel(/^mot de passe/i).fill(TEST_PASSWORD);
+        const resent = client.waitForResponse((res) => res.request().method() === 'POST' && pathOf(res.url()) === `/api/tickets/${r.tickets.std2}/transfer`);
+        await expectRoute(client, 'POST', '/api/account/password-confirm', () => confirmBox.getByRole('button', { name: /^confirmer$/i }).click(), 200, 'mot de passe confirmé');
+        const resentRes = await resent;
+        expect(resentRes.status(), `transfert relancé après la confirmation : ${(await resentRes.text()).slice(0, 300)}`).toBe(200);
         await dialog.getByRole('button', { name: /^terminer$/i }).click();
 
         const bis = await asRole(browser, testInfo, 'fumee-client-bis');
@@ -636,6 +712,8 @@ test('acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, an
         const dialog = page.getByRole('dialog', { name: /^ouvrir ma caisse$/i });
         await expect(dialog).toBeVisible();
         await dialog.getByLabel(/^fonds de caisse/i).fill('5000');
+        // Lot 9 bis (R42, A11) : PIN du régisseur obligatoire, celui généré par P1 à l'acte 3
+        await dialog.getByLabel(/^code pin du régisseur/i).fill(r.pin);
         await expectRoute(page, 'POST', '/api/controller/shifts/open', () => dialog.getByRole('button', { name: /^ouvrir la caisse$/i }).click(), 200, 'ouverture de la caisse');
         await openTab(page, /^contrôle$/i);
         await videoPlaying(page, 'retour au contrôle après l’ouverture de la caisse');
@@ -689,6 +767,9 @@ test('acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, an
         await expect(list.getByRole('listitem'), 'guichet : seules les catégories vendues au guichet').toHaveCount(2);
         await page.getByRole('button', { name: /^ajouter un billet sur place$/i }).click();
         await expect(page.getByRole('region', { name: /^total à encaisser$/i })).toContainText(/5\s000/);
+        // Lot 9 bis (R12) : le numéro de l'acheteur sert aussi à le prévenir d'un changement ou d'une annulation
+        await expect(page.getByText('Pour être prévenu en cas de changement ou d’annulation. Le billet n’est rattaché à aucun compte.', { exact: true }),
+            'aide du numéro de l’acheteur au guichet (R12)').toBeVisible();
         await page.getByLabel(/^numéro de l.acheteur/i).fill(receiptTo);
         const sold = await expectRoute(page, 'POST', '/api/controller/counter-sale', () => page.getByRole('button', { name: /^j.ai reçu .*valider la vente$/i }).click(), 200, 'vente au guichet');
         expect(sold.receipt_queued, `reçu SMS mis en file : ${JSON.stringify(sold)}`).toBe(true);
@@ -738,6 +819,11 @@ test('acte 6 [partenaire] : pilotage, rapport de clôture, export, retrait, remb
         await openTab(partner, /^caisse/i);
         await expect(kpi(partner.getByRole('tabpanel'), /^espèces encaissées/i)).toContainText(/5\s000/);
         await expect(kpi(partner.getByRole('tabpanel'), /^caisses clôturées/i)).toContainText(/(^|\D)1(\D|$)/);
+        // Lot 9 bis (R50, B66) : ventes par canal comptées par le serveur ; au guichet, le billet « Sur place » de l'acte 5
+        await openTab(partner, /^ventes/i);
+        await expect(partner.getByRole('heading', { name: /^par canal$/i }), 'section « Par canal »').toBeVisible();
+        const counter = partner.getByRole('table', { name: /^ventes par canal$/i }).getByRole('row').filter({ hasText: /^\s*au guichet/i });
+        await expect(counter, 'ligne « Au guichet » : 1 billet, 5 000 F CFA').toContainText(/au guichet\s+1\s+5\s000\sF\sCFA/i, { useInnerText: true });
     });
 
     await test.step('export des participants, journalisé', async () => {
@@ -771,6 +857,9 @@ test('acte 6 [partenaire] : pilotage, rapport de clôture, export, retrait, remb
         await expect(wave).toBeChecked();
         await partner.getByLabel(/qui reçoit le retrait/i).fill(r.p1.local);
         await partner.getByLabel(/^montant à retirer/i).fill('6000');
+        // Lot 9 bis (R62, B27) : minimum, frais et montant reçu dits AVANT l'envoi du code
+        await expect(partner.getByText(/^Minimum de retrait : \d[\d\s]*\sF\sCFA\. Frais : .+ \(60\sF\sCFA\)\. Vous recevrez 5\s940\sF\sCFA\.$/),
+            'devis avant le code : minimum, taux, frais et « Vous recevrez 5 940 F CFA »').toBeVisible();
         const seen = await smsSeen(r.p1.phone);
         await expectRoute(partner, 'POST', '/api/withdrawals/otp', () => partner.getByRole('button', { name: /^recevoir le code de confirmation$/i }).click(), 200, 'code de confirmation du retrait');
         await fillOtp(partner, await smsCode(r.p1.phone, seen, 'code du retrait'));
@@ -804,6 +893,10 @@ test('acte 7 [client] [partenaire] : annulation de E2, envoyeur par la vraie rou
         const dialog = partner.getByRole('dialog').or(partner.getByRole('alertdialog'));
         await expect(dialog).toBeVisible();
         await expect(dialog.getByText(/acheteurs à prévenir/i)).toBeVisible();
+        // Lot 9 bis (R20, B22) : ventes au guichet dites (aucune pour E2) ; (R48) E2 à J+2 : aucun avertissement « en cours »
+        await expect(definition(dialog, 'Ventes au guichet'), 'ventes au guichet de E2').toHaveText(/^0 billet, 0\sF\sCFA$/);
+        await expect(dialog.getByText(/^l.événement a commencé/i), 'aucun avertissement d’annulation en cours').toHaveCount(0);
+        await expect(dialog.getByRole('checkbox', { name: /j.ai compris/i }), 'aucune case « J’ai compris »').toHaveCount(0);
         await dialog.getByLabel(/^avis public aux participants/i).fill(NOTICE_E2);
         await dialog.getByLabel(/^motif interne/i).fill('Recette de la billetterie, lot 8.');
         await dialog.getByLabel(/pour confirmer, saisissez le titre exact/i).fill(r.e2.title);
@@ -912,7 +1005,9 @@ test('acte 9 [partenaire] [client] [contrôleur] : invitation d’un numéro san
         await invitee.getByRole('button', { name: /^créer mon compte$/i }).click();
         await invitee.waitForURL((url) => !url.pathname.startsWith('/register'), { timeout: 30_000 });
 
-        await invitee.goto('/tickets?tab=recus');
+        // Lot 9 bis (R45, A10) : sans onglet demandé, Mes billets ouvre « Reçus » quand un billet attend
+        await invitee.goto('/tickets');
+        await expect(invitee.getByRole('tab', { name: /^reçus/i }), '« Reçus » ouvert d’office (R45)').toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
         const offer = invitee.locator('li, article, section').filter({ hasText: r.e1.title }).filter({ has: invitee.getByRole('button', { name: /^accepter le billet$/i }) }).last();
         await expect(offer, 'invitation dans l’onglet Reçus').toBeVisible({ timeout: 30_000 });
         await expect(offer, 'expéditeur affiché').toContainText(/l.organisateur de l.événement/i);
@@ -967,21 +1062,42 @@ test('acte 8 [admin] : supervision et relance d’une notification, remboursemen
         expect(await ticketStatus(r.tickets.refundBlocked), 'billet en attente du versement').toBe('REMBOURSEMENT_EN_COURS');
     });
 
-    await test.step('A3 : solde rétabli, relance sur /admin/finance, billet remboursé', async () => {
+    await test.step('A3 : solde rétabli, « Renvoyer » avec justification sur /admin/finance, billet remboursé', async () => {
         const restored = await fakeServices('/__test/samirpay/balance', { solde: FAKE_BALANCE });
         expect(restored.status, `solde rétabli : ${JSON.stringify(restored.json)}`).toBe(200);
         await superadmin.goto('/admin/finance');
-        const panel = superadmin.locator('section').filter({ has: superadmin.getByRole('heading', { name: /^remboursements à reprendre$/i }) });
+        // Lot 9 bis (R1, R9, R10, B1 à B4) : « Versements à reprendre », renvoi justifié par la route resend (retry supprimée)
+        const panel = superadmin.locator('section').filter({ has: superadmin.getByRole('heading', { name: /^versements à reprendre$/i }) });
         const row = panel.locator('tr').filter({ hasText: r.e1.title });
-        await expect(row, 'remboursement bloqué dans la liste').toBeVisible();
+        await expect(row, 'versement bloqué dans la liste').toBeVisible();
         await expect(row, 'motif en français').toContainText(/solde du compte partenaire samirpay insuffisant/i);
-        await row.getByRole('button', { name: /^relancer le remboursement/i }).click();
-        const confirm = superadmin.getByRole('alertdialog', { name: /^relancer ce remboursement/i });
+        await row.getByRole('button', { name: /^renvoyer le versement/i }).click();
+        const confirm = superadmin.getByRole('alertdialog', { name: /^renvoyer ce versement/i });
         await expect(confirm).toBeVisible();
-        await expectRoute(superadmin, 'POST', /^\/api\/admin\/refunds\/[^/]+\/retry$/, () => confirm.getByRole('button', { name: /^relancer$/i }).click(), 200, 'relance du remboursement');
-        await expect(panel.getByText('Relance envoyée', { exact: true }), 'relance confirmée').toBeVisible();
+        await confirm.getByLabel(/^justification/i).fill(`Recette ${STAMP} : solde SamirPay rétabli, versement renvoyé`);
+        const resent = await expectRoute(superadmin, 'POST', /^\/api\/admin\/cashouts\/[^/]+\/resend$/, () => confirm.getByRole('button', { name: /^renvoyer$/i }).click(), 200, 'renvoi du versement');
+        expect(resent.ok, `réponse du renvoi : ${JSON.stringify(resent)}`).toBe(true);
+        await expect(panel.getByText(/^versement (confirmé|envoyé)$/i).first(), 'renvoi annoncé').toBeVisible();
         await expect(row, 'la ligne quitte la liste').toHaveCount(0);
-        await expect.poll(() => ticketStatus(r.tickets.refundBlocked), { message: 'billet remboursé après la relance', timeout: 15_000 }).toBe('REMBOURSE');
+        await expect.poll(() => ticketStatus(r.tickets.refundBlocked), { message: 'billet remboursé après le renvoi', timeout: 15_000 }).toBe('REMBOURSE');
+        const { data: audit, error: auditErr } = await serviceClient().from('audit_logs').select('metadata').eq('action', 'CASHOUT_RESENT')
+            .filter('metadata->>reason', 'eq', `Recette ${STAMP} : solde SamirPay rétabli, versement renvoyé`);
+        if (auditErr) throw new Error(`[e2e] journal du renvoi : ${auditErr.message}`);
+        expect((audit ?? []).length, 'renvoi journalisé avec sa justification (CASHOUT_RESENT)').toBe(1);
+    });
+
+    await test.step('E3 de P1 publié à J+3 (RPC du lot 5) : la cascade de la suspension de P1 le suspendra (R5)', async () => {
+        const day = dakarDayFrom(new Date(), 3);
+        r.e3.id = await createPublishedEvent({
+            partnerUserId: r.p1.userId,
+            superadminId: await userIdByEmail(FIXTURE_USERS.SUPERADMIN.email),
+            title: r.e3.title,
+            description: 'Concert de la recette publié, suspendu avec son organisateur puis jamais rouvert. Données fictives.',
+            startDate: day, startTime: '20:00:00', endDate: day, endTime: '23:00:00',
+            location: 'Corniche de Ngor', city: 'Dakar', capacity: 100,
+            imageUrl: await eventImageUrl(r.e1.id),
+            category: { name: 'Standard', price: 3000, total: 50 },
+        });
     });
 
     await test.step('suspension de E1 sur sa fiche, avec motif : plus de vente, bandeau public', async () => {
@@ -1000,18 +1116,39 @@ test('acte 8 [admin] : supervision et relance d’une notification, remboursemen
         await expect(visitor.getByRole('button', { name: /ajouter un billet/i }), 'plus aucune vente').toHaveCount(0);
     });
 
-    await test.step('suspension du compte de P1 : session refusée', async () => {
+    await test.step('suspension de P1 depuis sa fiche partenaire, avec motif : cascade sur E3, session refusée', async () => {
+        // Lot 9 bis (R6, R55) : /admin/users renvoie vers la fiche partenaire, seule à suspendre une partenaire, avec un motif
         await superadmin.goto('/admin/users');
-        await superadmin.getByPlaceholder(/rechercher par nom/i).fill(r.p1.email);
-        const row = cardOf(superadmin, r.p1.email, /^suspendre$/i);
-        // Statut seul : cette page ne lit pas le corps de la réponse, et response.text() attendrait sans fin
-        const patched = superadmin.waitForResponse((res) => res.request().method() === 'PATCH' && pathOf(res.url()) === '/api/admin/users');
-        await row.getByRole('button', { name: /^suspendre$/i }).click();
-        expect((await patched).status(), 'suspension de P1').toBe(200);
-        await expect(cardOf(superadmin, r.p1.email, /^réactiver$/i).getByText(/^suspendu$/i), 'statut à l’écran').toBeVisible();
+        await superadmin.getByPlaceholder(/rechercher par nom/i).fill(r.p1.local);
+        const row = superadmin.locator('li, article, tr, section, div')
+            .filter({ has: superadmin.getByText(r.p1.phone, { exact: true }) })
+            .filter({ has: superadmin.getByRole('link', { name: /^voir la fiche partenaire$/i }) })
+            .last();
+        await expect(row.getByRole('button', { name: /^suspendre$/i }), 'aucune suspension d’une partenaire depuis la liste des comptes').toHaveCount(0);
+        await row.getByRole('link', { name: /^voir la fiche partenaire$/i }).click();
+        await superadmin.waitForURL(/\/admin\/dashboard\?.*dossier=/);
+        const dossier = superadmin.getByRole('dialog', { name: /^dossier du partenaire/i });
+        await expect(dossier, 'fiche de P1 ouverte par le lien profond').toBeVisible({ timeout: 30_000 });
+        await dossier.getByRole('button', { name: /^suspendre$/i }).click();
+        const box = superadmin.getByRole('dialog', { name: /^suspendre le partenaire$/i }).or(superadmin.getByRole('alertdialog', { name: /^suspendre le partenaire$/i }));
+        await expect(box).toBeVisible();
+        await box.getByLabel(/^motif de la suspension/i).fill(`Recette ${STAMP} : contrôle de l’organisateur`);
+        await expectRoute(superadmin, 'PATCH', /^\/api\/admin\/partners\/[^/]+\/status$/, () => box.getByRole('button', { name: /^suspendre le partenaire$/i }).click(), 200, 'suspension de P1');
+
+        const { data: fiche, error: ficheErr } = await serviceClient().from('partners').select('id, status').eq('user_id', r.p1.userId).single();
+        if (ficheErr || !fiche) throw new Error(`[e2e] fiche de P1 : ${ficheErr?.message ?? 'introuvable'}`);
+        expect(String(fiche.status), 'fiche de P1').toBe('SUSPENDU');
         const { data, error } = await serviceClient().from('users').select('status').eq('id', r.p1.userId).single();
         if (error || !data) throw new Error(`[e2e] compte de P1 : ${error?.message ?? 'introuvable'}`);
         expect(String(data.status), 'compte de P1').toBe('SUSPENDU');
+        // R5 : la cascade suspend les événements publiés (E3) et en garde la trace ; E1, suspendu avant par l'admin, n'en a pas
+        const { data: events, error: eventsErr } = await serviceClient().from('events').select('id, status').in('id', [r.e1.id, r.e3.id]);
+        if (eventsErr) throw new Error(`[e2e] événements de P1 : ${eventsErr.message}`);
+        expect((events ?? []).map((e) => `${e.id === r.e3.id ? 'E3' : 'E1'} ${String(e.status)}`).sort(), 'E1 et E3 suspendus').toEqual(['E1 SUSPENDU', 'E3 SUSPENDU']);
+        const { data: traces, error: tracesErr } = await serviceClient().from('partner_suspension_cascades').select('event_id, closed_at').eq('partner_id', String(fiche.id));
+        if (tracesErr) throw new Error(`[e2e] traces de cascade de P1 : ${tracesErr.message}`);
+        expect((traces ?? []).map((t) => `${t.event_id === r.e3.id ? 'E3' : String(t.event_id)} ${t.closed_at === null ? 'ouverte' : 'fermée'}`),
+            'une trace de cascade ouverte, sur E3 seul').toEqual(['E3 ouverte']);
         await expect.poll(async () => String((await partner.request.get('/api/partner/events', { maxRedirects: 0 })).status()),
             { message: 'P1 suspendu : route partenaire refusée', timeout: 15_000 }).toMatch(/^40[13]$/);
     });

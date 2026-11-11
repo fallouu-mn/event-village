@@ -9,11 +9,17 @@
  * dépend du client de messagerie (bloc @media (prefers-color-scheme: dark) du gabarit : Apple Mail et iOS
  * l'appliquent, Gmail web l'ignore, SUPPOSÉ ; à dire au rapport).
  *
- * Captures : .e2e-captures/captures/email-<id>__<390|600>__<clair|sombre>.png (5 emails × 2 largeurs × 2 thèmes = 20),
+ * Captures : .e2e-captures/captures/email-<id>__<390|600>__<clair|sombre>.png (7 emails × 2 largeurs × 2 thèmes = 28),
  * pleine page. Résumé : .e2e-captures/captures/emails.txt.
  * Contrôles bloquants : aucun défilement horizontal ; textes ≥ 14 px ; contraste du texte sur son fond ≥ 4,5:1
- * (calcul WCAG, fond effectif lu sur les ancêtres) ; phrases P1 et P2 présentes (mot pour mot, contrat 19.4) ;
- * aucun <img> ; aucune requête réseau.
+ * (calcul WCAG, fond effectif lu sur les ancêtres) ; phrases P1 et P2 présentes (mot pour mot, contrat 19.4) dans les
+ * emails de billets ; aucun <img> ; aucune requête réseau.
+ *
+ * Lot 9 bis (G.51, contrat 7.2, T11) : deux emails de plus, mêmes contrôles de rendu (largeur, taille, contraste,
+ * images, réseau) : EMAIL_VERIFICATION (« verification-email » : bouton « Vérifier mon adresse » vers
+ * http://localhost:3000/verify-email?t=…, validité de 24 heures dite) et EVENT_CHANGED (« changement-date » : titre de
+ * l'événement et nouvelle date). Ce ne sont pas des emails de billets : P1 et P2 n'y sont pas exigées, leur contenu
+ * propre l'est à la place.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -35,6 +41,21 @@ const P2 = 'Ouvrez votre billet avec du réseau avant d\'arriver : il restera di
 
 interface RenderedEmail { id: string; type: string; subject: string; html: string; text: string }
 
+/** Emails de billets : phrases P1 et P2 exigées (contrat 19.4). */
+const TICKET_EMAIL_IDS: readonly string[] = ['achat-1-billet', 'achat-4-billets', 'achat-12-billets', 'gratuits-2-billets', 'transfert-recu'];
+/**
+ * Lot 9 bis (G.51) : contenu propre exigé à la place de P1 et P2 (textes de lib/notifications/catalog.ts, données de
+ * scripts/e2e/render-emails.ts, apostrophes ramenées à l'apostrophe droite comme le texte lu) : titre, bouton et
+ * validité du lien ; titre de l'événement et objet du changement.
+ */
+const OTHER_EMAIL_PHRASES: Readonly<Record<string, readonly string[]>> = {
+    'verification-email': ['Vérifiez votre adresse email', 'Vérifier mon adresse', 'Ce lien est valable 24 heures et ne sert qu\'une fois.'],
+    'changement-date': ['Nuit du Sabar — édition d\'automne', 'nouvelle date'],
+};
+const EMAIL_IDS: readonly string[] = [...TICKET_EMAIL_IDS, ...Object.keys(OTHER_EMAIL_PHRASES)];
+/** Lien du bouton de l'email de vérification : page publique /verify-email, jeton en paramètre (contrat 4.6). */
+const VERIFY_LINK = /^http:\/\/localhost:3000\/verify-email\?t=[A-Za-z0-9_-]{32,256}$/;
+
 /** Rendu par le script (processus séparé : jamais d'import du dépôt dans Playwright, alias @/ en CI). */
 function renderEmails(): RenderedEmail[] {
     const r = spawnSync(process.execPath, ['--import', 'tsx', RENDER_SCRIPT, '--out', EMAILS_DIR], { cwd: process.cwd(), env: process.env, encoding: 'utf8', timeout: 120_000 });
@@ -48,7 +69,9 @@ function renderEmails(): RenderedEmail[] {
     } catch (err) {
         throw new Error(`[e2e][emails] manifeste illisible (${err instanceof Error ? err.message : String(err)}) : ${last.slice(0, 300)}`);
     }
-    if (!Array.isArray(parsed.emails) || parsed.emails.length !== 5) throw new Error(`[e2e][emails] 5 emails attendus, manifeste : ${last.slice(0, 300)}`);
+    if (!Array.isArray(parsed.emails) || parsed.emails.length !== EMAIL_IDS.length) {
+        throw new Error(`[e2e][emails] ${EMAIL_IDS.length} emails attendus, manifeste : ${last.slice(0, 300)}`);
+    }
     return parsed.emails;
 }
 
@@ -99,7 +122,7 @@ function inspectEmail(arg: { minFont: number }): EmailDom & { pairs: Array<{ sam
     };
 }
 
-async function checkEmail(page: Page): Promise<{ blocking: string[]; dom: EmailDom }> {
+async function checkEmail(page: Page, id: string): Promise<{ blocking: string[]; dom: EmailDom }> {
     await page.evaluate('window.__name = window.__name || function (f) { return f; };');
     const raw = await page.evaluate(inspectEmail, { minFont: MIN_FONT_PX });
     const lowContrast: EmailDom['lowContrast'] = [];
@@ -118,8 +141,15 @@ async function checkEmail(page: Page): Promise<{ blocking: string[]; dom: EmailD
     if (dom.scrollWidth > dom.viewportWidth + 1) blocking.push(`défilement horizontal : largeur du document ${dom.scrollWidth} px pour ${dom.viewportWidth} px`);
     if (dom.small.length > 0) blocking.push(`${dom.small.length} texte(s) < ${MIN_FONT_PX} px : ${dom.small.slice(0, 5).map((s) => `${s.size} px « ${s.sample} »`).join(' ; ')}`);
     if (dom.lowContrast.length > 0) blocking.push(`${dom.lowContrast.length} texte(s) sous ${MIN_CONTRAST}:1 : ${dom.lowContrast.slice(0, 5).map((c) => `« ${c.sample} » ${c.fg} sur ${c.bg}`).join(' ; ')}`);
-    if (!text.includes(P1)) blocking.push('phrase obligatoire P1 absente (« Votre billet s\'affiche dans l\'application… »)');
-    if (!text.includes(P2)) blocking.push('phrase obligatoire P2 absente (« Ouvrez votre billet avec du réseau avant d\'arriver… »)');
+    if (TICKET_EMAIL_IDS.includes(id)) {
+        if (!text.includes(P1)) blocking.push('phrase obligatoire P1 absente (« Votre billet s\'affiche dans l\'application… »)');
+        if (!text.includes(P2)) blocking.push('phrase obligatoire P2 absente (« Ouvrez votre billet avec du réseau avant d\'arriver… »)');
+    }
+    for (const phrase of OTHER_EMAIL_PHRASES[id] ?? []) if (!text.includes(phrase)) blocking.push(`phrase attendue absente : « ${phrase} »`);
+    if (id === 'verification-email') {
+        const links = await page.getByRole('link', { name: /^vérifier mon adresse$/i }).evaluateAll((els) => els.map((el) => el.getAttribute('href') ?? ''));
+        if (links.length !== 1 || !VERIFY_LINK.test(links[0])) blocking.push(`bouton « Vérifier mon adresse » vers /verify-email?t=… attendu une fois, liens lus : ${JSON.stringify(links)}`);
+    }
     if (dom.images > 0) blocking.push(`${dom.images} élément(s) <img> (aucune image attendue : contrat 19.5)`);
     return { blocking, dom };
 }
@@ -138,7 +168,7 @@ test.beforeAll(() => {
         + 'thème sombre : appliqué par les clients qui lisent @media (prefers-color-scheme: dark) (Apple Mail, iOS) ; Gmail web l’ignore (SUPPOSÉ)\n\n', 'utf8');
 });
 
-for (const id of ['achat-1-billet', 'achat-4-billets', 'achat-12-billets', 'gratuits-2-billets', 'transfert-recu']) {
+for (const id of EMAIL_IDS) {
     test(`email ${id} : 390 et 600 px, clair et sombre, sans ressource externe`, async ({ browser }, testInfo) => {
         const email = emails.find((e) => e.id === id);
         expect(email, `email ${id} rendu par ${RENDER_SCRIPT}`).toBeTruthy();
@@ -157,7 +187,7 @@ for (const id of ['achat-1-billet', 'achat-4-billets', 'achat-12-billets', 'grat
                     const page = await context.newPage();
                     await page.emulateMedia({ colorScheme: theme.scheme });
                     await page.setContent(html, { waitUntil: 'load' });
-                    const { blocking } = await checkEmail(page);
+                    const { blocking } = await checkEmail(page, id);
                     if (requests.length > 0) blocking.push(`requête(s) réseau émise(s) par l’email : ${requests.slice(0, 5).join(' ; ')}`);
                     const file = `email-${id}__${width}__${theme.key}.png`;
                     fs.mkdirSync(CAPTURES_DIR, { recursive: true });

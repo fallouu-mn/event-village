@@ -64,6 +64,13 @@
  * avec et sans session. En dernier parce que le fichier est en mode « serial » : rouge jusqu'à fix(8.1s), il ne doit pas
  * empêcher la fumée. Vague F (T25) : les outils de ce fichier sont dans support/parcours.ts, partagés avec la recette, sans
  * changement de comportement ; buyThroughUi reçoit seulement un numéro de paiement facultatif, celui du client de la fumée par défaut.
+ *
+ * Lot 9 bis (contrat 7.2, T8 ; commit fix(9b.e2e)), signalé :
+ *  - 8 : l'email du J-1 est écarté EMAIL_NOT_VERIFIED (règle changée, B96 : aucun email à une adresse non vérifiée,
+ *    contrôle fait avant celui de la configuration du canal ; run 119) au lieu de EMAIL_NOT_CONFIGURED ;
+ *  - 15 : transfert avec mot de passe récent (R57) : saisies du client effacées (e2e/support/service.ts), refus 403
+ *    PASSWORD_CONFIRMATION_REQUIRED, boîte « Confirmez votre mot de passe », POST /api/account/password-confirm 200,
+ *    puis le même transfert repart (200). Aucune assertion retirée.
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect, openRoleContext, prepareContext, projectContextOptions } from './support/fixtures';
@@ -78,12 +85,13 @@ import {
     notifSettingInt, OFFLINE_CACHE, openBell, payloadFromLot, readStoredLots, renderData, smsSince, type StoredLot,
 } from './support/parcours';
 import {
-    createPublishedEvent, eventImageUrl, outboxOfEvent, pendingSmsEventsOf, sendingOfEvent, ticketNumbers, userIdByEmail, type OutboxLine,
+    clearPasswordConfirmations, createPublishedEvent, eventImageUrl, outboxOfEvent, pendingSmsEventsOf, sendingOfEvent, ticketNumbers, userIdByEmail,
+    type OutboxLine,
 } from './support/service';
 import {
     installScanProbe, openScanner, prepareTerrainEvent, presentPayload, restoreTerrainSetting, verifyHolderPhone, type TerrainEvent,
 } from './support/terrain';
-import { FIXTURE_USERS } from '../tests/helpers/fixture-data';
+import { FIXTURE_USERS, TEST_PASSWORD } from '../tests/helpers/fixture-data';
 
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(20 * 60_000);
@@ -351,8 +359,10 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
 
             const vapid = Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
             const j1 = (await outboxOfEvent(e2Id, ['REMINDER_J1'])).filter((r) => r.recipient_user_id === clientUserId);
+            // Lot 9 bis (B96, G.48, règle changée) : l'adresse du client n'est pas vérifiée, l'email est écarté pour ce motif
+            // avant toute question de configuration du canal (run 119 : EMAIL_NOT_VERIFIED)
             expect(j1.map((r) => `${r.channel} ${r.status}${r.reason ? ` ${r.reason}` : ''}`).sort(), `lignes REMINDER_J1 du client : ${brief(j1)}`).toEqual([
-                'EMAIL SKIPPED EMAIL_NOT_CONFIGURED',
+                'EMAIL SKIPPED EMAIL_NOT_VERIFIED',
                 'IN_APP SENT',
                 `PUSH SKIPPED ${vapid ? 'NO_PUSH_SUBSCRIPTION' : 'PUSH_NOT_CONFIGURED'}`,
                 'SMS SENT',
@@ -541,10 +551,26 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             const dialog = client.getByRole('dialog', { name: /^transférer ce billet$/i });
             await expect(dialog).toBeVisible();
             await dialog.getByLabel(/^numéro de téléphone du destinataire/i).fill(FIXTURE_USERS.CLIENT_BIS.phone.replace(/^\+221/, ''));
-            const sent = client.waitForResponse((r) => new URL(r.url()).pathname === `/api/tickets/${e3Tickets[1]}/transfer` && r.request().method() === 'POST');
+            // Lot 9 bis (R57, B35, contrat 4.2 et 5.13) : le transfert demande un mot de passe saisi depuis moins de 10 min ;
+            // les saisies du client sont effacées d'abord (la connexion de la phase « connexion » en compte une), puis la
+            // boîte « mot de passe » s'ouvre sur le refus et le transfert repart après la confirmation
+            await clearPasswordConfirmations(clientUserId);
+            const transferPath = `/api/tickets/${e3Tickets[1]}/transfer`;
+            const refused = client.waitForResponse((r) => new URL(r.url()).pathname === transferPath && r.request().method() === 'POST');
             await dialog.getByRole('button', { name: /^envoyer le billet$/i }).click();
+            const refusedRes = await refused;
+            const refusedBody = (await refusedRes.json().catch(() => ({}))) as { code?: string };
+            expect(`${refusedRes.status()} ${String(refusedBody.code)}`, 'transfert sans mot de passe récent (R57)').toBe('403 PASSWORD_CONFIRMATION_REQUIRED');
+            const confirmBox = client.getByRole('dialog', { name: /^confirmez votre mot de passe$/i });
+            await expect(confirmBox, 'boîte « mot de passe » ouverte par le refus (R57)').toBeVisible();
+            await confirmBox.getByLabel(/^mot de passe/i).fill(TEST_PASSWORD);
+            const confirmed = client.waitForResponse((r) => new URL(r.url()).pathname === '/api/account/password-confirm' && r.request().method() === 'POST');
+            const sent = client.waitForResponse((r) => new URL(r.url()).pathname === transferPath && r.request().method() === 'POST');
+            await confirmBox.getByRole('button', { name: /^confirmer$/i }).click();
+            const confirmedRes = await confirmed;
+            expect(confirmedRes.status(), `mot de passe confirmé : ${(await confirmedRes.text()).slice(0, 300)}`).toBe(200);
             const sentRes = await sent;
-            expect(sentRes.status(), `transfert du billet 2 : ${(await sentRes.text()).slice(0, 300)}`).toBe(200);
+            expect(sentRes.status(), `transfert du billet 2 relancé après la confirmation : ${(await sentRes.text()).slice(0, 300)}`).toBe(200);
             await dialog.getByRole('button', { name: /^terminer$/i }).click();
 
             const bis = await pageAs('fumee-client-bis');

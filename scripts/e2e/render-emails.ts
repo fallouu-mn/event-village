@@ -6,8 +6,11 @@
  *
  *   node --import tsx scripts/e2e/render-emails.ts [--out <dossier>]
  *
- * Emails rendus (5) : PURCHASE_CONFIRMED pour 1 billet, 4 billets de deux catégories et 12 billets (10 numéros puis
+ * Emails rendus (7) : PURCHASE_CONFIRMED pour 1 billet, 4 billets de deux catégories et 12 billets (10 numéros puis
  * « et 2 autres ») ; FREE_TICKETS_CONFIRMED pour 2 billets ; TRANSFER_RECEIVED (nouveau numéro, sans montant).
+ * Lot 9 bis (G.51, contrat 7.2, T11) : + EMAIL_VERIFICATION (lien de vérification, rendu par renderEmailVerification
+ * comme lib/email/verification.ts, jeton factice jamais émis) et EVENT_CHANGED (changement de date, indispensable
+ * générique, désormais aussi par email).
  * Sorties : <dossier>/<id>.html et <id>.txt (défaut .e2e-captures/emails/) ; la dernière ligne de la sortie standard
  * est le manifeste JSON { dir, emails: [{ id, type, subject, html, text }] }.
  * Lien de l'application : http://localhost:3000 (contrat 19.9), jamais une adresse de production. Aucune base,
@@ -32,7 +35,14 @@ function numbers(prefix: string, n: number): string[] {
     return Array.from({ length: n }, (_, i) => `TCK-20261104-${prefix}${String(i + 1).padStart(10 - prefix.length, '0')}`);
 }
 
-interface Sample { id: string; type: 'PURCHASE_CONFIRMED' | 'FREE_TICKETS_CONFIRMED' | 'TRANSFER_RECEIVED'; data: Record<string, unknown> }
+interface Sample {
+    id: string;
+    type: 'PURCHASE_CONFIRMED' | 'FREE_TICKETS_CONFIRMED' | 'TRANSFER_RECEIVED' | 'EVENT_CHANGED' | 'EMAIL_VERIFICATION';
+    data: Record<string, unknown>;
+}
+
+/** Lot 9 bis : jeton factice du lien de vérification (format base64url du vrai, jamais émis ni enregistré). */
+const VERIFICATION_TOKEN = 'e2e-jeton-factice-du-lien-de-verification-0123456789';
 
 const TWELVE = numbers('7C2D', 12);
 
@@ -74,6 +84,13 @@ const SAMPLES: Sample[] = [
             ticket_number: 'TCK-20261104-9E4B1C7A2F', category: 'VIP',
         },
     },
+    // Lot 9 bis (G.51) : indispensable générique (date changée), envoyé seulement à une adresse vérifiée (B96)
+    {
+        id: 'changement-date', type: 'EVENT_CHANGED',
+        data: { ...EVENT, changed_fields: ['start_date', 'start_time'], new_start_at: '2026-11-21T21:00:00.000Z', start_at: '2026-11-21T21:00:00.000Z' },
+    },
+    // Lot 9 bis (R87, G.51) : lien de vérification d'une adresse, synchrone (aucune donnée d'événement)
+    { id: 'verification-email', type: 'EMAIL_VERIFICATION', data: { token: VERIFICATION_TOKEN } },
 ];
 
 function outDir(argv: string[]): string {
@@ -89,11 +106,13 @@ function outDir(argv: string[]): string {
 
 async function main(): Promise<void> {
     const dir = outDir(process.argv.slice(2));
-    const { renderNotification } = await import('../../lib/notifications/catalog');
+    const { renderEmailVerification, renderNotification } = await import('../../lib/notifications/catalog');
     fs.mkdirSync(dir, { recursive: true });
     const emails: Array<{ id: string; type: string; subject: string; html: string; text: string }> = [];
     for (const sample of SAMPLES) {
-        const rendered = renderNotification(sample.type, 'EMAIL', sample.data, { appUrl: APP_URL });
+        const rendered = sample.type === 'EMAIL_VERIFICATION'
+            ? { channel: 'EMAIL' as const, ...renderEmailVerification(String(sample.data.token), { appUrl: APP_URL }) }
+            : renderNotification(sample.type, 'EMAIL', sample.data, { appUrl: APP_URL });
         if (rendered.channel !== 'EMAIL') throw new Error(`${TAG} ${sample.id} : canal ${rendered.channel} au lieu de EMAIL`);
         const html = path.join(dir, `${sample.id}.html`);
         const text = path.join(dir, `${sample.id}.txt`);
