@@ -16,12 +16,20 @@
  * notif.sms_essential_daily_alert n'existe pas (UNKNOWN_KEY) et l'alerte n'a plus d'émetteur depuis le lot 7 ; smsVar
  * garde tout caractère non translittérable (lib/notifications/sms-format.ts:88-92, :131) : SMS UCS-2 de 3 segments.
  * after() : la garde de schéma du lot 9 bis nomme les objets absents jusqu'à M12 (attendu).
+ *
+ * Lot 9 bis, tâche 39 (R28 ; contrat 5.39, B83, 11.2) — décision de coût gardée (le SMS de 3 heures reste remplacé par
+ * le push), seul le libellé de supervision change : OUTBOX_REASON_LABELS.PUSH_DELIVERED = « Push accepté par le
+ * service, SMS non envoyé (affichage non garanti) », sans « remise » ; détail de la page admin « SMS seulement si le
+ * push n’est pas accepté par le service push ». Statique, sans base. Rouge : « Notification push déjà remise »
+ * (lib/notifications/outbox-labels.ts:53) et « … sans notification push remise » (app/admin/notifications/[id]/page.tsx:92).
  * Envois comptés par numéro neuf et par texte exact, jamais globalement.
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
 import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
@@ -188,5 +196,21 @@ describe('9b.38 R27 : émojis et caractères hors alphabet SMS retirés du texte
         assert.ok(!EMOJI_RE.test(texts[0]), 'aucun émoji dans le SMS');
         const m = smsSegments(texts[0]);
         assert.deepEqual([m.encoding, m.segments], ['GSM7', 1], `un segment GSM-7 (aujourd'hui UCS-2) : ${JSON.stringify(m)}`);
+    });
+});
+
+// ── R28 : libellé de supervision du SMS H-3 ────────────────────────────────
+
+describe('9b.39 R28 : libellé de supervision du SMS de 3 heures remplacé par le push (statique)', () => {
+    test('OUTBOX_REASON_LABELS.PUSH_DELIVERED ne parle plus de push « remis » ; détail de la page admin aligné', async () => {
+        const labels = (await importModule('../../lib/notifications/outbox-labels')) as Record<string, unknown>;
+        const reasons = labels.OUTBOX_REASON_LABELS as Record<string, string> | undefined;
+        assert.ok(reasons && typeof reasons === 'object', 'lib/notifications/outbox-labels.ts : OUTBOX_REASON_LABELS exporté');
+        const label = String(reasons.PUSH_DELIVERED ?? '');
+        assert.doesNotMatch(label, /remis/i, `le libellé ne dit plus que le push est remis : « ${label} »`);
+        assert.equal(label, 'Push accepté par le service, SMS non envoyé (affichage non garanti)', 'libellé du contrat (11.2, R28)');
+        const page = fs.readFileSync(path.join(process.cwd(), 'app', 'admin', 'notifications', '[id]', 'page.tsx'), 'utf8');
+        assert.match(page, /SMS seulement si le push n['’]est pas accepté par le service push/, 'détail de la page admin (contrat 5.39, écran E-D)');
+        assert.doesNotMatch(page, /notification push remise/, 'ancien détail retiré');
     });
 });
