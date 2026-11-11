@@ -15,7 +15,8 @@
  *  - R88 : le résultat de verifyOtp est lu, et son échec mène à setErrorMessage sans navigation (connexion et récupération) ;
  *  - R92 : « Supprimer le brouillon » dépend de `can_delete`, plus de `status === 'BROUILLON'` ;
  *  - R104 : billets reçus : texte choisi par `kind` (invitation ou transfert) ;
- *  - R105 : onglet Aperçu avec un état suspendu ; fiche admin avec le lien « Ouvrir le pilotage ».
+ *  - R105 : onglet Aperçu avec un état suspendu ; fiche admin avec le lien « Ouvrir le pilotage » ;
+ *  - R81 (tâche 46) : témoin vert, event_notify supprimée (M/20261103000005:1199) et jamais redéfinie : non reproduit.
  *
  * Rouge avant correctif : chaque chaîne est présente aujourd'hui (fichier:ligne dans chaque message) ; lib/support.ts et
  * docs/glossaire.md n'existent pas. Fichiers sans propriétaire de correctif au contrat 8.2, signalés au rapport :
@@ -303,5 +304,23 @@ describe('R92, R104, R105 — écrans', () => {
         const src = norm(stripComments(read('app/admin/events/[id]/page.tsx')));
         assert.match(src, /\/partner\/events\/\$\{/, 'aucun lien vers /partner/events/{id}');
         assert.ok(src.includes('Ouvrir le pilotage'), 'libellé « Ouvrir le pilotage » absent');
+    });
+});
+
+// ── R81 (tâche 46) : event_notify, non reproduit ───────────────────────────
+
+describe('R81 — event_notify supprimée, aucune redéfinition (témoin vert, constat non reproduit)', () => {
+    const MIGRATIONS = path.join('supabase', 'migrations');
+    const DROP_FILE = '20261103000005_lot6_billetterie.sql';
+
+    test('M/20261103000005 supprime event_notify et aucune migration plus récente ne la redéfinit', () => {
+        const files = fs.readdirSync(abs(MIGRATIONS)).filter((f) => f.endsWith('.sql')).sort();
+        const drop = files.find((f) => f.startsWith('20261103000005'));
+        assert.ok(drop, `migration 20261103000005 introuvable (attendue : ${DROP_FILE})`);
+        assert.match(read(`supabase/migrations/${drop}`), /DROP FUNCTION IF EXISTS public\.event_notify\(uuid\[\], text, text, jsonb\);/, 'suppression de event_notify (:1199)');
+        const later = files.filter((f) => f > drop);
+        assert.ok(later.length > 10, `migrations postérieures lues : ${later.length}`);
+        const redefined = later.filter((f) => /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?event_notify\s*\(/i.test(read(`supabase/migrations/${f}`)));
+        assert.deepEqual(redefined, [], 'event_notify redéfinie après sa suppression');
     });
 });
