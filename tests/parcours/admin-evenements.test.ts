@@ -291,9 +291,9 @@ const PARTNER_CAN_EDIT: Record<EventStatus, boolean> = {
 
 const CAN_CANCEL: Record<EventStatus, boolean> = {
     BROUILLON: false, EN_ATTENTE: false, VALIDE: true, PUBLIE: true, SUSPENDU: true, TERMINE: false, ANNULE: false,
-};
+}; /** Lot 9 bis (R105, B68) : seul un admin annule un SUSPENDU, la propriétaire ne le peut plus. */ const OWNER_CAN_CANCEL: Record<EventStatus, boolean> = { ...CAN_CANCEL, SUSPENDU: false };
 
-function assertActions(body: ActionsBody, status: EventStatus, expected: ExpectedAction[], canEdit: boolean, label: string): void {
+function assertActions(body: ActionsBody, status: EventStatus, expected: ExpectedAction[], canEdit: boolean, label: string, cancelTable: Record<EventStatus, boolean> = CAN_CANCEL): void {
     const raw = JSON.stringify(body);
     assert.notEqual(body.ok, false, `${label} : event_actions refusé ${raw}`);
     assert.equal(body.status, status, `${label} : status ${body.status}, attendu ${status} (${raw})`);
@@ -309,7 +309,7 @@ function assertActions(body: ActionsBody, status: EventStatus, expected: Expecte
         assert.doesNotMatch(String(a.label), ENUM_RE, `${label} → ${e.to} : enum brut dans le libellé « ${a.label} »`);
     }
     assert.equal(body.can_edit, canEdit, `${label} : can_edit (${raw})`);
-    assert.equal(body.can_cancel, CAN_CANCEL[status], `${label} : can_cancel (${raw})`);
+    assert.equal(body.can_cancel, cancelTable[status], `${label} : can_cancel (${raw})`);
 }
 
 function assertNothingFor(body: ActionsBody, label: string): void {
@@ -637,7 +637,7 @@ describe('D5 — event_actions : actions exactes par statut et par rôle', () =>
 
     test('partenaire propriétaire : soumettre, retirer, publier selon le statut ; can_edit et can_cancel', async () => {
         for (const s of EVENT_STATUSES) {
-            assertActions(await eventActions(byStatus[s].eventId, partner.userId), s, PARTNER_ACTIONS[s], PARTNER_CAN_EDIT[s], `propriétaire, ${s}`);
+            assertActions(await eventActions(byStatus[s].eventId, partner.userId), s, PARTNER_ACTIONS[s], PARTNER_CAN_EDIT[s], `propriétaire, ${s}`, OWNER_CAN_CANCEL);
         }
     });
 
