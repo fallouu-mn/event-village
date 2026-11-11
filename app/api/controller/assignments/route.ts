@@ -15,12 +15,37 @@ async function readCounterSaleEnabled(): Promise<boolean> {
     return value;
 }
 
+interface ScanState {
+    open: boolean;
+    problem: string | null;
+    opens_at: string | null;
+    closes_at: string | null;
+}
+
+/**
+ * Lot 9 bis (R16, B48) : état du contrôle de chaque événement affecté, dit par le serveur (RPC scan_states, même
+ * règle que ticket_scan). Une seule lecture pour toutes les affectations ; en échec, erreur explicite.
+ */
+async function readScanStates(eventIds: string[]): Promise<Map<string, ScanState>> {
+    const states = new Map<string, ScanState>();
+    if (eventIds.length === 0) return states;
+    const { data, error } = await getServiceRoleClient().rpc('scan_states', { p: { event_ids: Array.from(new Set(eventIds)) } });
+    if (error) throw new Error(`scan_states : ${error.message}`);
+    const reply = data as { ok?: boolean; items?: Array<ScanState & { event_id: string }> } | null;
+    if (!reply || reply.ok !== true || !Array.isArray(reply.items)) throw new Error(`scan_states : réponse inattendue ${JSON.stringify(reply)}`);
+    for (const item of reply.items) {
+        states.set(item.event_id, { open: item.open === true, problem: item.problem ?? null, opens_at: item.opens_at ?? null, closes_at: item.closes_at ?? null });
+    }
+    return states;
+}
+
 /**
  * GET /api/controller/assignments — événements auxquels le contrôleur connecté est affecté, avec leurs
  * compteurs. Lot 7 (D42, D53, contrat 3.3) : chaque affectation porte son point d'entrée (`entry_point`) et
  * `counter_sale_enabled` (réglage access.counter_sale_enabled) ; « Arrivées » (`stats.scanned_today`, nom
  * gardé) = toutes les entrées de l'événement, plus coupées à minuit UTC (un concert de 22 h à 3 h gardait
- * son compteur jusqu'à minuit seulement).
+ * son compteur jusqu'à minuit seulement). Lot 9 bis (R16, contrat 4.3) : `scan { open, problem, opens_at,
+ * closes_at }` par affectation ; le scanner décide par `scan.open`.
  */
 export async function GET(req: NextRequest) {
     try {
@@ -58,6 +83,7 @@ export async function GET(req: NextRequest) {
         }
 
         const counterSaleEnabled = await readCounterSaleEnabled();
+        const scanStates = await readScanStates((assignments ?? []).map((a: any) => a.events?.id).filter((id: unknown): id is string => typeof id === 'string'));
 
         // Compteurs de chaque événement affecté (lus par le serveur, toute la durée de l'événement)
         const enriched = await Promise.all(
@@ -72,6 +98,7 @@ export async function GET(req: NextRequest) {
                     ...a,
                     entry_point: typeof a.entry_point === 'string' && a.entry_point.trim() !== '' ? a.entry_point : null,
                     counter_sale_enabled: counterSaleEnabled,
+                    scan: eventId ? scanStates.get(eventId) ?? null : null,
                     events: formattedEvent,
                 };
 

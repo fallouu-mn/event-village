@@ -144,7 +144,7 @@ function datesReadable(d: DatesLike): boolean {
 
 /** Fin de l'événement (même règle que la fonction SQL event_end_at). */
 export function eventEndInstant(d: DatesLike): number {
-    return eventEndAt({ start_date: d.start_date, end_date: d.end_date ?? null, end_time: d.end_time ?? null }).getTime();
+    return eventEndAt({ start_date: d.start_date, start_time: d.start_time, end_date: d.end_date ?? null, end_time: d.end_time ?? null }).getTime();
 }
 
 // ── Affiche ────────────────────────────────────────────────────────────────
