@@ -69,6 +69,9 @@
 --     même règle que event_end_at : date et heure de fin ; date sans heure → 23:59 ; aucune fin → début + 6 h) au
 --     lieu de event_end_from à trois arguments (laissée telle quelle, plus aucun appelant ici) ; contrôle des fins de
 --     vente, report des fonds et données new_end_at en découlent.
+--   - tâche 25 (S-C, R94, B61) : une modification de dates qui place la fin de l'événement au plus tard au début de
+--     vente d'une catégorie est refusée SALE_START_AFTER_EVENT « Le début de vente doit précéder la fin de
+--     l’événement. » (catégories en cause dans details), comme ticket_category_update (M08).
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -375,6 +378,7 @@ REVOKE ALL ON FUNCTION public.notif_event_status_changed() FROM PUBLIC, anon, au
 -- Tâche 33 : contrôleurs affectés (CONTROLLER_EVENT_CHANGED, in-app immédiat, SMS et email à 10 minutes, fusionnés).
 -- Tâche 5 (délégation, S-A) : event_start_changes écrit à chaque changement de début ; refund_open par porteur.
 -- Tâche 21 (délégation, S-C) : ancienne et nouvelle fin par event_end_from_v2 (sans fin : début + 6 h).
+-- Tâche 25 (délégation, S-C) : SALE_START_AFTER_EVENT quand un début de vente atteint la nouvelle fin.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.event_update(p jsonb)
 RETURNS jsonb
@@ -623,6 +627,16 @@ BEGIN
         IF v_late IS NOT NULL THEN
             RETURN public.event_edit_refusal('SALE_END_AFTER_EVENT',
                 format('La fin de vente de %s dépasse la nouvelle fin de l''événement : avancez d''abord la fin de vente.', v_late_names),
+                CASE WHEN v_patch ? 'end_time' THEN 'end_time' WHEN v_patch ? 'end_date' THEN 'end_date' ELSE 'start_date' END,
+                jsonb_build_object('categories', v_late));
+        END IF;
+        -- Lot 9 bis (R94, B61) : un début de vente précède toujours la fin de l'événement
+        SELECT jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'sale_start', c.sale_start) ORDER BY c.name, c.id)
+          INTO v_late
+          FROM public.ticket_categories c
+         WHERE c.event_id = v_event AND c.sale_start IS NOT NULL AND c.sale_start >= v_new_end;
+        IF v_late IS NOT NULL THEN
+            RETURN public.event_edit_refusal('SALE_START_AFTER_EVENT', 'Le début de vente doit précéder la fin de l’événement.',
                 CASE WHEN v_patch ? 'end_time' THEN 'end_time' WHEN v_patch ? 'end_date' THEN 'end_date' ELSE 'start_date' END,
                 jsonb_build_object('categories', v_late));
         END IF;
