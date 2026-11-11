@@ -11,8 +11,10 @@
  *  - sendCashout : succès, refus, délai dépassé avant envoi (rien n'est parti) ou APRÈS envoi
  *    (l'argent est parti mais la réponse est perdue), réponse « en attente » ;
  *  - buildWebhook : form-urlencoded (transaction_id, order_id, status=success), adressé au
- *    callBackUrl reçu à l'initialisation, aucune signature ; refusé si la transaction n'est pas
- *    SUCCESS (le contrat n'envoie aucun webhook d'échec).
+ *    callBackUrl reçu à l'initialisation ; refusé si la transaction n'est pas SUCCESS (le contrat
+ *    n'envoie aucun webhook d'échec). Lot 9 bis (H3, T14) : signature facultative X-SamirPay-Signature
+ *    `t=<secondes>,v1=<hex>`, HMAC-SHA256 du secret entier (préfixe whsec_ compris) sur `t + "." + corps
+ *    brut` ; `extraV1` ajoute une seconde valeur v1 (renouvellement), placée avant la bonne.
  * Le contrat exact est vérifié côté client réel par tests/samirpay-contrat.test.ts.
  */
 import crypto from 'node:crypto';
@@ -56,6 +58,18 @@ interface FakeTransaction {
     status: SamirPayTransactionStatus;
     callBackUrl: string | null;
     amount: number;
+}
+
+/** Signature facultative du webhook (H3). `t` en secondes, maintenant par défaut. */
+export interface FakeWebhookSignature {
+    secret: string;
+    t?: number;
+    extraV1?: string;
+}
+
+/** HMAC-SHA256 hexadécimal du secret sur `t + "." + corps brut` (v1.2, §7). */
+export function samirPaySignatureV1(secret: string, t: number, rawBody: string): string {
+    return crypto.createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex');
 }
 
 export interface FakeWebhook {
@@ -201,16 +215,18 @@ export class FakeSamirPayGateway implements PaymentGateway {
     /**
      * Webhook que SamirPay enverrait au callBackUrl reçu : uniquement pour une transaction SUCCESS.
      */
-    buildWebhook(transactionId: string): FakeWebhook {
+    buildWebhook(transactionId: string, signature?: FakeWebhookSignature): FakeWebhook {
         const tx = this.transactions.get(transactionId);
         if (!tx || tx.kind !== 'CASHIN' || !tx.callBackUrl || !tx.orderId) throw new Error(`Faux SamirPay : cashin inconnu « ${transactionId} »`);
         if (tx.status !== 'SUCCESS') throw new Error('Faux SamirPay : le contrat n’envoie de webhook qu’en cas de succès');
         const fields = { transaction_id: tx.transactionId, order_id: tx.orderId, status: 'success' };
-        return {
-            url: tx.callBackUrl,
-            body: new URLSearchParams(fields).toString(),
-            headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            fields,
-        };
+        const body = new URLSearchParams(fields).toString();
+        const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded' };
+        if (signature) {
+            const t = signature.t ?? Math.floor(Date.now() / 1000);
+            const v1 = samirPaySignatureV1(signature.secret, t, body);
+            headers['x-samirpay-signature'] = [`t=${t}`, ...(signature.extraV1 ? [`v1=${signature.extraV1}`] : []), `v1=${v1}`].join(',');
+        }
+        return { url: tx.callBackUrl, body, headers, fields };
     }
 }
