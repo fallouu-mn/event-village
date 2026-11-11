@@ -39,10 +39,12 @@ const serverEnvSchema = z.object({
     SAMIRPAY_API_URL: z.string().url({ message: 'URL API SamirPay requise' }),
     SAMIRPAY_API_KEY: z.string().min(1, 'clé API SamirPay requise'),
     SAMIRPAY_SECRET_KEY: z.string().min(1, 'clé secrète SamirPay requise'),
-    // Lot 2 : chemins fixés par le contrat sous SAMIRPAY_API_URL (plus de SAMIRPAY_*_URL). Le contrat
-    // ne prévoit aucune signature de webhook : SAMIRPAY_WEBHOOK_SECRET n'est plus utilisé (jeton de
-    // callback par paiement à la place, voir lib/payments/webhook.service.ts).
+    // Lot 2 : chemins fixés par le contrat sous SAMIRPAY_API_URL (plus de SAMIRPAY_*_URL).
     SAMIRPAY_TIMEOUT_MS: limit(15000),
+    // Lot 9 bis (H3) : secret de signature des webhooks SamirPay v1.2 (« whsec_… »), FACULTATIF. Défini : tout
+    // webhook sans signature valide est refusé (lib/samirpay/webhook-signature.ts) ; absent : seul le jeton de
+    // callback par paiement protège la route. La confirmation par le statut reste exigée dans les deux cas.
+    SAMIRPAY_WEBHOOK_SECRET: z.string().min(16, 'secret de 16 caractères au moins (whsec_…)').optional(),
 
     // SMS MTarget (obligatoire, lot 1C.8 : le SMS est le canal essentiel)
     MTARGET_API_URL: optionalUrl, // défaut : API publique MTarget (lib/sms/mtarget-http.adapter.ts)
@@ -65,6 +67,8 @@ const serverEnvSchema = z.object({
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Lot 2 : chaîne paiement → billet
+    // Lot 9 bis (H2) : remplacée par le réglage SUPERADMIN finance.payment_hold_minutes (10 min, de 5 à 60). Encore
+    // lue par lib/payments/checkout.service.ts jusqu'au correctif H2 de ce fichier ; la ligne est retirée ensuite.
     PAYMENT_HOLD_MINUTES: limit(15), // durée de réservation du stock (et du délai d'attente de l'interface)
     CHECKOUT_PER_USER_15MIN: limit(10), // checkouts par compte (quota en base)
     CHECKOUT_PER_USER_DAY: limit(50),
@@ -104,6 +108,13 @@ const serverEnvSchema = z.object({
     // Lot 9 (9.2) : codes de changement de numéro par compte et par jour ; envois de photo par compte et par heure
     PHONE_CHANGE_PER_ACCOUNT_DAY: limit(5),
     AVATAR_UPLOADS_PER_ACCOUNT_HOUR: limit(20),
+    // Lot 9 bis (13, 42) : confirmations et changements de mot de passe par compte, par 15 minutes
+    PASSWORD_CONFIRM_PER_ACCOUNT_15MIN: limit(5),
+    // Lot 9 bis (14) : connexions par mot de passe (POST /api/auth/login), par IP et par heure
+    PASSWORD_LOGIN_PER_IP_HOUR: limit(30),
+    // Lot 9 bis (48) : liens de vérification d'email par compte et par heure, puis par adresse (seau haché) et par jour
+    EMAIL_VERIFY_PER_ACCOUNT_HOUR: limit(3),
+    EMAIL_VERIFY_PER_ADDRESS_DAY: limit(5),
     // Source de l'IP cliente pour les limites par IP : x-forwarded-for (1re valeur, à réserver à
     // un hébergement qui réécrit l'en-tête, ex. Vercel), x-real-ip, ou none (pas de limite par IP).
     CLIENT_IP_SOURCE: z.enum(['x-forwarded-for', 'x-real-ip', 'none']).default('x-forwarded-for'),
@@ -111,6 +122,8 @@ const serverEnvSchema = z.object({
     // Email Resend (optionnel, lot 1C.8 : sans clé, le canal email est désactivé)
     RESEND_API_KEY: optionalString,
     NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
+    // Lot 9 bis (41/R70) : adresse de support montrée aux personnes, lue côté serveur seulement (lib/support.ts, qui
+    // porte l'adresse par défaut) ; jamais en NEXT_PUBLIC_
     SUPPORT_EMAIL: z.string().email().optional(),
 
     // Lot 6 (contrat E6) : délai maximal d'un appel MTarget ; au-delà, l'issue est incertaine (jamais renvoyé)
@@ -158,8 +171,9 @@ let cached: ServerEnv | null = null;
 
 /** Secrets dédiés : chacun doit différer des autres secrets et des autres secrets dédiés. */
 const DEDICATED_SECRETS = ['OTP_HASH_SECRET', 'TICKET_TOTP_MASTER_KEY', 'REGISSEUR_PIN_KEY'] as const;
-// Lot 6 (F4) : la clé privée VAPID ne doit servir de secret dédié nulle part.
-const OTHER_SECRETS = ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_AUTH_HOOK_SECRET', 'CRON_SECRET', 'SAMIRPAY_SECRET_KEY', 'SAMIRPAY_API_KEY', 'VAPID_PRIVATE_KEY'] as const;
+// Lot 6 (F4) : la clé privée VAPID ne doit servir de secret dédié nulle part. Lot 9 bis (H3) : le secret des
+// webhooks SamirPay non plus.
+const OTHER_SECRETS = ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_AUTH_HOOK_SECRET', 'CRON_SECRET', 'SAMIRPAY_SECRET_KEY', 'SAMIRPAY_API_KEY', 'VAPID_PRIVATE_KEY', 'SAMIRPAY_WEBHOOK_SECRET'] as const;
 
 function dedicatedSecretReuse(env: ServerEnv): string[] {
     const issues: string[] = [];
