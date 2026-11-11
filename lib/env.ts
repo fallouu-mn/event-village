@@ -67,9 +67,8 @@ const serverEnvSchema = z.object({
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Lot 2 : chaîne paiement → billet
-    // Lot 9 bis (H2) : remplacée par le réglage SUPERADMIN finance.payment_hold_minutes (10 min, de 5 à 60). Encore
-    // lue par lib/payments/checkout.service.ts jusqu'au correctif H2 de ce fichier ; la ligne est retirée ensuite.
-    PAYMENT_HOLD_MINUTES: limit(15), // durée de réservation du stock (et du délai d'attente de l'interface)
+    // Lot 9 bis (H2, décision S13) : PAYMENT_HOLD_MINUTES retirée, remplacée par le réglage SUPERADMIN
+    // finance.payment_hold_minutes (10 min, de 5 à 60).
     CHECKOUT_PER_USER_15MIN: limit(10), // checkouts par compte (quota en base)
     CHECKOUT_PER_USER_DAY: limit(50),
     CLAIM_FREE_PER_USER_HOUR: limit(20), // demandes de billets gratuits par compte
