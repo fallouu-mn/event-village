@@ -179,19 +179,24 @@ describe('I3 : register() en mode réel, SamirPay hors boucle locale (A9, premie
             assert.deepEqual(r.net, [], 'aucune requête réseau au démarrage');
         });
 
-        test(`${nodeEnv}, NEXT_PUBLIC_APP_URL en http : register() lève le refus exact, sans la valeur, et aucune ligne [réel]`, async () => {
+        // Lot 9 bis, run 121 : Next 14.2 n'appelle register() qu'à la première requête et une exception levée là est seulement
+        // journalisée (« Failed to prepare server ») sans arrêter next start (scripts/e2e/fake-prod.mjs, troisième lancement).
+        // Le refus est donc écrit sur la sortie d'erreur et le processus sort en code 1 (écart au contrat 4.7, « throw ») :
+        // ce cas exige cette sortie au lieu d'une exception. Mêmes exigences sur le texte, la valeur, la bannière et le réseau
+        // (un appel réseau lèverait « réseau interdit », rattrapé et rendu par le fils : aucun résultat ne doit sortir).
+        test(`${nodeEnv}, NEXT_PUBLIC_APP_URL en http : register() refuse le démarrage (refus exact sur la sortie d'erreur, code 1), sans la valeur, et aucune ligne [réel]`, async () => {
             assertRealModeModule();
             const appUrl = `http://localhost:3000/${generated().slice(0, 8)}`;
             const child = await runChild(REGISTER, { NODE_ENV: nodeEnv, ...REAL_REMOTE, NEXT_PUBLIC_APP_URL: appUrl });
-            const r = resultOf(child, `réel ${nodeEnv} en http`);
-            assert.equal(r.done, undefined, `register() a démarré en réel avec ${appUrl} : refus attendu`);
-            const refused = norm(String(r.refused ?? ''));
-            assert.equal(refused, norm(REFUSAL), `texte du refus (contrat 5.65) :\n${refused}`);
-            for (const word of ['NEXT_PUBLIC_APP_URL', 'https', 'tunnel']) assert.ok(refused.includes(word), `le refus doit citer « ${word} »`);
             const printed = `${child.stdout}${child.stderr}`;
-            assert.ok(!printed.includes(appUrl) && !refused.includes('localhost:3000'), 'la valeur de NEXT_PUBLIC_APP_URL ne doit jamais être affichée');
+            assert.equal(child.result, null, `register() a rendu la main en réel avec ${appUrl} (démarrage ou exception) : arrêt du processus attendu :\n${JSON.stringify(child.result)}`);
+            assert.equal(child.code, 1, `code de sortie du processus refusé :\n${printed}`);
+            const errLines = norm(child.stderr).split(/\r?\n/).filter((l) => l.includes('Refus de démarrer'));
+            assert.deepEqual(errLines, [norm(REFUSAL)], `texte du refus sur la sortie d'erreur, une seule fois (contrat 5.65) :\n${child.stderr}`);
+            for (const word of ['NEXT_PUBLIC_APP_URL', 'https', 'tunnel']) assert.ok(errLines[0].includes(word), `le refus doit citer « ${word} »`);
+            assert.ok(!printed.includes(appUrl) && !printed.includes('localhost:3000'), 'la valeur de NEXT_PUBLIC_APP_URL ne doit jamais être affichée');
             assert.equal(occurrences(printed, REAL_BANNER), 0, `aucune ligne [réel] quand le démarrage est refusé :\n${printed}`);
-            assert.deepEqual(r.net, [], 'aucune requête réseau au démarrage');
+            assert.ok(!printed.includes('réseau interdit'), `aucune requête réseau au démarrage :\n${printed}`);
         });
     }
 });
