@@ -7,6 +7,8 @@
  * salles, tables, commandes de repas), lus et modifiés par GET / PUT /api/admin/finance-settings, par section.
  * Lot 7 (D15) : le seuil d'alerte du volume total de SMS est supprimé ; l'alerte part à 80 % du plafond optionnel.
  * Lot 9 bis (R31, contrat 12.1) : seuil d'alerte des SMS indispensables du jour (notif.sms_essential_daily_alert).
+ * Lot 9 bis (H7, X5, B29) : sous les frais de retrait, frais SamirPay réels constatés sur 90 jours (observed_cashout_fee_rate
+ * et observed_cashout_fee_max de la route) ; avertissement si le taux réglé leur est inférieur, sans bloquer la modification.
  * Lecture : ADMIN et SUPERADMIN ; modification : SUPERADMIN seul, avec un motif obligatoire. Chaque
  * modification est historisée et ne s'applique qu'aux opérations futures (jamais rétroactive). La
  * validation des valeurs (bornes, choix admis) est faite par le serveur (finance_setting_set).
@@ -108,6 +110,20 @@ interface Setting {
   updatedAt: string | null;
 }
 
+/** Frais SamirPay réels des versements sur 90 jours, en % ; null tant qu'aucun n'est connu. */
+interface ObservedFees {
+  rate: number | null;
+  max: number | null;
+}
+
+interface SettingsData {
+  settings: Setting[];
+  history: HistoryRow[];
+  observed: ObservedFees;
+}
+
+const WITHDRAWAL_FEE_KEY = 'finance.withdrawal_fee_rate';
+
 interface HistoryRow {
   key: string;
   oldValue: unknown;
@@ -135,7 +151,15 @@ function displayValue(key: string, value: unknown): string {
   return String(v);
 }
 
-function parseSettings(body: unknown): { settings: Setting[]; history: HistoryRow[] } | null {
+function percentOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function formatRate(value: number): string {
+  return value.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+}
+
+function parseSettings(body: unknown): SettingsData | null {
   if (!isRecord(body) || !Array.isArray(body.settings)) return null;
   const settings = body.settings.flatMap((s: unknown) => {
     if (!isRecord(s) || typeof s.key !== 'string') return [];
@@ -147,7 +171,28 @@ function parseSettings(body: unknown): { settings: Setting[]; history: HistoryRo
         return [{ key: h.key, oldValue: h.old_value, newValue: h.new_value, reason: typeof h.reason === 'string' ? h.reason : null, changedAt: h.changed_at }];
       })
     : [];
-  return { settings, history };
+  return {
+    settings,
+    history,
+    observed: { rate: percentOrNull(body.observed_cashout_fee_rate), max: percentOrNull(body.observed_cashout_fee_max) },
+  };
+}
+
+/** Frais de retrait réglés comparés aux frais SamirPay constatés (H7) : l'écran avertit, la valeur reste modifiable. */
+function WithdrawalFeeCheck({ setting, observed }: { setting: Setting; observed: ObservedFees }) {
+  const configured = Number(unwrap(setting.value));
+  if (observed.rate === null) {
+    return <p className="text-sm text-fg-muted">Frais SamirPay réels pas encore constatés.</p>;
+  }
+  const max = observed.max !== null ? ` (maximum ${formatRate(observed.max)} %)` : '';
+  if (Number.isFinite(configured) && configured < observed.rate) {
+    return (
+      <StatusBanner tone="warning" title="Frais de retrait sous le coût réel">
+        Attention : les frais de retrait ({formatRate(configured)} %) sont inférieurs aux frais SamirPay constatés ({formatRate(observed.rate)} %). Chaque retrait coûte alors de l’argent à Event Village.
+      </StatusBanner>
+    );
+  }
+  return <p className="text-sm text-fg-muted">Frais SamirPay constatés sur 90 jours : {formatRate(observed.rate)} %{max}.</p>;
 }
 
 export default function AdminFinanceSettingsPage() {
@@ -155,7 +200,7 @@ export default function AdminFinanceSettingsPage() {
   const { hasRole } = useAuth();
   const isSuperadmin = hasRole('SUPERADMIN');
   const fieldId = useId();
-  const [data, setData] = useState<{ settings: Setting[]; history: HistoryRow[] } | null>(null);
+  const [data, setData] = useState<SettingsData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -314,6 +359,8 @@ export default function AdminFinanceSettingsPage() {
                             )}
                           </div>
                         </div>
+
+                        {s.key === WITHDRAWAL_FEE_KEY && <WithdrawalFeeCheck setting={s} observed={data.observed} />}
 
                         {isSuperadmin && isEditing && (
                           <form
