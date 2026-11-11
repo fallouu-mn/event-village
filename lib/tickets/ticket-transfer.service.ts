@@ -140,13 +140,17 @@ const TRANSFER_STATUS_MESSAGES: Record<string, string> = {
     EXPIRED: 'Ce transfert a déjà expiré.',
 };
 
+/** Lot 9 bis (ex-10.0 d, B84, contrat 4.3) : transfert ou invitation échu, sans durée inventée. */
+const TRANSFER_EXPIRED_MESSAGE = 'Ce billet ne peut plus être accepté : le délai est dépassé.';
+
 /** Refus de ticket_transfer_accept (contrat B3) : statut HTTP et message exacts. */
 const ACCEPT_REFUSALS: Record<string, { status: number; message: string }> = {
     INVALID_INPUT: { status: 400, message: 'Demande incomplète.' },
     TRANSFER_NOT_FOUND: { status: 404, message: 'Ce transfert est introuvable.' },
     PHONE_NOT_VERIFIED: { status: 403, message: "Confirmez d'abord votre numéro par un code SMS." },
     TRANSFER_NOT_PENDING: { status: 409, message: "Ce transfert n'est plus en attente." },
-    TRANSFER_EXPIRED: { status: 410, message: 'Ce transfert a expiré (délai de 48 h dépassé).' },
+    // Lot 9 bis (ex-10.0 d, B84) : une invitation n'expire pas en 48 h (échéance à la fin de l'événement)
+    TRANSFER_EXPIRED: { status: 410, message: TRANSFER_EXPIRED_MESSAGE },
     SELF_TRANSFER: { status: 400, message: 'Vous êtes déjà le propriétaire de ce billet.' },
     OWNER_CHANGED: { status: 409, message: 'L’expéditeur n’est plus le propriétaire de ce billet.' },
     TICKET_NOT_TRANSFERABLE: { status: 409, message: 'Ce billet n’est plus transférable.' },
@@ -155,13 +159,10 @@ const ACCEPT_REFUSALS: Record<string, { status: number; message: string }> = {
 };
 
 /**
- * Refus de ticket_transfer_decline (lot 9 bis, R46, contrat 4.3) : mêmes codes et mêmes statuts que l'acceptation
- * (un tiers et l'expéditeur reçoivent la même réponse, aucune fuite) ; échu : texte de l'ex-10.0 d.
+ * Refus de ticket_transfer_decline (lot 9 bis, R46, contrat 4.3) : mêmes codes, mêmes statuts et mêmes textes que
+ * l'acceptation (un tiers et l'expéditeur reçoivent la même réponse, aucune fuite).
  */
-const DECLINE_REFUSALS: Record<string, { status: number; message: string }> = {
-    ...ACCEPT_REFUSALS,
-    TRANSFER_EXPIRED: { status: 410, message: 'Ce billet ne peut plus être accepté : le délai est dépassé.' },
-};
+const DECLINE_REFUSALS: Record<string, { status: number; message: string }> = ACCEPT_REFUSALS;
 
 export class TicketTransferService {
     /**

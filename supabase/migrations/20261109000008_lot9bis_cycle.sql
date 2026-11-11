@@ -69,7 +69,8 @@
 --     transferts échus des billets du compte ; le cron passe sans filtre).
 -- 18. ticket_transfer_accept(jsonb) : base 20261108000002_lot9_invitations.sql:91-199, recopie intégrale, signature et
 --     VOLATILE identiques. Changement : un transfert échu est expiré pour de bon (ticket_transfers_expire_due) avant
---     le refus TRANSFER_EXPIRED ; DECLINED reste TRANSFER_NOT_PENDING.
+--     le refus TRANSFER_EXPIRED ; DECLINED reste TRANSFER_NOT_PENDING. Tâche 40 (ex-10.0 d, B84) : texte d'un
+--     transfert ou d'une invitation échus « Ce billet ne peut plus être accepté : le délai est dépassé. » (sans 48 h).
 -- 19. ticket_invitations_list(jsonb) : base 20261108000002_lot9_invitations.sql:582-631, recopie intégrale, signature
 --     et STABLE identiques. Changement : invitation refusée par son destinataire → « Refusée ».
 -- 20. pilotage_scan_result_label(text) : base 20261102000005_lot5_pilotage.sql:78-102, recopie, signature et IMMUTABLE
@@ -1547,7 +1548,7 @@ BEGIN
     IF tr.expires_at <= now() THEN
         -- Lot 9 bis (R44) : le transfert échu est expiré pour de bon (billet rendu à l'expéditeur, avis du cron)
         PERFORM public.ticket_transfers_expire_due(tr.ticket_id, FALSE);
-        RETURN jsonb_build_object('ok', false, 'code', 'TRANSFER_EXPIRED', 'message', 'Ce transfert a expiré (délai de 48 h dépassé).');
+        RETURN jsonb_build_object('ok', false, 'code', 'TRANSFER_EXPIRED', 'message', 'Ce billet ne peut plus être accepté : le délai est dépassé.');
     END IF;
     IF tr.from_user_id = v_actor THEN
         RETURN jsonb_build_object('ok', false, 'code', 'SELF_TRANSFER', 'message', 'Vous êtes déjà le propriétaire de ce billet.');
@@ -1566,7 +1567,7 @@ BEGIN
                 WHEN 'OWNER_CHANGED' THEN 'L''expéditeur n''est plus le propriétaire de ce billet.'
                 WHEN 'TICKET_NOT_TRANSFERABLE' THEN 'Ce billet n''est plus transférable.'
                 WHEN 'TRANSFER_NOT_PENDING' THEN 'Ce transfert n''est plus en attente.'
-                WHEN 'TRANSFER_EXPIRED' THEN 'Ce transfert a expiré (délai de 48 h dépassé).'
+                WHEN 'TRANSFER_EXPIRED' THEN 'Ce billet ne peut plus être accepté : le délai est dépassé.'
                 WHEN 'SELF_TRANSFER' THEN 'Vous êtes déjà le propriétaire de ce billet.'
                 WHEN 'EVENT_NOT_ACTIVE' THEN 'Cet événement n''accepte plus de transfert.'
                 ELSE 'Ce transfert est introuvable.' END);
