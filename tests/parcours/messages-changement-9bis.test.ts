@@ -142,7 +142,7 @@ describe('9b.32 R14 : changement de date ou de lieu indispensable (nuit, préfé
         await dispatchAt(dakarAt(dakarDay(1), '23:00'), { eventIds: [ev.eventId] });
         const rows = await changeSms(ev, holder);
         assert.deepEqual(rows.map((r) => [r.status, r.reason]), [['SENT', null]], `SMS envoyé à 23:00 (indispensable) : ${describeRows(rows)}`);
-        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.text), [placeText(ev, place)], 'un SMS remis, texte exact');
+        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.message), [placeText(ev, place)], 'un SMS remis, texte exact');
     });
 
     test('préférence EVENT_UPDATES/SMS coupée : SMS PENDING à l\'écriture puis SENT', async () => {
@@ -160,7 +160,7 @@ describe('9b.32 R14 : changement de date ou de lieu indispensable (nuit, préfé
         await dispatchAt(noonDakarTomorrow(), { eventIds: [ev.eventId] });
         const sent = await changeSms(ev, holder);
         assert.deepEqual(sent.map((r) => r.status), ['SENT'], `SMS envoyé malgré la préférence : ${describeRows(sent)}`);
-        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.text), [placeText(ev, place)], 'un SMS remis, texte exact');
+        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.message), [placeText(ev, place)], 'un SMS remis, texte exact');
     });
 
     test('budget des SMS optionnels à 0 : SMS SENT (jamais SMS_OPTIONAL_CAP)', async () => {
@@ -173,7 +173,7 @@ describe('9b.32 R14 : changement de date ou de lieu indispensable (nuit, préfé
         });
         const rows = await changeSms(ev, holder);
         assert.deepEqual(rows.map((r) => [r.status, r.reason]), [['SENT', null]], `SMS envoyé, budget optionnel ignoré : ${describeRows(rows)}`);
-        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.text), [placeText(ev, place)], 'un SMS remis, texte exact');
+        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.message), [placeText(ev, place)], 'un SMS remis, texte exact');
     });
 
     test('famille de chaque ligne EVENT_CHANGED créée : ESSENTIAL, sujet NULL', async () => {
@@ -214,7 +214,7 @@ describe('9b.32 R26 : SMS de changement regroupé sur 10 minutes, sauf début à
         const rows = await changeSms(ev, holder);
         assert.deepEqual(rows.map((r) => r.status), ['SENT'], `une seule ligne SMS, fusionnée puis envoyée : ${describeRows(rows)}`);
         const newStart = smsDateTime(`${EVENT_DAY}T21:00:00.000Z`);
-        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.text),
+        assert.deepEqual(smsTo(holder.phoneE164, mark).map((m) => m.message),
             [`Event Village : ${ev.title} change : ${newStart}, ${place}. Billets toujours valables. ${APP_URL}/tickets`],
             'un seul SMS, date et lieu unis (R26)');
     });
