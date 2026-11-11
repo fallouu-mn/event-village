@@ -13,6 +13,8 @@
  * du taux servis par GET /api/finance/balance (withdrawal_min_amount, withdrawal_fee_rate) ; sous le minimum, le
  * bouton est désactivé. Le corps du code porte `amount` : le serveur refait le devis avant tout SMS, et le devis
  * de sa réponse (`quote`) remplace l'estimation à l'étape du code.
+ * Lot 9 bis (R4, B14, contrat 5.2) : `frozen` servi par le serveur ; s'il est positif, ligne « Fonds gelés : … » sous
+ * le disponible (le gel est déjà retiré de `withdrawable`).
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -68,6 +70,8 @@ interface Balance {
     inProgress: number;
     debt: number;
     withdrawable: number;
+    /** Lot 9 bis (R4, B14) : net échu des événements suspendus, calculé par le serveur, non retirable. */
+    frozen: number;
     /** Réglage finance.withdrawal_min_amount, servi par le serveur (F CFA). */
     minimum: number;
     /** Réglage finance.withdrawal_fee_rate, servi par le serveur (en %). */
@@ -147,7 +151,8 @@ function parseAccount(body: unknown): AccountView | null {
     const withdrawable = readAmount(body.withdrawable);
     const minimum = readAmount(body.withdrawal_min_amount);
     const feeRate = readAmount(body.withdrawal_fee_rate);
-    if (available === null || pending === null || withdrawable === null || minimum === null || feeRate === null) return null;
+    const frozen = readAmount(body.frozen);
+    if (available === null || pending === null || withdrawable === null || minimum === null || feeRate === null || frozen === null) return null;
     const history: HistoryEntry[] = Array.isArray(body.history)
         ? body.history.flatMap((e: unknown, i: number) => {
               if (!isRecord(e)) return [];
@@ -197,6 +202,7 @@ function parseAccount(body: unknown): AccountView | null {
             inProgress: readAmount(body.in_progress) ?? 0,
             debt: readAmount(body.debt) ?? 0,
             withdrawable,
+            frozen,
             minimum,
             feeRate,
         },
@@ -564,6 +570,11 @@ export default function PartnerFinancePage() {
                                 <p className="mt-1 text-3xl font-bold tabular-nums text-brand-fg sm:text-4xl">{formatFcfa(balance.withdrawable)}</p>
                                 <p className="mt-1 text-sm text-fg-muted">Montant que vous pouvez retirer dès maintenant.</p>
                             </div>
+                            {balance.frozen > 0 && (
+                                <StatusBanner tone="suspended" title={<span className="tabular-nums">{`Fonds gelés : ${formatFcfa(balance.frozen)}.`}</span>}>
+                                    Un de vos événements est suspendu : ses ventes ne sont pas retirables tant qu’il l’est.
+                                </StatusBanner>
+                            )}
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                 <KpiCard
                                     label="En attente"
