@@ -21,8 +21,11 @@
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { NOTIFICATION_CATALOG } from '../../lib/notifications/catalog';
+import { inRolledBackTransaction } from '../helpers/db';
 import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
 import { authed, createTimedEvent, newController } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, type DraftEvent } from './cycle-helpers';
@@ -219,5 +222,99 @@ describe('9b.49 G.49 — une ligne EMAIL réellement créée pour un compte vér
         const rows = await outboxRows({ type: 'INVITATION_RECEIVED', eventId: invited.eventId });
         assert.ok(rows.some((r) => r.channel === 'SMS' && r.recipient_phone === account.phoneE164 && r.recipient_user_id === null), `SMS au numéro gardé (AR15) : ${describeRows(rows)}`);
         assertOneEmailRow(rows.filter((r) => r.recipient_user_id === account.userId), account.userId, 'INVITATION_RECEIVED');
+    });
+});
+
+// ── Tâche 50 : préférences (G.50, G53-9) ───────────────────────────────────
+
+const PREFERENCES_ROUTE = '../../app/api/notifications/preferences/route';
+/** Optionnels qui ont le push et reçoivent EMAIL (contrat 5.50, 11.2 « + EMAIL seul », décision D-E2). */
+const OPTIONAL_WITH_EMAIL = ['EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER', 'REMINDER_H3', 'CONTROLLER_REMINDER'];
+
+/** Préférence posée par la route, comme l'écran (200 exigé). */
+async function setPreference(user: Buyer, topic: string, channel: string, enabled: boolean): Promise<void> {
+    const put = await routeHandler(PREFERENCES_ROUTE, 'PUT', 'PUT /api/notifications/preferences');
+    const res = await invoke(put, authed('/api/notifications/preferences', 'PUT', user, { topic, channel, enabled }));
+    assert.equal(res.status, 200, `préférence ${topic}/${channel} = ${enabled} : ${show(res)}`);
+}
+
+/** notif_enqueue dans une transaction annulée (rien ne reste en base) ; lignes du groupe par canal. */
+async function enqueueRolledBack(type: string, userId: string): Promise<Partial<Record<string, OutboxRow>>> {
+    const key = `${type}:${randomUUID()}`;
+    return inRolledBackTransaction(async (db) => {
+        await db.query('SELECT public.notif_enqueue($1::jsonb)', [JSON.stringify({ type, key, user_id: userId, data: catalogSample(type) })]);
+        const rows = (await db.query<OutboxRow>('SELECT * FROM public.notification_outbox WHERE group_key = $1', [key])).rows;
+        return Object.fromEntries(rows.map((r) => [r.channel, r]));
+    });
+}
+
+function catalogSample(type: string): Row {
+    assert.ok(CATALOG[type]?.sample, `${type} absent du catalogue`);
+    return { ...CATALOG[type].sample };
+}
+
+function state(r: OutboxRow | undefined): [string | null, string | null] | 'absente' {
+    return r ? [r.status, r.reason] : 'absente';
+}
+
+/** Source du fichier et de ses imports directs « @/components/… » et « @/lib/… », espaces et apostrophes normalisées. */
+function screenSource(rel: string, why: string): string {
+    const norm = (s: string): string => s.replace(/[  ]/g, ' ').replace(/[’‘]/g, '\'').replace(/\s+/g, ' ');
+    const abs = path.resolve(process.cwd(), rel);
+    assert.ok(fs.existsSync(abs), `${rel} absent (${why})`);
+    const src = fs.readFileSync(abs, 'utf8');
+    const parts = [src];
+    for (const m of src.matchAll(/from\s+['"]@\/((?:components|lib)\/[^'"]+)['"]/g)) {
+        const file = [`${m[1]}.tsx`, `${m[1]}.ts`, `${m[1]}/index.tsx`, `${m[1]}/index.ts`].find((f) => fs.existsSync(path.resolve(process.cwd(), f)));
+        if (file) parts.push(fs.readFileSync(path.resolve(process.cwd(), file), 'utf8'));
+    }
+    return norm(parts.join('\n'));
+}
+
+describe('9b.50 G.50 — préférences : l’email se règle comme le push, les indispensables ne se coupent pas (G53-9)', () => {
+    test('catalogue (sans base) : tout type optionnel qui a le push déclare EMAIL, dont les quatre types de la consigne', () => {
+        const withoutEmail = CATALOG_TYPES.filter((t) => CATALOG[t].family === 'OPTIONAL' && CATALOG[t].channels.includes('PUSH') && !CATALOG[t].channels.includes('EMAIL'));
+        assert.deepEqual(withoutEmail, [], 'optionnels avec push sans EMAIL (G.50 : « comme le push »)');
+        assert.deepEqual(OPTIONAL_WITH_EMAIL.filter((t) => !CATALOG[t]?.channels.includes('EMAIL')), [], 'EVENT_*_HOLDER, REMINDER_H3, CONTROLLER_REMINDER sans EMAIL');
+    });
+
+    test('registre : tout type optionnel qui a le push déclare EMAIL', async () => {
+        const rows = await registry();
+        const withoutEmail = rows.filter((r) => r.family === 'OPTIONAL' && r.channels.includes('PUSH') && !r.channels.includes('EMAIL')).map((r) => r.type);
+        assert.deepEqual(withoutEmail, [], 'optionnels avec push sans EMAIL dans le registre (M03)');
+    });
+
+    test('garde (vert sur le fond, M10 pour la pose de l’adresse vérifiée) : REMINDERS/EMAIL coupé par la route → REMINDER_J1 EMAIL SKIPPED PREFERENCE_DISABLED, SMS en attente', async () => {
+        const a = await verifiedAccount('pref-rappel');
+        await setPreference(a, 'REMINDERS', 'EMAIL', false);
+        const rows = await enqueueRolledBack('REMINDER_J1', a.userId);
+        assert.deepEqual(state(rows.EMAIL), ['SKIPPED', 'PREFERENCE_DISABLED'], 'email du rappel coupé par la préférence');
+        assert.deepEqual(state(rows.SMS), ['PENDING', null], 'le SMS du rappel n’est pas touché');
+    });
+
+    test('EVENT_SUSPENDED_HOLDER : EVENT_UPDATES/EMAIL coupé → EMAIL SKIPPED PREFERENCE_DISABLED ; préférence ouverte → EMAIL en attente', async () => {
+        const off = await verifiedAccount('pref-off');
+        await setPreference(off, 'EVENT_UPDATES', 'EMAIL', false);
+        assert.deepEqual(state((await enqueueRolledBack('EVENT_SUSPENDED_HOLDER', off.userId)).EMAIL), ['SKIPPED', 'PREFERENCE_DISABLED'],
+            'préférence coupée : ligne EMAIL SKIPPED (aujourd’hui aucune ligne EMAIL, type sans EMAIL)');
+        const on = await verifiedAccount('pref-on');
+        assert.deepEqual(state((await enqueueRolledBack('EVENT_SUSPENDED_HOLDER', on.userId)).EMAIL), ['PENDING', null], 'préférence ouverte : email en attente');
+    });
+
+    test('indispensables : emails optionnels coupés, PURCHASE_CONFIRMED et EVENT_CHANGED partent quand même par email', async () => {
+        const a = await verifiedAccount('pref-indisp');
+        await setPreference(a, 'REMINDERS', 'EMAIL', false);
+        await setPreference(a, 'EVENT_UPDATES', 'EMAIL', false);
+        const purchase = await enqueueRolledBack('PURCHASE_CONFIRMED', a.userId);
+        assert.deepEqual(state(purchase.EMAIL), ['PENDING', null], 'confirmation d’achat : email indispensable, aucune préférence ne le coupe');
+        const changed = await enqueueRolledBack('EVENT_CHANGED', a.userId);
+        assert.deepEqual(state(changed.EMAIL), ['PENDING', null], 'changement de date ou de lieu : indispensable (R14) et par email (G.49), malgré EVENT_UPDATES/EMAIL coupé');
+        assert.equal(changed.EMAIL?.family, 'ESSENTIAL', 'famille ESSENTIAL copiée du registre');
+    });
+
+    test('page des préférences (statique, E-D) : aide d’un compte sans adresse vérifiée', () => {
+        const src = screenSource('app/profile/notifications/page.tsx', 'page des préférences, contrat 5.50');
+        assert.ok(src.includes('Ajoutez et vérifiez une adresse email dans votre profil pour recevoir ces emails.'),
+            'aide « Ajoutez et vérifiez une adresse email dans votre profil pour recevoir ces emails. » absente (interrupteur Email désactivé)');
     });
 });
