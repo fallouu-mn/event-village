@@ -462,7 +462,7 @@ describe('5.7 — GET /api/admin/events/[id] : fiche complète avant validation'
     });
 
     test('affiche, dates, lieu, programme, catégories et prix (masquées et inactives comprises), organisateur et contact, historique, actions', async () => {
-        const r = await fiche(adminReader, ev.eventId);
+        const r = await fiche(adminWriter, ev.eventId); // lot 9 bis (R2, B31) : valider et refuser exigent events.write
         assert.equal(r.status, 200, `fiche : ${show(r)}`);
         const { data: row, error } = await service.from('events').select('*').eq('id', ev.eventId).single();
         assert.equal(error, null, error?.message);

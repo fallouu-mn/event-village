@@ -63,7 +63,7 @@ before(async () => {
     evB = await createTimedEvent(partnerB.partnerId, 'retrait-b', [{ name: 'Standard', price: 3000, total: 10 }], { startsInHours: 48 });
     admin = await newBuyer('retrait-admin', { firstName: 'Aminata', lastName: 'Administratrice' });
     const { error } = await service.from('user_roles').upsert([{ user_id: admin.userId, role: 'ADMIN' }], { onConflict: 'user_id,role' });
-    assert.equal(error, null, `rôle ADMIN : ${error?.message}`);
+    assert.equal(error, null, `rôle ADMIN : ${error?.message}`); assert.equal((await service.from('admin_permissions').upsert({ user_id: admin.userId, permission: 'events.write' }, { onConflict: 'user_id,permission' })).error, null, 'permission events.write (lot 9 bis, R2, B31 : équipe)');
     const { data: own, error: ownErr } = await service.from('partners').select('id').eq('user_id', admin.userId);
     assert.equal(ownErr, null, `profil partenaire de l’admin : ${ownErr?.message}`);
     assert.deepEqual(own ?? [], [], 'précondition : l’admin n’a aucun profil partenaire');

@@ -98,7 +98,7 @@ async function newAdmin(label: string): Promise<Buyer> {
     const user = await newBuyer(`admin-${label}`, { firstName: 'Aminata', lastName: 'Administratrice' });
     const { error } = await service.from('user_roles').upsert([{ user_id: user.userId, role: 'ADMIN' }], { onConflict: 'user_id,role' });
     assert.equal(error, null, `rôle ADMIN : ${error?.message}`);
-    return user;
+    assert.equal((await service.from('admin_permissions').upsert({ user_id: user.userId, permission: 'events.write' }, { onConflict: 'user_id,permission' })).error, null, 'permission events.write (lot 9 bis, R2, B31 : clôture de caisse)'); return user;
 }
 
 interface Cashier { ctrl: Buyer; shiftId: string; expected: number }
