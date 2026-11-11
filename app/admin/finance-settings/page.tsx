@@ -62,6 +62,7 @@ const FREE_REMINDER_SMS_LABELS: Record<string, string> = {
 /** Libellés et aides d'affichage ; les bornes sont contrôlées par le serveur (finance_setting_set). */
 const META: Record<string, SettingMeta> = {
   'finance.service_fee_rate': { label: 'Frais de service', help: 'Payés par l’acheteur, arrondis au FCFA supérieur par billet. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'finance.payment_hold_minutes': { label: 'Durée de garde des places pendant un paiement (minutes)', help: 'Temps pendant lequel les places d’un paiement en attente restent réservées. Le paiement reste valable 1 heure chez SamirPay : validé après l’échéance, il donne les billets s’il reste des places, sinon il est remboursé automatiquement. Entier de 5 à 60.', kind: 'integer', unit: 'min' },
   'finance.aggregator_fee_rate.WAVE': { label: 'Frais agrégateur Wave', help: 'Coût SamirPay d’un paiement Wave. De 0 à 10 %.', kind: 'percent', unit: '%' },
   'finance.aggregator_fee_rate.ORANGE_MONEY': { label: 'Frais agrégateur Orange Money', help: 'Coût SamirPay d’un paiement Orange Money. De 0 à 10 %.', kind: 'percent', unit: '%' },
   'finance.cancellation_aggregator_fee_bearer': { label: 'Frais agrégateur d’une annulation', help: 'Qui supporte les frais agrégateur quand un billet est remboursé.', kind: 'choice', options: BEARER_LABELS },
