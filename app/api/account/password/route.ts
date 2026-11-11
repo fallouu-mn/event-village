@@ -33,6 +33,37 @@ const BodySchema = z.object({
         .pipe(StrongPasswordSchema),
 }).strict();
 
+/**
+ * Reste S3 (R85, D5) : le mot de passe est changé par la session courante (`PUT /auth/v1/user` avec son jeton), qui
+ * ferme les autres sessions et garde celle-ci. L'API d'administration (`updateUserById`) ferme TOUTES les sessions du
+ * compte, la courante comprise (compte-mot-de-passe : « seule la session courante reste »). Rend `null` si le mot de
+ * passe est posé, sinon le code et le message de GoTrue (jamais montrés tels quels).
+ */
+async function updateOwnPassword(accessToken: string, password: string): Promise<{ code?: string; message: string } | null> {
+    const env = getServerEnv();
+    const res = await fetch(`${env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/, '')}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+            apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify({ password }),
+        cache: 'no-store',
+    });
+    if (res.ok) return null;
+    const text = await res.text();
+    let body: { code?: unknown; error_code?: unknown; msg?: unknown; message?: unknown } = {};
+    try {
+        body = text ? (JSON.parse(text) as typeof body) : {};
+    } catch {
+        return { message: `HTTP ${res.status} ${text.slice(0, 200)}` };
+    }
+    const code = typeof body.error_code === 'string' ? body.error_code : typeof body.code === 'string' ? body.code : undefined;
+    const message = typeof body.msg === 'string' ? body.msg : typeof body.message === 'string' ? body.message : `HTTP ${res.status}`;
+    return { code, message: `HTTP ${res.status} ${message}` };
+}
+
 async function handle(req: NextRequest): Promise<NextResponse> {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
@@ -88,7 +119,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         }
 
         const supabase = getServiceRoleClient();
-        const { error: updateErr } = await supabase.auth.admin.updateUserById(user.id, { password: newPassword });
+        const updateErr = await updateOwnPassword(current.accessToken, newPassword);
         if (updateErr) {
             if (updateErr.code === 'weak_password') {
                 return NextResponse.json(
