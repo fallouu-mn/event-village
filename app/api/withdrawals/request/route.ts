@@ -23,6 +23,8 @@ const BodySchema = z.object({
 
 const REFUSAL_STATUS: Record<string, number> = {
     INSUFFICIENT_BALANCE: 409,
+    // Lot 9 bis (R4, B14) : net d'un événement suspendu, gelé (fin_withdrawal_check)
+    FUNDS_FROZEN: 409,
     NOT_PARTNER: 403,
     ACCOUNT_NOT_ACTIVE: 403,
 };

@@ -15,6 +15,9 @@ export interface AccountBalance {
     next_available_at: string | null;
     in_progress: number;
     debt: number;
+    /** Lot 9 bis (R4, B14) : net échu des événements SUSPENDU du compte, calculé à la lecture ; jamais retirable. */
+    frozen: number;
+    /** Disponible moins le gel, arrondi au FCFA inférieur. */
     withdrawable: number;
 }
 
@@ -60,6 +63,7 @@ export async function accountBalance(ownerId: string, kind: AccountKind): Promis
         next_available_at: (data.next_available_at as string | null) ?? null,
         in_progress: Number(data.in_progress),
         debt: Number(data.debt),
+        frozen: Number(data.frozen),
         withdrawable: Number(data.withdrawable),
     };
 }
