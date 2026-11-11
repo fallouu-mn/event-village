@@ -1,5 +1,5 @@
 import React from 'react';
-import { Armchair, Banknote, DoorOpen, Gift, Percent, RotateCcw, Smartphone, Tags, Ticket } from 'lucide-react';
+import { Armchair, Banknote, DoorOpen, Gift, PauseCircle, Percent, RotateCcw, Smartphone, Tags, Ticket } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
@@ -7,14 +7,28 @@ import { formatFcfa, formatInteger, formatPercent, formatDateTime } from '@/lib/
 import { KpiAmount, PilotageSection } from './PilotageBlocks';
 import type { PilotageOverview } from './types';
 
+/** État de la vente pour l'onglet Aperçu : en cours, suspendue avec l'événement, arrêtée par l'annulation. */
+export type SaleState = 'OPEN' | 'SUSPENDED' | 'CANCELLED';
+
+/** État de la vente déduit du statut servi par pilotage_overview, sauf indication explicite de l'appelant. */
+function saleStateOf(data: PilotageOverview, saleStopped: boolean, saleState?: SaleState): SaleState {
+    if (saleState) return saleState;
+    if (saleStopped || data.status === 'ANNULE') return 'CANCELLED';
+    if (data.status === 'SUSPENDU') return 'SUSPENDED';
+    return 'OPEN';
+}
+
 /**
  * Onglet Aperçu (contrat I) : billets vendus / capacité, recettes (en ligne, espèces, remboursé), entrées
- * et taux de présence, tels que calculés par pilotage_overview. `saleStopped` (événement annulé) : les places
+ * et taux de présence, tels que calculés par pilotage_overview. Vente arrêtée (événement annulé) : les places
  * « en vente » et « restantes » n'ont plus de sens, une carte le dit à leur place (relecture du run 98).
+ * Lot 9 bis (R105 ; contrat 5.41, D-txt E.41) : pendant une suspension, aucune place n'est proposée non plus ;
+ * la carte « Vente » dit « Suspendue » au lieu de « Places en vente » et « Places restantes ».
  */
-export function OverviewTab({ data, saleStopped = false }: { data: PilotageOverview; saleStopped?: boolean }) {
+export function OverviewTab({ data, saleStopped = false, saleState }: { data: PilotageOverview; saleStopped?: boolean; saleState?: SaleState }) {
     const { tickets, entries, revenue } = data;
     const refundedCash = revenue.refunded_cash_organizer ?? 0;
+    const sale = saleStateOf(data, saleStopped, saleState);
     return (
         <div className="flex flex-col gap-6">
             {tickets.capacity_exceeded && (
@@ -25,7 +39,7 @@ export function OverviewTab({ data, saleStopped = false }: { data: PilotageOverv
             )}
 
             <PilotageSection title="Billetterie" description="Billets valides et utilisés, hors invitations.">
-                <div className={cn('grid grid-cols-2 gap-3', saleStopped ? 'xl:grid-cols-3' : 'xl:grid-cols-4')}>
+                <div className={cn('grid grid-cols-2 gap-3', sale === 'OPEN' ? 'xl:grid-cols-4' : 'xl:grid-cols-3')}>
                     {/* Les ventes comptent toutes les catégories, y compris une catégorie désactivée après ses
                         ventes, alors que la capacité ne compte que les catégories actives : « 82 sur 240 places »
                         et « 178 restantes » ne tombaient pas juste (relecture du run 77). Le texte dit ce que
@@ -37,8 +51,10 @@ export function OverviewTab({ data, saleStopped = false }: { data: PilotageOverv
                         tone="brand"
                         icon={<Ticket size={18} />}
                     />
-                    {saleStopped ? (
+                    {sale === 'CANCELLED' ? (
                         <KpiCard label="Vente" value="Arrêtée" hint="Événement annulé : aucune place n’est plus proposée" tone="danger" icon={<Tags size={18} />} />
+                    ) : sale === 'SUSPENDED' ? (
+                        <KpiCard label="Vente" value="Suspendue" hint="Événement suspendu : la vente reprendra à la réactivation" tone="warning" icon={<PauseCircle size={18} />} />
                     ) : (
                         <>
                             <KpiCard
