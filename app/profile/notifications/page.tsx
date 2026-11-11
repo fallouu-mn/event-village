@@ -3,7 +3,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BellRing, CalendarClock, LogIn, ShieldCheck, TrendingUp } from 'lucide-react';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
@@ -21,6 +23,9 @@ import { useAuth } from '@/components/providers/AuthProvider';
  *    signalée (Toast et message sous la bascule) en cas d'échec.
  *  - État du push SUR CET APPAREIL : PushDeviceCard (la demande d'autorisation n'a lieu qu'au clic).
  *  - Lien de désabonnement d'un email (?topic=REMINDERS…) : défilement jusqu'au sujet, mis en évidence.
+ *  - Lot 9 bis (G.50, B96, contrat 5.50) : l'email se règle par sujet comme le push. Tant que le compte n'a pas
+ *    d'adresse vérifiée (email_verified servi par la route, même règle que l'envoi), aucun email ne part :
+ *    chaque bascule Email est désactivée et affichée « Désactivé », un bandeau dit quoi faire et mène au profil.
  */
 
 interface ChannelPreference {
@@ -39,7 +44,12 @@ interface TopicPreference {
 interface PreferencesData {
   topics: TopicPreference[];
   essentials: string[];
+  /** Le compte a une adresse email vérifiée : sans elle, aucun email ne part (B96). */
+  emailVerified: boolean;
 }
+
+const EMAIL_CHANNEL = 'EMAIL';
+const EMAIL_UNVERIFIED_HELP = 'Ajoutez et vérifiez une adresse email dans votre profil pour recevoir ces emails.';
 
 const TOPIC_ICONS: Record<string, React.ElementType> = {
   REMINDERS: CalendarClock,
@@ -55,7 +65,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 /** Lecture stricte de la réponse : une forme inattendue est une erreur affichée, jamais un écran vide. */
 function parsePreferences(body: unknown): PreferencesData | null {
-  if (!isRecord(body) || !Array.isArray(body.topics) || !Array.isArray(body.essentials)) return null;
+  if (!isRecord(body) || !Array.isArray(body.topics) || !Array.isArray(body.essentials) || typeof body.email_verified !== 'boolean') return null;
   const topics: TopicPreference[] = [];
   for (const t of body.topics) {
     if (!isRecord(t) || typeof t.topic !== 'string' || typeof t.label !== 'string' || !Array.isArray(t.channels)) return null;
@@ -67,7 +77,7 @@ function parsePreferences(body: unknown): PreferencesData | null {
     topics.push({ topic: t.topic, label: t.label, description: typeof t.description === 'string' ? t.description : '', channels });
   }
   const essentials = body.essentials.filter((e): e is string => typeof e === 'string');
-  return { topics, essentials };
+  return { topics, essentials, emailVerified: body.email_verified };
 }
 
 type LoadResult = { ok: true; data: PreferencesData } | { ok: false; message: string };
@@ -270,6 +280,15 @@ export default function NotificationPreferencesPage() {
                 Pour chaque sujet, activez ou coupez un canal. Un canal coupé n’envoie plus rien sur ce sujet ; vous gardez les autres.
               </p>
             </div>
+            {!data.emailVerified && data.topics.length > 0 && (
+              <StatusBanner
+                tone="info"
+                title="Emails non disponibles"
+                action={<LinkButton href="/profile" variant="secondary" size="sm">Ouvrir mon profil</LinkButton>}
+              >
+                {EMAIL_UNVERIFIED_HELP}
+              </StatusBanner>
+            )}
             {data.topics.length === 0 ? (
               <p className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg-muted">
                 Aucun réglage optionnel pour votre compte.
@@ -301,12 +320,15 @@ export default function NotificationPreferencesPage() {
                     <ul className="divide-y divide-border">
                       {topic.channels.map((channel) => {
                         const key = keyOf(topic.topic, channel.channel);
+                        const emailBlocked = channel.channel === EMAIL_CHANNEL && !data.emailVerified;
                         return (
                           <li key={key} className="py-1">
                             <Switch
                               id={`pref-${topic.topic}-${channel.channel}`}
                               label={channel.label}
-                              checked={channel.enabled}
+                              checked={channel.enabled && !emailBlocked}
+                              disabled={emailBlocked}
+                              description={emailBlocked ? 'Adresse email non vérifiée' : undefined}
                               loading={saving.has(key)}
                               error={errors[key]}
                               onChange={(next) => void toggle(topic, channel, next)}
