@@ -36,8 +36,10 @@ import {
  * Lot 9 bis (H4, T14) : timeout-after-create = transaction créée puis délai dépassé sans statut HTTP, une fois (la
  * relance au même orderId reçoit DUPLICATE porteur de l'identifiant) ; timeout-after-create-always = même chose à
  * chaque appel (relance sans réponse, PO6) ; timeout-once = délai dépassé une fois, rien de créé, puis succès.
+ * Lot 9 bis (H8) : internal-error = 500 au format D (INTERNAL_ERROR, par exemple montant sous le minimum du
+ * compte) : rien n'est créé, jamais relancé.
  */
-export type FakeInitMode = 'success' | 'rejected' | 'timeout' | 'unauthorized' | 'timeout-after-create' | 'timeout-after-create-always' | 'timeout-once';
+export type FakeInitMode = 'success' | 'rejected' | 'timeout' | 'unauthorized' | 'timeout-after-create' | 'timeout-after-create-always' | 'timeout-once' | 'internal-error';
 /**
  * Lot 9 bis (H7, T14) : conflict = 409 du transfert (interrompu, issue incertaine) ; insufficient = 400 « Solde
  * insuffisant » (code INSUFFICIENT_BALANCE, rien n'est débité) ; limits = 400 hors des limites du compte (code
@@ -147,6 +149,7 @@ export class FakeSamirPayGateway implements PaymentGateway {
         this.record('initDirectPayment', payload as unknown as Record<string, unknown>);
         if (this.initMode === 'unauthorized') throw new SamirPayError('UNAUTHORIZED', 'Clés refusées (simulation)', 401);
         if (this.initMode === 'timeout') throw new SamirPayError('UNCERTAIN', 'Délai dépassé (simulation)');
+        if (this.initMode === 'internal-error') throw providerError('UNCERTAIN', 'Erreur interne SamirPay, 500 (simulation)', 500, { code: 'INTERNAL_ERROR' });
         if (this.initMode === 'timeout-once') {
             this.initMode = 'success';
             throw new SamirPayError('UNCERTAIN', 'Délai dépassé une fois (simulation)');
