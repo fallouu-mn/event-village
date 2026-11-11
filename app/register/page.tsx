@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, Eye, EyeOff, LogIn, MessageSquareText, Pencil, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react';
+import { ArrowRight, ChevronDown, Eye, EyeOff, LogIn, MessageSquareText, Pencil, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -22,11 +22,17 @@ import { useAuth } from '@/components/providers/AuthProvider';
  *  1. Numéro : POST /api/auth/register/start envoie un code par SMS. Aucun compte n'est créé. Un numéro déjà
  *     inscrit (409 PHONE_ALREADY_REGISTERED) propose « Recevoir un code de connexion » (connexion).
  *  2. Code et profil : POST /api/auth/register vérifie et consomme le code AVANT de créer le compte (ACTIF,
- *     numéro vérifié). Prénom, nom, mot de passe (bouton « Afficher ») ; email et parrainage sous « Plus
- *     d'options ». Renvoi du code après le délai servi par le serveur (resend_after).
- * Puis connexion par signInWithPassword (email réel, sinon email technique `<numéro>@eventvillage.sn`) et
- * redirection vers ?redirect= (chemin interne seulement, jamais « //… »), conservé depuis la connexion.
- * Plus d'écran « Compte activé » ni de vérification séparée par code : deux écrans au lieu de trois.
+ *     numéro vérifié). Prénom, nom, mot de passe (bouton « Afficher »), puis l'adresse email, facultative mais
+ *     visible (lot 9 bis, G.47) ; le code de parrainage seul reste sous « Plus d'options ». Renvoi du code après le
+ *     délai servi par le serveur (resend_after).
+ * Puis connexion par signInWithPassword avec l'email du compte rendu par la route : l'adresse technique
+ * `<numéro>@eventvillage.sn` (lot 9 bis, R87 : l'adresse saisie attend sa vérification dans users.email_pending et
+ * n'est jamais identifiant de connexion avant), et redirection vers ?redirect= (chemin interne seulement, jamais
+ * « //… »), conservé depuis la connexion.
+ * Adresse saisie : la page ne redirige pas tout de suite, elle dit le sort du lien de vérification (envoyé, valable
+ * 24 heures ; non parti ; envoi des emails indisponible) et propose « Continuer », pour que la personne sache où
+ * chercher le lien. Refus qui nomme un champ (adresse réservée ou invalide, code de parrainage inconnu, R86) : message
+ * sous le champ, qui reçoit le focus ; le code SMS reste valable.
  */
 
 type Step = 'phone' | 'profile';
@@ -74,6 +80,34 @@ function codeOf(result: ApiResult): string | null {
     return typeof code === 'string' ? code : null;
 }
 
+/** Champs dont l'erreur est dite sous le champ (refus de validation ou de la route qui les nomment). */
+type FieldName = 'email' | 'referralCode';
+
+function fieldNameOf(value: unknown): FieldName | null {
+    return value === 'email' || value === 'referralCode' ? value : null;
+}
+
+/** Sort du lien de vérification de l'adresse saisie (contrat 4.6 : `email_verification` de la réponse). */
+interface EmailNotice {
+    tone: 'success' | 'warning';
+    title: string;
+    text: string;
+}
+
+function emailNoticeOf(state: unknown, address: string): EmailNotice {
+    if (state === 'SENT') {
+        return { tone: 'success', title: 'Vérifiez votre adresse email', text: `Un lien de vérification a été envoyé à ${address}. Il est valable 24 heures.` };
+    }
+    if (state === 'NOT_CONFIGURED') {
+        return {
+            tone: 'warning',
+            title: 'Adresse enregistrée, non vérifiée',
+            text: 'L’envoi des emails n’est pas encore disponible. Votre adresse est enregistrée : vous pourrez la vérifier plus tard.',
+        };
+    }
+    return { tone: 'warning', title: 'Adresse enregistrée, non vérifiée', text: 'Le lien n’a pas pu être envoyé. Renvoyez-le depuis votre profil.' };
+}
+
 export default function RegisterPage() {
     const { refreshProfile } = useAuth();
 
@@ -97,8 +131,15 @@ export default function RegisterPage() {
     const [infoMessage, setInfoMessage] = useState<string | null>(null);
     const [alreadyRegistered, setAlreadyRegistered] = useState(false);
     const [signInFailed, setSignInFailed] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldName, string>>>({});
+    const [emailNotice, setEmailNotice] = useState<EmailNotice | null>(null);
+    const [created, setCreated] = useState(false);
 
     const firstNameRef = useRef<HTMLInputElement | null>(null);
+    const emailRef = useRef<HTMLInputElement | null>(null);
+    const referralRef = useRef<HTMLInputElement | null>(null);
+    /** Champ à focaliser après le rendu (le champ du parrainage n'existe qu'une fois les options ouvertes). */
+    const [focusField, setFocusField] = useState<FieldName | null>(null);
 
     // ?redirect= conservé depuis la connexion (D61) et ?ref= du lien de parrainage (A2), lus dans le navigateur
     // seulement. « Plus d'options » s'ouvre pour que le code prérempli reste visible et modifiable.
@@ -122,6 +163,35 @@ export default function RegisterPage() {
     useEffect(() => {
         if (step === 'profile') firstNameRef.current?.focus();
     }, [step]);
+
+    useEffect(() => {
+        if (!focusField) return;
+        (focusField === 'email' ? emailRef : referralRef).current?.focus();
+        setFocusField(null);
+    }, [focusField]);
+
+    // Compte créé avec une adresse : le formulaire disparaît, le focus va sur « Continuer », juste après le message du
+    // lien (annoncé par son bandeau).
+    useEffect(() => {
+        if (created) document.getElementById('inscription-continuer')?.focus();
+    }, [created]);
+
+    /** Erreur d'un champ effacée dès qu'il est modifié. */
+    const clearFieldError = (field: FieldName) => {
+        setFieldErrors((current) => {
+            if (!current[field]) return current;
+            const next = { ...current };
+            delete next[field];
+            return next;
+        });
+    };
+
+    /** Erreur dite sous son champ ; le code de parrainage ouvre d'abord « Plus d'options ». */
+    const showFieldError = (field: FieldName, message: string) => {
+        setFieldErrors({ [field]: message });
+        if (field === 'referralCode') setMoreOptions(true);
+        setFocusField(field);
+    };
 
     const loginHref = redirectTo ? `/login?redirect=${encodeURIComponent(redirectTo)}` : '/login';
 
@@ -171,6 +241,8 @@ export default function RegisterPage() {
         setErrorMessage(null);
         setCodeError(null);
         setSignInFailed(false);
+        setFieldErrors({});
+        setEmailNotice(null);
 
         if (!/^\d{6}$/.test(otpCode)) {
             setCodeError('Saisissez le code à 6 chiffres reçu par SMS.');
@@ -187,7 +259,11 @@ export default function RegisterPage() {
         };
         const parsed = RegisterWithCodeSchema.safeParse(payload);
         if (!parsed.success) {
-            setErrorMessage(parsed.error.errors[0]?.message ?? 'Vérifiez les informations saisies.');
+            const issue = parsed.error.errors[0];
+            const message = issue?.message ?? 'Vérifiez les informations saisies.';
+            const field = fieldNameOf(issue?.path[0]);
+            if (field) showFieldError(field, message);
+            else setErrorMessage(message);
             return;
         }
 
@@ -197,8 +273,12 @@ export default function RegisterPage() {
             if (!result.ok) {
                 const code = codeOf(result);
                 const message = messageOf(result, `Le compte n’a pas pu être créé (erreur ${result.status}).`);
+                const field = fieldNameOf(result.body?.field);
                 if (code === 'INVALID_CODE' || code === 'CODE_EXPIRED' || code === 'TOO_MANY_ATTEMPTS' || code === 'REGISTRATION_CODE_REQUIRED') {
                     setCodeError(code === 'TOO_MANY_ATTEMPTS' ? `${message} Demandez un nouveau code.` : message);
+                } else if (field) {
+                    // R86 (REFERRAL_CODE_UNKNOWN) et adresse refusée (INVALID_FIELD) : sous le champ ; le code SMS reste valable.
+                    showFieldError(field, message);
                 } else {
                     if (code === 'ACCOUNT_ALREADY_EXISTS') setAlreadyRegistered(true);
                     setErrorMessage(message);
@@ -206,10 +286,14 @@ export default function RegisterPage() {
                 return;
             }
 
-            // Compte créé (numéro vérifié) : ouverture de la session avec l'email du compte.
+            // Compte créé (numéro vérifié) : ouverture de la session avec l'email du compte, l'adresse technique tant
+            // que l'adresse saisie n'est pas vérifiée (R87).
             const accountEmail = typeof result.body?.email === 'string' && result.body.email
                 ? result.body.email
-                : (email.trim().toLowerCase() || `${confirmedPhone.replace('+', '')}@eventvillage.sn`);
+                : `${confirmedPhone.replace('+', '')}@eventvillage.sn`;
+            const pendingEmail = typeof result.body?.email_pending === 'string' && result.body.email_pending ? result.body.email_pending : null;
+            const notice = pendingEmail ? emailNoticeOf(result.body?.email_verification, pendingEmail) : null;
+            setEmailNotice(notice);
             const supabase = getBrowserClient();
             const { error: signInError } = await supabase.auth.signInWithPassword({ email: accountEmail, password });
             if (signInError) {
@@ -218,6 +302,11 @@ export default function RegisterPage() {
                 return;
             }
             await refreshProfile();
+            if (notice) {
+                // Le message du lien reste lisible : la personne continue quand elle l'a lu.
+                setCreated(true);
+                return;
+            }
             window.location.href = redirectTo ?? '/';
         } catch (err) {
             console.error('[RegisterPage] création du compte impossible :', err);
@@ -246,7 +335,9 @@ export default function RegisterPage() {
                     title="Créer un compte"
                     description={step === 'phone'
                         ? 'Commencez par votre numéro : nous vous envoyons un code par SMS pour le vérifier.'
-                        : 'Saisissez le code reçu, puis vos informations : votre compte est créé dès que le code est vérifié.'}
+                        : created
+                            ? 'Votre compte est créé et votre numéro est vérifié.'
+                            : 'Saisissez le code reçu, puis vos informations : votre compte est créé dès que le code est vérifié.'}
                     className="pb-0 sm:pb-0"
                 />
 
@@ -291,8 +382,34 @@ export default function RegisterPage() {
                         </StatusBanner>
                     )}
 
-                    {infoMessage && step === 'profile' && !signInFailed && (
+                    {signInFailed && emailNotice && (
+                        <StatusBanner tone={emailNotice.tone} title={emailNotice.title}>
+                            {emailNotice.text}
+                        </StatusBanner>
+                    )}
+
+                    {infoMessage && step === 'profile' && !signInFailed && !created && (
                         <StatusBanner tone="success" icon={<ShieldCheck size={20} />} title={infoMessage} />
+                    )}
+
+                    {/* Compte créé avec une adresse : sort du lien de vérification, puis « Continuer » (G.47, R87). */}
+                    {created && emailNotice && (
+                        <div className="space-y-4">
+                            <StatusBanner tone={emailNotice.tone} title={emailNotice.title}>
+                                {emailNotice.text}
+                            </StatusBanner>
+                            <Button
+                                id="inscription-continuer"
+                                type="button"
+                                variant="primary"
+                                size="lg"
+                                fullWidth
+                                onClick={() => { window.location.href = redirectTo ?? '/'; }}
+                                rightIcon={<ArrowRight size={18} />}
+                            >
+                                Continuer
+                            </Button>
+                        </div>
                     )}
 
                     {/* ÉTAPE 1 : numéro */}
@@ -334,7 +451,7 @@ export default function RegisterPage() {
                     )}
 
                     {/* ÉTAPE 2 : code reçu et profil */}
-                    {step === 'profile' && (
+                    {step === 'profile' && !created && (
                         <form noValidate onSubmit={handleCreateAccount} className="space-y-5">
                             <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-surface-sunken px-4 py-2">
                                 <p className="text-sm text-fg">
@@ -427,6 +544,25 @@ export default function RegisterPage() {
                                 <PasswordStrengthChecklist password={password} id="inscription-mot-de-passe-criteres" />
                             </div>
 
+                            {/* Lot 9 bis (G.47) : l'email reste facultatif mais n'est plus caché sous « Plus d'options ». */}
+                            <TextInput
+                                ref={emailRef}
+                                id="inscription-email"
+                                label="Adresse email (facultative)"
+                                type="email"
+                                inputMode="email"
+                                autoComplete="email"
+                                maxLength={254}
+                                value={email}
+                                onChange={(e) => {
+                                    setEmail(e.target.value);
+                                    clearFieldError('email');
+                                }}
+                                placeholder="client@domaine.com"
+                                hint="Recommandé : recevez vos billets et confirmations par email"
+                                error={fieldErrors.email}
+                            />
+
                             <div className="rounded-2xl border border-border">
                                 <button
                                     type="button"
@@ -435,28 +571,23 @@ export default function RegisterPage() {
                                     onClick={() => setMoreOptions((v) => !v)}
                                     className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl px-4 text-left text-sm font-semibold text-fg transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
-                                    <span>Plus d’options : email, code de parrainage</span>
+                                    <span>Plus d’options : code de parrainage</span>
                                     <ChevronDown size={18} aria-hidden="true" className={cn('shrink-0 transition-transform motion-reduce:transition-none', moreOptions && 'rotate-180')} />
                                 </button>
                                 {moreOptions && (
                                     <div id="inscription-options" className="space-y-4 border-t border-border p-4">
                                         <TextInput
-                                            id="inscription-email"
-                                            label="Adresse email (facultative)"
-                                            type="email"
-                                            autoComplete="email"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="client@domaine.com"
-                                            hint="Pour recevoir vos confirmations d’achat par email."
-                                        />
-                                        <TextInput
+                                            ref={referralRef}
                                             id="inscription-parrainage"
                                             label="Code de parrainage (facultatif)"
                                             value={referralCode}
-                                            onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                                            onChange={(e) => {
+                                                setReferralCode(e.target.value.toUpperCase());
+                                                clearFieldError('referralCode');
+                                            }}
                                             placeholder="ex : EV-AMB-1234"
                                             autoComplete="off"
+                                            error={fieldErrors.referralCode}
                                         />
                                     </div>
                                 )}
@@ -476,15 +607,17 @@ export default function RegisterPage() {
                         </form>
                     )}
 
-                    <p className="flex flex-wrap items-center justify-center gap-x-1.5 border-t border-border pt-4 text-sm text-fg-muted">
-                        <span>Déjà un compte ?</span>
-                        <Link
-                            href={loginHref}
-                            className="inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                            Se connecter
-                        </Link>
-                    </p>
+                    {!created && (
+                        <p className="flex flex-wrap items-center justify-center gap-x-1.5 border-t border-border pt-4 text-sm text-fg-muted">
+                            <span>Déjà un compte ?</span>
+                            <Link
+                                href={loginHref}
+                                className="inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                                Se connecter
+                            </Link>
+                        </p>
+                    )}
                 </div>
             </div>
         </div>
