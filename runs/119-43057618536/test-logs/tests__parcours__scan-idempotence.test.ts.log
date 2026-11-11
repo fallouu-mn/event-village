@@ -1,0 +1,131 @@
+TAP version 13
+# Subtest: 7.2 — Idempotency-Key obligatoire sur POST /api/controller/scan (D39)
+    # Subtest: sans en-tête, clé trop courte (« a »), clé de 101 caractères ou à caractères interdits → 400 IDEMPOTENCY_KEY_REQUIRED, aucun effet
+    ok 1 - sans en-tête, clé trop courte (« a »), clé de 101 caractères ou à caractères interdits → 400 IDEMPOTENCY_KEY_REQUIRED, aucun effet
+      ---
+      duration_ms: 226.458383
+      type: 'test'
+      ...
+    1..1
+ok 1 - 7.2 — Idempotency-Key obligatoire sur POST /api/controller/scan (D39)
+  ---
+  duration_ms: 612.10428
+  type: 'suite'
+  ...
+# Subtest: 7.2 — rejeu d’un scan par sa clé (D40, M5 étape 1 bis)
+    # Subtest: même clé deux fois (réponse perdue) : second `valid`, `replayed: true`, même scan_id, une seule ligne, aucune ligne already_used
+    ok 1 - même clé deux fois (réponse perdue) : second `valid`, `replayed: true`, même scan_id, une seule ligne, aucune ligne already_used
+      ---
+      duration_ms: 178.607633
+      type: 'test'
+      ...
+    # Subtest: même clé après expiration du code : verdict d’origine (valid, replayed), aucune nouvelle ligne
+    ok 2 - même clé après expiration du code : verdict d’origine (valid, replayed), aucune nouvelle ligne
+      ---
+      duration_ms: 179.011192
+      type: 'test'
+      ...
+    # Subtest: deux envois simultanés de la même clé : une seule ligne, réponses identiques (valid, même scan_id)
+    ok 3 - deux envois simultanés de la même clé : une seule ligne, réponses identiques (valid, même scan_id)
+      ---
+      duration_ms: 165.115758
+      type: 'test'
+      ...
+    # Subtest: clés différentes, même code : valid puis already_used avec ticket.checked_in_by_me = true et checked_in_at
+    ok 4 - clés différentes, même code : valid puis already_used avec ticket.checked_in_by_me = true et checked_in_at
+      ---
+      duration_ms: 180.463325
+      type: 'test'
+      ...
+    # Subtest: même clé, autre scanneur : nouveau scan (already_used, pas un rejeu, checked_in_by_me = false), ligne du second scanneur avec la clé
+    ok 5 - même clé, autre scanneur : nouveau scan (already_used, pas un rejeu, checked_in_by_me = false), ligne du second scanneur avec la clé
+      ---
+      duration_ms: 309.364314
+      type: 'test'
+      ...
+    1..5
+ok 2 - 7.2 — rejeu d’un scan par sa clé (D40, M5 étape 1 bis)
+  ---
+  duration_ms: 1013.128185
+  type: 'suite'
+  ...
+# Subtest: 7.2 — jamais deux entrées pour une relance (V)
+    # Subtest: 5 relances de la même clé (en parallèle) puis 5 clés différentes (en parallèle) : une seule entrée acceptée par billet, aucune erreur serveur
+    ok 1 - 5 relances de la même clé (en parallèle) puis 5 clés différentes (en parallèle) : une seule entrée acceptée par billet, aucune erreur serveur
+      ---
+      duration_ms: 258.679704
+      type: 'test'
+      ...
+    1..1
+ok 3 - 7.2 — jamais deux entrées pour une relance (V)
+  ---
+  duration_ms: 258.944072
+  type: 'suite'
+  ...
+# Subtest: 7.2 — ticket_scans.client_key et secret_version écrits (M5)
+    # Subtest: scan accepté : client_key = clé de l’en-tête, secret_version = version courante du secret du billet ; refus qr_expired : clé écrite aussi
+    ok 1 - scan accepté : client_key = clé de l’en-tête, secret_version = version courante du secret du billet ; refus qr_expired : clé écrite aussi
+      ---
+      duration_ms: 204.563719
+      type: 'test'
+      ...
+    1..1
+ok 4 - 7.2 — ticket_scans.client_key et secret_version écrits (M5)
+  ---
+  duration_ms: 204.785613
+  type: 'suite'
+  ...
+[INVARIANT] scan-idempotence — avant purge (held = réservations ACTIVE) : 1 violation(s)
+[INVARIANT]   (b) df4808fb-09a1-4c12-a78b-1c2f47039b3b : billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)
+[INVARIANT] scan-idempotence — purge des réservations échues : {"expired":0}
+[INVARIANT] scan-idempotence — après purge (held = réservations non échues) : 1 violation(s)
+[INVARIANT]   (b) df4808fb-09a1-4c12-a78b-1c2f47039b3b : billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)
+not ok 5 - /home/runner/work/event-village/event-village/tests/parcours/scan-idempotence.test.ts
+  ---
+  duration_ms: 45.148106
+  location: '/home/runner/work/event-village/event-village/tests/parcours/scan-idempotence.test.ts:2:1777'
+  failureType: 'hookFailed'
+  error: |-
+    invariant violé avant purge :
+    (b) df4808fb-09a1-4c12-a78b-1c2f47039b3b : billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)',
+    +     objet: 'df4808fb-09a1-4c12-a78b-1c2f47039b3b',
+    +     regle: 'b'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'b'
+      objet: 'df4808fb-09a1-4c12-a78b-1c2f47039b3b'
+      detail: 'billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertPaymentInvariants (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:79:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertFinanceInvariants (/home/runner/work/event-village/event-village/tests/helpers/finance-invariants.ts:105:5)
+    async assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:67:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async assertNotificationInvariants (/home/runner/work/event-village/event-village/tests/helpers/notification-invariants.ts:214:5)
+    async assertTerrainInvariants (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:151:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/scan-idempotence.test.ts:51:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+  ...
+1..4
+# tests 8
+# suites 4
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2145.076401

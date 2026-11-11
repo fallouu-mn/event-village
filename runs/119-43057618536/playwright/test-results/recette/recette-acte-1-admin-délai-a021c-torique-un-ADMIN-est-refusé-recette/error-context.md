@@ -1,0 +1,1099 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: recette.spec.ts >> acte 1 [admin] : délai de garde coupé à l’écran, motif exigé, historique ; un ADMIN est refusé
+- Location: e2e/recette.spec.ts:285:5
+
+# Error details
+
+```
+Error: [e2e] état de connexion absent pour le rôle « administrateur (démonstration, events.read et events.write) » (.auth/admin.json) : la phase de connexion (e2e/auth.setup.ts) a échoué pour ce rôle.
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "Event Village, accueil" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e11]:
+          - generic [ref=e12]: EVENT
+          - generic [ref=e13]: VILLAGE
+      - navigation "Navigation principale" [ref=e14]:
+        - generic [ref=e15]: Administration
+        - link "Tableau de bord" [ref=e20] [cursor=pointer]:
+          - /url: /admin/dashboard
+        - generic [ref=e27]:
+          - paragraph [ref=e28]: Gestion
+          - generic [ref=e29]:
+            - link "Événements" [ref=e30] [cursor=pointer]:
+              - /url: /admin/events
+            - link "Utilisateurs" [ref=e34] [cursor=pointer]:
+              - /url: /admin/users
+            - link "Catalogues et services" [ref=e41] [cursor=pointer]:
+              - /url: /admin/services
+        - generic [ref=e47]:
+          - paragraph [ref=e48]: Finances
+          - generic [ref=e49]:
+            - link "Finance" [ref=e50] [cursor=pointer]:
+              - /url: /admin/finance
+            - link "Tarification" [ref=e54] [cursor=pointer]:
+              - /url: /admin/pricing
+        - generic [ref=e57]:
+          - paragraph [ref=e58]: Engagement
+          - generic [ref=e59]:
+            - link "Parrainage" [ref=e60] [cursor=pointer]:
+              - /url: /admin/referral
+            - link "Communications" [ref=e65] [cursor=pointer]:
+              - /url: /admin/communications
+        - generic [ref=e70]:
+          - paragraph [ref=e71]: Système
+          - generic [ref=e72]:
+            - link "Journal d’audit" [ref=e73] [cursor=pointer]:
+              - /url: /admin/audit
+            - link "Notifications" [ref=e78] [cursor=pointer]:
+              - /url: /admin/notifications
+            - link "Scanner" [ref=e85] [cursor=pointer]:
+              - /url: /scan
+        - link "Retour au site" [ref=e94] [cursor=pointer]:
+          - /url: /
+      - generic [ref=e99]:
+        - link "Elhadji SuperAdmin Super administrateur" [ref=e100] [cursor=pointer]:
+          - /url: /profile
+          - generic [aria-hidden] [ref=e101]: ES
+          - generic [ref=e102]:
+            - generic [ref=e103]: Elhadji SuperAdmin
+            - generic [ref=e104]: Super administrateur
+        - generic [ref=e105]:
+          - button "Se déconnecter" [ref=e106] [cursor=pointer]
+          - button "Basculer le thème" [ref=e111] [cursor=pointer]
+    - generic [ref=e115]:
+      - banner [ref=e116]:
+        - link "Rechercher un événement, un concert, un restaurant…" [ref=e118] [cursor=pointer]:
+          - /url: /explore
+        - button "Notifications, 2 non lues" [ref=e125] [cursor=pointer]:
+          - generic [ref=e129]: "2"
+      - main [ref=e130]:
+        - generic [ref=e132]:
+          - generic [ref=e133]:
+            - link "Administration" [ref=e135] [cursor=pointer]:
+              - /url: /admin
+            - generic [ref=e140]:
+              - generic [ref=e141]:
+                - heading "Réglages de la plateforme" [level=1] [ref=e142]
+                - paragraph [ref=e143]: Chaque modification est historisée et ne s’applique qu’aux opérations futures. Modification réservée aux superadministrateurs.
+              - button "Actualiser" [ref=e145] [cursor=pointer]
+          - region [ref=e153]:
+            - generic [ref=e154]:
+              - heading "Finance" [level=2] [ref=e155]
+              - paragraph [ref=e159]: Frais, délais de disponibilité des ventes, retraits et commissions.
+            - list [ref=e160]:
+              - listitem [ref=e161]:
+                - generic [ref=e162]:
+                  - generic [ref=e163]:
+                    - paragraph [ref=e164]: Frais de service
+                    - paragraph [ref=e165]: Payés par l’acheteur, arrondis au FCFA supérieur par billet. De 0 à 50 %.
+                    - paragraph [ref=e166]:
+                      - text: Modifié le
+                      - time [ref=e167]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e168]:
+                    - generic [ref=e169]: 5 %
+                    - button "Modifier Frais de service" [ref=e170] [cursor=pointer]:
+                      - generic [ref=e175]: Modifier
+              - listitem [ref=e176]:
+                - generic [ref=e177]:
+                  - generic [ref=e178]:
+                    - paragraph [ref=e179]: Frais agrégateur Wave
+                    - paragraph [ref=e180]: Coût SamirPay d’un paiement Wave. De 0 à 10 %.
+                    - paragraph [ref=e181]:
+                      - text: Modifié le
+                      - time [ref=e182]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e183]:
+                    - generic [ref=e184]: 1,5 %
+                    - button "Modifier Frais agrégateur Wave" [ref=e185] [cursor=pointer]:
+                      - generic [ref=e190]: Modifier
+              - listitem [ref=e191]:
+                - generic [ref=e192]:
+                  - generic [ref=e193]:
+                    - paragraph [ref=e194]: Frais agrégateur Orange Money
+                    - paragraph [ref=e195]: Coût SamirPay d’un paiement Orange Money. De 0 à 10 %.
+                    - paragraph [ref=e196]:
+                      - text: Modifié le
+                      - time [ref=e197]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e198]:
+                    - generic [ref=e199]: 1,5 %
+                    - button "Modifier Frais agrégateur Orange Money" [ref=e200] [cursor=pointer]:
+                      - generic [ref=e205]: Modifier
+              - listitem [ref=e206]:
+                - generic [ref=e207]:
+                  - generic [ref=e208]:
+                    - paragraph [ref=e209]: Frais agrégateur d’une annulation
+                    - paragraph [ref=e210]: Qui supporte les frais agrégateur quand un billet est remboursé.
+                    - paragraph [ref=e211]:
+                      - text: Modifié le
+                      - time [ref=e212]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e213]:
+                    - generic [ref=e214]: Event Village
+                    - button "Modifier Frais agrégateur d’une annulation" [ref=e215] [cursor=pointer]:
+                      - generic [ref=e220]: Modifier
+              - listitem [ref=e221]:
+                - generic [ref=e222]:
+                  - generic [ref=e223]:
+                    - paragraph [ref=e224]: Délai de garde des ventes
+                    - paragraph [ref=e225]: "Désactivé : les ventes sont disponibles dès la confirmation du paiement."
+                    - paragraph [ref=e226]:
+                      - text: Modifié le
+                      - time [ref=e227]: mer. 11 nov. 2026 à 17:02
+                  - generic [ref=e228]:
+                    - generic [ref=e229]: Désactivé
+                    - button "Modifier Délai de garde des ventes" [ref=e230] [cursor=pointer]:
+                      - generic [ref=e235]: Modifier
+              - listitem [ref=e236]:
+                - generic [ref=e237]:
+                  - generic [ref=e238]:
+                    - paragraph [ref=e239]: Délai après la fin de l’événement
+                    - paragraph [ref=e240]: Nombre d’heures avant que les ventes deviennent disponibles. De 0 à 720.
+                    - paragraph [ref=e241]:
+                      - text: Modifié le
+                      - time [ref=e242]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e243]:
+                    - generic [ref=e244]: 48 h
+                    - button "Modifier Délai après la fin de l’événement" [ref=e245] [cursor=pointer]:
+                      - generic [ref=e250]: Modifier
+              - listitem [ref=e251]:
+                - generic [ref=e252]:
+                  - generic [ref=e253]:
+                    - paragraph [ref=e254]: Frais de retrait
+                    - paragraph [ref=e255]: Arrondis au FCFA supérieur, déduits du montant versé. De 0 à 10 %.
+                    - paragraph [ref=e256]:
+                      - text: Modifié le
+                      - time [ref=e257]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e258]:
+                    - generic [ref=e259]: 1 %
+                    - button "Modifier Frais de retrait" [ref=e260] [cursor=pointer]:
+                      - generic [ref=e265]: Modifier
+              - listitem [ref=e266]:
+                - generic [ref=e267]:
+                  - generic [ref=e268]:
+                    - paragraph [ref=e269]: Montant minimum de retrait
+                    - paragraph [ref=e270]: Montant entier en FCFA.
+                    - paragraph [ref=e271]:
+                      - text: Modifié le
+                      - time [ref=e272]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e273]:
+                    - generic [ref=e274]: 5 000 FCFA
+                    - button "Modifier Montant minimum de retrait" [ref=e275] [cursor=pointer]:
+                      - generic [ref=e280]: Modifier
+              - listitem [ref=e281]:
+                - generic [ref=e282]:
+                  - generic [ref=e283]:
+                    - paragraph [ref=e284]: Retraits par virement bancaire
+                    - paragraph [ref=e285]: Tant qu’il est désactivé, seuls Wave et Orange Money sont proposés.
+                    - paragraph [ref=e286]:
+                      - text: Modifié le
+                      - time [ref=e287]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e288]:
+                    - generic [ref=e289]: Désactivé
+                    - button "Modifier Retraits par virement bancaire" [ref=e290] [cursor=pointer]:
+                      - generic [ref=e295]: Modifier
+              - listitem [ref=e296]:
+                - generic [ref=e297]:
+                  - generic [ref=e298]:
+                    - paragraph [ref=e299]: Délai de validation des commissions
+                    - paragraph [ref=e300]: Jours avant qu’une commission de parrainage devienne disponible. De 7 à 14.
+                    - paragraph [ref=e301]:
+                      - text: Modifié le
+                      - time [ref=e302]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e303]:
+                    - generic [ref=e304]: 7 jours
+                    - button "Modifier Délai de validation des commissions" [ref=e305] [cursor=pointer]:
+                      - generic [ref=e310]: Modifier
+              - listitem [ref=e311]:
+                - generic [ref=e312]:
+                  - generic [ref=e313]:
+                    - paragraph [ref=e314]: Réglage sans libellé
+                    - paragraph [ref=e315]:
+                      - text: Modifié le
+                      - time [ref=e316]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e317]:
+                    - generic [ref=e318]: "100"
+                    - button "Modifier Réglage sans libellé" [ref=e319] [cursor=pointer]:
+                      - generic [ref=e324]: Modifier
+              - listitem [ref=e325]:
+                - generic [ref=e326]:
+                  - generic [ref=e327]:
+                    - paragraph [ref=e328]: Réglage sans libellé
+                    - paragraph [ref=e329]:
+                      - text: Modifié le
+                      - time [ref=e330]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e331]:
+                    - generic [ref=e332]: "10"
+                    - button "Modifier Réglage sans libellé" [ref=e333] [cursor=pointer]:
+                      - generic [ref=e338]: Modifier
+          - region [ref=e339]:
+            - generic [ref=e340]:
+              - heading "Contrôle d’accès" [level=2] [ref=e341]
+              - paragraph [ref=e347]: Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet et seuil de stock affiché au public.
+            - list [ref=e348]:
+              - listitem [ref=e349]:
+                - generic [ref=e350]:
+                  - generic [ref=e351]:
+                    - paragraph [ref=e352]: Ouverture du contrôle avant le début
+                    - paragraph [ref=e353]: Heures avant le début de l’événement à partir desquelles les billets peuvent être scannés. De 0 à 48.
+                    - paragraph [ref=e354]:
+                      - text: Modifié le
+                      - time [ref=e355]: mer. 11 nov. 2026 à 17:02
+                  - generic [ref=e356]:
+                    - generic [ref=e357]: 24 h
+                    - button "Modifier Ouverture du contrôle avant le début" [ref=e358] [cursor=pointer]:
+                      - generic [ref=e363]: Modifier
+              - listitem [ref=e364]:
+                - generic [ref=e365]:
+                  - generic [ref=e366]:
+                    - paragraph [ref=e367]: Fermeture du contrôle après la fin
+                    - paragraph [ref=e368]: Heures après la fin de l’événement pendant lesquelles les billets peuvent encore être scannés. De 0 à 48.
+                    - paragraph [ref=e369]:
+                      - text: Modifié le
+                      - time [ref=e370]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e371]:
+                    - generic [ref=e372]: 6 h
+                    - button "Modifier Fermeture du contrôle après la fin" [ref=e373] [cursor=pointer]:
+                      - generic [ref=e378]: Modifier
+              - listitem [ref=e379]:
+                - generic [ref=e380]:
+                  - generic [ref=e381]:
+                    - paragraph [ref=e382]: Saisie manuelle d’un numéro de billet
+                    - paragraph [ref=e383]: Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.
+                    - paragraph [ref=e384]:
+                      - text: Modifié le
+                      - time [ref=e385]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e386]:
+                    - generic [ref=e387]: Contrôleur affecté seul
+                    - button "Modifier Saisie manuelle d’un numéro de billet" [ref=e388] [cursor=pointer]:
+                      - generic [ref=e393]: Modifier
+              - listitem [ref=e394]:
+                - generic [ref=e395]:
+                  - generic [ref=e396]:
+                    - paragraph [ref=e397]: Vente au guichet en espèces
+                    - paragraph [ref=e398]: Un contrôleur autorisé à encaisser, avec une caisse ouverte, vend des billets au prix facial, sans frais.
+                    - paragraph [ref=e399]:
+                      - text: Modifié le
+                      - time [ref=e400]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e401]:
+                    - generic [ref=e402]: Activé
+                    - button "Modifier Vente au guichet en espèces" [ref=e403] [cursor=pointer]:
+                      - generic [ref=e408]: Modifier
+              - listitem [ref=e409]:
+                - generic [ref=e410]:
+                  - generic [ref=e411]:
+                    - paragraph [ref=e412]: Seuil « bientôt complet »
+                    - paragraph [ref=e413]: Quand il reste ce nombre de places ou moins dans une catégorie, la page publique affiche le restant ; au-delà, seulement « disponible ». Entier de 1 à 1000.
+                    - paragraph [ref=e414]:
+                      - text: Modifié le
+                      - time [ref=e415]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e416]:
+                    - generic [ref=e417]: 10 places
+                    - button "Modifier Seuil « bientôt complet »" [ref=e418] [cursor=pointer]:
+                      - generic [ref=e423]: Modifier
+          - region [ref=e424]:
+            - generic [ref=e425]:
+              - heading "Notifications" [level=2] [ref=e426]
+              - paragraph [ref=e430]: Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels et rappels des billets gratuits.
+            - list [ref=e431]:
+              - listitem [ref=e432]:
+                - generic [ref=e433]:
+                  - generic [ref=e434]:
+                    - paragraph [ref=e435]: Rappel la veille
+                    - paragraph [ref=e436]: Rappel envoyé la veille du début aux porteurs d’un billet valable de l’événement en ligne.
+                    - paragraph [ref=e437]:
+                      - text: Modifié le
+                      - time [ref=e438]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e439]:
+                    - generic [ref=e440]: Activé
+                    - button "Modifier Rappel la veille" [ref=e441] [cursor=pointer]:
+                      - generic [ref=e446]: Modifier
+              - listitem [ref=e447]:
+                - generic [ref=e448]:
+                  - generic [ref=e449]:
+                    - paragraph [ref=e450]: Heure du rappel de la veille
+                    - paragraph [ref=e451]: Heure de Dakar à laquelle part le rappel de la veille. De 6 à 20.
+                    - paragraph [ref=e452]:
+                      - text: Modifié le
+                      - time [ref=e453]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e454]:
+                    - generic [ref=e455]: 10 h
+                    - button "Modifier Heure du rappel de la veille" [ref=e456] [cursor=pointer]:
+                      - generic [ref=e461]: Modifier
+              - listitem [ref=e462]:
+                - generic [ref=e463]:
+                  - generic [ref=e464]:
+                    - paragraph [ref=e465]: Rappel avant le début
+                    - paragraph [ref=e466]: Rappel envoyé quelques heures avant le début, avec le conseil d’ouvrir son billet avant d’arriver.
+                    - paragraph [ref=e467]:
+                      - text: Modifié le
+                      - time [ref=e468]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e469]:
+                    - generic [ref=e470]: Activé
+                    - button "Modifier Rappel avant le début" [ref=e471] [cursor=pointer]:
+                      - generic [ref=e476]: Modifier
+              - listitem [ref=e477]:
+                - generic [ref=e478]:
+                  - generic [ref=e479]:
+                    - paragraph [ref=e480]: Heures avant le début
+                    - paragraph [ref=e481]: Nombre d’heures entre le rappel et le début de l’événement. De 1 à 12.
+                    - paragraph [ref=e482]:
+                      - text: Modifié le
+                      - time [ref=e483]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e484]:
+                    - generic [ref=e485]: 3 h
+                    - button "Modifier Heures avant le début" [ref=e486] [cursor=pointer]:
+                      - generic [ref=e491]: Modifier
+              - listitem [ref=e492]:
+                - generic [ref=e493]:
+                  - generic [ref=e494]:
+                    - paragraph [ref=e495]: SMS du rappel de la veille
+                    - paragraph [ref=e496]: Envoi du SMS en plus de l’application et des notifications push.
+                    - paragraph [ref=e497]:
+                      - text: Modifié le
+                      - time [ref=e498]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e499]:
+                    - generic [ref=e500]: Toujours
+                    - button "Modifier SMS du rappel de la veille" [ref=e501] [cursor=pointer]:
+                      - generic [ref=e506]: Modifier
+              - listitem [ref=e507]:
+                - generic [ref=e508]:
+                  - generic [ref=e509]:
+                    - paragraph [ref=e510]: SMS du rappel avant le début
+                    - paragraph [ref=e511]: Envoi du SMS en plus de l’application et des notifications push.
+                    - paragraph [ref=e512]:
+                      - text: Modifié le
+                      - time [ref=e513]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e514]:
+                    - generic [ref=e515]: Seulement sans notification push
+                    - button "Modifier SMS du rappel avant le début" [ref=e516] [cursor=pointer]:
+                      - generic [ref=e521]: Modifier
+              - listitem [ref=e522]:
+                - generic [ref=e523]:
+                  - generic [ref=e524]:
+                    - paragraph [ref=e525]: Début de la plage sans SMS
+                    - paragraph [ref=e526]: Heure de Dakar à partir de laquelle aucun SMS optionnel ne part ; le rappel passe alors par les autres canaux. De 0 à 23.
+                    - paragraph [ref=e527]:
+                      - text: Modifié le
+                      - time [ref=e528]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e529]:
+                    - generic [ref=e530]: 22 h
+                    - button "Modifier Début de la plage sans SMS" [ref=e531] [cursor=pointer]:
+                      - generic [ref=e536]: Modifier
+              - listitem [ref=e537]:
+                - generic [ref=e538]:
+                  - generic [ref=e539]:
+                    - paragraph [ref=e540]: Fin de la plage sans SMS
+                    - paragraph [ref=e541]: Heure de Dakar de fin de la plage. Un début égal à la fin supprime la plage. De 0 à 23.
+                    - paragraph [ref=e542]:
+                      - text: Modifié le
+                      - time [ref=e543]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e544]:
+                    - generic [ref=e545]: 8 h
+                    - button "Modifier Fin de la plage sans SMS" [ref=e546] [cursor=pointer]:
+                      - generic [ref=e551]: Modifier
+              - listitem [ref=e552]:
+                - generic [ref=e553]:
+                  - generic [ref=e554]:
+                    - paragraph [ref=e555]: Plafond quotidien des SMS optionnels
+                    - paragraph [ref=e556]: "Nombre maximal de SMS optionnels (rappels, annonces, signaux aux professionnels) envoyés par jour de Dakar ; au-delà, ils partent sans SMS, par l’application et les notifications push. Les SMS indispensables (achat, transfert, annulation, remboursement, sécurité du compte) ne sont jamais plafonnés. Les administrateurs sont alertés à 80 %. De 0 à 1 000 000 ; 0 : aucun SMS optionnel."
+                    - paragraph [ref=e557]:
+                      - text: Modifié le
+                      - time [ref=e558]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e559]:
+                    - generic [ref=e560]: 700 SMS
+                    - button "Modifier Plafond quotidien des SMS optionnels" [ref=e561] [cursor=pointer]:
+                      - generic [ref=e566]: Modifier
+              - listitem [ref=e567]:
+                - generic [ref=e568]:
+                  - generic [ref=e569]:
+                    - paragraph [ref=e570]: SMS des rappels pour les billets gratuits
+                    - paragraph [ref=e571]: Pour un porteur qui ne détient que des billets gratuits ou des invitations de l’événement. Les rappels arrivent toujours dans l’application et en notification push.
+                    - paragraph [ref=e572]:
+                      - text: Modifié le
+                      - time [ref=e573]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e574]:
+                    - generic [ref=e575]: Jamais
+                    - button "Modifier SMS des rappels pour les billets gratuits" [ref=e576] [cursor=pointer]:
+                      - generic [ref=e581]: Modifier
+              - listitem [ref=e582]:
+                - generic [ref=e583]:
+                  - generic [ref=e584]:
+                    - paragraph [ref=e585]: Réglage sans libellé
+                    - paragraph [ref=e586]:
+                      - text: Modifié le
+                      - time [ref=e587]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e588]:
+                    - generic [ref=e589]: 2 000
+                    - button "Modifier Réglage sans libellé" [ref=e590] [cursor=pointer]:
+                      - generic [ref=e595]: Modifier
+          - region [ref=e596]:
+            - generic [ref=e597]:
+              - heading "Fonctionnalités" [level=2] [ref=e598]
+              - paragraph [ref=e602]: Services proposés en plus de la billetterie. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires.
+            - list [ref=e603]:
+              - listitem [ref=e604]:
+                - generic [ref=e605]:
+                  - generic [ref=e606]:
+                    - paragraph [ref=e607]: Salles de fête
+                    - paragraph [ref=e608]: "Réservation de salles par les clients et gestion des salles par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent."
+                    - paragraph [ref=e609]:
+                      - text: Modifié le
+                      - time [ref=e610]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e611]:
+                    - generic [ref=e612]: Désactivé
+                    - button "Modifier Salles de fête" [ref=e613] [cursor=pointer]:
+                      - generic [ref=e618]: Modifier
+              - listitem [ref=e619]:
+                - generic [ref=e620]:
+                  - generic [ref=e621]:
+                    - paragraph [ref=e622]: Réservation de tables
+                    - paragraph [ref=e623]: "Réservation de tables dans les restaurants et gestion des tables par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent."
+                    - paragraph [ref=e624]:
+                      - text: Modifié le
+                      - time [ref=e625]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e626]:
+                    - generic [ref=e627]: Désactivé
+                    - button "Modifier Réservation de tables" [ref=e628] [cursor=pointer]:
+                      - generic [ref=e633]: Modifier
+              - listitem [ref=e634]:
+                - generic [ref=e635]:
+                  - generic [ref=e636]:
+                    - paragraph [ref=e637]: Commandes de repas
+                    - paragraph [ref=e638]: "Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés."
+                    - paragraph [ref=e639]:
+                      - text: Modifié le
+                      - time [ref=e640]: mer. 11 nov. 2026 à 16:54
+                  - generic [ref=e641]:
+                    - generic [ref=e642]: Désactivé
+                    - button "Modifier Commandes de repas" [ref=e643] [cursor=pointer]:
+                      - generic [ref=e648]: Modifier
+          - region [ref=e649]:
+            - heading "Historique des modifications" [level=2] [ref=e650]
+            - list [ref=e655]:
+              - listitem [ref=e656]:
+                - paragraph [ref=e657]: Ouverture du contrôle avant le début
+                - paragraph [ref=e658]:
+                  - text: 6 h →
+                  - generic [ref=e659]: devient
+                  - text: 24 h
+                - paragraph [ref=e660]:
+                  - time [ref=e661]: mer. 11 nov. 2026 à 17:02
+                  - text: "· Recette 17.02.40 : contrôle ouvert la veille"
+              - listitem [ref=e662]:
+                - paragraph [ref=e663]: Délai de garde des ventes
+                - paragraph [ref=e664]:
+                  - text: Activé →
+                  - generic [ref=e665]: devient
+                  - text: Désactivé
+                - paragraph [ref=e666]:
+                  - time [ref=e667]: mer. 11 nov. 2026 à 17:02
+                  - text: "· Recette 17.02.40 : fonds disponibles dès le paiement"
+              - listitem [ref=e668]:
+                - paragraph [ref=e669]: Ouverture du contrôle avant le début
+                - paragraph [ref=e670]:
+                  - text: 24 h →
+                  - generic [ref=e671]: devient
+                  - text: 6 h
+                - paragraph [ref=e672]:
+                  - time [ref=e673]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e674]:
+                - paragraph [ref=e675]: Ouverture du contrôle avant le début
+                - paragraph [ref=e676]:
+                  - text: 6 h →
+                  - generic [ref=e677]: devient
+                  - text: 24 h
+                - paragraph [ref=e678]:
+                  - time [ref=e679]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : ecart de caisse"
+              - listitem [ref=e680]:
+                - paragraph [ref=e681]: Ouverture du contrôle avant le début
+                - paragraph [ref=e682]:
+                  - text: 24 h →
+                  - generic [ref=e683]: devient
+                  - text: 6 h
+                - paragraph [ref=e684]:
+                  - time [ref=e685]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e686]:
+                - paragraph [ref=e687]: Ouverture du contrôle avant le début
+                - paragraph [ref=e688]:
+                  - text: 6 h →
+                  - generic [ref=e689]: devient
+                  - text: 24 h
+                - paragraph [ref=e690]:
+                  - time [ref=e691]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : renvoi seulement"
+              - listitem [ref=e692]:
+                - paragraph [ref=e693]: Ouverture du contrôle avant le début
+                - paragraph [ref=e694]:
+                  - text: 24 h →
+                  - generic [ref=e695]: devient
+                  - text: 6 h
+                - paragraph [ref=e696]:
+                  - time [ref=e697]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e698]:
+                - paragraph [ref=e699]: Ouverture du contrôle avant le début
+                - paragraph [ref=e700]:
+                  - text: 6 h →
+                  - generic [ref=e701]: devient
+                  - text: 24 h
+                - paragraph [ref=e702]:
+                  - time [ref=e703]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : taille du lot"
+              - listitem [ref=e704]:
+                - paragraph [ref=e705]: Ouverture du contrôle avant le début
+                - paragraph [ref=e706]:
+                  - text: 24 h →
+                  - generic [ref=e707]: devient
+                  - text: 6 h
+                - paragraph [ref=e708]:
+                  - time [ref=e709]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e710]:
+                - paragraph [ref=e711]: Ouverture du contrôle avant le début
+                - paragraph [ref=e712]:
+                  - text: 6 h →
+                  - generic [ref=e713]: devient
+                  - text: 24 h
+                - paragraph [ref=e714]:
+                  - time [ref=e715]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : plein ecran"
+              - listitem [ref=e716]:
+                - paragraph [ref=e717]: Ouverture du contrôle avant le début
+                - paragraph [ref=e718]:
+                  - text: 24 h →
+                  - generic [ref=e719]: devient
+                  - text: 6 h
+                - paragraph [ref=e720]:
+                  - time [ref=e721]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e722]:
+                - paragraph [ref=e723]: Ouverture du contrôle avant le début
+                - paragraph [ref=e724]:
+                  - text: 6 h →
+                  - generic [ref=e725]: devient
+                  - text: 24 h
+                - paragraph [ref=e726]:
+                  - time [ref=e727]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : barre achat"
+              - listitem [ref=e728]:
+                - paragraph [ref=e729]: Ouverture du contrôle avant le début
+                - paragraph [ref=e730]:
+                  - text: 24 h →
+                  - generic [ref=e731]: devient
+                  - text: 6 h
+                - paragraph [ref=e732]:
+                  - time [ref=e733]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e734]:
+                - paragraph [ref=e735]: Ouverture du contrôle avant le début
+                - paragraph [ref=e736]:
+                  - text: 6 h →
+                  - generic [ref=e737]: devient
+                  - text: 24 h
+                - paragraph [ref=e738]:
+                  - time [ref=e739]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : reprise de session"
+              - listitem [ref=e740]:
+                - paragraph [ref=e741]: Ouverture du contrôle avant le début
+                - paragraph [ref=e742]:
+                  - text: 24 h →
+                  - generic [ref=e743]: devient
+                  - text: 6 h
+                - paragraph [ref=e744]:
+                  - time [ref=e745]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e746]:
+                - paragraph [ref=e747]: Ouverture du contrôle avant le début
+                - paragraph [ref=e748]:
+                  - text: 6 h →
+                  - generic [ref=e749]: devient
+                  - text: 24 h
+                - paragraph [ref=e750]:
+                  - time [ref=e751]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : camera en arriere-plan"
+              - listitem [ref=e752]:
+                - paragraph [ref=e753]: Ouverture du contrôle avant le début
+                - paragraph [ref=e754]:
+                  - text: 24 h →
+                  - generic [ref=e755]: devient
+                  - text: 6 h
+                - paragraph [ref=e756]:
+                  - time [ref=e757]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e758]:
+                - paragraph [ref=e759]: Ouverture du contrôle avant le début
+                - paragraph [ref=e760]:
+                  - text: 6 h →
+                  - generic [ref=e761]: devient
+                  - text: 24 h
+                - paragraph [ref=e762]:
+                  - time [ref=e763]: mer. 11 nov. 2026 à 17:01
+                  - text: "· projet e2e terrain (lot 7) : vibrations"
+              - listitem [ref=e764]:
+                - paragraph [ref=e765]: Ouverture du contrôle avant le début
+                - paragraph [ref=e766]:
+                  - text: 24 h →
+                  - generic [ref=e767]: devient
+                  - text: 6 h
+                - paragraph [ref=e768]:
+                  - time [ref=e769]: mer. 11 nov. 2026 à 17:01
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e770]:
+                - paragraph [ref=e771]: Ouverture du contrôle avant le début
+                - paragraph [ref=e772]:
+                  - text: 6 h →
+                  - generic [ref=e773]: devient
+                  - text: 24 h
+                - paragraph [ref=e774]:
+                  - time [ref=e775]: mer. 11 nov. 2026 à 16:59
+                  - text: "· projet e2e terrain (lot 7) : mesure du scan"
+              - listitem [ref=e776]:
+                - paragraph [ref=e777]: Ouverture du contrôle avant le début
+                - paragraph [ref=e778]:
+                  - text: 24 h →
+                  - generic [ref=e779]: devient
+                  - text: 6 h
+                - paragraph [ref=e780]:
+                  - time [ref=e781]: mer. 11 nov. 2026 à 16:59
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e782]:
+                - paragraph [ref=e783]: Ouverture du contrôle avant le début
+                - paragraph [ref=e784]:
+                  - text: 6 h →
+                  - generic [ref=e785]: devient
+                  - text: 24 h
+                - paragraph [ref=e786]:
+                  - time [ref=e787]: mer. 11 nov. 2026 à 16:59
+                  - text: "· projet e2e terrain (lot 7) : idempotence"
+              - listitem [ref=e788]:
+                - paragraph [ref=e789]: Ouverture du contrôle avant le début
+                - paragraph [ref=e790]:
+                  - text: 24 h →
+                  - generic [ref=e791]: devient
+                  - text: 6 h
+                - paragraph [ref=e792]:
+                  - time [ref=e793]: mer. 11 nov. 2026 à 16:59
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e794]:
+                - paragraph [ref=e795]: Ouverture du contrôle avant le début
+                - paragraph [ref=e796]:
+                  - text: 6 h →
+                  - generic [ref=e797]: devient
+                  - text: 24 h
+                - paragraph [ref=e798]:
+                  - time [ref=e799]: mer. 11 nov. 2026 à 16:59
+                  - text: "· projet e2e terrain (lot 7) : cache sans api"
+              - listitem [ref=e800]:
+                - paragraph [ref=e801]: Ouverture du contrôle avant le début
+                - paragraph [ref=e802]:
+                  - text: 24 h →
+                  - generic [ref=e803]: devient
+                  - text: 6 h
+                - paragraph [ref=e804]:
+                  - time [ref=e805]: mer. 11 nov. 2026 à 16:59
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e806]:
+                - paragraph [ref=e807]: Ouverture du contrôle avant le début
+                - paragraph [ref=e808]:
+                  - text: 6 h →
+                  - generic [ref=e809]: devient
+                  - text: 24 h
+                - paragraph [ref=e810]:
+                  - time [ref=e811]: mer. 11 nov. 2026 à 16:59
+                  - text: "· projet e2e terrain (lot 7) : écart -5 min"
+              - listitem [ref=e812]:
+                - paragraph [ref=e813]: Ouverture du contrôle avant le début
+                - paragraph [ref=e814]:
+                  - text: 24 h →
+                  - generic [ref=e815]: devient
+                  - text: 6 h
+                - paragraph [ref=e816]:
+                  - time [ref=e817]: mer. 11 nov. 2026 à 16:59
+                  - text: · restauration après le projet e2e terrain (lot 7)
+              - listitem [ref=e818]:
+                - paragraph [ref=e819]: Ouverture du contrôle avant le début
+                - paragraph [ref=e820]:
+                  - text: 6 h →
+                  - generic [ref=e821]: devient
+                  - text: 24 h
+                - paragraph [ref=e822]:
+                  - time [ref=e823]: mer. 11 nov. 2026 à 16:59
+                  - text: "· projet e2e terrain (lot 7) : écart +5 min"
+              - listitem [ref=e824]:
+                - paragraph [ref=e825]: Réglage retiré ou sans libellé
+                - paragraph [ref=e826]:
+                  - text: — →
+                  - generic [ref=e827]: devient
+                  - text: "10"
+                - paragraph [ref=e828]:
+                  - time [ref=e829]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e830]:
+                - paragraph [ref=e831]: Réglage retiré ou sans libellé
+                - paragraph [ref=e832]:
+                  - text: — →
+                  - generic [ref=e833]: devient
+                  - text: "100"
+                - paragraph [ref=e834]:
+                  - time [ref=e835]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e836]:
+                - paragraph [ref=e837]: Réglage retiré ou sans libellé
+                - paragraph [ref=e838]:
+                  - text: — →
+                  - generic [ref=e839]: devient
+                  - text: 2 000
+                - paragraph [ref=e840]:
+                  - time [ref=e841]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e842]:
+                - paragraph [ref=e843]: Salles de fête
+                - paragraph [ref=e844]:
+                  - text: — →
+                  - generic [ref=e845]: devient
+                  - text: Désactivé
+                - paragraph [ref=e846]:
+                  - time [ref=e847]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e848]:
+                - paragraph [ref=e849]: SMS des rappels pour les billets gratuits
+                - paragraph [ref=e850]:
+                  - text: — →
+                  - generic [ref=e851]: devient
+                  - text: Jamais
+                - paragraph [ref=e852]:
+                  - time [ref=e853]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e854]:
+                - paragraph [ref=e855]: Plafond quotidien des SMS optionnels
+                - paragraph [ref=e856]:
+                  - text: — →
+                  - generic [ref=e857]: devient
+                  - text: 700 SMS
+                - paragraph [ref=e858]:
+                  - time [ref=e859]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e860]:
+                - paragraph [ref=e861]: Commandes de repas
+                - paragraph [ref=e862]:
+                  - text: — →
+                  - generic [ref=e863]: devient
+                  - text: Désactivé
+                - paragraph [ref=e864]:
+                  - time [ref=e865]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e866]:
+                - paragraph [ref=e867]: Réservation de tables
+                - paragraph [ref=e868]:
+                  - text: — →
+                  - generic [ref=e869]: devient
+                  - text: Désactivé
+                - paragraph [ref=e870]:
+                  - time [ref=e871]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e872]:
+                - paragraph [ref=e873]: Réglage retiré ou sans libellé
+                - paragraph [ref=e874]:
+                  - text: 2 000 →
+                  - generic [ref=e875]: devient
+                  - text: —
+                - paragraph [ref=e876]:
+                  - time [ref=e877]: mer. 11 nov. 2026 à 16:54
+                  - text: · suppression
+              - listitem [ref=e878]:
+                - paragraph [ref=e879]: Heures avant le début
+                - paragraph [ref=e880]:
+                  - text: — →
+                  - generic [ref=e881]: devient
+                  - text: 3 h
+                - paragraph [ref=e882]:
+                  - time [ref=e883]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e884]:
+                - paragraph [ref=e885]: Rappel avant le début
+                - paragraph [ref=e886]:
+                  - text: — →
+                  - generic [ref=e887]: devient
+                  - text: Activé
+                - paragraph [ref=e888]:
+                  - time [ref=e889]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e890]:
+                - paragraph [ref=e891]: Heure du rappel de la veille
+                - paragraph [ref=e892]:
+                  - text: — →
+                  - generic [ref=e893]: devient
+                  - text: 10 h
+                - paragraph [ref=e894]:
+                  - time [ref=e895]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e896]:
+                - paragraph [ref=e897]: Rappel la veille
+                - paragraph [ref=e898]:
+                  - text: — →
+                  - generic [ref=e899]: devient
+                  - text: Activé
+                - paragraph [ref=e900]:
+                  - time [ref=e901]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e902]:
+                - paragraph [ref=e903]: Réglage retiré ou sans libellé
+                - paragraph [ref=e904]:
+                  - text: — →
+                  - generic [ref=e905]: devient
+                  - text: 2 000
+                - paragraph [ref=e906]:
+                  - time [ref=e907]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e908]:
+                - paragraph [ref=e909]: Fin de la plage sans SMS
+                - paragraph [ref=e910]:
+                  - text: — →
+                  - generic [ref=e911]: devient
+                  - text: 8 h
+                - paragraph [ref=e912]:
+                  - time [ref=e913]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e914]:
+                - paragraph [ref=e915]: Début de la plage sans SMS
+                - paragraph [ref=e916]:
+                  - text: — →
+                  - generic [ref=e917]: devient
+                  - text: 22 h
+                - paragraph [ref=e918]:
+                  - time [ref=e919]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e920]:
+                - paragraph [ref=e921]: SMS du rappel avant le début
+                - paragraph [ref=e922]:
+                  - text: — →
+                  - generic [ref=e923]: devient
+                  - text: Seulement sans notification push
+                - paragraph [ref=e924]:
+                  - time [ref=e925]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e926]:
+                - paragraph [ref=e927]: SMS du rappel de la veille
+                - paragraph [ref=e928]:
+                  - text: — →
+                  - generic [ref=e929]: devient
+                  - text: Toujours
+                - paragraph [ref=e930]:
+                  - time [ref=e931]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e932]:
+                - paragraph [ref=e933]: Seuil « bientôt complet »
+                - paragraph [ref=e934]:
+                  - text: — →
+                  - generic [ref=e935]: devient
+                  - text: 10 places
+                - paragraph [ref=e936]:
+                  - time [ref=e937]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e938]:
+                - paragraph [ref=e939]: Ouverture du contrôle avant le début
+                - paragraph [ref=e940]:
+                  - text: — →
+                  - generic [ref=e941]: devient
+                  - text: 6 h
+                - paragraph [ref=e942]:
+                  - time [ref=e943]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e944]:
+                - paragraph [ref=e945]: Vente au guichet en espèces
+                - paragraph [ref=e946]:
+                  - text: — →
+                  - generic [ref=e947]: devient
+                  - text: Activé
+                - paragraph [ref=e948]:
+                  - time [ref=e949]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e950]:
+                - paragraph [ref=e951]: Fermeture du contrôle après la fin
+                - paragraph [ref=e952]:
+                  - text: — →
+                  - generic [ref=e953]: devient
+                  - text: 6 h
+                - paragraph [ref=e954]:
+                  - time [ref=e955]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e956]:
+                - paragraph [ref=e957]: Saisie manuelle d’un numéro de billet
+                - paragraph [ref=e958]:
+                  - text: — →
+                  - generic [ref=e959]: devient
+                  - text: Contrôleur affecté seul
+                - paragraph [ref=e960]:
+                  - time [ref=e961]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e962]:
+                - paragraph [ref=e963]: Frais de service
+                - paragraph [ref=e964]:
+                  - text: — →
+                  - generic [ref=e965]: devient
+                  - text: 5 %
+                - paragraph [ref=e966]:
+                  - time [ref=e967]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e968]:
+                - paragraph [ref=e969]: Frais agrégateur Wave
+                - paragraph [ref=e970]:
+                  - text: — →
+                  - generic [ref=e971]: devient
+                  - text: 1,5 %
+                - paragraph [ref=e972]:
+                  - time [ref=e973]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e974]:
+                - paragraph [ref=e975]: Délai de validation des commissions
+                - paragraph [ref=e976]:
+                  - text: — →
+                  - generic [ref=e977]: devient
+                  - text: 7 jours
+                - paragraph [ref=e978]:
+                  - time [ref=e979]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e980]:
+                - paragraph [ref=e981]: Retraits par virement bancaire
+                - paragraph [ref=e982]:
+                  - text: — →
+                  - generic [ref=e983]: devient
+                  - text: Désactivé
+                - paragraph [ref=e984]:
+                  - time [ref=e985]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e986]:
+                - paragraph [ref=e987]: Montant minimum de retrait
+                - paragraph [ref=e988]:
+                  - text: — →
+                  - generic [ref=e989]: devient
+                  - text: 5 000 FCFA
+                - paragraph [ref=e990]:
+                  - time [ref=e991]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e992]:
+                - paragraph [ref=e993]: Frais de retrait
+                - paragraph [ref=e994]:
+                  - text: — →
+                  - generic [ref=e995]: devient
+                  - text: 1 %
+                - paragraph [ref=e996]:
+                  - time [ref=e997]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e998]:
+                - paragraph [ref=e999]: Délai après la fin de l’événement
+                - paragraph [ref=e1000]:
+                  - text: — →
+                  - generic [ref=e1001]: devient
+                  - text: 48 h
+                - paragraph [ref=e1002]:
+                  - time [ref=e1003]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e1004]:
+                - paragraph [ref=e1005]: Délai de garde des ventes
+                - paragraph [ref=e1006]:
+                  - text: — →
+                  - generic [ref=e1007]: devient
+                  - text: Activé
+                - paragraph [ref=e1008]:
+                  - time [ref=e1009]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e1010]:
+                - paragraph [ref=e1011]: Frais agrégateur d’une annulation
+                - paragraph [ref=e1012]:
+                  - text: — →
+                  - generic [ref=e1013]: devient
+                  - text: Event Village
+                - paragraph [ref=e1014]:
+                  - time [ref=e1015]: mer. 11 nov. 2026 à 16:54
+              - listitem [ref=e1016]:
+                - paragraph [ref=e1017]: Frais agrégateur Orange Money
+                - paragraph [ref=e1018]:
+                  - text: — →
+                  - generic [ref=e1019]: devient
+                  - text: 1,5 %
+                - paragraph [ref=e1020]:
+                  - time [ref=e1021]: mer. 11 nov. 2026 à 16:54
+  - generic:
+    - status [ref=e1022]:
+      - generic [ref=e1027]:
+        - paragraph [ref=e1028]: Succès
+        - paragraph [ref=e1029]: Réglage « Délai de garde des ventes » enregistré. Il s’applique aux prochaines opérations.
+      - button "Fermer le message" [ref=e1030] [cursor=pointer]
+    - status [ref=e1035]:
+      - generic [ref=e1040]:
+        - paragraph [ref=e1041]: Succès
+        - paragraph [ref=e1042]: Réglage « Ouverture du contrôle avant le début » enregistré. Il s’applique aux prochaines opérations.
+      - button "Fermer le message" [ref=e1043] [cursor=pointer]
+  - alert [ref=e1048]
+```
+
+# Test source
+
+```ts
+  1  | /**
+  2  |  * Lot 5.1 — comptes utilisés par Playwright et leur état de connexion (storageState dans `.auth/`).
+  3  |  *  - comptes de démonstration (seed:demo) : captures d'écran ;
+  4  |  *  - comptes du seed de test (seed:test) : test de fumée, indépendant des données de démonstration ;
+  5  |  *    lot 7 (D80) : second client et contrôleur A, pour le projet terrain et la fumée prolongée ;
+  6  |  *  - lot 7 (vague F, E5) : partenaire « premiers pas » du seed de démonstration (VALIDE, aucun événement), pour
+  7  |  *    la capture de la première utilisation.
+  8  |  * Le mot de passe vient des constantes de fixtures (aucun mot de passe littéral, cf.
+  9  |  * tests/schema/secrets-codes-en-dur.test.ts).
+  10 |  */
+  11 | import fs from 'node:fs';
+  12 | import path from 'node:path';
+  13 | import { FIXTURE_USERS, TEST_PASSWORD } from '../../tests/helpers/fixture-data';
+  14 | import { readDemoIds, type DemoAccountKey } from './demo-ids';
+  15 | 
+  16 | export { TEST_PASSWORD };
+  17 | 
+  18 | export const AUTH_DIR = path.resolve(process.cwd(), '.auth');
+  19 | 
+  20 | export type RoleKey =
+  21 |     | 'organisateur' | 'admin' | 'client' | 'controleur' | 'partenaire-premiers-pas'
+  22 |     | 'fumee-organisateur' | 'fumee-superadmin' | 'fumee-client'
+  23 |     | 'fumee-client-bis' | 'fumee-controleur';
+  24 | 
+  25 | export interface RoleSpec {
+  26 |     key: RoleKey;
+  27 |     libelle: string;
+  28 |     source: 'demonstration' | 'fixtures';
+  29 |     /** Page d'arrivée attendue après la connexion (redirection par rôle). */
+  30 |     arrivee: RegExp;
+  31 |     email: () => string;
+  32 | }
+  33 | 
+  34 | function demoEmail(key: DemoAccountKey): () => string {
+  35 |     return () => readDemoIds().accounts[key].email;
+  36 | }
+  37 | 
+  38 | export const ROLES: readonly RoleSpec[] = [
+  39 |     { key: 'organisateur', libelle: 'organisateur (démonstration)', source: 'demonstration', arrivee: /\/partner(\/|$)/, email: demoEmail('organisateur') },
+  40 |     { key: 'admin', libelle: 'administrateur (démonstration, events.read et events.write)', source: 'demonstration', arrivee: /\/admin(\/|$)/, email: demoEmail('admin') },
+  41 |     { key: 'client', libelle: 'client (démonstration)', source: 'demonstration', arrivee: /^\/$/, email: demoEmail('client') },
+  42 |     { key: 'controleur', libelle: 'contrôleur (démonstration)', source: 'demonstration', arrivee: /\/controller\/scanner/, email: demoEmail('controleur') },
+  43 |     { key: 'partenaire-premiers-pas', libelle: 'partenaire « premiers pas » (démonstration, aucun événement)', source: 'demonstration', arrivee: /\/partner(\/|$)/, email: demoEmail('partenaireNeuf') },
+  44 |     { key: 'fumee-organisateur', libelle: 'organisateur A (seed de test)', source: 'fixtures', arrivee: /\/partner(\/|$)/, email: () => FIXTURE_USERS.PARTNER_A.email },
+  45 |     { key: 'fumee-superadmin', libelle: 'superadmin (seed de test)', source: 'fixtures', arrivee: /\/admin(\/|$)/, email: () => FIXTURE_USERS.SUPERADMIN.email },
+  46 |     { key: 'fumee-client', libelle: 'client (seed de test)', source: 'fixtures', arrivee: /^\/$/, email: () => FIXTURE_USERS.CLIENT.email },
+  47 |     // Lot 7 (décision D80) : destinataire du transfert de la fumée prolongée et porteur des billets mesurés du
+  48 |     // projet terrain (CLIENT_BIS) ; contrôleur des projets terrain et de la fumée prolongée (CONTROLLER_A).
+  49 |     { key: 'fumee-client-bis', libelle: 'second client (seed de test)', source: 'fixtures', arrivee: /^\/$/, email: () => FIXTURE_USERS.CLIENT_BIS.email },
+  50 |     { key: 'fumee-controleur', libelle: 'contrôleur A (seed de test)', source: 'fixtures', arrivee: /\/controller\/scanner/, email: () => FIXTURE_USERS.CONTROLLER_A.email },
+  51 | ];
+  52 | 
+  53 | export function roleSpec(key: RoleKey): RoleSpec {
+  54 |     const spec = ROLES.find((r) => r.key === key);
+  55 |     if (!spec) throw new Error(`[e2e] rôle inconnu : ${key}`);
+  56 |     return spec;
+  57 | }
+  58 | 
+  59 | export function storageStatePath(key: RoleKey): string {
+  60 |     return path.join(AUTH_DIR, `${key}.json`);
+  61 | }
+  62 | 
+  63 | /** Chemin de l'état de connexion ; erreur explicite si la connexion du rôle n'a pas abouti. */
+  64 | export function requireStorageState(key: RoleKey): string {
+  65 |     const file = storageStatePath(key);
+  66 |     if (!fs.existsSync(file)) {
+> 67 |         throw new Error(
+     |               ^ Error: [e2e] état de connexion absent pour le rôle « administrateur (démonstration, events.read et events.write) » (.auth/admin.json) : la phase de connexion (e2e/auth.setup.ts) a échoué pour ce rôle.
+  68 |             `[e2e] état de connexion absent pour le rôle « ${roleSpec(key).libelle} » (${path.relative(process.cwd(), file)}) : ` +
+  69 |             'la phase de connexion (e2e/auth.setup.ts) a échoué pour ce rôle.',
+  70 |         );
+  71 |     }
+  72 |     return file;
+  73 | }
+  74 | 
+  75 | /** Numéro de paiement (9 chiffres SamirPay) du client de la fumée : son numéro de compte du seed de test. */
+  76 | export function fumeePayerPhone(): string {
+  77 |     return FIXTURE_USERS.CLIENT.phone.replace(/^\+221/, '');
+  78 | }
+  79 | 
+```

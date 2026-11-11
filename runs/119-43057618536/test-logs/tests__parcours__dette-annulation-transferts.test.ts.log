@@ -1,0 +1,104 @@
+TAP version 13
+# Subtest: 6.0 c — event_cancel : transferts PENDING annulés et billets déverrouillés dans sa transaction
+    # Subtest: PUBLIE → ANNULE : transfert CANCELLED, billet déverrouillé, même transaction ; le transfert d’un autre événement reste PENDING
+    ok 1 - PUBLIE → ANNULE : transfert CANCELLED, billet déverrouillé, même transaction ; le transfert d’un autre événement reste PENDING
+      ---
+      duration_ms: 450.403803
+      type: 'test'
+      ...
+    # Subtest: tout ou rien : un échec au déverrouillage annule toute l’annulation (transaction annulée)
+    ok 2 - tout ou rien : un échec au déverrouillage annule toute l’annulation (transaction annulée)
+      ---
+      duration_ms: 230.849283
+      type: 'test'
+      ...
+    # Subtest: variante SUSPENDU → ANNULE : transfert CANCELLED, billet déverrouillé, même transaction
+    not ok 3 - variante SUSPENDU → ANNULE : transfert CANCELLED, billet déverrouillé, même transaction
+      ---
+      duration_ms: 201.775421
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/dette-annulation-transferts.test.ts:14:943'
+      failureType: 'testCodeFailure'
+      error: |-
+        advanceEventTo(9abaa28f-2c2f-4a4e-96dc-acaac0db9227, ANNULE) : étape SUSPENDU → ANNULE (event_cancel, acteur PARTENAIRE b5abe6ad-64d2-47ae-aaea-0a004c4fae36) refusé : {"ok":false,"code":"TRANSITION_NOT_ALLOWED","message":"Un événement « Suspendu » ne peut pas être annulé."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        assertRpcOk (/home/runner/work/event-village/event-village/tests/parcours/cycle-helpers.ts:51:12)
+        advanceEventTo (/home/runner/work/event-village/event-village/tests/parcours/cycle-helpers.ts:392:33)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/dette-annulation-transferts.test.ts:237:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: réclamation après l’annulation par la route POST /api/tickets/transfers/[id]/claim → 409 TRANSFER_NOT_PENDING, billet resté au porteur
+    ok 4 - réclamation après l’annulation par la route POST /api/tickets/transfers/[id]/claim → 409 TRANSFER_NOT_PENDING, billet resté au porteur
+      ---
+      duration_ms: 227.566117
+      type: 'test'
+      ...
+    1..4
+not ok 1 - 6.0 c — event_cancel : transferts PENDING annulés et billets déverrouillés dans sa transaction
+  ---
+  duration_ms: 1574.120034
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/dette-annulation-transferts.test.ts:11:1050'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 6.0 c — garde-fou : la vérification détecte une annulation qui ne révoque plus les transferts
+    # Subtest: copie de event_cancel sans les deux UPDATE (transaction annulée) : transfert resté PENDING et billet verrouillé relevés ; contre-épreuve hors transaction
+    not ok 1 - copie de event_cancel sans les deux UPDATE (transaction annulée) : transfert resté PENDING et billet verrouillé relevés ; contre-épreuve hors transaction
+      ---
+      duration_ms: 80.126752
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/dette-annulation-transferts.test.ts:14:3483'
+      failureType: 'testCodeFailure'
+      error: 'confirmPassword : HTTP 429 {"error":"Trop de tentatives. Réessayez dans quelques minutes.","code":"PASSWORD_CONFIRM_RATE_LIMITED","retryAfterSeconds":39} (attendu 200 { ok: true })'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        confirmPassword (/home/runner/work/event-village/event-village/tests/parcours/helpers.ts:236:15)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async pendingTransfer (/home/runner/work/event-village/event-village/tests/parcours/dette-annulation-transferts.test.ts:122:5)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/dette-annulation-transferts.test.ts:263:23)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 2 - 6.0 c — garde-fou : la vérification détecte une annulation qui ne révoque plus les transferts
+  ---
+  duration_ms: 80.291169
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/dette-annulation-transferts.test.ts:14:3342'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] dette-annulation-transferts — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] dette-annulation-transferts — purge des réservations échues : {"expired":0}
+[INVARIANT] dette-annulation-transferts — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] dette-annulation-transferts — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] dette-annulation-transferts — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] dette-annulation-transferts — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] dette-annulation-transferts — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] dette-annulation-transferts — envoyeur : 359 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] dette-annulation-transferts — (m)(n)(o) : 0 violation(s)
+1..2
+# tests 5
+# suites 2
+# pass 3
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2327.302027

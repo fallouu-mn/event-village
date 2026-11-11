@@ -1,0 +1,339 @@
+TAP version 13
+# Subtest: R85 — POST /api/account/password : refus sans effet
+    # Subtest: mauvais mot de passe actuel → 403 PASSWORD_INCORRECT « Mot de passe actuel incorrect. », mot de passe inchangé
+    ok 1 - mauvais mot de passe actuel → 403 PASSWORD_INCORRECT « Mot de passe actuel incorrect. », mot de passe inchangé
+      ---
+      duration_ms: 335.79984
+      type: 'test'
+      ...
+    # Subtest: nouveau mot de passe faible → 400, mot de passe inchangé
+    ok 2 - nouveau mot de passe faible → 400, mot de passe inchangé
+      ---
+      duration_ms: 263.689265
+      type: 'test'
+      ...
+    # Subtest: sans session → 401
+    ok 3 - sans session → 401
+      ---
+      duration_ms: 1.811909
+      type: 'test'
+      ...
+[requireActiveSession] accès refusé à /api/account/password : compte 064c3955-744e-4d76-9423-cd5547a2325d au statut SUSPENDU
+    # Subtest: compte suspendu → 403, mot de passe inchangé
+    ok 4 - compte suspendu → 403, mot de passe inchangé
+      ---
+      duration_ms: 206.863716
+      type: 'test'
+      ...
+    # Subtest: au-delà de 5 essais en 15 minutes → 429
+    ok 5 - au-delà de 5 essais en 15 minutes → 429
+      ---
+      duration_ms: 622.259827
+      type: 'test'
+      ...
+    1..5
+ok 1 - R85 — POST /api/account/password : refus sans effet
+  ---
+  duration_ms: 1431.378835
+  type: 'suite'
+  ...
+# Subtest: R85 — POST /api/account/password : succès
+    # Subtest: 200 ; nouveau valable, ancien refusé ; session courante gardée, autre révoquée, aucune de plus ; un PASSWORD_CHANGED par canal ; un audit
+    not ok 1 - 200 ; nouveau valable, ancien refusé ; session courante gardée, autre révoquée, aucune de plus ; un PASSWORD_CHANGED par canal ; un audit
+      ---
+      duration_ms: 364.054465
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:2:7861'
+      failureType: 'testCodeFailure'
+      error: |-
+        seule la session courante reste (autre révoquée, aucune session de vérification laissée)
+        + actual - expected
+        
+        + []
+        - [
+        -   'd2b7585e-5c90-43d5-9aa6-9abbff69b913'
+        - ]
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        0: 'd2b7585e-5c90-43d5-9aa6-9abbff69b913'
+      actual:
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:172:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 2 - R85 — POST /api/account/password : succès
+  ---
+  duration_ms: 364.218352
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:2:7778'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: R85 — écran du profil (statique)
+    # Subtest: ProfileForm ouvre PasswordChangeDialog depuis le bloc « Mot de passe »
+    not ok 1 - ProfileForm ouvre PasswordChangeDialog depuis le bloc « Mot de passe »
+      ---
+      duration_ms: 0.569027
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:2:10220'
+      failureType: 'testCodeFailure'
+      error: 'PasswordChangeDialog non importé'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useRef, useState } from 'react';
+        import { Save } from 'lucide-react';
+        import { useAuth, type UserProfile } from '@/components/providers/AuthProvider';
+        import { Button } from '@/components/ui/Button';
+        import { TextInput } from '@/components/ui/Field';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { useToast } from '@/components/ui/Toast';
+        import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
+        import { PhoneChangeDialog } from '@/components/profile/PhoneChangeDialog';
+        import { isDeliverableEmail } from '@/lib/notifications/channels';
+        import { AccountProfileSchema } from '@/lib/validations/account';
+        
+        /**
+         * Coordonnées du compte (lot 9, tâche 9.2, contrat 4.3 et 5.3) : prénom, nom et email par PATCH /api/account/profile,
+         * mêmes règles que la route (AccountProfileSchema), changement de numéro dans sa boîte de dialogue.
+         * L'adresse technique d'un compte inscrit par téléphone n'est jamais présentée comme son email : le champ reste vide.
+         */
+        
+        type FieldName = 'first_name' | 'last_name' | 'email';
+        
+        const FIELD_NAMES: FieldName[] = ['first_name', 'last_name', 'email'];
+        
+        /** Codes de la route qui concernent l'email saisi. */
+        const EMAIL_FIELD_CODES = new Set(['EMAIL_TAKEN', 'EMAIL_CONFLICT']);
+        
+        function isFieldName(value: unknown): value is FieldName {
+          return value === 'first_name' || value === 'last_name' || value === 'email';
+        }
+        
+        function fieldError(name: FieldName, value: string): string | null {
+          const parsed = AccountProfileSchema.shape[name].safeParse(value);
+          return parsed.success ? null : parsed.error.issues[0]?.message ?? 'Valeur invalide.';
+        }
+        
+        export function ProfileForm({ profile }: { profile: UserProfile }) {
+          const { refreshProfile } = useAuth();
+          const toast = useToast();
+          const [values, setValues] = useState<Record<FieldName, string>>({
+            first_name: profile.first_name ?? '',
+            last_name: profile.last_name ?? '',
+            email: isDeliverableEmail(profile.email) ? profile.email : '',
+          });
+          const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
+          const [failure, setFailure] = useState<string | null>(null);
+          const [isSaving, setIsSaving] = useState(false);
+          const [isPhoneDialogOpen, setIsPhoneDialogOpen] = useState(false);
+          const inputs = useRef<Partial<Record<FieldName, HTMLInputElement | null>>>({});
+        
+          const update = (name: FieldName, value: string) => {
+            setValues((current) => ({ ...current, [name]: value }));
+            setErrors((current) => (current[name] ? { ...current, [name]: undefined } : current));
+          };
+        
+          const validateOnBlur = (name: FieldName) => {
+            const message = fieldError(name, values[name]);
+            setErrors((current) => ({ ...current, [name]: message ?? undefined }));
+          };
+        
+          const submit = async (e: React.FormEvent) => {
+            e.preventDefault();
+            setFailure(null);
+            const found: Partial<Record<FieldName, string>> = {};
+            for (const name of FIELD_NAMES) {
+              const message = fieldError(name, values[name]);
+              if (message) found[name] = message;
+            }
+            setErrors(found);
+            const firstInvalid = FIELD_NAMES.find((name) => found[name]);
+            if (firstInvalid) {
+              inputs.current[firstInvalid]?.focus();
+              return;
+            }
+        
+            const payload = {
+              first_name: values.first_name.trim(),
+              last_name: values.last_name.trim(),
+              email: values.email.trim().toLowerCase(),
+            };
+            setIsSaving(true);
+            try {
+              await sendJson<{ ok: true; email_technical: boolean }>('/api/account/profile', 'PATCH', payload);
+              setValues(payload);
+              await refreshProfile();
+              toast.success('Profil enregistré.');
+            } catch (err) {
+              console.error('[ProfileForm] enregistrement refusé :', err instanceof Error ? err.message : String(err));
+              const message = errorMessage(err);
+              const field: FieldName | null = err instanceof ApiError
+                ? (err.code !== null && EMAIL_FIELD_CODES.has(err.code) ? 'email' : isFieldName(err.body?.field) ? err.body.field : null)
+                : null;
+              if (field) {
+                setErrors({ [field]: message });
+                inputs.current[field]?.focus();
+              } else {
+                setFailure(message);
+              }
+            } finally {
+              setIsSaving(false);
+            }
+          };
+        
+          const onPhoneChanged = () => {
+            void refreshProfile();
+            toast.success('Numéro modifié. Vos autres appareils ont été déconnectés.');
+          };
+        
+          return (
+            <section aria-labelledby="profil-informations" className="space-y-4 rounded-2xl border border-border bg-surface p-5">
+              <h2 id="profil-informations" className="text-base font-semibold text-fg">Mes informations</h2>
+        
+              <form noValidate onSubmit={(e) => void submit(e)} className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextInput
+                    ref={(el) => { inputs.current.first_name = el; }}
+                    label="Prénom"
+                    autoComplete="given-name"
+                    maxLength={80}
+                    value={values.first_name}
+                    onChange={(e) => update('first_name', e.target.value)}
+                    onBlur={() => validateOnBlur('first_name')}
+                    error={errors.first_name}
+                    disabled={isSaving}
+                  />
+                  <TextInput
+                    ref={(el) => { inputs.current.last_name = el; }}
+                    label="Nom"
+                    autoComplete="family-name"
+                    maxLength={80}
+                    value={values.last_name}
+                    onChange={(e) => update('last_name', e.target.value)}
+                    onBlur={() => validateOnBlur('last_name')}
+                    error={errors.last_name}
+                    disabled={isSaving}
+                  />
+                </div>
+                <TextInput
+                  ref={(el) => { inputs.current.email = el; }}
+                  label="Adresse email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  maxLength={254}
+                  value={values.email}
+                  onChange={(e) => update('email', e.target.value)}
+                  onBlur={() => validateOnBlur('email')}
+                  error={errors.email}
+                  disabled={isSaving}
+                  hint="Facultative. Laissez ce champ vide si vous n’en avez pas."
+                />
+                {failure && (
+                  <StatusBanner tone="danger" announce="alert" title="Enregistrement impossible">
+                    {failure}
+                  </StatusBanner>
+                )}
+                <Button type="submit" isLoading={isSaving} leftIcon={<Save size={18} aria-hidden="true" />}>
+                  Enregistrer le profil
+                </Button>
+              </form>
+        
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+                <div className="min-w-0 flex-1 basis-48">
+                  <p className="text-sm font-semibold text-fg">Numéro de téléphone</p>
+                  <p className="text-sm text-fg-muted">Un code envoyé au nouveau numéro confirme le changement.</p>
+                </div>
+                <Button type="button" variant="secondary" onClick={() => setIsPhoneDialogOpen(true)}>
+                  Changer de numéro
+                </Button>
+              </div>
+        
+              <PhoneChangeDialog isOpen={isPhoneDialogOpen} onClose={() => setIsPhoneDialogOpen(false)} onChanged={onPhoneChanged} />
+            </section>
+          );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:192:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: PasswordChangeDialog : trois champs, aide de robustesse, appel de POST /api/account/password
+    not ok 2 - PasswordChangeDialog : trois champs, aide de robustesse, appel de POST /api/account/password
+      ---
+      duration_ms: 0.234944
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:2:10922'
+      failureType: 'testCodeFailure'
+      error: 'components/profile/PasswordChangeDialog.tsx absent'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:199:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..2
+not ok 3 - R85 — écran du profil (statique)
+  ---
+  duration_ms: 1.037763
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/compte-mot-de-passe.test.ts:2:9969'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] compte-mot-de-passe — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] compte-mot-de-passe — purge des réservations échues : {"expired":0}
+[INVARIANT] compte-mot-de-passe — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] compte-mot-de-passe — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] compte-mot-de-passe — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] compte-mot-de-passe — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] compte-mot-de-passe — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] compte-mot-de-passe — envoyeur : 2 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] compte-mot-de-passe — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] compte-mot-de-passe — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] compte-mot-de-passe — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] compte-mot-de-passe — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] compte-mot-de-passe — (w) : 0 violation(s)
+1..3
+# tests 8
+# suites 3
+# pass 5
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2298.191555

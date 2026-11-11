@@ -1,0 +1,126 @@
+TAP version 13
+[webhook SamirPay] événement 5c8d15aa-1cd1-4bcf-a660-847c3154c843 : REJECTED_TOKEN (jeton absent)
+# Subtest: Webhook SamirPay
+    # Subtest: sans jeton : enregistré, 200, aucun billet, paiement toujours PENDING
+    ok 1 - sans jeton : enregistré, 200, aucun billet, paiement toujours PENDING
+      ---
+      duration_ms: 184.215121
+      type: 'test'
+      ...
+[webhook SamirPay] événement 68626be9-f793-4e79-ab80-ec076d578fb3 : REJECTED_TOKEN (jeton invalide)
+    # Subtest: jeton erroné : rejeté, aucun billet
+    ok 2 - jeton erroné : rejeté, aucun billet
+      ---
+      duration_ms: 165.864351
+      type: 'test'
+      ...
+[webhook SamirPay] événement 0b358d8a-d22a-44ca-b9e6-ee18e861e217 : REJECTED_CORRELATION (transaction_id différent de l’identifiant enregistré)
+    # Subtest: jeton valide mais transaction_id différent de l’identifiant enregistré : rejeté (corrélation)
+    ok 3 - jeton valide mais transaction_id différent de l’identifiant enregistré : rejeté (corrélation)
+      ---
+      duration_ms: 161.425019
+      type: 'test'
+      ...
+[webhook SamirPay] événement 5292fc67-c312-4a81-8ec6-f49b27c18826 : CONFIRMATION_PENDING
+    # Subtest: jeton et corrélation valides, fournisseur encore PENDING : aucun billet
+    ok 4 - jeton et corrélation valides, fournisseur encore PENDING : aucun billet
+      ---
+      duration_ms: 169.498891
+      type: 'test'
+      ...
+    # Subtest: fournisseur SUCCESS : billets émis, statut demandé avec l’identifiant ENREGISTRÉ
+    ok 5 - fournisseur SUCCESS : billets émis, statut demandé avec l’identifiant ENREGISTRÉ
+      ---
+      duration_ms: 174.88693
+      type: 'test'
+      ...
+    # Subtest: rejeu : enregistré une fois (compteur de réceptions), billets non doublés
+    ok 6 - rejeu : enregistré une fois (compteur de réceptions), billets non doublés
+      ---
+      duration_ms: 184.239332
+      type: 'test'
+      ...
+[webhook SamirPay] événement c86c2227-22d8-42ef-8945-8d7100b14b55 : REJECTED_INVALID_PAYLOAD (order_id ou transaction_id invalide)
+    # Subtest: order_id malformé (injection de filtre PostgREST) : 200, rejeté, aucun billet
+    ok 7 - order_id malformé (injection de filtre PostgREST) : 200, rejeté, aucun billet
+      ---
+      duration_ms: 163.799393
+      type: 'test'
+      ...
+[webhook SamirPay] événement d3c4b9ee-33fd-4cb3-ba91-4c8521848a95 : REJECTED_STATUS (statut « failed »)
+    # Subtest: corps brut et en-têtes utiles conservés ; statut autre que success ignoré
+    ok 8 - corps brut et en-têtes utiles conservés ; statut autre que success ignoré
+      ---
+      duration_ms: 187.473406
+      type: 'test'
+      ...
+    # Subtest: aucun numéro de téléphone payeur dans les journaux du parcours
+    ok 9 - aucun numéro de téléphone payeur dans les journaux du parcours
+      ---
+      duration_ms: 175.711963
+      type: 'test'
+      ...
+[webhook SamirPay] événement 4795e7a1-3c23-451a-a85d-58020447139f : REJECTED_INVALID_PAYLOAD (corps non form-urlencoded)
+    # Subtest: corps multipart : 200, received: true, REJECTED_INVALID_PAYLOAD « corps non form-urlencoded », aucun billet
+    ok 10 - corps multipart : 200, received: true, REJECTED_INVALID_PAYLOAD « corps non form-urlencoded », aucun billet
+      ---
+      duration_ms: 169.463397
+      type: 'test'
+      ...
+    1..10
+ok 1 - Webhook SamirPay
+  ---
+  duration_ms: 1875.107716
+  type: 'suite'
+  ...
+[INVARIANT] paiement-webhook — avant purge (held = réservations ACTIVE) : 1 violation(s)
+[INVARIANT]   (b) df4808fb-09a1-4c12-a78b-1c2f47039b3b : billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)
+[INVARIANT] paiement-webhook — purge des réservations échues : {"expired":0}
+[INVARIANT] paiement-webhook — après purge (held = réservations non échues) : 1 violation(s)
+[INVARIANT]   (b) df4808fb-09a1-4c12-a78b-1c2f47039b3b : billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/paiement-webhook.test.ts
+  ---
+  duration_ms: 43.668001
+  location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-webhook.test.ts:2:2206'
+  failureType: 'hookFailed'
+  error: |-
+    invariant violé avant purge :
+    (b) df4808fb-09a1-4c12-a78b-1c2f47039b3b : billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)',
+    +     objet: 'df4808fb-09a1-4c12-a78b-1c2f47039b3b',
+    +     regle: 'b'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'b'
+      objet: 'df4808fb-09a1-4c12-a78b-1c2f47039b3b'
+      detail: 'billet UTILISE à 2000.00 F sans paiement SUCCESS ni PARTIAL (REFUNDED)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertPaymentInvariants (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:79:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/paiement-webhook.test.ts:48:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..1
+# tests 10
+# suites 1
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1926.318333
