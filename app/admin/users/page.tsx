@@ -38,6 +38,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/admin-auth';
 import { permissionLabel } from '@/lib/admin/permission-labels';
+import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
 
 interface UserItem {
   id: string;
@@ -63,6 +64,7 @@ function refusalOf(data: unknown, fallback: string): string {
  * Lot 9 bis (R51, B34 ; contrat 5.12) : les boutons qui écrivent ne s'affichent qu'avec la permission users.write
  * (création, suspension, réactivation, anonymisation) ; « Permissions » et toute action sur un compte ADMIN restent
  * au SUPERADMIN (R71, B33), comme côté serveur. Un refus éventuel de la route est affiché tel quel (texte français).
+ * Lot 9 bis (R75, contrat 5.41) : rôles et statuts par lib/labels/account.ts, jamais la valeur brute de la base.
  * Lot 9 bis (R6, R59, B38, B74 ; contrat 4.2, 5.15) : le statut d'un compte partenaire ne se change pas ici : la ligne
  * propose « Voir la fiche partenaire » (/admin/dashboard?partenaires=ALL&dossier=<partnerId>, identifiant lu sur
  * GET /api/admin/partners avec partners.read). Suspendre ou réactiver un autre compte demande un motif (ReasonDialog),
@@ -184,7 +186,7 @@ export default function AdminUsersManagementPage() {
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
 
-      toast.success(`Le compte ${newRole} de ${newFirstName} ${newLastName} a été créé avec succès.`);
+      toast.success(`Le compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} a été créé avec succès.`);
       setIsCreateModalOpen(false);
       setNewFirstName('');
       setNewLastName('');
@@ -388,7 +390,7 @@ export default function AdminUsersManagementPage() {
                     : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                {role === 'ALL' ? 'Tous' : role}
+                {role === 'ALL' ? 'Tous' : roleLabel(role)}
               </button>
             ))}
           </div>
@@ -446,7 +448,7 @@ export default function AdminUsersManagementPage() {
                             : 'bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
                         }`}
                       >
-                        {user.role}
+                        {roleLabel(user.role)}
                       </span>
 
                       <span
@@ -458,12 +460,12 @@ export default function AdminUsersManagementPage() {
                             : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
                         }`}
                       >
-                        {isDeleted ? 'SUPPRIMÉ (RGPD)' : user.status}
+                        {isDeleted ? ERASED_ACCOUNT_LABEL : accountStatusLabel(user.status)}
                       </span>
 
                       {user.referral_status === 'AMBASSADEUR' && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                          ⭐ Ambassadeur
+                          Ambassadeur
                         </span>
                       )}
                     </div>
@@ -611,7 +613,6 @@ export default function AdminUsersManagementPage() {
             </label>
             <div className="relative">
               <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-[11px] font-black text-slate-700 dark:text-zinc-300 border border-slate-300/60 dark:border-zinc-700 pointer-events-none">
-                <span>🇸🇳</span>
                 <span>+221</span>
               </div>
               <input
@@ -824,7 +825,7 @@ export default function AdminUsersManagementPage() {
               leftIcon={<UserPlus size={15} />}
               className="rounded-xl px-5 h-10 font-black text-xs bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
             >
-              Créer le compte {newRole}
+              Créer le compte {roleLabel(newRole)}
             </Button>
           </div>
         </form>
