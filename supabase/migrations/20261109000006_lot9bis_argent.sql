@@ -33,6 +33,20 @@
 --     toujours deux changements de statut de la même fiche (aucune colonne de clé n'est écrite).
 --     Ordre des verrous (3.3) : partners FOR NO KEY UPDATE, compte, événements ORDER BY id FOR NO KEY UPDATE,
 --     historique, traces.
+--
+-- Tâche 3 (R11 ; B21, et B45 pour l'audit, tâche 19) :
+--  7. ticket_refund_request : base 20261108000001_lot9_securite.sql:21-129, recopie intégrale, signature
+--     (uuid, uuid, text → jsonb) et VOLATILE identiques, verrous inchangés (paiement, catégorie NKU, billet).
+--     Changements :
+--     - règle d'acteur après les verrous, dans la fonction qui fait sortir l'argent. Événement ANNULE : contexte
+--       d'annulation (event_cancel), exempté de la règle de date ; l'acteur doit être la propriétaire ou un compte
+--       ADMIN ou SUPERADMIN. Sinon, un compte ACTIF : admin_can(acteur, 'refunds.manage') (M04) avant comme après la
+--       fin ; propriétaire jusqu'à event_end_at, puis REFUND_CLOSED_AFTER_EVENT ; tout autre acteur FORBIDDEN ;
+--     - « déjà remboursé » (rejeu) rendu seulement à un acteur lié au billet (propriétaire, compte ADMIN ou
+--       SUPERADMIN, porteur) : un tiers ne lit rien du remboursement ;
+--     - refus du paiement (PAYMENT_NOT_REFUNDABLE, ALREADY_REFUNDED) décidés avant toute écriture, puis une ligne
+--       audit_logs TICKET_REFUND_REQUESTED (object_type tickets, metadata { as, context, reason, mode, amount })
+--       dans la transaction (contrat 6.3, w20), puis les écritures des trois branches, inchangées.
 -- ============================================================================
 
 
@@ -500,6 +514,180 @@ $$;
 COMMENT ON FUNCTION public.partner_status_set(jsonb) IS
     'Lot 6 (J2.6), lot 9 bis (R5) : validation, refus, suspension ou réactivation d''un partenaire ; partners.status et users.status dans la même transaction, sessions révoquées à la suspension, avis par trg_partners_notify ; cascade sur les événements PUBLIE (partner_suspension_cascades), rétablissement ciblé à la réactivation. Service_role uniquement.';
 
+-- ----------------------------------------------------------------------------
+-- 3.4 ticket_refund_request (recopie de 20261108000001_lot9_securite.sql:21-129) : règle d'acteur R11, audit
+--     (tâches 3 et 19).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ticket_refund_request(p_ticket_id uuid, p_actor uuid, p_reason text)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_key text := 'REFUND-TKT-' || p_ticket_id::text;
+    v_payment_id uuid;
+    v_category uuid;
+    p record;
+    t record;
+    v_ref record;
+    v_user record;
+    v_blocked text;
+    v_refund uuid;
+    v_cashout uuid;
+    v_share numeric;
+    v_prev_amount numeric;
+    v_prev_agg numeric;
+    v_agg_share numeric;
+    v_bearer text;
+    v_apply jsonb;
+    v_platform boolean;
+    v_ev record;
+    v_is_owner boolean;
+    v_is_staff boolean;
+    v_is_holder boolean;
+    v_active boolean;
+    v_as text;
+    v_ctx text;
+    v_mode text;
+    v_amount numeric;
+BEGIN
+    SELECT payment_id, category_id INTO v_payment_id, v_category FROM public.tickets WHERE id = p_ticket_id;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TICKET_NOT_FOUND', 'message', 'Billet introuvable.');
+    END IF;
+    IF v_payment_id IS NOT NULL THEN
+        SELECT * INTO p FROM public.payments WHERE id = v_payment_id FOR UPDATE;
+    END IF;
+    PERFORM 1 FROM public.ticket_categories WHERE id = v_category FOR NO KEY UPDATE;
+    SELECT * INTO t FROM public.tickets WHERE id = p_ticket_id FOR UPDATE;
+
+    -- Lot 9 bis (R11, B21) : qui agit, sur quel événement (lecture sans verrou, comme event_transition)
+    SELECT e.id, e.status::text AS status, pa.user_id AS owner_id INTO v_ev
+      FROM public.events e JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = t.event_id;
+    v_is_owner := p_actor IS NOT NULL AND v_ev.owner_id IS NOT DISTINCT FROM p_actor;
+    v_is_staff := p_actor IS NOT NULL AND EXISTS (SELECT 1 FROM public.user_roles r
+                                                   WHERE r.user_id = p_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN'));
+    v_is_holder := p_actor IS NOT NULL AND t.user_id IS NOT DISTINCT FROM p_actor;
+    v_active := EXISTS (SELECT 1 FROM public.users u WHERE u.id = p_actor AND u.status::text = 'ACTIF');
+
+    SELECT * INTO v_ref FROM public.refunds WHERE refund_transaction_id = v_key;
+    IF FOUND AND (v_is_owner OR v_is_staff OR v_is_holder) THEN
+        RETURN jsonb_build_object('ok', true, 'already', true,
+            'mode', CASE WHEN v_ref.settlement = 'ORGANISATEUR' THEN 'ORGANISATEUR' ELSE 'CASHOUT' END,
+            'refund_id', v_ref.id, 'cashout_id', v_ref.cashout_id, 'amount', v_ref.amount);
+    END IF;
+
+    IF v_ev.status = 'ANNULE' THEN
+        -- Contexte d'annulation (event_cancel) : aucune règle de date, l'acteur a été contrôlé par event_cancel
+        v_ctx := 'CANCELLATION';
+        v_as := CASE WHEN v_is_owner THEN 'OWNER' WHEN v_is_staff THEN 'ADMIN' END;
+    ELSIF NOT v_active THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Votre compte n’est pas actif.');
+    ELSIF public.admin_can(p_actor, 'refunds.manage') THEN
+        v_ctx := 'DIRECT';
+        v_as := 'ADMIN';
+    ELSIF v_is_owner THEN
+        IF now() > public.event_end_at(v_ev.id) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'REFUND_CLOSED_AFTER_EVENT',
+                'message', 'L’événement est terminé : seul Event Village peut encore rembourser ce billet. Contactez le support.');
+        END IF;
+        v_ctx := 'DIRECT';
+        v_as := 'OWNER';
+    END IF;
+    IF v_as IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN',
+                                  'message', 'Remboursement réservé à l’organisateur ou à un administrateur habilité.');
+    END IF;
+
+    IF t.status::text <> 'VALIDE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TICKET_NOT_REFUNDABLE', 'status', t.status::text,
+                                  'message', format('Billet %s : remboursement impossible.', t.status));
+    END IF;
+
+    -- Branche du billet et refus du paiement, décidés avant toute écriture
+    IF v_payment_id IS NOT NULL THEN
+        v_platform := p.is_platform_payment;
+    END IF;
+    IF COALESCE(t.price, 0) = 0 THEN
+        -- Billet gratuit ou invitation : annulé, rien à rembourser
+        v_mode := 'AUCUN';
+        v_amount := 0;
+    ELSIF NOT COALESCE(v_platform, FALSE) THEN
+        -- Billet payé hors plateforme (espèces) : à rembourser par l'organisateur, aucun cashout
+        v_mode := 'ORGANISATEUR';
+        v_amount := t.price;
+    ELSE
+        IF p.status::text NOT IN ('SUCCESS', 'PARTIAL') THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PAYMENT_NOT_REFUNDABLE', 'status', p.status::text,
+                                      'message', 'Le paiement de ce billet ne peut pas être remboursé.');
+        END IF;
+        -- Part du paiement correspondant au billet, jamais au-delà du reste à rembourser
+        SELECT COALESCE(sum(amount), 0), COALESCE(sum(aggregator_fee_share), 0) INTO v_prev_amount, v_prev_agg
+          FROM public.refunds WHERE payment_id = p.id AND settlement = 'PLATEFORME';
+        v_share := LEAST(t.price + t.service_fee, p.amount - v_prev_amount);
+        IF v_share <= 0 THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_REFUNDED', 'message', 'Ce paiement est déjà entièrement remboursé.');
+        END IF;
+        v_mode := 'CASHOUT';
+        v_amount := v_share;
+    END IF;
+
+    -- Lot 9 bis (B45, contrat 6.3) : journal dans la transaction ; un échec du journal annule le remboursement
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+    VALUES (p_actor, CASE v_as WHEN 'OWNER' THEN 'PARTENAIRE' WHEN 'ADMIN' THEN 'ADMIN' ELSE 'CLIENT' END,
+            'TICKET_REFUND_REQUESTED', 'tickets', t.id,
+            jsonb_build_object('as', v_as, 'context', v_ctx, 'reason', COALESCE(p_reason, 'Remboursement'),
+                               'mode', v_mode, 'amount', v_amount, 'event_id', t.event_id, 'payment_id', v_payment_id));
+
+    IF v_mode = 'AUCUN' THEN
+        UPDATE public.tickets SET status = 'ANNULE' WHERE id = t.id;
+        UPDATE public.ticket_categories SET sold_quantity = GREATEST(sold_quantity - 1, 0) WHERE id = t.category_id;
+        RETURN jsonb_build_object('ok', true, 'mode', 'AUCUN', 'amount', 0);
+    END IF;
+
+    IF v_mode = 'ORGANISATEUR' THEN
+        INSERT INTO public.refunds (payment_id, ticket_id, refund_transaction_id, amount, reason, status, settlement, processed_by, kind, facial_part)
+        VALUES (v_payment_id, t.id, v_key, t.price, COALESCE(p_reason, 'Remboursement'), 'PENDING', 'ORGANISATEUR', p_actor, 'TICKET_REFUND', t.price)
+        RETURNING id INTO v_refund;
+        UPDATE public.tickets SET status = 'ANNULE' WHERE id = t.id;
+        UPDATE public.ticket_categories SET sold_quantity = GREATEST(sold_quantity - 1, 0) WHERE id = t.category_id;
+        RETURN jsonb_build_object('ok', true, 'mode', 'ORGANISATEUR', 'refund_id', v_refund, 'amount', t.price);
+    END IF;
+
+    v_agg_share := CASE WHEN v_prev_amount + v_share >= p.amount THEN p.aggregator_fee - v_prev_agg
+                        ELSE public.fin_round_2(p.aggregator_fee * v_share / p.amount) END;
+    v_bearer := public.fin_setting_text('finance.cancellation_aggregator_fee_bearer');
+
+    SELECT first_name, last_name INTO v_user FROM public.users WHERE id = p.client_id;
+    v_blocked := CASE
+        WHEN p.operator IS NULL THEN 'OPERATOR_UNKNOWN'
+        WHEN p.payer_phone IS NULL THEN 'PHONE_UNKNOWN'
+        WHEN NULLIF(btrim(v_user.first_name), '') IS NULL OR NULLIF(btrim(v_user.last_name), '') IS NULL THEN 'NAME_UNKNOWN'
+        ELSE NULL END;
+
+    INSERT INTO public.refunds (payment_id, ticket_id, refund_transaction_id, amount, reason, status, settlement, processed_by,
+                                kind, facial_part, service_part, aggregator_fee_share, aggregator_fee_bearer, net_revenue_reversal)
+    VALUES (p.id, t.id, v_key, v_share, COALESCE(p_reason, 'Remboursement'), 'PENDING', 'PLATEFORME', p_actor,
+            'TICKET_REFUND', t.price, t.service_fee, v_agg_share, v_bearer,
+            CASE WHEN v_bearer = 'ORGANISATEUR' THEN t.service_fee - v_agg_share ELSE t.service_fee END)
+    RETURNING id INTO v_refund;
+    INSERT INTO public.cashouts (kind, idempotency_key, payment_id, refund_id, ticket_id, beneficiary_user_id, operator, phone_number,
+                                 first_name, last_name, amount, blocked_reason)
+    VALUES ('TICKET_REFUND', v_key, p.id, v_refund, t.id, p.client_id, p.operator, p.payer_phone,
+            NULLIF(btrim(v_user.first_name), ''), NULLIF(btrim(v_user.last_name), ''), v_share, v_blocked)
+    RETURNING id INTO v_cashout;
+    UPDATE public.refunds SET cashout_id = v_cashout WHERE id = v_refund;
+    UPDATE public.tickets SET status = 'REMBOURSEMENT_EN_COURS' WHERE id = t.id;
+    UPDATE public.ticket_categories SET sold_quantity = GREATEST(sold_quantity - 1, 0) WHERE id = t.category_id;
+    v_apply := public.fin_refund_apply(v_refund);
+    RETURN jsonb_build_object('ok', true, 'mode', 'CASHOUT', 'refund_id', v_refund, 'cashout_id', v_cashout,
+                              'amount', v_share, 'blocked_reason', v_blocked, 'debt', COALESCE(v_apply->'debt', '0'::jsonb));
+END;
+$$;
+
 
 -- ============================================================================
 -- 9. Privilèges : service_role uniquement
@@ -513,7 +701,8 @@ BEGIN
         'public.fin_withdrawal_check(uuid, text, numeric, timestamptz)',
         'public.finance_account_balance(uuid, text)',
         'public.withdrawal_request(jsonb)',
-        'public.partner_status_set(jsonb)'
+        'public.partner_status_set(jsonb)',
+        'public.ticket_refund_request(uuid, uuid, text)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
