@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { loadAdminPermissions } from '@/lib/admin/admin-auth';
 import { getServerSessionUser } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -8,6 +9,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/auth/me
  * Renvoie le profil complet, les rôles actifs et le profil partenaire éventuel
  * de l'utilisateur connecté en passant par le client Service Role (sans erreur RLS 500).
+ * Lot 9 bis (R51, B34) : `admin_permissions` (ADMIN : ses lignes ; SUPERADMIN : toutes ; autre compte : aucune), lu
+ * par l'écran pour masquer les boutons sans permission (hasPermission).
  */
 export async function GET(req: NextRequest) {
     try {
@@ -49,6 +52,7 @@ export async function GET(req: NextRequest) {
         }
 
         const profile = { ...userData, roles };
+        const adminPermissions = await loadAdminPermissions(user.id, roles);
 
         return NextResponse.json({
             authenticated: true,
@@ -56,6 +60,7 @@ export async function GET(req: NextRequest) {
             profile,
             roles,
             partner: partnerData,
+            admin_permissions: adminPermissions,
         });
     } catch (err: unknown) {
         console.error('[API /api/auth/me]', err instanceof Error ? err.message : err);

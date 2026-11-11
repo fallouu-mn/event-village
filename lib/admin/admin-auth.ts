@@ -237,13 +237,11 @@ export async function verifyAdminAuth(
 
             permissions = permsData?.map((p) => p.permission) || [];
 
+            // Lot 9 bis (R51, B34) : refus en français, code stable, permission nommée ; jamais le code brut dans le texte.
             if (options?.requiredPermission && !permissions.includes(options.requiredPermission)) {
                 return {
                     authorized: false,
-                    errorResponse: NextResponse.json(
-                        { error: `Permission manquante : ${options.requiredPermission}` },
-                        { status: 403 }
-                    ),
+                    errorResponse: permissionMissingResponse(options.requiredPermission),
                 };
             }
         }

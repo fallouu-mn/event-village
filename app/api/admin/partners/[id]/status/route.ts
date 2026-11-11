@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { verifyAdminAuth } from '@/lib/admin/admin-auth';
+import { permissionMissingResponse, verifyAdminAuth } from '@/lib/admin/admin-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +68,8 @@ export async function PATCH(
 
         const permission = (newStatus as TargetStatus) === 'SUSPENDU' ? 'partners.suspend' : 'partners.validate';
         if (!(auth.permissions ?? []).includes(permission)) {
-            return NextResponse.json({ error: `Permission manquante : ${permission}`, code: 'FORBIDDEN' }, { status: 403 });
+            // Lot 9 bis (R51, B34) : 403 PERMISSION_MISSING en français, permission nommée dans le corps.
+            return permissionMissingResponse(permission);
         }
 
         const supabase = getServiceRoleClient();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession } from '@/lib/auth/session';
-import { verifyAdminAuth } from '@/lib/admin/admin-auth';
+import { permissionMissingResponse, verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * nouveau la permission de l'acteur (défense en profondeur), n'accepte qu'une ligne FAILED de la boîte
  * d'envoi (jamais une ligne envoyée, en cours, incertaine, annulée ou un journal OTP), la remet en attente
  * pour le prochain passage de l'envoyeur et journalise l'action (audit NOTIFICATION_RETRY).
- * 200 { success: true } ; 409 NOT_RETRYABLE ; 404 NOT_FOUND ; 403 FORBIDDEN.
+ * 200 { success: true } ; 409 NOT_RETRYABLE ; 404 NOT_FOUND ; 403 PERMISSION_MISSING (lot 9 bis, R51).
  */
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
@@ -47,8 +47,12 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
             return NextResponse.json({ error: data.message ?? 'Seule une notification en échec peut être relancée.', code: 'NOT_RETRYABLE' }, { status: 409, headers: NO_STORE });
         case 'NOT_FOUND':
             return NextResponse.json({ error: 'Notification introuvable.', code: 'NOT_FOUND' }, { status: 404, headers: NO_STORE });
-        case 'FORBIDDEN':
-            return NextResponse.json({ error: 'Permission manquante : notifications.write', code: 'FORBIDDEN' }, { status: 403, headers: NO_STORE });
+        case 'FORBIDDEN': {
+            // Lot 9 bis (R51, B34) : même refus que verifyAdminAuth, en français, permission nommée.
+            const refusal = permissionMissingResponse('notifications.write');
+            refusal.headers.set('Cache-Control', 'no-store');
+            return refusal;
+        }
         default:
             console.error('[API POST /api/admin/notifications/[id]/retry] refus inattendu :', JSON.stringify(data));
             return NextResponse.json(
