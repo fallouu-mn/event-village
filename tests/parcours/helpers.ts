@@ -139,7 +139,10 @@ export interface PartnerRegistration {
 }
 
 export interface PartnerRegistrationOptions {
-    /** En-têtes des deux appels (par exemple l'IP vue par getClientIp). */
+    /**
+     * En-têtes des deux appels (par exemple l'IP vue par getClientIp). Absents : une adresse neuve, la même pour les
+     * deux appels (freshRegisterIp), pour ne pas partager le seau « unknown » de PARTNER_REGISTER_PER_IP_HOUR.
+     */
     headers?: Record<string, string>;
     /** Code envoyé à l'appel 2 à la place du code reçu (cas « mauvais code »). */
     otpCode?: string;
@@ -160,6 +163,18 @@ function otpCodesSince(phone: string, since: number): { count: number; codes: st
 }
 
 /**
+ * Adresse neuve (/64 IPv6 aléatoire, patron ecritures-ignorees.test.ts:201), posée dans les deux en-têtes que
+ * getClientIp peut lire selon CLIENT_IP_SOURCE. Sans elle, chaque inscription en deux appels coûte deux unités du
+ * seau commun « unknown » et le quota d'inscription sature d'une suite à l'autre (run 118 : 429
+ * PARTNER_REGISTER_RATE_LIMITED, cause B du triage).
+ */
+export function freshRegisterIp(): Record<string, string> {
+    const hex = randomBytes(4).toString('hex');
+    const ip = `2001:db8:${hex.slice(0, 4)}:${hex.slice(4)}::1`;
+    return { 'x-forwarded-for': ip, 'x-real-ip': ip };
+}
+
+/**
  * Inscription partenaire en deux appels de `POST /api/partner/register` (contrat lot 9 bis, section 4, R53) :
  *  1. le corps sans `otpCode` : le serveur envoie le code par SMS et ne crée rien ;
  *  2. le même corps plus `otpCode`, lu dans le faux SMS envoyé par l'appel 1 (comptage par numéro neuf) :
@@ -173,7 +188,7 @@ function otpCodesSince(phone: string, since: number): { count: number; codes: st
 export async function registerPartnerTwoStep(body: Record<string, unknown>, opts: PartnerRegistrationOptions = {}): Promise<PartnerRegistration> {
     if ('otpCode' in body) throw new Error('registerPartnerTwoStep : le corps de l’appel 1 ne doit pas contenir otpCode (passez opts.otpCode)');
     const { POST: register } = await import('../../app/api/partner/register/route');
-    const headers = opts.headers ?? {};
+    const headers = opts.headers ?? freshRegisterIp();
     const phone = typeof body.phone === 'string' ? body.phone : null;
     const before = phone ? getFakes().sms.messagesTo(phone).length : 0;
 

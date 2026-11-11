@@ -19,7 +19,7 @@ import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
 // Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
-import { jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { freshRegisterIp, jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 import { registerStart, registerSubmit } from './terrain-helpers';
 
 /** Code du dernier SMS contenant un code à 6 chiffres (l'inscription partenaire envoie ensuite un avis sans code). */
@@ -122,13 +122,15 @@ describe('Parcours OTP serveur', () => {
         };
         // Lot 9 bis (T38) : l'appel 1 envoie le code et ne crée rien ; le code est persisté non vérifié, puis l'appel 2,
         // fait comme depuis une autre instance (mémoire du processus vidée), le vérifie en base et crée le compte.
-        const first = await registerPartnerTwoStep(body, { stopAfterFirst: true });
+        // Même adresse neuve pour les deux appels (quota PARTNER_REGISTER_PER_IP_HOUR hors du seau « unknown »).
+        const ip = freshRegisterIp();
+        const first = await registerPartnerTwoStep(body, { stopAfterFirst: true, headers: ip });
         assert.ok(first.first.status < 300, `inscription partenaire, appel 1 : HTTP ${first.first.status} ${JSON.stringify(first.first.body)}`);
         const code = codeFromLastSms(phone);
         const storedId = await assertStoredUnverified(phone, code);
         forgetProcessMemory();
         const { POST: register } = await import('../../app/api/partner/register/route');
-        const second = await register(jsonRequest('/api/partner/register', { ...body, otpCode: code }));
+        const second = await register(jsonRequest('/api/partner/register', { ...body, otpCode: code }, ip));
         const secondBody = await second.json();
         assert.ok(second.status < 300, `inscription partenaire, appel 2 avec le code : HTTP ${second.status} ${JSON.stringify(secondBody)}`);
         const { data: after } = await getServiceRoleClient().from('otp_codes').select('verified').eq('id', storedId).single();
