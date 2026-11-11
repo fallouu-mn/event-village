@@ -1,7 +1,8 @@
 /**
- * Fausse passerelle SamirPay, alignée EXACTEMENT sur le contrat officiel (API Partenaires v1.0)
+ * Fausse passerelle SamirPay, alignée sur le contrat officiel (API Partenaires v1.2, lot 9 bis, T14)
  * au niveau de la passerelle (lib/integrations/types.ts) : aucune requête réseau, comportement
- * pilotable, enregistrement de tous les appels.
+ * pilotable, enregistrement de tous les appels. Les formats HTTP A, B, C et D de la v1.2 sont lus par le
+ * client réel (tests/samirpay-contrat.test.ts) ; ce faux en donne le résultat, déjà traduit.
  *  - initDirectPayment : identifiant de transaction UUID ; orderId en double → DUPLICATE (409) ;
  *    paramètres hors contrat → REJECTED (400) ; modes refus, délai dépassé, clés refusées ;
  *  - checkTransactionStatus : par identifiant SamirPay, { transactionId, status } SANS montant ;

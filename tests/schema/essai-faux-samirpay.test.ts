@@ -14,6 +14,11 @@
  *
  * Rouge aujourd'hui : scripts/dev/fake-samirpay.mjs et scripts/dev/essai-start.mjs n'existent pas, chaque échec
  * nomme le fichier attendu.
+ *
+ * Lot 9 bis (H5, T15) : le cas « contrat SamirPay » suit la v1.2 (formats A, B, C et D), avec autant d'assertions
+ * qu'avant : cashin B (qrCode en base64 brut ; Orange : url nulle, urls.OM et urls.MAXIT), doublon 409 D (CONFLICT,
+ * transactionId= dans message), statut C (404 { transactionId, status: NOT_FOUND }), solde A (body.solde), transfert A
+ * (body, statut interne « V »). Rouge jusqu'à fix(9b.H5), qui aligne scripts/e2e/fake-core.mjs (A1).
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
@@ -216,28 +221,31 @@ describe('scripts/dev/fake-samirpay.mjs : écoute et contrat', () => {
             const created = await call(fake.base, 'POST', '/samirpay/api/tiers/direct/initPayment', body);
             assert.equal(created.status, 201, JSON.stringify(created.json));
             assert.equal(created.json.success, true);
-            const data = created.json.data as { transactionId: string; url: string; qrCode: string; urls: { wave: string; orange: string } };
+            const data = created.json.data as { transactionId: string; url: string; qrCode: string };
             assert.equal(typeof data.transactionId, 'string');
-            assert.equal(data.qrCode, data.url);
-            assert.ok(data.urls.wave.startsWith(data.url));
-            assert.ok(data.urls.orange.startsWith(data.url));
+            assert.match(String(data.qrCode), /^[A-Za-z0-9+/]+=*$/, `qrCode en base64 brut, sans préfixe data: (v1.2) : ${String(data.qrCode).slice(0, 40)}`);
+            const orange = await call(fake.base, 'POST', '/samirpay/api/tiers/direct/initPayment', initBody(`${TUNNEL}/api/webhooks/samirpay?token=essai`, { operatorName: 'ORANGE_MONEY' }));
+            const od = (orange.json.data ?? {}) as { transactionId: string; url: string | null; urls: { OM?: string; MAXIT?: string } | null };
+            assert.ok(orange.status === 201 && od.url === null && String(od.urls?.OM).startsWith(`${TUNNEL}/dev/paiements/${od.transactionId}`), `Orange : url nulle, urls.OM vers la page de paiement : ${JSON.stringify(orange.json)}`);
+            assert.ok(String(od.urls?.MAXIT).startsWith(`${TUNNEL}/dev/paiements/${od.transactionId}`), `Orange : urls.MAXIT vers la page de paiement : ${JSON.stringify(od.urls)}`);
 
             const twice = await call(fake.base, 'POST', '/samirpay/api/tiers/direct/initPayment', body);
-            assert.equal(twice.status, 409, 'un orderId déjà vu est refusé');
+            assert.deepEqual([twice.status, twice.json.status, twice.json.errorCode, new RegExp(`transactionId=${data.transactionId}`).test(String(twice.json.message))], [409, 409, 'CONFLICT', true], `un orderId déjà vu : 409 au format D, identifiant existant dans message : ${JSON.stringify(twice.json)}`);
 
             const status = await call(fake.base, 'GET', `/samirpay/api/tiers/payments/${data.transactionId}/status`);
             assert.equal(status.status, 200);
             assert.deepEqual(status.json, { transactionId: data.transactionId, status: 'PENDING' });
-            assert.equal((await call(fake.base, 'GET', `/samirpay/api/tiers/payments/${randomUUID()}/status`)).status, 404);
+            const unknownId = randomUUID();
+            assert.deepEqual(await call(fake.base, 'GET', `/samirpay/api/tiers/payments/${unknownId}/status`), { status: 404, json: { transactionId: unknownId, status: 'NOT_FOUND' } });
 
             const solde = await call(fake.base, 'GET', '/samirpay/api/tiers/payments/solde');
             assert.equal(solde.status, 200);
-            assert.equal(typeof (solde.json.data as { solde: unknown }).solde, 'number');
+            assert.equal(typeof (solde.json.body as { solde: unknown } | undefined)?.solde, 'number', `solde lu dans body.solde (format A) : ${JSON.stringify(solde.json)}`);
 
             const sent = await call(fake.base, 'POST', '/samirpay/api/tiers/payments/send', { phoneNumber: '770000002', operatorName: 'WAVE', amount: '1500', firstName: 'Awa', lastName: 'Diop' });
             assert.equal(sent.status, 200, JSON.stringify(sent.json));
             assert.equal(sent.json.status, 'success');
-            assert.equal((sent.json.data as { status: string }).status, 'SUCCESS');
+            assert.equal((sent.json.body as { status: string } | undefined)?.status, 'V', `transfert : body = Transaction, statut interne « V » : ${JSON.stringify(sent.json)}`);
         } finally {
             await fake.stop();
             await app.close();
