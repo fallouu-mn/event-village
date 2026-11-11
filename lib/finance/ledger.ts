@@ -56,6 +56,22 @@ export function effectiveWithdrawalStatus(status: string, cashoutStatus: string 
     return status;
 }
 
+interface CashoutState { status: string; blocked_reason: string | null; delay_flagged_at: string | null }
+
+/**
+ * Lot 9 bis (R1, B9) : retrait retardé, à dire « Retardé : l’équipe Event Village s’en occupe ». Retrait encore en
+ * cours (statut affiché PENDING ou PROCESSING) dont l'envoi n'est pas confirmé et qui est bloqué hors simulation,
+ * incertain ou signalé en retard (delay_flagged_at, posé après 30 minutes par cashouts_flag_delayed) : même règle que
+ * l'avis WITHDRAWAL_DELAYED et que le remboursement retardé de /api/tickets. Décidé par le serveur, jamais par
+ * l'horloge du navigateur.
+ */
+export function withdrawalDelayed(effectiveStatus: string, cashout: CashoutState | null): boolean {
+    if (!cashout || (effectiveStatus !== 'PENDING' && effectiveStatus !== 'PROCESSING')) return false;
+    if (!['A_ENVOYER', 'ENVOYE', 'INCERTAIN'].includes(cashout.status)) return false;
+    return cashout.status === 'INCERTAIN' || cashout.delay_flagged_at !== null
+        || (cashout.blocked_reason !== null && cashout.blocked_reason !== 'SIMULATED');
+}
+
 export async function accountBalance(ownerId: string, kind: AccountKind): Promise<AccountBalance> {
     const { data, error } = await rpcWithRetry<Record<string, unknown>>('finance_account_balance', { p_owner: ownerId, p_kind: kind });
     if (error || !data) throw new Error(`Solde ${kind} indisponible : ${error?.message ?? 'réponse vide'}`);
@@ -119,14 +135,22 @@ export async function withdrawalsOf(ownerId: string, kind: AccountKind, limit = 
     // Issue de l'envoi de chaque retrait (lecture séparée : withdrawals et cashouts se référencent l'un l'autre,
     // l'embarquement PostgREST serait ambigu).
     const cashoutIds = Array.from(new Set(rows.map((w) => w.cashout_id).filter((id): id is string => typeof id === 'string')));
-    const cashoutStatus = new Map<string, string>();
+    const cashoutState = new Map<string, CashoutState>();
     if (cashoutIds.length > 0) {
-        const { data: cashouts, error: cErr } = await getServiceRoleClient().from('cashouts').select('id, status').in('id', cashoutIds);
+        const { data: cashouts, error: cErr } = await getServiceRoleClient().from('cashouts')
+            .select('id, status, blocked_reason, delay_flagged_at').in('id', cashoutIds);
         if (cErr) throw new Error(`Envois des retraits ${kind} indisponibles : ${cErr.message}`);
-        for (const c of cashouts ?? []) cashoutStatus.set(String(c.id), String(c.status));
+        for (const c of cashouts ?? []) {
+            cashoutState.set(String(c.id), {
+                status: String(c.status),
+                blocked_reason: c.blocked_reason === null || c.blocked_reason === undefined ? null : String(c.blocked_reason),
+                delay_flagged_at: c.delay_flagged_at === null || c.delay_flagged_at === undefined ? null : String(c.delay_flagged_at),
+            });
+        }
     }
-    return rows.map(({ cashout_id, ...w }) => ({
-        ...w,
-        effective_status: effectiveWithdrawalStatus(String(w.status), cashout_id ? cashoutStatus.get(String(cashout_id)) ?? null : null),
-    }));
+    return rows.map(({ cashout_id, ...w }) => {
+        const cashout = cashout_id ? cashoutState.get(String(cashout_id)) ?? null : null;
+        const effective = effectiveWithdrawalStatus(String(w.status), cashout?.status ?? null);
+        return { ...w, effective_status: effective, delayed: withdrawalDelayed(effective, cashout) };
+    });
 }

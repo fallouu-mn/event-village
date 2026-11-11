@@ -98,6 +98,8 @@ interface WithdrawalRow {
   createdAt: string;
   processedAt: string | null;
   rejectionReason: string | null;
+  /** Lot 9 bis (B9) : envoi retardé, décidé par le serveur (withdrawalsOf, `delayed`). */
+  delayed: boolean;
 }
 
 interface AccountView {
@@ -185,6 +187,7 @@ function parseAccount(body: unknown): AccountView | null {
           createdAt,
           processedAt: text(w.processed_at),
           rejectionReason: text(w.rejection_reason),
+          delayed: w.delayed === true,
         }];
       })
     : [];
@@ -300,6 +303,10 @@ const COMMISSION_STATUS: Record<string, string> = {
   PAID: 'Versée',
   CANCELLED: 'Annulée',
 };
+
+/** Lot 9 bis (B9) : retrait retardé, état honnête (texte du contrat). */
+const WITHDRAWAL_DELAYED: { label: string; variant: BadgeVariant } = { label: 'Retardé', variant: 'warning' };
+const WITHDRAWAL_DELAYED_TEXT = 'Retardé : l’équipe Event Village s’en occupe.';
 
 function withdrawalStatus(status: string): { label: string; variant: BadgeVariant } {
   return WITHDRAWAL_STATUS[status] ?? { label: 'Statut à vérifier', variant: 'neutral' };
@@ -1064,7 +1071,7 @@ export default function WalletPage() {
         ) : (
           <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
             {account.withdrawals.map((w) => {
-              const st = withdrawalStatus(w.status);
+              const st = w.delayed ? WITHDRAWAL_DELAYED : withdrawalStatus(w.status);
               return (
                 <li key={w.id} className="flex flex-col justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 space-y-1">
@@ -1079,6 +1086,7 @@ export default function WalletPage() {
                       Demandé le {formatDateTime(w.createdAt) ?? '—'}
                       {w.processedAt && formatDateTime(w.processedAt) && `, traité le ${formatDateTime(w.processedAt)}`}
                     </p>
+                    {w.delayed && <p className="text-sm text-warning-fg">{WITHDRAWAL_DELAYED_TEXT}</p>}
                     {w.status === 'REJECTED' && w.rejectionReason && <p className="text-sm text-danger-fg">{w.rejectionReason}</p>}
                   </div>
                   <div className="shrink-0 sm:text-right">

@@ -104,6 +104,8 @@ interface WithdrawalRow {
     net: number;
     /** Statut à afficher, servi par le serveur (effective_status). */
     effectiveStatus: string;
+    /** Lot 9 bis (B9) : envoi retardé, décidé par le serveur (withdrawalsOf, `delayed`). */
+    delayed: boolean;
     operator: string | null;
     phone: string | null;
     createdAt: string;
@@ -186,6 +188,7 @@ function parseAccount(body: unknown): AccountView | null {
                   fee,
                   net,
                   effectiveStatus: text(w.effective_status) ?? text(w.status) ?? 'PENDING',
+                  delayed: w.delayed === true,
                   operator: text(w.operator),
                   phone: text(w.phone_number),
                   createdAt,
@@ -296,6 +299,10 @@ const WITHDRAWAL_STATUS: Record<string, { label: string; variant: BadgeVariant }
     REJECTED: { label: 'Refusé, montant rendu', variant: 'danger' },
     CANCELLED: { label: 'Annulé', variant: 'neutral' },
 };
+
+/** Lot 9 bis (B9) : retrait retardé, état honnête dit à la partenaire (texte du contrat). */
+const WITHDRAWAL_DELAYED = { label: 'Retardé', variant: 'warning' as BadgeVariant };
+const WITHDRAWAL_DELAYED_TEXT = 'Retardé : l’équipe Event Village s’en occupe.';
 
 function withdrawalStatus(status: string) {
     return WITHDRAWAL_STATUS[status] ?? { label: 'Statut inconnu', variant: 'neutral' as BadgeVariant };
@@ -896,7 +903,7 @@ export default function PartnerFinancePage() {
                 ) : (
                     <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
                         {account.withdrawals.map((w) => {
-                            const st = withdrawalStatus(w.effectiveStatus);
+                            const st = w.delayed ? WITHDRAWAL_DELAYED : withdrawalStatus(w.effectiveStatus);
                             return (
                                 <li key={w.id} className="flex flex-col justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center">
                                     <div className="min-w-0 space-y-1">
@@ -913,6 +920,7 @@ export default function PartnerFinancePage() {
                                                 <> · traité le <time dateTime={w.processedAt} className="text-sm">{formatDateTime(w.processedAt)}</time></>
                                             )}
                                         </p>
+                                        {w.delayed && <p className="text-sm text-warning-fg">{WITHDRAWAL_DELAYED_TEXT}</p>}
                                         {w.effectiveStatus === 'REJECTED' && w.rejectionReason && (
                                             <p className="text-sm text-danger-fg">Motif : {w.rejectionReason}</p>
                                         )}
