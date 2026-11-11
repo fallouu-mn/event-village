@@ -18,6 +18,9 @@ function generateOtpCode(): string {
 /** Type du journal synchrone (lot 6, contrat E7) selon l'objet du code. */
 const SYNC_TYPE = { LOGIN: 'OTP_LOGIN', REGISTER: 'OTP_REGISTER', PASSWORD_RESET: 'OTP_PASSWORD_RESET' } as const;
 
+/** Lot 9 bis (R84) : réponse d'une demande de récupération acceptée, que le numéro ait un compte ou non. */
+const NEUTRAL_RESET_REPLY = { success: true } as const;
+
 /**
  * POST /api/auth/send-otp
  * Génère un code OTP sécurisé et l'envoie par SMS (envoi synchrone, journalisé sans le code dans la
@@ -67,11 +70,10 @@ export async function POST(req: NextRequest) {
                 return apiFailure('POST /api/auth/send-otp, lecture du compte', userRecordErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
             }
 
+            // Lot 9 bis (R84, B86, D2) : même réponse neutre que la récupération par email ; un numéro sans compte ne
+            // reçoit ni code ni SMS, et la réponse ne dit pas si un compte existe.
             if (!userRecord) {
-                return NextResponse.json(
-                    { error: 'Aucun compte n\'est associé à ce numéro de téléphone.' },
-                    { status: 404 }
-                );
+                return NextResponse.json(NEUTRAL_RESET_REPLY);
             }
             resetUserId = String(userRecord.id);
         }
@@ -115,11 +117,11 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        if (purpose === 'PASSWORD_RESET') return NextResponse.json(NEUTRAL_RESET_REPLY);
+
         return NextResponse.json({
             success: true,
-            message: purpose === 'PASSWORD_RESET'
-                ? `Code de réinitialisation envoyé par SMS au ${normalizedPhone}.`
-                : `Code de confirmation envoyé par SMS au ${normalizedPhone}.`,
+            message: `Code de confirmation envoyé par SMS au ${normalizedPhone}.`,
             recipient: normalizedPhone,
         });
     } catch (error: unknown) {
