@@ -5,6 +5,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { revokeUserSessions } from '@/lib/auth/sessions';
+import { adminTeamRefusal } from '../../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,9 @@ export async function DELETE(
     if (!serverIsPartner(user)) {
         return NextResponse.json({ error: 'Accès non autorisé.', code: 'FORBIDDEN' }, { status: 403 });
     }
+    // Lot 9 bis (R2, B31) : un admin retire un contrôleur de l'équipe avec events.write
+    const denied = await adminTeamRefusal(user, 'events.write');
+    if (denied) return denied;
 
     const resolvedParams = await Promise.resolve(context?.params);
     const controllerId = resolvedParams?.controllerId;

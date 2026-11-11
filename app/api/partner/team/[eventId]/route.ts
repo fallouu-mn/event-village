@@ -4,6 +4,7 @@ import { requireActiveSession, serverIsAdmin, serverIsPartner, serverHasRole } f
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,9 @@ export async function GET(req: NextRequest, { params }: { params: { eventId: str
         if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
+        // Lot 9 bis (R2, B31) : un admin lit l'équipe avec events.read
+        const denied = await adminTeamRefusal(user, 'events.read');
+        if (denied) return denied;
 
         const supabase = getServiceRoleClient();
         const resolvedParams = await Promise.resolve(params);
@@ -94,6 +98,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
     if (!serverIsPartner(user)) {
         return NextResponse.json({ error: 'Accès non autorisé.', code: 'FORBIDDEN' }, { status: 403 });
     }
+    // Lot 9 bis (R2, B31) : un admin retire un contrôleur avec events.write
+    const denied = await adminTeamRefusal(user, 'events.write');
+    if (denied) return denied;
 
     const { eventId } = await Promise.resolve(params);
     const assignmentId = req.nextUrl.searchParams.get('assignmentId');

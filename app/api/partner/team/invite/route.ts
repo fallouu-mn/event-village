@@ -16,6 +16,7 @@ import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { addUserRole, grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { createControllerInvitation } from '../controller-invitation';
+import { adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,9 @@ export async function POST(req: NextRequest) {
         if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
+        // Lot 9 bis (R2, B31) : un admin invite un contrôleur avec events.write (avant le quota et tout effet)
+        const denied = await adminTeamRefusal(user, 'events.write');
+        if (denied) return denied;
 
         let body: unknown;
         try { body = await req.json(); }

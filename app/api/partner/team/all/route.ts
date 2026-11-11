@@ -6,6 +6,7 @@ import { isEventEligibleForController } from '@/lib/events/event-status';
 import { dakarInstant } from '@/lib/validations/event';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { maskPersonName } from '@/lib/security/mask';
+import { adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -140,6 +141,9 @@ export async function GET(req: NextRequest) {
         if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
+        // Lot 9 bis (R2, B31) : un admin lit l'équipe avec events.read
+        const denied = await adminTeamRefusal(user, 'events.read');
+        if (denied) return denied;
 
         const supabase = getServiceRoleClient();
 
@@ -315,6 +319,9 @@ export async function DELETE(req: NextRequest) {
         if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
+        // Lot 9 bis (R2, B31) : un admin retire un contrôleur avec events.write
+        const denied = await adminTeamRefusal(user, 'events.write');
+        if (denied) return denied;
 
         const controllerId = req.nextUrl.searchParams.get('controllerId');
         if (!controllerId) {

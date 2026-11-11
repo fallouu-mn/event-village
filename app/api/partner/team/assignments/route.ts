@@ -9,6 +9,7 @@ import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { maskPersonName } from '@/lib/security/mask';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { createControllerInvitation } from '../controller-invitation';
+import { adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,9 @@ export async function PATCH(req: NextRequest) {
         if (!serverIsPartner(user)) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
+        // Lot 9 bis (R2, B31) : un admin gère les affectations avec events.write
+        const denied = await adminTeamRefusal(user, 'events.write');
+        if (denied) return denied;
 
         let body: unknown;
         try { body = await req.json(); }

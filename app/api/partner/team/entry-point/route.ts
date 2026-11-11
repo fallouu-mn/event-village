@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,9 @@ export async function PATCH(req: NextRequest) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const user = session.user;
+    // Lot 9 bis (R2, B31) : un admin règle le point d'entrée avec events.write
+    const denied = await adminTeamRefusal(user, 'events.write');
+    if (denied) return denied;
     let body: unknown;
     try {
         body = await req.json();
