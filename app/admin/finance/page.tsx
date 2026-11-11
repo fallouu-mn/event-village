@@ -8,6 +8,9 @@
  * Lot 8 (A3, contrat 3.10) : remboursements à reprendre (RefundsToRetry). L'écran passe sur les jetons du système de
  * design : capturé pour la première fois, il n'avait jamais tenu les contrôles bloquants à 390 px (« § », contrastes,
  * textes sous 14 px, cibles sous 44 px). Il reste hors de la liste des fichiers migrés (A22).
+ * Lot 9 bis (H6, B106, A5 ; contrat 4.1 et 5.59) : frais SamirPay des versements lus dans la même réponse : réels
+ * (cashoutFeesReal), estimés au taux de retrait réglé (cashoutFeesEstimated) et écart (gap) ; pour les encaissements,
+ * la mention du serveur (cashinNote) : SamirPay n'en fournit pas les frais réels, jamais un 0 affiché.
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
@@ -16,6 +19,7 @@ import {
   CheckCircle2,
   CreditCard,
   DollarSign,
+  Info,
   RefreshCw,
   Undo2,
   Users,
@@ -72,6 +76,29 @@ function serviceFeeLabel(item: FinancialReconciliationItem): string {
   return item.platformFeeRate !== null ? `${formatPrice(item.serviceFee)} (${item.platformFeeRate.toLocaleString('fr-FR')} %)` : formatPrice(item.serviceFee);
 }
 
+/** Frais SamirPay des versements sur la période (H6) ; null si la réponse ne les porte pas. */
+interface CashoutFees {
+  real: number;
+  estimated: number;
+  gap: number;
+  rate: number;
+  count: number;
+  cashinNote: string;
+}
+
+function readCashoutFees(body: Record<string, unknown>): CashoutFees | null {
+  const nums = [body.cashoutFeesReal, body.cashoutFeesEstimated, body.gap, body.cashoutFeeRate, body.cashoutCount];
+  if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n)) || typeof body.cashinNote !== 'string') return null;
+  return {
+    real: body.cashoutFeesReal as number,
+    estimated: body.cashoutFeesEstimated as number,
+    gap: body.gap as number,
+    rate: body.cashoutFeeRate as number,
+    count: body.cashoutCount as number,
+    cashinNote: body.cashinNote,
+  };
+}
+
 function isReconciliation(body: unknown): body is { summary: FinancialReconciliationSummary; items: FinancialReconciliationItem[] } {
   if (typeof body !== 'object' || body === null) return false;
   const b = body as Record<string, unknown>;
@@ -82,6 +109,7 @@ export default function AdminFinanceReconciliationPage() {
   const fieldId = useId();
   const [summary, setSummary] = useState<FinancialReconciliationSummary | null>(null);
   const [items, setItems] = useState<FinancialReconciliationItem[]>([]);
+  const [fees, setFees] = useState<CashoutFees | null>(null);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('ALL');
   const [isLoading, setIsLoading] = useState(true);
@@ -108,8 +136,13 @@ export default function AdminFinanceReconciliationPage() {
         setLoadError('Réponse inattendue du serveur.');
         return;
       }
+      const cashoutFees = readCashoutFees(body as unknown as Record<string, unknown>);
+      // Partie H6 absente ou illisible : journalisée et dite à l'écran (« Frais SamirPay non disponibles »), le reste du
+      // rapprochement reste lisible.
+      if (!cashoutFees) console.warn('[rapprochement financier] frais SamirPay absents ou illisibles dans la réponse :', body);
       setSummary(body.summary);
       setItems(body.items);
+      setFees(cashoutFees);
       setLoadError(null);
     } catch (err) {
       console.error('[rapprochement financier] chargement impossible :', err);
@@ -225,6 +258,55 @@ export default function AdminFinanceReconciliationPage() {
             </div>
           </section>
         </>
+      )}
+
+      {summary && (
+        <section aria-labelledby={`${fieldId}-frais`} className="space-y-3">
+          <div className="space-y-1">
+            <h2 id={`${fieldId}-frais`} className="text-lg font-semibold text-fg">Frais SamirPay</h2>
+            <p className="text-sm leading-relaxed text-fg-muted">
+              Frais réellement prélevés sur les versements confirmés de la période, comparés à l’estimation au taux de retrait réglé.
+            </p>
+          </div>
+          {!fees ? (
+            <StatusBanner tone="warning" title="Frais SamirPay non disponibles">
+              La comparaison des frais n’a pas pu être lue. Actualisez la page.
+            </StatusBanner>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="space-y-1 rounded-2xl border border-border bg-surface-sunken p-4">
+                  <span className="text-sm font-bold text-fg-muted">Frais réels des versements</span>
+                  <p className="text-base font-black tabular-nums text-fg">{formatPrice(fees.real)}</p>
+                  <span className="block text-sm text-fg-muted">
+                    <span className="tabular-nums">{fees.count}</span> {fees.count > 1 ? 'versements aux frais connus' : 'versement aux frais connus'}
+                  </span>
+                </div>
+                <div className="space-y-1 rounded-2xl border border-border bg-surface-sunken p-4">
+                  <span className="text-sm font-bold text-fg-muted">Frais estimés</span>
+                  <p className="text-base font-black tabular-nums text-fg">{formatPrice(fees.estimated)}</p>
+                  <span className="block text-sm text-fg-muted">
+                    Au taux de retrait réglé : <span className="tabular-nums">{fees.rate.toLocaleString('fr-FR')}</span> %
+                  </span>
+                </div>
+                <div className="space-y-1 rounded-2xl border border-border bg-surface-sunken p-4">
+                  <span className="text-sm font-bold text-fg-muted">Écart (réels moins estimés)</span>
+                  <p className={`flex items-center gap-1.5 text-base font-black tabular-nums ${fees.gap > 0 ? 'text-danger-fg' : 'text-fg'}`}>
+                    {fees.gap > 0 && <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />}
+                    {formatPrice(fees.gap)}
+                  </p>
+                  <span className="block text-sm text-fg-muted">
+                    {fees.gap > 0 ? 'Les versements coûtent plus que l’estimation.' : fees.gap < 0 ? 'Les versements coûtent moins que l’estimation.' : 'Aucun écart.'}
+                  </span>
+                </div>
+              </div>
+              <p className="flex items-start gap-2 rounded-2xl border border-border bg-surface p-3 text-sm text-fg-muted">
+                <Info size={16} className="mt-0.5 shrink-0 text-info-fg" aria-hidden="true" />
+                <span>Encaissements : {fees.cashinNote}</span>
+              </p>
+            </>
+          )}
+        </section>
       )}
 
       <RefundsToRetry refreshToken={refundsRefresh} />
