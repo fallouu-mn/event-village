@@ -18,7 +18,8 @@ export const dynamic = 'force-dynamic';
  *     statut SamirPay (identifiant enregistré) → RPC de confirmation, échec ou annulation ; au-delà
  *     de PAYMENT_PENDING_MAX_AGE_MINUTES encore PENDING → EXPIRED, réservations rendues ;
  *  3. succès tardifs : paiements EXPIRED ou annulés par le client dans la fenêtre
- *     PAYMENT_LATE_SUCCESS_WINDOW_HOURS (au plus un contrôle toutes les 15 minutes) ;
+ *     PAYMENT_LATE_SUCCESS_WINDOW_HOURS (au plus un contrôle toutes les 15 minutes) ; lot 9 bis (H1) : aussi les
+ *     FAILED encore surveillés (provider_final faux : un FAILED lu au statut n'est définitif qu'après 2 h, S-H) ;
  *  4. PENDING sans identifiant SamirPay (initialisation interrompue) trop anciens → EXPIRED ;
  *  5. envois d'argent : confirmation des ENVOYE ; envoi réservé puis interrompu → INCERTAIN ;
  *     lot 9 bis (R1, B8) : tout versement resté à envoyer (tous types, blocage SOLDE_INSUFFISANT compris) repris
@@ -48,7 +49,7 @@ async function run(req: NextRequest) {
         const lateFrom = new Date(now - env.PAYMENT_LATE_SUCCESS_WINDOW_HOURS * 3_600_000).toISOString();
         const recheckBefore = now - 15 * 60_000;
         const { data: late, error: lErr } = await supabase.from('payments').select('*')
-            .in('status', ['EXPIRED', 'CANCELLED']).eq('provider_final', false).not('external_transaction_id', 'is', null)
+            .in('status', ['EXPIRED', 'CANCELLED', 'FAILED']).eq('provider_final', false).not('external_transaction_id', 'is', null)
             .gt('created_at', lateFrom).order('last_reconciled_at', { ascending: true, nullsFirst: true }).limit(env.PAYMENT_RECONCILE_BATCH);
         if (lErr) throw new Error(`lecture des paiements à surveiller : ${lErr.message}`);
         const due = ((late ?? []) as Array<PaymentRecord & { last_reconciled_at: string | null }>)
