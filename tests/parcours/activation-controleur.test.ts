@@ -48,7 +48,7 @@ after(async () => {
 type Row = Record<string, unknown>;
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
-const INVALID_MESSAGE = 'Code de vérification incorrect ou expiré.';
+const EXPIRED_MESSAGE = 'Le code a expiré. Demandez-en un nouveau.';
 const EXPIRED_MESSAGE = 'Le code OTP a expiré. Veuillez en demander un nouveau.';
 const TOO_MANY_MESSAGE = 'Trop de tentatives infructueuses. Veuillez demander un nouveau code.';
 const DAY_MS = 24 * 3600_000;
