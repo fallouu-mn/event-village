@@ -147,3 +147,12 @@ describe('R28 — chaque rôle', () => {
         });
     }
 });
+
+// ── Lot 9 bis (T40) : adresses nouvelles du lot ────────────────────────────
+
+describe('R28 — lot 9 bis : connexion côté serveur (R58)', () => {
+    test('/api/auth/login est publique : servie sans session (préfixe /api/auth)', async () => {
+        const res = await callMiddleware('/api/auth/login', []);
+        assert.ok(res.passedThrough, `/api/auth/login sans session : servie attendue, HTTP ${res.status} ${res.location ?? ''}`);
+    });
+});

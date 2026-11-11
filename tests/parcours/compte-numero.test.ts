@@ -197,13 +197,13 @@ async function technicalAccount(label: string): Promise<Buyer> {
     return { userId, accessToken: s.accessToken, email, phoneE164, phone9: phoneE164.slice(4), firstName: 'Awa', lastName: 'Technique' };
 }
 
-/** Connexion comme l'écran : numéro → resolve-phone → email → mot de passe. */
+/** Connexion comme l'écran (lot 9 bis, R58, T35) : numéro + mot de passe → POST /api/auth/login, la correspondance numéro → compte est faite côté serveur. */
 async function loginByPhone(phone: string): Promise<{ status: number; signInError: string | null }> {
     const from = `203.0.113.${randomBytes(1)[0] % 250 + 1}`;
-    const res = await reply(await resolvePhone(jsonRequest('/api/auth/resolve-phone', { phone }, { 'x-forwarded-for': `${from}, 10.0.0.1` })));
+    const mod = await importModule('../../app/api/auth/login/route'); assert.equal(typeof mod.POST, 'function', 'R58 : app/api/auth/login/route.ts doit exporter POST (contrat 4.2)');
+    const res = await reply(await mod.POST(jsonRequest('/api/auth/login', { identifier: phone, password: STRONG_PASSWORD }, { 'x-forwarded-for': `${from}, 10.0.0.1` })));
     if (res.status !== 200) return { status: res.status, signInError: null };
-    const { error } = await anonClient().auth.signInWithPassword({ email: String(res.body.email), password: STRONG_PASSWORD });
-    return { status: 200, signInError: error ? error.message : null };
+    return { status: 200, signInError: res.body.ok === true ? null : `réponse inattendue de /api/auth/login : ${res.text}` };
 }
 
 // ── Pannes et écoute des appels sortants ───────────────────────────────────
@@ -544,7 +544,7 @@ describe('POST /api/account/phone/confirm — succès', () => {
         const byNew = await loginByPhone(next);
         assert.deepEqual(byNew, { status: 200, signInError: null }, 'connexion par le nouveau numéro');
         const byOld = await loginByPhone(a.phoneE164);
-        assert.equal(byOld.status, 404, 'l’ancien numéro ne correspond plus à aucun compte');
+        assert.equal(byOld.status, 401, 'l’ancien numéro n’ouvre plus de session (401 INVALID_CREDENTIALS, R58)'); assert.equal((await reply(await resolvePhone(jsonRequest('/api/auth/resolve-phone', { phone: a.phoneE164 }, { 'x-forwarded-for': `203.0.113.${randomBytes(1)[0] % 250 + 1}, 10.0.0.1` })))).status, 404, 'l’ancien numéro ne correspond plus à aucun compte');
     });
 
     test('email technique : réécrit vers le nouveau numéro dans les deux tables, connexion possible', async () => {

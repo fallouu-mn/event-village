@@ -51,6 +51,7 @@ const BASE_LIMITS: Record<string, string> = {
     SCAN_PER_SCANNER_10S: '1000',
     LIVE_CODE_PER_USER_MIN: '1000',
     RESOLVE_PHONE_PER_IP_HOUR: '1000',
+    PASSWORD_LOGIN_PER_IP_HOUR: '1000',
     VERIFY_OTP_PER_PHONE_15MIN: '1000',
     CONTROLLER_SETUP_PER_PHONE_HOUR: '1000',
     PARTNER_REGISTER_PER_IP_HOUR: '1000',
@@ -523,5 +524,23 @@ describe('A21 — reserveQuota : refus motivé', () => {
         const { data, error } = await service.from('quota_counters').select('hits').eq('scope', 'test_brute_force').eq('bucket', bucket);
         assert.equal(error, null, `compteur en base : ${error?.message}`);
         assert.ok((data ?? []).length > 0 && (data ?? []).every((r) => Number(r.hits) >= 5), `compteur en base : ${JSON.stringify(data)}`);
+    });
+});
+
+// ── Lot 9 bis (R58, T39) : même quota par IP pour la connexion côté serveur ──
+
+describe('R58 — /api/auth/login : quota par IP', () => {
+    test('login : PASSWORD_LOGIN_PER_IP_HOUR par IP, numéros différents (rouge jusqu’à fix(9b.14) : route absente)', async () => {
+        await withEnv({ PASSWORD_LOGIN_PER_IP_HOUR: '2' }, async () => {
+            const from = freshIp();
+            await alignWindow(3600, 8000);
+            const results: RouteResult[] = [];
+            for (let i = 0; i < 3; i += 1) {
+                results.push(await post('../../app/api/auth/login/route',
+                    jsonRequest('/api/auth/login', { identifier: randomSenegalPhone('78'), password: STRONG_PASSWORD }, ip(from))));
+            }
+            assert.deepEqual(results.slice(0, 2).map((r) => r.status), [401, 401], `numéros inconnus sous la limite : ${statuses(results)}`);
+            assertLimitedAfter(results, 2, 'login');
+        });
     });
 });
