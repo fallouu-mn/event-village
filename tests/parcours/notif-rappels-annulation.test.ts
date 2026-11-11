@@ -50,7 +50,7 @@ import { authed, ticketRow } from './acces-helpers';
 import { advanceEventTo, eventStatus, shiftEventDates } from './cycle-helpers';
 import {
     assertNotificationInvariants, createReminderEvent, dakarAt, dakarDay, deleteOutboxRows, dispatchAt, getNotifSetting, insertOutboxRow,
-    loadLotModule, markPhoneVerified, outboxRows, scheduleAt, setNotifSetting, smsMark, smsTo,
+    loadLotModule, markEmailVerified, markPhoneVerified, outboxRows, scheduleAt, setNotifSetting, smsMark, smsTo,
     type OutboxChannel, type OutboxRow, type ReminderEvent, type ScheduleReport,
 } from './notif-helpers';
 
@@ -83,7 +83,7 @@ const FREE = 'Entree libre';
 const CATEGORIES: CategorySpec[] = [{ name: STANDARD, price: 5_000, total: 50 }, { name: FREE, price: 0, total: 50 }];
 const REMINDER_TYPES: ReminderType[] = ['REMINDER_J1', 'REMINDER_H3', 'CONTROLLER_REMINDER'];
 const J1_CHANNELS: OutboxChannel[] = ['EMAIL', 'IN_APP', 'PUSH', 'SMS'];
-const H3_CHANNELS: OutboxChannel[] = ['IN_APP', 'PUSH', 'SMS'];
+const H3_CHANNELS: OutboxChannel[] = ['EMAIL', 'IN_APP', 'PUSH', 'SMS']; // lot 9 bis (G.49, B97, 5.50) : EMAIL au registre
 const EVENT_DAY = dakarDay(3);
 const EVE = dakarDay(2);
 const NEXT_DAY = dakarDay(4);
@@ -133,7 +133,7 @@ async function giveFreeTicket(ev: ReminderEvent, holder: Buyer): Promise<string>
 }
 
 async function holderWithTicket(ev: ReminderEvent, label: string): Promise<Buyer> {
-    const holder = await newBuyer(`rapa-${label}`);
+    const holder = await newBuyer(`rapa-${label}`); await markEmailVerified(holder.userId); // lot 9 bis (R87, B96) : EMAIL PENDING pour une adresse vérifiée
     await giveFreeTicket(ev, holder);
     return holder;
 }
@@ -420,10 +420,10 @@ describe('6.5 Rappels annulés par un changement de date (contrat I4, I2)', () =
 describe('6.5 Billet transféré : rappels de l’ancien et du nouveau porteur (contrat I4, B3)', () => {
     test('ancien porteur sans autre billet → CANCELLED NO_LONGER_HOLDER (transaction de l’acceptation) ; porteur qui garde un billet → intact ; nouveaux porteurs → rappels à venir', async () => {
         const ev = await reminderEvent('Transfert');
-        const alone = await newBuyer('rapa-seul');
-        const keeper = await newBuyer('rapa-garde');
-        const toAlone = await newBuyer('rapa-dest1', { firstName: 'Mariama', lastName: 'Destinataire' });
-        const toKeeper = await newBuyer('rapa-dest2', { firstName: 'Ousmane', lastName: 'Destinataire' });
+        const alone = await newBuyer('rapa-seul'); await markEmailVerified(alone.userId);
+        const keeper = await newBuyer('rapa-garde'); await markEmailVerified(keeper.userId);
+        const toAlone = await newBuyer('rapa-dest1', { firstName: 'Mariama', lastName: 'Destinataire' }); await markEmailVerified(toAlone.userId);
+        const toKeeper = await newBuyer('rapa-dest2', { firstName: 'Ousmane', lastName: 'Destinataire' }); await markEmailVerified(toKeeper.userId);
         await markPhoneVerified(toAlone.userId);
         await markPhoneVerified(toKeeper.userId);
         const pAlone = await buyConfirmed(alone, ev, [[STANDARD, 1]]);

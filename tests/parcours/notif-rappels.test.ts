@@ -58,7 +58,7 @@ import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { newController, scan, ticketPayload, ticketRow } from './acces-helpers';
 import {
     assertNotificationInvariants, createReminderEvent, dakarAt, dakarDay, dispatchAt, fakeBrowserSubscription, getNotifSetting,
-    loadLotModule, newVapidKeys, outboxRows, pushTo, scheduleAt, setNotifSetting, smsMark, smsTo, withEnv, withNotifSettings, withVapid,
+    loadLotModule, markEmailVerified, newVapidKeys, outboxRows, pushTo, scheduleAt, setNotifSetting, smsMark, smsTo, withEnv, withNotifSettings, withVapid,
     type FakeBrowserSubscription, type OutboxChannel, type OutboxRow, type OutboxStatus, type ReminderEvent,
     type ScheduleReport, type VapidKeys,
 } from './notif-helpers';
@@ -95,8 +95,8 @@ const FREE = 'Entree libre';
 const CATEGORIES: CategorySpec[] = [{ name: STANDARD, price: 5_000, total: 50 }, { name: FREE, price: 0, total: 50 }];
 const REMINDER_TYPES: ReminderType[] = ['REMINDER_J1', 'REMINDER_H3', 'CONTROLLER_REMINDER'];
 const J1_CHANNELS: OutboxChannel[] = ['EMAIL', 'IN_APP', 'PUSH', 'SMS'];
-const H3_CHANNELS: OutboxChannel[] = ['IN_APP', 'PUSH', 'SMS'];
-const CTRL_CHANNELS: OutboxChannel[] = ['IN_APP', 'PUSH', 'SMS'];
+const H3_CHANNELS: OutboxChannel[] = ['EMAIL', 'IN_APP', 'PUSH', 'SMS']; // lot 9 bis (G.49, B97, 5.50) : EMAIL au registre
+const CTRL_CHANNELS: OutboxChannel[] = ['EMAIL', 'IN_APP', 'PUSH', 'SMS']; // idem
 /** Jour du début des événements à horloge future, et sa veille (Dakar). */
 const EVENT_DAY = dakarDay(3);
 const EVE = dakarDay(2);
@@ -172,7 +172,7 @@ async function giveTicket(ev: ReminderEvent, holder: Buyer | null, channel: 'FRE
 }
 
 async function holderWithTicket(ev: ReminderEvent, label: string): Promise<Buyer> {
-    const holder = await newBuyer(`rap-${label}`);
+    const holder = await newBuyer(`rap-${label}`); await markEmailVerified(holder.userId); // lot 9 bis (R87, B96) : EMAIL PENDING pour une adresse vérifiée
     await giveTicket(ev, holder);
     return holder;
 }
@@ -483,8 +483,8 @@ describe('6.5 Rappel H-3 : au début moins le nombre d’heures réglé (contrat
         const ev = await reminderEvent('Entres', inMinutes(190));
         const due = new Date(ev.startAt.getTime() - 3 * HOUR);
         const used = await newBuyer('rap-utilise');
-        const valid = await newBuyer('rap-valide');
-        const mixed = await newBuyer('rap-mixte');
+        const valid = await newBuyer('rap-valide'); await markEmailVerified(valid.userId);
+        const mixed = await newBuyer('rap-mixte'); await markEmailVerified(mixed.userId);
         const pUsed = await buyConfirmed(used, ev, [[STANDARD, 1]]);
         await buyConfirmed(valid, ev, [[STANDARD, 1]]);
         const pMixed = await buyConfirmed(mixed, ev, [[STANDARD, 2]]);
@@ -553,7 +553,7 @@ describe('6.5 Rappel H-3 : au début moins le nombre d’heures réglé (contrat
 describe('6.5 Destinataires et unicité (contrat I2)', () => {
     test('5 billets d’un compte → une ligne par canal ; deux planifications et deux envois → aucun doublon, un seul SMS au texte exact', async () => {
         const ev = await reminderEvent('Cinq Billets');
-        const buyer = await newBuyer('rap-cinq');
+        const buyer = await newBuyer('rap-cinq'); await markEmailVerified(buyer.userId);
         const purchase = await buyConfirmed(buyer, ev, [[STANDARD, 5]]);
         assert.equal(purchase.tickets.length, 5, 'cinq billets émis');
         const due = dakarAt(EVE, '10:00');
@@ -585,7 +585,7 @@ describe('6.5 Destinataires et unicité (contrat I2)', () => {
 
     test('invitation → rappel ; billet de guichet (sans porteur) → rien ; compte suspendu → lignes SKIPPED ACCOUNT_SUSPENDED (trace)', async () => {
         const ev = await reminderEvent('Invites');
-        const invitee = await newBuyer('rap-invite');
+        const invitee = await newBuyer('rap-invite'); await markEmailVerified(invitee.userId);
         await giveTicket(ev, invitee, 'INVITATION');
         await giveTicket(ev, null, 'COUNTER');
         const suspended = await holderWithTicket(ev, 'suspendu');
@@ -604,8 +604,8 @@ describe('6.5 Destinataires et unicité (contrat I2)', () => {
 
     test('rappel du contrôleur : la veille à 18:00, une ligne par affectation, point d’entrée et espèces dans les textes', async () => {
         const ev = await reminderEvent('Controle K');
-        const withCash = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'rap-c1' });
-        const noCash = await newController(partner, ev.eventId, { canAcceptCash: false, label: 'rap-c2' });
+        const withCash = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'rap-c1' }); await markEmailVerified(withCash.userId);
+        const noCash = await newController(partner, ev.eventId, { canAcceptCash: false, label: 'rap-c2' }); await markEmailVerified(noCash.userId);
         const { error } = await service.from('event_controllers').update({ entry_point: 'Porte Nord' }).eq('event_id', ev.eventId).eq('user_id', withCash.userId);
         assert.equal(error, null, `point d’entrée : ${error?.message}`);
         const { data: assignments, error: aErr } = await service.from('event_controllers').select('id, user_id').eq('event_id', ev.eventId);

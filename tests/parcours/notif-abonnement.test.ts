@@ -94,9 +94,9 @@ async function deliver(row: OutboxRow): Promise<NotificationRow> {
 describe('8.2 m — PAYMENT_SUCCESS : le lien suit la cible du paiement (contrat 10.1)', () => {
     test('abonnement payé et confirmé : une notification dont le lien mène à /partner/subscription', async () => {
         const payment = await paySubscription();
-        const rows = await outboxRows({ keyPrefix: `PAYMENT_SUCCESS:${payment.id}`, userId: subscriber.userId });
-        assert.deepEqual(rows.map((r) => ({ type: r.type, channel: r.channel })), [{ type: 'PAYMENT_SUCCESS', channel: 'IN_APP' }],
-            `une seule ligne, canal IN_APP : ${JSON.stringify(rows.map((r) => r.idempotency_key))}`);
+        const all = await outboxRows({ keyPrefix: `PAYMENT_SUCCESS:${payment.id}`, userId: subscriber.userId }); const rows = all.filter((r) => r.channel === 'IN_APP');
+        assert.deepEqual(all.map((r) => ({ type: r.type, channel: r.channel })).sort((a, b) => a.channel.localeCompare(b.channel)), [{ type: 'PAYMENT_SUCCESS', channel: 'EMAIL' }, { type: 'PAYMENT_SUCCESS', channel: 'IN_APP' }],
+            `une ligne par canal du registre, IN_APP et EMAIL (lot 9 bis, G.49 : PAYMENT_SUCCESS indispensable déclare EMAIL) : ${JSON.stringify(all.map((r) => r.idempotency_key))}`);
 
         const n = await deliver(rows[0]);
         assert.deepEqual(

@@ -125,8 +125,8 @@ async function signals(kind: string, refIds: string[]): Promise<Array<Record<str
 /** Alerte ADMIN_NOTIFICATION_FAILED attendue pour `admin` (notifications.read), absente pour `other`. */
 async function assertFailedAlert(outboxId: string, failedType: string, channel: string, reason: string): Promise<void> {
     const alerts = await failedAlerts(outboxId);
-    const mine = alerts.filter((a) => a.recipient_user_id === adminWith.userId);
-    assert.equal(mine.length, 1, `ADMIN_NOTIFICATION_FAILED pour l’admin qui a notifications.read : ${JSON.stringify(alerts.map((a) => a.idempotency_key))}`);
+    const ofAdmin = alerts.filter((a) => a.recipient_user_id === adminWith.userId); const mine = ofAdmin.filter((a) => a.channel === 'IN_APP'); // lot 9 bis (G.49, B97) : IN_APP et EMAIL
+    assert.deepEqual(ofAdmin.map((a) => a.channel).sort(), ['EMAIL', 'IN_APP'], `ADMIN_NOTIFICATION_FAILED pour l’admin qui a notifications.read, une ligne par canal du registre : ${JSON.stringify(alerts.map((a) => a.idempotency_key))}`);
     assert.equal(mine[0].idempotency_key, `ADMIN_NOTIFICATION_FAILED:${outboxId}:${adminWith.userId}:IN_APP`, 'clé de l’alerte');
     assert.equal(mine[0].channel, 'IN_APP');
     assert.deepEqual(

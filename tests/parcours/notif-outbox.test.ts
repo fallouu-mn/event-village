@@ -973,8 +973,8 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
         const k = { skip: `REMINDER_J1:${randomUUID()}`, pref: `REMINDER_H3:${randomUUID()}` };
         const reminderData = { event_id: randomUUID(), title: 'TEST Rappel', start_at: new Date(now.getTime() + 24 * 3600_000).toISOString(), location: 'Lieu', city: 'Dakar', sms_policy: 'NEVER' };
         const r = await inRolledBackTransaction(async (db) => {
-            await prepare(db, 'notif_enqueue SKIPPED');
-            await db.query('DELETE FROM public.notification_preferences WHERE user_id = $1', [buyer.userId]);
+            await prepare(db, 'notif_enqueue SKIPPED', ['users']);
+            await db.query('DELETE FROM public.notification_preferences WHERE user_id = $1', [buyer.userId]); await db.query('UPDATE public.users SET email_verified_at = now() WHERE id = $1', [buyer.userId]); // lot 9 bis (R87, B96) : EMAIL PENDING pour une adresse vérifiée
             const nSkip = await enqueue(db, { type: 'REMINDER_J1', key: k.skip, user_id: buyer.userId, data: reminderData, skip: { SMS: 'SMS_POLICY_NEVER' }, now: now.toISOString() });
             await db.query(`INSERT INTO public.notification_preferences (user_id, topic, channel, enabled) VALUES ($1, 'REMINDERS', 'PUSH', false)`, [buyer.userId]);
             const nPref = await enqueue(db, { type: 'REMINDER_H3', key: k.pref, user_id: buyer.userId, data: { ...reminderData, sms_policy: 'IF_NO_PUSH' }, now: now.toISOString() });
@@ -1014,7 +1014,7 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             await db.query('DELETE FROM public.notification_preferences WHERE user_id = $1', [buyer.userId]);
             await db.query(`INSERT INTO public.notification_preferences (user_id, topic, channel, enabled) VALUES ($1, 'REMINDERS', 'SMS', false)`, [buyer.userId]);
             await db.query(`UPDATE public.users SET status = 'SUSPENDU' WHERE id = $1`, [buyer.userId]);
-            await db.query(`UPDATE public.partners SET status = 'SUSPENDU' WHERE id = $1`, [partner.partnerId]);
+            await db.query(`UPDATE public.partners SET status = 'SUSPENDU' WHERE id = $1`, [partner.partnerId]); await db.query('UPDATE public.users SET email_verified_at = now() WHERE id IN ($1, $2)', [buyer.userId, partner.userId]); // lot 9 bis (R87, B96)
             const n = {
                 block: await enqueue(db, { type: 'REMINDER_J1', key: k.block, user_id: buyer.userId, data: { title: 'TEST' }, now: now.toISOString() }),
                 allow: await enqueue(db, { type: 'PURCHASE_CONFIRMED', key: k.allow, user_id: buyer.userId, data: purchaseData(), now: now.toISOString() }),
@@ -1026,7 +1026,7 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
                 partnerBlock: await groupRows(db, k.partnerBlock), partnerAllow: await groupRows(db, k.partnerAllow),
             };
         });
-        assert.deepEqual(r.n, { block: 4, allow: 3, partnerBlock: 4, partnerAllow: 3 }, 'une ligne par canal du registre, SKIPPED compris');
+        assert.deepEqual(r.n, { block: 4, allow: 3, partnerBlock: 4, partnerAllow: 4 }, 'une ligne par canal du registre, SKIPPED compris (SHIFT_DISCREPANCY + EMAIL, G.49)');
         for (const row of [...r.block, ...r.partnerBlock]) {
             assert.equal(row.status, 'SKIPPED', `${row.type}/${row.channel} : ${show([row])}`);
             assert.equal(row.reason, 'ACCOUNT_SUSPENDED', `${row.type}/${row.channel} : le compte bloqué passe avant la préférence`);
@@ -1109,11 +1109,11 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
         assert.equal(r.first, r.rows.length, `nombre renvoyé = lignes créées : ${show(r.rows)}`);
         const keys = new Set(r.rows.map((x) => x.idempotency_key));
         assert.ok(keys.has(`${prefix}${fx.users.SUPERADMIN.id}:IN_APP`), `SUPERADMIN du seed destinataire : ${Array.from(keys).join(', ')}`);
-        assert.ok(keys.has(`${prefix}${withPerm}:IN_APP`), 'ADMIN avec notifications.read destinataire');
+        assert.ok(keys.has(`${prefix}${withPerm}:IN_APP`) && keys.has(`${prefix}${withPerm}:EMAIL`), 'ADMIN avec notifications.read destinataire (IN_APP et EMAIL, G.49)');
         assert.ok(!Array.from(keys).some((key) => key.includes(noPerm)), 'ADMIN sans la permission : aucune ligne');
         for (const row of r.rows) {
-            assert.equal(row.channel, 'IN_APP', 'canal du registre (I)');
-            assert.equal(row.idempotency_key, `${prefix}${row.recipient_user_id}:IN_APP`, 'clé type:ref:admin:canal');
+            assert.ok(row.channel === 'IN_APP' || row.channel === 'EMAIL', `canaux du registre (I, E : G.49) : ${row.channel}`);
+            assert.equal(row.idempotency_key, `${prefix}${row.recipient_user_id}:${row.channel}`, 'clé type:ref:admin:canal');
             assert.equal((row.template_data as { outbox_id?: string }).outbox_id, ref, 'données copiées');
         }
         assert.equal(r.replay, 0, 'rejeu sans doublon');

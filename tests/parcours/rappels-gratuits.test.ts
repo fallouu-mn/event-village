@@ -48,7 +48,7 @@ const STANDARD = 'Standard';
 const FREE = 'Entree libre';
 const CATEGORIES: CategorySpec[] = [{ name: STANDARD, price: 5_000, total: 50 }, { name: FREE, price: 0, total: 50 }];
 const J1_CHANNELS: OutboxChannel[] = ['EMAIL', 'IN_APP', 'PUSH', 'SMS'];
-const H3_CHANNELS: OutboxChannel[] = ['IN_APP', 'PUSH', 'SMS'];
+const H3_CHANNELS: OutboxChannel[] = ['EMAIL', 'IN_APP', 'PUSH', 'SMS']; // lot 9 bis (G.49, B97, 5.50) : EMAIL au registre
 
 /** Réglages des rappels au défaut du contrat (I1 du lot 6), politique des billets gratuits posée par cas. */
 function settings(policy: FreePolicy): Partial<Record<NotifSettingKey, unknown>> {

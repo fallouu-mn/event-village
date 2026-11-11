@@ -136,8 +136,8 @@ describe('Anti-abus SMS', () => {
             // clé du jour UTC). Lot 7 (T9) : la ligne de l'admin neuf est exigée, puis livrée par l'envoyeur.
             const capDay = new Date().toISOString().slice(0, 10);
             const queued = await outboxRows({ userId: recipient.userId, keyPrefix: `ADMIN_SMS_CAP_GLOBAL:${capDay}:` });
-            assert.deepEqual(queued.map((r) => r.idempotency_key), [`ADMIN_SMS_CAP_GLOBAL:${capDay}:${recipient.userId}:IN_APP`],
-                'alerte du plafond mise en file pour l’admin notifications.read créé par le test (in-app seulement)');
+            assert.deepEqual(queued.map((r) => r.idempotency_key).sort(), [`ADMIN_SMS_CAP_GLOBAL:${capDay}:${recipient.userId}:EMAIL`, `ADMIN_SMS_CAP_GLOBAL:${capDay}:${recipient.userId}:IN_APP`],
+                'alerte du plafond mise en file pour l’admin notifications.read créé par le test (in-app et email, G.49 ; jamais de SMS)');
             await flushNotifications({ ids: queued.map((r) => r.id) });
             const { data: notif, error: notifErr } = await service.from('notifications').select('id, channel').eq('user_id', recipient.userId).eq('type', 'SMS_DAILY_CAP_REACHED').gte('created_at', since);
             assert.equal(notifErr, null, `notifications : ${notifErr?.message}`);

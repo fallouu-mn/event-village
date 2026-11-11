@@ -44,7 +44,7 @@ import { fakePay, importModule, newBuyer, service, setFakeMode, type Buyer, type
 import { buyConfirmed, createPartnerEvent, jsonRequest, newPartner, withSettings, type TestPartner } from './finance-helpers';
 import { advanceEventTo, createDraftEvent, eventHistory } from './cycle-helpers';
 import {
-    assertNotificationInvariants, dakarAt, dakarDay, dispatchAt, insertOutboxRow, newAdmin, outboxRows, withNotifSettings,
+    assertNotificationInvariants, dakarAt, dakarDay, dispatchAt, insertOutboxRow, markEmailVerified, newAdmin, outboxRows, withNotifSettings,
     type OutboxChannel, type OutboxRow, type TestAdmin,
 } from './notif-helpers';
 
@@ -67,8 +67,8 @@ let suspended: TestAdmin;
 let legacyRole: Buyer;
 
 before(async () => {
-    superadmin = await newAdmin('notif-sa', [], { role: 'SUPERADMIN' });
-    for (const p of PERMISSIONS) admins[p] = await newAdmin(`notif-${p.replace('.', '-')}`, [p]);
+    superadmin = await newAdmin('notif-sa', [], { role: 'SUPERADMIN' }); await markEmailVerified(superadmin.userId); // lot 9 bis (R87, B96) : email seulement à une adresse vérifiée
+    for (const p of PERMISSIONS) { admins[p] = await newAdmin(`notif-${p.replace('.', '-')}`, [p]); await markEmailVerified(admins[p].userId); }
     noPermission = await newAdmin('notif-sans-permission', []);
     suspended = await newAdmin('notif-suspendu', [...PERMISSIONS]);
     const { error: sErr } = await service.from('users').update({ status: 'SUSPENDU' }).eq('id', suspended.userId);
@@ -285,7 +285,7 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
         const [failed] = await outboxRows({ ids: [row.id] });
         assert.equal(failed.status, 'FAILED', `refus définitif : FAILED (${failed.status} ${failed.reason})`);
         assert.equal(failed.reason, 'SMS_REJECTED', `motif : ${failed.reason}`);
-        const rows = await adminAlert('ADMIN_NOTIFICATION_FAILED', `ADMIN_NOTIFICATION_FAILED:${row.id}:`, 'notifications.read', ['IN_APP']);
+        const rows = await adminAlert('ADMIN_NOTIFICATION_FAILED', `ADMIN_NOTIFICATION_FAILED:${row.id}:`, 'notifications.read', ['EMAIL', 'IN_APP']); // G.49 (B97) : EMAIL déclaré
         assert.ok(rows.every((r) => r.template_data.outbox_id === row.id), 'template_data.outbox_id');
         assert.equal((await signals('NOTIFICATION_FAILED', row.id)).length, 1, 'un signal NOTIFICATION_FAILED');
         await dispatchAt(new Date(), { ids: [row.id] });
@@ -344,7 +344,7 @@ describe('6.6 Admin — notification FAILED, seuil de SMS du jour, plafond de SM
             const first = await call();
             assert.equal(first.error, null, `notification_admin_alert ${type} : ${first.error?.message} (code ${first.error?.code})`);
             assert.equal((first.data as Row | null)?.ok, true, `réponse : ${JSON.stringify(first.data)}`);
-            const rows = await adminAlert(type, `${type}:${day}:`, 'notifications.read', ['IN_APP']);
+            const rows = await adminAlert(type, `${type}:${day}:`, 'notifications.read', ['EMAIL', 'IN_APP']); // G.49 (B97) : EMAIL déclaré
             const second = await call();
             assert.equal(second.error, null, `second appel : ${second.error?.message}`);
             assert.equal((await outboxRows({ type, keyPrefix: `${type}:${day}:` })).length, rows.length, `${type} : second appel du jour sans doublon`);

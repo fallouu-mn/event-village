@@ -197,7 +197,7 @@ describe('6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amen
         assert.equal((await ticketRow(ticketId)).transfer_locked, true, 'billet verrouillé');
 
         const rows = await outboxRows({ type: 'TRANSFER_OFFERED', keyPrefix: `TRANSFER_OFFERED:${id}:` });
-        assert.deepEqual(channelsOf(rows), ['IN_APP', 'PUSH', 'SMS'], `canaux de l'offre (sans EMAIL, amendement 2) : ${JSON.stringify(rows.map((r) => r.channel))}`);
+        assert.deepEqual(channelsOf(rows), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `canaux de l'offre (lot 9 bis, G.49 : EMAIL au compte, l'amendement 2 est annulé) : ${JSON.stringify(rows.map((r) => r.channel))}`);
         const sms = rows.find((r) => r.channel === 'SMS')!;
         assert.equal(sms.recipient_phone, to.phoneE164, 'SMS : au numéro saisi');
         assert.equal(sms.actor_id, owner.userId, 'SMS : compte déclencheur = expéditeur (quota par compte)');
@@ -321,7 +321,7 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
         assert.equal(tr.to_user_id, to.userId, 'to_user_id');
 
         const sender = await outboxRows({ type: 'TRANSFER_CLAIMED_SENDER', keyPrefix: `TRANSFER_CLAIMED_SENDER:${id}:` });
-        assert.deepEqual(channelsOf(sender), ['IN_APP', 'PUSH'], `expéditeur prévenu (in-app, push ; aucun SMS, décision 15) : ${JSON.stringify(sender.map((r) => r.channel))}`);
+        assert.deepEqual(channelsOf(sender), ['EMAIL', 'IN_APP', 'PUSH'], `expéditeur prévenu (in-app, push, email par G.49 ; aucun SMS, décision 15) : ${JSON.stringify(sender.map((r) => r.channel))}`);
         assert.ok(sender.every((r) => r.recipient_user_id === owner.userId), 'à l’expéditeur');
         const received = await outboxRows({ type: 'TRANSFER_RECEIVED', keyPrefix: `TRANSFER_RECEIVED:${id}:` });
         // Lot 7, tâche 7.9 (D91) : le destinataire reçoit aussi l'email de confirmation (nouveau numéro du billet).
