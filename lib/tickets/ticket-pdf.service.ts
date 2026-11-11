@@ -3,7 +3,9 @@
  * l'application (renouvelé toutes les 20 s) ou, sans téléphone, avec le numéro du billet et une pièce
  * d'identité au nom du titulaire (saisie manuelle au contrôle).
  */
+import { pdfText } from '@/lib/pdf/pdf-text';
 import { supportEmail } from '@/lib/support';
+import { isTicketStatus, ticketStatusLabel } from '@/lib/tickets/ticket-status';
 
 export interface TicketPdfData {
     ticketNumber: string;
@@ -22,46 +24,6 @@ export interface TicketPdfData {
     ownerPhoneOrEmail?: string;
     status: string;
     securityVersion?: number;
-}
-
-/**
- * Encode un texte UTF-8 en caractères compatibles WinAnsi/PDF standard.
- */
-function escapePdfText(str: string): string {
-    if (!str) return '';
-    const clean = str
-        .replace(/[\u00A0\u202F\u2000-\u200A]/g, ' ')
-        .replace(/\\/g, '\\\\')
-        .replace(/\(/g, '\\(')
-        .replace(/\)/g, '\\)');
-    
-    // Normalisation des accents fréquents en français pour le jeu de caractères standard PDF Helvetica
-    return clean
-        .replace(/é/g, '\xE9')
-        .replace(/è/g, '\xE8')
-        .replace(/ê/g, '\xEA')
-        .replace(/ë/g, '\xEB')
-        .replace(/à/g, '\xE0')
-        .replace(/â/g, '\xE2')
-        .replace(/ä/g, '\xE4')
-        .replace(/î/g, '\xEE')
-        .replace(/ï/g, '\xEF')
-        .replace(/ô/g, '\xF4')
-        .replace(/ö/g, '\xF6')
-        .replace(/ù/g, '\xF9')
-        .replace(/û/g, '\xFB')
-        .replace(/ü/g, '\xFC')
-        .replace(/ç/g, '\xE7')
-        .replace(/É/g, '\xC9')
-        .replace(/È/g, '\xC8')
-        .replace(/Ê/g, '\xCA')
-        .replace(/À/g, '\xC0')
-        .replace(/Ç/g, '\xC7')
-        .replace(/’/g, "'")
-        .replace(/–/g, '-')
-        .replace(/—/g, '--')
-        .replace(/«/g, '"')
-        .replace(/»/g, '"');
 }
 
 export class TicketPdfService {
@@ -116,23 +78,27 @@ export class TicketPdfService {
         stream += '/F1 9 Tf\n';
         stream += '1 1 1 rg\n';
         stream += `${cardX + 24} ${cardY + cardHeight - 48} Td\n`;
-        stream += `(BILLET OFFICIEL D'ACCES -- BILLETTERIE SECURISEE) Tj\n`;
+        stream += `(${pdfText('BILLET OFFICIEL D’ACCÈS -- BILLETTERIE SÉCURISÉE')}) Tj\n`;
         stream += 'ET\n';
 
         // Badge Statut
-        stream += 'BT\n';
-        stream += '/F2 10 Tf\n';
-        stream += '1 1 1 rg\n';
-        stream += `${cardX + cardWidth - 110} ${cardY + cardHeight - 38} Td\n`;
-        stream += `(STATUT: ${escapePdfText(data.status)}) Tj\n`;
-        stream += 'ET\n';
+        // Lot 9 bis (R77, glossaire) : libellé du statut (« Valable »), jamais la valeur de la base ; inconnu : aucun badge.
+        if (isTicketStatus(data.status)) {
+            const statusLabel = ticketStatusLabel(data.status).toUpperCase();
+            stream += 'BT\n';
+            stream += '/F2 10 Tf\n';
+            stream += '1 1 1 rg\n';
+            stream += `${cardX + cardWidth - 110} ${cardY + cardHeight - 38} Td\n`;
+            stream += `(${pdfText(`STATUT : ${statusLabel}`)}) Tj\n`;
+            stream += 'ET\n';
+        }
 
         // Titre de l'événement dans le Header
         stream += 'BT\n';
         stream += '/F2 15 Tf\n';
         stream += '1 1 1 rg\n';
         stream += `${cardX + 24} ${cardY + cardHeight - 82} Td\n`;
-        stream += `(${escapePdfText(data.eventTitle.slice(0, 48))}) Tj\n`;
+        stream += `(${pdfText(data.eventTitle.slice(0, 48))}) Tj\n`;
         stream += 'ET\n';
 
         if (data.organizerName || data.eventSubtitle) {
@@ -141,7 +107,7 @@ export class TicketPdfService {
             stream += '/F1 10 Tf\n';
             stream += '1 1 1 rg\n';
             stream += `${cardX + 24} ${cardY + cardHeight - 98} Td\n`;
-            stream += `(Organise par: ${escapePdfText(org.slice(0, 50))}) Tj\n`;
+            stream += `(${pdfText(`Organisé par : ${org.slice(0, 50)}`)}) Tj\n`;
             stream += 'ET\n';
         }
 
@@ -159,41 +125,41 @@ export class TicketPdfService {
 
         // Ligne 1 : Date & Heure
         stream += 'BT\n/F1 9 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${cardX + 28} ${infoStartY} Td\n(DATE DE L'EVENEMENT) Tj\nET\n`;
+        stream += `${cardX + 28} ${infoStartY} Td\n(${pdfText('DATE DE L’ÉVÉNEMENT')}) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `${cardX + 28} ${infoStartY - 16} Td\n(${escapePdfText(data.dateFormatted)}) Tj\nET\n`;
+        stream += `${cardX + 28} ${infoStartY - 16} Td\n(${pdfText(data.dateFormatted)}) Tj\nET\n`;
 
         stream += 'BT\n/F1 9 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${cardX + 260} ${infoStartY} Td\n(HEURE D'ACCES) Tj\nET\n`;
+        stream += `${cardX + 260} ${infoStartY} Td\n(${pdfText('HEURE D’ACCÈS')}) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `${cardX + 260} ${infoStartY - 16} Td\n(${escapePdfText(data.timeFormatted)}) Tj\nET\n`;
+        stream += `${cardX + 260} ${infoStartY - 16} Td\n(${pdfText(data.timeFormatted)}) Tj\nET\n`;
 
         // Ligne 2 : Lieu & Emplacement / Catégorie
         const line2Y = infoStartY - 48;
         stream += 'BT\n/F1 9 Tf\n0.45 0.52 0.60 rg\n';
         stream += `${cardX + 28} ${line2Y} Td\n(LIEU ET SALLE) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `${cardX + 28} ${line2Y - 16} Td\n(${escapePdfText(`${data.venue}, ${data.city}`.slice(0, 36))}) Tj\nET\n`;
+        stream += `${cardX + 28} ${line2Y - 16} Td\n(${pdfText(`${data.venue}, ${data.city}`.slice(0, 36))}) Tj\nET\n`;
 
         stream += 'BT\n/F1 9 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${cardX + 260} ${line2Y} Td\n(CATEGORIE / FORMULE) Tj\nET\n`;
+        stream += `${cardX + 260} ${line2Y} Td\n(${pdfText('CATÉGORIE')}) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n1 0.34 0.13 rg\n'; // Orange
-        stream += `${cardX + 260} ${line2Y - 16} Td\n(${escapePdfText(data.categoryName)}) Tj\nET\n`;
+        stream += `${cardX + 260} ${line2Y - 16} Td\n(${pdfText(data.categoryName)}) Tj\nET\n`;
 
         // Ligne 3 : Porteur / Titulaire & Prix
         const line3Y = line2Y - 48;
         stream += 'BT\n/F1 9 Tf\n0.45 0.52 0.60 rg\n';
         stream += `${cardX + 28} ${line3Y} Td\n(TITULAIRE DU BILLET) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `${cardX + 28} ${line3Y - 16} Td\n(${escapePdfText(data.ownerName)}) Tj\nET\n`;
+        stream += `${cardX + 28} ${line3Y - 16} Td\n(${pdfText(data.ownerName)}) Tj\nET\n`;
 
         stream += 'BT\n/F1 9 Tf\n0.45 0.52 0.60 rg\n';
         stream += `${cardX + 260} ${line3Y} Td\n(PRIX DU BILLET) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `${cardX + 260} ${line3Y - 16} Td\n(${escapePdfText(data.priceFormatted)}) Tj\nET\n`;
+        stream += `${cardX + 260} ${line3Y - 16} Td\n(${pdfText(data.priceFormatted)}) Tj\nET\n`;
         if (data.feesFormatted) {
             stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
-            stream += `${cardX + 260} ${line3Y - 30} Td\n(${escapePdfText(data.feesFormatted)}) Tj\nET\n`;
+            stream += `${cardX + 260} ${line3Y - 30} Td\n(${pdfText(data.feesFormatted)}) Tj\nET\n`;
         }
 
         // Ligne 4 : Numéro officiel de billet
@@ -202,7 +168,7 @@ export class TicketPdfService {
         stream += `${cardX + 24} ${line4Y - 10} ${cardWidth - 48} 26 re f\n`;
 
         stream += 'BT\n/F2 10 Tf\n0.20 0.25 0.35 rg\n';
-        stream += `${cardX + 36} ${line4Y - 2} Td\n(NUMERO DE BILLET :  ${escapePdfText(data.ticketNumber)}) Tj\nET\n`;
+        stream += `${cardX + 36} ${line4Y - 2} Td\n(${pdfText(`NUMÉRO DE BILLET : ${data.ticketNumber}`)}) Tj\nET\n`;
 
         // ── SECTION CENTRALE : ACCÈS AU CONTRÔLE (aucun QR imprimé) ─────────────
         const accessTop = line4Y - 26;
@@ -214,7 +180,7 @@ export class TicketPdfService {
 
         const textX = cardX + 40;
         const line = (font: 'F1' | 'F2', size: number, y: number, text: string, color = '0.06 0.09 0.16') => {
-            stream += `BT\n/${font} ${size} Tf\n${color} rg\n${textX} ${y} Td\n(${escapePdfText(text)}) Tj\nET\n`;
+            stream += `BT\n/${font} ${size} Tf\n${color} rg\n${textX} ${y} Td\n(${pdfText(text)}) Tj\nET\n`;
         };
         line('F2', 12, accessTop - 24, 'ACCÈS AU CONTRÔLE', '1 0.34 0.13');
         line('F2', 10, accessTop - 48, 'Avec votre téléphone');
@@ -238,14 +204,14 @@ export class TicketPdfService {
         stream += '/F1 7.5 Tf\n';
         stream += '0.45 0.52 0.60 rg\n';
         stream += `${cardX + 28} ${footerY + 10} Td\n`;
-        stream += `(Billet nominatif : QR dynamique de l'application ou pièce d'identité du titulaire au contrôle.) Tj\n`;
+        stream += `(${pdfText('Billet nominatif : QR dynamique de l’application ou pièce d’identité du titulaire au contrôle.')}) Tj\n`;
         stream += 'ET\n';
 
         stream += 'BT\n';
         stream += '/F1 7.5 Tf\n';
         stream += '0.45 0.52 0.60 rg\n';
         stream += `${cardX + 28} ${footerY} Td\n`;
-        stream += `(Event Village Senegal -- Plateforme officielle de billetterie -- ${escapePdfText(supportEmail())}) Tj\n`;
+        stream += `(${pdfText(`Event Village Sénégal -- Plateforme officielle de billetterie -- ${supportEmail()}`)}) Tj\n`;
         stream += 'ET\n';
 
         // Sceau de sécurité / Version

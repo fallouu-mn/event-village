@@ -2,6 +2,8 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { accountBalance } from '@/lib/finance/ledger';
 import { formatFcfa } from '@/lib/format';
 import { dakarInstant } from '@/lib/validations/event';
+import { eventStatusLabel } from '@/lib/events/event-status';
+import { pdfAmount, pdfText } from '@/lib/pdf/pdf-text';
 import { supportEmail } from '@/lib/support';
 
 /**
@@ -508,50 +510,6 @@ interface TicketRow {
     created_at: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPER D'ÉCHAPPEMENT TEXTE PDF (WINANSI & CARACTÈRES ACCENTUÉS)
-// ─────────────────────────────────────────────────────────────────────────────
-function escapePdfText(str: string): string {
-    if (!str) return '';
-    const clean = str
-        .replace(/[   - ]/g, ' ')
-        .replace(/\\/g, '\\\\')
-        .replace(/\(/g, '\\(')
-        .replace(/\)/g, '\\)');
-
-    return clean
-        .replace(/é/g, '\xE9')
-        .replace(/è/g, '\xE8')
-        .replace(/ê/g, '\xEA')
-        .replace(/ë/g, '\xEB')
-        .replace(/à/g, '\xE0')
-        .replace(/â/g, '\xE2')
-        .replace(/ä/g, '\xE4')
-        .replace(/î/g, '\xEE')
-        .replace(/ï/g, '\xEF')
-        .replace(/ô/g, '\xF4')
-        .replace(/ö/g, '\xF6')
-        .replace(/ù/g, '\xF9')
-        .replace(/û/g, '\xFB')
-        .replace(/ü/g, '\xFC')
-        .replace(/ç/g, '\xE7')
-        .replace(/É/g, '\xC9')
-        .replace(/È/g, '\xC8')
-        .replace(/Ê/g, '\xCA')
-        .replace(/À/g, '\xC0')
-        .replace(/Ç/g, '\xC7')
-        .replace(/’/g, "'")
-        .replace(/–/g, '-')
-        .replace(/—/g, '--')
-        .replace(/«/g, '"')
-        .replace(/»/g, '"');
-}
-
-/** Montant FCFA pour le PDF (séparateurs de milliers normalisés, encodage WinAnsi). */
-function pdfAmount(n: number, suffix = 'FCFA'): string {
-    return escapePdfText(`${n.toLocaleString('fr-FR')} ${suffix}`);
-}
-
 /**
  * Champ CSV (séparateur point-virgule) : guillemets si nécessaire. Anomalie A23 (AM1) : un TEXTE commençant par un
  * caractère de formule reçoit une apostrophe, sinon un titre d'événement s'évaluerait à l'ouverture dans un tableur.
@@ -916,19 +874,19 @@ export class PartnerDashboardService {
 
         // Titres Header
         stream += 'BT\n/F2 16 Tf\n1 1 1 rg\n';
-        stream += `52 ${headerY + 44} Td\n(${escapePdfText('Rapport de clôture')}) Tj\nET\n`;
+        stream += `52 ${headerY + 44} Td\n(${pdfText('Rapport de clôture')}) Tj\nET\n`;
 
         stream += 'BT\n/F1 9 Tf\n1 1 1 rg\n';
-        stream += `52 ${headerY + 28} Td\n(Event Village -- Billetterie et recettes de la session) Tj\nET\n`;
+        stream += `52 ${headerY + 28} Td\n(${pdfText('Event Village -- Billetterie et recettes de la session')}) Tj\nET\n`;
 
         stream += 'BT\n/F2 9 Tf\n1 1 1 rg\n';
-        stream += `${pageWidth - 210} ${headerY + 44} Td\n(ID: ${escapePdfText(data.reportId)}) Tj\nET\n`;
+        stream += `${pageWidth - 210} ${headerY + 44} Td\n(ID: ${pdfText(data.reportId)}) Tj\nET\n`;
 
         const genDateFormatted = new Date(data.generatedAt).toLocaleDateString('fr-FR', {
             day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
         stream += 'BT\n/F1 8 Tf\n1 1 1 rg\n';
-        stream += `${pageWidth - 210} ${headerY + 28} Td\n(Edite le: ${escapePdfText(genDateFormatted)}) Tj\nET\n`;
+        stream += `${pageWidth - 210} ${headerY + 28} Td\n(${pdfText(`Édité le : ${genDateFormatted}`)}) Tj\nET\n`;
 
         // 3. Carte Résumé Événement & Partenaire (2 Colonnes)
         const infoY = headerY - 70;
@@ -937,28 +895,28 @@ export class PartnerDashboardService {
 
         // Colonne 1 : Événement
         stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `50 ${infoY + 40} Td\n(${escapePdfText(data.event.title.slice(0, 42))}) Tj\nET\n`;
+        stream += `50 ${infoY + 40} Td\n(${pdfText(data.event.title.slice(0, 42))}) Tj\nET\n`;
 
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `50 ${infoY + 26} Td\n(Date: ${escapePdfText(data.event.startDate)} a ${escapePdfText(data.event.startTime)} -- Lieu: ${escapePdfText(data.event.venue)}, ${escapePdfText(data.event.city)}) Tj\nET\n`;
+        stream += `50 ${infoY + 26} Td\n(${pdfText(`Date : ${data.event.startDate} à ${data.event.startTime} -- Lieu : ${data.event.venue}, ${data.event.city}`)}) Tj\nET\n`;
 
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `50 ${infoY + 12} Td\n(Statut: ${escapePdfText(data.event.status)} -- Capacite: ${data.event.capacity} places) Tj\nET\n`;
+        stream += `50 ${infoY + 12} Td\n(${pdfText(`Statut : ${eventStatusLabel(data.event.status)} -- Capacité : ${data.event.capacity} places`)}) Tj\nET\n`;
 
         // Colonne 2 : Organisateur / Partenaire
         stream += 'BT\n/F2 10 Tf\n1 0.34 0.13 rg\n';
-        stream += `${pageWidth - 230} ${infoY + 40} Td\n(Organisateur: ${escapePdfText(data.partner.commercialName.slice(0, 28))}) Tj\nET\n`;
+        stream += `${pageWidth - 230} ${infoY + 40} Td\n(${pdfText(`Organisateur : ${data.partner.commercialName.slice(0, 28)}`)}) Tj\nET\n`;
 
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${pageWidth - 230} ${infoY + 26} Td\n(Societe: ${escapePdfText(data.partner.companyName.slice(0, 30))}) Tj\nET\n`;
+        stream += `${pageWidth - 230} ${infoY + 26} Td\n(${pdfText(`Société : ${data.partner.companyName.slice(0, 30)}`)}) Tj\nET\n`;
 
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${pageWidth - 230} ${infoY + 12} Td\n(Contact: ${escapePdfText(data.partner.phone || data.partner.email || supportEmail())}) Tj\nET\n`;
+        stream += `${pageWidth - 230} ${infoY + 12} Td\n(${pdfText(`Contact : ${data.partner.phone || data.partner.email || supportEmail()}`)}) Tj\nET\n`;
 
         // 4. Section : VENTES PAR CATÉGORIE (Tableau Vectoriel)
         const tableY = infoY - 26;
         stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `36 ${tableY} Td\n(1. VENTILATION DES VENTES PAR FORMULE / CATEGORIE) Tj\nET\n`;
+        stream += `36 ${tableY} Td\n(${pdfText('1. VENTILATION DES VENTES PAR CATÉGORIE')}) Tj\nET\n`;
 
         // En-tête du tableau
         const theadY = tableY - 22;
@@ -966,10 +924,10 @@ export class PartnerDashboardService {
         stream += `36 ${theadY} ${pageWidth - 72} 20 re f\n`;
 
         stream += 'BT\n/F2 8.5 Tf\n0.20 0.25 0.35 rg\n';
-        stream += `44 ${theadY + 6} Td\n(CATEGORIE) Tj\n`;
+        stream += `44 ${theadY + 6} Td\n(${pdfText('CATÉGORIE')}) Tj\n`;
         stream += `160 0 Td\n(PRIX UNIT.) Tj\n`;
         stream += `80 0 Td\n(VENDUS) Tj\n`;
-        stream += `70 0 Td\n(COMPOSTES) Tj\n`;
+        stream += `70 0 Td\n(${pdfText('COMPOSTÉS')}) Tj\n`;
         stream += `70 0 Td\n(RESTANTS) Tj\n`;
         stream += `70 0 Td\n(EN LIGNE) Tj\n`;
         stream += 'ET\n';
@@ -985,8 +943,8 @@ export class PartnerDashboardService {
             stream += `36 ${rowY} m ${pageWidth - 36} ${rowY} l S\n`;
 
             stream += 'BT\n/F1 8.5 Tf\n0.06 0.09 0.16 rg\n';
-            stream += `44 ${rowY + 5} Td\n(${escapePdfText(cat.name.slice(0, 22))}) Tj\n`;
-            stream += `160 0 Td\n(${pdfAmount(cat.unitPrice, 'F')}) Tj\n`;
+            stream += `44 ${rowY + 5} Td\n(${pdfText(cat.name.slice(0, 22))}) Tj\n`;
+            stream += `160 0 Td\n(${pdfAmount(cat.unitPrice)}) Tj\n`;
             stream += `80 0 Td\n(${cat.soldQuantity}) Tj\n`;
             stream += `70 0 Td\n(${cat.checkedInQuantity}) Tj\n`;
             stream += `70 0 Td\n(${cat.remainingQuantity}) Tj\n`;
@@ -1001,7 +959,7 @@ export class PartnerDashboardService {
         // 5. Section : SYNTHÈSE DE BILLETTERIE & CONTRÔLE D'ACCÈS
         const summaryBoxY = rowY - 14;
         stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `36 ${summaryBoxY} Td\n(2. STATISTIQUES D'ACCES & RECONCILIATION) Tj\nET\n`;
+        stream += `36 ${summaryBoxY} Td\n(${pdfText('2. STATISTIQUES D’ACCÈS ET RÉCONCILIATION')}) Tj\nET\n`;
 
         const statGridY = summaryBoxY - 58;
         const boxWidth = (pageWidth - 72 - 20) / 3;
@@ -1010,7 +968,7 @@ export class PartnerDashboardService {
         stream += '1 1 1 rg\n0.85 0.88 0.92 RG\n1 w\n';
         stream += `36 ${statGridY} ${boxWidth} 48 re B\n`;
         stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `46 ${statGridY + 34} Td\n(BILLETS VENDUS / CAPACITE) Tj\nET\n`;
+        stream += `46 ${statGridY + 34} Td\n(${pdfText('BILLETS VENDUS / CAPACITÉ')}) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
         stream += `46 ${statGridY + 16} Td\n(${data.ticketsSummary.sold} / ${data.ticketsSummary.totalAllocated} (${data.ticketsSummary.fillRatePercent}%)) Tj\nET\n`;
 
@@ -1018,7 +976,7 @@ export class PartnerDashboardService {
         stream += '1 1 1 rg\n0.85 0.88 0.92 RG\n1 w\n';
         stream += `${36 + boxWidth + 10} ${statGridY} ${boxWidth} 48 re B\n`;
         stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${46 + boxWidth + 10} ${statGridY + 34} Td\n(ENTREES VALIDEES / SCAN) Tj\nET\n`;
+        stream += `${46 + boxWidth + 10} ${statGridY + 34} Td\n(${pdfText('ENTRÉES VALIDÉES / SCAN')}) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.10 0.60 0.30 rg\n';
         stream += `${46 + boxWidth + 10} ${statGridY + 16} Td\n(${data.ticketsSummary.checkedIn} entr\xE9es (${data.ticketsSummary.checkInRatePercent}%)) Tj\nET\n`;
 
@@ -1026,14 +984,14 @@ export class PartnerDashboardService {
         stream += '1 1 1 rg\n0.85 0.88 0.92 RG\n1 w\n';
         stream += `${36 + (boxWidth + 10) * 2} ${statGridY} ${boxWidth} 48 re B\n`;
         stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 34} Td\n(ANNULES / REMBOURSES) Tj\nET\n`;
+        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 34} Td\n(${pdfText('ANNULÉS / REMBOURSÉS')}) Tj\nET\n`;
         stream += 'BT\n/F2 12 Tf\n0.80 0.20 0.20 rg\n';
-        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 16} Td\n(${data.ticketsSummary.cancelled} annule(s) / ${data.ticketsSummary.refunded} remb.) Tj\nET\n`;
+        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 16} Td\n(${pdfText(`${data.ticketsSummary.cancelled} annulé(s) / ${data.ticketsSummary.refunded} remb.`)}) Tj\nET\n`;
 
         // 6. Section : SYNTHÈSE COMPTABLE (grand livre) & REVERSEMENT NET
         const finSectionY = statGridY - 26;
         stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `36 ${finSectionY} Td\n(3. RECAPITULATIF FINANCIER & REVERSEMENT NET) Tj\nET\n`;
+        stream += `36 ${finSectionY} Td\n(${pdfText('3. RÉCAPITULATIF FINANCIER ET REVERSEMENT NET')}) Tj\nET\n`;
 
         const finBoxY = finSectionY - 150;
         stream += '0.96 0.97 0.99 rg\n0.80 0.85 0.90 RG\n1.5 w\n';
@@ -1041,23 +999,23 @@ export class PartnerDashboardService {
 
         const finLine = (y: number, label: string, amount: string, color: string) => {
             stream += 'BT\n/F1 10 Tf\n0.20 0.25 0.35 rg\n';
-            stream += `52 ${finBoxY + y} Td\n(${escapePdfText(label)}) Tj\nET\n`;
+            stream += `52 ${finBoxY + y} Td\n(${pdfText(label)}) Tj\nET\n`;
             stream += `BT\n/F2 11 Tf\n${color} rg\n`;
             stream += `${pageWidth - 180} ${finBoxY + y} Td\n(${amount}) Tj\nET\n`;
         };
         const fin = data.financialSummary;
         finLine(114, 'Ventes en ligne (prix faciaux des billets)', pdfAmount(fin.totalGross), '0.06 0.09 0.16');
         finLine(94, 'Remboursements aux acheteurs (part organisateur)', `- ${pdfAmount(fin.totalRefunded)}`, '0.80 0.20 0.20');
-        finLine(74, 'Frais de service payes par l\'acheteur (informatif, non deduits)', pdfAmount(fin.buyerServiceFees), '0.45 0.52 0.60');
-        finLine(54, `Ventes especes au guichet, hors plateforme (${fin.cashTickets} billet(s), informatif)`, pdfAmount(fin.cashSales), '0.45 0.52 0.60');
-        finLine(34, 'Dont disponible / en attente de disponibilite', `${pdfAmount(fin.availableNet, 'F')} / ${pdfAmount(fin.pendingNet, 'F')}`, '0.06 0.09 0.16');
+        finLine(74, 'Frais de service payés par l’acheteur (informatif, non déduits)', pdfAmount(fin.buyerServiceFees), '0.45 0.52 0.60');
+        finLine(54, `Ventes en espèces au guichet, hors plateforme (${fin.cashTickets} billet(s), informatif)`, pdfAmount(fin.cashSales), '0.45 0.52 0.60');
+        finLine(34, 'Dont disponible / en attente de disponibilité', pdfText(`${fin.availableNet.toLocaleString('fr-FR')} / ${fin.pendingNet.toLocaleString('fr-FR')} F CFA`), '0.06 0.09 0.16');
 
         // NET PARTENAIRE (Surbrillance Orange)
         stream += '1 0.34 0.13 rg\n';
         stream += `36 ${finBoxY} ${pageWidth - 72} 26 re f\n`;
 
         stream += 'BT\n/F2 11 Tf\n1 1 1 rg\n';
-        stream += `52 ${finBoxY + 8} Td\n(NET ORGANISATEUR -- VENTES EN LIGNE) Tj\nET\n`;
+        stream += `52 ${finBoxY + 8} Td\n(${pdfText('NET ORGANISATEUR -- VENTES EN LIGNE')}) Tj\nET\n`;
         stream += 'BT\n/F2 13 Tf\n1 1 1 rg\n';
         stream += `${pageWidth - 190} ${finBoxY + 7} Td\n(${pdfAmount(fin.totalNet)}) Tj\nET\n`;
 
@@ -1067,10 +1025,10 @@ export class PartnerDashboardService {
         stream += `36 ${footerY + 22} m ${pageWidth - 36} ${footerY + 22} l S\n`;
 
         stream += 'BT\n/F1 7.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `36 ${footerY + 10} Td\n(Genere automatiquement par Event Village Senegal -- ${escapePdfText(supportEmail())}) Tj\nET\n`;
+        stream += `36 ${footerY + 10} Td\n(${pdfText(`Généré automatiquement par Event Village Sénégal -- ${supportEmail()}`)}) Tj\nET\n`;
 
         stream += 'BT\n/F2 7.5 Tf\n0.35 0.40 0.50 rg\n';
-        stream += `36 ${footerY} Td\n(Reference : ${escapePdfText(data.reportId)}) Tj\nET\n`;
+        stream += `36 ${footerY} Td\n(${pdfText(`Référence : ${data.reportId}`)}) Tj\nET\n`;
 
         stream += 'Q\n';
 
@@ -1140,17 +1098,17 @@ export class PartnerDashboardService {
 
         const headers = [
             'Date',
-            'Evenement',
-            'Reference Transaction',
+            'Événement',
+            'Référence de la transaction',
             'Canal',
             'Billet',
-            'Categorie',
-            'Quantite',
-            'Prix facial (FCFA)',
-            'Frais de service acheteur (FCFA, informatif)',
-            'Remboursement (FCFA)',
-            'Net organisateur en ligne (FCFA)',
-            'Statut billet',
+            'Catégorie',
+            'Quantité',
+            'Prix facial (F CFA)',
+            'Frais de service acheteur (F CFA, informatif)',
+            'Remboursement (F CFA)',
+            'Net organisateur en ligne (F CFA)',
+            'Statut du billet',
         ];
 
         const rows: Array<Array<string | number>> = tickets
@@ -1162,7 +1120,7 @@ export class PartnerDashboardService {
                 const channel = online ? 'EN_LIGNE' : price > 0 ? 'ESPECES' : 'INVITATION';
                 return [
                     t.created_at ? new Date(t.created_at).toISOString().split('T')[0] : '',
-                    String(eventList.find((e) => e.id === t.event_id)?.title ?? 'Evenement'),
+                    String(eventList.find((e) => e.id === t.event_id)?.title ?? 'Événement'),
                     flag?.reference ?? '',
                     channel,
                     t.ticket_number || t.id,
@@ -1184,11 +1142,11 @@ export class PartnerDashboardService {
             return line;
         };
         rows.push(blank);
-        rows.push(totalLine('SYNTHESE DU GRAND LIVRE : ventes en ligne (prix faciaux)', summary.onlineSales));
+        rows.push(totalLine('SYNTHÈSE DU GRAND LIVRE : ventes en ligne (prix faciaux)', summary.onlineSales));
         rows.push(totalLine('Remboursements (part organisateur)', -summary.refunded));
         rows.push(totalLine('NET ORGANISATEUR (ventes en ligne)', summary.organizerNet));
-        rows.push(totalLine('Frais de service payes par l\'acheteur (informatif, non deduits)', summary.buyerServiceFees));
-        rows.push(totalLine(`Ventes especes hors plateforme (${summary.cashTickets} billet(s), informatif)`, summary.cashSales));
+        rows.push(totalLine('Frais de service payés par l’acheteur (informatif, non déduits)', summary.buyerServiceFees));
+        rows.push(totalLine(`Ventes en espèces hors plateforme (${summary.cashTickets} billet(s), informatif)`, summary.cashSales));
 
         const csvLines = [headers, ...rows].map((r) => r.map(csvField).join(';'));
         const csvContent = '﻿' + csvLines.join('\r\n');
