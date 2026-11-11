@@ -203,7 +203,7 @@ async function sendWithRetry(body: Record<string, unknown>, key: string, opts: S
             console.warn(`[scan] POST ${SCAN_ENDPOINT} : ${timedOut ? `délai de ${SCAN_ATTEMPT_TIMEOUTS_MS[i]} ms dépassé` : 'réseau indisponible'} à l'essai ${attempt}`,
                 err instanceof Error ? err.message : String(err));
             last = timedOut
-                ? { result: 'network_error', failure: 'timeout', httpStatus: null, attempts: attempt, message: 'Réseau trop lent : rien n’est validé. Faites patienter et réessayez.' }
+                ? { result: 'network_error', failure: 'timeout', httpStatus: null, attempts: attempt, message: 'Réseau trop lent : résultat inconnu. Scannez de nouveau le même billet.' }
                 : { result: 'network_error', failure: 'network', httpStatus: null, attempts: attempt, message: SCAN_RESULT_LABELS.network_error };
         } finally {
             clearTimeout(timer);
@@ -342,15 +342,17 @@ export function titleFor(outcome: ScanOutcome): string {
         case 'auth':
             return 'Session expirée';
         case 'forbidden':
-            return 'Contrôle non autorisé';
+            // Lot 9 bis (R107) : 403 du scan, le plus souvent une affectation retirée ; le scanner relit ses affectations
+            return 'Vous ne contrôlez plus cet événement';
         case 'bad_request':
             return 'Requête refusée par le serveur';
         case 'offline':
             return 'Hors ligne : rien n’est validé';
+        // Lot 9 bis (R100) : après un délai ou une coupure, le billet a pu être composté ; seul le hors-ligne (aucun envoi)
+        // garantit qu'aucune entrée n'a été faite
         case 'timeout':
-            return 'Réseau trop lent : rien n’est validé';
         case 'network':
-            return 'Réseau indisponible : rien n’est validé';
+            return 'Résultat inconnu : scannez de nouveau';
         default:
             return SCAN_RESULT_LABELS[outcome.result];
     }
