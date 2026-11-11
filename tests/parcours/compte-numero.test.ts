@@ -172,7 +172,7 @@ async function auditRows(userId: string, action: string): Promise<Array<Record<s
 }
 
 const phoneChangedKey = (userId: string): string => `PHONE_CHANGED:${userId}:`;
-const phoneChangedRows = (userId: string): ReturnType<typeof outboxRows> => outboxRows({ type: 'PHONE_CHANGED', keyPrefix: phoneChangedKey(userId) });
+const phoneChangedRows = (userId: string): ReturnType<typeof outboxRows> => outboxRows({ type: 'PHONE_CHANGED', keyPrefix: phoneChangedKey(userId), channel: 'SMS' }); // lot 9 bis (B97, G.49) : la ligne EMAIL au compte (clé « …:compte ») est tenue par email-regle-envoi
 
 async function otpRow(phone: string, purpose: string): Promise<{ verified: boolean; attempts: number } | null> {
     const { data, error } = await service.from('otp_codes').select('verified, attempts').eq('phone', phone).eq('purpose', purpose)
