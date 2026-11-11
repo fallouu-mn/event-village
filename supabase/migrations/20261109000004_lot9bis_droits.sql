@@ -548,7 +548,7 @@ COMMENT ON COLUMN public.partners.resubmitted_at IS 'Lot 9 bis (R54) : date du c
 -- ============================================================================
 -- Tâche 17 — 12. partner_register_finalize (recopie, 20261108000001_lot9_securite.sql:637-700)
 -- ============================================================================
--- p : { user_id, first_name, last_name, phone, email, partner: { company_name, commercial_name, description, address,
+-- p : { user_id, first_name, last_name, phone, email, email_pending?, partner: { company_name, commercial_name, description, address,
 --       city, phone, email, id_card_url, business_doc_url, ninea?, rccm? }, activities[], upload_ids[], ip } → { ok,
 --     partner_id } ou { ok:false, code:'INVALID_DOCUMENT_UPLOAD', message }.
 -- Profil, fiche, activités, rattachement des deux pièces et audit vont ensemble : trg_partners_notify part dans la
@@ -583,11 +583,17 @@ BEGIN
       FROM jsonb_array_elements_text(p->'upload_ids') AS x;
 
     BEGIN
-        INSERT INTO public.users (id, first_name, last_name, phone, email, role, status, referral_status, phone_verified_at, updated_at)
+        -- Reste S3 (R87, A33) : l'adresse saisie attend son lien dans users.email_pending, écrite ici avec le reste
+        -- (plus d'écriture REST de la route après la RPC, ecritures-ignorees:338) ; colonne créée par M10, lue à
+        -- l'exécution seulement.
+        INSERT INTO public.users (id, first_name, last_name, phone, email, email_pending, role, status, referral_status,
+                                  phone_verified_at, updated_at)
         VALUES (v_user, p->>'first_name', p->>'last_name', p->>'phone', p->>'email',
+                NULLIF(lower(btrim(COALESCE(p->>'email_pending', ''))), ''),
                 'PARTENAIRE'::public.user_role, 'EN_ATTENTE'::public.user_status, 'STANDARD'::public.referral_status, now(), now())
         ON CONFLICT (id) DO UPDATE
            SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, phone = EXCLUDED.phone, email = EXCLUDED.email,
+               email_pending = EXCLUDED.email_pending,
                role = EXCLUDED.role, status = EXCLUDED.status, referral_status = EXCLUDED.referral_status,
                phone_verified_at = EXCLUDED.phone_verified_at, updated_at = EXCLUDED.updated_at;
 

@@ -218,6 +218,7 @@ export async function POST(req: NextRequest) {
                 last_name: data.lastName.trim(),
                 phone: normalizedPhone,
                 email: technicalEmail,
+                email_pending: effectiveEmail,
                 partner: {
                     company_name: data.companyName.trim(),
                     commercial_name: data.commercialName?.trim() || data.companyName.trim(),
@@ -254,23 +255,15 @@ export async function POST(req: NextRequest) {
 
         const partnerId = outcome.partner_id;
 
-        // 3 bis. Lot 9 bis (R87) : l'adresse saisie attend son lien. Le dossier est enregistré quoi qu'il arrive : un
-        //        échec est journalisé et dit dans la réponse (email_pending null, email_verification NOT_SENT), le profil
-        //        permet de saisir l'adresse de nouveau.
-        let emailPending: string | null = null;
+        // 3 bis. Lot 9 bis (R87) : l'adresse saisie attend son lien dans users.email_pending, écrite par
+        //        partner_register_finalize avec le reste du dossier (A33 : aucune écriture REST hors de la RPC). Le lien
+        //        part ensuite ; un échec d'envoi est journalisé et dit dans la réponse (email_verification NOT_SENT).
+        const emailPending: string = effectiveEmail;
         let emailVerification: EmailVerificationState = 'NOT_SENT';
-        const { error: pendingErr } = await supabase.from('users')
-            .update({ email_pending: effectiveEmail, updated_at: new Date().toISOString() })
-            .eq('id', userId);
-        if (pendingErr) {
-            console.error(`[API /api/partner/register] adresse en attente du compte ${userId} non enregistrée :`, pendingErr.message);
-        } else {
-            emailPending = effectiveEmail;
-            try {
-                emailVerification = emailVerificationState(await sendEmailVerification(userId));
-            } catch (mailErr) {
-                console.error(`[API /api/partner/register] lien de vérification du compte ${userId} non envoyé :`, mailErr instanceof Error ? mailErr.message : String(mailErr));
-            }
+        try {
+            emailVerification = emailVerificationState(await sendEmailVerification(userId));
+        } catch (mailErr) {
+            console.error(`[API /api/partner/register] lien de vérification du compte ${userId} non envoyé :`, mailErr instanceof Error ? mailErr.message : String(mailErr));
         }
 
         // 4. Connexion côté serveur (cookies de session, comme POST /api/auth/login) : le dossier est enregistré quoi
