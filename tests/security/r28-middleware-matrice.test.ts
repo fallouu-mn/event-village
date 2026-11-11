@@ -167,3 +167,18 @@ describe('R28 — lot 9 bis : vérification de l’email (R87), publique', () =>
         assert.deepEqual(failures, [], `écarts :\n${failures.join('\n')}`);
     });
 });
+
+describe('R28 — lot 9 bis : invitations de contrôleur (R37), session exigée', () => {
+    test('/invitations et /api/account/controller-invitations : refusés sans session, servis à un client connecté', async () => {
+        const failures: string[] = [];
+        const page = outcome(await callMiddleware('/invitations', []));
+        if (page !== `/login?redirect=${encodeURIComponent('/invitations')}`) failures.push(`/invitations sans session : attendu /login?redirect=, vu ${page}`);
+        const api = await callMiddleware('/api/account/controller-invitations', []);
+        if (api.passedThrough || api.status !== 401) failures.push(`/api/account/controller-invitations sans session : 401 attendu, HTTP ${api.status}${api.passedThrough ? ' (servi)' : ''}`);
+        for (const pathname of ['/invitations', '/api/account/controller-invitations']) {
+            const seen = outcome(await callMiddleware(pathname, cookiesOf('CLIENT')));
+            if (seen !== PASS) failures.push(`${pathname} avec une session CLIENT : attendu ${PASS}, vu ${seen}`);
+        }
+        assert.deepEqual(failures, [], `écarts :\n${failures.join('\n')}`);
+    });
+});
