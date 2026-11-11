@@ -107,6 +107,13 @@
 -- 28. controller_assignments_sync(p jsonb) (nouvelle) : affectations d'un contrôleur chez une partenaire en une
 --     transaction (retraits, ajouts, droit d'encaisser par événement, R41 ; tout ou rien, R102) et journal
 --     CONTROLLER_ASSIGNMENTS_UPDATED dedans (tâche 19) ; un droit d'encaisser absent garde la valeur actuelle.
+--
+-- Tâche 28 (R50 ; B66) :
+-- 29. pilotage_sales(jsonb) : base 20261106000001_lot8_canaux.sql:1187-1280, recopie intégrale, signature et STABLE
+--     identiques. Changement : by_channel calculé par le serveur, dans cet ordre : ONLINE « En ligne » (paiement de la
+--     plateforme, montant = recette en ligne des catégories), ONLINE_FREE « En ligne, gratuits », COUNTER « Au
+--     guichet » (paiement hors plateforme, montant encaissé), INVITATION « Invitations » ; mêmes billets que
+--     pilotage_category_stats (VALIDE, UTILISE), donc somme des canaux = vendus + invitations.
 -- ============================================================================
 
 
@@ -2222,6 +2229,135 @@ $$;
 
 
 -- ============================================================================
+-- Tâche 28 — 29. pilotage_sales (recopie, 20261106000001_lot8_canaux.sql:1187-1280)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.pilotage_sales(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event uuid := public.try_uuid(p->>'event_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_code text;
+    v_by_category jsonb;
+    v_first date;
+    v_last date;
+    v_sale_start date;
+    v_today date := (now() AT TIME ZONE 'Africa/Dakar')::date;
+    v_end_day date;
+    v_from date;
+    v_to date;
+    v_by_day jsonb;
+    v_by_channel jsonb;
+BEGIN
+    v_code := public.pilotage_access(v_event, v_actor);
+    IF v_code IS NOT NULL THEN
+        RETURN public.pilotage_refusal(v_code);
+    END IF;
+
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'category_id', x.category_id,
+               'name', x.name,
+               'price', x.price,
+               'is_active', x.is_active,
+               'is_visible', x.is_visible,
+               'sale_online', tc.sale_online,
+               'sale_counter', tc.sale_counter,
+               'total', x.total,
+               'sold', x.sold,
+               'sold_online', x.sold_online,
+               'sold_cash', x.sold_cash,
+               'sold_unpaid', x.sold_unpaid,
+               'invitations', x.invitations,
+               'in_payment', x.in_payment,
+               -- Une catégorie inactive ne se vend plus : aucun restant
+               'remaining', CASE WHEN x.is_active THEN x.total - x.sold - x.invitations - x.in_payment ELSE 0 END,
+               'revenue_online', x.revenue_online,
+               -- Contrôle : le compteur de stock en base suit-il les billets ?
+               'sold_quantity_mismatch', x.sold_quantity IS DISTINCT FROM (x.sold + x.invitations)::integer)
+             ORDER BY x.created_at, x.name, x.category_id), '[]'::jsonb)
+      INTO v_by_category
+      FROM public.pilotage_category_stats(v_event) x
+      JOIN public.ticket_categories tc ON tc.id = x.category_id;
+
+    SELECT min((tk.created_at AT TIME ZONE 'Africa/Dakar')::date), max((tk.created_at AT TIME ZONE 'Africa/Dakar')::date)
+      INTO v_first, v_last
+      FROM public.tickets tk
+     WHERE tk.event_id = v_event AND tk.status::text IN ('VALIDE', 'UTILISE') AND tk.sale_channel IS DISTINCT FROM 'INVITATION';
+    SELECT min((c.sale_start AT TIME ZONE 'Africa/Dakar')::date) INTO v_sale_start
+      FROM public.ticket_categories c WHERE c.event_id = v_event AND c.is_active;
+    v_end_day := (public.event_end_at(v_event) AT TIME ZONE 'Africa/Dakar')::date;
+
+    v_by_day := '[]'::jsonb;
+    IF v_first IS NOT NULL THEN
+        -- Période : du début des ventes (ou de la première vente) à aujourd'hui, borné à la fin de l'événement
+        v_from := LEAST(v_first, COALESCE(v_sale_start, v_first));
+        v_to := GREATEST(v_last, LEAST(v_today, COALESCE(v_end_day, v_today)));
+        IF v_to - v_from > 1000 THEN
+            v_from := LEAST(v_first, v_to - 1000);
+        END IF;
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                   'day', to_char(g.d, 'YYYY-MM-DD'),
+                   'sold', COALESCE(x.sold, 0),
+                   'sold_online', COALESCE(x.online, 0),
+                   'sold_cash', COALESCE(x.cash, 0),
+                   'revenue_online', COALESCE(x.revenue_online, 0))
+                 ORDER BY g.d), '[]'::jsonb)
+          INTO v_by_day
+          FROM (SELECT gs::date AS d FROM generate_series(v_from::timestamp, v_to::timestamp, interval '1 day') gs) g
+          LEFT JOIN (
+              SELECT (tk.created_at AT TIME ZONE 'Africa/Dakar')::date AS d,
+                     count(*) AS sold,
+                     count(*) FILTER (WHERE pay.is_platform_payment) AS online,
+                     count(*) FILTER (WHERE pay.id IS NOT NULL AND NOT pay.is_platform_payment) AS cash,
+                     COALESCE(sum(tk.price) FILTER (WHERE pay.is_platform_payment), 0) AS revenue_online
+                FROM public.tickets tk
+                LEFT JOIN public.payments pay ON pay.id = tk.payment_id
+               WHERE tk.event_id = v_event AND tk.status::text IN ('VALIDE', 'UTILISE')
+                 AND tk.sale_channel IS DISTINCT FROM 'INVITATION'
+               GROUP BY 1
+          ) x ON x.d = g.d;
+    END IF;
+
+    -- Lot 9 bis (R50) : ventes par canal, mêmes billets que pilotage_category_stats (VALIDE, UTILISE). Classement
+    -- exclusif : invitation ; guichet (paiement hors plateforme ou vente au guichet) ; gratuit ; en ligne (le reste,
+    -- montant = recette des paiements de la plateforme, comme revenue_online).
+    SELECT jsonb_build_array(
+               jsonb_build_object('channel', 'ONLINE', 'label', 'En ligne',
+                                  'tickets', COALESCE(sum(1) FILTER (WHERE k.channel = 'ONLINE'), 0),
+                                  'amount', COALESCE(sum(k.price) FILTER (WHERE k.channel = 'ONLINE' AND k.platform), 0)),
+               jsonb_build_object('channel', 'ONLINE_FREE', 'label', 'En ligne, gratuits',
+                                  'tickets', COALESCE(sum(1) FILTER (WHERE k.channel = 'ONLINE_FREE'), 0),
+                                  'amount', 0),
+               jsonb_build_object('channel', 'COUNTER', 'label', 'Au guichet',
+                                  'tickets', COALESCE(sum(1) FILTER (WHERE k.channel = 'COUNTER'), 0),
+                                  'amount', COALESCE(sum(k.price) FILTER (WHERE k.channel = 'COUNTER' AND k.counter_paid), 0)),
+               jsonb_build_object('channel', 'INVITATION', 'label', 'Invitations',
+                                  'tickets', COALESCE(sum(1) FILTER (WHERE k.channel = 'INVITATION'), 0),
+                                  'amount', 0))
+      INTO v_by_channel
+      FROM (SELECT tk.price,
+                   COALESCE(pay.is_platform_payment, FALSE) AS platform,
+                   (pay.id IS NOT NULL AND NOT pay.is_platform_payment) AS counter_paid,
+                   CASE WHEN tk.sale_channel = 'INVITATION' THEN 'INVITATION'
+                        WHEN (pay.id IS NOT NULL AND NOT pay.is_platform_payment) OR tk.sale_channel = 'COUNTER' THEN 'COUNTER'
+                        WHEN tk.price = 0 THEN 'ONLINE_FREE'
+                        ELSE 'ONLINE' END AS channel
+              FROM public.tickets tk
+              JOIN public.ticket_categories c ON c.id = tk.category_id
+              LEFT JOIN public.payments pay ON pay.id = tk.payment_id
+             WHERE c.event_id = v_event AND tk.status::text IN ('VALIDE', 'UTILISE')) k;
+
+    RETURN jsonb_build_object('ok', true, 'event_id', v_event, 'by_category', v_by_category, 'by_day', v_by_day,
+                              'by_channel', v_by_channel, 'computed_at', now());
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -2252,7 +2388,8 @@ BEGIN
         'public.controller_invitation_respond(jsonb)',
         'public.controller_invitations_mine(jsonb)',
         'public.controller_account_states(jsonb)',
-        'public.controller_assignments_sync(jsonb)'
+        'public.controller_assignments_sync(jsonb)',
+        'public.pilotage_sales(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
