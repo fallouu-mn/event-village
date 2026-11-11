@@ -142,9 +142,14 @@ describe('R92 — « Supprimer le brouillon » seulement pour un brouillon jamai
 
 // ── 3. R104 : fiche publique et billets reçus ──────────────────────────────
 
+/**
+ * GET /api/events/[id] lit `params.id` sans await : contexte objet et promesse à la fois (patron
+ * canaux-vente.test.ts:190). Avec routeContext seul (promesse), params.id vaut undefined et la route répond 404.
+ */
 async function publicSheet(eventId: string): Promise<Row> {
     const handler = await routeHandler('../../app/api/events/[id]/route', 'GET', 'GET /api/events/[id]');
-    const res = await invoke(handler, jsonRequest(`/api/events/${eventId}`, 'GET', null), routeContext({ id: eventId }));
+    const params = { id: eventId };
+    const res = await invoke(handler, jsonRequest(`/api/events/${eventId}`, 'GET', null), { params: Object.assign(Promise.resolve(params), params) });
     assert.equal(res.status, 200, `fiche publique : ${show(res)}`);
     assert.ok(res.body.event && typeof res.body.event === 'object', `fiche publique : objet event attendu, ${show(res)}`);
     return res.body.event as Row;
@@ -179,7 +184,8 @@ describe('R104 — billets reçus : kind INVITATION ou TRANSFER (ticket_transfer
         const ev = await createDraftEvent(partner, 'textes-r104-recus', [{ name: 'Gratuit', price: 0, total: 20 }], { startsInHours: 72 });
         await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: partner.userId });
         const recipient = await newBuyer('r104-destinataire');
-        await markPhoneVerified(recipient.userId);
+        // Numéro vérifié APRÈS l'invitation (patron messages-sms-9bis.test.ts:239) : un numéro déjà rattaché à un compte
+        // vérifié reçoit le billet directement, sans transfert (ticket_invitation_create, v_account IS NULL seulement).
 
         const { data: inv, error: invErr } = await service.rpc('ticket_invitation_create', {
             p: { actor_id: partner.userId, event_id: ev.eventId, category_id: ev.categories.Gratuit.id, phones: [recipient.phoneE164], quantity: 1, limits: { per_event_hour: 50, per_phone_day: 3 } },
@@ -189,6 +195,7 @@ describe('R104 — billets reçus : kind INVITATION ou TRANSFER (ticket_transfer
         const { data: invRows, error: trErr } = await service.from('ticket_transfers').select('id').eq('to_phone_or_email', recipient.phoneE164).is('from_user_id', null).eq('status', 'PENDING');
         assert.equal(trErr, null, trErr?.message);
         assert.equal((invRows ?? []).length, 1, 'un transfert d’invitation en attente');
+        await markPhoneVerified(recipient.userId);
 
         const sender = await newBuyer('r104-expediteur');
         const ticketId = await issueFreeTicket(ev.eventId, ev.categories.Gratuit.id, sender);
