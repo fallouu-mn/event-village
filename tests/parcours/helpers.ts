@@ -218,12 +218,32 @@ export interface SessionHolder {
 // Import dynamique : la route n'existe pas avant le correctif fix(9b.13), et le typecheck passe avant les tests.
 const PASSWORD_CONFIRM_ROUTE = '../../app/api/account/password-confirm/route';
 
+/** Vrai si la session du jeton a une saisie du mot de passe de moins de 5 minutes (table password_confirmations). */
+async function recentlyConfirmed(accessToken: string): Promise<boolean> {
+    let sessionId: unknown;
+    try {
+        sessionId = (JSON.parse(Buffer.from(accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { session_id?: unknown }).session_id;
+    } catch (err) {
+        throw new Error(`confirmPassword : jeton illisible (${err instanceof Error ? err.message : String(err)})`);
+    }
+    if (typeof sessionId !== 'string') return false;
+    const { getServiceRoleClient } = await import('../../lib/supabase/server');
+    const { data, error } = await getServiceRoleClient().from('password_confirmations').select('confirmed_at')
+        .eq('session_id', sessionId).maybeSingle();
+    if (error) throw new Error(`confirmPassword : lecture de password_confirmations : ${error.message}`);
+    return !!data && Date.now() - Date.parse(String(data.confirmed_at)) < 5 * 60_000;
+}
+
 /**
  * Confirme le mot de passe pour la session de `client` (`POST /api/account/password-confirm` `{ password }`,
  * contrat lot 9 bis, section 4) : étape à placer juste avant un transfert, `phone/start`, `phone/confirm` ou un
  * changement d'email. Lève si la route est absente ou si la réponse n'est pas 200 `{ ok: true }`.
  */
 export async function confirmPassword(client: SessionHolder, password: string): Promise<void> {
+    // La saisie vaut 10 minutes pour la session (B35) et chaque essai compte au quota par compte
+    // (PASSWORD_CONFIRM_PER_ACCOUNT_15MIN = 5) : une session confirmée il y a moins de 5 minutes n'est pas reconfirmée,
+    // sinon une suite qui transfère six fois pour le même porteur reçoit 429 (dette-annulation-transferts, run 119).
+    if (await recentlyConfirmed(client.accessToken)) return;
     let mod: { POST: (req: NextRequest) => Promise<Response> };
     try {
         mod = (await import(PASSWORD_CONFIRM_ROUTE)) as typeof mod;
