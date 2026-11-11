@@ -14,6 +14,8 @@
  *     visée, adresse prise ailleurs, quota par compte et par adresse, ancien lien fermé, lien de 24 h) ;
  *  3. rendu du catalogue (renderEmailVerification, textes 11.1 N26) et envoi par EmailService, délai de 5 s ;
  *  4. journal de l'issue (email_verification_log).
+ * Lot 9 bis (I1) : hors simulation, un compte de démonstration ne reçoit aucun lien (WITHHELD DEMO_ACCOUNT, journal
+ * SKIPPED) ; garde indisponible : WITHHELD DEMO_GUARD_UNAVAILABLE, rien ne part.
  * Une RPC en échec lève (l'appelant répond son statut) ; un envoi refusé ou en panne rend NOT_SENT, journalisé.
  */
 import { createHash, randomBytes } from 'node:crypto';
@@ -21,6 +23,7 @@ import { EmailService } from '@/lib/email/email.service';
 import { getServerEnv } from '@/lib/env';
 import { renderEmailVerification } from '@/lib/notifications/catalog';
 import { emailChannelAvailable } from '@/lib/notifications/channels';
+import { demoBlockedKeys, demoGuardActive } from '@/lib/notifications/demo-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import type { EmailSendPayload } from '@/lib/integrations/types';
 
@@ -34,7 +37,9 @@ export type EmailVerificationResult =
     | { outcome: 'NOT_SENT'; email: string }
     | { outcome: 'NOT_CONFIGURED' }
     | { outcome: 'REFUSED'; code: EmailVerificationRefusal }
-    | { outcome: 'RATE_LIMITED'; retryAfterSeconds: number };
+    | { outcome: 'RATE_LIMITED'; retryAfterSeconds: number }
+    /** Lot 9 bis (I1, fix(9b.I1-SG)) : compte de démonstration, ou garde indisponible (échec fermé) ; rien n'est parti. */
+    | { outcome: 'WITHHELD'; reason: 'DEMO_ACCOUNT' | 'DEMO_GUARD_UNAVAILABLE' };
 
 /** Valeur `email_verification` des réponses des routes (contrat 4.6). */
 export type EmailVerificationState = 'SENT' | 'NOT_SENT' | 'NOT_CONFIGURED';
@@ -100,6 +105,24 @@ export async function sendEmailVerification(userId: string): Promise<EmailVerifi
         if (reply.ok === true) return { outcome: 'NOT_CONFIGURED' };
         if (reply.code === 'NO_EMAIL_TO_VERIFY') return { outcome: 'REFUSED', code: 'NO_EMAIL_TO_VERIFY' };
         throw new Error(`email_verification_log : ${reply.code ?? 'réponse vide'} ${reply.message ?? ''}`.trim());
+    }
+
+    // Lot 9 bis (I1, B108, fix(9b.I1-SG)) : hors simulation, aucun lien vers un compte de démonstration (compte, ou
+    // adresse visée d'un tel compte ou du domaine du seed). Vérifié avant l'émission : aucun lien ni quota consommé.
+    // Garde indisponible : rien ne part (échec fermé). Journal SKIPPED avec le motif, sans jeton.
+    if (demoGuardActive()) {
+        const { data: account, error: accountErr } = await supabase.from('users').select('email, email_pending').eq('id', userId).maybeSingle();
+        if (accountErr) throw new Error(`lecture du compte ${userId} : ${accountErr.message}`);
+        const target = (account?.email_pending as string | null | undefined) ?? (account?.email as string | null | undefined) ?? null;
+        const guard = await demoBlockedKeys([{ key: 'account', user_id: userId, email: target }]);
+        const withheld = !guard.ok ? 'DEMO_GUARD_UNAVAILABLE' : guard.blocked.has('account') ? 'DEMO_ACCOUNT' : null;
+        if (withheld) {
+            const reply = await logOutcome({ user_id: userId, outcome: 'SKIPPED', reason: withheld });
+            if (reply.code === 'NO_EMAIL_TO_VERIFY') return { outcome: 'REFUSED', code: 'NO_EMAIL_TO_VERIFY' };
+            if (reply.ok !== true) throw new Error(`email_verification_log : ${reply.code ?? 'réponse vide'} ${reply.message ?? ''}`.trim());
+            console.warn(`[email-verification] lien du compte ${userId} retenu : ${withheld}`);
+            return { outcome: 'WITHHELD', reason: withheld };
+        }
     }
 
     const env = getServerEnv();

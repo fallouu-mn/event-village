@@ -18,6 +18,9 @@
  * Lot 9 bis (G.52, B99) : les lignes réservées partent par un groupe de 5 places par canal (IN_APP, PUSH, EMAIL,
  * SMS en parallèle) : un email lent ne retarde jamais un SMS du même lot.
  *
+ * Lot 9 bis (I1, B108) : hors simulation, les lignes SMS, EMAIL et PUSH d'un compte de démonstration sont retenues
+ * (SKIPPED DEMO_ACCOUNT) avant tout envoi ; garde indisponible → RETRY DEMO_GUARD_UNAVAILABLE.
+ *
  * Aucune erreur avalée : une RPC en erreur lève (la route répond 500) ; un échec d'envoi devient un statut
  * explicite (RETRY, FAILED, SKIPPED, UNCERTAIN avec motif). Un SMS dont l'issue est inconnue n'est jamais
  * renvoyé (UNCERTAIN).
@@ -33,6 +36,7 @@ import { rpcWithRetry } from '@/lib/payments/rpc';
 import { getPushConfig, pushChannelAvailable } from '@/lib/push/config';
 import { isAllowedPushEndpoint } from '@/lib/push/endpoints';
 import { classifySmsResult, mTargetService, type MTargetSendResult } from '@/lib/sms/mtarget.service';
+import { demoBlockedKeys, demoGuardActive, type DemoProbe } from '@/lib/notifications/demo-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 // ── Contrat public (E4) ─────────────────────────────────────────────────────
@@ -504,6 +508,33 @@ async function deliver(item: ClaimedItem, ctx: RenderCtx, now: Date): Promise<Ma
     }
 }
 
+/**
+ * Lot 9 bis, tâche I1 (B108, X13, fix(9b.I1-SG)) — garde des comptes de démonstration, après la réservation et avant
+ * tout appel d'adaptateur. Hors simulation, une ligne SMS, EMAIL ou PUSH adressée à un compte de démonstration (compte,
+ * numéro, adresse, événement d'une partenaire de démonstration : RPC notification_demo_recipients) est rendue SKIPPED
+ * DEMO_ACCOUNT ; garde en panne : RETRY DEMO_GUARD_UNAVAILABLE (échec fermé, rien ne part). L'IN_APP n'est jamais
+ * retenu. Rend les résultats des lignes retenues, par identifiant ; les autres lignes partent normalement.
+ */
+async function demoRetained(items: ClaimedItem[]): Promise<Map<string, MarkResult>> {
+    const retained = new Map<string, MarkResult>();
+    if (!demoGuardActive()) return retained;
+    const outward = items.filter((item) => item.channel !== 'IN_APP');
+    if (outward.length === 0) return retained;
+    const probes: DemoProbe[] = outward.map((item) => ({
+        key: item.id,
+        user_id: item.recipient.user_id,
+        phone: item.recipient.phone,
+        email: item.recipient.email,
+        event_id: item.event?.id ?? null,
+    }));
+    const guard = await demoBlockedKeys(probes);
+    for (const item of outward) {
+        if (!guard.ok) retained.set(item.id, retry(item, 'DEMO_GUARD_UNAVAILABLE', guard.detail));
+        else if (guard.blocked.has(item.id)) retained.set(item.id, skipped(item, 'DEMO_ACCOUNT'));
+    }
+    return retained;
+}
+
 async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
     const out = new Array<R>(items.length);
     let next = 0;
@@ -580,7 +611,11 @@ export async function dispatchNotifications(opts: DispatchOptions = {}): Promise
 
         if (items.length > 0) {
             const clock = opts.now ?? new Date();
-            const results = await deliverByChannel(items, (item) => deliver(item, ctx, clock));
+            const retained = await demoRetained(items);
+            const results = await deliverByChannel(items, (item) => {
+                const kept = retained.get(item.id);
+                return kept ? Promise.resolve(kept) : deliver(item, ctx, clock);
+            });
             const markArgs: Record<string, unknown> = { results };
             if (nowIso) markArgs.now = nowIso;
             // Marquage rejouable sans risque : une ligne déjà marquée est ignorée (stale).
