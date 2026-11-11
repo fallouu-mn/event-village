@@ -24,6 +24,12 @@
 --     suspendu : son événement ne peut pas être remis en ligne avant sa réactivation. » quand la partenaire est
 --     SUSPENDU, admin compris (statut lu sans verrou, ordre 3.3).
 --
+-- Délégation fix(9b.18-SC) (R103, R102 ; B43, B44, pour S-B) :
+-- 16 bis. ticket_transfer_initiate (même définition, point 16) : transfert vers son propre numéro (formes +221… et
+--     221…, 9 derniers chiffres) refusé SELF_TRANSFER « Vous ne pouvez pas transférer un billet à votre propre
+--     numéro. », avant tout verrou, transfert ou avis. R102 (affectations en une opération) : controller_assignments_sync
+--     (point 28, tâche 26).
+--
 -- Délégation fix(9b.16-SC) (R7 ; B39, pour S-B) :
 --  2 quater. event_transition (même définition, point 2) : soumission (→ EN_ATTENTE) et publication (→ PUBLIE)
 --     refusées PARTNER_NOT_VALIDATED « Votre profil d’organisateur doit être validé avant de soumettre ou de publier
@@ -1391,6 +1397,7 @@ DECLARE
     v_id uuid;
     v_target uuid;
     v_data jsonb;
+    v_actor_phone text;
 BEGIN
     IF v_ticket IS NULL OR v_actor IS NULL OR v_recipient IS NULL OR char_length(v_recipient) > 254
        OR NULLIF(p->>'expires_at', '') IS NULL THEN
@@ -1399,6 +1406,14 @@ BEGIN
     IF position('@' IN v_recipient) > 0 THEN
         RETURN jsonb_build_object('ok', false, 'code', 'RECIPIENT_PHONE_REQUIRED',
                                   'message', 'Le billet se transfère vers un numéro de téléphone.');
+    END IF;
+    -- Lot 9 bis (R103, B44) : aucun transfert vers son propre numéro, sous ses deux formes (+221… et 221…),
+    -- refusé avant tout verrou, transfert ou avis
+    SELECT u.phone INTO v_actor_phone FROM public.users u WHERE u.id = v_actor;
+    IF v_actor_phone IS NOT NULL AND regexp_replace(v_recipient, '[^0-9]', '', 'g') ~ '[0-9]{9}$'
+       AND right(regexp_replace(v_recipient, '[^0-9]', '', 'g'), 9) = right(regexp_replace(v_actor_phone, '[^0-9]', '', 'g'), 9) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SELF_TRANSFER',
+                                  'message', 'Vous ne pouvez pas transférer un billet à votre propre numéro.');
     END IF;
     IF v_recipient !~ '^\+221[0-9]{9}$' THEN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Numéro du destinataire invalide.');

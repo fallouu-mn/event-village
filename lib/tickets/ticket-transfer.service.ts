@@ -125,6 +125,8 @@ const INITIATE_REFUSALS: Record<string, number> = {
     TICKET_USED: 400,
     EVENT_NOT_ACTIVE: 400,
     TRANSFER_PENDING: 409,
+    // Lot 9 bis (R103, B44) : transfert vers son propre numéro
+    SELF_TRANSFER: 400,
 };
 
 const CANCEL_REFUSALS: Record<string, number> = {
