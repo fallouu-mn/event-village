@@ -116,6 +116,11 @@
 --     TICKET_CANCELLED:<billet>) : au compte porteur (canaux du registre : in-app, SMS, email), ou par SMS au numéro
 --     d'une invitation encore à réclamer (transfert sans expéditeur, annulé par le bloc R61). Un billet payé en ligne
 --     garde ses avis de remboursement (REFUND_REQUESTED, trigger des versements).
+--
+-- Tâche 11, reste de la vague S3 (R2 ; contrat 4.2) :
+-- 23. event_cancellation_impact : l'acteur est lu par event_actor_profile_perm(…, 'events.read') (M04) au lieu de
+--     event_actor_profile (events.write) ; un compte ADMIN ou SUPERADMIN sans la permission reçoit PERMISSION_MISSING
+--     (permission events.read), tout autre acteur EVENT_NOT_FOUND ; même règle que event_cancellation_progress (M07).
 -- ============================================================================
 
 
@@ -1184,7 +1189,7 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- 3.5 event_cancellation_impact (recopie de 20261102000003_lot5_cycle.sql:687-758) : + counter (tâche 4),
---     in_progress et used_online (tâche 27).
+--     in_progress et used_online (tâche 27), lecture events.read et PERMISSION_MISSING (tâche 11).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.event_cancellation_impact(p jsonb)
 RETURNS jsonb
@@ -1212,8 +1217,15 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.events WHERE id = v_event) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
     END IF;
-    SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
+    -- Lot 9 bis (tâche 11, R2, fix(9b.11)) : lecture réservée à la propriétaire ou à un admin events.read
+    -- (event_actor_profile_perm, M04) ; un compte ADMIN ou SUPERADMIN sans la permission reçoit PERMISSION_MISSING,
+    -- tout autre acteur EVENT_NOT_FOUND, sans indice (même règle que event_cancellation_progress de M07).
+    SELECT * INTO a FROM public.event_actor_profile_perm(v_event, v_actor, 'events.read');
     IF NOT (a.is_owner OR a.is_staff) THEN
+        IF EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PERMISSION_MISSING', 'permission', 'events.read',
+                'message', 'Action non autorisée : votre compte n’a pas la permission « Consulter les événements ».');
+        END IF;
         RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
     END IF;
 
