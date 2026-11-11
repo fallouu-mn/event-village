@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { normalizePhoneNumber } from '@/lib/validations/auth';
+import { normalizePhoneNumber, phoneStorageForms } from '@/lib/validations/auth';
 import { getServerEnv } from '@/lib/env';
 import { getClientIp } from '@/lib/security/client-ip';
 import { reserveQuota } from '@/lib/security/quota';
@@ -11,7 +11,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/auth/resolve-phone
- * Résout l'adresse email associée à un numéro de téléphone avec les privilèges Service Role (contourne le blocage RLS anonyme)
+ * Dit seulement si un compte porte ce numéro (chemin de connexion par code SMS). Lot 9 bis (R58, B36) : plus aucun
+ * identifiant, email, statut ni rôle ; la connexion par mot de passe passe par POST /api/auth/login, qui fait la
+ * correspondance côté serveur. 200 `{ success: true }` ou 404 (L7 du lot 9 gardée, A15).
  *
  * Lot 4.8 : quota par IP en base (RESOLVE_PHONE_PER_IP_HOUR), réservé avant toute lecture du corps :
  * chaque tentative compte, numéro connu ou non, et la garde indisponible refuse (503). Sans IP
@@ -47,8 +49,9 @@ export async function POST(req: NextRequest) {
 
         const { data: userRow, error } = await supabase
             .from('users')
-            .select('id, email, phone, role, status')
-            .eq('phone', normalizedPhone)
+            .select('id')
+            .in('phone', phoneStorageForms(normalizedPhone))
+            .limit(1)
             .maybeSingle();
 
         if (error) {
@@ -63,13 +66,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        return NextResponse.json({
-            success: true,
-            email: userRow.email || `${normalizedPhone.replace('+', '')}@eventvillage.sn`,
-            userId: userRow.id,
-            status: userRow.status,
-            role: userRow.role,
-        });
+        return NextResponse.json({ success: true });
     } catch (err: unknown) {
         return apiFailure('POST /api/auth/resolve-phone', err, { message: 'Recherche du compte momentanément indisponible. Réessayez.', code: 'ACCOUNT_LOOKUP_UNAVAILABLE' });
     }

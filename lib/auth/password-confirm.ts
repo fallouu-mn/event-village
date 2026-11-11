@@ -13,6 +13,7 @@
  * Une panne n'est jamais lue comme un mot de passe faux ni comme un mot de passe juste : elle lève
  * PasswordCheckUnavailable, que la route traduit en 503.
  */
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
@@ -67,6 +68,84 @@ export async function verifyAccountPassword(userId: string, password: string): P
         throw new PasswordCheckUnavailable(`fermeture de la session de vérification de ${userId} impossible : ${outErr.message}`);
     }
     return true;
+}
+
+/** Cookie de session @supabase/ssr à poser sur la réponse. */
+export interface SessionCookie {
+    name: string;
+    value: string;
+    options: CookieOptions;
+}
+
+export type ServerSignIn =
+    | { ok: true; userId: string; sessionId: string; accessToken: string; cookies: SessionCookie[] }
+    /** Identifiants faux (ou compte inconnu, décidé par l'appelant) : même réponse pour les deux. */
+    | { ok: false; reason: 'INVALID_CREDENTIALS' }
+    /** Refus de Supabase Auth autre que les identifiants (code stable, jamais le texte anglais). */
+    | { ok: false; reason: 'REFUSED'; code: string };
+
+function sessionIdOfToken(accessToken: string): string | null {
+    try {
+        const claims = JSON.parse(Buffer.from(accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { session_id?: unknown };
+        return typeof claims.session_id === 'string' ? claims.session_id : null;
+    } catch (err) {
+        console.error('[serverPasswordSignIn] charge du jeton illisible :', err instanceof Error ? err.message : String(err));
+        return null;
+    }
+}
+
+/**
+ * Lot 9 bis, tâche 14 (R58 ; B36) — connexion par mot de passe côté serveur : la correspondance numéro → identifiant de
+ * connexion ne quitte jamais le serveur. Les cookies @supabase/ssr de la session ouverte sont rendus pour être posés sur
+ * la réponse (le navigateur lit sa session dans ces cookies, lib/supabase/client.ts). La saisie compte comme une
+ * confirmation récente du mot de passe (R57) : la ligne password_confirmations est écrite ; si elle ne peut pas l'être,
+ * la session ouverte est refermée et l'erreur remonte (aucune session sans trace, aucun cookie posé).
+ */
+export async function serverPasswordSignIn(
+    req: NextRequest,
+    credentials: { email: string } | { phone: string },
+    password: string,
+): Promise<ServerSignIn> {
+    const collected = new Map<string, SessionCookie>();
+    const client = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+        cookies: {
+            getAll() {
+                return req.cookies.getAll();
+            },
+            setAll(cookiesToSet) {
+                for (const c of cookiesToSet) collected.set(c.name, { name: c.name, value: c.value, options: c.options });
+            },
+        },
+        global: { fetch: noStoreFetch },
+    });
+    const { data, error } = 'email' in credentials
+        ? await client.auth.signInWithPassword({ email: credentials.email, password })
+        : await client.auth.signInWithPassword({ phone: credentials.phone, password });
+    if (error) {
+        if (WRONG_PASSWORD_CODES.has(String(error.code ?? ''))) return { ok: false, reason: 'INVALID_CREDENTIALS' };
+        if (error.code) return { ok: false, reason: 'REFUSED', code: String(error.code) };
+        if (error.status === 400) return { ok: false, reason: 'INVALID_CREDENTIALS' };
+        throw new PasswordCheckUnavailable(`connexion par mot de passe : ${error.status ?? ''} ${error.message}`);
+    }
+    const session = data.session;
+    const sessionId = session ? sessionIdOfToken(session.access_token) : null;
+    if (!session || !data.user || !sessionId) {
+        throw new PasswordCheckUnavailable('connexion par mot de passe : session sans identifiant');
+    }
+    try {
+        await recordPasswordConfirmation(sessionId, data.user.id);
+    } catch (err) {
+        const { error: outErr } = await getServiceRoleClient().auth.admin.signOut(session.access_token, 'local');
+        if (outErr) console.error(`[serverPasswordSignIn] session ${sessionId} non refermée : ${outErr.message}`);
+        throw err;
+    }
+    return { ok: true, userId: data.user.id, sessionId, accessToken: session.access_token, cookies: Array.from(collected.values()) };
+}
+
+/** Pose les cookies de session sur la réponse. */
+export function applySessionCookies(res: NextResponse, cookies: readonly SessionCookie[]): NextResponse {
+    for (const c of cookies) res.cookies.set(c.name, c.value, c.options);
+    return res;
 }
 
 /** Écrit la saisie du mot de passe pour la session `sessionId` du compte `userId` (horloge de la base). */
