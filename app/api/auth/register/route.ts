@@ -68,7 +68,8 @@ async function linkReferral(userId: string, referralCode: string): Promise<void>
  * { phone, code, firstName, lastName, password, email?, referralCode? }. Ordre :
  *  1. validation du profil (400, aucun essai de code consommé) ;
  *  2. code absent → 400 REGISTRATION_CODE_REQUIRED ;
- *  3. compte existant (numéro ou email) → 409 ;
+ *  3. compte existant (numéro ou email) → 409 ; lot 9 bis (R86) : code de parrainage inconnu → 400
+ *     REFERRAL_CODE_UNKNOWN (champ referralCode), aucun essai de code consommé ;
  *  4. quota de vérification par numéro (otp_verify_phone, comme /api/auth/verify-otp : 429
  *     OTP_VERIFY_RATE_LIMITED), puis code REGISTER vérifié ET consommé en base (otp_check, 5 essais au plus)
  *     AVANT toute création : 400 INVALID_CODE, 400 CODE_EXPIRED, 429 TOO_MANY_ATTEMPTS ;
@@ -126,6 +127,23 @@ export async function POST(req: NextRequest) {
         // 3. Compte existant (aucun essai de code consommé)
         if (await findExistingAccount(phone, typedEmail || technicalEmail)) {
             return NextResponse.json({ error: ACCOUNT_EXISTS_MESSAGE, code: 'ACCOUNT_ALREADY_EXISTS' }, { status: 409 });
+        }
+
+        // Lot 9 bis (R86, B87) : un code de parrainage inconnu est signalé AVANT la consommation du code SMS (le même
+        // code sert encore, sans parrainage ou avec le bon code). Lecture en échec : 500 (aucune création).
+        if (referralCode) {
+            const { data: sponsor, error: sponsorErr } = await supabase
+                .from('users')
+                .select('id')
+                .eq('referral_code', referralCode.trim().toUpperCase())
+                .limit(1);
+            if (sponsorErr) throw new Error(`recherche du code de parrainage : ${sponsorErr.message}`);
+            if (!sponsor || sponsor.length === 0) {
+                return NextResponse.json(
+                    { error: 'Code de parrainage inconnu. Vérifiez-le ou laissez le champ vide.', code: 'REFERRAL_CODE_UNKNOWN', field: 'referralCode' },
+                    { status: 400 },
+                );
+            }
         }
 
         // 4. Vérification et consommation du code, avant toute création. Même garde anti-force brute en base

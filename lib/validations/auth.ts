@@ -4,6 +4,9 @@ import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 /** Lot 9 bis (B100) : refus d'une adresse du domaine technique, à l'inscription comme au profil. */
 export const RESERVED_EMAIL_MESSAGE = 'Cette adresse est réservée. Saisissez votre propre adresse email.';
 
+/** Lot 9 bis (R76, glossaire) : un seul texte pour un numéro invalide, importé par les écrans et les routes. */
+export const INVALID_SN_PHONE_MESSAGE = 'Numéro de mobile sénégalais invalide. Exemple : 77 123 45 67.';
+
 /**
  * Normalise un numéro de téléphone sénégalais vers le format E.164 (+221XXXXXXXXX)
  */
@@ -50,7 +53,7 @@ export const SenegalesePhoneSchema = z.string().refine((val) => {
     const normalized = normalizePhoneNumber(val);
     return /^\+221[7][05678]\d{7}$/.test(normalized);
 }, {
-    message: 'Numéro de téléphone sénégalais invalide (ex: 77 123 45 67 ou +221 78 987 65 43)',
+    message: INVALID_SN_PHONE_MESSAGE,
 });
 
 /**

@@ -18,7 +18,11 @@
  * Désabonnement (familles OPTIONAL seulement) : pied « Ne plus recevoir ces emails : <APP_URL>/profile/
  * notifications?topic=<TOPIC> » (texte et HTML) et en-tête List-Unsubscribe vers la même page ; la page
  * demande la connexion, aucun jeton n'est mis dans le lien.
+ *
+ * Lot 9 bis (R70, B88) : l'adresse du support du pied vient de lib/support.ts (SUPPORT_EMAIL, côté serveur), lue au
+ * rendu ; plus aucune adresse écrite ici.
  */
+import { supportEmail } from '@/lib/support';
 
 export type EmailTopic = 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY';
 
@@ -67,8 +71,6 @@ export interface EmailLayoutInput {
 }
 
 export interface EmailLayoutOutput { html: string; text: string }
-
-const SUPPORT_ADDRESS = 'support@eventvillage.sn';
 
 /** Seule feuille de style : surcharges du thème sombre (les styles en ligne restent ceux du thème clair). */
 const DARK_STYLE = `<style>
@@ -135,6 +137,7 @@ export function emailLayout(input: EmailLayoutInput): EmailLayoutOutput {
     const list = input.list && input.list.items.length > 0 ? input.list : null;
     const notice = input.notice ?? [];
     const footnote = input.footnote?.trim() ? input.footnote.trim() : null;
+    const support = supportEmail();
 
     const blocks: string[] = [];
     for (const p of input.paragraphs) {
@@ -175,7 +178,7 @@ export function emailLayout(input: EmailLayoutInput): EmailLayoutOutput {
           ${blocks.join('\n          ')}
         </td></tr>
         <tr><td class="ev-divider" style="padding:16px 28px 24px;border-top:1px solid #E4E4E7;">
-          <p class="ev-muted" style="margin:0;font-size:14px;line-height:1.6;color:#475569;">Message automatique d'Event Village, merci de ne pas y répondre. Support : <a class="ev-link" href="mailto:${SUPPORT_ADDRESS}" style="color:#C2410C;">${SUPPORT_ADDRESS}</a></p>
+          <p class="ev-muted" style="margin:0;font-size:14px;line-height:1.6;color:#475569;">Message automatique d'Event Village, merci de ne pas y répondre. Support : <a class="ev-link" href="mailto:${escapeHtml(support)}" style="color:#C2410C;">${escapeHtml(support)}</a></p>
           ${unsubscribeHtml}
         </td></tr>
       </table>
@@ -194,7 +197,7 @@ export function emailLayout(input: EmailLayoutInput): EmailLayoutOutput {
     if (notice.length > 0) textLines.push(...notice.flatMap((p) => [p, '']));
     if (ctaUrl && input.cta) textLines.push(`${input.cta.label} : ${ctaUrl}`, '');
     if (footnote) textLines.push(footnote, '');
-    textLines.push('—', `Message automatique d'Event Village, merci de ne pas y répondre. Support : ${SUPPORT_ADDRESS}`);
+    textLines.push('—', `Message automatique d'Event Village, merci de ne pas y répondre. Support : ${support}`);
     if (unsubscribe) textLines.push(`Ne plus recevoir ces emails : ${unsubscribe}`);
     return { html, text: textLines.join('\n') };
 }
