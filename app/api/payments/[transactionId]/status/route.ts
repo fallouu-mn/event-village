@@ -16,6 +16,22 @@ const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL', 'SMS'] as const;
 
 interface StatusItem { category_id: string; category_name: string | null; quantity: number }
 
+/**
+ * Lot 9 bis (R1, B9, B11 ; délégation 8.3, fix(9b.1-SH)) : un remboursement de ce paiement est retardé s'il n'est pas
+ * versé et qu'il est bloqué (hors simulation), refusé, incertain ou signalé en retard (delay_flagged_at, posé par
+ * cashouts_flag_delayed après 30 minutes) : même règle que l'avis REFUND_DELAYED. Erreur de lecture levée.
+ */
+async function refundDelayedOf(paymentId: string): Promise<boolean> {
+    const { data, error } = await getServiceRoleClient().from('cashouts')
+        .select('status, blocked_reason, delay_flagged_at')
+        .eq('payment_id', paymentId)
+        .in('kind', ['REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND'])
+        .in('status', ['A_ENVOYER', 'ENVOYE', 'INCERTAIN', 'ECHOUE']);
+    if (error) throw new Error(`lecture des remboursements du paiement : ${error.message}`);
+    return (data ?? []).some((c) => c.status === 'INCERTAIN' || c.status === 'ECHOUE' || c.delay_flagged_at !== null
+        || (c.blocked_reason !== null && c.blocked_reason !== 'SIMULATED'));
+}
+
 /** Lien de succès selon la cible (D62 : un abonnement ne mène jamais vers /orders). */
 function successUrl(target: string): string {
     if (target === 'TICKET') return '/tickets';
@@ -99,6 +115,8 @@ async function receiptChannels(payment: PaymentRecord, accountEmail: string | un
  * Lot 7 (7.3, contrat 3.5, D58) : la page d'attente dit ce que le client va recevoir et comment reprendre :
  * target_type, event, ticket_count, items, payer_phone_masked (jamais le numéro en clair), receipt_channels,
  * success_url, retry_url.
+ * Lot 9 bis (R1, B9) : refundDelayed (un remboursement de ce paiement est retardé : « Remboursement retardé, l’équipe
+ * Event Village s’en occupe. »).
  * Lot 9 bis (H2, B103) : holdMinutes (durée de garde appliquée au paiement) et paymentDeadline (création + 60 minutes,
  * validité SamirPay : la page suit le paiement jusque-là).
  */
@@ -123,10 +141,11 @@ export async function GET(req: NextRequest, context: { params: Promise<{ transac
         }
         const { data: tickets, error } = await getServiceRoleClient().from('tickets').select('id').eq('payment_id', id);
         if (error) throw new Error(`lecture des billets : ${error.message}`);
-        const [items, event, channels] = await Promise.all([
+        const [items, event, channels, refundDelayed] = await Promise.all([
             itemsOf(payment),
             eventOf(payment),
             receiptChannels(payment, session.user.email, session.user.phone),
+            refundDelayedOf(payment.id),
         ]);
         const ticketIds = (tickets ?? []).map((t) => t.id);
         const view = payment as unknown as Record<string, unknown>;
@@ -138,6 +157,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ transac
             // Paiement antérieur au lot 3 (sans répartition enregistrée) : frais inconnus, pas 0
             service_fee: view.facial_amount === null || view.facial_amount === undefined ? null : Number(view.service_fee ?? 0),
             refunded_amount: Number(view.refunded_amount ?? 0),
+            refundDelayed,
             currency: payment.currency ?? 'XOF',
             operator: view.operator ?? null,
             expires_at: view.held_expires_at ?? null,
