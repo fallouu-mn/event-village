@@ -184,7 +184,7 @@ describe('9.0 Annulation : effets (5.1, L11)', () => {
         await assertStockExact(ev, 0, 'après la tentative');
     });
 
-    test('après réclamation : billet au compte annulé, transfert CLAIMED conservé, stock rendu, aucun avis', async () => {
+    test('après réclamation : billet au compte annulé, transfert CLAIMED conservé, stock rendu, seul avis : TICKET_CANCELLED au compte (R22)', async () => {
         const ev = await newEvent('reclamee');
         const invitee = await newBuyer('annul-recl', { firstName: 'Khady', lastName: 'Invitee' });
         const tickets = await inviteOk(ev, invitee.phoneE164);
@@ -202,7 +202,7 @@ describe('9.0 Annulation : effets (5.1, L11)', () => {
         assert.equal(ticket.user_id, invitee.userId, 'porteur conservé');
         assert.equal((await transferRow(transferId)).status, 'CLAIMED', 'transfert réclamé inchangé');
         await assertStockExact(ev, 0, 'après annulation');
-        assert.deepEqual(await outboxIds(ev.eventId), outboxBefore, 'aucune notification mise en file');
+        const added = (await outboxRows({ eventId: ev.eventId })).filter((r) => !outboxBefore.includes(r.id)).map((r) => [r.type, r.channel, r.recipient_user_id, r.recipient_phone]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))); assert.deepEqual(added, ['EMAIL', 'IN_APP', 'SMS'].map((c) => ['TICKET_CANCELLED', c, invitee.userId, null]), `lot 9 bis (R22, B73, la consigne renverse L11 ; G.49) : seul avis, TICKET_CANCELLED au porteur, une ligne par canal du registre : ${JSON.stringify(added)}`);
     });
 
     test('attribution directe à un compte vérifié : annulable, stock rendu', async () => {
