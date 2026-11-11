@@ -7,6 +7,7 @@
  * salles, tables, commandes de repas), lus et modifiés par GET / PUT /api/admin/finance-settings, par section.
  * Lot 7 (D15) : le seuil d'alerte du volume total de SMS est supprimé ; l'alerte part à 80 % du plafond optionnel.
  * Lot 9 bis (R31, contrat 12.1) : seuil d'alerte des SMS indispensables du jour (notif.sms_essential_daily_alert).
+ * Lot 9 bis (H2, H8, contrat 12.1) : durée de garde des places pendant un paiement, prix minimum d'un billet payant.
  * Lot 9 bis (H7, X5, B29) : sous les frais de retrait, frais SamirPay réels constatés sur 90 jours (observed_cashout_fee_rate
  * et observed_cashout_fee_max de la route) ; avertissement si le taux réglé leur est inférieur, sans bloquer la modification.
  * Lecture : ADMIN et SUPERADMIN ; modification : SUPERADMIN seul, avec un motif obligatoire. Chaque
@@ -63,6 +64,7 @@ const FREE_REMINDER_SMS_LABELS: Record<string, string> = {
 const META: Record<string, SettingMeta> = {
   'finance.service_fee_rate': { label: 'Frais de service', help: 'Payés par l’acheteur, arrondis au FCFA supérieur par billet. De 0 à 50 %.', kind: 'percent', unit: '%' },
   'finance.payment_hold_minutes': { label: 'Durée de garde des places pendant un paiement (minutes)', help: 'Temps pendant lequel les places d’un paiement en attente restent réservées. Le paiement reste valable 1 heure chez SamirPay : validé après l’échéance, il donne les billets s’il reste des places, sinon il est remboursé automatiquement. Entier de 5 à 60.', kind: 'integer', unit: 'min' },
+  'finance.min_paid_price': { label: 'Prix minimum d’un billet payant (F CFA)', help: 'Appliqué à toute catégorie payante créée ou dont le prix change ; un billet gratuit reste à 0. À ajuster quand SamirPay donnera son minimum d’encaissement. Entier de 1 à 100 000.', kind: 'integer', unit: 'F CFA' },
   'finance.aggregator_fee_rate.WAVE': { label: 'Frais agrégateur Wave', help: 'Coût SamirPay d’un paiement Wave. De 0 à 10 %.', kind: 'percent', unit: '%' },
   'finance.aggregator_fee_rate.ORANGE_MONEY': { label: 'Frais agrégateur Orange Money', help: 'Coût SamirPay d’un paiement Orange Money. De 0 à 10 %.', kind: 'percent', unit: '%' },
   'finance.cancellation_aggregator_fee_bearer': { label: 'Frais agrégateur d’une annulation', help: 'Qui supporte les frais agrégateur quand un billet est remboursé.', kind: 'choice', options: BEARER_LABELS },
