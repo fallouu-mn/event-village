@@ -82,6 +82,12 @@ interface PartnerItem {
   id_card_url?: string | null;
   business_doc_url?: string | null;
   is_verified: boolean;
+  /** Lot 9 bis (R53, R90, R54) : numéro vérifié par le code SMS, NINEA et RCCM saisis, complément du dossier. */
+  phone_verified?: boolean | null;
+  ninea?: string | null;
+  rccm?: string | null;
+  resubmitted_at?: string | null;
+  rejection_reason?: string | null;
   status: string;
   created_at: string;
   users?: PartnerUser | null;
@@ -688,6 +694,15 @@ export default function AdminDashboardPage() {
               {activitiesOf(selectedPartner).map((a, i) => <Badge key={`${a}-${i}`} variant="brand">{a}</Badge>)}
             </div>
 
+            {selectedPartner.status === 'REJETE' && (
+              <StatusBanner tone="danger" title="Motif du refus">
+                {selectedPartner.rejection_reason || 'Aucun motif enregistré.'}
+                {selectedPartner.resubmitted_at
+                  ? ' Le partenaire a déjà complété son dossier une fois.'
+                  : ' Le partenaire peut compléter son dossier une fois depuis son tableau de bord.'}
+              </StatusBanner>
+            )}
+
             <section aria-labelledby="dossier-structure">
               <h3 id="dossier-structure" className="mb-2 text-base font-semibold text-fg">Structure</h3>
               <dl className="grid gap-3 rounded-2xl border border-border bg-surface-sunken p-4 sm:grid-cols-2">
@@ -710,7 +725,22 @@ export default function AdminDashboardPage() {
                   <dt className="text-sm text-fg-muted">Adresse</dt>
                   <dd className="break-words text-base font-medium text-fg">{selectedPartner.address || 'Non renseignée'}</dd>
                 </div>
+                <div className="min-w-0">
+                  <dt className="text-sm text-fg-muted">NINEA</dt>
+                  <dd className="break-words text-base font-medium text-fg">{selectedPartner.ninea || 'Non renseigné'}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-sm text-fg-muted">RCCM</dt>
+                  <dd className="break-words text-base font-medium text-fg">{selectedPartner.rccm || 'Non renseigné'}</dd>
+                </div>
               </dl>
+              {selectedPartner.resubmitted_at && (
+                <p className="mt-2 text-sm text-fg-muted">
+                  Dossier complété par le partenaire le{' '}
+                  <time dateTime={toDakarDateTimeLocal(selectedPartner.resubmitted_at)} className="tabular-nums">{formatDateTime(selectedPartner.resubmitted_at)}</time>
+                  {' '}après un refus.
+                </p>
+              )}
             </section>
 
             <section aria-labelledby="dossier-contact">
@@ -721,7 +751,14 @@ export default function AdminDashboardPage() {
                   <dd className="break-words text-base font-medium text-fg">{managerName(selectedPartner)}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">Téléphone</dt>
+                  <dt className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+                    Téléphone
+                    {selectedPartner.phone_verified ? (
+                      <Badge variant="success" size="sm" icon={<CheckCircle2 size={12} aria-hidden="true" />}>Numéro vérifié</Badge>
+                    ) : (
+                      <Badge variant="neutral" size="sm">Numéro non vérifié</Badge>
+                    )}
+                  </dt>
                   <dd className="text-base font-medium">
                     {(selectedPartner.phone || selectedPartner.users?.phone) ? (
                       <a href={`tel:${selectedPartner.phone || selectedPartner.users?.phone}`} className="inline-flex min-h-11 items-center gap-1.5 text-brand-fg underline-offset-4 hover:underline">
