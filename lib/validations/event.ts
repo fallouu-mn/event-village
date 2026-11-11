@@ -506,8 +506,10 @@ export function updateTicketCategorySchema(ctx: UpdateTicketCategorySchemaContex
         if (v.sale_start === undefined && v.sale_end === undefined) return;
         const start = v.sale_start !== undefined ? v.sale_start : ctx.current.sale_start;
         const end = v.sale_end !== undefined ? v.sale_end : ctx.current.sale_end;
-        // La fin de l'événement n'est contrôlée que pour une fin de vente modifiée.
+        // La fin de l'événement borne une fin de vente modifiée ; lot 9 bis (R94) : et un début de vente modifié
+        // (seul le champ envoyé est borné : une fin de vente existante n'empêche pas de corriger le début).
         checkSaleWindow(c, [], start, end, v.sale_end !== undefined ? eventEnd : null);
+        if (v.sale_start !== undefined && v.sale_end === undefined) checkSaleWindow(c, [], start, null, eventEnd);
     });
 }
 

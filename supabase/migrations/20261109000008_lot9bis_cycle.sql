@@ -80,6 +80,15 @@
 --     l'événement, prix, frais de service, canal de vente, code_visible (billet VALIDE, libre, et scan non refusé
 --     par l'événement : ni suspendu, ni annulé, ni fenêtre fermée), transfer_allowed (billet VALIDE, libre, non
 --     composté, événement PUBLIE ou VALIDE avant sa fin, même règle que ticket_transfer_initiate) et notice.
+--
+-- Tâche 25 (R34, R94 ; B61 ; contrôle de sale_start dans event_update par M09, fix(9b.25-SD)) :
+--  2 bis. event_transition (même définition, point 2) : à la soumission, début passé (manque start_date « La date
+--     de début est passée : changez-la avant de soumettre. ») et catégorie active dont la période de vente dépasse la
+--     fin (« La période de vente de « {nom} » dépasse la fin de l’événement. ») sont des manques ; le message de
+--     SUBMIT_INCOMPLETE est « L’événement est incomplet : » suivi des manques, `missing` inchangé.
+-- 22. ticket_category_update(jsonb) : base 20261106000001_lot8_canaux.sql:900-1041, recopie intégrale, signature et
+--     VOLATILE identiques. Changement : un début de vente modifié au-delà ou à la fin de l'événement est refusé
+--     SALE_START_AFTER_EVENT « Le début de vente doit précéder la fin de l’événement. ».
 -- ============================================================================
 
 
@@ -203,9 +212,23 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM public.ticket_categories c WHERE c.event_id = v_event AND c.is_active) THEN
             v_missing := v_missing || jsonb_build_object('field', 'ticket_categories', 'message', 'Ajoutez au moins une catégorie de billets active.');
         END IF;
+        -- Lot 9 bis (R94) : dates contrôlées à la soumission (début passé, période de vente au-delà de la fin)
+        IF ((e.start_date + COALESCE(e.start_time, time '00:00')) AT TIME ZONE 'Africa/Dakar') <= now() THEN
+            v_missing := v_missing || jsonb_build_object('field', 'start_date', 'message', 'La date de début est passée : changez-la avant de soumettre.');
+        END IF;
+        SELECT v_missing || COALESCE(jsonb_agg(jsonb_build_object(
+                   'field', 'ticket_categories',
+                   'message', format('La période de vente de « %s » dépasse la fin de l’événement.', c.name)) ORDER BY c.name, c.id), '[]'::jsonb)
+          INTO v_missing
+          FROM public.ticket_categories c
+         WHERE c.event_id = v_event AND c.is_active
+           AND ((c.sale_start IS NOT NULL AND c.sale_start >= public.event_end_at(v_event))
+             OR (c.sale_end IS NOT NULL AND c.sale_end > public.event_end_at(v_event)));
         IF jsonb_array_length(v_missing) > 0 THEN
+            -- Lot 9 bis (R34) : le message liste les manques, pour que tout écran l'affiche tel quel
             RETURN jsonb_build_object('ok', false, 'code', 'SUBMIT_INCOMPLETE', 'missing', v_missing,
-                                      'message', 'L''événement est incomplet : complétez-le avant de le soumettre.');
+                                      'message', 'L’événement est incomplet : '
+                                                 || (SELECT string_agg(m->>'message', ' ' ORDER BY o) FROM jsonb_array_elements(v_missing) WITH ORDINALITY AS x(m, o)));
         END IF;
     END IF;
     IF v_to = 'PUBLIE' AND public.event_end_at(v_event) <= now() THEN
@@ -1683,6 +1706,157 @@ $$;
 
 
 -- ============================================================================
+-- Tâche 25 — 22. ticket_category_update (recopie, 20261106000001_lot8_canaux.sql:900-1041)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.ticket_category_update(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event uuid := public.try_uuid(p->>'event_id');
+    v_category uuid := public.try_uuid(p->>'category_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_patch jsonb := p->'patch';
+    v_guard jsonb;
+    v_capacity integer;
+    c public.ticket_categories%ROWTYPE;
+    v_key text;
+    n_name text;
+    n_desc text;
+    n_price numeric;
+    n_total integer;
+    n_max integer;
+    n_start timestamptz;
+    n_end timestamptz;
+    n_online boolean;
+    n_counter boolean;
+    n_active boolean;
+    v_sum integer;
+    v_row jsonb;
+BEGIN
+    IF v_patch IS NULL OR jsonb_typeof(v_patch) <> 'object' THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'Les modifications de la catégorie sont illisibles.');
+    END IF;
+    v_guard := public.ticket_category_guard(v_event, v_actor);
+    IF (v_guard->>'ok')::boolean IS NOT TRUE THEN
+        RETURN v_guard;
+    END IF;
+    SELECT * INTO c FROM public.ticket_categories WHERE id = v_category AND event_id = v_event;
+    IF NOT FOUND THEN
+        RETURN public.event_edit_refusal('CATEGORY_NOT_FOUND', 'Catégorie de billets introuvable pour cet événement.');
+    END IF;
+    SELECT k INTO v_key FROM jsonb_object_keys(v_patch) AS k
+     WHERE k <> ALL (ARRAY['name', 'description', 'price', 'total_quantity', 'max_per_order', 'sale_start', 'sale_end', 'sale_online', 'sale_counter', 'is_visible', 'is_active'])
+     ORDER BY k LIMIT 1;
+    IF v_key IS NOT NULL THEN
+        RETURN public.event_edit_refusal('FIELD_NOT_EDITABLE', 'Ce champ de la catégorie de billets ne se modifie pas.', v_key);
+    END IF;
+
+    n_name := c.name; n_desc := c.description; n_price := c.price; n_total := c.total_quantity; n_max := c.max_per_order;
+    n_start := c.sale_start; n_end := c.sale_end; n_online := c.sale_online; n_counter := c.sale_counter; n_active := c.is_active;
+    BEGIN
+        IF v_patch ? 'name' THEN n_name := btrim(v_patch->>'name'); END IF;
+        IF v_patch ? 'description' THEN n_desc := NULLIF(btrim(COALESCE(v_patch->>'description', '')), ''); END IF;
+        IF v_patch ? 'price' THEN n_price := (v_patch->>'price')::numeric; END IF;
+        IF v_patch ? 'total_quantity' THEN n_total := (v_patch->>'total_quantity')::integer; END IF;
+        IF v_patch ? 'max_per_order' THEN n_max := (v_patch->>'max_per_order')::integer; END IF;
+        IF v_patch ? 'sale_start' THEN n_start := NULLIF(v_patch->>'sale_start', '')::timestamptz; END IF;
+        IF v_patch ? 'sale_end' THEN n_end := NULLIF(v_patch->>'sale_end', '')::timestamptz; END IF;
+        IF v_patch ? 'is_visible' THEN n_online := (v_patch->>'is_visible')::boolean; END IF;
+        IF v_patch ? 'sale_online' THEN n_online := (v_patch->>'sale_online')::boolean; END IF;
+        IF v_patch ? 'sale_counter' THEN n_counter := (v_patch->>'sale_counter')::boolean; END IF;
+        IF v_patch ? 'is_active' THEN n_active := (v_patch->>'is_active')::boolean; END IF;
+    EXCEPTION WHEN invalid_text_representation OR invalid_datetime_format OR datetime_field_overflow OR numeric_value_out_of_range THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'Une valeur modifiée de la catégorie est illisible.');
+    END;
+    IF n_name IS NULL OR char_length(n_name) < 1 OR char_length(n_name) > 60 THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'Le nom de la catégorie compte de 1 à 60 caractères.', 'name');
+    END IF;
+    IF n_desc IS NOT NULL AND char_length(n_desc) > 300 THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'La description de la catégorie ne dépasse pas 300 caractères.', 'description');
+    END IF;
+    IF n_price IS NULL OR n_price < 0 OR n_price > 10000000 OR n_price <> trunc(n_price) THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'Le prix est un montant entier de 0 à 10 000 000 F CFA.', 'price');
+    END IF;
+    IF n_total IS NULL OR n_total < 1 OR n_total > 100000 THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'Le quota est un nombre entier de 1 à 100 000 billets.', 'total_quantity');
+    END IF;
+    IF n_max IS NULL OR n_max < 1 OR n_max > 50 THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'Le maximum par commande est un nombre entier de 1 à 50.', 'max_per_order');
+    END IF;
+    IF n_online IS NULL OR n_counter IS NULL OR n_active IS NULL THEN
+        RETURN public.event_edit_refusal('INVALID_INPUT', 'Indiquez oui ou non pour les canaux de vente et la mise en vente.',
+                                         CASE WHEN n_online IS NULL THEN CASE WHEN v_patch ? 'sale_online' THEN 'sale_online' ELSE 'is_visible' END
+                                              WHEN n_counter IS NULL THEN 'sale_counter' ELSE 'is_active' END);
+    END IF;
+
+    -- Prix : modifiable seulement sans billet ni réservation en cours
+    IF n_price <> c.price AND public.ticket_category_has_sales(c.id) THEN
+        RETURN public.event_edit_refusal('PRICE_LOCKED_AFTER_SALES',
+            'Le prix de cette catégorie est verrouillé : des billets ont été vendus ou réservés. Créez une nouvelle catégorie pour un autre tarif.', 'price');
+    END IF;
+    -- Quota : jamais sous les vendus, ni sous vendus + réservés (paiements en cours)
+    IF n_total < c.sold_quantity THEN
+        RETURN public.event_edit_refusal('QUOTA_BELOW_SOLD',
+            format('Le quota ne peut pas descendre sous les %s billet(s) déjà vendus.', c.sold_quantity), 'total_quantity');
+    END IF;
+    IF n_total < c.sold_quantity + c.held_quantity THEN
+        RETURN public.event_edit_refusal('QUOTA_BELOW_HELD',
+            format('Le quota ne peut pas descendre sous %s : %s billet(s) vendus et %s en cours de paiement.',
+                   c.sold_quantity + c.held_quantity, c.sold_quantity, c.held_quantity), 'total_quantity');
+    END IF;
+    -- Somme des quotas des catégories actives ≤ jauge (contrôlée quand le quota monte ou que la catégorie est activée)
+    SELECT capacity INTO v_capacity FROM public.events WHERE id = v_event;
+    IF v_capacity IS NOT NULL AND n_active AND (n_total > c.total_quantity OR NOT c.is_active) THEN
+        SELECT COALESCE(sum(o.total_quantity), 0)::int INTO v_sum
+          FROM public.ticket_categories o WHERE o.event_id = v_event AND o.is_active AND o.id <> c.id;
+        IF v_sum + n_total > v_capacity THEN
+            RETURN public.event_edit_refusal('QUOTA_ABOVE_CAPACITY',
+                format('La somme des quotas des catégories actives (%s) dépasserait la jauge de l''événement (%s).', v_sum + n_total, v_capacity),
+                'total_quantity');
+        END IF;
+    END IF;
+    -- Nom unique dans l'événement, sans tenir compte de la casse
+    IF lower(n_name) IS DISTINCT FROM lower(btrim(c.name)) AND EXISTS (
+        SELECT 1 FROM public.ticket_categories o
+         WHERE o.event_id = v_event AND o.id <> c.id AND lower(btrim(o.name)) = lower(n_name)) THEN
+        RETURN public.event_edit_refusal('CATEGORY_NAME_TAKEN',
+            format('Une catégorie « %s » existe déjà pour cet événement : choisissez un autre nom.', n_name), 'name');
+    END IF;
+    -- Dates de vente : début < fin ≤ fin de l'événement
+    IF (v_patch ? 'sale_start' OR v_patch ? 'sale_end') AND n_start IS NOT NULL AND n_end IS NOT NULL AND n_start >= n_end THEN
+        RETURN public.event_edit_refusal('SALE_DATES_INVALID', 'La fin de vente doit être postérieure au début de vente.', 'sale_end');
+    END IF;
+    IF v_patch ? 'sale_end' AND n_end IS NOT NULL AND n_end > public.event_end_at(v_event) THEN
+        RETURN public.event_edit_refusal('SALE_END_AFTER_EVENT', 'La fin de vente ne peut pas dépasser la fin de l''événement.', 'sale_end');
+    END IF;
+    -- Lot 9 bis (R94) : un début de vente modifié précède la fin de l'événement
+    IF v_patch ? 'sale_start' AND n_start IS NOT NULL AND n_start >= public.event_end_at(v_event) THEN
+        RETURN public.event_edit_refusal('SALE_START_AFTER_EVENT', 'Le début de vente doit précéder la fin de l’événement.', 'sale_start');
+    END IF;
+
+    UPDATE public.ticket_categories
+       SET name = n_name, description = n_desc, price = n_price, total_quantity = n_total, max_per_order = n_max,
+           sale_start = n_start, sale_end = n_end, sale_online = n_online, sale_counter = n_counter, is_active = n_active, updated_at = now()
+     WHERE id = c.id;
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+    VALUES (v_actor, 'PARTENAIRE', 'CATEGORY_UPDATED', 'TICKET_CATEGORY', c.id,
+            jsonb_build_object('event_id', v_event,
+                               'fields', (SELECT COALESCE(jsonb_agg(k ORDER BY k), '[]'::jsonb) FROM jsonb_object_keys(v_patch) AS k),
+                               'old', jsonb_build_object('price', c.price, 'total_quantity', c.total_quantity, 'is_active', c.is_active, 'is_visible', c.is_visible, 'sale_online', c.sale_online, 'sale_counter', c.sale_counter),
+                               'new', jsonb_build_object('price', n_price, 'total_quantity', n_total, 'is_active', n_active, 'is_visible', n_online, 'sale_online', n_online, 'sale_counter', n_counter)));
+
+    SELECT to_jsonb(x) INTO v_row FROM public.ticket_categories x WHERE x.id = c.id;
+    RETURN jsonb_build_object('ok', true, 'category', v_row);
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -1707,7 +1881,8 @@ BEGIN
         'public.ticket_transfer_accept(jsonb)',
         'public.ticket_invitations_list(jsonb)',
         'public.pilotage_scan_result_label(text)',
-        'public.ticket_card_states(jsonb)'
+        'public.ticket_card_states(jsonb)',
+        'public.ticket_category_update(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

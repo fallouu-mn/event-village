@@ -55,6 +55,8 @@ const REFUSAL_HTTP: Record<string, number> = {
     SUBMIT_INCOMPLETE: 422,
     EVENT_NOT_STARTED: 409,
     EVENT_ENDED: 409,
+    // Lot 9 bis (R3) : clôture d'un SUSPENDU dont la fin n'est pas passée
+    EVENT_NOT_ENDED: 409,
     ACCOUNT_NOT_ACTIVE: 403,
     TITLE_MISMATCH: 400,
     PUBLIC_NOTICE_REQUIRED: 400,
