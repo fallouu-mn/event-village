@@ -15,6 +15,10 @@ import { getClientIp } from '@/lib/security/client-ip';
 import { findExistingAccount } from '@/lib/auth/existing-account';
 import { resolveRegistrationUploads } from '@/lib/partners/documents';
 import { grantUserRoles } from '@/lib/auth/roles';
+import { technicalEmailOf } from '@/lib/auth/account-sync';
+import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
+import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
+import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +39,9 @@ const REGISTRY_ID_MAX = 40;
  *    connexion (numéro confirmé), rôle PARTENAIRE, profil, fiche (numéro vérifié, NINEA, RCCM), activités, pièces et
  *    audit en une transaction (partner_register_finalize), et connexion côté serveur (cookies de session). 201.
  * Le quota d'inscription ne compte que l'appel qui envoie le SMS (décision D8).
+ * Lot 9 bis (R87, B96, contrat 4.6, fix(9b.48-SB)) : GoTrue et users.email reçoivent l'adresse technique du numéro ;
+ * l'adresse saisie attend son lien de vérification dans users.email_pending (jamais identifiant de connexion avant).
+ * La fiche garde l'adresse saisie comme contact. Le domaine eventvillage.sn est réservé (B100).
  */
 export async function POST(req: NextRequest) {
     try {
@@ -72,6 +79,10 @@ export async function POST(req: NextRequest) {
         const data = parseResult.data;
         const normalizedPhone = normalizePhoneNumber(data.phone.trim());
         const effectiveEmail = data.email.trim().toLowerCase();
+        if (TECHNICAL_EMAIL_RE.test(effectiveEmail)) {
+            return NextResponse.json({ error: RESERVED_EMAIL_MESSAGE, code: 'INVALID_FIELD', field: 'email' }, { status: 400 });
+        }
+        const technicalEmail = technicalEmailOf(normalizedPhone);
         const ninea = data.ninea?.trim() || null;
         const rccm = data.rccm?.trim() || null;
         if ((ninea && ninea.length > REGISTRY_ID_MAX) || (rccm && rccm.length > REGISTRY_ID_MAX)) {
@@ -161,7 +172,7 @@ export async function POST(req: NextRequest) {
 
         // 2. Création de l'utilisateur dans Supabase Auth, numéro confirmé : le code vient d'être vérifié.
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-            email: effectiveEmail,
+            email: technicalEmail,
             phone: normalizedPhone,
             password: data.password,
             email_confirm: true,
@@ -206,7 +217,7 @@ export async function POST(req: NextRequest) {
                 first_name: data.firstName.trim(),
                 last_name: data.lastName.trim(),
                 phone: normalizedPhone,
-                email: effectiveEmail,
+                email: technicalEmail,
                 partner: {
                     company_name: data.companyName.trim(),
                     commercial_name: data.commercialName?.trim() || data.companyName.trim(),
@@ -243,12 +254,31 @@ export async function POST(req: NextRequest) {
 
         const partnerId = outcome.partner_id;
 
+        // 3 bis. Lot 9 bis (R87) : l'adresse saisie attend son lien. Le dossier est enregistré quoi qu'il arrive : un
+        //        échec est journalisé et dit dans la réponse (email_pending null, email_verification NOT_SENT), le profil
+        //        permet de saisir l'adresse de nouveau.
+        let emailPending: string | null = null;
+        let emailVerification: EmailVerificationState = 'NOT_SENT';
+        const { error: pendingErr } = await supabase.from('users')
+            .update({ email_pending: effectiveEmail, updated_at: new Date().toISOString() })
+            .eq('id', userId);
+        if (pendingErr) {
+            console.error(`[API /api/partner/register] adresse en attente du compte ${userId} non enregistrée :`, pendingErr.message);
+        } else {
+            emailPending = effectiveEmail;
+            try {
+                emailVerification = emailVerificationState(await sendEmailVerification(userId));
+            } catch (mailErr) {
+                console.error(`[API /api/partner/register] lien de vérification du compte ${userId} non envoyé :`, mailErr instanceof Error ? mailErr.message : String(mailErr));
+            }
+        }
+
         // 4. Connexion côté serveur (cookies de session, comme POST /api/auth/login) : le dossier est enregistré quoi
         //    qu'il arrive ; un échec de connexion est journalisé et dit dans la réponse (`signed_in: false`), jamais tu.
         let signedIn = false;
         let cookies: SessionCookie[] = [];
         try {
-            const signIn = await serverPasswordSignIn(req, { email: effectiveEmail }, data.password);
+            const signIn = await serverPasswordSignIn(req, { email: technicalEmail }, data.password);
             if (signIn.ok) {
                 signedIn = true;
                 cookies = signIn.cookies;
@@ -265,6 +295,8 @@ export async function POST(req: NextRequest) {
             userId,
             phone: normalizedPhone,
             phone_verified: true,
+            email_pending: emailPending,
+            email_verification: emailVerification,
             signed_in: signedIn,
             message: 'Dossier envoyé : il est en cours de vérification.',
         }, { status: 201 }), cookies);

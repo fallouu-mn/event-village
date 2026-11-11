@@ -371,6 +371,10 @@ export class AdminService {
                 first_name: 'Utilisateur',
                 last_name: 'Supprimé',
                 email: anonymizedEmail,
+                // Lot 9 bis (R87, G53-6, fix(9b.48-SB)) : plus d'adresse vérifiée ni en attente (contrainte
+                // users_email_verified_real_chk de M10 : une adresse technique n'est jamais vérifiée).
+                email_verified_at: null,
+                email_pending: null,
                 phone: anonymizedPhoneToUse,
                 status: finalStatus as any,
                 referral_status: 'STANDARD',
@@ -387,6 +391,8 @@ export class AdminService {
                     first_name: 'Utilisateur',
                     last_name: 'Supprimé',
                     email: anonymizedEmail,
+                    email_verified_at: null,
+                    email_pending: null,
                     phone: anonymizedPhoneToUse,
                     status: finalStatus as any,
                     referral_status: 'STANDARD',
@@ -405,6 +411,8 @@ export class AdminService {
                     first_name: 'Utilisateur',
                     last_name: 'Supprimé',
                     email: anonymizedEmail,
+                    email_verified_at: null,
+                    email_pending: null,
                     phone: anonymizedPhoneToUse,
                     status: finalStatus as any,
                     referral_status: 'STANDARD',

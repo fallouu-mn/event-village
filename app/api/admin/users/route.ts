@@ -7,6 +7,13 @@ import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { RoleChangeError, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { technicalEmailOf } from '@/lib/auth/account-sync';
+import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
+import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
+import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
+
+/** Forme minimale d'une adresse saisie (la contrainte users_email_pending_chk de M10 refait le contrôle). */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const dynamic = 'force-dynamic';
 
@@ -133,9 +140,16 @@ export async function POST(req: NextRequest) {
         }
 
         const normalizedPhone = phone.trim().startsWith('+') ? phone.trim() : `+221${phone.trim().replace(/^0+/, '').replace(/\s+/g, '')}`;
-        const effectiveEmail = email?.trim() 
-            ? email.trim().toLowerCase() 
-            : `${normalizedPhone.replace('+', '')}@eventvillage.internal`;
+        // Lot 9 bis (R87, B96, contrat 4.6, fix(9b.48-SB)) : GoTrue et users.email reçoivent l'adresse technique du
+        // numéro ; l'adresse saisie attend son lien de vérification dans users.email_pending. Domaine réservé (B100).
+        const typedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        if (typedEmail && (!EMAIL_SHAPE.test(typedEmail) || typedEmail.length > 254)) {
+            return NextResponse.json({ error: 'Adresse email invalide.', code: 'INVALID_FIELD', field: 'email' }, { status: 400 });
+        }
+        if (typedEmail && TECHNICAL_EMAIL_RE.test(typedEmail)) {
+            return NextResponse.json({ error: RESERVED_EMAIL_MESSAGE, code: 'INVALID_FIELD', field: 'email' }, { status: 400 });
+        }
+        const effectiveEmail = technicalEmailOf(normalizedPhone);
         const supabase = getServiceRoleClient();
 
         // 1. Création dans Supabase Auth
@@ -177,6 +191,7 @@ export async function POST(req: NextRequest) {
             last_name: lastName.trim(),
             phone: normalizedPhone,
             email: effectiveEmail,
+            email_pending: typedEmail || null,
             role: targetRole,
             status: 'ACTIF',
             referral_status: 'STANDARD',
@@ -201,9 +216,23 @@ export async function POST(req: NextRequest) {
             metadata: { created_by: auth.user!.role },
         });
 
+        // 4. Lien de vérification de l'adresse saisie, au mieux : le compte est créé quoi qu'il arrive ; un échec est
+        //    journalisé et dit dans la réponse (email_verification NOT_SENT), le lien se renvoie depuis le profil.
+        let emailVerification: EmailVerificationState | null = null;
+        if (typedEmail) {
+            try {
+                emailVerification = emailVerificationState(await sendEmailVerification(userId));
+            } catch (mailErr) {
+                console.error(`[API /api/admin/users POST] lien de vérification du compte ${userId} non envoyé :`, mailErr instanceof Error ? mailErr.message : String(mailErr));
+                emailVerification = 'NOT_SENT';
+            }
+        }
+
         return NextResponse.json({
             success: true,
             userId,
+            email_pending: typedEmail || null,
+            ...(emailVerification ? { email_verification: emailVerification } : {}),
             message: `Utilisateur avec le rôle ${targetRole} créé avec succès.`,
         });
     } catch (err: unknown) {

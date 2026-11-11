@@ -36,6 +36,9 @@ const PUBLIC_API_EXACT = [
     // Lot 8 (A41) : devis d'un panier, sans session. Sans cette ligne, un visiteur lisait « Total indisponible » sur
     // la fiche et ne pouvait pas commencer un achat. POST /api/checkout reste protégé.
     '/api/checkout/quote',
+    // Lot 9 bis (R87, contrat 4.6, fix(9b.48-SB)) : validation du lien reçu par email, sans session ouverte (le jeton
+    // seul prouve la demande ; la route n'ouvre aucune session). /api/account/email/resend reste protégée.
+    '/api/account/email/verify',
 ];
 
 /**
@@ -58,6 +61,8 @@ const PUBLIC_EXACT_ROUTES = [
     '/halls',
     '/partner/register',
     '/controller/setup',
+    // Lot 9 bis (R87, fix(9b.48-SB)) : page du lien de vérification de l'email, ouverte depuis la boîte de réception
+    '/verify-email',
 ];
 
 function hasRole(roles: string[], role: string): boolean {
