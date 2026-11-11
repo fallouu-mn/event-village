@@ -43,6 +43,20 @@
 --     signature ; seule la condition « held_expires_at > now() » de la garde 3 bis est retirée : un paiement de
 --     billets PENDING bloque tout second paiement du même compte pour le même événement jusqu'à son issue
 --     (PAYMENT_PENDING, message inchangé). H2 passe la durée lue au réglage par hold_minutes (signature inchangée).
+--
+-- Tâche 7 (R106 partie argent, B12) :
+--  8. calculate_referral_commissions(uuid) : recopie intégrale de 20261106000004_lot8_commissions.sql:37-112, même
+--     signature ; disponibilité d'une commission de billet = GREATEST(now(), fin_event_end) + délai réglé
+--     (finance.referral_availability_days, 7 par défaut, jamais moins) ; abonnement et paiement sans événement :
+--     confirmation + délai, inchangé ; event_id ajouté aux refs du crédit COMMISSION.
+--  9. referral_commissions_realign(p_event uuid DEFAULT NULL) (nouvelle) : lignes COMMISSION non annulées, jamais
+--     retirées (paid_amount = 0), d'un paiement de billets : date = GREATEST(date, fin + délai), PENDING si future,
+--     écriture COMM-<id> et compensations COMP-<écriture>-* à la même date, audit REFERRAL_COMMISSION_DEFERRED
+--     (user_role SYSTEM) par ligne déplacée ; IS NOT DISTINCT FROM : un second appel ne change rien.
+-- 10. events_referral_realign() et trg_events_referral_realign AFTER UPDATE OF start_date, start_time, end_date,
+--     end_time ON events : la fin recule, les commissions suivent (jamais avancées). Ordre : events → commissions
+--     FOR UPDATE → grand livre (tableau 3.3).
+--  DML en fin de fichier : referral_commissions_realign(NULL) une fois, nombre annoncé par RAISE NOTICE.
 -- ============================================================================
 
 
@@ -762,6 +776,180 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- 8. calculate_referral_commissions(p_payment_id uuid) — recopie intégrale de
+--    20261106000004_lot8_commissions.sql:37-112 (voir l'en-tête)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.calculate_referral_commissions(p_payment_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_payment record;
+    v_rel_n1 record;
+    v_rel_n2 record;
+    v_available timestamptz;
+    v_amount numeric;
+    v_id uuid;
+    v_calc numeric;
+    v_budget numeric;
+BEGIN
+    SELECT * INTO v_payment FROM public.payments WHERE id = p_payment_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'calculate_referral_commissions : paiement % introuvable', p_payment_id;
+    END IF;
+    IF v_payment.status <> 'SUCCESS' OR NOT v_payment.is_platform_payment THEN
+        RETURN;
+    END IF;
+    IF v_payment.net_event_village_revenue IS NULL OR v_payment.net_event_village_revenue <= 0 THEN
+        RETURN;
+    END IF;
+    SELECT * INTO v_rel_n1 FROM public.referral_relationships
+     WHERE referred_id = v_payment.client_id AND is_active = TRUE AND expires_at >= now();
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+    -- Lot 9 bis (R106, B12) : commission d'un billet disponible après la fin de l'événement + délai réglé, jamais
+    -- avant la confirmation + délai ; abonnement et paiement sans événement : règle inchangée.
+    IF v_payment.payment_target::text = 'TICKET' AND v_payment.event_id IS NOT NULL THEN
+        v_available := GREATEST(now(), public.fin_event_end(v_payment.event_id))
+                       + make_interval(days => public.fin_setting_num('finance.referral_availability_days')::int);
+    ELSE
+        v_available := now() + make_interval(days => public.fin_setting_num('finance.referral_availability_days')::int);
+    END IF;
+
+    v_calc := public.fin_round_2(v_payment.net_event_village_revenue * v_rel_n1.rate_n1_at_creation / 100);
+    v_amount := LEAST(v_calc, v_payment.net_event_village_revenue);
+    v_budget := v_payment.net_event_village_revenue - v_amount;
+    IF v_amount > 0 THEN
+        INSERT INTO public.referral_commissions (sponsor_id, referred_id, generation, referral_type, payment_id, eligible_net_revenue,
+                                                 commission_rate, amount, status, idempotency_key, available_at, kind, uncapped_amount)
+        VALUES (v_rel_n1.sponsor_id, v_payment.client_id, 'N1', v_rel_n1.referral_type, v_payment.id, v_payment.net_event_village_revenue,
+                v_rel_n1.rate_n1_at_creation, v_amount, 'PENDING', 'COMM_N1_' || v_payment.id || '_' || v_rel_n1.sponsor_id, v_available, 'COMMISSION',
+                CASE WHEN v_calc > v_amount THEN v_calc END)
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id INTO v_id;
+        IF v_id IS NOT NULL THEN
+            PERFORM public.fin_ledger_credit(v_rel_n1.sponsor_id, 'PARRAINAGE', NULL, 'COMMISSION', v_amount, v_available,
+                                             jsonb_build_object('payment_id', v_payment.id, 'commission_id', v_id, 'event_id', v_payment.event_id),
+                                             'COMM-' || v_id::text, 'Commission de parrainage N1');
+        END IF;
+    END IF;
+
+    SELECT * INTO v_rel_n2 FROM public.referral_relationships
+     WHERE referred_id = v_rel_n1.sponsor_id AND is_active = TRUE AND expires_at >= now();
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+    v_id := NULL;
+    v_calc := public.fin_round_2(v_payment.net_event_village_revenue * v_rel_n1.rate_n2_at_creation / 100);
+    v_amount := LEAST(v_calc, v_budget);
+    IF v_amount > 0 THEN
+        INSERT INTO public.referral_commissions (sponsor_id, referred_id, generation, referral_type, payment_id, eligible_net_revenue,
+                                                 commission_rate, amount, status, idempotency_key, available_at, kind, uncapped_amount)
+        VALUES (v_rel_n2.sponsor_id, v_payment.client_id, 'N2', v_rel_n1.referral_type, v_payment.id, v_payment.net_event_village_revenue,
+                v_rel_n1.rate_n2_at_creation, v_amount, 'PENDING', 'COMM_N2_' || v_payment.id || '_' || v_rel_n2.sponsor_id, v_available, 'COMMISSION',
+                CASE WHEN v_calc > v_amount THEN v_calc END)
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id INTO v_id;
+        IF v_id IS NOT NULL THEN
+            PERFORM public.fin_ledger_credit(v_rel_n2.sponsor_id, 'PARRAINAGE', NULL, 'COMMISSION', v_amount, v_available,
+                                             jsonb_build_object('payment_id', v_payment.id, 'commission_id', v_id, 'event_id', v_payment.event_id),
+                                             'COMM-' || v_id::text, 'Commission de parrainage N2');
+        END IF;
+    END IF;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- 9. referral_commissions_realign(p_event uuid DEFAULT NULL) — reprise R106 (B12), rend le nombre de lignes déplacées
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.referral_commissions_realign(p_event uuid DEFAULT NULL)
+RETURNS integer
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_days integer := public.fin_setting_num('finance.referral_availability_days')::int;
+    c record;
+    v_new timestamptz;
+    v_status text;
+    v_entry uuid;
+    v_moved integer := 0;
+BEGIN
+    -- Lignes non annulées, jamais retirées (paid_amount = 0, B12), d'un paiement de billets rattaché à un événement.
+    -- Verrou des commissions par identifiant croissant (tableau 3.3 : events → commissions → grand livre).
+    FOR c IN
+        SELECT rc.id, rc.available_at, rc.status::text AS status, p.event_id
+          FROM public.referral_commissions rc
+          JOIN public.payments p ON p.id = rc.payment_id
+         WHERE rc.kind = 'COMMISSION' AND rc.cancelled_at IS NULL AND rc.paid_amount = 0
+           AND rc.status::text IN ('PENDING', 'AVAILABLE')
+           AND p.payment_target::text = 'TICKET' AND p.event_id IS NOT NULL
+           AND (p_event IS NULL OR p.event_id = p_event)
+         ORDER BY rc.id
+           FOR UPDATE OF rc
+    LOOP
+        v_new := GREATEST(c.available_at, public.fin_event_end(c.event_id) + make_interval(days => v_days));
+        -- Fin illisible : GREATEST garde l'ancienne date ; rien ne bouge si la date est déjà la bonne.
+        CONTINUE WHEN v_new IS NULL OR v_new IS NOT DISTINCT FROM c.available_at;
+        v_status := CASE WHEN c.status = 'AVAILABLE' AND v_new > now() THEN 'PENDING' ELSE c.status END;
+        UPDATE public.referral_commissions
+           SET available_at = v_new, status = v_status::commission_status_enum, updated_at = now()
+         WHERE id = c.id;
+        -- Écriture COMMISSION de la ligne, puis les compensations de créance qu'elle a payées (même date)
+        v_entry := NULL;
+        SELECT l.id INTO v_entry FROM public.finance_ledger l WHERE l.source_key = 'COMM-' || c.id::text;
+        IF v_entry IS NOT NULL THEN
+            UPDATE public.finance_ledger SET available_at = v_new
+             WHERE id = v_entry OR source_key LIKE 'COMP-' || v_entry::text || '-%';
+        END IF;
+        INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+        VALUES (NULL, 'SYSTEM', 'REFERRAL_COMMISSION_DEFERRED', 'referral_commissions', c.id, jsonb_build_object(
+            'commission_id', c.id, 'event_id', c.event_id, 'old_available_at', c.available_at, 'new_available_at', v_new,
+            'old_status', c.status, 'new_status', v_status,
+            'regle', format('fin de l''événement + %s jours (finance.referral_availability_days)', v_days)));
+        v_moved := v_moved + 1;
+    END LOOP;
+    RETURN v_moved;
+END;
+$$;
+
+COMMENT ON FUNCTION public.referral_commissions_realign(uuid) IS
+    'Lot 9 bis (R106, B12) : commission d''un billet repoussée à la fin de l''événement + délai réglé (jamais avancée), PENDING si la nouvelle date est future ; écriture COMM-<id> et compensations suivies ; audit REFERRAL_COMMISSION_DEFERRED par ligne ; lignes déjà retirées inchangées. Service_role seul.';
+
+
+-- ----------------------------------------------------------------------------
+-- 10. events_referral_realign() — trigger : la fin d'un événement recule, ses commissions suivent
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.events_referral_realign()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NEW.start_date IS DISTINCT FROM OLD.start_date OR NEW.start_time IS DISTINCT FROM OLD.start_time
+       OR NEW.end_date IS DISTINCT FROM OLD.end_date OR NEW.end_time IS DISTINCT FROM OLD.end_time THEN
+        PERFORM public.referral_commissions_realign(NEW.id);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_events_referral_realign ON public.events;
+CREATE TRIGGER trg_events_referral_realign
+    AFTER UPDATE OF start_date, start_time, end_date, end_time ON public.events
+    FOR EACH ROW EXECUTE FUNCTION public.events_referral_realign();
+
+
 -- ============================================================================
 -- Privilèges : service_role uniquement (règle 1A.3)
 -- ============================================================================
@@ -775,10 +963,34 @@ BEGIN
         'public.cashout_admin_decide(jsonb)',
         'public.notif_cashouts_notify()',
         'public.event_cancellation_progress(jsonb)',
-        'public.checkout_create_payment(jsonb)'
+        'public.checkout_create_payment(jsonb)',
+        'public.calculate_referral_commissions(uuid)',
+        'public.referral_commissions_realign(uuid)',
+        'public.events_referral_realign()'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
     END LOOP;
+END;
+$$;
+
+
+-- ============================================================================
+-- Reprise de données (DML en fin de fichier) — tâche 7 (R106, B12)
+-- Commissions de billets déjà posées à « confirmation + délai » : repoussées à la fin de l'événement + délai.
+-- Rejouable : referral_commissions_realign ne touche une ligne que si sa date change (IS NOT DISTINCT FROM) ;
+-- le nombre de lignes déplacées et celui des lignes déjà retirées (laissées telles quelles) sont annoncés.
+-- ============================================================================
+DO $$
+DECLARE
+    v_moved integer;
+    v_paid integer;
+BEGIN
+    v_moved := public.referral_commissions_realign(NULL);
+    SELECT count(*) INTO v_paid
+      FROM public.referral_commissions rc JOIN public.payments p ON p.id = rc.payment_id
+     WHERE rc.kind = 'COMMISSION' AND rc.cancelled_at IS NULL AND rc.paid_amount > 0
+       AND p.payment_target::text = 'TICKET' AND p.event_id IS NOT NULL;
+    RAISE NOTICE 'lot 9 bis R106 : % commission(s) repoussée(s) à la fin de l''événement + délai ; % ligne(s) déjà retirée(s) en tout ou partie, inchangée(s)', v_moved, v_paid;
 END;
 $$;
