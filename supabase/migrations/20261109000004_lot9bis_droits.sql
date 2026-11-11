@@ -49,6 +49,11 @@
 --     users.phone_verified_at et partners.phone_verified = TRUE, et enregistre ninea et rccm (R90).
 -- 13. partner_dossier_resubmit(p jsonb) (nouvelle) : complément d'un dossier REJETE une seule fois (R54) ; REJETE →
 --     EN_ATTENTE, resubmitted_at, pièces rattachées, motif gardé, ADMIN_PARTNER_RESUBMITTED aux admins partners.read.
+--
+-- Tâche 19 (ex-10.0 c ; B45, D9) :
+--  8 bis. user_roles_set (même définition, point 8) écrit son journal ROLES_SET (acteur, rôles avant et après) dans la
+--     transaction, après le changement : un journal refusé annule le changement de rôles.
+-- 14. Trigger trg_audit_cashouts AFTER INSERT OR UPDATE OF status, blocked_reason ON cashouts (audit_log_changes).
 -- ============================================================================
 
 
@@ -384,6 +389,17 @@ BEGIN
                                   'message', 'Ce contrôleur a une caisse ouverte : clôturez-la avant de lui retirer ce rôle.');
     END;
 
+    -- Lot 9 bis (ex-10.0 c, B45, tâche 19) : journal ROLES_SET dans la transaction, avec l'acteur ; s'il ne s'écrit
+    -- pas, l'erreur remonte et aucun rôle n'est changé.
+    IF v_target IS DISTINCT FROM v_before THEN
+        INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+        VALUES (v_actor, CASE WHEN v_actor_super THEN 'SUPERADMIN' ELSE 'ADMIN' END, 'ROLES_SET', 'users', v_user,
+                jsonb_build_object('roles', to_jsonb(v_before)), jsonb_build_object('roles', to_jsonb(v_target)),
+                jsonb_build_object(
+                    'added', COALESCE((SELECT jsonb_agg(x ORDER BY x) FROM unnest(v_target) x WHERE NOT (x = ANY (v_before))), '[]'::jsonb),
+                    'removed', COALESCE((SELECT jsonb_agg(x ORDER BY x) FROM unnest(v_before) x WHERE NOT (x = ANY (v_target))), '[]'::jsonb)));
+    END IF;
+
     RETURN jsonb_build_object('ok', true,
         'before', to_jsonb(v_before),
         'after', to_jsonb(v_target),
@@ -687,6 +703,19 @@ BEGIN
                               'message', 'Dossier envoyé : il est de nouveau en cours de vérification.');
 END;
 $$;
+
+
+-- ============================================================================
+-- Tâche 19 (ex-10.0 c ; B45, D9) — 14. Trigger trg_audit_cashouts
+-- ============================================================================
+-- Chaque création d'un versement et chaque changement de son statut ou de son motif de blocage est journalisé dans
+-- la même instruction (audit_log_changes, comme payments, refunds et withdrawals : object_type 'cashouts', ligne
+-- entière dans old_value et new_value), y compris les écritures faites par TypeScript (CashoutService) : un journal
+-- refusé annule l'écriture. Lu par l'invariant w2. Fonction de trigger existante : rien à accorder.
+DROP TRIGGER IF EXISTS trg_audit_cashouts ON public.cashouts;
+CREATE TRIGGER trg_audit_cashouts
+    AFTER INSERT OR UPDATE OF status, blocked_reason ON public.cashouts
+    FOR EACH ROW EXECUTE FUNCTION public.audit_log_changes();
 
 
 -- ============================================================================

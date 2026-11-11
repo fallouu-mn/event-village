@@ -4,7 +4,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
-import { grantUserRoles, RoleChangeError, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
+import { RoleChangeError, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 
@@ -160,9 +160,11 @@ export async function POST(req: NextRequest) {
 
         const userId = authData.user.id;
 
-        // 1 bis. Attribution explicite du rôle (lot 1A : le trigger d'inscription ne crée plus que CLIENT).
+        // 1 bis. Attribution explicite du rôle (lot 1A : le trigger d'inscription ne crée plus que CLIENT). Lot 9 bis
+        //       (B45, R71) : par la RPC user_roles_set, qui refait le contrôle du rôle ADMIN et écrit son journal
+        //       ROLES_SET dans la transaction.
         try {
-            await grantUserRoles(userId, [targetRole]);
+            await setUserRoles(userId, [targetRole], auth.user!.id);
         } catch (roleErr) {
             console.error('[API /api/admin/users POST] Attribution du rôle impossible:', roleErr);
             return NextResponse.json({ error: 'Compte créé mais attribution du rôle impossible. Réessayez.' }, { status: 500 });

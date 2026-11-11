@@ -37,7 +37,8 @@ type StatusReply = {
  * Lot 6 (J2.6) : une seule transaction, la RPC partner_status_set, écrit partners.status (et le motif),
  * users.status (SUSPENDU à la suspension, ACTIF sinon), révoque les sessions à la suspension et met en
  * file l'avis au partenaire (trigger trg_partners_notify : in-app, SMS, email). Aucun envoi depuis la
- * route. Permission : partners.validate, ou partners.suspend pour une suspension. Journal d'audit gardé.
+ * route. Permission : partners.validate, ou partners.suspend pour une suspension. Lot 9 bis (B45) : journal d'audit
+ * écrit dans la RPC (transactionnel), `audit_logged` toujours vrai (champ gardé pour la compatibilité).
  */
 export async function PATCH(
     req: NextRequest,
@@ -91,29 +92,14 @@ export async function PATCH(
             return NextResponse.json({ error: reply.message ?? 'Mise à jour du partenaire refusée.', code }, { status });
         }
 
-        // Journal d'audit (la transition est acquise : un échec d'écriture est journalisé et signalé)
-        const { error: auditErr } = await supabase.from('audit_logs').insert({
-            user_id: auth.user!.id,
-            user_role: auth.user!.role,
-            action: 'STATUS_CHANGE',
-            object_type: 'partners',
-            object_id: partnerId,
-            old_value: { status: reply.old_status ?? null },
-            new_value: { status: reply.status ?? newStatus, is_verified: reply.is_verified ?? newStatus === 'VALIDE' },
-            metadata: {
-                reason: effectiveReason,
-                old_status: reply.old_status ?? null,
-                updated_by: auth.user!.role,
-                sessions_revoked: reply.sessions_revoked ?? null,
-            },
-        });
-        if (auditErr) console.error('[API /api/admin/partners/status] journal d’audit :', auditErr.message);
+        // Lot 9 bis (ex-10.0 c, B45) : le journal PARTNER_STATUS_SET est écrit par partner_status_set dans sa
+        // transaction (M06) ; s'il ne peut pas l'être, la RPC échoue et rien n'a changé (500 ci-dessus).
 
         return NextResponse.json({
             success: true,
             message: 'Statut du partenaire mis à jour.',
             notification: 'QUEUED',
-            audit_logged: !auditErr,
+            audit_logged: true,
             partner: {
                 id: partnerId,
                 status: reply.status ?? newStatus,

@@ -269,7 +269,10 @@ export class AdminService {
     }
 
     /**
-     * Journalisation inaltérable d'une action Superadmin
+     * Journalisation inaltérable d'une action d'administration.
+     * Lot 9 bis (ex-10.0 c, B45, décision D10) : l'erreur d'écriture est lue et LEVÉE (avant : avalée, le client
+     * Supabase ne lève pas). L'appelant hors RPC (GoTrue, écritures déjà faites) répond 500 explicite ; l'argent, les
+     * rôles et les permissions écrivent leur journal dans la RPC qui agit, dans la même transaction.
      */
     static async logAudit(params: {
         userId?: string;
@@ -281,20 +284,20 @@ export class AdminService {
         newValue?: any;
         metadata?: any;
     }) {
-        try {
-            const supabase = getServiceRoleClient();
-            await supabase.from('audit_logs').insert({
-                user_id: params.userId || null,
-                user_role: params.userRole,
-                action: params.action,
-                object_type: params.objectType,
-                object_id: params.objectId || null,
-                old_value: params.oldValue || null,
-                new_value: params.newValue || null,
-                metadata: params.metadata || {},
-            });
-        } catch (err) {
-            console.error('[AdminService.logAudit] Erreur journalisation:', err);
+        const supabase = getServiceRoleClient();
+        const { error } = await supabase.from('audit_logs').insert({
+            user_id: params.userId || null,
+            user_role: params.userRole,
+            action: params.action,
+            object_type: params.objectType,
+            object_id: params.objectId || null,
+            old_value: params.oldValue || null,
+            new_value: params.newValue || null,
+            metadata: params.metadata || {},
+        });
+        if (error) {
+            console.error(`[AdminService.logAudit] journal ${params.action} non écrit :`, `${error.code ?? ''} ${error.message}`);
+            throw new Error(`Journal d'audit ${params.action} non écrit : ${error.message}`);
         }
     }
 
