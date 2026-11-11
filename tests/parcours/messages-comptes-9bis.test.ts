@@ -15,6 +15,9 @@
  *  7. R59, règle d'entrée (B74, décision A8) : billet payé d'un client suspendu, scan d'un code valide → `valid`.
  *     Non reproduit probable, vert dès l'écriture (ticket_scan ne lit pas le statut du porteur,
  *     M/20261108000005:104,141) : garde-fou de la décision, le statut est posé comme le fait la route actuelle.
+ * Lot 9 bis, tâche 37 (R79 ; contrat 5.37, B78, 11.2 M3) — invitation à un compte vérifié : INVITATION_RECEIVED aussi
+ * en in-app et push (et email) au compte ; la ligne SMS reste sans compte ni acteur (AR15 du lot 9). Rouge : SMS seul,
+ * sans compte (M/20261108000002:477-482).
  *
  * Rouge avant correctif : ticket_invitation_cancel ne met rien en file (M/20261108000002:501), ticket_refund_request
  * n'avise pas dans ses branches gratuit et espèces (M/20261108000001:69-86), event_cancel révoque les transferts sans
@@ -281,5 +284,24 @@ describe('9b.34 R59 : client suspendu ou réactivé prévenu par SMS avec motif 
         const r = await scan(controller, { eventId: ev.eventId, payload: await ticketPayload(ticketId) });
         assert.equal(r.status, 200, show(r));
         assert.equal(r.body.result, 'valid', `billet payé d'un client suspendu valable à l'entrée (décision A8) : ${show(r)}`);
+    });
+});
+
+// ── R79 : invité qui a un compte ───────────────────────────────────────────
+
+describe('9b.37 R79 : avis in-app à l\'invité qui a un compte', () => {
+    test('invitation à un compte vérifié : INVITATION_RECEIVED in-app et push au compte ; la ligne SMS reste sans compte ni acteur', async () => {
+        const ev = await publishedEvent('Invit inapp');
+        const account = await newBuyer('cpt-r79', { firstName: 'Mariama', lastName: 'Invitee' });
+        await markPhoneVerified(account.userId);
+        await invite(ev, account.phoneE164);
+
+        const toAccount = await outboxRows({ type: 'INVITATION_RECEIVED', eventId: ev.eventId, userId: account.userId });
+        const chans = toAccount.map((r) => r.channel);
+        assert.ok(chans.includes('IN_APP') && chans.includes('PUSH'), `in-app et push au compte (R79) : ${describeRows(toAccount)}`);
+        assert.ok(!chans.includes('SMS'), `le SMS ne part pas par le compte : ${describeRows(toAccount)}`);
+        const sms = await outboxRows({ type: 'INVITATION_RECEIVED', eventId: ev.eventId, channel: 'SMS' });
+        assert.deepEqual(sms.map((r) => [r.recipient_phone, r.recipient_user_id, r.actor_id]), [[account.phoneE164, null, null]],
+            `une ligne SMS au numéro, sans compte ni acteur (AR15) : ${describeRows(sms)}`);
     });
 });

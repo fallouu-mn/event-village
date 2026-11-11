@@ -8,7 +8,7 @@
  *  - billet : canal INVITATION, prix 0, décision INVITATION, aucun paiement, stock décrémenté ; au compte si le
  *    numéro est vérifié et ACTIF, sinon billet sans porteur et transfert PENDING sans expéditeur (AR15) ;
  *  - réponse identique avec ou sans compte (L7), liste sans numéro de billet ni QR ;
- *  - SMS INVITATION_RECEIVED : une ligne par numéro, ESSENTIAL, sans actor_id ni compte, texte exact, 1 segment
+ *  - SMS INVITATION_RECEIVED : une ligne SMS par numéro, ESSENTIAL, sans actor_id ni compte (lot 9 bis, R79 : in-app et push au compte vérifié), texte exact, 1 segment
  *    GSM-7 (calculé ici), aucun claim, token, 6 chiffres ; audit sans numéro en clair ;
  *  - pilotage (invitations comptées à part, restants) et CSV (colonne « Canal », nom « Invitation en attente »).
  *
@@ -489,13 +489,13 @@ describe('9.0 Invitations : liste du pilotage (L7, L14, 4.1)', () => {
 // ── SMS ────────────────────────────────────────────────────────────────────
 
 describe('9.0 Invitations : SMS INVITATION_RECEIVED (L10, AR15, 5.1 étape 9)', () => {
-    test('une ligne par numéro, SMS seul, ESSENTIAL, sans actor_id ni compte, même pour un compte vérifié ; quantité portée dans les données', async () => {
+    test('une ligne SMS par numéro, ESSENTIAL, sans actor_id ni compte, même pour un compte vérifié (in-app et push au compte, R79) ; quantité portée dans les données', async () => {
         const ev = await newEvent('sms-lignes');
         const account = await verifiedAccount('sms');
         const phone = randomSenegalPhone('76');
         await sendOk(partner, ev, [account.phoneE164, phone], 2);
-        const rows = await outboxRows({ type: 'INVITATION_RECEIVED', eventId: ev.eventId });
-        assert.equal(rows.length, 2, `une ligne par numéro : ${JSON.stringify(rows.map((r) => r.recipient_phone))}`);
+        const rows = await outboxRows({ type: 'INVITATION_RECEIVED', eventId: ev.eventId, channel: 'SMS' }); // lot 9 bis (R79, T57) : lignes SMS seules pour L10/AR15
+        assert.equal(rows.length, 2, `une ligne SMS par numéro : ${JSON.stringify(rows.map((r) => r.recipient_phone))}`);
         assert.deepEqual(rows.map((r) => r.recipient_phone).sort(), [account.phoneE164, phone].sort(), 'destinataires');
         const ticketIds = new Set((await invitationTickets(ev.eventId)).map((t) => String(t.id)));
         for (const r of rows) {
@@ -508,7 +508,7 @@ describe('9.0 Invitations : SMS INVITATION_RECEIVED (L10, AR15, 5.1 étape 9)', 
             assert.equal(r.idempotency_key, `INVITATION_RECEIVED:${r.template_data.ticket_id}:SMS`, JSON.stringify(r));
             assert.ok(!/claim|token/i.test(JSON.stringify(r.template_data)), `données sans jeton : ${JSON.stringify(r.template_data)}`);
         }
-        assert.deepEqual(await outboxRows({ type: 'INVITATION_RECEIVED', userId: account.userId }), [], 'ni in-app ni push au compte (L10)');
+        const toAccount = (await outboxRows({ type: 'INVITATION_RECEIVED', userId: account.userId })).map((r) => r.channel); assert.ok(toAccount.includes('IN_APP') && toAccount.includes('PUSH') && !toAccount.includes('SMS'), `lot 9 bis (R79, T57, règle changée : L10 renversée par la consigne) : in-app et push au compte vérifié, jamais le SMS : ${JSON.stringify(toAccount)}`);
     });
 
     test('texte exact au singulier et au pluriel, 1 segment GSM-7, lien /tickets, aucun claim, token ni code à 6 chiffres', async () => {
