@@ -209,16 +209,32 @@ export async function POST(req: NextRequest) {
     }
 }
 
+/** Refus de admin_user_status_set (lot 9 bis, M04) : statut HTTP ; le texte vient de la RPC. */
+const STATUS_SET_REFUSALS: Readonly<Record<string, number>> = {
+    INVALID_INPUT: 400,
+    REASON_REQUIRED: 400,
+    FORBIDDEN: 403,
+    ADMIN_ROLE_SUPERADMIN_ONLY: 403,
+    USER_NOT_FOUND: 404,
+    PARTNER_STATUS_VIA_PARTNER_SHEET: 409,
+};
+
+const PARTNER_VIA_SHEET = 'Ce compte est celui d’un partenaire : suspendez-le ou réactivez-le depuis sa fiche partenaire, avec un motif.';
+
 /**
  * PATCH /api/admin/users
- * Mise à jour du rôle ou du statut Ambassadeur d'un utilisateur
+ * Mise à jour des rôles, du statut ou du statut Ambassadeur d'un utilisateur.
+ * Lot 9 bis : le statut (`status` ACTIF ou SUSPENDU, `reason` obligatoire à la suspension) passe par la RPC
+ * admin_user_status_set (journal, sessions révoquées, avis au compte, une transaction) ; un compte partenaire est
+ * renvoyé à sa fiche (409 PARTNER_STATUS_VIA_PARTNER_SHEET, aucune écriture, R6) ; un compte ADMIN n'est suspendu que
+ * par un SUPERADMIN (R71).
  */
 export async function PATCH(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'users.write' });
     if (!auth.authorized) return auth.errorResponse!;
 
     try {
-        let body: { userId?: string; role?: string; roles?: unknown; referralStatus?: unknown; status?: string };
+        let body: { userId?: string; role?: string; roles?: unknown; referralStatus?: unknown; status?: string; reason?: unknown };
         try {
             body = await req.json();
         } catch {
@@ -226,6 +242,10 @@ export async function PATCH(req: NextRequest) {
         }
 
         const { userId, role, roles: requestedRoles, referralStatus, status } = body;
+        const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+        if (status !== undefined && status !== 'ACTIF' && status !== 'SUSPENDU') {
+            return NextResponse.json({ error: 'Statut invalide : ACTIF ou SUSPENDU.', code: 'INVALID_FIELD', field: 'status' }, { status: 400 });
+        }
         if (!userId) {
             return NextResponse.json({ error: 'userId requis.' }, { status: 400 });
         }
@@ -310,6 +330,19 @@ export async function PATCH(req: NextRequest) {
             if (adminChanged || adminStatus) return adminRoleSuperadminOnly();
         }
 
+        // 3 ter. Lot 9 bis (R6, B38) : le statut d'une partenaire ne se change que depuis sa fiche, avec un motif ; la
+        //        suspension d'un autre compte exige un motif (contrôlés avant toute écriture, rôles compris).
+        if (status !== undefined) {
+            const { data: partnerRow, error: partnerErr } = await supabase.from('partners').select('id').eq('user_id', userId).maybeSingle();
+            if (partnerErr) return apiFailure('PATCH /api/admin/users, fiche partenaire', partnerErr, USER_UPDATE_FALLBACK);
+            if (partnerRow) {
+                return NextResponse.json({ error: PARTNER_VIA_SHEET, code: 'PARTNER_STATUS_VIA_PARTNER_SHEET', partner_id: partnerRow.id }, { status: 409 });
+            }
+            if (status === 'SUSPENDU' && targetUser.status !== 'SUSPENDU' && reason.length < 3) {
+                return NextResponse.json({ error: 'Indiquez le motif de la suspension (3 caractères au moins).', code: 'REASON_REQUIRED', field: 'reason' }, { status: 400 });
+            }
+        }
+
         // 4. Rôles : ajout et retrait dans user_roles (le trigger recalcule users.role)
         //    Lot 4.7 : retirer CONTROLEUR à un compte qui a une caisse OUVERT est refusé par le trigger
         //    controller_removal_guard (CONTROLLER_HAS_OPEN_SHIFT) → 409, rien d'autre n'est modifié.
@@ -330,10 +363,27 @@ export async function PATCH(req: NextRequest) {
             }
         }
 
-        // 5. Autres attributs du profil (le rôle legacy n'est plus écrit directement)
+        // 4 bis. Lot 9 bis (R59, B38, B45) : statut par la RPC (journal, sessions révoquées, avis, une transaction)
+        if (status !== undefined) {
+            const { data: statusReply, error: statusErr } = await supabase.rpc('admin_user_status_set', {
+                p: { actor_id: auth.user!.id, user_id: userId, status, reason: reason || null },
+            });
+            if (statusErr || !statusReply) {
+                return apiFailure('PATCH /api/admin/users, statut', statusErr ?? new Error('admin_user_status_set : réponse vide'), USER_UPDATE_FALLBACK);
+            }
+            const reply = statusReply as { ok?: boolean; code?: string; message?: string };
+            if (reply.ok !== true) {
+                const httpStatus = STATUS_SET_REFUSALS[String(reply.code)];
+                if (!httpStatus || typeof reply.message !== 'string') {
+                    return apiFailure('PATCH /api/admin/users, statut', new Error(`admin_user_status_set : refus non répertorié ${JSON.stringify(reply)}`), USER_UPDATE_FALLBACK);
+                }
+                return NextResponse.json({ error: reply.message, code: reply.code }, { status: httpStatus });
+            }
+        }
+
+        // 5. Autres attributs du profil (le rôle legacy et le statut ne sont plus écrits directement)
         const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
         if (referralValue) updatePayload.referral_status = referralValue;
-        if (status) updatePayload.status = status;
 
         const { data: updatedUser, error } = await supabase
             .from('users')
@@ -344,12 +394,12 @@ export async function PATCH(req: NextRequest) {
 
         if (error) return apiFailure('PATCH /api/admin/users', error, USER_UPDATE_FALLBACK);
 
-        // 6. Lot 1C.3 : rôle retiré ou compte non actif → sessions révoquées (déconnexion forcée réelle)
+        // 6. Lot 1C.3 : rôle retiré → sessions révoquées (déconnexion forcée réelle) ; une suspension les a déjà révoquées
+        //    dans la RPC de statut (lot 9 bis).
         const rolesRemoved = (roleChange?.removed.length ?? 0) > 0;
-        const deactivated = status !== undefined && status !== 'ACTIF';
-        if (rolesRemoved || deactivated) {
+        if (rolesRemoved) {
             const revoked = await revokeUserSessions(userId, {
-                reason: deactivated ? `STATUS_${status}` : 'ROLES_REMOVED',
+                reason: 'ROLES_REMOVED',
                 actorId: auth.user!.id,
             });
             if (!revoked) {
@@ -367,6 +417,7 @@ export async function PATCH(req: NextRequest) {
             oldValue: { roles: targetCurrentRoles, role: targetUser.role, referral_status: targetUser.referral_status, status: targetUser.status },
             newValue: {
                 ...updatePayload,
+                ...(status !== undefined ? { status } : {}),
                 ...(roleChange ? { roles: roleChange.after, roles_added: roleChange.added, roles_removed: roleChange.removed } : {}),
             },
             metadata: { target_email: targetUser.email },

@@ -35,6 +35,12 @@
 --
 -- Tâche 13 (R57 ; B35, D4) :
 --  9. Table password_confirmations (session_id clé primaire, user_id, confirmed_at), service_role seul.
+--
+-- Tâche 15 (R6 ; B38, X9 ; porte aussi R59 de la tâche 34, B33 de la tâche 11 et l'audit de la tâche 19) :
+-- 10. admin_user_status_set(p jsonb) (nouvelle) : statut ACTIF ou SUSPENDU d'un compte par un admin users.write ;
+--     compte partenaire refusé (PARTNER_STATUS_VIA_PARTNER_SHEET), compte admin réservé au SUPERADMIN, motif exigé à
+--     la suspension, sessions révoquées, journal USER_STATUS_SET et avis ACCOUNT_SUSPENDED / ACCOUNT_REACTIVATED dans
+--     la transaction.
 -- ============================================================================
 
 
@@ -401,6 +407,95 @@ COMMENT ON TABLE public.password_confirmations IS
 
 
 -- ============================================================================
+-- Tâche 15 (R6 ; B38, X9 ; R59 et B74 de la tâche 34, B33 de la tâche 11, B45 de la tâche 19)
+-- 10. admin_user_status_set (nouvelle)
+-- ============================================================================
+-- Statut d'un compte (suspension, réactivation) par un admin, en une transaction : p = { actor_id, user_id, status
+-- ('ACTIF' | 'SUSPENDU'), reason }. Acteur ACTIF muni de users.write (ou SUPERADMIN). Refus, sans aucune écriture :
+-- compte partenaire → PARTNER_STATUS_VIA_PARTNER_SHEET (la fiche partenaire, avec motif, est la seule voie : B38) ;
+-- compte ADMIN ou SUPERADMIN par un acteur non SUPERADMIN → ADMIN_ROLE_SUPERADMIN_ONLY (B33) ; suspension sans motif
+-- (3 caractères au moins) → REASON_REQUIRED. Changement effectif : users.status, sessions révoquées à la suspension
+-- (revoke_user_sessions), journal USER_STATUS_SET avec l'acteur et le motif (B45), puis l'avis au compte
+-- ACCOUNT_SUSPENDED (motif) ou ACCOUNT_REACTIVATED (seulement depuis SUSPENDU), politique ALLOW du registre (M03) :
+-- le SMS part malgré la suspension (R59, B74). Même statut : rien d'écrit, `changed: false`.
+-- Verrous : users FOR UPDATE (compte visé) → sessions de GoTrue → audit → boîte d'envoi (ordre 3.3).
+CREATE OR REPLACE FUNCTION public.admin_user_status_set(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_status text := p->>'status';
+    v_reason text := NULLIF(btrim(COALESCE(p->>'reason', '')), '');
+    v_old text;
+    v_actor_super boolean;
+    v_revoked integer;
+    v_audit uuid;
+    v_type text;
+BEGIN
+    IF v_user IS NULL OR v_actor IS NULL OR v_status IS NULL OR v_status NOT IN ('ACTIF', 'SUSPENDU')
+       OR char_length(COALESCE(v_reason, '')) > 500 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Changement de statut incomplet.');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF')
+       OR NOT public.admin_can(v_actor, 'users.write') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Changement de statut réservé à un administrateur habilité.');
+    END IF;
+    v_actor_super := EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text = 'SUPERADMIN');
+
+    SELECT u.status::text INTO v_old FROM public.users u WHERE u.id = v_user FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'USER_NOT_FOUND', 'message', 'Utilisateur cible introuvable.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.partners pa WHERE pa.user_id = v_user) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_STATUS_VIA_PARTNER_SHEET',
+            'message', 'Ce compte est celui d’un partenaire : suspendez-le ou réactivez-le depuis sa fiche partenaire, avec un motif.');
+    END IF;
+    IF NOT v_actor_super
+       AND EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_user AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ADMIN_ROLE_SUPERADMIN_ONLY',
+                                  'message', 'Seul un superadmin peut créer un administrateur ou changer ce rôle.');
+    END IF;
+    IF v_status = 'SUSPENDU' AND char_length(COALESCE(v_reason, '')) < 3 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif de la suspension (3 caractères au moins).');
+    END IF;
+    IF v_old = v_status THEN
+        RETURN jsonb_build_object('ok', true, 'user_id', v_user, 'old_status', v_old, 'status', v_status, 'changed', false,
+                                  'sessions_revoked', 0);
+    END IF;
+
+    UPDATE public.users SET status = v_status::public.user_status, updated_at = now() WHERE id = v_user;
+    v_revoked := 0;
+    IF v_status = 'SUSPENDU' THEN
+        v_revoked := public.revoke_user_sessions(v_user);
+    END IF;
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+    VALUES (v_actor, CASE WHEN v_actor_super THEN 'SUPERADMIN' ELSE 'ADMIN' END, 'USER_STATUS_SET', 'users', v_user,
+            jsonb_build_object('status', v_old), jsonb_build_object('status', v_status),
+            jsonb_build_object('reason', v_reason, 'sessions_revoked', v_revoked))
+    RETURNING id INTO v_audit;
+
+    v_type := CASE WHEN v_status = 'SUSPENDU' THEN 'ACCOUNT_SUSPENDED'
+                   WHEN v_old = 'SUSPENDU' THEN 'ACCOUNT_REACTIVATED' END;
+    IF v_type IS NOT NULL THEN
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', v_type, 'key', v_type || ':' || v_audit::text,
+            'user_id', v_user, 'actor_id', v_actor,
+            'data', jsonb_strip_nulls(jsonb_build_object('reason', CASE WHEN v_type = 'ACCOUNT_SUSPENDED' THEN v_reason END))));
+    END IF;
+
+    RETURN jsonb_build_object('ok', true, 'user_id', v_user, 'old_status', v_old, 'status', v_status, 'changed', true,
+                              'sessions_revoked', v_revoked);
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -415,7 +510,8 @@ BEGIN
         'public.pilotage_refusal(text)',
         'public.participants_export(jsonb)',
         'public.event_controller_set_cash(jsonb)',
-        'public.user_roles_set(jsonb)'
+        'public.user_roles_set(jsonb)',
+        'public.admin_user_status_set(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
