@@ -318,3 +318,69 @@ describe('9b.50 G.50 — préférences : l’email se règle comme le push, les 
             'aide « Ajoutez et vérifiez une adresse email dans votre profil pour recevoir ces emails. » absente (interrupteur Email désactivé)');
     });
 });
+
+// ── Tâche 51 : contenu des emails (G.51, sans base) ────────────────────────
+
+const RENDER_APP = 'https://eventvillage.sn';
+/** Aucun lien de réclamation ni de connexion automatique dans un email (11.3, notif-modeles.test.ts:641-660). */
+const FORBIDDEN_LINK = /claim|token|access_token|magic/i;
+
+function plain(s: string): string {
+    return s.replace(/[  ]/g, ' ').replace(/[’‘]/g, '\'');
+}
+
+/** Défauts G.51 d'un rendu email : fond in-app, bouton interne, aucune image ni lien externe, de connexion ou de réclamation. */
+function emailFaults(type: string): string[] {
+    const tpl = CATALOG[type];
+    if (!tpl.inApp || !tpl.link || !tpl.email) return [`${type} : contenu in-app, lien ou rendu email absent`];
+    const faults: string[] = [];
+    const mail = tpl.email(tpl.sample, { appUrl: RENDER_APP });
+    const content = tpl.inApp(tpl.sample).content;
+    const link = tpl.link(tpl.sample);
+    if (!link.startsWith('/') || link.startsWith('//')) faults.push(`${type} : lien hors de l’application « ${link} »`);
+    if (!mail.text.includes(content)) faults.push(`${type} : le corps ne reprend pas le contenu in-app « ${content} »`);
+    if (!mail.text.includes(`${RENDER_APP}${link}`)) faults.push(`${type} : aucun bouton vers ${link}`);
+    if (/<img|data:image/i.test(mail.html)) faults.push(`${type} : image ou QR dans l’email`);
+    for (const m of mail.html.matchAll(/href="([^"]+)"/g)) {
+        const href = m[1].replace(/&amp;/g, '&');
+        if (!href.startsWith(`${RENDER_APP}/`) && !href.startsWith('mailto:')) faults.push(`${type} : lien externe ${href}`);
+        if (FORBIDDEN_LINK.test(href)) faults.push(`${type} : lien de connexion ou de réclamation ${href}`);
+    }
+    return faults;
+}
+
+describe('9b.51 G.51 — contenu des emails (rendu du catalogue, sans base)', () => {
+    test('garde : chaque type EMAIL non synchrone a le fond de l’in-app, un bouton vers son chemin interne, aucune image ni QR, aucun lien claim, token, access_token ni magic', () => {
+        const types = CATALOG_TYPES.filter((t) => CATALOG[t].channels.includes('EMAIL') && !CATALOG[t].syncOnly);
+        assert.ok(types.length >= 29, `au moins les 29 types email d’avant le lot (11.3) : ${types.length}`);
+        assert.deepEqual(types.flatMap(emailFaults), [], 'rendus email hors de la règle G.51');
+    });
+
+    test('garde : la confirmation d’achat garde les numéros des billets et la phrase du QR qui change (catalog.ts:449-454)', () => {
+        const tpl = CATALOG.PURCHASE_CONFIRMED;
+        const mail = tpl.email!(tpl.sample, { appUrl: RENDER_APP });
+        const numbers = tpl.sample.ticket_numbers as string[];
+        assert.ok(Array.isArray(numbers) && numbers.length > 0, 'exemple du catalogue avec des numéros de billets');
+        for (const n of numbers) assert.ok(mail.text.includes(n), `numéro ${n} absent de la confirmation d’achat`);
+        assert.ok(plain(mail.text).includes('Son QR code change toutes les 20 secondes'), 'phrase du QR qui change absente');
+    });
+
+    test('INVITATION_RECEIVED (11.2 M3) : email au compte, fond « N invitations pour « titre » le date : vos billets sont dans Mes billets. », bouton vers /tickets?tab=recus', () => {
+        const tpl = CATALOG.INVITATION_RECEIVED;
+        assert.ok(tpl.channels.includes('EMAIL') && tpl.inApp && tpl.link, `INVITATION_RECEIVED : EMAIL, contenu in-app et lien attendus (aujourd’hui SMS seul, catalog.ts:565) [${tpl.channels.join(', ')}]`);
+        assert.equal(tpl.link!(tpl.sample), '/tickets?tab=recus', 'bouton vers Mes billets, onglet Reçus');
+        assert.match(plain(tpl.inApp!(tpl.sample).content), /^\d+ invitations? pour « .+ » le .+ : vos billets sont dans Mes billets\.$/, 'fond de l’email');
+        assert.deepEqual(emailFaults('INVITATION_RECEIVED'), []);
+    });
+
+    test('PHONE_CHANGED (11.2 M22) : email au compte, « Numéro de téléphone modifié », fond du SMS, bouton vers /profile', () => {
+        const tpl = CATALOG.PHONE_CHANGED;
+        assert.ok(tpl.channels.includes('EMAIL') && tpl.inApp && tpl.link, `PHONE_CHANGED : EMAIL, contenu in-app et lien attendus (aujourd’hui SMS seul, catalog.ts:728-732) [${tpl.channels.join(', ')}]`);
+        assert.equal(tpl.link!(tpl.sample), '/profile', 'bouton vers le profil');
+        const body = tpl.inApp!(tpl.sample);
+        assert.deepEqual([plain(body.title), plain(body.content)],
+            ['Numéro de téléphone modifié', 'Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.'], 'titre et fond de l’email');
+        assert.equal(plain(tpl.email!(tpl.sample, { appUrl: RENDER_APP }).subject), 'Numéro de téléphone modifié — Event Village', 'sujet');
+        assert.deepEqual(emailFaults('PHONE_CHANGED'), []);
+    });
+});
