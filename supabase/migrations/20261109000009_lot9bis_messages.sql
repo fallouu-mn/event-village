@@ -62,6 +62,9 @@
 --   - tâche 20 (S-C, R3, B46, X10) : SUSPENDU → TERMINE (clôture par l'administration, ligne de transition de M08) →
 --     EVENT_CLOSED_HOLDER à chaque porteur d'un billet VALIDE ou UTILISE, sans motif ; EVENT_CLOSED_BY_ADMIN à la
 --     propriétaire avec le motif ; dans la transaction de la transition.
+--   - tâche 22 (S-C, R43, B50, X11) : passage à TERMINE (cron depuis PUBLIE, clôture admin depuis SUSPENDU) avec au
+--     moins une caisse OUVERT → SHIFT_OPEN_AT_END à la propriétaire (open_shifts) ; depuis PUBLIE, il remplace
+--     EVENT_FINISHED (un seul avis par cas) ; jamais à l'annulation.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -84,6 +87,7 @@
 -- Tâche 2 (délégation 8.3, pour S-A) : transitions d'une cascade (marqueur ev.partner_cascade) sans
 -- EVENT_SUSPENDED ni EVENT_REACTIVATED à la partenaire ; porteurs et contrôleurs prévenus.
 -- Tâche 20 (délégation, S-C) : SUSPENDU → TERMINE → EVENT_CLOSED_HOLDER aux porteurs, EVENT_CLOSED_BY_ADMIN (motif).
+-- Tâche 22 (délégation, S-C) : → TERMINE avec caisse ouverte → SHIFT_OPEN_AT_END à la propriétaire.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -341,6 +345,14 @@ BEGIN
                     'user_id', v_owner, 'event_id', NEW.event_id,
                     'data', v_data || jsonb_strip_nulls(jsonb_build_object('reason', NULLIF(btrim(COALESCE(NEW.reason, '')), '')))));
             END IF;
+        END IF;
+        -- Lot 9 bis (R43, B50, X11) : caisse encore ouverte au passage à TERMINE (depuis PUBLIE ou SUSPENDU), jamais
+        -- à l'annulation : SHIFT_OPEN_AT_END à la propriétaire, nombre de caisses ouvertes.
+        IF v_open > 0 AND v_owner IS NOT NULL THEN
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'SHIFT_OPEN_AT_END', 'key', 'SHIFT_OPEN_AT_END:' || NEW.id::text,
+                'user_id', v_owner, 'event_id', NEW.event_id,
+                'data', v_data || jsonb_build_object('open_shifts', v_open)));
         END IF;
     END IF;
     RETURN NULL;
