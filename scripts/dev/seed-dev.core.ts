@@ -102,11 +102,19 @@ export function countRealAccounts(users: AuthUserLike[]): number {
     return users.filter((u) => u.user_metadata?.is_essai_fixture !== true && !(u.email ?? '').toLowerCase().endsWith(`@${SEED_DOMAIN}`)).length;
 }
 
-/** Schéma à jour, lu par REST (pas de SUPABASE_DB_URL en essai) : les migrations du lot 8 sont appliquées. */
+/**
+ * Schéma à jour, lu par REST (pas de SUPABASE_DB_URL en essai) : les migrations du lot 8 sont appliquées, et celles du
+ * lot 9 bis pour la marque des comptes de démonstration (users.demo_account, I1, fix(9b.I1-SE)).
+ */
 export async function assertSchemaReady(client: SupabaseClient): Promise<void> {
-    for (const [table, columns] of [['ticket_categories', 'sale_online, sale_counter'], ['payments', 'simulated']]) {
+    const checks: ReadonlyArray<readonly [string, string, string]> = [
+        ['ticket_categories', 'sale_online, sale_counter', '20261106'],
+        ['payments', 'simulated', '20261106'],
+        ['users', 'demo_account', '20261109'],
+    ];
+    for (const [table, columns, migrations] of checks) {
         const { error } = await client.from(table).select(columns).limit(1);
-        if (error) throw new Error(`Schéma en retard (${table} : ${error.message}) : appliquez les migrations 20261106 sur ce projet, voir docs/essai-local.md.`);
+        if (error) throw new Error(`Schéma en retard (${table} : ${error.message}) : appliquez les migrations ${migrations} sur ce projet, voir docs/essai-local.md.`);
     }
 }
 
@@ -204,6 +212,10 @@ async function ensureAccount(client: SupabaseClient, spec: AccountSeed, password
     const found = await client.from('users').select('id').eq('email', spec.email).maybeSingle();
     if (found.error) throw new Error(`recherche de ${spec.email} : ${found.error.message}`);
     if (found.data) {
+        // Lot 9 bis (I1, B108, fix(9b.I1-SE)) : un compte du seed semé avant M12 reçoit la marque des envois retenus
+        // (seule écriture sur un compte gardé, et seulement si elle manque).
+        done(`marque de démonstration ${spec.email}`, await client.from('users').update({ demo_account: true })
+            .eq('id', String(found.data.id)).eq('demo_account', false));
         report.kept.push(spec.email);
         return String(found.data.id);
     }
@@ -216,7 +228,10 @@ async function ensureAccount(client: SupabaseClient, spec: AccountSeed, password
     // Le trigger d'inscription a créé le profil au rôle CLIENT, avec le numéro tel que l'authentification le garde.
     done(`profil ${spec.email}`, await client.from('users').update({
         first_name: spec.firstName, last_name: spec.lastName, phone: spec.phone, email: spec.email, role: spec.primaryRole,
-        status: 'ACTIF', referral_status: 'STANDARD', updated_at: new Date().toISOString(),
+        status: 'ACTIF', referral_status: 'STANDARD',
+        // Lot 9 bis (I1, B108, fix(9b.I1-SE)) : aucun SMS, email ni push réel vers un compte du seed (garde des envois)
+        demo_account: true,
+        updated_at: new Date().toISOString(),
     }).eq('id', userId));
     const present = must(`rôles ${spec.email}`, await client.from('user_roles').select('role').eq('user_id', userId)) as { role: string }[];
     const missing = spec.roles.filter((role) => !present.some((r) => r.role === role));
