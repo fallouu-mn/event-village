@@ -24,6 +24,13 @@
 --     suspendu : son événement ne peut pas être remis en ligne avant sa réactivation. » quand la partenaire est
 --     SUSPENDU, admin compris (statut lu sans verrou, ordre 3.3).
 --
+-- Délégation fix(9b.49-SC) (G.49, B97, pour S-G) :
+-- 16 ter. ticket_transfer_initiate (même définition, point 16) : la ligne TRANSFER_OFFERED au compte MATCH porte
+--     IN_APP, PUSH et EMAIL ; la ligne au numéro reste SMS seul.
+-- 31. ticket_transfer_cancel(jsonb) : base 20261103000005_lot6_billetterie.sql:174-234, recopie intégrale, signature
+--     et VOLATILE identiques. Changement : même ajout d'EMAIL à la ligne TRANSFER_CANCELLED du compte MATCH.
+--     L'email ne part qu'à une adresse vérifiée (notif_enqueue de M10, S-G).
+--
 -- Délégation fix(9b.41-SC) (R92, R104, R105, pour S-E) :
 --  1 bis. Ligne de transition SUSPENDU → ANNULE PARTENAIRE retirée (R105, B68) : seul un admin annule un SUSPENDU
 --     (event_cancel et event_actions lisent la table).
@@ -1488,7 +1495,8 @@ BEGIN
         PERFORM public.notif_enqueue(jsonb_build_object(
             'type', 'TRANSFER_OFFERED', 'key', 'TRANSFER_OFFERED:' || v_id::text,
             'user_id', v_target, 'actor_id', v_actor, 'event_id', t.event_id,
-            'data', v_data, 'channels', jsonb_build_array('IN_APP', 'PUSH')));
+            -- Lot 9 bis (G.49, B97) : email au compte (adresse vérifiée exigée par notif_enqueue, M10)
+            'data', v_data, 'channels', jsonb_build_array('IN_APP', 'PUSH', 'EMAIL')));
     END IF;
 
     RETURN jsonb_build_object('ok', true, 'transfer_id', v_id, 'ticket_id', t.id, 'ticket_number', t.ticket_number,
@@ -2492,6 +2500,75 @@ $$;
 
 
 -- ============================================================================
+-- Délégation fix(9b.49-SC) — 31. ticket_transfer_cancel (recopie, 20261103000005_lot6_billetterie.sql:174-234)
+-- ============================================================================
+-- Recopie de 20261102000002_lot5_dette.sql:149-179. Changement : TRANSFER_CANCELLED mis en file (mêmes
+-- canaux que l'offre) quand la cible est un numéro ; un ancien transfert vers un email n'a aucun canal.
+-- Lot 9 bis (G.49, B97) : la ligne au compte MATCH porte aussi EMAIL (adresse vérifiée exigée par notif_enqueue).
+CREATE OR REPLACE FUNCTION public.ticket_transfer_cancel(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_transfer uuid := public.try_uuid(p->>'transfer_id');
+    v_actor uuid := public.try_uuid(COALESCE(p->>'actor_id', p->>'from_user_id'));
+    tr record;
+    v_event uuid;
+    v_target uuid;
+    v_data jsonb;
+    v_queued text := 'NONE';
+BEGIN
+    IF v_transfer IS NULL OR v_actor IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Demande d''annulation incomplète.');
+    END IF;
+    SELECT * INTO tr FROM public.ticket_transfers WHERE id = v_transfer FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TRANSFER_NOT_FOUND', 'message', 'Transfert introuvable.');
+    END IF;
+    IF tr.from_user_id IS DISTINCT FROM v_actor THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'NOT_SENDER', 'message', 'Vous n''êtes pas l''émetteur de ce transfert.');
+    END IF;
+    IF tr.status::text <> 'PENDING' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TRANSFER_NOT_PENDING', 'status', tr.status::text,
+                                  'message', 'Ce transfert n''est plus en attente.');
+    END IF;
+    PERFORM 1 FROM public.tickets WHERE id = tr.ticket_id FOR UPDATE;
+    UPDATE public.ticket_transfers SET status = 'CANCELLED', cancelled_at = now() WHERE id = tr.id;
+    UPDATE public.tickets SET transfer_locked = FALSE, updated_at = now() WHERE id = tr.ticket_id;
+
+    IF tr.to_phone_or_email ~ '^\+221[0-9]{9}$' THEN
+        SELECT event_id INTO v_event FROM public.tickets WHERE id = tr.ticket_id;
+        v_data := COALESCE(public.notif_event_data(v_event), '{}'::jsonb)
+                  || jsonb_build_object('transfer_id', tr.id, 'ticket_id', tr.ticket_id);
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'TRANSFER_CANCELLED', 'key', 'TRANSFER_CANCELLED:' || tr.id::text,
+            'phone', tr.to_phone_or_email, 'actor_id', v_actor, 'event_id', v_event,
+            'data', v_data, 'channels', jsonb_build_array('SMS')));
+        SELECT u.id INTO v_target
+          FROM public.users u
+         WHERE u.phone = tr.to_phone_or_email AND u.id <> v_actor
+           AND public.ticket_transfer_identity(tr.to_phone_or_email, u.id) = 'MATCH'
+         ORDER BY u.id
+         LIMIT 1;
+        IF v_target IS NOT NULL THEN
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'TRANSFER_CANCELLED', 'key', 'TRANSFER_CANCELLED:' || tr.id::text,
+                'user_id', v_target, 'actor_id', v_actor, 'event_id', v_event,
+                'data', v_data, 'channels', jsonb_build_array('IN_APP', 'PUSH', 'EMAIL')));
+        END IF;
+        v_queued := 'QUEUED';
+    END IF;
+
+    RETURN jsonb_build_object('ok', true, 'transfer_id', tr.id, 'ticket_id', tr.ticket_id, 'to_phone_or_email', tr.to_phone_or_email,
+                              'recipient_notification', v_queued);
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -2524,7 +2601,8 @@ BEGIN
         'public.controller_account_states(jsonb)',
         'public.controller_assignments_sync(jsonb)',
         'public.pilotage_sales(jsonb)',
-        'public.ticket_transfers_incoming(jsonb)'
+        'public.ticket_transfers_incoming(jsonb)',
+        'public.ticket_transfer_cancel(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
