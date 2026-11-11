@@ -153,7 +153,8 @@ describe('9b.33 R33 : contrôleurs affectés prévenus (annulation et changement
         const inviteHandler = await routeHandler(INVITE_ROUTE, 'POST', 'POST /api/partner/team/invite');
         const invite = await invoke(inviteHandler, authed('/api/partner/team/invite', 'POST', partner,
             { event_ids: [ev.eventId], phone: invited.phoneE164, confirm_promotion: true }));
-        assert.equal(invite.status, 200, `invitation d'un client comme contrôleur : ${show(invite)}`);
+        // 201 à la création de l'invitation, comme dette-retrait-controleur.test.ts:295 (contrat de RC, inchangé par fix(9b.26)).
+        assert.equal(invite.status, 201, `invitation d'un client comme contrôleur : ${show(invite)}`);
         const mark = smsMark(controller.phoneE164);
         const invitedMark = smsMark(invited.phoneE164);
         const date = await smsStart(ev.eventId);
