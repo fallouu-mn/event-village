@@ -9,7 +9,7 @@ export const toastMessages = {
     partnerValidated: (companyName: string) =>
       `Le partenaire « ${companyName} » a été validé avec succès.`,
     partnerRejected: (companyName: string) =>
-      `La demande du partenaire « ${companyName} » a été rejetée.`,
+      `La demande du partenaire « ${companyName} » a été refusée.`,
     partnerSuspended: (companyName: string) =>
       `Le compte du partenaire « ${companyName} » a été suspendu.`,
     partnerActivated: (companyName: string) =>
