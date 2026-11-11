@@ -147,15 +147,18 @@ export class PaymentService {
                     throw new PublicError('Plan d\'abonnement introuvable.');
                 }
 
-                const { data: partnerRec } = await supabase
+                // Lot 9 bis (R8, B25) : un abonnement ne s'achète que sur un dossier partenaire VALIDE ; rien
+                // n'est créé sinon. Le paiement n'écrit jamais le statut du dossier (activateSubscription).
+                const { data: partnerRec, error: partnerErr } = await supabase
                     .from('partners')
-                    .select('id')
+                    .select('id, status')
                     .eq('user_id', userId)
                     .maybeSingle();
-
-                if (partnerRec) {
-                    partnerId = partnerRec.id;
+                if (partnerErr) throw new Error(`Lecture de la fiche partenaire impossible : ${partnerErr.message}`);
+                if (!partnerRec || partnerRec.status !== 'VALIDE') {
+                    throw new PaymentInputError('Abonnement réservé aux comptes partenaires validés.', 'PARTNER_NOT_VALIDATED', 403);
                 }
+                partnerId = partnerRec.id;
 
                 payableAmount = Number(plan.price);
                 subscriptionRefId = plan.id;

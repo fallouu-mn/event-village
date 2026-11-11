@@ -112,8 +112,10 @@ async function activateSubscription(payment: PaymentRecord): Promise<void> {
     }
     const days = plan.billing_period === 'YEARLY' ? 365 : 30;
     const now = new Date();
+    // Lot 9 bis (R8, B25) : le plan et l'échéance seulement ; le statut du dossier n'est jamais écrit par un
+    // paiement (un dossier refusé ou suspendu entre la création et le succès le reste).
     const { error } = await supabase.from('partners').update({
-        subscription_plan_id: plan.id, status: 'VALIDE', trial_ends_at: new Date(now.getTime() + days * 86_400_000).toISOString(), updated_at: now.toISOString(),
+        subscription_plan_id: plan.id, trial_ends_at: new Date(now.getTime() + days * 86_400_000).toISOString(), updated_at: now.toISOString(),
     }).eq('id', partnerId);
     if (error) {
         console.error(`[confirmation] abonnement du partenaire ${partnerId} non activé :`, error.message);
