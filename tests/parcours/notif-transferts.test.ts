@@ -379,6 +379,10 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
         assert.equal(self.status, 400, `expéditeur = acteur : ${show(self)}`);
         assert.equal(self.body.code, 'SELF_TRANSFER', `code : ${show(self)}`);
         assert.equal((await transferRow(tSelf.id)).status, 'PENDING', 'refus : transfert toujours PENDING');
+        // Lot 9 bis (R103, invariant w11) : la cible fabriquée ci-dessus est rendue ; aucun transfert ne reste vers le
+        // numéro de l'expéditeur après le test (toutes les suites suivantes lisent w11).
+        const { error: rErr } = await service.from('ticket_transfers').update({ to_phone_or_email: target.phoneE164 }).eq('id', tSelf.id);
+        assert.equal(rErr, null, `cible rendue : ${rErr?.message}`);
     });
 });
 
