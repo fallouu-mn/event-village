@@ -111,6 +111,24 @@ async function claim(now: Date, ids: string[], limit?: number): Promise<ClaimedI
     return body.claimed as ClaimedItem[];
 }
 
+/**
+ * Jour lointain de Dakar dont le budget des SMS optionnels est intact : aucune ligne SMS OPTIONAL réservée ce
+ * jour-là (même compte que notif_sms_optional_used, lot 7). Les suites précédentes envoient des optionnels à des
+ * jours simulés tirés au hasard ; un jour déjà entamé ferait sortir la ligne du test en SKIPPED SMS_OPTIONAL_CAP.
+ */
+async function untouchedOptionalDay(): Promise<string> {
+    for (let i = 0; i < 20; i++) {
+        const day = dakarDay(150 + randomInt(0, 400));
+        const from = dakarAt(day, '00:00');
+        const { count, error } = await service.from('notification_outbox').select('id', { count: 'exact', head: true })
+            .eq('channel', 'SMS').eq('family', 'OPTIONAL').in('status', ['SENDING', 'SENT', 'UNCERTAIN'])
+            .gte('claimed_at', from.toISOString()).lt('claimed_at', new Date(from.getTime() + DAY).toISOString());
+        assert.equal(error, null, `budget optionnel du ${day} : ${error?.message}`);
+        if (count === 0) return day;
+    }
+    assert.fail('aucun jour lointain au budget de SMS optionnels intact en 20 tirages');
+}
+
 async function failedAlerts(outboxId: string): Promise<OutboxRow[]> {
     return outboxRows({ type: 'ADMIN_NOTIFICATION_FAILED', keyPrefix: `ADMIN_NOTIFICATION_FAILED:${outboxId}:` });
 }
@@ -529,14 +547,15 @@ describe('6.1 Envoyeur : plafond SMS et seuil du jour (décision 4, contrat E3 ;
     // Lot 7 (7.0 a, T1, D15) : le seuil notif.sms_daily_alert est supprimé ; l'alerte part à 80 % du budget des SMS
     // optionnels (ceil(0,8 × plafond)), une fois par jour. Plafond 1 : seuil 1, un SMS optionnel du jour suffit.
     test('80 % du budget des SMS optionnels atteint : une seule alerte ADMIN_SMS_OPTIONAL_80 et un seul signal SMS_OPTIONAL_80 par jour', async () => {
-        // Jour lointain de Dakar : seuls les SMS datés par cette horloge y comptent (aucune autre suite).
-        const day = dakarDay(150 + randomInt(0, 400));
+        // Jour lointain de Dakar : seuls les SMS datés par cette horloge y comptent ; jour choisi au budget intact.
+        const day = await untouchedOptionalDay();
         const t = dakarAt(day, '12:00');
         const phone = randomSenegalPhone('76');
         const row = await dueRow({ type: 'FIRST_TICKET_SOLD', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', recipient_phone: phone, template_data: { title: 'TEST Seuil optionnel' } });
         await withNotifSettings({ 'notif.sms_optional_daily_cap': 1 }, async () => {
             await dispatchAt(t, { ids: [row.id] });
-            assert.equal((await rowOf(row.id)).status, 'SENT', 'SMS optionnel du jour envoyé');
+            const sentRow = await rowOf(row.id);
+            assert.equal(sentRow.status, 'SENT', `SMS optionnel du jour envoyé : ${brief(sentRow)} ; décision ${JSON.stringify(sentRow.decision)}`);
             const first = await rpcOk('notification_daily_checks', { now: addMinutes(t, 1).toISOString() });
             assert.equal(first.day, day, `jour de Dakar : ${JSON.stringify(first)}`);
             assert.ok(Number(first.sms_today) >= 1, `SMS du jour comptés : ${JSON.stringify(first)}`);
