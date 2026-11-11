@@ -235,7 +235,7 @@ describe('7.4 Première utilisation : onboarding servi par /api/partner/dashboar
         const oPending = await onboardingOf(pending, 'partenaire EN_ATTENTE');
         assert.equal(oPending.visible, false, 'partenaire EN_ATTENTE : pas de carte (il ne peut pas encore créer)');
 
-        const rejected = await newPartner('p7-onb-refus');
+        const rejected = await newPartner('p7-onb-refus'); await updatePartner(rejected, { status: 'EN_ATTENTE', is_verified: false }, 'dossier remis EN_ATTENTE avant le refus (lot 9 bis, B37 : seul un dossier en attente est refusé)');
         const reason = `Pièce d’identité illisible ${randomUUID().slice(0, 8)}`;
         const { data, error } = await service.rpc('partner_status_set', { p: { partner_id: rejected.partnerId, actor_id: await superadminId(), status: 'REJETE', reason } });
         assert.equal(error, null, `partner_status_set REJETE : ${error?.message}`);
