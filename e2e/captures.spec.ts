@@ -57,7 +57,18 @@ const THEMES: ReadonlyArray<{ key: ThemeKey; colorScheme: 'light' | 'dark' }> = 
     { key: 'clair', colorScheme: 'light' },
     { key: 'sombre', colorScheme: 'dark' },
 ];
-const ROLE_ORDER: readonly CaptureRole[] = ['anonyme', 'client', 'organisateur', 'partenaire-premiers-pas', 'admin', 'controleur'];
+/**
+ * Lot 9 bis (7.3, B114) : fumee-superadmin porte admin-remboursements-a-reprendre (existante, passée de admin à ce rôle
+ * par test(9b.e2e) 0d9cfb6b), admin-versements-marquer-verse et admin-fiche-partenaire-suspendre. Absent de cette
+ * liste au run 118, ses trois écrans n'ont pas tourné et la capture existante a disparu sans échec : tout rôle d'un
+ * écran de SCREENS doit désormais figurer ici, sinon la phase échoue au chargement (contrôle ci-dessous).
+ */
+const ROLE_ORDER: readonly CaptureRole[] = ['anonyme', 'client', 'organisateur', 'partenaire-premiers-pas', 'admin', 'fumee-superadmin', 'controleur'];
+const ROLES_WITHOUT_ORDER = Array.from(new Set(SCREENS.map((s) => s.role))).filter((r) => !ROLE_ORDER.includes(r));
+if (ROLES_WITHOUT_ORDER.length > 0) {
+    throw new Error(`[e2e] rôles d'écrans absents de ROLE_ORDER (leurs captures ne tourneraient pas) : ${ROLES_WITHOUT_ORDER.join(', ')} — écrans : ${
+        SCREENS.filter((s) => ROLES_WITHOUT_ORDER.includes(s.role)).map((s) => s.id).join(', ')}`);
+}
 
 /** D84 : requêtes /api/ au repos depuis 500 ms, plafond de 3 s. */
 const API_QUIET_MS = 500;
