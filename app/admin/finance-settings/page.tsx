@@ -10,6 +10,8 @@
  * modification est historisée et ne s'applique qu'aux opérations futures (jamais rétroactive). La
  * validation des valeurs (bornes, choix admis) est faite par le serveur (finance_setting_set).
  * Lot 6 : page migrée sur le système de design (tokens, PageHeader, Field, StatusBanner, 44 px, 14 px).
+ * Lot 9 bis (R51, B34) : « Modifier » n'est rendu que pour un SUPERADMIN (rôle lu dans user_roles par AuthProvider) ;
+ * le serveur refuse toujours la modification à tout autre compte (PUT, requireSuperadmin).
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
@@ -22,6 +24,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { formatDateTime } from '@/lib/format';
 import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
 
@@ -147,6 +150,8 @@ function parseSettings(body: unknown): { settings: Setting[]; history: HistoryRo
 
 export default function AdminFinanceSettingsPage() {
   const toast = useToast();
+  const { hasRole } = useAuth();
+  const isSuperadmin = hasRole('SUPERADMIN');
   const fieldId = useId();
   const [data, setData] = useState<{ settings: Setting[]; history: HistoryRow[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -243,7 +248,9 @@ export default function AdminFinanceSettingsPage() {
     <div className="space-y-6 pb-24 lg:pb-12">
       <PageHeader
         title="Réglages de la plateforme"
-        description="Chaque modification est historisée et ne s’applique qu’aux opérations futures. Modification réservée aux superadministrateurs."
+        description={isSuperadmin
+          ? 'Chaque modification est historisée et ne s’applique qu’aux opérations futures.'
+          : 'Lecture seule : seul un superadministrateur peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
         back={{ href: '/admin', label: 'Administration' }}
         actions={(
           <Button variant="secondary" leftIcon={<RefreshCw size={18} aria-hidden="true" />} onClick={() => void load()} isLoading={isLoading && Boolean(data)} disabled={isLoading}>
@@ -298,7 +305,7 @@ export default function AdminFinanceSettingsPage() {
                           </div>
                           <div className="flex flex-shrink-0 items-center gap-3">
                             <span className="text-base font-semibold tabular-nums text-brand-fg">{displayValue(s.key, s.value)}</span>
-                            {!isEditing && (
+                            {isSuperadmin && !isEditing && (
                               <Button variant="ghost" size="sm" leftIcon={<Pencil size={16} aria-hidden="true" />} onClick={() => startEdit(s)} aria-label={`Modifier ${label}`}>
                                 Modifier
                               </Button>
@@ -306,7 +313,7 @@ export default function AdminFinanceSettingsPage() {
                           </div>
                         </div>
 
-                        {isEditing && (
+                        {isSuperadmin && isEditing && (
                           <form
                             id={formId}
                             noValidate
