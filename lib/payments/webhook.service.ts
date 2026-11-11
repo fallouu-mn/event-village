@@ -1,9 +1,14 @@
 /**
  * Lot 2.1 — webhook SamirPay (POST form-urlencoded : transaction_id, order_id, status=success).
  *
- * Le contrat SamirPay ne prévoit AUCUNE signature : rien n'est inventé. Défense en profondeur :
+ * Défense en profondeur :
  *  1. le webhook est enregistré (payment_webhook_events : corps brut, en-têtes utiles) AVANT tout
  *     traitement ; un rejeu identique incrémente receive_count ;
+ *  1 bis. lot 9 bis (H3, B104) : si SAMIRPAY_WEBHOOK_SECRET est défini, la signature facultative de la v1.2
+ *     (X-SamirPay-Signature, lib/samirpay/webhook-signature.ts) est vérifiée sur les OCTETS reçus ; un échec
+ *     répond 401 { received: false }, résultat REJECTED_SIGNATURE, sans aucune lecture du paiement. Seule la
+ *     présence de l'en-tête est journalisée (headers.signature_present), jamais sa valeur. Secret absent :
+ *     comportement inchangé. La signature ne dispense d'aucune des étapes suivantes ;
  *  2. order_id validé par regex, transaction_id par format UUID, recherche par .eq() ;
  *  3. jeton aléatoire propre au paiement, présent dans le callBackUrl transmis à SamirPay ; seule
  *     son empreinte est stockée, comparée à temps constant ;
@@ -18,6 +23,8 @@
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerEnv } from '@/lib/env';
+import { SAMIRPAY_SIGNATURE_HEADER, verifySamirPaySignature } from '@/lib/samirpay/webhook-signature';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { loadPayment, reconcilePayment, type PaymentRecord } from './confirmation.service';
 import { rpcWithRetry } from './rpc';
@@ -35,14 +42,17 @@ function sameHex(a: string, b: string): boolean {
 }
 
 export async function handleSamirPayWebhook(req: NextRequest): Promise<NextResponse> {
-    const raw = await req.text();
+    // Lot 9 bis (H3) : corps lu en octets, tels que signés ; le texte n'en est que le décodage UTF-8.
+    const bytes = Buffer.from(await req.arrayBuffer());
+    const raw = bytes.toString('utf8');
     const token = new URL(req.url).searchParams.get('t');
-    const headers: Record<string, string> = {};
+    const signatureHeader = req.headers.get(SAMIRPAY_SIGNATURE_HEADER);
+    const headers: Record<string, string | boolean> = { signature_present: Boolean(signatureHeader && signatureHeader.trim()) };
     for (const h of KEPT_HEADERS) {
         const v = req.headers.get(h);
         if (v) headers[h] = v;
     }
-    const isForm = (headers['content-type'] ?? '').toLowerCase().startsWith('application/x-www-form-urlencoded');
+    const isForm = String(headers['content-type'] ?? '').toLowerCase().startsWith('application/x-www-form-urlencoded');
     const fields = isForm ? new URLSearchParams(raw) : null;
     const orderId = fields?.get('order_id') ?? null;
     const transactionId = fields?.get('transaction_id') ?? null;
@@ -58,16 +68,22 @@ export async function handleSamirPayWebhook(req: NextRequest): Promise<NextRespo
         return NextResponse.json({ received: false }, { status: 500 });
     }
 
-    const finish = async (result: string, detail: string | null, paymentId: string | null = null) => {
+    const finish = async (result: string, detail: string | null, paymentId: string | null = null, refused = false) => {
         const { error } = await getServiceRoleClient().from('payment_webhook_events')
             .update({ result, result_detail: detail, payment_id: paymentId, processed_at: new Date().toISOString() })
             .eq('id', recorded.id);
         if (error) console.error(`[webhook SamirPay] résultat de l'événement ${recorded.id} non enregistré :`, error.message);
         if (result !== 'CONFIRMED' && result !== 'ALREADY_CONFIRMED') console.warn(`[webhook SamirPay] événement ${recorded.id} : ${result}${detail ? ` (${detail})` : ''}`);
-        return NextResponse.json({ received: true }, { status: 200 });
+        return refused ? NextResponse.json({ received: false }, { status: 401 }) : NextResponse.json({ received: true }, { status: 200 });
     };
 
     try {
+        // 1 bis. Signature (H3), seulement si le secret est défini : aucune lecture du paiement en cas d'échec
+        const secret = getServerEnv().SAMIRPAY_WEBHOOK_SECRET;
+        if (secret) {
+            const verdict = verifySamirPaySignature(signatureHeader, bytes, secret, Math.floor(Date.now() / 1000));
+            if (verdict !== 'OK') return finish('REJECTED_SIGNATURE', `signature ${verdict.toLowerCase()}`, null, true);
+        }
         // 2. Format
         if (!fields) return finish('REJECTED_INVALID_PAYLOAD', 'corps non form-urlencoded');
         if (!orderId || !ORDER_ID.test(orderId) || !transactionId || !UUID.test(transactionId)) {
