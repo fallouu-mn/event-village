@@ -50,7 +50,8 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     EMAIL_NOT_CONFIGURED: 'Envoi des emails non configuré',
     PUSH_NOT_CONFIGURED: 'Notifications push non configurées',
     NO_PUSH_SUBSCRIPTION: 'Aucun appareil abonné aux notifications push',
-    PUSH_DELIVERED: 'Notification push déjà remise',
+    // Lot 9 bis (R28) : SENT = push accepté par le service push, jamais une preuve d'affichage.
+    PUSH_DELIVERED: 'Push accepté par le service, SMS non envoyé (affichage non garanti)',
     SMS_POLICY_NEVER: 'Rappel sans SMS selon les réglages',
     SMS_DAILY_CAP: 'Plafond quotidien de SMS atteint',
     // Lot 7 (7.0 a, 7.0 b) : budget des SMS optionnels ; rappel d'un porteur de billets gratuits seulement.
@@ -64,6 +65,9 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     COVERED_BY_INVITATION: "Déjà prévenu par l'invitation",
     SETTING_MISSING: 'Réglage des notifications manquant',
     MIGRATED_NO_PHONE: 'Reprise sans numéro de téléphone',
+    // Lot 9 bis (G.52, I1) : adresse email non vérifiée ; destinataire d'un compte de démonstration hors simulation.
+    EMAIL_NOT_VERIFIED: 'Adresse email non vérifiée',
+    DEMO_ACCOUNT: 'Non envoyé : compte de démonstration',
     // Annulée
     EVENT_SUSPENDU: 'Événement suspendu',
     EVENT_ANNULE: 'Événement annulé',
@@ -86,6 +90,8 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     PUSH_PROVIDER_ERROR: 'Service push indisponible',
     TEMPLATE_ERROR: 'Contenu du message incomplet',
     SENDING_INTERRUPTED: 'Envoi interrompu',
+    // Lot 9 bis (I1) : garde des comptes de démonstration injoignable, la ligne est reprise plus tard (échec fermé).
+    DEMO_GUARD_UNAVAILABLE: 'Contrôle des comptes de démonstration indisponible',
     MIGRATED_FAILED: 'Reprise en échec',
     // Incertaine
     PROVIDER_TIMEOUT: 'Délai dépassé : remise non confirmée',
@@ -156,7 +162,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_WITHDRAWAL_REJECTED: "Retrait refusé par l'opérateur",
     ADMIN_FINANCE_DEBT: 'Créance sur un compte',
     ADMIN_NOTIFICATION_FAILED: 'Notification en échec',
-    ADMIN_SMS_DAILY_THRESHOLD: 'Volume de SMS du jour élevé',
+    ADMIN_SMS_DAILY_THRESHOLD: 'Volume de SMS indispensables élevé',
     ADMIN_SMS_CAP_GLOBAL: 'Plafond de SMS atteint',
     ADMIN_SMS_CAP_NON_OTP: 'Quota de SMS hors codes atteint',
     ADMIN_SMS_OPTIONAL_80: 'SMS optionnels à 80 % du plafond',
@@ -168,6 +174,33 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     OTP_PHONE_CHANGE: 'Code de changement de numéro',
     OTP_AUTH_HOOK: 'Code de connexion (authentification)',
     CONTROLLER_INVITE: "Invitation d'un contrôleur",
+    // Lot 9 bis (contrat 11.1, N1 à N26)
+    REFUND_DELAYED: 'Remboursement retardé',
+    WITHDRAWAL_DELAYED: 'Retrait retardé',
+    ADMIN_CASHOUT_TO_RESUME: 'Versement à reprendre',
+    PAYMENT_REFUND_STARTED: 'Remboursement d’un paiement',
+    ADMIN_PARTNER_RESUBMITTED: 'Dossier partenaire complété',
+    EVENT_CLOSED_HOLDER: 'Événement suspendu clos (porteurs)',
+    EVENT_CLOSED_BY_ADMIN: "Événement clos par l'administration",
+    SHIFT_OPEN_AT_END: 'Caisse encore ouverte à la fin',
+    TRANSFER_REVOKED: 'Transfert annulé par un remboursement',
+    TRANSFER_DECLINED_SENDER: 'Transfert refusé',
+    TRANSFER_RECIPIENT_CHANGED: 'Transfert annulé : numéro du destinataire changé',
+    CONTROLLER_INVITATION: 'Invitation à contrôler l’entrée',
+    EVENT_CANCELLED_BY_ADMIN: "Événement annulé par l'administration",
+    ADMIN_EVENT_CANCELLED: "Événement annulé par l'organisateur",
+    CONTROLLER_EVENT_CANCELLED: 'Contrôle annulé',
+    CONTROLLER_EVENT_CHANGED: 'Contrôle modifié',
+    CONTROLLER_EVENT_STATUS: 'Suspension ou reprise d’un contrôle',
+    TICKET_CANCELLED: 'Billet ou invitation annulé',
+    ACCOUNT_SUSPENDED: 'Compte suspendu',
+    ACCOUNT_REACTIVATED: 'Compte réactivé',
+    ADMIN_EVENT_CHANGED: 'Événement modifié après validation',
+    EVENT_SUBMITTED_ACK: 'Événement envoyé en validation',
+    EVENT_FINISHED: 'Événement terminé',
+    CLOSING_REPORT_READY: 'Rapport de clôture prêt',
+    FUNDS_AVAILABLE: 'Recettes disponibles',
+    EMAIL_VERIFICATION: "Lien de vérification de l'adresse email",
 };
 
 export function outboxStatusLabel(status: string): string {

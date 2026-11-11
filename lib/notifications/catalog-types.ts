@@ -15,6 +15,17 @@
  * (plafond), entry_type / debt (créance).
  * Lot 7 (7.9) : categories / ticket_numbers (confirmations d'achat et de billets gratuits), ticket_number /
  * category (billet reçu par transfert).
+ * Lot 9 bis (contrat 11.1, 11.2 ; noms fixés ici pour les émetteurs de la vague S3) :
+ *  - EVENT_CANCELLED : refund_mode += TRANSFERRED (billet reçu par transfert, R13) ; recipient_kind = 'PHONE' pour une
+ *    ligne « numéro seul » (invitation non réclamée, acheteur au guichet, transfert révoqué : SMS sans lien, R12, R23) ;
+ *  - EVENT_CHANGED : refund_open (report qui ouvre un remboursement, R32), address_cleared (adresse retirée, R80) ;
+ *  - TICKET_SCANNED : ticket_count, payment_id (avis regroupé par commande, R78) ;
+ *  - PAYMENT_REFUND_STARTED : duplicate_of (variante « double ») ; ADMIN_CASHOUT_TO_RESUME : kind (nature du
+ *    versement), cause (DELAYED | BLOCKED), blocked_reason ; SHIFT_OPEN_AT_END : open_shifts ;
+ *  - CONTROLLER_INVITATION : invitation_id, company, expires_at, events ; CONTROLLER_EVENT_STATUS : status
+ *    (SUSPENDU | PUBLIE) ; TICKET_CANCELLED : kind (INVITATION | FREE | CASH) ; ADMIN_EVENT_CHANGED : changes
+ *    (TITLE | POSTER | PLACE | DATE | CATEGORY), old_title, category ; motifs : reason (motif interne ou de l'admin),
+ *    public_notice (avis public d'une annulation).
  *
  * Jamais de code, de jeton, de QR ni de secret dans ces données (contrainte notification_outbox_no_secret_chk).
  */
@@ -31,6 +42,9 @@ export type AdminPermission =
 
 /** Types journalisés seulement (OTP et invitation d'un contrôleur) : le code n'est jamais stocké. */
 export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE';
+
+/** Lot 9 bis (11.1 N26) : email synchrone, journal seulement ; le jeton du lien n'est jamais stocké. */
+export type EmailSyncType = 'EMAIL_VERIFICATION';
 
 /** Données d'un événement, présentes pour tout type lié à un événement. */
 export interface EventData {
@@ -77,12 +91,23 @@ export interface TemplateData {
      * nom de sa catégorie. Facultatifs : une ligne mise en file avant la migration 20261105000007 ne les a pas.
      */
     TRANSFER_RECEIVED: EventData & { transfer_id: string; ticket_id: string; ticket_number?: string; category?: string };
-    TICKET_SCANNED: EventData & { ticket_id: string };
-    EVENT_CANCELLED: EventData & { public_notice?: string | null; refund_mode: 'AUTO' | 'ORGANIZER' | 'NONE' };
+    /** Lot 9 bis (11.2 M4, R78) : `ticket_count` = billets de la commande contrôlés (avis regroupé), 1 si absent. */
+    TICKET_SCANNED: EventData & { ticket_id?: string; ticket_count?: number; payment_id?: string | null };
+    /**
+     * Lot 9 bis (11.2 M2) : TRANSFERRED = billet reçu par transfert, remboursé à l'acheteur d'origine (R13) ;
+     * `recipient_kind: 'PHONE'` = ligne SMS « numéro seul », sans lien (ORGANIZER : guichet ; NONE : invitation non
+     * réclamée ou transfert révoqué).
+     */
+    EVENT_CANCELLED: EventData & { public_notice?: string | null; refund_mode: 'AUTO' | 'ORGANIZER' | 'NONE' | 'TRANSFERRED'; recipient_kind?: 'PHONE' | string };
     EVENT_SUSPENDED_HOLDER: EventData;
     EVENT_REACTIVATED_HOLDER: EventData;
+    /**
+     * Lot 9 bis (11.2 M1) : `refund_open` = report de plus de 24 h qui ouvre le remboursement (R32) ; `address_cleared` =
+     * adresse retirée (R80, `new_address` absent dans ce cas).
+     */
     EVENT_CHANGED: EventData & {
         changed_fields: string[]; new_start_at?: string; new_end_at?: string; new_location?: string; new_address?: string; new_city?: string; old_title?: string;
+        refund_open?: boolean; address_cleared?: boolean;
     };
     REMINDER_J1: EventData & { sms_policy?: string };
     REMINDER_H3: EventData & { sms_policy?: string };
@@ -149,6 +174,41 @@ export interface TemplateData {
     OTP_PHONE_CHANGE: { purpose?: string };
     OTP_AUTH_HOOK: { purpose?: string };
     CONTROLLER_INVITE: { purpose?: string };
+
+    // ── Lot 9 bis (contrat 11.1, N1 à N26) ──
+    REFUND_DELAYED: OptionalEventData & { cashout_id: string; amount: number };
+    WITHDRAWAL_DELAYED: { cashout_id: string; amount: number; account_kind?: AccountKind | string };
+    ADMIN_CASHOUT_TO_RESUME: {
+        cashout_id: string; amount: number; kind: 'REFUND' | 'EVENT_CANCELLATION_REFUND' | 'TICKET_REFUND' | 'WITHDRAWAL' | string;
+        cause: 'DELAYED' | 'BLOCKED' | string; blocked_reason?: string | null;
+    };
+    PAYMENT_REFUND_STARTED: OptionalEventData & { payment_id: string; amount: number; operator?: OperatorCode | string | null; duplicate_of?: string | null };
+    ADMIN_PARTNER_RESUBMITTED: { partner_id: string; company: string };
+    EVENT_CLOSED_HOLDER: EventData;
+    EVENT_CLOSED_BY_ADMIN: EventData & { reason: string };
+    SHIFT_OPEN_AT_END: EventData & { open_shifts: number };
+    TRANSFER_REVOKED: EventData & { transfer_id?: string; ticket_id?: string };
+    TRANSFER_DECLINED_SENDER: EventData & { transfer_id: string; ticket_id: string };
+    TRANSFER_RECIPIENT_CHANGED: EventData & { transfer_id: string; ticket_id: string };
+    CONTROLLER_INVITATION: Partial<EventData> & { invitation_id: string; company: string; expires_at: string; events?: ControllerEventRef[] };
+    EVENT_CANCELLED_BY_ADMIN: EventData & { public_notice?: string | null };
+    ADMIN_EVENT_CANCELLED: EventData & { company?: string | null; reason?: string | null };
+    CONTROLLER_EVENT_CANCELLED: EventData;
+    CONTROLLER_EVENT_CHANGED: EventData & {
+        changed_fields: string[]; new_start_at?: string; new_end_at?: string; new_location?: string; new_address?: string; new_city?: string;
+    };
+    CONTROLLER_EVENT_STATUS: EventData & { status: 'SUSPENDU' | 'PUBLIE' | string };
+    TICKET_CANCELLED: EventData & { ticket_id?: string; kind: 'INVITATION' | 'FREE' | 'CASH' | string };
+    ACCOUNT_SUSPENDED: { reason: string };
+    ACCOUNT_REACTIVATED: Record<string, never>;
+    ADMIN_EVENT_CHANGED: EventData & {
+        company?: string | null; changes: Array<'TITLE' | 'POSTER' | 'PLACE' | 'DATE' | 'CATEGORY' | string>; old_title?: string | null; category?: string | null;
+    };
+    EVENT_SUBMITTED_ACK: EventData;
+    EVENT_FINISHED: EventData;
+    CLOSING_REPORT_READY: EventData;
+    FUNDS_AVAILABLE: EventData;
+    EMAIL_VERIFICATION: { purpose?: string };
 }
 
 export type NotificationType = keyof TemplateData;

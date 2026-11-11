@@ -5,7 +5,7 @@
  * le message en UCS-2 (70 caractères, 67 par segment ensuite). Les textes fixes des modèles n'utilisent
  * donc que l'alphabet GSM-7 de base (é è à ù ì ò É Ç admis ; « » ’ ° ç ê â ô î û ï ë œ et les espaces
  * insécables interdits), et chaque valeur saisie (titre, lieu, nom, motif…) passe par smsVar :
- * translittération vers GSM-7, espaces repliés, troncature avec « ... ».
+ * translittération vers GSM-7, caractère hors GSM-7 retiré (lot 9 bis, R27), espaces repliés, troncature avec « ... ».
  *
  * Dates à l'heure de Dakar (UTC+0 toute l'année) : « sam. 15 nov. à 20:00 » ; montants avec une espace
  * SIMPLE entre les milliers (« 5 000 F CFA ») : l'insécable U+00A0 n'existe pas en GSM-7. L'in-app, le
@@ -88,7 +88,8 @@ export function smsSegments(text: string): SmsMeasure {
  * Translittération vers l'alphabet GSM-7 de base des caractères courants en français et dans les saisies
  * (lettres accentuées absentes de l'alphabet, guillemets et apostrophes typographiques, tirets, points de
  * suspension, espaces insécables). Les lettres présentes dans l'alphabet (é è à ù ì ò É Ç ä ö ñ ü…) sont
- * gardées ; un caractère d'une autre écriture est gardé tel quel (le SMS part alors en UCS-2).
+ * gardées ; lot 9 bis (R27) : un caractère d'une autre écriture ou un émoji est retiré par smsVar (avant : gardé,
+ * le SMS partait en UCS-2 sur plusieurs segments).
  */
 const TRANSLITERATION: Readonly<Record<string, string>> = {
     'ê': 'e', 'ë': 'e', 'ē': 'e', 'ę': 'e', 'ė': 'e',
@@ -106,6 +107,8 @@ const TRANSLITERATION: Readonly<Record<string, string>> = {
     'Ù': 'U', 'Û': 'U', 'Ú': 'U',
     'Ÿ': 'Y', 'Ý': 'Y',
     'ş': 's', 'š': 's', 'Š': 'S', 'ž': 'z', 'Ž': 'Z',
+    // Lot 9 bis (R27) : lettres du wolof et des langues nationales.
+    'ŋ': 'n', 'Ŋ': 'N',
     '«': '"', '»': '"', '“': '"', '”': '"', '„': '"', '‟': '"',
     '’': '\'', '‘': '\'', '‚': '\'', '‛': '\'', '′': '\'', '`': '\'', '´': '\'',
     '°': 'o', 'º': 'o', 'ª': 'a',
@@ -122,14 +125,21 @@ function septetsOf(ch: string): number {
     return GSM7_EXTENSION.has(ch) ? 2 : 1;
 }
 
+/** Caractère gardé dans une valeur de SMS : alphabet GSM-7 de base ou d'extension, ou espace (replié ensuite). */
+function keptInSms(ch: string): boolean {
+    return GSM7_BASIC.has(ch) || GSM7_EXTENSION.has(ch) || /\s/.test(ch);
+}
+
 /**
- * Valeur saisie prête pour un SMS : translittérée vers GSM-7, espaces repliés et rognés, puis tronquée
- * pour tenir en `max` (septets ; un caractère hors GSM-7 compte pour un), « ... » compris.
+ * Valeur saisie prête pour un SMS : translittérée vers GSM-7, puis (lot 9 bis, R27) tout caractère resté hors de
+ * l'alphabet GSM-7 (émoji, autre écriture) est retiré, pour que le SMS reste en GSM-7 et sur un segment ; espaces
+ * repliés et rognés, puis troncature pour tenir en `max` septets, « ... » compris. SMS seulement : l'in-app, le push
+ * et l'email gardent la valeur saisie.
  */
 export function smsVar(value: string, max: number): string {
     if (!Number.isInteger(max) || max < 4) throw new SmsFormatError(`smsVar : longueur maximale invalide (${max})`);
     const chars = Array.from(String(value).replace(INVISIBLE_RE, '')).map((c) => TRANSLITERATION[c] ?? c);
-    const text = chars.join('').replace(/\s+/g, ' ').trim();
+    const text = Array.from(chars.join('')).filter(keptInSms).join('').replace(/\s+/g, ' ').trim();
     const all = Array.from(text);
     const total = all.reduce((n, c) => n + septetsOf(c), 0);
     if (total <= max) return text;
