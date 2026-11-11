@@ -58,6 +58,8 @@ const ClosingReportModal = dynamic(
 interface DashboardResponse {
     dashboard?: PartnerDashboardData;
     data?: PartnerDashboardData;
+    /** Lot 9 bis (R70, B88) : adresse de support lue côté serveur (SUPPORT_EMAIL), jamais écrite dans l'écran. */
+    support_email?: string;
 }
 
 const ORDER_STATUS_LABELS: Record<string, { label: string; variant: BadgeVariant }> = {
@@ -99,6 +101,7 @@ export default function PartnerDashboardPage() {
     const kpis = dashboard?.kpis ?? null;
     const trial = dashboard?.trial ?? null;
     const onboarding = (dashboard?.onboarding ?? null) as FirstEventOnboarding | null;
+    const supportEmail = typeof body?.support_email === 'string' && body.support_email.includes('@') ? body.support_email : null;
 
     // Commandes en direct : abonnement seulement si le service des commandes est ouvert (D69).
     const ordersOpen = flags?.orders === true;
@@ -231,7 +234,7 @@ export default function PartnerDashboardPage() {
     return (
         <div className="mx-auto max-w-6xl space-y-6 py-6 pb-24 sm:space-y-8">
             <PageHeader
-                eyebrow={<span className="text-sm font-medium text-fg-muted">Espace organisateur</span>}
+                eyebrow={<span className="text-sm font-medium text-fg-muted">Espace partenaire</span>}
                 title={title}
                 description="Ventes, entrées et solde de vos événements."
                 actions={
@@ -288,7 +291,7 @@ export default function PartnerDashboardPage() {
                         <StatusBanner
                             tone="danger"
                             title="Demande de compte partenaire refusée"
-                            action={<LinkButton href="mailto:support@eventvillage.sn" variant="secondary" size="sm">Contacter le support</LinkButton>}
+                            action={supportEmail ? <LinkButton href={`mailto:${supportEmail}`} variant="secondary" size="sm">Contacter le support</LinkButton> : undefined}
                         >
                             {partner.rejectionReason ? <>Motif : {partner.rejectionReason}</> : 'Aucun motif n’a été précisé.'}{' '}
                             Contactez le support pour corriger votre dossier.

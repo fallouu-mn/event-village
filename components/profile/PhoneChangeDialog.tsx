@@ -9,7 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
-import { toSenegaleseE164 } from '@/lib/validations/auth';
+import { INVALID_SN_PHONE_MESSAGE, toSenegaleseE164 } from '@/lib/validations/auth';
 
 /** Boîte « mot de passe » chargée à la demande (lot 9 bis, R57 ; contrat 5.13 : hors du premier chargement). */
 const PasswordConfirmDialog = dynamic(
@@ -118,7 +118,7 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
     e.preventDefault();
     const target = toSenegaleseE164(phone);
     if (!target) {
-      setPhoneError('Saisissez un numéro de mobile sénégalais valide, par exemple 77 123 45 67.');
+      setPhoneError(INVALID_SN_PHONE_MESSAGE);
       return;
     }
     void sendCode(target);
