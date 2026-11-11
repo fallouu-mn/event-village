@@ -6,6 +6,7 @@
  * quotidien des SMS optionnels, SMS des rappels des billets gratuits) et fonctionnalités (lot 7, clés features.* :
  * salles, tables, commandes de repas), lus et modifiés par GET / PUT /api/admin/finance-settings, par section.
  * Lot 7 (D15) : le seuil d'alerte du volume total de SMS est supprimé ; l'alerte part à 80 % du plafond optionnel.
+ * Lot 9 bis (R31, contrat 12.1) : seuil d'alerte des SMS indispensables du jour (notif.sms_essential_daily_alert).
  * Lecture : ADMIN et SUPERADMIN ; modification : SUPERADMIN seul, avec un motif obligatoire. Chaque
  * modification est historisée et ne s'applique qu'aux opérations futures (jamais rétroactive). La
  * validation des valeurs (bornes, choix admis) est faite par le serveur (finance_setting_set).
@@ -82,6 +83,7 @@ const META: Record<string, SettingMeta> = {
   'notif.sms_quiet_start': { label: 'Début de la plage sans SMS', help: 'Heure de Dakar à partir de laquelle aucun SMS optionnel ne part ; le rappel passe alors par les autres canaux. De 0 à 23.', kind: 'integer', unit: 'h' },
   'notif.sms_quiet_end': { label: 'Fin de la plage sans SMS', help: 'Heure de Dakar de fin de la plage. Un début égal à la fin supprime la plage. De 0 à 23.', kind: 'integer', unit: 'h' },
   'notif.sms_optional_daily_cap': { label: 'Plafond quotidien des SMS optionnels', help: 'Nombre maximal de SMS optionnels (rappels, annonces, signaux aux professionnels) envoyés par jour de Dakar ; au-delà, ils partent sans SMS, par l’application et les notifications push. Les SMS indispensables (achat, transfert, annulation, remboursement, sécurité du compte) ne sont jamais plafonnés. Les administrateurs sont alertés à 80 %. De 0 à 1 000 000 ; 0 : aucun SMS optionnel.', kind: 'integer', unit: 'SMS' },
+  'notif.sms_essential_daily_alert': { label: 'Seuil d’alerte des SMS indispensables du jour', help: 'Nombre de SMS indispensables envoyés dans la journée de Dakar à partir duquel les administrateurs sont alertés, une fois par jour. Ces SMS ne sont jamais plafonnés : le seuil sert à repérer un volume anormal. De 1 à 1 000 000.', kind: 'integer', unit: 'SMS' },
   'notif.free_ticket_reminder_sms': { label: 'SMS des rappels pour les billets gratuits', help: 'Pour un porteur qui ne détient que des billets gratuits ou des invitations de l’événement. Les rappels arrivent toujours dans l’application et en notification push.', kind: 'choice', options: FREE_REMINDER_SMS_LABELS },
   'features.halls_enabled': { label: 'Salles de fête', help: 'Réservation de salles par les clients et gestion des salles par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
   'features.tables_enabled': { label: 'Réservation de tables', help: 'Réservation de tables dans les restaurants et gestion des tables par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
@@ -96,7 +98,7 @@ const rank = (key: string) => (META_ORDER.includes(key) ? META_ORDER.indexOf(key
 const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: LucideIcon }> = [
   { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
   { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet et seuil de stock affiché au public.', icon: ScanLine },
-  { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels et rappels des billets gratuits.', icon: Bell },
+  { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels, alerte sur les SMS indispensables et rappels des billets gratuits.', icon: Bell },
   { prefix: 'features.', title: 'Fonctionnalités', help: 'Services proposés en plus de la billetterie. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires.', icon: ToggleRight },
 ];
 
