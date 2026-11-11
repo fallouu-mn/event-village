@@ -1282,7 +1282,7 @@ Message à l'écran de Mariama : « Contrôleur créé et assigné sur l'événe
 | Ibrahima | cloche | indispensable | prochain passage de la file | titre « Compte activé » ; modèle « Votre compte est activé : vous pouvez scanner les billets. » ; exemple « Votre compte est activé : vous pouvez scanner les billets. » |
 | Ibrahima, si son adresse est vérifiée | email | indispensable | prochain passage de la file | objet « Compte activé — Event Village » ; texte « Votre compte est activé : vous pouvez scanner les billets. » |
 
-Depuis le lot 9 bis, l'activation n'envoie plus l'alerte « mot de passe modifié » : un seul SMS. Preuve : `CONTROLLER_ACTIVATED` (`M/20261103000006_lot6_pros_admin.sql:1115`), `M/20261109000009_lot9bis_messages.sql:52-55` (`notif_on_password_changed`).
+Depuis le lot 9 bis, l'activation n'envoie plus l'alerte « mot de passe modifié » : un seul SMS. Preuve : `CONTROLLER_ACTIVATED` (`M/20261103000006_lot6_pros_admin.sql:1115`), `M/20261109000009_lot9bis_messages.sql:1313-1334` (`notif_on_password_changed`).
 
 5. **Ce que les autres voient.** Mariama n'a aucun message ; depuis le lot 9 bis, le badge passe de « Activation en attente » à « Actif » à son prochain chargement.
 6. **Ce qui est impossible.** Un compte déjà activé : renvoi à la connexion, « Ce compte est déjà activé : connectez-vous. ». Un compte suspendu (refus ci-dessus). Preuve : `components/auth/LoginForm.tsx:80`.
@@ -3388,7 +3388,7 @@ Aïda (SUPERADMIN) a toutes les permissions. Moussa (ADMIN) n'a que les siennes.
 | Aïda et les admins avec `notifications.read` | cloche, et depuis le lot 9 bis email | indispensable | prochain passage de la file | titre « Plafond de SMS atteint » ; modèle « Le plafond de {cap} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar). » ; exemple « Le plafond de 1 000 SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar). » |
 | Aïda et les admins avec `notifications.read` | cloche, et depuis le lot 9 bis email | indispensable | prochain passage de la file | titre « Quota de SMS hors code atteint » ; modèle « La part des SMS hors codes de connexion ({limit} sur {cap} par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar). » ; exemple « La part des SMS hors codes de connexion (700 sur 1 000 par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar). » |
 
-Aucun admin ne reçoit de SMS. Les emails partent vers les adresses vérifiées seulement. Preuve : `ADMIN_SMS_DAILY_THRESHOLD` (`lib/notifications/catalog.ts:1245-1253`, `M/20261109000009_lot9bis_messages.sql:52-55`) ; `ADMIN_NOTIFICATION_FAILED` (`M/20261103000002_lot6_outbox.sql:647`) ; `ADMIN_SMS_OPTIONAL_80` (`M/20261105000002_lot7_sms.sql:497`) ; `ADMIN_SMS_FORECAST` (`M/20261105000002_lot7_sms.sql:807`).
+Aucun admin ne reçoit de SMS. Les emails partent vers les adresses vérifiées seulement. Preuve : `ADMIN_SMS_DAILY_THRESHOLD` (`lib/notifications/catalog.ts:1245-1253`, `M/20261109000009_lot9bis_messages.sql:1313-1334`) ; `ADMIN_NOTIFICATION_FAILED` (`M/20261103000002_lot6_outbox.sql:647`) ; `ADMIN_SMS_OPTIONAL_80` (`M/20261105000002_lot7_sms.sql:497`) ; `ADMIN_SMS_FORECAST` (`M/20261105000002_lot7_sms.sql:807`).
 
 5. **Ce que les autres voient.** Aucun.
 6. **Ce qui est impossible.** Sans permission : « Accès refusé », depuis le lot 9 bis avec le refus « Action non autorisée : votre compte n’a pas la permission « Consulter les envois de messages ». ». Aucune relance depuis la liste. Preuve : `app/api/admin/notifications/route.ts:25`, `lib/admin/admin-auth.ts:70-74`.
@@ -3529,26 +3529,30 @@ Depuis le lot 9 bis, la page `/admin/pricing` n'enregistre plus rien : elle renv
 
 # Annexe A. Les machines à états
 
-Pour chaque passage : qui le déclenche, à quelle condition, ce qui est envoyé. Les libellés sont ceux de l'écran.
+Pour chaque passage : qui le déclenche, à quelle condition, ce qui est envoyé. Les libellés sont ceux de l'écran. Depuis le lot 9 bis, la fin d'un événement sans fin saisie est le début + 6 heures, partout où une fin sert (vente, contrôle, passage à « Terminé », fonds) ; les lignes ci-dessous le disent par « fin ».
 
 ## A.1 L'événement
 
 | De | Vers | Qui | Bouton | Condition | Envoyé | Preuve |
 |---|---|---|---|---|---|---|
 | (création) | Brouillon | partenaire validée | « Enregistrer le brouillon » | étape 3.6 | rien | `M/20261106000001_lot8_canaux.sql:690` |
-| Brouillon | En attente de validation | partenaire | « Soumettre à la validation » | une affiche et une catégorie active | admins : cloche, push, email | `M/20261102000003_lot5_cycle.sql:50`, `M/20261103000005_lot6_billetterie.sql:1024-1035` |
+| Brouillon | En attente de validation | partenaire | « Soumettre à la validation » | une affiche et une catégorie active ; depuis le lot 9 bis aussi dossier validé, dates à venir et périodes de vente cohérentes (étape 3.9) | admins : cloche, push, email ; depuis le lot 9 bis, partenaire : accusé, cloche, email | `M/20261102000003_lot5_cycle.sql:50`, `M/20261103000005_lot6_billetterie.sql:1024-1035` |
 | En attente de validation | Brouillon | partenaire | « Retirer de la validation » | aucune | rien | `M/20261102000003_lot5_cycle.sql:51` |
 | En attente de validation | Brouillon | admin `events.write` | « Refuser » | motif de 3 caractères | partenaire : SMS, cloche, push, email | `M/20261102000003_lot5_cycle.sql:52` |
 | En attente de validation | Validé | admin `events.write` | « Valider » | aucune | partenaire : SMS, cloche, push, email | `M/20261102000003_lot5_cycle.sql:53` |
-| Validé | Publié | partenaire | « Publier » | fin non passée | rien | `M/20261102000003_lot5_cycle.sql:54`, `M/20261103000005_lot6_billetterie.sql:1036` |
-| Validé | Publié | admin `events.write` | « Publier » | fin non passée | partenaire : cloche, push | `M/20261102000003_lot5_cycle.sql:55` |
-| Publié | Suspendu | admin `events.write` | « Suspendre » | motif | partenaire : quatre canaux ; détenteurs : cloche, push | `M/20261102000003_lot5_cycle.sql:56` |
-| Suspendu | Publié | admin `events.write` | « Réactiver » | fin non passée | partenaire : quatre canaux ; détenteurs : cloche, push | `M/20261102000003_lot5_cycle.sql:57` |
-| Publié, Validé, Suspendu | Annulé | partenaire ou admin | « Annuler l’événement » | titre retapé, avis de 10 caractères, motif de 3 | détenteurs : étape 14.5 | `M/20261102000003_lot5_cycle.sql:58-63` |
-| Publié | Terminé | système, toutes les 15 minutes | automatique | fin passée | rien | `M/20261102000003_lot5_cycle.sql:64`, `M/20261103000005_lot6_billetterie.sql:1320` |
-| Publié | Terminé | admin `events.write` | « Terminer » | événement commencé | rien | `M/20261102000003_lot5_cycle.sql:65`, `M/20261103000005_lot6_billetterie.sql:1039-1042` |
+| Validé | Publié | partenaire | « Publier » | fin non passée ; depuis le lot 9 bis, partenaire validée et non suspendue | rien | `M/20261102000003_lot5_cycle.sql:54`, `M/20261103000005_lot6_billetterie.sql:1036`, `M/20261109000008_lot9bis_cycle.sql:299-303` |
+| Validé | Publié | admin `events.write` | « Publier » | fin non passée ; depuis le lot 9 bis, partenaire validée et non suspendue | partenaire : cloche, push, et depuis le lot 9 bis email | `M/20261102000003_lot5_cycle.sql:55` |
+| Publié | Suspendu | admin `events.write` | « Suspendre » | motif | partenaire : quatre canaux ; détenteurs : cloche, push, et depuis le lot 9 bis email ; depuis le lot 9 bis, contrôleurs : cloche, email | `M/20261102000003_lot5_cycle.sql:56` |
+| Publié | Suspendu | système, depuis le lot 9 bis | suspension de la partenaire (étape 17.2) | motif « Organisateur suspendu » | détenteurs et contrôleurs comme ci-dessus ; aucun avis par événement à la partenaire | `M/20261109000006_lot9bis_argent.sql:869` |
+| Suspendu | Publié | admin `events.write` | « Réactiver » | fin non passée ; depuis le lot 9 bis, partenaire non suspendue | partenaire : quatre canaux ; détenteurs : cloche, push, et depuis le lot 9 bis email ; depuis le lot 9 bis, contrôleurs : cloche, email | `M/20261102000003_lot5_cycle.sql:57` |
+| Suspendu | Publié | système, depuis le lot 9 bis | réactivation de la partenaire (étape 2.10) | événement suspendu par la cascade, encore suspendu, fin non passée | détenteurs et contrôleurs | `M/20261109000006_lot9bis_argent.sql:772` (`partner_status_set`) |
+| Publié, Validé | Annulé | partenaire ou admin | « Annuler l’événement » | titre retapé, avis de 10 caractères, motif de 3 | détenteurs, partenaire, admins, contrôleurs : étape 14.5 | `M/20261102000003_lot5_cycle.sql:58-63` |
+| Suspendu | Annulé | admin, depuis le lot 9 bis seulement | « Annuler l’événement » | les mêmes | les mêmes | `M/20261109000008_lot9bis_cycle.sql:208-209` |
+| Publié | Terminé | système, toutes les 15 minutes | automatique | fin passée | depuis le lot 9 bis, partenaire : fin de l'événement, ou alerte de caisse encore ouverte (étape 16.1) | `M/20261102000003_lot5_cycle.sql:64`, `M/20261103000005_lot6_billetterie.sql:1320` |
+| Publié | Terminé | admin `events.write` | « Terminer » | événement commencé | les mêmes | `M/20261102000003_lot5_cycle.sql:65`, `M/20261103000005_lot6_billetterie.sql:1039-1042` |
+| Suspendu | Terminé | admin `events.write`, depuis le lot 9 bis | « Clore l’événement » | fin passée, motif | détenteurs : SMS, cloche, push, email ; partenaire : SMS, cloche, push, email (étape 13.4) | `M/20261109000008_lot9bis_cycle.sql:201-204`, `:341` |
 
-Passages absents : Suspendu vers Terminé ; Annulé vers tout autre statut ; Terminé vers tout autre statut ; Publié vers Brouillon ; Validé vers Brouillon. Preuve : `M/20261102000003_lot5_cycle.sql:49-65`.
+Passages absents : Annulé vers tout autre statut ; Terminé vers tout autre statut ; Publié vers Brouillon ; Validé vers Brouillon ; depuis le lot 9 bis, Suspendu vers Annulé par la partenaire. Preuve : `M/20261102000003_lot5_cycle.sql:49-65`, `M/20261109000008_lot9bis_cycle.sql:201-209`.
 
 ## A.2 Le billet
 
@@ -3560,38 +3564,42 @@ Passages absents : Suspendu vers Terminé ; Annulé vers tout autre statut ; Ter
 | (rien) | Utilisé | vente au guichet | entrée immédiate | reçu si un numéro est saisi | `M/20261106000001_lot8_canaux.sql:438-443` |
 | Valable | Utilisé | scan | QR bon ou saisie manuelle, contrôle ouvert | étape 10.4 | `M/20261108000005_lot9_nettoyage.sql:21-216` |
 | Valable | Annulé | annulation de l'événement | billet gratuit, invitation, ou payé en espèces | étape 14.5 | `M/20261106000003_lot8_paiement.sql:395`, `:405` |
-| Valable | Annulé | annulation d'une invitation | non scannée | rien | `M/20261108000002_lot9_invitations.sql:504-574` |
-| Valable | Annulé | remboursement d'un billet | gratuit, invitation, ou espèces | rien | `M/20261108000001_lot9_securite.sql:70`, `:83` |
-| Valable | Remboursement en cours | remboursement | versement demandé | seul pour un billet seul : étape 15.2 | `M/20261101000005_lot3_remboursements.sql:252`, `M/20261108000001_lot9_securite.sql:123` |
+| Valable | Annulé | annulation d'une invitation | non scannée | depuis le lot 9 bis, l'invité avec compte est prévenu (étape 8.12) | `M/20261108000002_lot9_invitations.sql:504-574` |
+| Valable | Annulé | refus d'une invitation par l'invité, depuis le lot 9 bis | invitation en attente | rien | `M/20261109000008_lot9bis_cycle.sql:1388-1394` |
+| Valable | Annulé | changement de numéro de l'invité, depuis le lot 9 bis | invitation non réclamée vers l'ancien numéro | rien | `M/20261109000004_lot9bis_droits.sql:802-837` |
+| Valable | Annulé | remboursement d'un billet | gratuit, invitation, ou espèces ; depuis le lot 9 bis, par la partenaire jusqu'à la fin seulement | depuis le lot 9 bis, détenteur : « Billet annulé » (étape 15.3) | `M/20261108000001_lot9_securite.sql:70`, `:83` |
+| Valable | Remboursement en cours | remboursement | versement demandé ; depuis le lot 9 bis, par la partenaire jusqu'à la fin, ensuite par l'admin `refunds.manage` | étape 15.2 | `M/20261101000005_lot3_remboursements.sql:252`, `M/20261108000001_lot9_securite.sql:123` |
 | Remboursement en cours | Remboursé | confirmation du versement | versement confirmé | étape 7.11 | `M/20261101000005_lot3_remboursements.sql:259-326` |
 
-Le passage à « Terminé » ne change pas le billet. Un transfert ne change pas son statut, il pose seulement un verrou.
+Le passage à « Terminé » ne change pas le billet ; depuis le lot 9 bis, la carte dit « Événement terminé. », sans QR ni transfert. Un transfert ne change pas son statut, il pose seulement un verrou. Depuis le lot 9 bis, un billet d'un événement suspendu reste « Valable », QR masqué.
 
 ## A.3 Le paiement
 
 | De | Vers | Qui | Condition | Envoyé | Preuve |
 |---|---|---|---|---|---|
 | (rien) | En attente | lancement du paiement | contrôles passés | rien | `M/20261105000006_lot7_client.sql:24` |
-| En attente, Expiré, Annulé | Confirmé | confirmation | SamirPay confirme, panier honorable | étape 7.7 | `M/20261106000003_lot8_paiement.sql:84` |
-| En attente, Expiré, Annulé | Remboursement en cours | confirmation | panier impossible, ou double paiement | admins si doublon (étape 7.11) | `M/20261106000003_lot8_paiement.sql:154-156` |
-| En attente | Échoué | refus à l'envoi ou SamirPay | | rien | `M/20261031000013_lot2_reservations.sql:192` |
+| En attente, Expiré, Annulé, et depuis le lot 9 bis Échoué non définitif | Confirmé | confirmation | SamirPay confirme, panier honorable | étape 7.7 | `M/20261106000003_lot8_paiement.sql:84` |
+| En attente, Expiré, Annulé, et depuis le lot 9 bis Échoué non définitif | Remboursement en cours | confirmation | panier impossible (dont événement suspendu entre-temps), ou double paiement | admins si doublon ; depuis le lot 9 bis, client : « Remboursement lancé » (étape 7.11) | `M/20261106000003_lot8_paiement.sql:154-156` |
+| En attente | Échoué | refus à l'envoi ou SamirPay | | rien | `M/20261031000013_lot2_reservations.sql:192`, `M/20261109000005_lot9bis_samirpay.sql:185-221` |
 | En attente | Annulé | le client, ou SamirPay | | rien | `M/20261031000013_lot2_reservations.sql:192` |
-| En attente | Expiré | tâche de rapprochement | 60 minutes | rien | `lib/payments/confirmation.service.ts:184-188` |
+| En attente | Expiré | tâche de rapprochement | 60 minutes ; la réservation des places, elle, échoit à la durée de garde (10 minutes par défaut depuis le lot 9 bis) | rien | `lib/payments/confirmation.service.ts:184-188` |
 | Confirmé, Partiel, Remboursement en cours | Remboursé ou Partiel | confirmation d'un versement | total ou partiel | étape 7.11 | `M/20261101000005_lot3_remboursements.sql:259-326` |
 
-Réservation de places : active, puis convertie, libérée ou expirée. Échoué est définitif.
+Réservation de places : active, puis convertie, libérée ou expirée. Depuis le lot 9 bis, Échoué n'est plus définitif d'office : un refus à l'envoi l'est, un échec lu chez SamirPay ne le devient que 2 heures après la création du paiement (un succès tardif reste possible jusque-là) ; Annulé reste définitif tout de suite. Preuve : `lib/payments/confirmation.service.ts:46`, `:199`.
 
 ## A.4 Le transfert
 
 | De | Vers | Qui | Condition | Envoyé | Preuve |
 |---|---|---|---|---|---|
-| (rien) | En attente | Fatou | détenteur, billet valable, événement publié ou validé | étape 8.1 | `M/20261103000005_lot6_billetterie.sql:78-170` |
+| (rien) | En attente | Fatou | détenteur, billet valable, événement publié ou validé ; depuis le lot 9 bis, mot de passe saisi depuis moins de 10 minutes, autre numéro que le sien | étape 8.1 | `M/20261103000005_lot6_billetterie.sql:78-170` |
 | En attente | Accepté | Lamine | numéro vérifié, non échu, événement actif | étape 8.2 | `M/20261108000002_lot9_invitations.sql:91` |
+| En attente | Refusé | Lamine, depuis le lot 9 bis | numéro vérifié, non échu | expéditrice : cloche (étape 8.3) ; invitation : rien | `M/20261109000008_lot9bis_cycle.sql:1377-1391` |
+| En attente | Annulé | changement de numéro du destinataire, depuis le lot 9 bis | transfert vers l'ancien numéro | expéditrice : « Transfert annulé » (étape 17.4) | `M/20261109000004_lot9bis_droits.sql:802-837` |
 | En attente | Annulé | Fatou | | étape 8.6 | `M/20261103000005_lot6_billetterie.sql:174-234` |
 | En attente | Annulé | annulation de l'événement, ou annulation d'une invitation | | rien | `M/20261106000003_lot8_paiement.sql:364-366` |
-| En attente | Expiré | tâche des transferts | 48 heures, ou fin d'événement pour une invitation | étape 8.5 | `M/20261103000005_lot6_billetterie.sql:239` |
+| En attente | Expiré | tâche des transferts, et depuis le lot 9 bis aussi à la lecture ou au scan d'un transfert échu | 48 heures, ou fin d'événement pour une invitation | étape 8.5 | `M/20261103000005_lot6_billetterie.sql:239` |
 
-Aucun état « refusé » n'existe.
+Depuis le lot 9 bis, l'état « Refusé » existe (étape 8.3).
 
 ## A.5 L'invitation
 
@@ -3605,21 +3613,23 @@ Elle n'a pas de table propre : c'est un billet et, sauf compte vérifié, un tra
 | Non réclamée, fin passée | Valable, sans propriétaire, déverrouillé | Expiré | « Envoyée » |
 | Scannée | Utilisé | | « Entrée validée » |
 | Annulée | Annulé | Annulé ou absent | « Annulée » |
+| Refusée par l'invité, depuis le lot 9 bis | Annulé, place rendue | Refusé | « Refusée » |
+| Ancien numéro de l'invité, depuis le lot 9 bis | Annulé, place rendue | Annulé | « Annulée » |
 
-Preuve : `M/20261108000002_lot9_invitations.sql:582`.
+Preuve : `M/20261108000002_lot9_invitations.sql:582`, `M/20261109000008_lot9bis_cycle.sql:1388-1394`.
 
 ## A.6 La caisse
 
 | De | Vers | Qui | Condition | Envoyé | Preuve |
 |---|---|---|---|---|---|
-| (rien) | Ouverte | contrôleur affecté avec espèces (voie aussi ouverte à la partenaire et à l'admin, sans écran) | compte actif, contrôle ouvert, aucune autre caisse ouverte, PIN vérifié s'il est saisi | rien | `M/20261102000003_lot5_cycle.sql:963-999` |
+| (rien) | Ouverte | contrôleur affecté avec espèces (voie aussi ouverte à la partenaire et à l'admin, sans écran) | compte actif, contrôle ouvert, aucune autre caisse ouverte ; depuis le lot 9 bis, PIN régisseur exigé | rien | `M/20261102000003_lot5_cycle.sql:963-999` |
 | Ouverte | Ouverte, attendu augmenté | vente au guichet | étape 11.2 | reçu si numéro | `M/20261106000001_lot8_canaux.sql:454` |
-| Ouverte | Clôturée sans écart | contrôleur (voie aussi ouverte à la partenaire et à l'admin, sans écran) | déclaré égal à l'attendu | rien ; avis au contrôleur si un tiers clôture | `M/20261103000006_lot6_pros_admin.sql:165-308` |
-| Ouverte | Clôturée avec écart | contrôleur (voie aussi ouverte à la partenaire et à l'admin, sans écran) | justification, PIN | étape 11.4 | `M/20261103000006_lot6_pros_admin.sql:220` |
+| Ouverte | Clôturée sans écart | contrôleur ; depuis le lot 9 bis aussi la partenaire ou l'admin `events.write`, « Fermer cette caisse » (étape 11.6) | déclaré égal à l'attendu ; depuis le lot 9 bis, PIN | rien ; avis au contrôleur si un tiers clôture | `M/20261103000006_lot6_pros_admin.sql:165-308` |
+| Ouverte | Clôturée avec écart | les mêmes | justification, PIN | étape 11.4 | `M/20261103000006_lot6_pros_admin.sql:220` |
 | Clôturée | | | état final, pas de réouverture | | `lib/shifts/shift.service.ts:356` |
 | tout | En litige | **personne** | aucune écriture | | `M/20260906000002_controller_shifts.sql:23` |
 
-Aucun passage automatique : ni l'annulation ni la fin de l'événement ne ferment une caisse. Une caisse ouverte empêche de retirer le contrôleur. Preuve : `M/20261106000003_lot8_paiement.sql:266-414`, `M/20261101000011_lot4_caisse.sql:1`.
+Aucun passage automatique : ni l'annulation ni la fin de l'événement ne ferment une caisse ; depuis le lot 9 bis, une caisse encore ouverte à la fin est signalée à la partenaire (étape 16.1). Une caisse ouverte empêche de retirer le contrôleur. Preuve : `M/20261106000003_lot8_paiement.sql:266-414`, `M/20261101000011_lot4_caisse.sql:1`.
 
 ## A.7 Le remboursement et le versement
 
@@ -3629,8 +3639,8 @@ Aucun passage automatique : ni l'annulation ni la fin de l'événement ne fermen
 | (création) | en attente, à la charge de la partenaire | remboursement d'un billet payé hors plateforme | | rien | `M/20261108000001_lot9_securite.sql:21-129` |
 | en attente | versé | versement confirmé | | étape 7.11 | `M/20261101000005_lot3_remboursements.sql:259-326` |
 | en attente | en échec | refus explicite | | admins ; partenaire si annulation | `M/20261103000006_lot6_pros_admin.sql:382-400` |
-| en échec | en attente | admin `refunds.manage`, « Relancer » | versement en échec | rien | `lib/events/event-cancellation.service.ts:186-222` |
-| en attente, à la charge de la partenaire | **aucune sortie** | | pas d'écran | rien | `M/20261108000001_lot9_securite.sql:21-129` |
+| en échec | en attente | admin `refunds.manage`, depuis le lot 9 bis « Renvoyer » dans « Versements à reprendre », justifié | versement en échec | rien | `M/20261109000007_lot9bis_versements.sql` |
+| en attente, à la charge de la partenaire | remboursé | depuis le lot 9 bis, la partenaire, case « Remboursé » de la liste « Espèces à rembourser par l'organisateur », après une annulation (étape 14.2) | définitif | rien | `components/partner/pilotage/CashRefundsList.tsx` |
 
 Versement :
 
@@ -3638,75 +3648,77 @@ Versement :
 |---|---|---|---|---|---|
 | (création) | à envoyer | remboursement ou retrait | bloqué si opérateur, numéro ou nom manque | alerte si remboursement | `lib/payments/cashout.service.ts:216-220` |
 | à envoyer | à envoyer, bloqué solde | envoi | solde insuffisant | admins (remboursement) | `lib/payments/cashout.service.ts:285-289` |
-| à envoyer | **reste à envoyer** | envoi | solde illisible | **rien** | `lib/payments/cashout.service.ts:281-283` |
+| à envoyer | **reste à envoyer** | envoi | solde illisible | **rien** ; depuis le lot 9 bis, repris par la tâche planifiée, et au-delà de 30 minutes dans « Versements à reprendre » avec l'avis « Retardé » au bénéficiaire | `lib/payments/cashout.service.ts:281-283`, `M/20261109000007_lot9bis_versements.sql:9-12` |
 | à envoyer | envoyé | réponse SamirPay | pas encore final | rien | `lib/payments/cashout.service.ts:254` |
 | à envoyer, envoyé | confirmé | réponse SamirPay, rapprochement | | étapes 7.11 et 16.10 | `lib/payments/cashout.service.ts:258-260` |
 | à envoyer, envoyé | en échec | refus | | admins, partenaire | `lib/payments/cashout.service.ts:254` |
 | à envoyer | incertain | délai, erreur serveur, réponse illisible | | admins | `app/api/cron/payments-reconcile/route.ts:69` |
-| en échec | à envoyer | admin, « Relancer » | | rien | `lib/events/event-cancellation.service.ts:186-222` |
-| incertain | **aucune sortie** | | aucune action écrite dans le code | rien | `components/admin/RefundsToRetry.tsx:173-177` |
-| à envoyer, bloqué opérateur, numéro ou nom | **aucune sortie** | | « Aucune relance possible depuis cet écran. » | rien | `app/api/admin/refunds/route.ts:106-109` |
-| à envoyer, ancien type de remboursement seul, non bloqué, plus de 5 minutes | envoi | tâche de rapprochement | **ce type seulement** | selon résultat | `lib/payments/cashout.service.ts:308-315` |
+| en échec | à envoyer | admin `refunds.manage`, depuis le lot 9 bis « Renvoyer », justifié | | rien | `components/admin/RefundsToRetry.tsx:225-250` |
+| incertain, envoyé non confirmé | confirmé | depuis le lot 9 bis, admin `refunds.manage`, « Marquer versé », avec la référence SamirPay et une justification | versement vérifié chez SamirPay | étapes 7.11 et 16.10 | `components/admin/RefundsToRetry.tsx:385-419`, `M/20261109000007_lot9bis_versements.sql:189` |
+| incertain, envoyé non confirmé, avec un identifiant SamirPay | envoi | depuis le lot 9 bis, admin, « Renvoyer », après relecture chez SamirPay | | selon résultat | `app/api/admin/refunds/route.ts:143-145` |
+| à envoyer, bloqué opérateur ou numéro | confirmé | depuis le lot 9 bis, admin, « Marquer versé » si le versement a été réglé autrement ; aucun renvoi | | rien | `app/api/admin/refunds/route.ts:139-140`, `:154` |
+| à envoyer, bloqué nom ou autre cause | envoi | depuis le lot 9 bis, admin, « Renvoyer » une fois la cause levée | | selon résultat | `app/api/admin/refunds/route.ts:139-140`, `:155-156` |
+| à envoyer, sans blocage ou bloqué solde, plus de 5 minutes | envoi | tâche de rapprochement, depuis le lot 9 bis pour tous les types, retraits compris | | selon résultat | `lib/payments/cashout.service.ts:455-470` |
 
 # Annexe B. Le catalogue complet des messages
 
-Messages de la file, 66 types. Le texte du SMS est un exemple rempli ; ses modèles avec variables sont cités aux étapes.
+Messages de la file, 91 types depuis le lot 9 bis (66 avant ; les 25 types nouveaux sont en fin de tableau). Le texte du SMS est un exemple rempli ; ses modèles avec variables sont cités aux étapes.
 
 | Type | Déclencheur | Destinataire | Canaux | Indispensable ou optionnel | Texte exact du SMS (caractères, segments) | Titre dans la cloche | Email |
 |---|---|---|---|---|---|---|---|
 | `PURCHASE_CONFIRMED` | Paiement de billets confirmé | SMS au numéro qui a payé ; cloche et email au compte acheteur | SMS, cloche, email | indispensable | « Event Village : achat confirmé, 2 billets Gala de la Teranga. Frais de service 100 F CFA, total payé 10 100 F CFA. https://eventvillage.sn/tickets » (146 caractères, 1 segment) | « Achat confirmé » | oui |
 | `FREE_TICKETS_CONFIRMED` | Réservation de billets gratuits, une fois par réservation | Le compte qui réserve | SMS, cloche, email | indispensable | « Event Village : 2 billets gratuits pour Gala de la Teranga le sam. 14 nov. à 20:00. Vos billets : https://eventvillage.sn/tickets » (129 caractères, 1 segment) | « Billets confirmés » | oui |
 | `COUNTER_RECEIPT` | Vente au guichet avec un numéro saisi | Le numéro saisi par le vendeur, sans compte | SMS | indispensable | « Event Village : achat au guichet pour Gala de la Teranga, 2 billets, 10 000 F CFA. Entrée validée. Réf. 1F6E2B9C. » (113 caractères, 1 segment) | Aucun. | non |
-| `INVITATION_RECEIVED` | Invitation envoyée, un SMS par numéro | Le numéro invité, avec ou sans compte | SMS | indispensable | « Event Village : 2 invitations pour Gala de la Teranga le sam. 14 nov. à 20:00. Connectez-vous avec ce numéro : https://eventvillage.sn/tickets » (142 caractères, 1 segment) | Aucun. | non |
-| `TRANSFER_OFFERED` | Transfert lancé | SMS au numéro cible, compté sur l'expéditeur ; cloche et push au compte actif dont ce numéro est vérifié | SMS, cloche, push | indispensable | « Event Village : un billet Gala de la Teranga vous est transféré. Connectez-vous avec ce numéro avant le 12 nov. à 18:30 : https://eventvillage.sn/tickets » (153 caractères, 1 segment) | « Un billet vous est transféré » | non |
-| `TRANSFER_CANCELLED` | Annulation du transfert par l'expéditeur | SMS au numéro cible ; cloche et push au compte vérifié de ce numéro | SMS, cloche, push | indispensable | « Event Village : le transfert du billet Gala de la Teranga a été annulé par son propriétaire. » (92 caractères, 1 segment) | « Transfert annulé » | non |
-| `TRANSFER_EXPIRED` | Délai de 48 heures dépassé | L'expéditeur seulement | cloche, push | indispensable | Aucun. | « Transfert expiré » | non |
-| `TRANSFER_CLAIMED_SENDER` | Transfert accepté | L'expéditeur (aucun pour une invitation réclamée) | cloche, push | indispensable | Aucun. | « Billet accepté » | non |
+| `INVITATION_RECEIVED` | Invitation envoyée, un SMS par numéro | Le numéro invité, avec ou sans compte | SMS, cloche, push, email | indispensable | « Event Village : 2 invitations pour Gala de la Teranga le sam. 14 nov. à 20:00. Connectez-vous avec ce numéro : https://eventvillage.sn/tickets » (142 caractères, 1 segment) | « Invitation reçue » | oui |
+| `TRANSFER_OFFERED` | Transfert lancé | SMS au numéro cible, compté sur l'expéditeur ; cloche et push au compte actif dont ce numéro est vérifié | SMS, cloche, push, email | indispensable | « Event Village : un billet Gala de la Teranga vous est transféré. Connectez-vous avec ce numéro avant le 12 nov. à 18:30 : https://eventvillage.sn/tickets » (153 caractères, 1 segment) | « Un billet vous est transféré » | oui |
+| `TRANSFER_CANCELLED` | Annulation du transfert par l'expéditeur | SMS au numéro cible ; cloche et push au compte vérifié de ce numéro | SMS, cloche, push, email | indispensable | « Event Village : le transfert du billet Gala de la Teranga a été annulé par son propriétaire. » (92 caractères, 1 segment) | « Transfert annulé » | oui |
+| `TRANSFER_EXPIRED` | Délai de 48 heures dépassé | L'expéditeur seulement | cloche, push, email | indispensable | Aucun. | « Transfert expiré » | oui |
+| `TRANSFER_CLAIMED_SENDER` | Transfert accepté | L'expéditeur (aucun pour une invitation réclamée) | cloche, push, email | indispensable | Aucun. | « Billet accepté » | oui |
 | `TRANSFER_RECEIVED` | Transfert accepté | Le compte qui accepte | cloche, push, email | indispensable | Aucun. | « Billet reçu » | oui |
-| `TICKET_SCANNED` | Entrée validée au scan ou en saisie manuelle, hors guichet | Le détenteur du billet | cloche, push | indispensable | Aucun. | « Entrée validée » | non |
-| `EVENT_CANCELLED` | Annulation de l'événement | Chaque compte qui détient un billet valable ou utilisé | SMS, cloche, push, email | indispensable | « Event Village : Gala de la Teranga du sam. 14 nov. à 20:00 est annulé. Remboursement automatique en cours. https://eventvillage.sn/tickets » (138 caractères, 1 segment) | « Événement annulé » | oui |
-| `EVENT_SUSPENDED_HOLDER` | Suspension par l'admin | Chaque compte détenteur d'un billet valable ou utilisé | cloche, push | optionnel | Aucun. | « Événement suspendu » | non |
-| `EVENT_REACTIVATED_HOLDER` | Réactivation par l'admin | Chaque compte détenteur d'un billet valable ou utilisé | cloche, push | optionnel | Aucun. | « Événement de nouveau en ligne » | non |
-| `EVENT_CHANGED` | Modification d'un événement publié : titre, date, heure, lieu, ville, adresse | Chaque compte détenteur d'un billet valable, et utilisé pour un événement de plusieurs jours | SMS, cloche, push | optionnel | « Event Village : Gala de la Teranga change de date : sam. 21 nov. à 21:00. Vos billets restent valables. https://eventvillage.sn/tickets » (135 caractères, 1 segment) | « Événement modifié » | non |
+| `TICKET_SCANNED` | Entrée validée au scan ou en saisie manuelle, hors guichet | Le détenteur du billet | cloche, push, email | indispensable | Aucun. | « Entrée validée » | oui |
+| `EVENT_CANCELLED` | Annulation de l'événement | Chaque compte qui détient un billet valable ou utilisé ; depuis le lot 9 bis aussi l'acheteur d'origine et chaque numéro sans compte par SMS (étape 14.5) | SMS, cloche, push, email | indispensable | « Event Village : Gala de la Teranga du sam. 14 nov. à 20:00 est annulé. Remboursement automatique en cours. https://eventvillage.sn/tickets » (138 caractères, 1 segment) | « Événement annulé » | oui |
+| `EVENT_SUSPENDED_HOLDER` | Suspension par l'admin ; depuis le lot 9 bis aussi par la suspension de la partenaire | Chaque compte détenteur d'un billet valable ou utilisé | cloche, push, email | optionnel | Aucun. | « Événement suspendu » | oui |
+| `EVENT_REACTIVATED_HOLDER` | Réactivation par l'admin ; depuis le lot 9 bis aussi par la réactivation de la partenaire | Chaque compte détenteur d'un billet valable ou utilisé | cloche, push, email | optionnel | Aucun. | « Événement de nouveau en ligne » | oui |
+| `EVENT_CHANGED` | Modification d'un événement publié : titre, date, heure, fin, lieu, ville ; SMS et email 10 minutes après, regroupés ; depuis le lot 9 bis indispensable, sauf le titre seul (cloche et push, étape 5.3) | Chaque compte détenteur d'un billet valable, et utilisé pour un événement de plusieurs jours ; depuis le lot 9 bis aussi chaque numéro sans compte (invitation non réclamée, acheteur au guichet) par SMS | SMS, cloche, push, email | indispensable depuis le lot 9 bis | « Event Village : Gala de la Teranga change de date : sam. 21 nov. à 21:00. Vos billets restent valables. https://eventvillage.sn/tickets » (135 caractères, 1 segment) | « Événement modifié » | oui |
 | `REMINDER_J1` | Tâche des rappels, la veille à 10 h | Chaque compte détenteur d'un billet valable à l'échéance | SMS, cloche, push, email | optionnel | « Event Village : rappel, Gala de la Teranga demain à 20:00, CICAD. Vos billets : https://eventvillage.sn/tickets » (111 caractères, 1 segment) | « Rappel : c'est demain » | oui |
-| `REMINDER_H3` | Tâche des rappels, 3 heures avant le début | Chaque compte détenteur d'un billet valable à l'échéance | SMS, cloche, push | optionnel | « Event Village : Gala de la Teranga à 20:00. Ouvrez votre billet avant d'arriver : QR renouvelé toutes les 20 s. https://eventvillage.sn/tickets » (143 caractères, 1 segment) | « C'est bientôt » | non |
-| `REFUND_REQUESTED` | Création du remboursement d'un billet seul | Le client du paiement, c'est-à-dire celui qui a payé | cloche | indispensable | Aucun. | « Remboursement demandé » | non |
+| `REMINDER_H3` | Tâche des rappels, 3 heures avant le début | Chaque compte détenteur d'un billet valable à l'échéance | SMS, cloche, push, email | optionnel | « Event Village : Gala de la Teranga à 20:00. Ouvrez votre billet avant d'arriver : QR renouvelé toutes les 20 s. https://eventvillage.sn/tickets » (143 caractères, 1 segment) | « C'est bientôt » | oui |
+| `REFUND_REQUESTED` | Création du remboursement d'un billet seul | Le client du paiement, c'est-à-dire celui qui a payé | cloche, email | indispensable | Aucun. | « Remboursement demandé » | oui |
 | `REFUND_PAID` | Versement de remboursement confirmé | Le client du paiement, même si le billet a été transféré | SMS, cloche, push, email | indispensable | « Event Village : remboursement de 5 000 F CFA versé sur votre compte Wave (Gala de la Teranga). » (94 caractères, 1 segment) | « Remboursement versé » | oui |
 | `PASSWORD_CHANGED` | Mot de passe défini ou modifié | Le compte concerné | SMS, cloche, email | indispensable | « Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous, contactez le support. » (116 caractères, 1 segment) | « Mot de passe modifié » | oui |
-| `PHONE_CHANGED` | Changement de numéro confirmé | L'ancien numéro, sans compte rattaché | SMS | indispensable | « Event Village : le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support. » (100 caractères, 1 segment) | Aucun. | non |
+| `PHONE_CHANGED` | Changement de numéro confirmé | L'ancien numéro, sans compte rattaché, par SMS ; depuis le lot 9 bis, le compte par email si son adresse est vérifiée | SMS, email | indispensable | « Event Village : le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support. » (100 caractères, 1 segment) | Aucun. | oui |
 | `PUSH_TEST` | Bouton d'essai des préférences | Le compte qui clique | push | indispensable | Aucun. | Aucun. | non |
 | `EVENT_VALIDATED` | Événement validé par l'admin | La partenaire | SMS, cloche, push, email | indispensable | « Event Village : votre événement Gala de la Teranga est validé. Publiez-le depuis votre espace : https://eventvillage.sn/partner/events » (134 caractères, 1 segment) | « Événement validé » | oui |
 | `EVENT_REJECTED` | Événement refusé par l'admin, avec motif | La partenaire | SMS, cloche, push, email | indispensable | « Event Village : événement Gala de la Teranga non validé. Motif : Affiche illisible, merci d'en déposer... https://eventvillage.sn/partner/events » (144 caractères, 1 segment) | « Événement non validé » | oui |
 | `EVENT_SUSPENDED` | Suspension par l'admin, avec motif | La partenaire | SMS, cloche, push, email | indispensable | « Event Village : événement Gala de la Teranga suspendu. Motif : Signalement en cours d'examen. https://eventvillage.sn/partner/events » (132 caractères, 1 segment) | « Événement suspendu » | oui |
 | `EVENT_REACTIVATED` | Réactivation par l'admin | La partenaire | SMS, cloche, push, email | indispensable | « Event Village : votre événement Gala de la Teranga est de nouveau en ligne. https://eventvillage.sn/partner/events » (114 caractères, 1 segment) | « Événement réactivé » | oui |
-| `EVENT_PUBLISHED_BY_ADMIN` | Publication par l'admin | La partenaire | cloche, push | indispensable | Aucun. | « Événement publié » | non |
+| `EVENT_PUBLISHED_BY_ADMIN` | Publication par l'admin | La partenaire | cloche, push, email | indispensable | Aucun. | « Événement publié » | oui |
 | `FIRST_TICKET_SOLD` | Premier billet en ligne ou au guichet, hors gratuits et invitations | La partenaire | SMS, cloche, push, email | optionnel | « Event Village : premier billet vendu pour Gala de la Teranga. Suivez vos ventes : https://eventvillage.sn/partner/events » (120 caractères, 1 segment) | « Premier billet vendu » | oui |
 | `NEW_ORDER` | Paiement de billets confirmé | La partenaire | cloche | optionnel | Aucun. | « Nouvelle commande » | non |
 | `CATEGORY_SOLD_OUT` | Ventes égales à la quantité d'une catégorie | La partenaire | SMS, cloche, push, email | optionnel | « Event Village : la catégorie Carré VIP de Gala de la Teranga est complète. https://eventvillage.sn/partner/events » (113 caractères, 1 segment) | « Catégorie complète » | oui |
 | `EVENT_SOLD_OUT` | Dernière catégorie active épuisée | La partenaire | SMS, cloche, push, email | optionnel | « Event Village : Gala de la Teranga est complet, toutes les catégories sont vendues. https://eventvillage.sn/partner/events » (122 caractères, 1 segment) | « Événement complet » | oui |
-| `SHIFT_DISCREPANCY` | Clôture de caisse avec écart | La partenaire | SMS, cloche, push | indispensable | « Event Village : caisse de Ibrahima Sow fermée (Gala de la Teranga) avec un écart de -2 500 F CFA. https://eventvillage.sn/partner/events » (136 caractères, 1 segment) | « Écart de caisse » | non |
+| `SHIFT_DISCREPANCY` | Clôture de caisse avec écart | La partenaire | SMS, cloche, push, email | indispensable | « Event Village : caisse de Fatou Sow fermée (Gala de la Teranga) avec un écart de -2 500 F CFA. https://eventvillage.sn/partner/events » (133 caractères, 1 segment) | « Écart de caisse » | oui |
 | `WITHDRAWAL_PAID` | Retrait versé | Le bénéficiaire du retrait | SMS, cloche, push, email | indispensable | « Event Village : votre retrait de 25 000 F CFA a été versé sur votre compte Wave. » (80 caractères, 1 segment) | « Retrait versé » | oui |
 | `WITHDRAWAL_REJECTED` | Retrait refusé par l'opérateur | Le bénéficiaire du retrait | SMS, cloche, push, email | indispensable | « Event Village : votre retrait de 25 000 F CFA a été refusé par l'opérateur. Le montant est revenu sur votre solde. » (114 caractères, 1 segment) | « Retrait refusé » | oui |
-| `WITHDRAWAL_UNCERTAIN` | Issue d'un retrait incertaine | Le bénéficiaire du retrait | SMS, cloche, push | indispensable | « Event Village : votre retrait de 25 000 F CFA est en vérification auprès de l'opérateur. Aucune action de votre part. » (117 caractères, 1 segment) | « Retrait en vérification » | non |
+| `WITHDRAWAL_UNCERTAIN` | Issue d'un retrait incertaine | Le bénéficiaire du retrait | SMS, cloche, push, email | indispensable | « Event Village : votre retrait de 25 000 F CFA est en vérification auprès de l'opérateur. Aucune action de votre part. » (117 caractères, 1 segment) | « Retrait en vérification » | oui |
 | `CANCEL_REFUNDS_DONE` | Dernier remboursement d'annulation confirmé | La partenaire | cloche, push, email | indispensable | Aucun. | « Remboursements terminés » | oui |
 | `CANCEL_REFUNDS_BLOCKED` | Remboursement d'annulation bloqué ou refusé, une fois par jour | La partenaire | cloche, push, email | indispensable | Aucun. | « Remboursements en attente » | oui |
 | `PARTNER_REGISTERED_ACK` | Création du dossier partenaire | La partenaire | cloche, email | indispensable | Aucun. | « Inscription reçue » | oui |
 | `PARTNER_VALIDATED` | Dossier validé, depuis en attente ou refusé | La partenaire | SMS, cloche, email | indispensable | « Event Village : votre compte partenaire Sabar Events est validé. Connectez-vous : https://eventvillage.sn/login » (111 caractères, 1 segment) | « Compte partenaire validé » | oui |
 | `PARTNER_REJECTED` | Dossier refusé, avec motif | La partenaire | SMS, cloche, email | indispensable | « Event Village : votre demande de compte partenaire n'est pas acceptée. Motif : Pièce d'identité illisible. » (106 caractères, 1 segment) | « Demande refusée » | oui |
-| `PARTNER_SUSPENDED` | Dossier suspendu, avec motif, par la route sans écran | La partenaire | SMS, cloche, email | indispensable | « Event Village : votre compte partenaire est suspendu. Motif : Signalements de fraude en cours d'examen. Contactez le support. » (125 caractères, 1 segment) | « Compte suspendu » | oui |
-| `PARTNER_REACTIVATED` | Dossier revalidé depuis suspendu, par la route sans écran | La partenaire | SMS, cloche, email | indispensable | « Event Village : votre compte partenaire est réactivé. Connectez-vous : https://eventvillage.sn/login » (100 caractères, 1 segment) | « Compte réactivé » | oui |
-| `TRIAL_STARTED` | Première activation de la période d'essai | La partenaire | SMS, cloche | indispensable | « Event Village : votre période d'essai de 60 jours commence aujourd'hui. Bienvenue ! » (83 caractères, 1 segment) | « Période d'essai activée » | non |
-| `SUBSCRIPTION_ACTIVATED` | Changement de formule | La partenaire | cloche | indispensable | Aucun. | « Abonnement activé » | non |
-| `PAYMENT_SUCCESS` | Paiement réussi hors billetterie | Le client du paiement | cloche | indispensable | Aucun. | « Paiement confirmé » | non |
-| `HALL_RESERVATION_REQUESTED` | Réservation de salle créée, service fermé par défaut | Le partenaire de la salle | cloche | indispensable | Aucun. | « Nouvelle demande de réservation » | non |
-| `HALL_RESERVATION_CONFIRMED` | Réservation de salle confirmée, service fermé par défaut | Le client | cloche | indispensable | Aucun. | « Réservation confirmée » | non |
-| `HALL_RESERVATION_CANCELLED` | Réservation de salle annulée, service fermé par défaut | Le client et le partenaire | cloche | indispensable | Aucun. | « Réservation annulée » | non |
-| `PROMOTION_DECIDED` | Décision sur une mise en avant, sans écran | La partenaire | cloche | indispensable | Aucun. | « Mise en avant acceptée » | non |
-| `CONTROLLER_ASSIGNED` | Affectation à un événement | Le contrôleur | SMS, cloche, push | indispensable | « Event Village : affectation à l'entrée de Gala de la Teranga, sam. 14 nov. à 20:00, point Porte Nord, et 1 autre. https://eventvillage.sn/login » (143 caractères, 1 segment) | « Nouvelle affectation » | non |
-| `CONTROLLER_UNASSIGNED` | Retrait d'une affectation | Le contrôleur | SMS, cloche, push | indispensable | « Event Village : votre affectation à l'entrée de Gala de la Teranga est retirée, et 1 autre. » (91 caractères, 1 segment) | « Affectation retirée » | non |
-| `CONTROLLER_REMINDER` | Tâche des rappels, la veille à 18 h | Chaque contrôleur affecté à l'échéance | SMS, cloche, push | optionnel | « Event Village : demain Gala de la Teranga à 20:00, point Porte Nord, espèces autorisées. Connexion : https://eventvillage.sn/login » (130 caractères, 1 segment) | « Contrôle demain » | non |
-| `SHIFT_CLOSED_BY_OTHER` | Caisse fermée par la partenaire ou un admin, par la route sans écran | Le contrôleur de la caisse | cloche, push | indispensable | Aucun. | « Caisse fermée » | non |
-| `CONTROLLER_ACTIVATED` | Activation du compte | Le contrôleur | SMS, cloche | indispensable | « Event Village : votre compte est activé. Vous pouvez vous connecter et scanner les billets. » (91 caractères, 1 segment) | « Compte activé » | non |
+| `PARTNER_SUSPENDED` | Dossier suspendu, avec motif ; depuis le lot 9 bis depuis la fiche partenaire (étape 2.9) | La partenaire | SMS, cloche, email | indispensable | « Event Village : votre compte partenaire est suspendu. Motif : Signalements de fraude en cours d'examen. Contactez le support. » (125 caractères, 1 segment) | « Compte suspendu » | oui |
+| `PARTNER_REACTIVATED` | Dossier revalidé depuis suspendu ; depuis le lot 9 bis depuis la fiche partenaire (étape 2.10) | La partenaire | SMS, cloche, email | indispensable | « Event Village : votre compte partenaire est réactivé. Connectez-vous : https://eventvillage.sn/login » (100 caractères, 1 segment) | « Compte réactivé » | oui |
+| `TRIAL_STARTED` | Première activation de la période d'essai | La partenaire | cloche, email | indispensable | Aucun. | « Période d'essai activée » | oui |
+| `SUBSCRIPTION_ACTIVATED` | Changement de formule | La partenaire | cloche, email | indispensable | Aucun. | « Abonnement activé » | oui |
+| `PAYMENT_SUCCESS` | Paiement réussi hors billetterie | Le client du paiement | cloche, email | indispensable | Aucun. | « Paiement confirmé » | oui |
+| `HALL_RESERVATION_REQUESTED` | Réservation de salle créée, service fermé par défaut | Le partenaire de la salle | cloche, email | indispensable | Aucun. | « Nouvelle demande de réservation » | oui |
+| `HALL_RESERVATION_CONFIRMED` | Réservation de salle confirmée, service fermé par défaut | Le client | cloche, email | indispensable | Aucun. | « Réservation confirmée » | oui |
+| `HALL_RESERVATION_CANCELLED` | Réservation de salle annulée, service fermé par défaut | Le client et le partenaire | cloche, email | indispensable | Aucun. | « Réservation annulée » | oui |
+| `PROMOTION_DECIDED` | Décision sur une mise en avant, sans écran | La partenaire | cloche, email | indispensable | Aucun. | « Mise en avant acceptée » | oui |
+| `CONTROLLER_ASSIGNED` | Affectation à un événement | Le contrôleur | SMS, cloche, push, email | indispensable | « Event Village : affectation à l'entrée de Gala de la Teranga, sam. 14 nov. à 20:00, point Porte Nord, et 1 autre. https://eventvillage.sn/login » (143 caractères, 1 segment) | « Nouvelle affectation » | oui |
+| `CONTROLLER_UNASSIGNED` | Retrait d'une affectation | Le contrôleur | SMS, cloche, push, email | indispensable | « Event Village : votre affectation à l'entrée de Gala de la Teranga est retirée, et 1 autre. » (91 caractères, 1 segment) | « Affectation retirée » | oui |
+| `CONTROLLER_REMINDER` | Tâche des rappels, la veille à 18 h | Chaque contrôleur affecté à l'échéance | SMS, cloche, push, email | optionnel | « Event Village : demain Gala de la Teranga à 20:00, point Porte Nord, espèces autorisées. Connexion : https://eventvillage.sn/login » (130 caractères, 1 segment) | « Contrôle demain » | oui |
+| `SHIFT_CLOSED_BY_OTHER` | Caisse fermée par la partenaire ou un admin ; depuis le lot 9 bis par « Fermer cette caisse » (étape 11.6) | Le contrôleur de la caisse | cloche, push, email | indispensable | Aucun. | « Caisse fermée » | oui |
+| `CONTROLLER_ACTIVATED` | Activation du compte | Le contrôleur | SMS, cloche, email | indispensable | « Event Village : votre compte est activé. Vous pouvez vous connecter et scanner les billets. » (91 caractères, 1 segment) | « Compte activé » | oui |
 | `ADMIN_EVENT_SUBMITTED` | Événement soumis à la validation | Admins avec events.read et tout SUPERADMIN | cloche, push, email | indispensable | Aucun. | « Événement à valider » | oui |
 | `ADMIN_PARTNER_REGISTERED` | Création du dossier partenaire | Admins avec partners.read et tout SUPERADMIN | cloche, push, email | indispensable | Aucun. | « Nouvelle candidature » | oui |
 | `ADMIN_REFUND_TO_RETRY` | Remboursement bloqué ou refusé | Admins avec refunds.manage et tout SUPERADMIN | cloche, push, email | indispensable | Aucun. | « Remboursement à reprendre » | oui |
@@ -3714,36 +3726,62 @@ Messages de la file, 66 types. Le texte du SMS est un exemple rempli ; ses modè
 | `ADMIN_CASHOUT_UNCERTAIN` | Versement à l'issue incertaine | Admins avec refunds.manage et tout SUPERADMIN | cloche, push, email | indispensable | Aucun. | « Versement incertain » | oui |
 | `ADMIN_WITHDRAWAL_REJECTED` | Retrait refusé | Admins avec refunds.manage et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Retrait refusé par l'opérateur » | oui |
 | `ADMIN_FINANCE_DEBT` | Créance créée sur un compte | Admins avec payments.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Créance sur un compte » | oui |
-| `ADMIN_NOTIFICATION_FAILED` | Notification en échec après 5 tentatives | Admins avec notifications.read et tout SUPERADMIN | cloche | indispensable | Aucun. | « Envoi en échec » | non |
-| `ADMIN_SMS_DAILY_THRESHOLD` | Aucun émetteur dans le code actuel | Sans objet | cloche, email | indispensable | Aucun. | « Volume de SMS élevé » | oui |
-| `ADMIN_SMS_CAP_GLOBAL` | Plafond global de SMS atteint par un code | Admins avec notifications.read et tout SUPERADMIN | cloche | indispensable | Aucun. | « Plafond de SMS atteint » | non |
-| `ADMIN_SMS_CAP_NON_OTP` | Part hors code du plafond atteinte | Admins avec notifications.read et tout SUPERADMIN | cloche | indispensable | Aucun. | « Quota de SMS hors code atteint » | non |
+| `ADMIN_NOTIFICATION_FAILED` | Notification en échec après 5 tentatives | Admins avec notifications.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Envoi en échec » | oui |
+| `ADMIN_SMS_DAILY_THRESHOLD` | Depuis le lot 9 bis : SMS indispensables du jour au-delà du seuil réglé, une fois par jour | Admins avec notifications.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Volume de SMS indispensables élevé » | oui |
+| `ADMIN_SMS_CAP_GLOBAL` | Plafond global de SMS atteint par un code | Admins avec notifications.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Plafond de SMS atteint » | oui |
+| `ADMIN_SMS_CAP_NON_OTP` | Part hors code du plafond atteinte | Admins avec notifications.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Quota de SMS hors code atteint » | oui |
 | `ADMIN_SMS_OPTIONAL_80` | 80 % du budget des SMS optionnels atteint | Admins avec notifications.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « SMS optionnels : 80 % du plafond » | oui |
 | `ADMIN_SMS_FORECAST` | Rappels SMS de demain au-delà du budget restant | Admins avec notifications.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Budget SMS de demain insuffisant » | oui |
+| `PAYMENT_REFUND_STARTED` | Paiement passé en remboursement sans billet émis (panier impossible, doublon) (depuis le lot 9 bis) | Le client du paiement | SMS, cloche, push, email | indispensable | « Event Village : paiement de 10 200 F CFA ("Gala de la Teranga") sans billet possible : il vous est remboursé sur votre compte Wave. » (131 caractères, 1 segment) | « Remboursement de votre paiement » | oui |
+| `REFUND_DELAYED` | Versement de remboursement bloqué, refusé, incertain ou en retard de plus de 30 minutes, une fois (depuis le lot 9 bis) | Le client du paiement | SMS, cloche, push, email | indispensable | « Event Village : remboursement de 10 200 F CFA retardé ("Gala de la Teranga"). L'équipe Event Village s'en occupe, aucune action de votre part. » (142 caractères, 1 segment) | « Remboursement retardé » | oui |
+| `WITHDRAWAL_DELAYED` | Versement d'un retrait bloqué, refusé, incertain ou en retard de plus de 30 minutes, une fois (depuis le lot 9 bis) | Le bénéficiaire du retrait | SMS, cloche, push, email | indispensable | « Event Village : votre retrait de 25 000 F CFA est retardé. L'équipe Event Village s'en occupe, aucune action de votre part. » (123 caractères, 1 segment) | « Retrait retardé » | oui |
+| `ADMIN_CASHOUT_TO_RESUME` | Versement entré dans « Versements à reprendre » (depuis le lot 9 bis) | Admins avec refunds.manage et tout SUPERADMIN | cloche, push, email | indispensable | Aucun. | « Versement à reprendre » | oui |
+| `ADMIN_PARTNER_RESUBMITTED` | Dossier refusé complété par la partenaire (étape 2.8) (depuis le lot 9 bis) | Admins avec partners.read et tout SUPERADMIN | cloche, push, email | indispensable | Aucun. | « Dossier complété » | oui |
+| `EVENT_SUBMITTED_ACK` | Événement soumis à la validation (étape 3.9) (depuis le lot 9 bis) | La partenaire | cloche, email | indispensable | Aucun. | « Événement envoyé en validation » | oui |
+| `ADMIN_EVENT_CHANGED` | Affiche, titre, date, lieu ou catégorie changés après validation (chapitre 5) (depuis le lot 9 bis) | Admins avec events.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Événement modifié après validation » | oui |
+| `CONTROLLER_EVENT_CHANGED` | Changement de date ou de lieu d'un événement contrôlé, regroupé à 10 minutes (étape 5.4) (depuis le lot 9 bis) | Chaque contrôleur affecté | SMS, cloche, email | indispensable | « Event Village : affectation à l'entrée de Gala de la Teranga : nouvelle date sam. 21 nov. à 21:00. https://eventvillage.sn/login » (128 caractères, 1 segment) | « Contrôle modifié » | oui |
+| `CONTROLLER_EVENT_STATUS` | Suspension ou reprise d'un événement contrôlé, par l'admin ou par la cascade de la partenaire (étapes 2.9, 13.1) (depuis le lot 9 bis) | Chaque contrôleur affecté | cloche, email | indispensable | Aucun. | « Événement suspendu » | oui |
+| `CONTROLLER_INVITATION` | Invitation d'un compte existant à contrôler, valable 72 heures (étape 6.3) (depuis le lot 9 bis) | Le compte invité | SMS, cloche, push, email | indispensable | « Event Village : Sabar Events vous invite à scanner les billets de Gala de la Teranga, et 1 autre. Répondez sur https://eventvillage.sn/invitations » (146 caractères, 1 segment) | « Invitation de Sabar Events » | oui |
+| `TRANSFER_DECLINED_SENDER` | Transfert refusé par son destinataire (étape 8.3) (depuis le lot 9 bis) | L'expéditeur | cloche, push, email | indispensable | Aucun. | « Billet refusé » | oui |
+| `TRANSFER_RECIPIENT_CHANGED` | Changement de numéro du destinataire d'un transfert en attente (étape 17.4) (depuis le lot 9 bis) | L'expéditeur | cloche, push, email | indispensable | Aucun. | « Transfert annulé » | oui |
+| `TRANSFER_REVOKED` | Remboursement d'un billet dont un transfert était en attente (étape 15.5) (depuis le lot 9 bis) | Le numéro destinataire du transfert, et son compte vérifié | SMS, cloche, push, email | indispensable | « Event Village : le billet Gala de la Teranga qui vous était transféré a été remboursé à son acheteur. Le transfert est annulé. » (126 caractères, 1 segment) | « Transfert annulé » | oui |
+| `TICKET_CANCELLED` | Billet gratuit, invitation ou billet payé en espèces annulé par un remboursement, ou invitation annulée (étapes 8.12, 15.3, 15.4) (depuis le lot 9 bis) | Le détenteur, ou le numéro d'une invitation non réclamée | SMS, cloche, email | indispensable | « Event Village : votre invitation pour Gala de la Teranga du sam. 14 nov. à 20:00 est annulée par l'organisateur. » (112 caractères, 1 segment) | « Invitation annulée » | oui |
+| `EVENT_CANCELLED_BY_ADMIN` | Annulation de l'événement par un admin (étape 14.5) (depuis le lot 9 bis) | La partenaire | SMS, cloche, email | indispensable | « Event Village : Gala de la Teranga annulé par l'administration. Motif : Intempéries annoncées sur Dakar. https://eventvillage.sn/partner/events » (143 caractères, 1 segment) | « Événement annulé par l'administration » | oui |
+| `ADMIN_EVENT_CANCELLED` | Annulation de l'événement par la partenaire (étape 14.5) (depuis le lot 9 bis) | Admins avec events.read et tout SUPERADMIN | cloche, email | indispensable | Aucun. | « Événement annulé par l'organisateur » | oui |
+| `CONTROLLER_EVENT_CANCELLED` | Annulation d'un événement contrôlé (étape 14.5) (depuis le lot 9 bis) | Chaque contrôleur affecté | SMS, cloche, email | indispensable | « Event Village : Gala de la Teranga du sam. 14 nov. à 20:00 est annulé. Votre affectation à l'entrée est retirée. » (112 caractères, 1 segment) | « Contrôle annulé » | oui |
+| `EVENT_CLOSED_HOLDER` | Événement suspendu clos par l'admin après sa fin (étape 13.4) (depuis le lot 9 bis) | Chaque compte détenteur d'un billet valable ou utilisé | SMS, cloche, push, email | indispensable | « Event Village : Gala de la Teranga est clos après sa suspension, sans annulation ni remboursement automatique. https://eventvillage.sn/tickets » (142 caractères, 1 segment) | « Événement clos » | oui |
+| `EVENT_CLOSED_BY_ADMIN` | Événement suspendu clos par l'admin après sa fin (étape 13.4) (depuis le lot 9 bis) | La partenaire | SMS, cloche, push, email | indispensable | « Event Village : Gala de la Teranga est clos par l'équipe Event Village après sa suspension. Motif : Organisateur injoignable. » (125 caractères, 1 segment) | « Événement clos par l'administration » | oui |
+| `EVENT_FINISHED` | Passage à « Terminé », aucune caisse ouverte (étape 16.1) (depuis le lot 9 bis) | La partenaire | cloche, email | indispensable | Aucun. | « Événement terminé » | oui |
+| `SHIFT_OPEN_AT_END` | Passage à « Terminé » avec au moins une caisse encore ouverte (étape 16.1) (depuis le lot 9 bis) | La partenaire | SMS, cloche, push, email | indispensable | « Event Village : Gala de la Teranga est terminé et 2 caisses restent ouvertes. Fermez-les dans le pilotage : https://eventvillage.sn/partner/events » (146 caractères, 1 segment) | « Caisse encore ouverte » | oui |
+| `CLOSING_REPORT_READY` | Dernière caisse fermée après la fin (étape 16.1) (depuis le lot 9 bis) | La partenaire | cloche, email | indispensable | Aucun. | « Rapport de clôture prêt » | oui |
+| `FUNDS_AVAILABLE` | Recettes d'un événement devenues disponibles au retrait (étape 16.7) (depuis le lot 9 bis) | La partenaire | cloche, email | indispensable | Aucun. | « Recettes disponibles » | oui |
+| `ACCOUNT_SUSPENDED` | Compte suspendu par un admin, avec motif (étape 17.1) (depuis le lot 9 bis) | Le titulaire du compte, même suspendu | SMS, cloche, email | indispensable | « Event Village : votre compte est suspendu. Motif : Paiements contestés. Vos billets payés restent valables à l'entrée. Contactez le support. » (140 caractères, 1 segment) | « Compte suspendu » | oui |
+| `ACCOUNT_REACTIVATED` | Compte réactivé par un admin (étape 17.1) (depuis le lot 9 bis) | Le titulaire du compte | SMS, cloche, email | indispensable | « Event Village : votre compte est réactivé. Vous pouvez de nouveau vous connecter : https://eventvillage.sn/login » (112 caractères, 1 segment) | « Compte réactivé » | oui |
 
-Messages immédiats, 7 types, envoyés pendant la requête. Pas de relance automatique ni manuelle (`lib/notifications/catalog.ts:1248-1270`). Le numéro `OTP_AUTH_HOOK` est NON VÉRIFIÉ sur le projet hébergé : `supabase/config.toml` n'active pas de hook d'envoi SMS, et ce réglage ne se lit que sur le projet.
+Messages immédiats, 8 types depuis le lot 9 bis (dont l'email de vérification), envoyés pendant la requête. Pas de relance automatique ni manuelle (`lib/notifications/catalog.ts:1621-1629`). Le numéro `OTP_AUTH_HOOK` est NON VÉRIFIÉ sur le projet hébergé : `supabase/config.toml` n'active pas de hook d'envoi SMS, et ce réglage ne se lit que sur le projet.
 
 | Type | Déclencheur | Destinataire | Canaux | Indispensable ou optionnel | Texte exact du SMS (caractères, segments) | Titre dans la cloche | Email |
 |---|---|---|---|---|---|---|---|
 | `OTP_LOGIN` | Connexion par code ; vérification du numéro avant un transfert | Le numéro saisi | SMS | indispensable | « Event Village : votre code de vérification est 483920. Valable 10 minutes. » (74 caractères, 1 segment) | Aucun. | non |
 | `OTP_REGISTER` | Inscription d'un client ou d'un partenaire | Le numéro saisi | SMS | indispensable | « Event Village : votre code de vérification est 483920. Valable 10 minutes. » (74 caractères, 1 segment) | Aucun. | non |
 | `OTP_PASSWORD_RESET` | Mot de passe oublié | Le numéro du compte | SMS | indispensable | « Event Village : votre code de réinitialisation du mot de passe est 483920. Valable 10 minutes. » (94 caractères, 1 segment) | Aucun. | non |
-| `OTP_WITHDRAWAL` | Demande de retrait | Le numéro du compte, jamais un numéro saisi | SMS | indispensable | « Event Village : votre code de vérification est 483920. Valable 10 minutes. » (74 caractères, 1 segment) | Aucun. | non |
+| `OTP_WITHDRAWAL` | Demande de retrait | Le numéro du compte, jamais un numéro saisi | SMS | indispensable | « Event Village : votre code de retrait est 483920. Valable 10 minutes. Ne le donnez à personne. » (94 caractères, 1 segment) | Aucun. | non |
 | `OTP_PHONE_CHANGE` | Changement de numéro | Le nouveau numéro | SMS | indispensable | « Event Village : votre code de vérification est 483920. Valable 10 minutes. » (74 caractères, 1 segment) | Aucun. | non |
 | `OTP_AUTH_HOOK` | Service de codes de l'authentification | Le numéro de l'appel | SMS | indispensable | « Event Village : votre code de vérification est 483920. Valable 10 minutes. » (74 caractères, 1 segment) | Aucun. | non |
-| `CONTROLLER_INVITE` — avec prénom (Ibrahima), URL 23 | Invitation d'un contrôleur sans compte, ou d'un compte pas encore activé | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Ibrahima, vous etes invite comme controleur. Code : 483920 (valable 24h). Activez votre compte : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (183 caractères, 2 segments) | Aucun. | non |
-| `CONTROLLER_INVITE` — sans prénom, URL 23 | Même invitation, sans prénom | Le numéro du contrôleur | SMS | indispensable | « Event Village : Vous etes invite comme controleur. Code : 483920 (valable 24h). Activez votre compte : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (165 caractères, 2 segments) | Aucun. | non |
-| `CONTROLLER_INVITE` — avec prénom (Ibrahima), URL 27 | Même invitation, avec une adresse de 27 caractères | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Ibrahima, vous etes invite comme controleur. Code : 483920 (valable 24h). Activez votre compte : https://app.eventvillage.sn/controller/setup?phone=%2B221771234567 » (187 caractères, 2 segments) | Aucun. | non |
-| `CONTROLLER_INVITE` — prénom hors GSM-7 (Maïmouna) | Même invitation, prénom hors de l'alphabet SMS de base | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Maïmouna, vous etes invite comme controleur. Code : 483920 (valable 24h). Activez votre compte : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (183 caractères, 3 segments) | Aucun. | non |
-| `CONTROLLER_INVITE` — prénom hors GSM-7 (Ousmanê) | Même invitation, prénom hors de l'alphabet SMS de base | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Ousmanê, vous etes invite comme controleur. Code : 483920 (valable 24h). Activez votre compte : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (182 caractères, 3 segments) | Aucun. | non |
+| `CONTROLLER_INVITE` — avec prénom (Ibrahima), URL 23 | Invitation d'un contrôleur sans compte, ou d'un compte pas encore activé | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Ibrahima, code d'activation 483920 (24 h) pour scanner les billets : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (155 caractères, 1 segment) | Aucun. | non |
+| `CONTROLLER_INVITE` — sans prénom, URL 23 | Même invitation, sans prénom | Le numéro du contrôleur | SMS | indispensable | « Event Village : code d'activation 483920 (24 h) pour scanner les billets : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (137 caractères, 1 segment) | Aucun. | non |
+| `CONTROLLER_INVITE` — avec prénom (Ibrahima), URL 27 | Même invitation, avec une adresse de 27 caractères | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Ibrahima, code d'activation 483920 (24 h) pour scanner les billets : https://app.eventvillage.sn/controller/setup?phone=%2B221771234567 » (159 caractères, 1 segment) | Aucun. | non |
+| `CONTROLLER_INVITE` — prénom hors GSM-7 (Maïmouna) | Même invitation, prénom hors de l'alphabet SMS de base | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Maimouna, code d'activation 483920 (24 h) pour scanner les billets : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (155 caractères, 1 segment) | Aucun. | non |
+| `CONTROLLER_INVITE` — prénom hors GSM-7 (Ousmanê) | Même invitation, prénom hors de l'alphabet SMS de base | Le numéro du contrôleur | SMS | indispensable | « Event Village : Bonjour Ousmane, code d'activation 483920 (24 h) pour scanner les billets : https://eventvillage.sn/controller/setup?phone=%2B221771234567 » (154 caractères, 1 segment) | Aucun. | non |
+| `EMAIL_VERIFICATION` | Adresse email saisie ou changée, ou « Renvoyer le lien » (depuis le lot 9 bis) | L'adresse en attente de vérification | email | indispensable | Aucun. | Aucun. | oui, objet « Vérifiez votre adresse email — Event Village », lien valable 24 heures |
 
-Un type n'a aucun émetteur dans le code actuel : `ADMIN_SMS_DAILY_THRESHOLD` (`M/20261105000002_lot7_sms.sql:449`). Aucun SMS ne part hors des deux tableaux ci-dessus.
+Depuis le lot 9 bis, `ADMIN_SMS_DAILY_THRESHOLD` a un émetteur (`M/20261109000009_lot9bis_messages.sql:1313-1334`) : tous les types ont le leur. Les emails partent vers une adresse vérifiée seulement. Aucun SMS ne part hors des deux tableaux ci-dessus.
 
 # Annexe C. Les écrans par rôle
 
 Valeurs : **oui** ; **login** = renvoi à la connexion ; **acc.** = renvoi à l'accueil avec le message d'accès ; **esp.** = renvoi vers son propre espace ; **404** = page introuvable ; **err** = la page s'ouvre, le serveur refuse ou ne trouve rien. Colonnes : V visiteur, C client, P partenaire validée, R contrôleur seul, A admin, S SUPERADMIN.
 
-Une page peut s'ouvrir et rester vide si le serveur refuse : les permissions d'un admin sont lues par le serveur, jamais par la page. Preuve : `middleware.ts:219-223`, `lib/admin/admin-auth.ts:204-210`. Le rendu réel de chaque page est NON VÉRIFIÉ : aucune page n'a été ouverte pour ce document, tout vient de la lecture du code.
+Une page peut s'ouvrir et rester vide si le serveur refuse : les permissions d'un admin sont décidées par le serveur. Depuis le lot 9 bis, la page les lit aussi pour masquer les boutons interdits, et tout refus nomme la permission en français. Preuve : `middleware.ts:219-223`, `lib/admin/admin-auth.ts:70-74`, `lib/admin/permission-labels.ts:34`. Le rendu réel de chaque page est NON VÉRIFIÉ : aucune page n'a été ouverte pour ce document, tout vient de la lecture du code.
 
 Valeurs : **oui** ; **login** = renvoi à la connexion ; **acc.** = renvoi à l'accueil avec le message d'accès ; **esp.** = renvoi vers son propre espace ; **404** = page introuvable ; **err** = la page s'ouvre, l'API refuse ou ne trouve rien (détail en section 2 à 7).
 
@@ -3761,7 +3799,9 @@ Colonnes : V visiteur, C client, P partenaire validé, R contrôleur seul, A ADM
 | `/reset-password` | login sans session de récupération | oui | oui | oui | oui | oui |
 | `/partner/register` | oui | message « Vous êtes déjà connecté » | message « Vous êtes déjà connecté » | message « Vous êtes déjà connecté » | message « Vous êtes déjà connecté » | message « Vous êtes déjà connecté » |
 | `/controller/setup` | oui | acc. | acc. | oui | oui | oui |
+| `/verify-email` (depuis le lot 9 bis) | oui | oui | oui | oui | oui | oui |
 | `/tickets` | login | oui | oui | oui | oui | oui |
+| `/invitations` (depuis le lot 9 bis) | login | oui | oui | oui | oui | oui |
 | `/tickets/claim/{token}` | login | renvoi `/tickets?tab=recus` | renvoi `/tickets?tab=recus` | renvoi `/tickets?tab=recus` | renvoi `/tickets?tab=recus` | renvoi `/tickets?tab=recus` |
 | `/wallet` | login | oui | oui | oui | oui | oui |
 | `/paiement/{id}` | login | oui, son paiement | oui, son paiement | oui, son paiement | oui, son paiement | oui, son paiement |
@@ -3775,7 +3815,7 @@ Colonnes : V visiteur, C client, P partenaire validé, R contrôleur seul, A ADM
 | `/partner`, `/partner/dashboard` | login | acc. | oui | acc. | err | err |
 | `/partner/events` | login | acc. | oui | acc. | err | err |
 | `/partner/events/new`, `/partner/events/{id}/edit` | login | acc. | oui | acc. | err à l'enregistrement | err à l'enregistrement |
-| `/partner/events/{id}` (pilotage) | login | acc. | oui, ses événements | acc. | oui par l'adresse | oui par l'adresse |
+| `/partner/events/{id}` (pilotage) | login | acc. | oui, ses événements | acc. | depuis le lot 9 bis, `events.read`, actions `events.write` | oui par l'adresse |
 | `/partner/events/{id}/team`, `/caisse` | login | acc. | renvoi à l'onglet du pilotage | acc. | acc. | acc. |
 | `/partner/finance` | login | acc. | oui | acc. | oui, soldes nuls | oui, soldes nuls |
 | `/partner/stats`, `/partner/subscription`, `/partner/profile` | login | acc. | oui | acc. | err | err |
@@ -3787,11 +3827,11 @@ Colonnes : V visiteur, C client, P partenaire validé, R contrôleur seul, A ADM
 | `/admin`, `/admin/dashboard` | login | acc. | acc. | acc. | oui, selon permissions | oui |
 | `/admin/events`, `/admin/events/{id}` | login | acc. | acc. | acc. | `events.read` | oui |
 | `/admin/users` | login | acc. | acc. | acc. | `users.read` | oui |
-| `/admin/referral` | login | acc. | acc. | acc. | `users.read` | oui |
+| `/admin/referral` | login | acc. | acc. | acc. | `users.read` ; depuis le lot 9 bis, durée lue avec `referrals.manage` | oui |
 | `/admin/services` | login | acc. | acc. | acc. | `events.read` | oui |
 | `/admin/finance` | login | acc. | acc. | acc. | `payments.read` | oui |
-| `/admin/finance-settings` | login | acc. | acc. | acc. | lecture seule | oui |
-| `/admin/pricing` | login | acc. | acc. | acc. | lecture, écriture `pricing.manage` | oui |
+| `/admin/finance-settings` | login | acc. | acc. | acc. | lecture seule, sans « Modifier » depuis le lot 9 bis | oui |
+| `/admin/pricing` | login | acc. | acc. | acc. | depuis le lot 9 bis, renvoi vers les réglages | oui |
 | `/admin/communications` | login | acc. | acc. | acc. | `communications.manage` | oui |
 | `/admin/notifications`, `/admin/notifications/{id}` | login | acc. | acc. | acc. | `notifications.read` | oui |
 | `/admin/audit` | login | acc. | acc. | acc. | err « Réservé au superadmin » | oui |
@@ -3809,14 +3849,16 @@ Colonnes : V visiteur, C client, P partenaire validé, R contrôleur seul, A ADM
 | `/reset-password` | « Nouveau mot de passe ». Sans session : `/login?error=session_expired` (`app/reset-password/page.tsx:117`, :338) | menu | Essai 8 |
 | `/partner/register` | « Devenir partenaire Event Village », dossier et pièces, écran « Vous êtes déjà connecté » pour un connecté. `app/partner/register/page.tsx:348`, :352-365 | « Se connecter » :552, menu | `e2e/recette.spec.ts:323`. Essai 9 |
 | `/controller/setup` | « Activer votre compte contrôleur », code et mot de passe. Après succès « Compte activé ». `app/controller/setup/page.tsx:155`, :171 | « Mon espace client », « Se connecter » :263 | Essai 29|
+| `/verify-email` | Depuis le lot 9 bis : « Vérifier mon adresse email », ouverte depuis le lien reçu, sans connexion ; « Adresse vérifiée », « Vérification impossible » ou « Vérification interrompue ». `app/verify-email/page.tsx:97-116`, `middleware.ts:65` | menu | Essais 7, 66 |
 | `/billet/hors-ligne` | « Billet hors ligne », QR des billets enregistrés sur le téléphone, page sans coquille, sans donnée serveur. `app/billet/hors-ligne/page.tsx:95` | « Mes billets » seulement si réseau, :87-92 | `e2e/terrain.spec.ts:119`. Essais 26, 32. Guide 11 |
 
 #### Pages de tout compte connecté (client)
 
 | Adresse | Ce que montre la page | Retour | Test, essai |
 |---|---|---|---|
-| `/tickets` | « Mes billets », onglets « À venir », « Tous mes billets », « Historique », « Reçus ». Carte : événement, organisateur, date, heure, lieu, catégorie, numéro, statut, QR, transfert, PDF, partage. Pas de prix (revue critique). `app/tickets/page.tsx:233-236`, :258 ; `components/tickets/TicketCard.tsx:60-85` | menu | `tests/parcours/acces-qr.test.ts:340`. Essais 16, 19, 23, 24, 26, 27, 45, 63 |
+| `/tickets` | « Mes billets », onglets « À venir », « Tous mes billets », « Historique », « Reçus ». Carte : événement, organisateur, date, heure, lieu, catégorie, numéro, statut, QR, transfert, PDF, partage ; depuis le lot 9 bis aussi le prix, les frais de service et l'état de l'événement quand il n'est pas publié (étape 7.15). `app/tickets/page.tsx:233-236`, :258 ; `components/tickets/TicketCard.tsx:60-85` | menu | `tests/parcours/acces-qr.test.ts:340`. Essais 16, 19, 23, 24, 26, 27, 45, 63 |
 | `/tickets/claim/{token}` | Rien : ancienne réclamation par lien, renvoi à `/tickets?tab=recus`. `app/tickets/claim/[token]/page.tsx:12` | | |
+| `/invitations` | Depuis le lot 9 bis : « Invitations à contrôler », invitations d'une partenaire en attente (72 heures), boutons pour accepter ou refuser, fenêtre « Refuser cette invitation ? », « Aucune invitation en attente ». `app/invitations/page.tsx:99-135`, :197 | menu | `tests/parcours/cycle9bis-equipe.test.ts`. Étape 6.3 |
 | `/paiement/{id}` | Page d'attente et de résultat. États « Lien de paiement invalide », « Connexion requise », « Accès refusé », « Paiement introuvable », « Statut momentanément indisponible ». `app/paiement/[id]/page.tsx:664`, :692, :702, :713, :729| boutons de fin, menu | Essais 16, 18, 19. Guide 8.3, 8.4 |
 | `/wallet` | « Portefeuille de parrainage » : soldes, « Votre lien de parrainage », retrait, « Mes retraits », « Historique du compte ». Compte PARRAINAGE seulement (`app/wallet/page.tsx:55`). `app/wallet/page.tsx:516`, :893, :969, :1009 | menu | `tests/parcours/finance-commissions.test.ts:475`. Essais 49, 50 |
 | `/notifications` | « Notifications », filtres par catégorie, marquer lu. `app/notifications/page.tsx:344` | menu | Essais 14, 48 |
@@ -3860,11 +3902,11 @@ Barre du bas d'un compte qui a le rôle contrôleur, hors espace contrôleur : �
 | `/admin/dashboard` | `statistics.read`, `partners.read`, `events.read` | « Tableau de bord » : « À traiter », « Indicateurs » (« Volume des transactions », « Revenu net de la plateforme », « Partenaires validés », « Utilisateurs inscrits »), « Candidatures des partenaires », onglets « En attente », « Validés », « Refusés », « Tous », « Raccourcis ». `app/admin/dashboard/page.tsx:350-353`, :441, :460, :494, :504-528, :586 | menu | `tests/parcours/notif-pros.test.ts:665`. Essai 10 |
 | `/admin/events` | `events.read` | « Événements », 8 onglets par statut, recherche. `app/admin/events/page.tsx:331` | menu | `tests/parcours/admin-evenements.test.ts:346`. Essais 12, 13 |
 | `/admin/events/{id}` | `events.read`, actions `events.write` | Fiche : « Dates et lieu », « Description », « Programme », « Catégories et prix », « Affiche », « Organisateur », « Historique des statuts ». `app/admin/events/[id]/page.tsx:582-705` | « Retour aux événements » | `tests/parcours/admin-evenements.test.ts:464`. Essais 12, 13 |
-| `/admin/users` | `users.read`, écriture `users.write` | « Gestion des Utilisateurs & Permissions RBAC », filtres par rôle, créer un compte, suspendre, supprimer, permissions. `app/admin/users/page.tsx:256`, :300, :458, :728 | chevron vers `/admin/dashboard` :246 | `tests/parcours/securite-admin-lot7.test.ts:177`. Essai 55 |
-| `/admin/referral` | `users.read`, statut SUPERADMIN | « Gestion des Ambassadeurs & Parrainage », compteurs, bascule du statut. `app/admin/referral/page.tsx:118`, :146-157 | chevron :108 | `tests/parcours/admin-parrainage.test.ts:239`. Essai 51 |
+| `/admin/users` | `users.read`, écriture `users.write` ; comptes admin au SUPERADMIN seul depuis le lot 9 bis | « Gestion des Utilisateurs & Permissions RBAC », filtres par rôle, créer un compte, suspendre avec motif, supprimer, permissions ; depuis le lot 9 bis, pour une partenaire, « Voir la fiche partenaire » au lieu de « Suspendre ». `app/admin/users/page.tsx:256`, :300, :458, :500-511, :728 | chevron vers `/admin/dashboard` :246 | `tests/parcours/securite-admin-lot7.test.ts:177`. Essai 55 |
+| `/admin/referral` | `users.read`, statut SUPERADMIN, durée `referrals.manage` | « Gestion des Ambassadeurs & Parrainage », compteurs, bascule du statut ; depuis le lot 9 bis, « Durée du parrainage » lue en base. `app/admin/referral/page.tsx:118`, :146-157, :211-217 | chevron :108 | `tests/parcours/admin-parrainage.test.ts:239`. Essai 51 |
 | `/admin/services` | `events.read` | « Catalogues et services », cinq onglets en lecture. `app/admin/services/page.tsx:31-35`, :281 | « Tableau de bord » | `tests/parcours/admin-services-mention.test.ts:189`. Aucun essai |
-| `/admin/finance` | `payments.read`, relance `refunds.manage` | « Rapprochement financier », synthèse, « Remboursements à reprendre », « Paiements rapprochés », lien « Réglages de la plateforme ». `app/admin/finance/page.tsx:141`, :144, :236 | « Tableau de bord » | `tests/parcours/admin-remboursements.test.ts:180`. Essais 56, 58, 60. Guide 8.11 |
-| `/admin/pricing` | lecture libre, `pricing.manage` | « Tarifs, Packs Partenaires & Monétisation (§117-§126) », trois sections à enregistrer. `app/admin/pricing/page.tsx:114`, :137, :217, :267 | chevron :104 | `tests/parcours/finance-reglages.test.ts:91` (réglages `finance.*` seulement). Aucun essai |
+| `/admin/finance` | `payments.read`, décisions `refunds.manage` | « Rapprochement financier », synthèse ; depuis le lot 9 bis « Frais SamirPay » et « Versements à reprendre », retraits compris, avec « Renvoyer » et « Marquer versé » ; « Paiements rapprochés », lien « Réglages de la plateforme ». `app/admin/finance/page.tsx:174`, :266, `components/admin/RefundsToRetry.tsx:315` | « Tableau de bord » | `tests/parcours/admin-remboursements.test.ts:180`. Essais 56, 58, 60. Guide 8.11 |
+| `/admin/pricing` | aucune | Depuis le lot 9 bis, « Tarification », un seul bandeau « Réglages de la plateforme » et le bouton « Ouvrir les Réglages de la plateforme » ; les trois sections d'avant, qui enregistraient des valeurs que rien ne relisait, sont retirées (R21). `app/admin/pricing/page.tsx:22-39` | « Tableau de bord » :26 | `tests/parcours/finance-reglages.test.ts:91` (réglages `finance.*` seulement). Aucun essai |
 | `/admin/communications` | `communications.manage` | « Campagnes de communication », brouillon seul, « Envoi des campagnes désactivé ». `app/admin/communications/page.tsx:202`, :218 | « Administration » | aucun. Aucun essai |
 | `/admin/notifications` | `notifications.read` | « Notifications », compteurs SMS, onglets de statut, filtres, par jour. `app/admin/notifications/page.tsx:445`, :469-483 | menu | `tests/parcours/notif-admin.test.ts:293`. Essai 54 |
 | `/admin/notifications/{id}` | `notifications.read`, relance `notifications.write` | Détail : « Envoi », « Destinataire », « Décision », « Contenu », « Tentatives ». `app/admin/notifications/[id]/page.tsx:465-519` | lien de retour | Essai 54 |
@@ -3876,9 +3918,9 @@ Barre du bas de l'administration : « Accueil », « Validation », « Comptes �
 | Adresse | Ce que montre la page | Retour | Test, essai |
 |---|---|---|---|
 | `/admin/audit` | « Journal d'Audit Inaltérable & Traçabilité », filtres action et objet, table, détail en JSON. ADMIN : « Réservé au superadmin ». `app/admin/audit/page.tsx:118`, :140, :219-220 | chevron :108 | `tests/parcours/admin-audit-lot9.test.ts:77`. Essai 57 |
-| `/admin/finance-settings` | « Réglages de la plateforme » : finance, contrôle d'accès, notifications, fonctionnalités, avec historique. ADMIN : lecture, enregistrement refusé. `app/admin/finance-settings/page.tsx:245`, :94-97 ; `app/api/admin/finance-settings/route.ts:21`, :46 | « Administration » | `tests/parcours/finance-reglages.test.ts:91`, :159. Essais 52, 53 |
+| `/admin/finance-settings` | « Réglages de la plateforme » : finance, contrôle d'accès, notifications, fonctionnalités, avec historique. ADMIN : lecture, sans « Modifier » depuis le lot 9 bis, enregistrement refusé. `app/admin/finance-settings/page.tsx:300-303` ; `app/api/admin/finance-settings/route.ts:21`, :46 | « Administration » | `tests/parcours/finance-reglages.test.ts:91`, :159. Essais 52, 53 |
 
-Actions réservées au SUPERADMIN sur des pages communes : créer un compte SUPERADMIN (`app/api/admin/users/route.ts:121`), statut Ambassadeur, permissions (`app/api/admin/permissions/route.ts:48`), lien « Journal d’audit » (`AppLayout.tsx:198`, :237).
+Actions réservées au SUPERADMIN sur des pages communes : créer un compte SUPERADMIN (`app/api/admin/users/route.ts:121`), et depuis le lot 9 bis créer, promouvoir, rétrograder ou suspendre tout compte admin (`ADMIN_ROLE_SUPERADMIN_ONLY`), statut Ambassadeur, permissions (`app/api/admin/permissions/route.ts:48`), lien « Journal d’audit » (`AppLayout.tsx:198`, :237).
 
 #### Pages masquées ou hors billetterie
 
@@ -3899,7 +3941,7 @@ L'adresse de support à utiliser réellement est NON VÉRIFIÉ : deux domaines f
 
 # Annexe D. Le coût SMS du scénario
 
-Scénario : un événement, 100 billets payants, 20 gratuits, 5 invitations, 3 transferts, puis une annulation.
+Scénario : un événement, 100 billets payants, 20 gratuits, 5 invitations, 3 transferts, puis une annulation par la partenaire. Recalculé au lot 9 bis sur le catalogue actuel.
 
 **On compte par commande ou par compte, pas par billet.** Le nombre dépend donc de la façon dont les billets sont achetés. Deux hypothèses bornent le résultat. Plafond par commande par défaut : 10 billets (`lib/validations/event.ts:57`).
 
@@ -3916,30 +3958,32 @@ Scénario : un événement, 100 billets payants, 20 gratuits, 5 invitations, 3 t
 | Invitations | `INVITATION_RECEIVED` | 5 | 2 | indispensable | `M/20261108000002_lot9_invitations.sql:478` |
 | Transferts, offre | `TRANSFER_OFFERED` | 3 | 3 | indispensable | `M/20261103000005_lot6_billetterie.sql:149` |
 | Transferts, acceptation | aucun SMS | 0 | 0 | | |
-| Annulation | `EVENT_CANCELLED` | 120 | 33 | indispensable | `M/20261103000005_lot6_billetterie.sql:1297-1303` |
+| Annulation | `EVENT_CANCELLED` | 128 | 35 | indispensable | `M/20261103000005_lot6_billetterie.sql:1297-1303`, `M/20261109000009_lot9bis_messages.sql:242`, `:300` |
 | Remboursements | `REFUND_PAID` | 100 | 25 | indispensable | `M/20261103000006_lot6_pros_admin.sql:410` |
-| **Total** | | **350** | **95** | 349 indispensables + 1 optionnel en H1 | |
+| **Total** | | **358** | **97** | 357 indispensables + 1 optionnel en H1 | |
 
-Annulation H1 : 100 acheteurs + 20 détenteurs gratuits. H2 : 25 + 3 + 5. Les invités sans compte ne reçoivent rien. Tous ces SMS tiennent en un segment avec les données d'exemple.
+Annulation H1, depuis le lot 9 bis : 97 acheteurs qui gardent leur billet, 3 détenteurs par transfert, 3 acheteurs d'origine sans billet (prévenus même sans billet, R13), 20 détenteurs gratuits, 5 numéros d'invitations non réclamées (prévenus par SMS, R12) : 128 (120 avant le lot). H2 : 25 acheteurs, 3 détenteurs par transfert, 5 comptes gratuits, 2 numéros invités : 35 (33 avant). Un compte ne reçoit qu'un SMS d'annulation, même s'il est à la fois acheteur et détenteur. Tous ces SMS tiennent en un segment avec les données d'exemple. Total avant le lot 9 bis : 350 en H1, 95 en H2.
 
 Ajouts selon les cas :
 
 | Cas | H1 | H2 |
 |---|---|---|
-| Invités avec compte vérifié, ou invitation déjà réclamée | + 5 | + 2 |
+| Invités avec compte vérifié, ou invitation déjà réclamée | + 0 depuis le lot 9 bis (déjà comptés : un SMS au compte au lieu du numéro) | + 0 |
+| Annulation par un admin au lieu de la partenaire | + 1 (partenaire) | + 1 |
+| Acheteurs au guichet qui ont laissé leur numéro | + 1 par numéro à l'annulation | + 1 par numéro |
 | Annulation après la veille à 10 h : rappel de la veille | + 100 | + 28 |
 | Annulation après H-3 : rappel de 3 heures | + 0 à + 100 | + 0 à + 28 |
 | Catégorie ou événement complet | + 1 par catégorie, + 1 | + 1 par catégorie, + 1 |
 | Comptes à créer | + 1 code par nouveau compte | + 1 code par nouveau compte |
-| Contrôleurs | invitation sur 2 segments, affectation, activation, mot de passe, rappel | invitation sur 2 segments, affectation, activation, mot de passe, rappel |
+| Contrôleurs | depuis le lot 9 bis : invitation sur 1 segment, affectation, activation (plus d'alerte de mot de passe), rappel, + 1 par contrôleur à l'annulation | les mêmes |
 
-Maximum H1 avec invités ayant un compte et les deux rappels sans push : 350 + 5 + 100 + 100 = **555 SMS**, dont 201 optionnels, sous le budget de 700.
+Maximum H1 avec les deux rappels sans push : 358 + 100 + 100 = **558 SMS**, dont 201 optionnels, sous le budget de 700 SMS optionnels par jour (555 avant le lot 9 bis).
 
-**Sensibilité.** Un seul caractère hors de l'alphabet SMS de base dans le titre fait passer chaque SMS qui le cite sur 2 ou 3 segments. Avec le titre `Gala Teranga 🎉`, H1 passe à **908 segments** pour 350 SMS. Preuve : `lib/notifications/sms-format.ts:74`, `:131`.
+**Sensibilité.** Avant le lot 9 bis, un seul caractère hors de l'alphabet SMS de base dans le titre faisait passer chaque SMS qui le cite sur 2 ou 3 segments : avec le titre `Gala Teranga 🎉`, H1 passait à 908 segments pour 350 SMS. Depuis le lot 9 bis, le titre est translittéré et tout caractère resté hors de l'alphabet de base est retiré : avec ce titre, chaque SMS du scénario tient en 1 segment, soit **358 segments** en H1. Le prénom d'un contrôleur suit la même règle. Preuve : `lib/notifications/sms-format.ts:8`, `:134`.
 
 **Ce qui reste inconnu.**
 
-- Le prix MTarget est NON VÉRIFIÉ : aucun tarif du fournisseur n'est dans le code. La seule valeur, `SMS: { cost: 8, price: 15, margin: 7 }`, est l'état initial d'un formulaire d'administration (`app/admin/pricing/page.tsx:41`) qui n'est jamais lu par l'envoi. À titre d'ordre de grandeur non prouvé, 8 F donneraient 2 800 F pour 350 SMS.
+- Le prix MTarget est NON VÉRIFIÉ : aucun tarif du fournisseur n'est dans le code. Avant le lot 9 bis, la seule valeur, 8 F de coût par SMS, était l'état initial d'un formulaire d'administration jamais lu par l'envoi ; depuis le lot 9 bis ce formulaire est retiré (`app/admin/pricing/page.tsx:22-39`). À titre d'ordre de grandeur non prouvé, 8 F donneraient 2 864 F pour 358 SMS.
 - La facturation par segment ou par message est NON VÉRIFIÉ : le dépôt enregistre le nombre de segments, pas de prix (`lib/notifications/dispatcher.ts:303-308`).
 - Aucun accusé de réception n'existe : un SMS accepté par MTarget compte comme envoyé qu'il arrive ou non.
 - Un SMS à l'issue incertaine est peut-être facturé.
