@@ -63,13 +63,30 @@ export async function GET(request: NextRequest) {
  * Corps validé par le schéma partagé lib/validations/event.ts (.strict() : statut, slug, partenaire,
  * services ou clé inconnue → 400 avec les champs refusés). Le partenaire est dérivé du compte connecté.
  * Réponses : 201 `{ success, event }` ; 400 `{ error, code, field?, fields }` ; 403 ; 409 (doublon, jauge).
+ * Lot 9 bis (R7, B39) : un compte EN_ATTENTE est admis puis refusé 403 PARTNER_NOT_VALIDATED tant que sa fiche n'est
+ * pas validée (avant : ACCOUNT_NOT_ACTIVE, refus muet sur la vraie raison).
  */
 export async function POST(request: NextRequest) {
-    const activeSession = await requireActiveSession(request);
+    const activeSession = await requireActiveSession(request, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
     if (activeSession.response) return activeSession.response;
     const user = activeSession.user;
     if (!serverHasRole(user, 'PARTENAIRE')) {
         return NextResponse.json({ error: 'Seul un organisateur peut créer un événement.', code: 'PARTNER_ROLE_REQUIRED' }, { status: 403 });
+    }
+    const { data: partnerRow, error: partnerErr } = await getServiceRoleClient()
+        .from('partners')
+        .select('status')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    if (partnerErr) {
+        console.error('[API partner/events POST] fiche partenaire :', partnerErr.message);
+        return NextResponse.json({ error: 'Création de l’événement impossible pour le moment.', code: 'EVENT_CREATE_FAILED' }, { status: 500 });
+    }
+    if (!partnerRow || partnerRow.status !== 'VALIDE') {
+        return NextResponse.json({
+            error: 'Votre profil d’organisateur doit être validé avant de créer un événement.',
+            code: 'PARTNER_NOT_VALIDATED',
+        }, { status: 403 });
     }
 
     let body: unknown;

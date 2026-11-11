@@ -9,10 +9,12 @@ export const dynamic = 'force-dynamic';
  * GET /api/partner/dashboard — tableau de bord du partenaire connecté : indicateurs lus au grand livre,
  * événements, activité récente, et (lot 7, contrat 3.8) `onboarding` (étapes de la première utilisation,
  * cochées ici) et `trial` (durée, début, fin de l'essai). Aucun chiffre n'est laissé au navigateur.
- * Réponse : `{ success, dashboard, data }` (`data` : alias historique).
+ * Réponse : `{ success, dashboard, data, partner }` (`data` : alias historique).
+ * Lot 9 bis (R7, B39) : ouvert aussi au compte EN_ATTENTE ; `partner.status` dit l'état du dossier (bandeau « Compte en
+ * cours de vérification » de l'écran).
  */
 export async function GET(req: NextRequest) {
-    const activeSession = await requireActiveSession(req);
+    const activeSession = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
     if (activeSession.response) return activeSession.response;
     const user = activeSession.user;
     if (!user) {
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
         const supabase = getServiceRoleClient();
         const { data: partnerRecord, error: partnerErr } = await supabase
             .from('partners')
-            .select('id')
+            .select('id, status')
             .eq('user_id', user.id)
             .maybeSingle();
         if (partnerErr) {
@@ -36,7 +38,8 @@ export async function GET(req: NextRequest) {
         }
 
         const data = await PartnerDashboardService.getDashboardData(user.id);
-        return NextResponse.json({ success: true, dashboard: data, data }, { headers: { 'Cache-Control': 'no-store' } });
+        const partner = partnerRecord ? { id: partnerRecord.id, status: partnerRecord.status } : null;
+        return NextResponse.json({ success: true, dashboard: data, data, partner }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         if (message === 'PROFIL_PARTENAIRE_INTROUVABLE') {

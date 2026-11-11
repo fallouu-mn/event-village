@@ -110,8 +110,9 @@ function isPartnerImageUrl(url: string, partnerId: string): boolean {
     return segments.length >= 3 && segments[1] === partnerId && !segments.includes('..');
 }
 
+/** GET — lot 9 bis (R7, B39) : ouvert aussi au compte EN_ATTENTE (dossier en cours de vérification). */
 export async function GET(request: NextRequest) {
-    const activeSession = await requireActiveSession(request);
+    const activeSession = await requireActiveSession(request, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
     if (activeSession.response) return activeSession.response;
     const user = activeSession.user;
     if (!serverIsPartner(user)) {
