@@ -226,7 +226,7 @@ const EXPECTED_TRANSITIONS: Array<[EventStatus, EventStatus, 'PARTENAIRE' | 'ADM
     ['PUBLIE', 'ANNULE', 'ADMIN', 'CANCELLATION', null],
     ['VALIDE', 'ANNULE', 'PARTENAIRE', 'CANCELLATION', null],
     ['VALIDE', 'ANNULE', 'ADMIN', 'CANCELLATION', null],
-    ['SUSPENDU', 'ANNULE', 'PARTENAIRE', 'CANCELLATION', null],
+    ['SUSPENDU', 'TERMINE', 'ADMIN', 'TRANSITION', true], // lot 9 bis (R3, T41) ; SUSPENDU → ANNULE par la partenaire retiré (R105)
     ['SUSPENDU', 'ANNULE', 'ADMIN', 'CANCELLATION', null],
     ['PUBLIE', 'TERMINE', 'SYSTEM', 'CRON', false],
     ['PUBLIE', 'TERMINE', 'ADMIN', 'TRANSITION', false],
@@ -239,7 +239,7 @@ function transitionKey(from: string, to: string, actor: string, channel: string)
 }
 
 describe('5.2 Table de transitions (event_status_transitions)', () => {
-    test('liste exacte de 5.2 : 16 couples (ancien, nouveau, rôle, canal), motif obligatoire pour le refus et la suspension', async () => {
+    test('liste exacte de 5.2 : 16 couples (ancien, nouveau, rôle, canal), motif obligatoire pour le refus, la suspension et la clôture d’un suspendu', async () => {
         const { data, error } = await service.from('event_status_transitions').select('from_status, to_status, actor_kind, reason_required, channel');
         assert.equal(error, null, `event_status_transitions : ${error?.message} (code ${error?.code})`);
         const rows = (data ?? []) as TransitionRow[];
@@ -472,7 +472,7 @@ describe('5.2 Motifs, complétude et dates', () => {
 
         const veille = await inStatus('finiveille', 'VALIDE');
         await shiftEventDates(veille.eventId, { startsInHours: -(hoursSinceDakarMidnight() + 6), durationHours: null });
-        await expectRefused(veille.eventId, owner.userId, 'PUBLIE', 'EVENT_ENDED', 'sans fin, début la veille : fin la veille à 23:59 (D7)');
+        await expectRefused(veille.eventId, owner.userId, 'PUBLIE', 'EVENT_ENDED', 'sans fin, début la veille à 18:00 : fin à début + 6 h, minuit, passée (R16, lot 9 bis)');
     });
 });
 
