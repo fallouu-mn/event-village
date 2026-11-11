@@ -36,6 +36,11 @@
  * compte resté suspendu après un échec est réactivé avant.
  * La suite crée son partenaire, ses événements, son contrôleur, sa caisse, sa commande, son billet, ses
  * clients et son admin.
+ * Lot 9 bis (T24 ; R5, B18, B37) : la suspension par la route suspend en cascade les événements PUBLIE du
+ * partenaire et refuse leur republication par un admin tant qu'il est suspendu ; la bascule de l'événement
+ * d'historique relit donc son statut en base, et un brouillon du partenaire créé par le service produit la ligne
+ * d'historique quand la bascule est refusée PARTNER_SUSPENDED ; la réactivation porte un motif. L'absence de fuite
+ * est vérifiée de la même façon, sur l'événement d'historique et sur chacun de ces brouillons.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -67,7 +72,7 @@ import { assertNotificationInvariants, newAdmin, type TestAdmin } from './notif-
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { createCashOrderTickets, createTimedEvent, newController, openShift, type RouteResult } from './acces-helpers';
-import { assertRpcOk, eventHistory, rpcTransition } from './cycle-helpers';
+import { assertRpcOk, createDraftEvent, eventHistory, eventStatus, rpcTransition } from './cycle-helpers';
 import { jsonRequest } from './helpers';
 
 const SETTLE_MS = 1_500;
@@ -106,6 +111,7 @@ before(async () => {
     ]);
     hiddenCategoryId = ev.categories[HIDDEN_CATEGORY].id;
     historyEvent = await createTimedEvent(partner.partnerId, 'tr-susp-historique', [{ name: 'Standard', price: 2000, total: 10 }], { startsInHours: 72 });
+    historyEventIds.push(historyEvent.eventId);
     live = await createTimedEvent(partner.partnerId, 'tr-susp-controle', [{ name: 'Standard', price: 2000, total: 10 }], { startsInHours: 96 });
     const { data, error } = await service.from('events').select('title').eq('id', live.eventId).single();
     assert.equal(error, null, `titre de l'événement de contrôle : ${error?.message}`);
@@ -372,14 +378,37 @@ async function touchOrder(): Promise<string> {
     return marker;
 }
 
-let historyStatus: 'PUBLIE' | 'SUSPENDU' = 'PUBLIE';
+/**
+ * Événements du partenaire dont l'historique est observé : l'événement d'historique, puis chaque brouillon de
+ * remplacement (lot 9 bis, ci-dessous). Tableau partagé, lu à chaque message par `about` (fuite) : un brouillon
+ * créé pendant la suspension est couvert par l'assertion d'absence comme l'événement d'historique.
+ */
+const historyEventIds: string[] = [];
 
-/** Transition admin PUBLIE ↔ SUSPENDU de l'événement d'historique ; renvoie l'id de la ligne écrite. */
+/**
+ * Lot 9 bis (T24 ; R5, B16, B18) : la suspension de la partenaire suspend en cascade ses événements PUBLIE, et un
+ * admin ne republie pas l'événement d'une partenaire suspendue (PARTNER_SUSPENDED). Le statut est donc relu en base
+ * avant la bascule (plus de variable locale désynchronisée par la cascade) ; si la bascule est refusée
+ * PARTNER_SUSPENDED, un brouillon du partenaire créé par le service écrit la ligne d'historique à sa place (CREATION,
+ * trigger events_log_creation), sur la même table et pour un événement du même partenaire.
+ */
+async function draftHistoryRow(): Promise<string> {
+    const draft = await createDraftEvent(partner, 'tr-susp-historique-brouillon', [], { startsInHours: 120 });
+    historyEventIds.push(draft.eventId);
+    const rows = await eventHistory(draft.eventId);
+    assert.equal(rows.length, 1, `ligne CREATION du brouillon de remplacement : ${JSON.stringify(rows)}`);
+    assert.equal(rows[0].channel, 'CREATION', JSON.stringify(rows[0]));
+    return rows[0].id;
+}
+
+/** Transition admin PUBLIE ↔ SUSPENDU de l'événement d'historique (ou brouillon de remplacement) ; renvoie l'id de la ligne écrite. */
 async function toggleHistoryEvent(): Promise<string> {
-    const to = historyStatus === 'PUBLIE' ? 'SUSPENDU' : 'PUBLIE';
-    assertRpcOk(await rpcTransition(historyEvent.eventId, adminActor, to, to === 'SUSPENDU' ? 'Suspension de test du lot 6 (temps réel)' : undefined),
-        `transition ${historyStatus} → ${to} de l'événement d'historique`);
-    historyStatus = to;
+    const from = await eventStatus(historyEvent.eventId);
+    assert.ok(from === 'PUBLIE' || from === 'SUSPENDU', `événement d'historique ni PUBLIE ni SUSPENDU : ${from}`);
+    const to = from === 'PUBLIE' ? 'SUSPENDU' : 'PUBLIE';
+    const call = await rpcTransition(historyEvent.eventId, adminActor, to, to === 'SUSPENDU' ? 'Suspension de test du lot 6 (temps réel)' : undefined);
+    if (call.error === null && call.data?.ok === false && call.data.code === 'PARTNER_SUSPENDED') return draftHistoryRow();
+    assertRpcOk(call, `transition ${from} → ${to} de l'événement d'historique`);
     const rows = await eventHistory(historyEvent.eventId);
     const last = rows[rows.length - 1];
     assert.equal(last.new_status, to, `dernière ligne d'historique : ${JSON.stringify(last)}`);
@@ -441,8 +470,10 @@ function probes(): Probe[] {
             produce: () => touchShift(shiftId), matches: (e, at) => e.new.id === shiftId && sameInstant(e.new.updated_at, at), leak: about('id', [shiftId]),
         },
         {
-            key: 'event_status_history', target: { table: 'event_status_history', filter: `event_id=eq.${historyEvent.eventId}` }, witness: 'admin',
-            produce: toggleHistoryEvent, matches: (e, id) => e.new.id === id, leak: about('event_id', [historyEvent.eventId]),
+            // Lot 9 bis (T24) : abonnement sans filtre, car un brouillon de remplacement naît après l'abonnement ;
+            // la fuite couvre l'événement d'historique et chacun de ces brouillons (historyEventIds).
+            key: 'event_status_history', target: { table: 'event_status_history' }, witness: 'admin',
+            produce: toggleHistoryEvent, matches: (e, id) => e.new.id === id, leak: about('event_id', historyEventIds),
         },
         {
             key: 'tickets', target: { table: 'tickets', filter: `event_id=eq.${ev.eventId}` }, witness: 'admin',
@@ -546,7 +577,8 @@ describe('6.0 a — partenaire suspendu par la route : plus aucun message en tem
 
     test('réactivé (SUSPENDU → VALIDE par la même route) : un nouveau client reçoit chacune des huit tables', async () => {
         assert.ok(initial, 'précondition non établie : le premier test (abonnement du partenaire actif) a échoué');
-        const res = await setPartnerStatus('VALIDE');
+        // Lot 9 bis (T24, B37) : la réactivation SUSPENDU → VALIDE exige désormais un motif.
+        const res = await setPartnerStatus('VALIDE', 'Réactivation de test du lot 9 bis (temps réel)');
         assert.equal(res.status, 200, `réactivation du partenaire : ${show(res)}`);
         assert.equal(await partnerStatus(partner.partnerId), 'VALIDE', 'fiche partenaire réactivée');
         assert.equal(await userStatus(partner.userId), 'ACTIF', 'compte du partenaire réactivé');
