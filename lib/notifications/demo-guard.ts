@@ -65,7 +65,7 @@ export async function demoBlockedKeys(probes: readonly DemoProbe[]): Promise<Dem
                 console.error(`[demo-guard] garde des comptes de démonstration indisponible : ${chunk.detail}`);
                 return chunk;
             }
-            for (const key of chunk.blocked) blocked.add(key);
+            chunk.blocked.forEach((key) => blocked.add(key));
         }
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
