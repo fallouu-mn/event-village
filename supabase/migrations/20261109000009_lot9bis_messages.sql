@@ -34,6 +34,12 @@
 -- avant la révocation) ; à l'annulation, le destinataire d'un transfert en attente révoqué reçoit EVENT_CANCELLED par
 -- SMS (numéro seul, NONE). Les branches gratuit et espèces de ticket_refund_request sont à S-A (fix(9b.34-SA), M06) ;
 -- admin_user_status_set (R59) à S-B (M04).
+-- Tâche 35 (R24) : décision, aucun code (EMAIL réglable des types *_HOLDER posé par M03).
+-- Tâche 36 (R18, R95, B76) : ADMIN_EVENT_CHANGED aux admins events.read par deux triggers nouveaux, sans recopie de
+-- event_update ni de ticket_category_create : trg_events_admin_change_alert (titre, affiche, lieu, ville, adresse,
+-- dates et heures distincts sur un événement VALIDE, PUBLIE ou SUSPENDU ; clé par transaction) et
+-- trg_ticket_categories_admin_alert (catégorie ajoutée à un tel événement) ; EVENT_SUBMITTED_ACK à la soumission.
+-- Verrous : lectures sans verrou de partners et events, boîte d'envoi en dernier (3.3).
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -51,6 +57,7 @@
 -- Tâche 33 : ANNULE → propriétaire (annulation admin) ou admins events.read (annulation partenaire), contrôleurs ;
 -- PUBLIE ↔ SUSPENDU → contrôleurs (in-app).
 -- Tâche 34 : ANNULE → destinataires des transferts en attente révoqués (numéro seul, NONE).
+-- Tâche 36 : BROUILLON → EN_ATTENTE → accusé EVENT_SUBMITTED_ACK à la propriétaire.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -86,6 +93,12 @@ BEGIN
         PERFORM public.notif_enqueue_admins(jsonb_build_object(
             'type', 'ADMIN_EVENT_SUBMITTED', 'ref', NEW.id::text, 'event_id', NEW.event_id,
             'data', v_data || jsonb_strip_nulls(jsonb_build_object('company', v_company))));
+        -- Lot 9 bis (R95, B76) : accusé de soumission à la propriétaire
+        IF v_owner IS NOT NULL THEN
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'EVENT_SUBMITTED_ACK', 'key', 'EVENT_SUBMITTED_ACK:' || NEW.id::text,
+                'user_id', v_owner, 'event_id', NEW.event_id, 'data', v_data));
+        END IF;
 
     ELSIF v_old = 'EN_ATTENTE' AND v_new = 'BROUILLON' AND NEW.actor_role = 'ADMIN' THEN
         IF v_owner IS NOT NULL THEN
@@ -911,3 +924,103 @@ $$;
 
 REVOKE ALL ON FUNCTION public.ticket_invitation_cancel(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ticket_invitation_cancel(jsonb) TO service_role;
+
+
+-- ============================================================================
+-- 5. notif_events_admin_change_alert (nouvelle, trigger trg_events_admin_change_alert) — tâche 36 (R18, B76)
+-- Après validation (VALIDE, PUBLIE, SUSPENDU), un titre, une affiche, un lieu (lieu, ville, adresse) ou une date
+-- (début, fin) réellement changés : ADMIN_EVENT_CHANGED aux admins events.read (in-app, email), données `changes`
+-- (TITLE, POSTER, PLACE, DATE), ancien titre, société. Clé ADMIN_EVENT_CHANGED:<event>:tx<transaction>:<admin> :
+-- une alerte par enregistrement. Une colonne citée par UPDATE mais inchangée (event_update réécrit toutes les
+-- colonnes) ne compte pas : comparaison OLD / NEW.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.notif_events_admin_change_alert()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_changes text[] := ARRAY[]::text[];
+    v_company text;
+BEGIN
+    IF NEW.status::text NOT IN ('VALIDE', 'PUBLIE', 'SUSPENDU') THEN
+        RETURN NULL;
+    END IF;
+    IF NEW.title IS DISTINCT FROM OLD.title THEN
+        v_changes := array_append(v_changes, 'TITLE');
+    END IF;
+    IF NEW.image_url IS DISTINCT FROM OLD.image_url THEN
+        v_changes := array_append(v_changes, 'POSTER');
+    END IF;
+    IF NEW.location IS DISTINCT FROM OLD.location OR NEW.city IS DISTINCT FROM OLD.city
+       OR NULLIF(btrim(COALESCE(NEW.practical_info->>'address', '')), '') IS DISTINCT FROM NULLIF(btrim(COALESCE(OLD.practical_info->>'address', '')), '') THEN
+        v_changes := array_append(v_changes, 'PLACE');
+    END IF;
+    IF NEW.start_date IS DISTINCT FROM OLD.start_date OR NEW.start_time IS DISTINCT FROM OLD.start_time
+       OR NEW.end_date IS DISTINCT FROM OLD.end_date OR NEW.end_time IS DISTINCT FROM OLD.end_time THEN
+        v_changes := array_append(v_changes, 'DATE');
+    END IF;
+    IF cardinality(v_changes) = 0 THEN
+        RETURN NULL;
+    END IF;
+    SELECT pa.company_name INTO v_company FROM public.partners pa WHERE pa.id = NEW.partner_id;
+    PERFORM public.notif_enqueue_admins(jsonb_build_object(
+        'type', 'ADMIN_EVENT_CHANGED', 'ref', NEW.id::text || ':tx' || txid_current()::text, 'event_id', NEW.id,
+        'data', COALESCE(public.notif_event_data(NEW.id), '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+            'changes', to_jsonb(v_changes),
+            'old_title', CASE WHEN 'TITLE' = ANY (v_changes) THEN OLD.title END,
+            'company', v_company))));
+    RETURN NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notif_events_admin_change_alert() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_events_admin_change_alert ON public.events;
+CREATE TRIGGER trg_events_admin_change_alert
+    AFTER UPDATE OF title, image_url, location, city, practical_info, start_date, start_time, end_date, end_time ON public.events
+    FOR EACH ROW
+    WHEN (NEW.status::text IN ('VALIDE', 'PUBLIE', 'SUSPENDU'))
+    EXECUTE FUNCTION public.notif_events_admin_change_alert();
+
+
+-- ============================================================================
+-- 6. notif_ticket_categories_admin_alert (nouvelle, trigger trg_ticket_categories_admin_alert) — tâche 36 (R18)
+-- Catégorie ajoutée à un événement VALIDE, PUBLIE ou SUSPENDU : ADMIN_EVENT_CHANGED (changes CATEGORY, nom de la
+-- catégorie) aux admins events.read ; clé ADMIN_EVENT_CHANGED:<event>:cat<catégorie>:<admin>. event_create insère
+-- ses catégories sur un BROUILLON : aucune alerte.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.notif_ticket_categories_admin_alert()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_status text;
+    v_company text;
+BEGIN
+    SELECT e.status::text, pa.company_name INTO v_status, v_company
+      FROM public.events e LEFT JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = NEW.event_id;
+    IF v_status IS NULL OR v_status NOT IN ('VALIDE', 'PUBLIE', 'SUSPENDU') THEN
+        RETURN NULL;
+    END IF;
+    PERFORM public.notif_enqueue_admins(jsonb_build_object(
+        'type', 'ADMIN_EVENT_CHANGED', 'ref', NEW.event_id::text || ':cat' || NEW.id::text, 'event_id', NEW.event_id,
+        'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+            'changes', jsonb_build_array('CATEGORY'), 'category', NEW.name, 'company', v_company))));
+    RETURN NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notif_ticket_categories_admin_alert() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_ticket_categories_admin_alert ON public.ticket_categories;
+CREATE TRIGGER trg_ticket_categories_admin_alert
+    AFTER INSERT ON public.ticket_categories
+    FOR EACH ROW
+    EXECUTE FUNCTION public.notif_ticket_categories_admin_alert();
