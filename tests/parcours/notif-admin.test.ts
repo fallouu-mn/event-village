@@ -23,7 +23,7 @@
  *    chaque type du registre.
  * Les lignes sont écrites par insertOutboxRow (échéance à J+30 : l'envoyeur ne les prend jamais) et
  * supprimées en fin de suite ; les comptes admin créés sont suspendus en fin de suite (ils ne reçoivent
- * plus d'alertes des suites suivantes).
+ * plus d'alertes des suites suivantes). Lot 9 bis (T32) : motifs EMAIL_NOT_VERIFIED, DEMO_ACCOUNT, DEMO_GUARD_UNAVAILABLE ; refus PERMISSION_MISSING (R51).
  *
  * Rouge avant correctif : app/api/admin/notifications/** , les RPC admin_notifications_list,
  * admin_notification_detail, admin_notifications_stats, notification_retry, la table notification_outbox
@@ -76,7 +76,7 @@ const REASONS = [
     'PUSH_PAYLOAD_TOO_LARGE', 'PUSH_PROVIDER_ERROR', 'TEMPLATE_ERROR', 'SENDING_INTERRUPTED', 'MIGRATED_FAILED',
     'PROVIDER_TIMEOUT', 'PROVIDER_UNREADABLE', 'MIGRATED_WHILE_SENDING',
     // Lot 7 (7.0 a, 7.0 b, T3) : budget des SMS optionnels atteint ; rappel d'un porteur de billets gratuits seulement.
-    'SMS_OPTIONAL_CAP', 'FREE_TICKETS_ONLY',
+    'SMS_OPTIONAL_CAP', 'FREE_TICKETS_ONLY', 'EMAIL_NOT_VERIFIED', 'DEMO_ACCOUNT', 'DEMO_GUARD_UNAVAILABLE', // lot 9 bis (T32 : G.52, I1, 11.2)
 ];
 
 /** Lignes écrites par la suite (supprimées en fin de suite) et comptes admin créés (suspendus en fin de suite). */
@@ -464,7 +464,7 @@ describe('6.8 Permissions notifications.read et notifications.write (L1, L3)', (
             }
         }
         const denied = await list(none.accessToken);
-        assert.match(String(denied.body.error), /Permission manquante : notifications\.read/, `message de refus existant, ${show(denied)}`);
+        assert.deepEqual([denied.body.code, denied.body.permission], ['PERMISSION_MISSING', 'notifications.read'], `lot 9 bis (R51, T32) : code et permission du refus, ${show(denied)}`); assert.match(String(denied.body.error).replace(/[\u00a0\u202f]/g, ' '), /^Action non autorisée : votre compte n['’]a pas la permission « [^»]*[a-zé][^»]* »\.$/, `libellé français, sans code technique (B34), ${show(denied)}`); assert.doesNotMatch(String(denied.body.error), /notifications\.read/, show(denied));
 
         assert.equal((await list(reader.accessToken)).status, 200, 'lecture seule : liste');
         assert.equal((await stats(reader.accessToken)).status, 200, 'lecture seule : statistiques');
