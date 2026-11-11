@@ -33,7 +33,9 @@
 --     UPDATE OF status, blocked_reason, delay_flagged_at.
 --  6. event_cancellation_progress(p jsonb) : recopie intégrale de 20261102000003_lot5_cycle.sql:761-824, même
 --     signature ; ajout du compteur `delayed` { count, total } (remboursements de l'événement présents dans
---     cashouts_to_resume), visible de la propriétaire et des admins (B9).
+--     cashouts_to_resume), visible de la propriétaire et des admins (B9). Tâche 4 (fix(9b.4-SV), R20, B22) : ajout
+--     de `counter_cash` { count, total, refunded_count, refunded_total } (ventes au guichet de l'événement, même
+--     périmètre que event_cash_refunds de M06, marques de event_cash_refund_marks, table de M06).
 --
 -- Tâche 6 (R47, R30, B10, B11 ; H1 pour l'avis) :
 --  5 (suite). notif_cashouts_notify : à la création d'un REFUND (paiement encaissé sans billet possible, ou en
@@ -597,6 +599,7 @@ DECLARE
     a record;
     c record;
     o record;
+    k record;
     v_out jsonb;
 BEGIN
     BEGIN
@@ -642,13 +645,24 @@ BEGIN
       JOIN public.tickets tk ON tk.id = rf.ticket_id
      WHERE tk.event_id = v_event AND rf.settlement = 'ORGANISATEUR';
 
+    -- Lot 9 bis (tâche 4, R20, B22) : ventes au guichet à rendre en espèces par l'organisateur, même périmètre que
+    -- event_cash_refunds (M06) : paiements hors plateforme SUCCESS de l'événement, marques « Remboursé » comptées.
+    SELECT count(*) AS n, COALESCE(sum(pay.amount), 0) AS total,
+           count(m.payment_id) AS rn, COALESCE(sum(pay.amount) FILTER (WHERE m.payment_id IS NOT NULL), 0) AS rtotal
+      INTO k
+      FROM public.payments pay
+      LEFT JOIN public.event_cash_refund_marks m ON m.payment_id = pay.id
+     WHERE pay.event_id = v_event AND NOT pay.is_platform_payment AND pay.payment_target::text = 'TICKET'
+       AND pay.status::text = 'SUCCESS' AND pay.amount > 0;
+
     v_out := jsonb_build_object(
         'ok', true,
         'paid', jsonb_build_object('count', c.paid_n, 'total', c.paid_t),
         'in_progress', jsonb_build_object('count', c.prog_n, 'total', c.prog_t),
         'verifying', jsonb_build_object('count', c.verif_n, 'total', c.verif_t),
         'delayed', jsonb_build_object('count', c.late_n, 'total', c.late_t),
-        'organizer_cash', jsonb_build_object('count', o.n, 'total', o.total));
+        'organizer_cash', jsonb_build_object('count', o.n, 'total', o.total),
+        'counter_cash', jsonb_build_object('count', k.n, 'total', k.total, 'refunded_count', k.rn, 'refunded_total', k.rtotal));
     IF a.is_staff THEN
         v_out := v_out || jsonb_build_object('to_retry', jsonb_build_object('count', c.retry_n, 'total', c.retry_t));
     END IF;
