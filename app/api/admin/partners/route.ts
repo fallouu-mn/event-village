@@ -9,7 +9,9 @@ const PARTNERS_FALLBACK = { message: 'Liste des partenaires momentanément indis
 
 /**
  * GET /api/admin/partners
- * Récupère la liste réelle des partenaires avec leurs activités et informations utilisateur
+ * Récupère la liste réelle des partenaires avec leurs activités et informations utilisateur.
+ * Lot 9 bis (R90, R54, R53) : + `ninea`, `rccm`, `phone_verified` (« Numéro vérifié »), `resubmitted_at` (dossier
+ * complété) et `rejection_reason` (motif d'un refus, gardé après le complément).
  */
 export async function GET(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'partners.read' });
@@ -36,6 +38,11 @@ export async function GET(req: NextRequest) {
                 id_card_url,
                 business_doc_url,
                 is_verified,
+                phone_verified,
+                ninea,
+                rccm,
+                resubmitted_at,
+                rejection_reason,
                 status,
                 created_at,
                 updated_at,

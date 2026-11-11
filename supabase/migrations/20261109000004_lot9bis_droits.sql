@@ -41,6 +41,14 @@
 --     compte partenaire refusé (PARTNER_STATUS_VIA_PARTNER_SHEET), compte admin réservé au SUPERADMIN, motif exigé à
 --     la suspension, sessions révoquées, journal USER_STATUS_SET et avis ACCOUNT_SUSPENDED / ACCOUNT_REACTIVATED dans
 --     la transaction.
+--
+-- Tâche 17 (R53, R54, R90 ; B40 à B42) :
+-- 11. Colonnes partners.ninea et partners.rccm (≤ 40 caractères, facultatives) et partners.resubmitted_at.
+-- 12. partner_register_finalize(jsonb) : base 20261108000001_lot9_securite.sql:637-700, recopie intégrale, signature
+--     et VOLATILE identiques. Changements : appelée après la vérification du code (R53), elle pose
+--     users.phone_verified_at et partners.phone_verified = TRUE, et enregistre ninea et rccm (R90).
+-- 13. partner_dossier_resubmit(p jsonb) (nouvelle) : complément d'un dossier REJETE une seule fois (R54) ; REJETE →
+--     EN_ATTENTE, resubmitted_at, pièces rattachées, motif gardé, ADMIN_PARTNER_RESUBMITTED aux admins partners.read.
 -- ============================================================================
 
 
@@ -496,6 +504,192 @@ $$;
 
 
 -- ============================================================================
+-- Tâche 17 (R53, R54, R90 ; B40 à B42) — 11. Colonnes partners.ninea, partners.rccm, partners.resubmitted_at
+-- ============================================================================
+-- Aucune donnée existante : les contraintes de longueur sont posées valides d'emblée (DROP IF EXISTS puis ADD).
+ALTER TABLE public.partners ADD COLUMN IF NOT EXISTS ninea text;
+ALTER TABLE public.partners ADD COLUMN IF NOT EXISTS rccm text;
+ALTER TABLE public.partners ADD COLUMN IF NOT EXISTS resubmitted_at timestamptz;
+ALTER TABLE public.partners DROP CONSTRAINT IF EXISTS partners_ninea_length_chk;
+ALTER TABLE public.partners ADD CONSTRAINT partners_ninea_length_chk CHECK (ninea IS NULL OR char_length(ninea) <= 40);
+ALTER TABLE public.partners DROP CONSTRAINT IF EXISTS partners_rccm_length_chk;
+ALTER TABLE public.partners ADD CONSTRAINT partners_rccm_length_chk CHECK (rccm IS NULL OR char_length(rccm) <= 40);
+COMMENT ON COLUMN public.partners.ninea IS 'Lot 9 bis (R90) : NINEA déclaré à l’inscription ou au complément du dossier, facultatif.';
+COMMENT ON COLUMN public.partners.rccm IS 'Lot 9 bis (R90) : RCCM déclaré à l’inscription ou au complément du dossier, facultatif.';
+COMMENT ON COLUMN public.partners.resubmitted_at IS 'Lot 9 bis (R54) : date du complément d’un dossier refusé (une seule fois).';
+
+
+-- ============================================================================
+-- Tâche 17 — 12. partner_register_finalize (recopie, 20261108000001_lot9_securite.sql:637-700)
+-- ============================================================================
+-- p : { user_id, first_name, last_name, phone, email, partner: { company_name, commercial_name, description, address,
+--       city, phone, email, id_card_url, business_doc_url, ninea?, rccm? }, activities[], upload_ids[], ip } → { ok,
+--     partner_id } ou { ok:false, code:'INVALID_DOCUMENT_UPLOAD', message }.
+-- Profil, fiche, activités, rattachement des deux pièces et audit vont ensemble : trg_partners_notify part dans la
+-- même transaction, l'accusé n'est émis que si tout est passé. Une pièce consommée entre-temps annule le tout par
+-- le bloc d'exception ; toute autre erreur remonte, et la route retire le compte de connexion.
+-- Lot 9 bis (R53, R90) : la route n'appelle cette fonction qu'après la vérification du code SMS : numéro vérifié
+-- (users.phone_verified_at, partners.phone_verified), NINEA et RCCM enregistrés.
+CREATE OR REPLACE FUNCTION public.partner_register_finalize(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_partner jsonb := p->'partner';
+    v_partner_id uuid;
+    v_activities text[];
+    v_upload_ids uuid[];
+    v_claimed integer;
+BEGIN
+    IF v_user IS NULL OR jsonb_typeof(v_partner) IS DISTINCT FROM 'object'
+       OR jsonb_typeof(p->'activities') IS DISTINCT FROM 'array'
+       OR jsonb_typeof(p->'upload_ids') IS DISTINCT FROM 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Inscription partenaire incomplète.');
+    END IF;
+
+    SELECT COALESCE(array_agg(DISTINCT x ORDER BY x), ARRAY[]::text[]) INTO v_activities
+      FROM jsonb_array_elements_text(p->'activities') AS x;
+    SELECT COALESCE(array_agg(public.try_uuid(x)), ARRAY[]::uuid[]) INTO v_upload_ids
+      FROM jsonb_array_elements_text(p->'upload_ids') AS x;
+
+    BEGIN
+        INSERT INTO public.users (id, first_name, last_name, phone, email, role, status, referral_status, phone_verified_at, updated_at)
+        VALUES (v_user, p->>'first_name', p->>'last_name', p->>'phone', p->>'email',
+                'PARTENAIRE'::public.user_role, 'EN_ATTENTE'::public.user_status, 'STANDARD'::public.referral_status, now(), now())
+        ON CONFLICT (id) DO UPDATE
+           SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, phone = EXCLUDED.phone, email = EXCLUDED.email,
+               role = EXCLUDED.role, status = EXCLUDED.status, referral_status = EXCLUDED.referral_status,
+               phone_verified_at = EXCLUDED.phone_verified_at, updated_at = EXCLUDED.updated_at;
+
+        INSERT INTO public.partners (user_id, company_name, commercial_name, description, address, city, phone, email,
+                                     id_card_url, business_doc_url, status, is_verified, phone_verified, ninea, rccm)
+        VALUES (v_user, v_partner->>'company_name', v_partner->>'commercial_name', v_partner->>'description', v_partner->>'address',
+                v_partner->>'city', v_partner->>'phone', v_partner->>'email', v_partner->>'id_card_url', v_partner->>'business_doc_url',
+                'EN_ATTENTE'::public.partner_status, FALSE, TRUE,
+                NULLIF(btrim(COALESCE(v_partner->>'ninea', '')), ''), NULLIF(btrim(COALESCE(v_partner->>'rccm', '')), ''))
+        RETURNING id INTO v_partner_id;
+
+        INSERT INTO public.partner_activities (partner_id, activity_type, is_active)
+        SELECT v_partner_id, x::public.partner_activity_type, TRUE FROM unnest(v_activities) AS x;
+
+        UPDATE public.partner_document_uploads
+           SET claimed_partner_id = v_partner_id, claimed_at = now()
+         WHERE id = ANY (v_upload_ids) AND claimed_at IS NULL AND expires_at > now();
+        GET DIAGNOSTICS v_claimed = ROW_COUNT;
+        IF v_claimed <> 2 THEN
+            RAISE EXCEPTION USING ERRCODE = 'EV409', MESSAGE = 'Pièces justificatives déjà utilisées ou expirées.';
+        END IF;
+
+        INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value, metadata)
+        VALUES (v_user, 'PARTENAIRE', 'PARTNER_REGISTRATION', 'partners', v_partner_id,
+                jsonb_build_object('company_name', v_partner->>'company_name', 'status', 'EN_ATTENTE', 'activities', to_jsonb(v_activities)),
+                jsonb_build_object('ip', COALESCE(p->>'ip', 'inconnue')));
+    EXCEPTION WHEN SQLSTATE 'EV409' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_DOCUMENT_UPLOAD',
+                                  'message', 'Pièces justificatives déjà utilisées ou expirées : déposez-les à nouveau.');
+    END;
+
+    RETURN jsonb_build_object('ok', true, 'partner_id', v_partner_id);
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 17 — 13. partner_dossier_resubmit (nouvelle)
+-- ============================================================================
+-- Complément d'un dossier refusé, une seule fois (R54, B41). p = { user_id, upload_ids[2], id_card_url,
+-- business_doc_url, ninea?, rccm? } (pièces résolues par la route depuis leurs jetons de dépôt, comme à l'inscription).
+-- Refus sans effet : fiche introuvable → PARTNER_NOT_FOUND ; statut autre que REJETE → DOSSIER_NOT_REJECTED ;
+-- complément déjà fait → RESUBMIT_ALREADY_USED ; pièce consommée ou expirée → INVALID_DOCUMENT_UPLOAD.
+-- Effet : pièces rattachées, chemins des pièces, NINEA et RCCM remplacés s'ils sont fournis, partners.status
+-- EN_ATTENTE (is_verified faux), resubmitted_at posé, users.status EN_ATTENTE (comme à l'inscription), motif du refus
+-- gardé ; journal PARTNER_DOSSIER_RESUBMITTED ; ADMIN_PARTNER_RESUBMITTED aux admins partners.read. Aucun avis à la
+-- partenaire (trg_partners_notify : retour en attente sans avis).
+-- Verrous : partners FOR NO KEY UPDATE → users (UPDATE) → pièces : même ordre que partner_status_set (M06, S-A :
+-- fiche puis compte), pour qu'un refus ou une validation concurrente ne forme aucun cycle ; le tableau 3.3 écrivait
+-- users → partners, écart signalé au rapport.
+CREATE OR REPLACE FUNCTION public.partner_dossier_resubmit(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_upload_ids uuid[];
+    v_ninea text := NULLIF(btrim(COALESCE(p->>'ninea', '')), '');
+    v_rccm text := NULLIF(btrim(COALESCE(p->>'rccm', '')), '');
+    pa record;
+    v_claimed integer;
+BEGIN
+    IF v_user IS NULL OR jsonb_typeof(p->'upload_ids') IS DISTINCT FROM 'array'
+       OR NULLIF(btrim(COALESCE(p->>'id_card_url', '')), '') IS NULL
+       OR NULLIF(btrim(COALESCE(p->>'business_doc_url', '')), '') IS NULL
+       OR char_length(COALESCE(v_ninea, '')) > 40 OR char_length(COALESCE(v_rccm, '')) > 40 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Complément du dossier incomplet.');
+    END IF;
+    SELECT COALESCE(array_agg(public.try_uuid(x)), ARRAY[]::uuid[]) INTO v_upload_ids
+      FROM jsonb_array_elements_text(p->'upload_ids') AS x;
+
+    SELECT pa0.id, pa0.status::text AS status, pa0.resubmitted_at, pa0.company_name
+      INTO pa
+      FROM public.partners pa0
+     WHERE pa0.user_id = v_user
+       FOR NO KEY UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_NOT_FOUND', 'message', 'Profil partenaire introuvable.');
+    END IF;
+    IF pa.status <> 'REJETE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'DOSSIER_NOT_REJECTED', 'message', 'Seul un dossier refusé peut être complété.');
+    END IF;
+    IF pa.resubmitted_at IS NOT NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'RESUBMIT_ALREADY_USED',
+                                  'message', 'Votre dossier a déjà été complété une fois. Contactez le support.');
+    END IF;
+
+    BEGIN
+        UPDATE public.partner_document_uploads
+           SET claimed_partner_id = pa.id, claimed_at = now()
+         WHERE id = ANY (v_upload_ids) AND claimed_at IS NULL AND expires_at > now();
+        GET DIAGNOSTICS v_claimed = ROW_COUNT;
+        IF v_claimed <> 2 THEN
+            RAISE EXCEPTION USING ERRCODE = 'EV409', MESSAGE = 'Pièces justificatives déjà utilisées ou expirées.';
+        END IF;
+
+        UPDATE public.partners
+           SET id_card_url = p->>'id_card_url', business_doc_url = p->>'business_doc_url',
+               ninea = COALESCE(v_ninea, ninea), rccm = COALESCE(v_rccm, rccm),
+               status = 'EN_ATTENTE'::public.partner_status, is_verified = FALSE, resubmitted_at = now()
+         WHERE id = pa.id;
+        UPDATE public.users SET status = 'EN_ATTENTE'::public.user_status, updated_at = now() WHERE id = v_user;
+
+        INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+        VALUES (v_user, 'PARTENAIRE', 'PARTNER_DOSSIER_RESUBMITTED', 'partners', pa.id,
+                jsonb_build_object('status', 'REJETE'), jsonb_build_object('status', 'EN_ATTENTE'),
+                jsonb_build_object('ninea_set', v_ninea IS NOT NULL, 'rccm_set', v_rccm IS NOT NULL));
+
+        PERFORM public.notif_enqueue_admins(jsonb_build_object(
+            'type', 'ADMIN_PARTNER_RESUBMITTED',
+            'ref', pa.id::text,
+            'data', jsonb_build_object('partner_id', pa.id,
+                                       'company', COALESCE(NULLIF(btrim(pa.company_name), ''), 'Un partenaire'))));
+    EXCEPTION WHEN SQLSTATE 'EV409' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_DOCUMENT_UPLOAD',
+                                  'message', 'Pièces justificatives déjà utilisées ou expirées : déposez-les à nouveau.');
+    END;
+
+    RETURN jsonb_build_object('ok', true, 'partner_id', pa.id, 'status', 'EN_ATTENTE',
+                              'message', 'Dossier envoyé : il est de nouveau en cours de vérification.');
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -511,7 +705,9 @@ BEGIN
         'public.participants_export(jsonb)',
         'public.event_controller_set_cash(jsonb)',
         'public.user_roles_set(jsonb)',
-        'public.admin_user_status_set(jsonb)'
+        'public.admin_user_status_set(jsonb)',
+        'public.partner_register_finalize(jsonb)',
+        'public.partner_dossier_resubmit(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

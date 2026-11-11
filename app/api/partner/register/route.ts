@@ -7,7 +7,8 @@ import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { mTargetService } from '@/lib/sms/mtarget.service';
-import { storeOtp } from '@/lib/auth/otp-store';
+import { otpFailureMessage, storeOtp, verifyStoredOtp } from '@/lib/auth/otp-store';
+import { applySessionCookies, serverPasswordSignIn, type SessionCookie } from '@/lib/auth/password-confirm';
 import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
@@ -23,33 +24,43 @@ async function removeIncompleteAccount(supabase: ReturnType<typeof getServiceRol
     if (error) console.error(`[API /api/partner/register] retrait du compte incomplet ${userId} impossible :`, error.message);
 }
 
+/** NINEA et RCCM (R90) : facultatifs, 40 caractères au plus. */
+const REGISTRY_ID_MAX = 40;
+
 /**
- * POST /api/partner/register
- * Inscription complète d'un partenaire avec statut EN_ATTENTE et enregistrement des activités
+ * POST /api/partner/register — inscription d'un partenaire, en deux appels de la même route (lot 9 bis, R53, B40).
+ *  - Appel 1, sans `otpCode` : quota par IP, formulaire, pièces, compte existant (409 avant tout SMS), code SMS au
+ *    numéro. 200 `{ otpSent: true, phone }`. RIEN n'est créé ni annoncé.
+ *  - Appel 2, même corps avec `otpCode` : code vérifié (400 OTP_INVALID sans aucune écriture), puis compte de
+ *    connexion (numéro confirmé), rôle PARTENAIRE, profil, fiche (numéro vérifié, NINEA, RCCM), activités, pièces et
+ *    audit en une transaction (partner_register_finalize), et connexion côté serveur (cookies de session). 201.
+ * Le quota d'inscription ne compte que l'appel qui envoie le SMS (décision D8).
  */
 export async function POST(req: NextRequest) {
     try {
-        // Lot 4.8 : quota par IP en base (PARTNER_REGISTER_PER_IP_HOUR), réservé avant toute lecture du
-        // corps : chaque tentative compte (formulaire invalide, pièces introuvables, compte existant),
-        // l'IP vient de getClientIp (CLIENT_IP_SOURCE, plus de x-forwarded-for brut) et la garde
-        // indisponible refuse (503). Sans IP connue, les appels partagent le compteur « unknown ».
-        const clientIp = getClientIp(req);
-        const quota = await reserveQuota(
-            [{ scope: 'partner_register_ip', bucket: clientIp ?? 'unknown', windowSecs: 3600, max: getServerEnv().PARTNER_REGISTER_PER_IP_HOUR }],
-            'inscription partenaire'
-        );
-        if (!quota.allowed) {
-            return quotaRefusalResponse(quota, {
-                error: 'Trop de tentatives d’inscription depuis cette connexion. Réessayez plus tard.',
-                code: 'PARTNER_REGISTER_RATE_LIMITED',
-            });
-        }
-
         let body: any;
         try {
             body = await req.json();
         } catch {
             return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
+        }
+        const clientIp = getClientIp(req);
+        const otpCode: string | null = typeof body?.otpCode === 'string' ? body.otpCode.trim() : null;
+
+        if (otpCode === null) {
+            // Lot 4.8 : quota par IP en base (PARTNER_REGISTER_PER_IP_HOUR) sur l'appel qui peut envoyer le SMS : chaque
+            // tentative compte (formulaire invalide, pièces introuvables, compte existant) ; garde indisponible → 503.
+            // Sans IP connue, les appels partagent le compteur « unknown ».
+            const quota = await reserveQuota(
+                [{ scope: 'partner_register_ip', bucket: clientIp ?? 'unknown', windowSecs: 3600, max: getServerEnv().PARTNER_REGISTER_PER_IP_HOUR }],
+                'inscription partenaire'
+            );
+            if (!quota.allowed) {
+                return quotaRefusalResponse(quota, {
+                    error: 'Trop de tentatives d’inscription depuis cette connexion. Réessayez plus tard.',
+                    code: 'PARTNER_REGISTER_RATE_LIMITED',
+                });
+            }
         }
 
         const parseResult = RegisterPartnerSchema.safeParse(body);
@@ -61,6 +72,18 @@ export async function POST(req: NextRequest) {
         const data = parseResult.data;
         const normalizedPhone = normalizePhoneNumber(data.phone.trim());
         const effectiveEmail = data.email.trim().toLowerCase();
+        const ninea = data.ninea?.trim() || null;
+        const rccm = data.rccm?.trim() || null;
+        if ((ninea && ninea.length > REGISTRY_ID_MAX) || (rccm && rccm.length > REGISTRY_ID_MAX)) {
+            return NextResponse.json({
+                error: 'Le NINEA et le RCCM font 40 caractères au plus.',
+                code: 'INVALID_FIELD',
+                field: ninea && ninea.length > REGISTRY_ID_MAX ? 'ninea' : 'rccm',
+            }, { status: 400 });
+        }
+        if (otpCode !== null && !/^\d{6}$/.test(otpCode)) {
+            return NextResponse.json({ error: 'Code de vérification incorrect ou expiré.', code: 'OTP_INVALID', field: 'otpCode' }, { status: 400 });
+        }
         const supabase = getServiceRoleClient();
 
         // 0 bis. Lot 1C.2 : pièces rattachées par leurs jetons de dépôt (jamais par un chemin libre).
@@ -80,45 +103,69 @@ export async function POST(req: NextRequest) {
                 { status: 409 }
             );
         }
-        const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: clientIp });
-        if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
+        if (otpCode === null) {
+            // Appel 1 (R53) : code SMS au numéro ; rien n'est créé ni annoncé.
+            const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: clientIp });
+            if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
-        // 1. Générer et envoyer le SMS OTP AVANT toute création de compte
-        const otpCode = randomInt(100000, 1000000).toString();
-        const otpExpiresAt = Date.now() + 10 * 60 * 1000;
+            const sentCode = randomInt(100000, 1000000).toString();
+            const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
-        // Lot 1B.7 : le code est enregistré en base AVANT l'envoi (vérifiable depuis toute instance).
-        let otpId: string;
-        try {
-            otpId = await storeOtp(normalizedPhone, otpCode, new Date(otpExpiresAt), 'REGISTER');
-        } catch (storeErr) {
-            console.error('[API /api/partner/register]', storeErr instanceof Error ? storeErr.message : storeErr);
-            return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
+            // Lot 1B.7 : le code est enregistré en base AVANT l'envoi (vérifiable depuis toute instance).
+            let otpId: string;
+            try {
+                otpId = await storeOtp(normalizedPhone, sentCode, new Date(otpExpiresAt), 'REGISTER');
+            } catch (storeErr) {
+                console.error('[API /api/partner/register]', storeErr instanceof Error ? storeErr.message : storeErr);
+                return NextResponse.json({ error: 'Impossible de préparer le code de vérification. Réessayez.' }, { status: 500 });
+            }
+
+            // L'adaptateur renvoie success:false sans lever : le résultat est contrôlé (lot 1C.9).
+            // Lot 6 (E7) : envoi synchrone journalisé dans la boîte d'envoi, sans le code.
+            const smsResult = await mTargetService.sendOtp(normalizedPhone, sentCode, {
+                reservation: reserved.reservation,
+                purpose: 'REGISTER',
+                log: { type: 'OTP_REGISTER', ref: otpId },
+            });
+            if (!smsResult.success) {
+                console.error('[API /api/partner/register] Échec envoi SMS OTP:', smsResult.error);
+                return NextResponse.json(
+                    { error: 'Impossible d\'envoyer le code de vérification SMS. Vérifiez votre numéro et réessayez.' },
+                    { status: 503 }
+                );
+            }
+            return NextResponse.json({
+                otpSent: true,
+                phone: normalizedPhone,
+                message: `Code envoyé au ${normalizedPhone}. Saisissez-le pour envoyer votre dossier.`,
+            });
         }
 
-        // L'adaptateur renvoie success:false sans lever : le résultat est contrôlé (lot 1C.9).
-        // Lot 6 (E7) : envoi synchrone journalisé dans la boîte d'envoi, sans le code.
-        const smsResult = await mTargetService.sendOtp(normalizedPhone, otpCode, {
-            reservation: reserved.reservation,
-            purpose: 'REGISTER',
-            log: { type: 'OTP_REGISTER', ref: otpId },
-        });
-        if (!smsResult.success) {
-            console.error('[API /api/partner/register] Échec envoi SMS OTP:', smsResult.error);
-            return NextResponse.json(
-                { error: 'Impossible d\'envoyer le code de vérification SMS. Vérifiez votre numéro et réessayez.' },
-                { status: 503 }
-            );
+        // Appel 2 (R53) : code vérifié avant toute écriture (essais limités par code, otp_check, et par numéro). Un refus
+        // ne crée rien.
+        const verifyQuota = await reserveQuota(
+            [{ scope: 'otp_verify_phone', bucket: normalizedPhone, windowSecs: 900, max: getServerEnv().VERIFY_OTP_PER_PHONE_15MIN }],
+            'vérification du code d’inscription partenaire',
+        );
+        if (!verifyQuota.allowed) {
+            return quotaRefusalResponse(verifyQuota, {
+                error: 'Trop de tentatives de vérification pour ce numéro. Réessayez plus tard.',
+                code: 'OTP_VERIFY_RATE_LIMITED',
+            });
+        }
+        const check = await verifyStoredOtp(normalizedPhone, otpCode, 'REGISTER');
+        if (!check.ok) {
+            const { message, status } = otpFailureMessage(check.reason);
+            return NextResponse.json({ error: message, code: 'OTP_INVALID', field: 'otpCode' }, { status });
         }
 
-        // 2. Création de l'utilisateur dans Supabase Auth
-        //    phone_confirm: false → sera confirmé UNIQUEMENT après vérification OTP via /api/auth/verify-otp
+        // 2. Création de l'utilisateur dans Supabase Auth, numéro confirmé : le code vient d'être vérifié.
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
             email: effectiveEmail,
             phone: normalizedPhone,
             password: data.password,
             email_confirm: true,
-            phone_confirm: false,
+            phone_confirm: true,
             user_metadata: {
                 first_name: data.firstName.trim(),
                 last_name: data.lastName.trim(),
@@ -170,6 +217,8 @@ export async function POST(req: NextRequest) {
                     email: effectiveEmail,
                     id_card_url: documents.uploads.id_card.object_path,
                     business_doc_url: documents.uploads.business_doc.object_path,
+                    ninea,
+                    rccm,
                 },
                 activities: data.activities,
                 upload_ids: [documents.uploads.id_card.id, documents.uploads.business_doc.id],
@@ -194,14 +243,31 @@ export async function POST(req: NextRequest) {
 
         const partnerId = outcome.partner_id;
 
-        return NextResponse.json({
+        // 4. Connexion côté serveur (cookies de session, comme POST /api/auth/login) : le dossier est enregistré quoi
+        //    qu'il arrive ; un échec de connexion est journalisé et dit dans la réponse (`signed_in: false`), jamais tu.
+        let signedIn = false;
+        let cookies: SessionCookie[] = [];
+        try {
+            const signIn = await serverPasswordSignIn(req, { email: effectiveEmail }, data.password);
+            if (signIn.ok) {
+                signedIn = true;
+                cookies = signIn.cookies;
+            } else {
+                console.error(`[API /api/partner/register] connexion après l'inscription refusée : ${signIn.reason === 'REFUSED' ? signIn.code : signIn.reason}`);
+            }
+        } catch (signErr) {
+            console.error('[API /api/partner/register] connexion après l’inscription impossible :', signErr instanceof Error ? signErr.message : String(signErr));
+        }
+
+        return applySessionCookies(NextResponse.json({
             success: true,
             partnerId,
             userId,
             phone: normalizedPhone,
-            otpSent: true,
-            message: `Dossier enregistré. Un code SMS de vérification a été envoyé au ${normalizedPhone}.`,
-        });
+            phone_verified: true,
+            signed_in: signedIn,
+            message: 'Dossier envoyé : il est en cours de vérification.',
+        }, { status: 201 }), cookies);
     } catch (err: unknown) {
         return apiFailure('POST /api/partner/register', err, { message: 'Inscription momentanément impossible. Réessayez.', code: 'PARTNER_REGISTER_FAILED' });
     }

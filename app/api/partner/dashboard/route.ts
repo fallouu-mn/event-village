@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * cochées ici) et `trial` (durée, début, fin de l'essai). Aucun chiffre n'est laissé au navigateur.
  * Réponse : `{ success, dashboard, data, partner }` (`data` : alias historique).
  * Lot 9 bis (R7, B39) : ouvert aussi au compte EN_ATTENTE ; `partner.status` dit l'état du dossier (bandeau « Compte en
- * cours de vérification » de l'écran).
+ * cours de vérification » de l'écran) ; `resubmitted_at` et `rejection_reason` pilotent « Compléter mon dossier » (R54).
  */
 export async function GET(req: NextRequest) {
     const activeSession = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
         const supabase = getServiceRoleClient();
         const { data: partnerRecord, error: partnerErr } = await supabase
             .from('partners')
-            .select('id, status')
+            .select('id, status, resubmitted_at, rejection_reason')
             .eq('user_id', user.id)
             .maybeSingle();
         if (partnerErr) {
@@ -38,7 +38,9 @@ export async function GET(req: NextRequest) {
         }
 
         const data = await PartnerDashboardService.getDashboardData(user.id);
-        const partner = partnerRecord ? { id: partnerRecord.id, status: partnerRecord.status } : null;
+        const partner = partnerRecord
+            ? { id: partnerRecord.id, status: partnerRecord.status, resubmitted_at: partnerRecord.resubmitted_at, rejection_reason: partnerRecord.rejection_reason }
+            : null;
         return NextResponse.json({ success: true, dashboard: data, data, partner }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
