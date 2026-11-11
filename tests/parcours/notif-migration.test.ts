@@ -38,6 +38,9 @@
  *    remplace la seconde forme par `pg_temp.event_change_notifications` avant de l'exécuter ;
  *  - méthodes send* conservées dans MTargetService : sendSms, sendNotification (alias,
  *    tests/fondations-lot0.test.ts:51), sendOtp, sendControllerInvite.
+ * Lot 9 bis (T37) : inventaire K1 étendu aux types nouveaux et réémis du lot (contrat 3.2, 11.1, 11.2 M6) : triggers
+ * d'événement, de versement, de catégorie, de caisse ; RPC nouvelles ou recopiées ; EMAIL_VERIFICATION envoyé par
+ * TypeScript. Aucun appel phone/* ni aucune inscription partenaire dans ce fichier (grep) : rien d'autre à adapter.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -394,13 +397,18 @@ const INVENTORY: Insertion[] = [
     {
         k1: 'E1-E5', trigger: { name: 'trg_event_status_notify', table: 'public.event_status_history' },
         types: ['ADMIN_EVENT_SUBMITTED', 'EVENT_REJECTED', 'EVENT_VALIDATED', 'EVENT_PUBLISHED_BY_ADMIN', 'EVENT_SUSPENDED',
-            'EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED', 'EVENT_REACTIVATED_HOLDER', 'EVENT_CANCELLED'],
+            'EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED', 'EVENT_REACTIVATED_HOLDER', 'EVENT_CANCELLED',
+            // Lot 9 bis (T37, contrat 3.2 et 11.1) : une seule recopie de notif_event_status_changed (M09) ; rouge jusqu'à M09.
+            'EVENT_CLOSED_HOLDER', 'EVENT_CLOSED_BY_ADMIN', 'SHIFT_OPEN_AT_END', 'EVENT_CANCELLED_BY_ADMIN', 'ADMIN_EVENT_CANCELLED',
+            'CONTROLLER_EVENT_CANCELLED', 'CONTROLLER_EVENT_STATUS', 'EVENT_SUBMITTED_ACK', 'EVENT_FINISHED'],
     },
-    { k1: 'E7-E8', fn: 'event_update', types: ['EVENT_CHANGED'] },
+    { k1: 'E7-E8', fn: 'event_update', types: ['EVENT_CHANGED', 'CONTROLLER_EVENT_CHANGED'] }, // lot 9 bis (R33, T37)
     {
         k1: 'E6, F1-F7', trigger: { name: 'trg_cashouts_notify', table: 'public.cashouts' },
         types: ['REFUND_REQUESTED', 'REFUND_PAID', 'WITHDRAWAL_PAID', 'WITHDRAWAL_REJECTED', 'WITHDRAWAL_UNCERTAIN',
-            'CANCEL_REFUNDS_DONE', 'CANCEL_REFUNDS_BLOCKED', 'ADMIN_REFUND_TO_RETRY', 'ADMIN_CASHOUT_UNCERTAIN', 'ADMIN_WITHDRAWAL_REJECTED'],
+            'CANCEL_REFUNDS_DONE', 'CANCEL_REFUNDS_BLOCKED', 'ADMIN_REFUND_TO_RETRY', 'ADMIN_CASHOUT_UNCERTAIN', 'ADMIN_WITHDRAWAL_REJECTED',
+            // Lot 9 bis (T37, B11 : un seul émetteur, notif_cashouts_notify, M07).
+            'REFUND_DELAYED', 'WITHDRAWAL_DELAYED', 'ADMIN_CASHOUT_TO_RESUME', 'PAYMENT_REFUND_STARTED'],
     },
     { k1: 'F8', fn: 'fin_alert_superadmins', types: ['ADMIN_FINANCE_DEBT'] },
     { k1: 'F9', trigger: { name: 'trg_payments_other_success', table: 'public.payments' }, types: ['PAYMENT_SUCCESS'] },
@@ -426,16 +434,27 @@ const INVENTORY: Insertion[] = [
     // de notification_outbox_claim (comportement prouvé par notif-envoyeur, « 5 échecs → FAILED + alerte ») ;
     // l'entrée visait notification_outbox_mark, qui ne nomme pas le type (run 61).
     { k1: 'échec', fn: 'notif_failed_alert', types: ['ADMIN_NOTIFICATION_FAILED'] },
-    // Lot 7 (7.0 a, T6, D15) : le seuil notif.sms_daily_alert est remplacé par l'alerte à 80 % du budget optionnel ;
-    // ADMIN_SMS_DAILY_THRESHOLD reste au registre (lignes déjà écrites) sans point d'insertion.
-    { k1: 'seuil', fn: 'notification_daily_checks', types: ['ADMIN_SMS_OPTIONAL_80'] },
+    // Lot 7 (7.0 a, T6, D15) : le seuil notif.sms_daily_alert est remplacé par l'alerte à 80 % du budget optionnel.
+    // Lot 9 bis (R31, R72, T37) : ADMIN_SMS_DAILY_THRESHOLD est de nouveau émis (seuil notif.sms_essential_daily_alert),
+    // FUNDS_AVAILABLE naît au même endroit ; rouge jusqu'à M09.
+    { k1: 'seuil', fn: 'notification_daily_checks', types: ['ADMIN_SMS_OPTIONAL_80', 'ADMIN_SMS_DAILY_THRESHOLD', 'FUNDS_AVAILABLE'] },
     // Lot 9 (T8) : rouges jusqu'aux migrations 20261108000002 (9.0) et 20261108000004 (9.2).
     { k1: '9.0', fn: 'ticket_invitation_create', types: ['INVITATION_RECEIVED'] },
-    { k1: '9.2', fn: 'account_phone_finalize', types: ['PHONE_CHANGED'] },
+    { k1: '9.2', fn: 'account_phone_finalize', types: ['PHONE_CHANGED', 'TRANSFER_RECIPIENT_CHANGED'] }, // lot 9 bis (R63, T37)
+    // Lot 9 bis (T37, contrat 3.2 et 11.1) : points d'insertion des types nouveaux ; rouges jusqu'à leur migration (M04, M06, M08, M09).
+    { k1: '9b.17', fn: 'partner_dossier_resubmit', types: ['ADMIN_PARTNER_RESUBMITTED'] },
+    { k1: '9b.23, 9b.34', fn: 'ticket_refund_request', types: ['TRANSFER_REVOKED', 'TICKET_CANCELLED'] },
+    { k1: '9b.23', fn: 'ticket_transfer_decline', types: ['TRANSFER_DECLINED_SENDER'] },
+    { k1: '9b.26', fn: 'controller_invitation_create', types: ['CONTROLLER_INVITATION'] },
+    { k1: '9b.34', fn: 'ticket_invitation_cancel', types: ['TICKET_CANCELLED'] },
+    { k1: '9b.34', fn: 'admin_user_status_set', types: ['ACCOUNT_SUSPENDED', 'ACCOUNT_REACTIVATED'] },
+    { k1: '9b.36', trigger: { name: 'trg_events_admin_change_alert', table: 'public.events' }, types: ['ADMIN_EVENT_CHANGED'] },
+    { k1: '9b.36', trigger: { name: 'trg_ticket_categories_admin_alert', table: 'public.ticket_categories' }, types: ['ADMIN_EVENT_CHANGED'] },
+    { k1: '9b.37', trigger: { name: 'trg_controller_shifts_report_ready', table: 'public.controller_shifts' }, types: ['CLOSING_REPORT_READY'] },
 ];
 
-/** Types sans point d'insertion SQL littéral : appelés par TypeScript (OTP, invitation, plafond SMS). */
-const TS_TYPES = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK', 'OTP_PHONE_CHANGE', 'CONTROLLER_INVITE', 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP'];
+/** Types sans point d'insertion SQL littéral : appelés par TypeScript (OTP, invitation, plafond SMS ; lot 9 bis : lien de vérification d'email, synchrone, T37). */
+const TS_TYPES = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK', 'OTP_PHONE_CHANGE', 'CONTROLLER_INVITE', 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP', 'EMAIL_VERIFICATION'];
 
 describe('6.7 K1 — inventaire : chaque envoi migré a son type au registre et son point d’insertion en base', () => {
     let registry: Set<string> | null = null;
