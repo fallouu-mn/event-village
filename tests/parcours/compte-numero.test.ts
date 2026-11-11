@@ -989,7 +989,7 @@ describe('Transferts en attente', () => {
         assert.deepEqual(await incomingIds(a), [toNew], 'visible : le transfert vers le numéro désormais prouvé');
         const { data, error } = await service.from('ticket_transfers').select('to_phone_or_email, status').eq('id', toOld).single();
         assert.equal(error, null, `transfert : ${error?.message}`);
-        assert.deepEqual(data, { to_phone_or_email: a.phoneE164, status: 'PENDING' }, 'le transfert visait un numéro : pas de reciblage');
+        assert.deepEqual(data, { to_phone_or_email: a.phoneE164, status: 'CANCELLED' }, 'le transfert visait un numéro : pas de reciblage, et il est annulé au changement de numéro du destinataire (lot 9 bis, R63, T35 : règle changée)');
     });
 });
 
