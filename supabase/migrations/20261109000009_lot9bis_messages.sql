@@ -59,6 +59,9 @@
 --   - tâche 5 (S-A, R32, B23) : event_update écrit event_start_changes (ancien et nouveau début, acteur) à chaque
 --     changement de début, puis met refund_open dans les données EVENT_CHANGED du porteur dont un billet ouvre le
 --     remboursement d'un report (ticket_postponement_refund_open, M06) : variante « report » du SMS et de l'in-app.
+--   - tâche 20 (S-C, R3, B46, X10) : SUSPENDU → TERMINE (clôture par l'administration, ligne de transition de M08) →
+--     EVENT_CLOSED_HOLDER à chaque porteur d'un billet VALIDE ou UTILISE, sans motif ; EVENT_CLOSED_BY_ADMIN à la
+--     propriétaire avec le motif ; dans la transaction de la transition.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -80,6 +83,7 @@
 -- Tâche 37 : PUBLIE → TERMINE sans caisse ouverte → EVENT_FINISHED à la propriétaire.
 -- Tâche 2 (délégation 8.3, pour S-A) : transitions d'une cascade (marqueur ev.partner_cascade) sans
 -- EVENT_SUSPENDED ni EVENT_REACTIVATED à la partenaire ; porteurs et contrôleurs prévenus.
+-- Tâche 20 (délégation, S-C) : SUSPENDU → TERMINE → EVENT_CLOSED_HOLDER aux porteurs, EVENT_CLOSED_BY_ADMIN (motif).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -318,6 +322,25 @@ BEGIN
             PERFORM public.notif_enqueue(jsonb_build_object(
                 'type', 'EVENT_FINISHED', 'key', 'EVENT_FINISHED:' || NEW.event_id::text,
                 'user_id', v_owner, 'event_id', NEW.event_id, 'data', v_data));
+        END IF;
+        -- Lot 9 bis (R3, B46, X10) : un événement suspendu clos par l'administration. Porteurs (billets VALIDE ou
+        -- UTILISE) : EVENT_CLOSED_HOLDER sans motif ; propriétaire : EVENT_CLOSED_BY_ADMIN avec le motif de l'admin.
+        IF v_old = 'SUSPENDU' THEN
+            FOR h IN
+                SELECT DISTINCT t.user_id FROM public.tickets t
+                 WHERE t.event_id = NEW.event_id AND t.user_id IS NOT NULL AND t.status::text IN ('VALIDE', 'UTILISE')
+                 ORDER BY t.user_id
+            LOOP
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'EVENT_CLOSED_HOLDER', 'key', 'EVENT_CLOSED_HOLDER:' || NEW.id::text || ':' || h.user_id::text,
+                    'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data));
+            END LOOP;
+            IF v_owner IS NOT NULL THEN
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'EVENT_CLOSED_BY_ADMIN', 'key', 'EVENT_CLOSED_BY_ADMIN:' || NEW.id::text,
+                    'user_id', v_owner, 'event_id', NEW.event_id,
+                    'data', v_data || jsonb_strip_nulls(jsonb_build_object('reason', NULLIF(btrim(COALESCE(NEW.reason, '')), '')))));
+            END IF;
         END IF;
     END IF;
     RETURN NULL;
