@@ -150,14 +150,17 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 3. Définir le mot de passe définitif via Supabase Auth Admin et verrouiller le statut coquille
-        const { error: pwdErr } = await supabase.auth.admin.updateUserById(profile.id, {
-            password: new_password,
-            user_metadata: {
-                ...(authUser.user_metadata || {}),
-                is_temporary_controller_account: false,
-            },
-        });
+        // 3. Définir le mot de passe définitif via Supabase Auth Admin, puis verrouiller le statut coquille.
+        //    Lot 9 bis (R29, reste S3) : deux appels, le mot de passe d'abord, pendant que le compte est encore marqué
+        //    coquille : le trigger notif_on_password_changed (M09) n'émet pas PASSWORD_CHANGED pour cette activation.
+        //    Un échec du second appel laisse le compte coquille (une nouvelle activation reste possible) et est dit.
+        const { error: pwdErr } = await supabase.auth.admin.updateUserById(profile.id, { password: new_password })
+            .then(async (first) => first.error ? first : supabase.auth.admin.updateUserById(profile.id, {
+                user_metadata: {
+                    ...(authUser.user_metadata || {}),
+                    is_temporary_controller_account: false,
+                },
+            }));
 
         if (pwdErr) {
             console.error(`[controller/setup] updateUserById (code ${otpCheck.id} déjà consommé) :`, pwdErr.message);

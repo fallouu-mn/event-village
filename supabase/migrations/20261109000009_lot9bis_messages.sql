@@ -1616,9 +1616,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = NEW.id) THEN
         RETURN NEW;
     END IF;
-    -- Lot 9 bis (R29) : activation du compte coquille, aucune alerte de sécurité
-    IF COALESCE(OLD.raw_user_meta_data->>'is_temporary_controller_account', '') = 'true'
-       AND COALESCE(NEW.raw_user_meta_data->>'is_temporary_controller_account', '') <> 'true' THEN
+    -- Lot 9 bis (R29) : activation du compte coquille, aucune alerte de sécurité. Reste S3 : GoTrue écrit le mot de
+    -- passe et les métadonnées par deux UPDATE distincts ; le mot de passe est donc posé pendant que le compte est encore
+    -- marqué coquille (POST /api/controller/setup le pose avant de retirer la marque). Seule l'activation donne un mot de
+    -- passe à un compte coquille (création : INSERT, hors de ce trigger) ; toute pose ultérieure reste prévenue.
+    IF COALESCE(OLD.raw_user_meta_data->>'is_temporary_controller_account', '') = 'true' THEN
         RETURN NEW;
     END IF;
     PERFORM public.notif_enqueue(jsonb_build_object(
