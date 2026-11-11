@@ -210,6 +210,8 @@ function ControllerCard({
  * Onglet Équipe (contrat I) : contrôleurs affectés (pilotage_team), point d'entrée, permission espèces
  * modifiable par affectation (PATCH /api/partner/team/assignments/[id], journalisé), invitation, renvoi
  * du SMS et retrait. Lecture seule pour un admin (propriétaire seul).
+ * Lot 9 bis : R97 plus de champ Email (ignoré par la route) ; R37 un compte existant reçoit une invitation qu'il accepte
+ * lui-même, il n'est affecté qu'après.
  */
 export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eventStatus: string; signal: number }) {
     const toast = useToast();
@@ -217,7 +219,6 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
 
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
-    const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
     const [inviteCash, setInviteCash] = useState(false);
     const [phoneError, setPhoneError] = useState<string | undefined>(undefined);
@@ -233,7 +234,6 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
     const resetForm = (): void => {
         setFirstName('');
         setLastName('');
-        setEmail('');
         setPhone('');
         setInviteCash(false);
         setPhoneError(undefined);
@@ -254,7 +254,6 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
                 phone: cleanPhone,
                 first_name: firstName.trim() || 'Contrôleur',
                 last_name: lastName.trim(),
-                email: email.trim() || undefined,
                 can_accept_cash: inviteCash,
             });
             if (res.requires_confirmation && res.existing_user) {
@@ -281,12 +280,12 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
                 can_accept_cash: inviteCash,
                 confirm_promotion: true,
             });
-            toast.success(res.message || 'Rôle de contrôleur attribué.');
+            toast.success(res.message || 'Invitation envoyée : la personne doit l’accepter dans l’application.');
             setExisting(null);
             resetForm();
             await reload();
         } catch (err) {
-            toast.error(errorMessage(err, 'Attribution du rôle impossible pour le moment.'));
+            toast.error(errorMessage(err, 'Invitation impossible pour le moment.'));
         } finally {
             setPromoting(false);
         }
@@ -347,7 +346,6 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
                                 }}
                                 error={phoneError}
                             />
-                            <TextInput label="Email" hint="Facultatif" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={120} />
                         </div>
                         <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-medium text-fg">
                             <input
@@ -414,7 +412,7 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
                             Annuler
                         </Button>
                         <Button variant="primary" onClick={() => void confirmPromotion()} isLoading={promoting} className="flex-1 sm:flex-none">
-                            Attribuer le rôle de contrôleur
+                            Envoyer l’invitation
                         </Button>
                     </>
                 }
@@ -433,7 +431,7 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
                         </dl>
                         {existing.message && <p className="text-fg-muted">{existing.message}</p>}
                         <p className="text-fg-muted">
-                            La personne garde son compte, ses billets et son historique ; elle accède en plus au scanner de cet événement.
+                            La personne garde son compte, ses billets et son historique. Elle reçoit une invitation par SMS et ne contrôle cet événement qu’après l’avoir acceptée dans l’application.
                         </p>
                     </div>
                 )}

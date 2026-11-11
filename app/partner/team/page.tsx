@@ -9,6 +9,11 @@
  *  - Temps réel : les changements de statut des événements (event_status_history) relancent la lecture,
  *    indicateur LiveIndicator.
  *  - Modales sur le système de design (Modal, ConfirmDialog) ; échec de lecture : ErrorState « Réessayer ».
+ *  - Lot 9 bis : R39 état du compte servi (`account_state` : Actif, Activation en attente, Invitation en attente),
+ *    « Renvoyer le SMS » pour un compte en attente d'activation seulement (R38) ; R37 un client existant reçoit une
+ *    invitation qu'il accepte lui-même (« Invitation en attente », aucune affectation avant) ; R41 droit d'encaisser
+ *    réglé événement par événement (un interrupteur « Encaisse » par événement coché, corps `assignments[]`) ;
+ *    R97 plus de champ Email (ignoré par la route), texte de suppression juste.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -66,8 +71,14 @@ interface MemberAssignment {
     event: { id: string; title: string; start_at: string | null; status: string; assignable: boolean } | null;
 }
 
+type AccountState = 'ACTIVATED' | 'PENDING_ACTIVATION' | 'INVITATION_PENDING';
+
 interface TeamMember {
     user_id: string;
+    /** R39 : état réel du compte, servi par le serveur. */
+    account_state: AccountState;
+    /** R37 : invitation en attente de l'accord du titulaire. */
+    invitation?: { id: string; expires_at: string };
     first_name: string | null;
     last_name: string | null;
     phone: string | null;
@@ -203,7 +214,6 @@ export default function PartnerTeamPage() {
     const [showInvite, setShowInvite] = useState(false);
     const [invFirstName, setInvFirstName] = useState('');
     const [invLastName, setInvLastName] = useState('');
-    const [invEmail, setInvEmail] = useState('');
     const [invPhone, setInvPhone] = useState('');
     const [invEventIds, setInvEventIds] = useState<string[]>([]);
     const [invCanCash, setInvCanCash] = useState(false);
@@ -216,7 +226,8 @@ export default function PartnerTeamPage() {
     // Modification des affectations
     const [editMember, setEditMember] = useState<TeamMember | null>(null);
     const [editEventIds, setEditEventIds] = useState<string[]>([]);
-    const [editCanCash, setEditCanCash] = useState(false);
+    /** R41 : droit d'encaisser par événement coché. */
+    const [editCash, setEditCash] = useState<Record<string, boolean>>({});
     const [updatingAssignments, setUpdatingAssignments] = useState(false);
 
     // Confirmations
@@ -248,7 +259,6 @@ export default function PartnerTeamPage() {
     const resetInvite = () => {
         setInvFirstName('');
         setInvLastName('');
-        setInvEmail('');
         setInvPhone('');
         setInvCanCash(false);
         setInvError({});
@@ -283,7 +293,6 @@ export default function PartnerTeamPage() {
                 phone: phoneSanitized,
                 first_name: invFirstName.trim() || 'Contrôleur',
                 last_name: invLastName.trim() || '',
-                email: invEmail.trim() || undefined,
                 can_accept_cash: invCanCash,
             });
             if (reply.requires_confirmation && reply.existing_user) {
@@ -312,14 +321,14 @@ export default function PartnerTeamPage() {
                 can_accept_cash: existingAccountConfirm.canAcceptCash,
                 confirm_promotion: true,
             });
-            toast.success(reply.message || 'Rôle de contrôleur attribué.');
+            toast.success(reply.message || 'Invitation envoyée : la personne doit l’accepter dans l’application.');
             setExistingAccountConfirm(null);
             setShowInvite(false);
             resetInvite();
             await reload();
         } catch (err) {
-            console.error('[équipe] attribution du rôle impossible :', err);
-            toast.error(errorMessage(err, 'Le rôle de contrôleur n’a pas pu être attribué.'));
+            console.error('[équipe] invitation d’un compte existant impossible :', err);
+            toast.error(errorMessage(err, 'L’invitation n’a pas pu être envoyée.'));
         } finally {
             setConfirmingPromotion(false);
         }
@@ -352,7 +361,7 @@ export default function PartnerTeamPage() {
     const openEdit = (m: TeamMember) => {
         setEditMember(m);
         setEditEventIds(m.assignments.map((a) => a.event_id));
-        setEditCanCash(m.can_accept_cash);
+        setEditCash(Object.fromEntries(m.assignments.map((a) => [a.event_id, a.can_accept_cash])));
     };
 
     // Événements proposés : les assignables servis, plus les affectations actuelles devenues non assignables.
@@ -380,8 +389,7 @@ export default function PartnerTeamPage() {
         try {
             await sendJson('/api/partner/team/assignments', 'PATCH', {
                 controller_id: editMember.user_id,
-                event_ids: editEventIds,
-                can_accept_cash: editCanCash,
+                assignments: editEventIds.map((eventId) => ({ event_id: eventId, can_accept_cash: editCash[eventId] === true })),
             });
             toast.success('Affectations mises à jour.');
             setEditMember(null);
@@ -433,7 +441,14 @@ export default function PartnerTeamPage() {
         {
             key: 'state',
             header: 'État',
-            render: (m) => (m.pending_activation
+            render: (m) => (m.account_state === 'INVITATION_PENDING' ? (
+                <span className="flex flex-col items-start gap-1">
+                    <Badge variant="info" size="sm">Invitation en attente</Badge>
+                    {m.invitation?.expires_at && (
+                        <span className="text-sm text-fg-muted">Jusqu’au <time dateTime={m.invitation.expires_at}>{formatDateTime(m.invitation.expires_at)}</time></span>
+                    )}
+                </span>
+            ) : m.account_state === 'PENDING_ACTIVATION'
                 ? <Badge variant="warning" size="sm">Activation en attente</Badge>
                 : <Badge variant="success" size="sm">Actif</Badge>),
         },
@@ -469,21 +484,25 @@ export default function PartnerTeamPage() {
             key: 'actions',
             header: 'Actions',
             align: 'right',
-            render: (m) => (
+            render: (m) => (m.account_state === 'INVITATION_PENDING' ? (
+                <p className="text-right text-sm text-fg-muted">Affecté dès qu’il accepte l’invitation dans l’application.</p>
+            ) : (
                 <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button variant="secondary" size="sm" leftIcon={<Settings size={16} aria-hidden="true" />} onClick={() => openEdit(m)} disabled={actionLoading || updatingAssignments}>
                         Gérer
                     </Button>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        leftIcon={<Send size={16} aria-hidden="true" />}
-                        onClick={() => void handleResendInvite(m)}
-                        isLoading={resendingId === m.user_id}
-                        disabled={actionLoading}
-                    >
-                        Renvoyer le SMS
-                    </Button>
+                    {m.account_state === 'PENDING_ACTIVATION' && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            leftIcon={<Send size={16} aria-hidden="true" />}
+                            onClick={() => void handleResendInvite(m)}
+                            isLoading={resendingId === m.user_id}
+                            disabled={actionLoading}
+                        >
+                            Renvoyer le SMS
+                        </Button>
+                    )}
                     <IconButton
                         aria-label={`Retirer ${displayName(m)} de tous vos événements`}
                         title="Retirer de tous les événements"
@@ -503,7 +522,7 @@ export default function PartnerTeamPage() {
                         <Trash2 size={18} />
                     </IconButton>
                 </div>
-            ),
+            )),
         },
     ];
 
@@ -645,7 +664,7 @@ export default function PartnerTeamPage() {
                     () => setConfirmDeleteCtrl(null),
                 )}
                 title="Supprimer le contrôleur de l’équipe ?"
-                message={`Les accès de ${confirmDeleteCtrl?.ctrlName ?? ''} au scanner sont révoqués immédiatement et sa session est fermée. Pour le réintégrer, une nouvelle invitation sera nécessaire.`}
+                message={`${confirmDeleteCtrl?.ctrlName ?? ''} ne contrôlera plus vos événements. S’il ne contrôle pour aucun autre organisateur, son accès au scanner est fermé aussitôt. Pour le réintégrer, invitez-le à nouveau.`}
                 confirmLabel="Supprimer le contrôleur"
                 variant="danger"
                 isLoading={actionLoading}
@@ -679,13 +698,21 @@ export default function PartnerTeamPage() {
                             name="edit-events"
                         />
                     )}
-                    <Switch
-                        label="Autoriser l’encaissement des espèces"
-                        description="Le contrôleur peut vendre des billets au guichet."
-                        checked={editCanCash}
-                        onChange={setEditCanCash}
-                        disabled={updatingAssignments}
-                    />
+                    {editEventIds.length > 0 && (
+                        <fieldset className="space-y-2">
+                            <legend className="text-sm font-semibold text-fg">Encaissement des espèces, événement par événement</legend>
+                            {editEventIds.map((eventId) => (
+                                <Switch
+                                    key={eventId}
+                                    label={`Encaisse : ${editChoices.find((c) => c.id === eventId)?.title ?? 'Événement'}`}
+                                    description="Le contrôleur peut vendre des billets au guichet de cet événement."
+                                    checked={editCash[eventId] === true}
+                                    onChange={(next) => setEditCash((prev) => ({ ...prev, [eventId]: next }))}
+                                    disabled={updatingAssignments}
+                                />
+                            ))}
+                        </fieldset>
+                    )}
                 </div>
             </Modal>
 
@@ -721,7 +748,6 @@ export default function PartnerTeamPage() {
                         }}
                         className="tabular-nums"
                     />
-                    <TextInput label="Email" aside="Facultatif" type="email" placeholder="controleur@email.com" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} />
 
                     {assignableEvents.length === 0 ? (
                         <div className="space-y-2 rounded-xl border border-warning-border bg-warning-bg p-4 text-sm text-warning-fg">
@@ -766,13 +792,13 @@ export default function PartnerTeamPage() {
                 isOpen={!!existingAccountConfirm}
                 onClose={() => setExistingAccountConfirm(null)}
                 title="Compte existant"
-                subtitle="Attribution du rôle de contrôleur, sans nouveau compte"
+                subtitle="Invitation à contrôler, sans nouveau compte"
                 icon={<UserCheck size={20} aria-hidden="true" />}
                 busy={confirmingPromotion}
                 footer={
                     <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <Button variant="secondary" onClick={() => setExistingAccountConfirm(null)} disabled={confirmingPromotion}>Annuler</Button>
-                        <Button variant="primary" onClick={() => void handleConfirmPromotion()} isLoading={confirmingPromotion}>Attribuer le rôle de contrôleur</Button>
+                        <Button variant="primary" onClick={() => void handleConfirmPromotion()} isLoading={confirmingPromotion}>Envoyer l’invitation</Button>
                     </div>
                 }
             >
@@ -792,7 +818,7 @@ export default function PartnerTeamPage() {
                             <p className="flex items-center gap-1.5 font-semibold">
                                 <ShieldCheck size={16} aria-hidden="true" /> Un seul compte, rien n’est perdu
                             </p>
-                            <p>Cette personne garde ses billets, commandes et son portefeuille, et accède en plus au scanner de vos événements.</p>
+                            <p>Cette personne garde ses billets, commandes et son portefeuille. Elle reçoit une invitation par SMS et ne contrôle vos événements qu’après l’avoir acceptée dans l’application.</p>
                             {existingAccountConfirm.message && <p>{existingAccountConfirm.message}</p>}
                         </div>
                     </div>
