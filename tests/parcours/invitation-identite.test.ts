@@ -18,7 +18,7 @@ import { POST as inviteController } from '../../app/api/partner/team/invite/rout
 import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers'; import { freshSession, respondControllerInvitations } from './acces-helpers';
 
 interface Holder { userId: string; email: string; phone: string; firstName: string; lastName: string }
 
@@ -83,8 +83,8 @@ describe('Invitation : identité des comptes existants', () => {
             phone: holder.phone, event_ids: [fx.events.A_PUBLIE.id], ...forged, confirm_promotion: true,
         }, bearer(partnerA.accessToken)));
         const confirmedBody = await confirmed.json();
-        assert.ok(confirmed.status === 200 || confirmed.status === 201, `confirmation : HTTP ${confirmed.status} ${JSON.stringify(confirmedBody)}`);
-        assert.ok((await rolesOf(holder.userId)).includes('CONTROLEUR'), 'rôle CONTROLEUR attribué après confirmation');
+        assert.ok((confirmed.status === 200 || confirmed.status === 201) && !(await rolesOf(holder.userId)).includes('CONTROLEUR'), `confirmation de la partenaire : invitation en attente, aucun rôle avant l’acceptation du titulaire (R37, lot 9 bis) : HTTP ${confirmed.status} ${JSON.stringify(confirmedBody)}`);
+        await acceptAsHolder(holder); assert.ok((await rolesOf(holder.userId)).includes('CONTROLEUR') && (await assignedEventsOf(holder.userId)).includes(fx.events.A_PUBLIE.id), 'rôle CONTROLEUR et affectation après l’acceptation du titulaire (R37)');
 
         assert.deepEqual(await identityOf(holder.userId), before, 'prénom, nom, email et téléphone du titulaire inchangés');
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -152,3 +152,16 @@ describe('Invitation : identité des comptes existants', () => {
         assert.equal(auth.user?.email, `${phone.replace(/\D/g, '')}@eventvillage.sn`, 'email de connexion synthétique, lié au numéro');
     });
 });
+
+// ── Lot 9 bis (R37, T49) : acceptation par le titulaire ───────────────────
+
+/** Le titulaire, connecté par son mot de passe, accepte ses invitations de contrôleur (routes /api/account/controller-invitations). */
+async function acceptAsHolder(holder: Holder): Promise<void> {
+    await respondControllerInvitations(await freshSession(holder), true);
+}
+
+async function assignedEventsOf(userId: string): Promise<string[]> {
+    const { data, error } = await getServiceRoleClient().from('event_controllers').select('event_id').eq('user_id', userId);
+    assert.equal(error, null, `affectations : ${error?.message}`);
+    return (data ?? []).map((a) => String(a.event_id));
+}

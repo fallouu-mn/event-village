@@ -12,8 +12,9 @@
 import '../helpers/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
-import { BASE_URL, routeContext } from './helpers';
+import { BASE_URL, routeContext, STRONG_PASSWORD } from './helpers';
 import {
     service, newBuyer, importModule, advanceHelperEvent, helperInsertionDates, helperPosterUrl,
     type Buyer, type CategorySpec, type HelperEventDates, type SaleEvent,
@@ -289,6 +290,18 @@ export async function myControllerInvitations(user: Pick<Buyer, 'accessToken'>):
 export async function respondControllerInvitation(user: Pick<Buyer, 'accessToken'>, invitationId: string, accept: boolean): Promise<RouteResult> {
     const POST = await routeOf(INVITATION_RESPOND_ROUTE, 'POST', 'POST /api/account/controller-invitations/[id]');
     return call(POST, authed(`/api/account/controller-invitations/${invitationId}`, 'POST', user as Buyer, { accept }), routeContext({ id: invitationId }));
+}
+
+/**
+ * Session neuve du compte, ouverte par son mot de passe (clé anon) : une promotion ou un retrait de contrôleur révoque
+ * les sessions existantes, le jeton d'origine ne sert plus.
+ */
+export async function freshSession(user: Pick<Buyer, 'email'>): Promise<Pick<Buyer, 'accessToken'>> {
+    const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data, error } = await anon.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    assert.equal(error, null, `connexion de ${user.email} : ${error?.message}`);
+    assert.ok(data.session, `session de ${user.email}`);
+    return { accessToken: data.session.access_token };
 }
 
 /**

@@ -13,7 +13,8 @@
  *  6. T12 : retrait d'une affectation sur un événement devenu SUSPENDU ou TERMINE → 200, seule l'affectation gardée
  *     reste ;
  *  7. security-fixes T2.3 : compte CLIENT par PATCH → requires_confirmation sans aucun effet, puis confirm_promotion
- *     → rôle CONTROLEUR, compte ACTIF, affectation créée.
+ *     → rôle CONTROLEUR, compte ACTIF, affectation créée. Lot 9 bis (R37, T49, règle changée) : confirm_promotion crée
+ *     une invitation, le rôle et l'affectation suivent l'acceptation du titulaire (rouge jusqu'à fix(9b.26)).
  *
  *  8. T6 (invitation) : événement d'un autre partenaire → 403 « propriétaire », seul ou mêlé à un événement à soi ;
  *     aucun compte créé, aucune affectation, aucun SMS. Ajouté avant la suppression du legacy : T6 était annoncé couvert
@@ -39,6 +40,7 @@ import { newBuyer, service, type CategorySpec, type SaleEvent } from './paiement
 import { newPartner, type TestPartner } from './finance-helpers';
 import { assignController, authed, createTimedEvent, newController, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createEventInStatus, type EventStatus } from './cycle-helpers';
+import { respondControllerInvitations } from './acces-helpers';
 import { assertTerrainInvariants } from './terrain-helpers';
 
 type Row = Record<string, unknown>;
@@ -228,8 +230,12 @@ describe('8.2 v — PATCH /api/partner/team/assignments selon le statut de l’�
         const confirmed = await patchAssignments(partnerA, { controller_id: customer.userId, event_ids: [evPublie.eventId], confirm_promotion: true });
         assert.equal(confirmed.status, 200, show(confirmed));
         assert.equal(confirmed.body.success, true, show(confirmed));
-        assert.ok((await rolesOf(customer.userId)).includes('CONTROLEUR'), 'avec confirmation : rôle CONTROLEUR');
+        // Lot 9 bis (R37, T49, règle changée) : la confirmation de la partenaire crée une invitation ; rien avant l'acceptation du titulaire.
+        assert.ok(!(await rolesOf(customer.userId)).includes('CONTROLEUR'), 'avec confirmation de la partenaire seule : aucun rôle CONTROLEUR (invitation en attente)');
+        assert.deepEqual(await assignedEvents(customer.userId), [], 'avec confirmation de la partenaire seule : aucune affectation');
+        await respondControllerInvitations(await freshSession(customer), true);
+        assert.ok((await rolesOf(customer.userId)).includes('CONTROLEUR'), 'après l’acceptation du titulaire : rôle CONTROLEUR');
         assert.deepEqual(await accountOf(customer.userId), { role: 'CONTROLEUR', status: 'ACTIF' }, 'compte promu, toujours ACTIF');
-        assert.deepEqual(await assignedEvents(customer.userId), [evPublie.eventId], 'avec confirmation : affecté');
+        assert.deepEqual(await assignedEvents(customer.userId), [evPublie.eventId], 'après l’acceptation du titulaire : affecté');
     });
 });

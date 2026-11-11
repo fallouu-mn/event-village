@@ -41,7 +41,7 @@ import { getFakes } from '../fakes';
 import { routeContext } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { assignController, authed, createCashOrderTickets, createTimedEvent, newController, type RouteResult } from './acces-helpers';
+import { assignController, authed, createCashOrderTickets, createTimedEvent, freshSession, newController, respondControllerInvitations, type RouteResult } from './acces-helpers';
 import { flushNotifications, outboxRows } from './notif-helpers';
 
 const CONTROLLER_ROUTE = '../../app/api/partner/team/controller/[controllerId]/route';
@@ -296,7 +296,11 @@ describe('8.2 v — retour au rôle CLIENT et ré-invitation (cas T3 et T5 port�
         assert.equal(confirmed.status, 201, `ré-invitation confirmée : ${show(confirmed)}`);
         assert.equal(confirmed.body.success, true, show(confirmed));
         assert.equal(confirmed.body.is_new_user, false, `aucun compte créé : ${show(confirmed)}`);
-        assert.deepEqual(await accountOf(ctrl.userId), { role: 'CONTROLEUR', status: 'ACTIF' }, 'rôle rendu, compte ACTIF');
-        assert.deepEqual((await assignmentsOf(ctrl.userId)).map((a) => a.event_id), [evA1.eventId], 'affectation rétablie');
+        // Lot 9 bis (R37, T49, règle changée) : redevenu CLIENT, le titulaire accepte lui-même avant d'être affecté.
+        assert.deepEqual(await assignmentsOf(ctrl.userId), [], 'confirmation de la partenaire seule : invitation en attente, aucune affectation');
+        assert.ok(!(await rolesOf(ctrl.userId)).includes('CONTROLEUR'), 'confirmation de la partenaire seule : aucun rôle CONTROLEUR');
+        await respondControllerInvitations(await freshSession(ctrl), true);
+        assert.deepEqual(await accountOf(ctrl.userId), { role: 'CONTROLEUR', status: 'ACTIF' }, 'rôle rendu après l’acceptation, compte ACTIF');
+        assert.deepEqual((await assignmentsOf(ctrl.userId)).map((a) => a.event_id), [evA1.eventId], 'affectation rétablie après l’acceptation');
     });
 });
