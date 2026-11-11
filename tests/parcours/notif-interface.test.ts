@@ -482,7 +482,7 @@ describe('6.0 e — connexion : composant serveur et formulaire client (A5)', ()
             ['clé ev_login_failed_attempts', /["'`]ev_login_failed_attempts["'`]/.test(code)],
             ['429 serveur lu (remainingSeconds)', /\bremainingSeconds\b/.test(code)],
             ['résolution du téléphone (/api/auth/resolve-phone)', /\/api\/auth\/resolve-phone/.test(code)],
-            ['signInWithPassword', /\.signInWithPassword\(/.test(code)],
+            ['mot de passe par POST /api/auth/login { identifier, password } (lot 9 bis, R58, B36 : remplace signInWithPassword)', /fetch\(\s*['"`]\/api\/auth\/login['"`]/.test(code) && /\bidentifier\b/.test(code) && /\bpassword\b/.test(code)],
             ['OTP : /api/auth/send-otp et /api/auth/verify-otp', /\/api\/auth\/send-otp/.test(code) && /\/api\/auth\/verify-otp/.test(code)],
             ['verifyOtp avec type « email »', /\.verifyOtp\(\s*\{[^}]*type:\s*["']email["']/.test(code)],
             ['contrôle du compte SUSPENDU puis signOut', /["']SUSPENDU["']/.test(code) && /\.signOut\(/.test(code)],
