@@ -60,6 +60,10 @@
 --     VOLATILE identiques. Changement : transferts PENDING vers l'ancien numéro annulés dans la transaction (expéditeur :
 --     billet déverrouillé, TRANSFER_RECIPIENT_CHANGED ; invitation sans expéditeur : billet ANNULE, place rendue, sans
 --     avis) ; `transfers_cancelled` dans la réponse et le journal.
+--
+-- Délégation fix(9b.49-SB) (G.49, B97, pour S-G) :
+-- 15 bis. account_phone_finalize (même définition, point 15) : la ligne au numéro de l'ancien téléphone reste SMS seul
+--     (`channels: ['SMS']`) ; seconde mise en file PHONE_CHANGED au compte, `channels: ['EMAIL']`, clé distincte.
 -- ============================================================================
 
 
@@ -825,13 +829,24 @@ BEGIN
             END IF;
         END LOOP;
 
-        -- Sans user_id : l'envoyeur viserait le numéro du compte, c'est-à-dire le nouveau (L30).
+        -- Sans user_id : l'envoyeur viserait le numéro du compte, c'est-à-dire le nouveau (L30). Lot 9 bis (G.49) : le
+        -- registre déclare aussi EMAIL ; cette ligne au numéro reste SMS seul.
         v_queued := public.notif_enqueue(jsonb_build_object(
             'type', 'PHONE_CHANGED',
             'key', 'PHONE_CHANGED:' || v_user::text || ':' || txid_current()::text,
             'phone', v_old_e164,
-            'data', '{}'::jsonb));
+            'data', '{}'::jsonb,
+            'channels', jsonb_build_array('SMS')));
     END IF;
+
+    -- Lot 9 bis (G.49, B97) : seconde mise en file au compte, EMAIL seul (adresse vérifiée exigée par notif_enqueue, M10) ;
+    -- clé distincte de celle du SMS.
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'PHONE_CHANGED',
+        'key', 'PHONE_CHANGED:' || v_user::text || ':' || txid_current()::text || ':compte',
+        'user_id', v_user,
+        'data', '{}'::jsonb,
+        'channels', jsonb_build_array('EMAIL')));
 
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
     VALUES (v_user, v_role, 'ACCOUNT_PHONE_CHANGED', 'users', v_user, jsonb_build_object(
