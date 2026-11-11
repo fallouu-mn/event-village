@@ -1,7 +1,7 @@
 /**
  * Lot 9, tâche 9.0 — annulation d'une invitation (contrat 4.1, 5.1, L11 ; découverte 9-invitations, 3.3, 4.1).
  * POST /api/partner/events/[id]/invitations/[ticketId]/cancel : billet ANNULE, transfert PENDING CANCELLED, stock
- * rendu (égalité exacte vendus = billets actifs de la catégorie), audit, aucune notification.
+ * rendu (égalité exacte vendus = billets actifs de la catégorie), audit ; lot 9 bis (R22, T56) : une ligne TICKET_CANCELLED au numéro, rien d'autre.
  *  - en attente, après réclamation, attribution directe ;
  *  - acceptation après annulation refusée ;
  *  - billet scanné : 409 TICKET_ALREADY_USED ; déjà annulé : 409 TICKET_NOT_CANCELLABLE ;
@@ -138,7 +138,7 @@ describe('9.0 Annulation : effets (5.1, L11)', () => {
         assert.equal((await ticketRow(ticketId)).status, 'VALIDE', 'billet intact');
     });
 
-    test('invitation en attente : billet ANNULE et déverrouillé, transfert CANCELLED, stock rendu, audit ; aucune notification', async () => {
+    test('invitation en attente : billet ANNULE et déverrouillé, transfert CANCELLED, stock rendu, audit ; seul avis : TICKET_CANCELLED au numéro (R22)', async () => {
         const ev = await newEvent('attente');
         const { ticketId, transferId, phone } = await pending(ev);
         const outboxBefore = await outboxIds(ev.eventId);
@@ -156,9 +156,12 @@ describe('9.0 Annulation : effets (5.1, L11)', () => {
         assert.ok(tr.cancelled_at, 'cancelled_at renseigné');
         await assertStockExact(ev, 0, 'après annulation');
         assert.equal(await cancelAudits(partner.userId), auditsBefore + 1, 'une ligne TICKET_INVITATION_CANCELLED');
-        assert.deepEqual(await outboxIds(ev.eventId), outboxBefore, 'aucune notification mise en file');
-        assert.deepEqual(await outboxRows({ type: 'TRANSFER_CANCELLED', eventId: ev.eventId }), [], 'aucun avis d’annulation');
-        assert.deepEqual((await outboxRows({ type: 'INVITATION_RECEIVED', phone })).length, 1, 'le SMS d’invitation initial reste, sans SMS d’annulation (L11)');
+        // Lot 9 bis (R22, T56, règle changée : la consigne renverse L11) : une seule ligne nouvelle, TICKET_CANCELLED par SMS au numéro.
+        const added = (await outboxRows({ eventId: ev.eventId })).filter((r) => !outboxBefore.includes(r.id));
+        assert.deepEqual(added.map((r) => [r.type, r.channel, r.recipient_phone, r.recipient_user_id]), [['TICKET_CANCELLED', 'SMS', phone, null]],
+            `une seule notification mise en file : TICKET_CANCELLED par SMS au numéro (R22) : ${JSON.stringify(added.map((r) => [r.type, r.channel, r.recipient_phone]))}`);
+        assert.deepEqual(await outboxRows({ type: 'TRANSFER_CANCELLED', eventId: ev.eventId }), [], 'aucun avis d’annulation de transfert');
+        assert.deepEqual((await outboxRows({ type: 'INVITATION_RECEIVED', phone })).length, 1, 'le SMS d’invitation initial reste unique');
     });
 
     test('acceptation après annulation : 409 TRANSFER_NOT_PENDING, absente de « Reçus », billet resté annulé', async () => {
