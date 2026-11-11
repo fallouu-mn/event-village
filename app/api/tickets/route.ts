@@ -218,7 +218,7 @@ export async function GET(req: NextRequest) {
                 timeFormatted,
                 rawStartDate: t.events?.start_date || null,
                 venue: t.events?.location || 'Dakar, Sénégal',
-                seat: t.ticket_categories?.name || 'Pass Standard',
+                seat: t.ticket_categories?.name || 'Catégorie inconnue',
                 status: t.status,
                 usedAt: t.checked_in_at,
                 isUpcoming,
