@@ -16,6 +16,9 @@
 --     SMS dû à maintenant + 10 minutes (B71), tout de suite si l'ancien ou le nouveau début est à moins d'une heure ;
 --     ligne en attente du numéro fusionnée (index uq_outbox_event_change_pending_sms_phone, M03) ; réponse et audit
 --     + notified_phones.
+-- Tâche 31 (R13, B70) : à l'annulation, l'acheteur d'origine (payeur d'un paiement en ligne de billets encore
+-- valables) est prévenu même sans billet (clé EVENT_CANCELLED:<event>:<compte>, mode AUTO, prioritaire) ; le porteur
+-- d'un billet payé par un autre compte reçoit le mode TRANSFERRED (« Remboursement à l'acheteur d'origine. »).
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -29,6 +32,7 @@
 -- ============================================================================
 -- 1. notif_event_status_changed (recopie de 20261103000005_lot6_billetterie.sql:1206-1323)
 -- Tâche 30 : branche ANNULE, numéros sans compte (invitations non réclamées NONE, acheteurs au guichet ORGANIZER).
+-- Tâche 31 : branche ANNULE, acheteurs d'origine prévenus (AUTO), porteurs d'un billet reçu en mode TRANSFERRED.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -123,10 +127,20 @@ BEGIN
     ELSIF v_new = 'ANNULE' THEN
         -- Avis public écrit par event_cancel avant la transition ; porteurs lus avant toute modification des
         -- billets (event_cancel ne les annule qu'après) ; mode de remboursement par porteur.
+        -- Lot 9 bis (R13, B70) : destinataires = porteurs ∪ acheteurs d'origine (payeurs des paiements en ligne de
+        -- billets encore valables, remboursés par event_cancel) ; mode par destinataire, premier vrai : AUTO pour le
+        -- payeur (son remboursement est réel, prioritaire), TRANSFERRED pour le porteur d'un billet payé par un autre
+        -- compte, ORGANIZER et NONE inchangés.
         SELECT c.public_notice INTO v_notice FROM public.event_cancellations c WHERE c.event_id = NEW.event_id;
-        SELECT COALESCE(array_agg(DISTINCT t.user_id ORDER BY t.user_id), ARRAY[]::uuid[]) INTO v_recipients
-          FROM public.tickets t
-         WHERE t.event_id = NEW.event_id AND t.user_id IS NOT NULL AND t.status::text IN ('VALIDE', 'UTILISE');
+        SELECT COALESCE(array_agg(x.uid ORDER BY x.uid), ARRAY[]::uuid[]) INTO v_recipients
+          FROM (SELECT t.user_id AS uid FROM public.tickets t
+                 WHERE t.event_id = NEW.event_id AND t.user_id IS NOT NULL AND t.status::text IN ('VALIDE', 'UTILISE')
+                UNION
+                SELECT py.client_id FROM public.tickets t
+                  JOIN public.payments py ON py.id = t.payment_id
+                 WHERE t.event_id = NEW.event_id AND t.status::text IN ('VALIDE', 'UTILISE') AND COALESCE(t.price, 0) > 0
+                   AND py.client_id IS NOT NULL AND py.is_platform_payment AND py.payment_target::text = 'TICKET'
+                   AND py.status::text IN ('SUCCESS', 'PARTIAL') AND py.amount > 0) x;
         FOREACH v_user IN ARRAY v_recipients LOOP
             PERFORM public.notif_enqueue(jsonb_build_object(
                 'type', 'EVENT_CANCELLED', 'key', 'EVENT_CANCELLED:' || NEW.event_id::text || ':' || v_user::text,
@@ -136,9 +150,16 @@ BEGIN
                     'refund_mode', CASE
                         WHEN EXISTS (SELECT 1 FROM public.tickets t
                                        JOIN public.payments py ON py.id = t.payment_id
+                                      WHERE t.event_id = NEW.event_id AND py.client_id = v_user
+                                        AND t.status::text IN ('VALIDE', 'UTILISE') AND COALESCE(t.price, 0) > 0
+                                        AND py.is_platform_payment AND py.payment_target::text = 'TICKET'
+                                        AND py.status::text IN ('SUCCESS', 'PARTIAL') AND py.amount > 0) THEN 'AUTO'
+                        WHEN EXISTS (SELECT 1 FROM public.tickets t
+                                       JOIN public.payments py ON py.id = t.payment_id
                                       WHERE t.event_id = NEW.event_id AND t.user_id = v_user
                                         AND t.status::text IN ('VALIDE', 'UTILISE') AND py.is_platform_payment
-                                        AND COALESCE(t.price, 0) > 0) THEN 'AUTO'
+                                        AND COALESCE(t.price, 0) > 0
+                                        AND py.client_id IS DISTINCT FROM v_user) THEN 'TRANSFERRED'
                         WHEN EXISTS (SELECT 1 FROM public.tickets t
                                       WHERE t.event_id = NEW.event_id AND t.user_id = v_user
                                         AND t.status::text IN ('VALIDE', 'UTILISE') AND t.payment_id IS NULL
