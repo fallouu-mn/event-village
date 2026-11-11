@@ -89,6 +89,14 @@
 -- 17. withdrawal_quote(p) (nouvelle, STABLE) : devis par fin_withdrawal_check, sans verrou ; la route du code le
 --     passe avant toute réservation de SMS (tout refus : ni réservation, ni code).
 -- 18. finance_account_balance : + withdrawal_min_amount et withdrawal_fee_rate (réglages lus par fin_setting_num).
+--
+-- Tâche 15, partie S-A (R6, R55 ; B37) et audit de la tâche 19 (B45) :
+-- 19. partner_status_set : table fermée des transitions, EN_ATTENTE → VALIDE, EN_ATTENTE → REJETE (motif),
+--     VALIDE → SUSPENDU (motif), SUSPENDU → VALIDE (motif désormais obligatoire) ; tout le reste
+--     TRANSITION_NOT_ALLOWED sans effet (VALIDE → REJETE : « Seul un dossier en attente peut être refusé. Pour un
+--     partenaire validé, utilisez la suspension. ») ; REJETE → EN_ATTENTE par le seul complément du dossier
+--     (M04). Journal PARTNER_STATUS_SET (object_type partners, ancien et nouveau statut, motif, compte, sessions
+--     révoquées, événements de la cascade) écrit dans la transaction, avant la réponse.
 -- ============================================================================
 
 
@@ -779,7 +787,22 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'TRANSITION_NOT_ALLOWED', 'status', pa.status::text,
                                   'message', 'Le partenaire est déjà dans ce statut.');
     END IF;
-    IF v_status IN ('REJETE', 'SUSPENDU') AND (v_reason IS NULL OR char_length(v_reason) < 3) THEN
+    -- Lot 9 bis (R6, R55, B37) : table fermée. EN_ATTENTE → VALIDE ; EN_ATTENTE → REJETE ; VALIDE → SUSPENDU ;
+    -- SUSPENDU → VALIDE. REJETE ne revient EN_ATTENTE que par le complément du dossier (partner_dossier_resubmit).
+    IF v_status = 'REJETE' AND pa.status::text <> 'EN_ATTENTE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TRANSITION_NOT_ALLOWED', 'status', pa.status::text,
+                                  'message', 'Seul un dossier en attente peut être refusé. Pour un partenaire validé, utilisez la suspension.');
+    END IF;
+    IF v_status = 'SUSPENDU' AND pa.status::text <> 'VALIDE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TRANSITION_NOT_ALLOWED', 'status', pa.status::text,
+                                  'message', 'Seul un partenaire validé peut être suspendu.');
+    END IF;
+    IF v_status = 'VALIDE' AND pa.status::text NOT IN ('EN_ATTENTE', 'SUSPENDU') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TRANSITION_NOT_ALLOWED', 'status', pa.status::text,
+                                  'message', 'Un dossier refusé doit d’abord être complété par le partenaire : il revient alors en attente de validation.');
+    END IF;
+    IF (v_status IN ('REJETE', 'SUSPENDU') OR (v_status = 'VALIDE' AND pa.status::text = 'SUSPENDU'))
+       AND (v_reason IS NULL OR char_length(v_reason) < 3) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED',
                                   'message', 'Indiquez le motif (3 caractères au moins).');
     END IF;
@@ -865,6 +888,18 @@ BEGIN
         PERFORM set_config('ev.partner_cascade', '0', true);
     END IF;
 
+    -- Lot 9 bis (ex-10.0 c, B45) : journal dans la transaction ; un échec du journal annule le changement de statut
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+    VALUES (v_actor,
+            CASE WHEN EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text = 'SUPERADMIN')
+                 THEN 'SUPERADMIN' ELSE 'ADMIN' END,
+            'PARTNER_STATUS_SET', 'partners', pa.id,
+            jsonb_build_object('status', pa.status::text),
+            jsonb_build_object('status', v_row.status, 'is_verified', v_row.is_verified),
+            jsonb_build_object('reason', v_reason, 'user_id', pa.user_id, 'sessions_revoked', v_revoked,
+                               'events_suspended', to_jsonb(v_suspended), 'events_restored', to_jsonb(v_restored),
+                               'events_left_suspended', to_jsonb(v_left)));
+
     RETURN jsonb_build_object(
         'ok', true, 'partner_id', pa.id, 'user_id', pa.user_id, 'old_status', pa.status::text,
         'status', v_row.status, 'is_verified', v_row.is_verified,
@@ -877,7 +912,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.partner_status_set(jsonb) IS
-    'Lot 6 (J2.6), lot 9 bis (R5) : validation, refus, suspension ou réactivation d''un partenaire ; partners.status et users.status dans la même transaction, sessions révoquées à la suspension, avis par trg_partners_notify ; cascade sur les événements PUBLIE (partner_suspension_cascades), rétablissement ciblé à la réactivation. Service_role uniquement.';
+    'Lot 6 (J2.6), lot 9 bis (R5) : validation, refus, suspension ou réactivation d''un partenaire ; partners.status et users.status dans la même transaction, sessions révoquées à la suspension, avis par trg_partners_notify ; cascade sur les événements PUBLIE (partner_suspension_cascades), rétablissement ciblé à la réactivation ; transitions fermées (B37), motif exigé pour refuser, suspendre et réactiver ; journal PARTNER_STATUS_SET dans la transaction. Service_role uniquement.';
 
 -- ----------------------------------------------------------------------------
 -- 3.4 ticket_refund_request (recopie de 20261108000001_lot9_securite.sql:21-129) : règle d'acteur R11, audit
