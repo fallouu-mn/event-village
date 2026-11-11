@@ -7,6 +7,8 @@
  * par compte ou par slug ; présente, elle reste telle quelle, mot de passe compris. Les statuts passent par la
  * seule RPC event_transition. Une création interrompue n'est pas reprise : l'objet déjà écrit reste, et le
  * message d'erreur dit lequel.
+ * Lot 9 bis (R60, R91) : le compte `admin` reçoit les permissions manquantes de la préparation P0.2, même s'il existait
+ * déjà (ajout seul) ; la fiche partenaire créée a un essai de 60 jours, sans statut de fondateur.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fixturePosterPng } from '../../tests/helpers/fixture-poster';
@@ -21,6 +23,19 @@ export const MAX_REAL_ACCOUNTS = 25;
 const SEED_DOMAIN = 'essai.eventvillage.invalid';
 const BUCKET = 'public-images';
 const DAY_MS = 86_400_000;
+
+/**
+ * Lot 9 bis (R60, B95, décision D7) : permissions du compte `admin` (Moussa), celles de la préparation P0.2 du plan
+ * de test (docs/plan-de-test-evenement.md), toutes dans lib/admin/admin-auth.ts. Ajoutées même à un compte déjà semé,
+ * jamais retirées : une permission présente reste telle quelle (aucune ligne réécrite).
+ */
+export const SEED_ADMIN_PERMISSIONS = [
+    'events.read', 'events.write', 'notifications.read', 'notifications.write',
+    'partners.read', 'partners.validate', 'payments.read', 'refunds.manage',
+] as const;
+
+/** Lot 9 bis (R91) : essai de 60 jours, comme activate_partner_trial hors fondateur (20261103000006_lot6_pros_admin.sql:856-861). */
+const TRIAL_DAYS_STANDARD = 60;
 
 type EnvMap = Record<string, string | undefined>;
 
@@ -210,6 +225,22 @@ async function ensureAccount(client: SupabaseClient, spec: AccountSeed, password
     return userId;
 }
 
+/** R60 : ajoute au compte admin les permissions manquantes (insertion seule, aucune suppression ni réécriture). */
+async function ensureAdminPermissions(client: SupabaseClient, adminId: string, grantedBy: string, report: SeedReport): Promise<void> {
+    const present = must('permissions du compte admin', await client.from('admin_permissions').select('permission').eq('user_id', adminId)) as { permission: string }[];
+    const missing = SEED_ADMIN_PERMISSIONS.filter((perm) => !present.some((r) => r.permission === perm));
+    if (missing.length === 0) {
+        report.kept.push('permissions admin');
+        return;
+    }
+    // Insertion des seules manquantes (jamais d'upsert : tests/schema/essai-seed-gardes.test.ts) ; une course avec un
+    // autre passage lève sur uq_admin_user_permission, sans rien réécrire.
+    done('permissions du compte admin', await client.from('admin_permissions').insert(
+        missing.map((permission) => ({ user_id: adminId, permission, granted_by: grantedBy })),
+    ));
+    report.created.push(`permissions admin (${missing.length})`);
+}
+
 async function ensurePartner(client: SupabaseClient, ownerId: string, owner: AccountSeed, now: number, report: SeedReport): Promise<string> {
     const found = await client.from('partners').select('id').eq('user_id', ownerId).maybeSingle();
     if (found.error) throw new Error(`recherche du partenaire : ${found.error.message}`);
@@ -224,7 +255,8 @@ async function ensurePartner(client: SupabaseClient, ownerId: string, owner: Acc
         user_id: ownerId, company_name: 'Essai Événements SARL', commercial_name: 'Essai Événements',
         description: 'Organisateur de démonstration du mode d\'essai.', address: '1, rue de l\'Essai, Dakar', city: 'Dakar',
         phone: owner.phone, email: owner.email, is_verified: true, status: 'VALIDE', subscription_plan_id: plan.data?.id ?? null,
-        trial_started_at: new Date(now).toISOString(), trial_ends_at: new Date(now + 90 * DAY_MS).toISOString(),
+        is_founder: false,
+        trial_started_at: new Date(now).toISOString(), trial_ends_at: new Date(now + TRIAL_DAYS_STANDARD * DAY_MS).toISOString(),
     }).select('id').single()) as { id: string };
     const activity = await client.from('partner_activities').select('id').eq('partner_id', partner.id).eq('activity_type', 'ORGANISATEUR').maybeSingle();
     if (activity.error) throw new Error(`activité du partenaire : ${activity.error.message}`);
@@ -293,6 +325,7 @@ export async function runSeedDev(client: SupabaseClient, { password }: { passwor
         if (!id) throw new Error(`compte ${key} absent`);
         return id;
     };
+    await ensureAdminPermissions(client, userId('admin'), userId('superadmin'), report);
     const owner = ACCOUNTS.find((a) => a.key === 'partenaire');
     if (!owner) throw new Error('compte partenaire absent de la liste du seed');
     const actors: EventActors = {
