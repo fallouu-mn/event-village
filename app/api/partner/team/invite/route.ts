@@ -11,7 +11,7 @@ import { storeOtp } from '@/lib/auth/otp-store';
 import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
 import { getServerEnv } from '@/lib/env';
-import { reserveQuota } from '@/lib/security/quota';
+import { releaseQuota, reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { addUserRole, grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
@@ -19,6 +19,9 @@ import { createControllerInvitation } from '../controller-invitation';
 import { adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
+
+/** Fenêtre du quota INVITE_PER_PHONE_DAY (une journée), la même à la réservation et au rendu. */
+const PHONE_WINDOW_SECS = 86_400;
 
 const InviteSchema = z.object({
     event_id:        z.string().uuid('ID événement invalide.').optional(),
@@ -49,6 +52,9 @@ const InviteSchema = z.object({
 }));
 
 export async function POST(req: NextRequest) {
+    // Lot 9 bis (R98, fix(9b.43-SC)) : unité INVITE_PER_PHONE_DAY réservée (numéro) et consommée par un message parti
+    let phoneUnitBucket: string | null = null;
+    let phoneUnitUsed = false;
     try {
         const activeSession = await requireActiveSession(req);
         if (activeSession.response) return activeSession.response;
@@ -152,20 +158,17 @@ export async function POST(req: NextRequest) {
             }, { status: 409 });
         }
 
-        // 0. Lot 4.8 : quotas en base, réservés ensemble (tout ou rien) avant tout autre contrôle — chaque
-        //    tentative compte : INVITE_PER_PARTNER_HOUR par partenaire, INVITE_PER_PHONE_DAY par numéro
-        //    invité (tous partenaires confondus). Garde indisponible : refus (503). Les SMS envoyés sont
-        //    en plus comptés sur le compte du partenaire (SMS_PER_ACCOUNT_DAY, lib/sms/sms-guard.ts).
+        // 0. Lot 4.8 : quota en base par partenaire (INVITE_PER_PARTNER_HOUR), réservé à chaque tentative avant
+        //    tout autre contrôle. Garde indisponible : refus (503). Les SMS envoyés sont en plus comptés sur le
+        //    compte du partenaire (SMS_PER_ACCOUNT_DAY, lib/sms/sms-guard.ts).
+        //    Lot 9 bis (R98, B90, fix(9b.43-SC)) : le quota par numéro (INVITE_PER_PHONE_DAY) n'est plus réservé ici ;
+        //    il l'est plus bas, seulement si un message part au numéro (voir 1 bis).
         const env = getServerEnv();
         const quota = await reserveQuota([
             { scope: 'invite_partner', bucket: user.id, windowSecs: 3600, max: env.INVITE_PER_PARTNER_HOUR },
-            { scope: 'invite_phone', bucket: normalizedPhone, windowSecs: 86400, max: env.INVITE_PER_PHONE_DAY },
         ], 'invitation contrôleur');
         if (!quota.allowed) {
-            const byPhone = quota.reason === 'EXCEEDED' && quota.scope === 'invite_phone';
-            return quotaRefusalResponse(quota, byPhone
-                ? { error: `Trop d'invitations envoyées à ce numéro aujourd'hui (maximum ${env.INVITE_PER_PHONE_DAY} par jour).`, code: 'PHONE_INVITE_RATE_LIMIT' }
-                : { error: `Limite d'invitations atteinte : maximum ${env.INVITE_PER_PARTNER_HOUR} par heure. Réessayez plus tard.`, code: 'PARTNER_INVITE_RATE_LIMIT' });
+            return quotaRefusalResponse(quota, { error: `Limite d'invitations atteinte : maximum ${env.INVITE_PER_PARTNER_HOUR} par heure. Réessayez plus tard.`, code: 'PARTNER_INVITE_RATE_LIMIT' });
         }
 
         // 1. Vérifier que les événements appartiennent bien au partenaire et sont éligibles
@@ -194,6 +197,24 @@ export async function POST(req: NextRequest) {
                 error: INELIGIBLE_EVENT_ASSIGNMENT_ERROR,
                 details: `L'événement "${ineligibleEvent.title}" est en statut ${ineligibleEvent.status}. Seuls les événements confirmés (VALIDÉ ou PUBLIÉ) peuvent être affectés.`,
             }, { status: 400 });
+        }
+
+        // 1 bis. Lot 9 bis (R98, B90, fix(9b.43-SC)) : une unité INVITE_PER_PHONE_DAY n'est réservée que si un message
+        //    part au numéro : SMS d'activation (numéro neuf ou compte encore temporaire) ou invitation à accepter
+        //    (compte établi, après la confirmation). L'étape de confirmation, l'affectation d'un contrôleur déjà établi
+        //    et un compte non ACTIF (refusé plus bas) ne consomment rien. Si aucun message ne part finalement (SMS refusé,
+        //    invitation refusée, erreur), l'unité est rendue (finally, releaseQuota).
+        const willMessage = !existingProfile
+            || (existingProfile.status === 'ACTIF'
+                && (isPendingActivation ? (alreadyController || confirm_promotion) : (!alreadyController && confirm_promotion)));
+        if (willMessage) {
+            const phoneQuota = await reserveQuota([
+                { scope: 'invite_phone', bucket: normalizedPhone, windowSecs: PHONE_WINDOW_SECS, max: env.INVITE_PER_PHONE_DAY },
+            ], 'invitation contrôleur (numéro)');
+            if (!phoneQuota.allowed) {
+                return quotaRefusalResponse(phoneQuota, { error: `Trop d'invitations envoyées à ce numéro aujourd'hui (maximum ${env.INVITE_PER_PHONE_DAY} par jour).`, code: 'PHONE_INVITE_RATE_LIMIT' });
+            }
+            phoneUnitBucket = normalizedPhone;
         }
 
         // 2. Trouver ou créer le compte contrôleur (compte du numéro lu en 0 bis)
@@ -240,6 +261,7 @@ export async function POST(req: NextRequest) {
                         assignments: targetEventIds.map((evId) => ({ event_id: evId, can_accept_cash })),
                     });
                     if (invited.response) return invited.response;
+                    phoneUnitUsed = true; // CONTROLLER_INVITATION mis en file par la RPC
                     return NextResponse.json({
                         success: true,
                         assignments: [],
@@ -460,6 +482,7 @@ export async function POST(req: NextRequest) {
                     { actorId: user.id, log: { type: 'CONTROLLER_INVITE', ref: otpId!, userId: controllerUserId, actorId: user.id } }
                 );
                 smsSent = smsRes.success;
+                phoneUnitUsed = smsSent;
                 if (!smsRes.success) {
                     smsRefusal = smsRes.code ?? 'SMS_NOT_DELIVERED';
                     console.warn('[invite-controller] SMS mTarget non délivré:', smsRes.error);
@@ -502,5 +525,15 @@ export async function POST(req: NextRequest) {
     } catch (err: unknown) {
         console.error('[API /api/partner/team/invite]', err instanceof Error ? err.message : err);
         return NextResponse.json({ error: 'Erreur interne du serveur.' }, { status: 500 });
+    } finally {
+        // Lot 9 bis (R98, fix(9b.43-SC)) : unité du numéro rendue quand aucun message n'est parti. L'invitation
+        // (affectations, compte) n'est jamais défaite pour autant ; un rendu impossible est journalisé.
+        if (phoneUnitBucket && !phoneUnitUsed) {
+            const released = await releaseQuota(
+                [{ scope: 'invite_phone', bucket: phoneUnitBucket, windowSecs: PHONE_WINDOW_SECS }],
+                'invitation contrôleur (numéro), aucun message parti',
+            );
+            if (!released.ok) console.error(`[invite-controller] unité invite_phone du numéro non rendue : ${released.message}`);
+        }
     }
 }
