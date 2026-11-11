@@ -123,7 +123,7 @@ describe('9b.33 R15 : partenaire prévenue d\'une annulation par un admin, admin
             'prévenue avant tout versement : les avis de fin des remboursements n\'existent pas encore');
 
         await flushNotifications({ eventIds: [ev.eventId] });
-        const texts = smsTo(partner.phoneE164, mark).map((m) => m.text);
+        const texts = smsTo(partner.phoneE164, mark).map((m) => m.message);
         assert.deepEqual(texts, [`Event Village : ${ev.title} annulé par l'administration. Motif : ${PUBLIC_NOTICE}. ${APP_URL}/partner/events`],
             'un SMS à la partenaire, texte exact (11.1 N13)');
         assert.ok(!texts.join(' ').includes(INTERNAL_REASON), 'le motif interne n\'est jamais envoyé');
@@ -165,10 +165,10 @@ describe('9b.33 R33 : contrôleurs affectés prévenus (annulation et changement
         assert.deepEqual(await rowsOf('CONTROLLER_EVENT_CANCELLED', ev.eventId, invited.userId), [],
             'rien au contrôleur invité tant qu\'il n\'a pas accepté (affectations acceptées seulement, R37)');
         await flushNotifications({ eventIds: [ev.eventId] });
-        assert.deepEqual(smsTo(controller.phoneE164, mark).map((m) => m.text),
+        assert.deepEqual(smsTo(controller.phoneE164, mark).map((m) => m.message),
             [`Event Village : ${ev.title} du ${date} est annulé. Votre affectation à l'entrée est retirée.`],
             'un SMS au contrôleur, texte exact (11.1 N15)');
-        assert.deepEqual(smsTo(invited.phoneE164, invitedMark).filter((m) => m.text.includes(ev.title)), [], 'aucun SMS d\'annulation au compte invité');
+        assert.deepEqual(smsTo(invited.phoneE164, invitedMark).filter((m) => m.message.includes(ev.title)), [], 'aucun SMS d\'annulation au compte invité');
     });
 
     test('suspension puis reprise : CONTROLLER_EVENT_STATUS en in-app seulement, à chaque transition', async () => {
