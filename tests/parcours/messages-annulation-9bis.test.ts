@@ -176,7 +176,7 @@ describe('9b.30 R12 : SMS indispensable aux numéros sans compte (invitation non
         assert.ok(!JSON.stringify(row.template_data).includes(phone.slice(4)), `aucun numéro dans les données (notification_outbox_no_secret_chk) : ${JSON.stringify(row.template_data)}`);
 
         await flushNotifications({ eventIds: [ev.eventId] });
-        assert.deepEqual(smsTo(phone, mark).map((m) => m.text),
+        assert.deepEqual(smsTo(phone, mark).map((m) => m.message),
             [`Event Village : ${ev.title} du ${date} est annulé. Le billet qui vous était destiné n'est plus valable.`],
             'un SMS remis au numéro, texte exact (11.2 M2, numéro seul, sans lien)');
     });
@@ -202,7 +202,7 @@ describe('9b.30 R12 : SMS indispensable aux numéros sans compte (invitation non
         assert.equal(rows[0].family, 'ESSENTIAL', 'SMS indispensable');
 
         await flushNotifications({ eventIds: [ev.eventId] });
-        assert.deepEqual(smsTo(phone, mark).map((m) => m.text),
+        assert.deepEqual(smsTo(phone, mark).map((m) => m.message),
             [`Event Village : ${ev.title} du ${date} est annulé. Remboursement par l'organisateur.`],
             'un SMS remis à l\'acheteur au guichet, texte exact (11.2 M2, numéro seul ORGANIZER, sans lien)');
     });
@@ -299,7 +299,7 @@ describe('9b.31 R13 : billet reçu par transfert, annonce à l\'acheteur d\'orig
         const content = norm(String(cancelNotes[0].content));
         assert.match(content, /acheteur d'origine/, `la notification de Lamine dit « acheteur d'origine » : ${content}`);
         assert.doesNotMatch(content, /Votre remboursement est en cours/, `aucune promesse de remboursement à Lamine : ${content}`);
-        assert.deepEqual(smsTo(lamine.phoneE164, laMark).map((m) => m.text),
+        assert.deepEqual(smsTo(lamine.phoneE164, laMark).map((m) => m.message),
             [`Event Village : ${ev.title} du ${date} est annulé. Remboursement à l'acheteur d'origine. ${APP_URL}/tickets`],
             'SMS de Lamine, texte exact (11.2 M2, mode TRANSFERRED)');
     });
