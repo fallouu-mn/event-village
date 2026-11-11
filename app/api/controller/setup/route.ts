@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         // 2. Récupérer l'utilisateur contrôleur
         const { data: matches, error: lookupErr } = await supabase
             .from('users')
-            .select('id, role')
+            .select('id, role, status')
             .in('phone', phoneStorageForms(normalizedPhone))
             .limit(2);
         if (lookupErr) {
@@ -84,6 +84,15 @@ export async function POST(req: NextRequest) {
 
         if (!profile) {
             return NextResponse.json({ error: 'Aucun compte associé à ce numéro.' }, { status: 404 });
+        }
+
+        // Lot 9 bis (R102, B43) : après la vérification du code (le statut n'est jamais dit avant), un compte non ACTIF
+        // n'est pas activé : ni mot de passe, ni rôle, ni avis. Le code reste consommé.
+        if (profile.status !== 'ACTIF') {
+            return NextResponse.json({
+                error: 'Ce compte est suspendu : l’activation est impossible. Contactez l’organisateur ou le support.',
+                code: 'ACCOUNT_NOT_ACTIVE',
+            }, { status: 403 });
         }
 
         // Vérifier qu'il existe au moins une assignation contrôleur pour ce compte.
