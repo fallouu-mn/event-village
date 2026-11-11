@@ -40,7 +40,7 @@ type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
 const ROUTE = '../../app/api/partner/events/[id]/tickets/lookup/route';
 const PRICE = 5000;
-const TICKET_KEYS = ['category', 'holder_short', 'id', 'price', 'refund_mode', 'refundable', 'sale_channel', 'service_fee', 'status', 'ticket_number'];
+const TICKET_KEYS = ['category', 'holder_short', 'id', 'price', 'refund_closed_reason', 'refund_mode', 'refundable', 'sale_channel', 'service_fee', 'status', 'ticket_number']; // lot 9 bis (R11, contrat 4.1) : + refund_closed_reason
 const PANEL = 'components/partner/pilotage/TicketRefundPanel.tsx';
 const SALES_TAB = 'components/partner/pilotage/SalesTab.tsx';
 
