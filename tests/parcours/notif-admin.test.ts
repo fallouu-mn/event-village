@@ -471,7 +471,7 @@ describe('6.8 Permissions notifications.read et notifications.write (L1, L3)', (
         assert.equal((await detail(reader.accessToken, id)).status, 404, 'lecture seule : détail (ligne inconnue → 404, pas 403)');
         const r = await retry(reader.accessToken, id);
         assert.equal(r.status, 403, `lecture seule : relance refusée, ${show(r)}`);
-        assert.match(String(r.body.error), /notifications\.write/, show(r));
+        assert.deepEqual([r.body.code, r.body.permission], ['PERMISSION_MISSING', 'notifications.write'], show(r)); // lot 9 bis (R51, B34) : permission dans `permission`, libellé français dans `error`
 
         assert.equal((await list(superToken)).status, 200, 'SUPERADMIN : liste');
         assert.equal((await stats(superToken)).status, 200, 'SUPERADMIN : statistiques');
