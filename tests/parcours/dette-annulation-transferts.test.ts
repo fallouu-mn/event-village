@@ -234,7 +234,7 @@ describe('6.0 c — event_cancel : transferts PENDING annulés et billets déver
         const setup = await pendingTransfer('annul-transf-suspendu', 1);
         await advanceEventTo(setup.ev.eventId, 'SUSPENDU', { suspendReason: 'Suspension de test du lot 6 (transferts)' });
         assert.equal((await transferRow(setup.transferId)).status, 'PENDING', 'précondition : la suspension laisse le transfert PENDING');
-        await advanceEventTo(setup.ev.eventId, 'ANNULE', { publicNotice: PUBLIC_NOTICE, internalReason: INTERNAL_REASON });
+        await advanceEventTo(setup.ev.eventId, 'ANNULE', { publicNotice: PUBLIC_NOTICE, internalReason: INTERNAL_REASON, cancelledBy: 'ADMIN' }); // lot 9 bis (R105, B68) : seul un admin annule un SUSPENDU
         assert.deepEqual(await inspect((db) => cancellationGaps(db, setup.transferId)), [], 'état après l’annulation d’un événement suspendu');
         await assertSameTransaction(setup.ev.eventId, setup.transferId);
     });
