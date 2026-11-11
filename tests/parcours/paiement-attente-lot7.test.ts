@@ -3,8 +3,9 @@
  * « Client », W7). Faux SamirPay de tests/fakes.
  *  1. second checkout (autre Idempotency-Key) pendant un PENDING non échu du même compte et du même
  *     événement → 409 PAYMENT_PENDING avec le payment_id du premier et status_page_url, aucune réservation ni
- *     appel SamirPay de plus ; autre événement → 200 ; après échéance (held_expires_at reculé en base locale)
- *     → 200 ; même clé → doublon actuel (200, même paiement) ;
+ *     appel SamirPay de plus ; autre événement → 200 ; même clé → doublon actuel (200, même paiement) ; lot 9 bis
+ *     (R47, B10, T20, règle changée par la consigne) : après l'échéance de la réservation (held_expires_at reculé),
+ *     premier paiement encore PENDING → 409 PAYMENT_PENDING ; après son expiration (EXPIRED) → 200 ;
  *  2. deux checkouts simultanés (clés différentes) → un seul PENDING, l'autre 409 PAYMENT_PENDING ;
  *  3. annulation par le client vérifiée chez SamirPay avant de libérer : SamirPay SUCCESS → 409
  *     PAYMENT_ALREADY_CONFIRMED et billets émis ; SamirPay injoignable → 503 PROVIDER_UNAVAILABLE, paiement
@@ -24,6 +25,7 @@
  *  - 6 : app/api/checkout/pending/route.ts absent.
  * Vert dès l'écriture (couverture ajoutée, signalé) : 4 (confirmation.service.ts:75, payment_confirm accepte
  * un paiement CANCELLED tant que le stock le permet) ; dans 1, « même clé → même paiement ».
+ * Lot 9 bis : le cas 1 est rouge jusqu'à fix(9b.6) (garde held_expires_at > now(), 20261105000006_lot7_client.sql:69).
  *
  * SamirPay injoignable : la méthode checkTransactionStatus du faux est remplacée le temps du cas par une
  * fonction qui enregistre l'appel et lève SamirPayError UNCERTAIN (comme un délai dépassé), puis rétablie dans
@@ -141,7 +143,7 @@ async function pendingPayment(label: string, items: Array<[string, number]> = [[
 // ── 1. Un seul paiement en attente par compte et par événement ─────────────
 
 describe('7.3 — paiement : refus d\'un second paiement en attente (D4, M6)', () => {
-    test('autre clé pendant un PENDING → 409 PAYMENT_PENDING ; autre événement → 200 ; après échéance → 200 ; même clé → doublon', async () => {
+    test('autre clé pendant un PENDING → 409 PAYMENT_PENDING ; autre événement → 200 ; après échéance encore PENDING → 409, après expiration → 200 ; même clé → doublon', async () => {
         const buyer = await newBuyer('attente-second');
         const key = randomUUID();
         const body = cart(ev.eventId, [[ev.categories.Standard.id, 2]], buyer);
@@ -171,9 +173,15 @@ describe('7.3 — paiement : refus d\'un second paiement en attente (D4, M6)', (
 
         const { error } = await service.from('payments').update({ held_expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('id', firstId);
         assert.equal(error, null, `échéance reculée : ${error?.message}`);
+        const stillPending = await checkout(buyer, cart(ev.eventId, [[ev.categories.Standard.id, 1]], buyer));
+        assert.equal(stillPending.status, 409, `après l'échéance de la réservation, premier paiement encore PENDING (R47, règle changée) : ${brief(stillPending)}`);
+        assert.deepEqual([stillPending.body.code, stillPending.body.payment_id], ['PAYMENT_PENDING', firstId], `refus : ${brief(stillPending)}`);
+        const { data: released, error: relErr } = await service.rpc('payment_release', { p_payment_id: firstId, p_status: 'EXPIRED', p_reason: 'PENDING_TOO_OLD' });
+        assert.equal(relErr, null, `expiration du premier paiement : ${relErr?.message}`);
+        assert.equal((released as Row | null)?.changed, true, `précondition : premier paiement EXPIRED (${JSON.stringify(released)})`);
         const afterExpiry = await checkout(buyer, cart(ev.eventId, [[ev.categories.Standard.id, 1]], buyer));
-        assert.equal(afterExpiry.status, 200, `après l'échéance du premier : ${brief(afterExpiry)}`);
-        assert.notEqual(afterExpiry.body.payment_id, firstId, 'après échéance : nouveau paiement');
+        assert.equal(afterExpiry.status, 200, `après l'expiration du premier : ${brief(afterExpiry)}`);
+        assert.notEqual(afterExpiry.body.payment_id, firstId, 'après expiration : nouveau paiement');
     });
 
     test('deux checkouts simultanés (clés différentes) → un seul PENDING, l\'autre 409 PAYMENT_PENDING', async () => {

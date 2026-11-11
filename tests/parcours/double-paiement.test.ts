@@ -9,7 +9,7 @@
  *     garde ses billets ; sold_quantity = un seul jeu, held 0 ; un cashout REFUND = A.amount ; une VENTE (B),
  *     commission de B seule ; un REFUND_PAID (SMS exact) ; une alerte ADMIN_DUPLICATE_PAYMENT par admin ;
  *  2. même chose par le cron (source RECONCILIATION, A EXPIRED) ;
- *  3. ordre inverse : A PENDING échu confirmé d'abord, B ensuite : B remboursé ;
+ *  3. ordre inverse : A expiré (R47, lot 9 bis T18) confirmé d'abord, B ensuite : B remboursé ;
  *  4. rejeu du webhook : REFUND_IN_PROGRESS, pas de second cashout ;
  *  5. témoin : rachat séquentiel identique : deux jeux, aucun remboursement ;
  *  6. témoin : panier différent (1 VIP puis 2 VIP) : deux jeux ;
@@ -114,13 +114,13 @@ async function cancelByClient(s: Scene, payment: PaymentRow): Promise<void> {
     assert.equal((await paymentById(payment.id)).status, 'CANCELLED', 'précondition : paiement annulé');
 }
 
-/** Paiement dont la garde est échue, comme 16 minutes après sa création : réservation comprise. */
+/** A expiré réellement (R47, T18 : plus de second paiement sur un PENDING) : payment_release(EXPIRED) comme le cron. */
 async function expireHold(payment: PaymentRow): Promise<void> {
-    const past = new Date(Date.now() - 60_000).toISOString();
-    const { error } = await service.from('payments').update({ held_expires_at: past }).eq('id', payment.id);
-    assert.equal(error, null, `échéance du paiement : ${error?.message}`);
-    const { error: rErr } = await service.from('stock_reservations').update({ expires_at: past }).eq('payment_id', payment.id).eq('status', 'ACTIVE');
-    assert.equal(rErr, null, `échéance de la réservation : ${rErr?.message}`);
+    const { data, error } = await service.rpc('payment_release', { p_payment_id: payment.id, p_status: 'EXPIRED', p_reason: 'PENDING_TOO_OLD' });
+    assert.equal(error, null, `expiration du paiement : ${error?.message}`);
+    assert.equal((data as Row | null)?.changed, true, `précondition : paiement EXPIRED, réservation rendue (${JSON.stringify(data)})`);
+    assert.equal((await paymentById(payment.id)).status, 'EXPIRED', 'précondition : A expiré, un second paiement est de nouveau possible');
+    assert.equal((await paymentById(payment.id)).provider_final, false, 'précondition : A expiré reste surveillé (succès tardif possible)');
 }
 
 /** Le client a validé l'invite : succès chez SamirPay, webhook authentique. */
@@ -282,7 +282,7 @@ describe('8.2 a — le second paiement réussi d’un même panier est rembours�
         assertKeptCommission(await commissionsOf(kept.payment.id));
     });
 
-    test('3. ordre inverse : A PENDING échu confirmé d’abord, B ensuite : B, second confirmé, est remboursé', async () => {
+    test('3. ordre inverse : A expiré confirmé d’abord, B ensuite : B, second confirmé, est remboursé', async () => {
         const s = await scene('inverse', { sponsored: true });
         const first = await pendingPayment(s, [['VIP', 2]]);
         await expireHold(first);
