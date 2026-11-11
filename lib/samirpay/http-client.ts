@@ -119,6 +119,12 @@ const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
  * débité, repris quand le solde revient) ; « minimum autorisé » ou « maximum autorisé » → ACCOUNT_LIMIT ; tout autre
  * 400 → OPERATOR_REFUSED.
  */
+/** Lot 9 bis (H4) : `transactionId=<uuid>` dans le message d'un 409 au format D, ou null. */
+export function existingTransactionIdOf(message: string | null): string | null {
+    const m = /transactionId=([0-9a-f-]{36})/i.exec(message ?? '');
+    return m ? m[1] : null;
+}
+
 export type CashoutRefusalCode = 'INSUFFICIENT_BALANCE' | 'ACCOUNT_LIMIT' | 'OPERATOR_REFUSED';
 
 export function cashoutRefusalCode(message: string | null): CashoutRefusalCode {
@@ -227,7 +233,16 @@ export class SamirPayHttpClient implements PaymentGateway {
         if (payload.description) body.description = payload.description;
         const context = `Cashin ${payload.orderId}`;
         const res = await this.call('POST', '/api/tiers/direct/initPayment', body);
-        if (res.status !== 200 && res.status !== 201) throw this.failure(res, context, { conflict: 'DUPLICATE', unexpected: 'INVALID_RESPONSE' });
+        if (res.status !== 200 && res.status !== 201) {
+            const err = this.failure(res, context, { conflict: 'DUPLICATE', unexpected: 'INVALID_RESPONSE' });
+            if (err.kind === 'DUPLICATE') {
+                // v1.2 (H4) : le 409 au format D porte l'identifiant de la transaction existante dans son message
+                const existing = existingTransactionIdOf(errorDetail(res.body).message);
+                if (existing) err.existingTransactionId = existing;
+                else console.error(`[samirpay] ${context} : orderId en double sans identifiant de transaction lisible dans le 409`);
+            }
+            throw err;
+        }
         const b = readB(res.body);
         const transactionId = b?.success ? text(b.data.transactionId) : null;
         if (!b || !b.success || !transactionId) {

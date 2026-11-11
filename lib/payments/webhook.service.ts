@@ -19,7 +19,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { reconcilePayment, type PaymentRecord } from './confirmation.service';
+import { loadPayment, reconcilePayment, type PaymentRecord } from './confirmation.service';
 import { rpcWithRetry } from './rpc';
 
 const ORDER_ID = /^ORD-EV-\d{13}-[0-9A-F]{6,12}$/;
@@ -83,14 +83,34 @@ export async function handleSamirPayWebhook(req: NextRequest): Promise<NextRespo
         if (!token || !payment.callback_token_hash || !sameHex(sha256(token), String(payment.callback_token_hash))) {
             return finish('REJECTED_TOKEN', token ? 'jeton invalide' : 'jeton absent', payment.id);
         }
-        // 4. Corrélation avec l'identifiant enregistré
-        if (!payment.external_transaction_id || payment.external_transaction_id !== transactionId) {
-            return finish('REJECTED_CORRELATION', payment.external_transaction_id ? 'transaction_id différent de l’identifiant enregistré' : 'aucun identifiant SamirPay enregistré', payment.id);
+        // 4. Corrélation avec l'identifiant enregistré. Lot 9 bis (H4, PO6) : un paiement dont l'initialisation n'a
+        //    rendu aucun identifiant (statut INIT_*) adopte celui du webhook, seulement si aucun n'est enregistré : le
+        //    jeton prouve que l'avis vient du callBackUrl remis à SamirPay pour CE paiement, et le statut est ensuite
+        //    lu chez SamirPay avec cet identifiant (rien n'est confirmé sur la seule foi du webhook).
+        let current = payment as PaymentRecord & { provider_status?: string | null };
+        let adopted = false;
+        if (!current.external_transaction_id && String(current.provider_status ?? '').startsWith('INIT_')) {
+            const { data: won, error: adoptErr } = await getServiceRoleClient().from('payments')
+                .update({ external_transaction_id: transactionId })
+                .eq('id', current.id).is('external_transaction_id', null)
+                .select('*');
+            if (adoptErr) throw new Error(`adoption de l'identifiant SamirPay : ${adoptErr.message}`);
+            if (won?.length) {
+                current = won[0] as typeof current;
+                adopted = true;
+            } else {
+                const reread = await loadPayment(current.id);
+                if (!reread) throw new Error(`paiement ${current.id} introuvable après l'adoption`);
+                current = reread;
+            }
+        }
+        if (!current.external_transaction_id || current.external_transaction_id !== transactionId) {
+            return finish('REJECTED_CORRELATION', current.external_transaction_id ? 'transaction_id différent de l’identifiant enregistré' : 'aucun identifiant SamirPay enregistré', current.id);
         }
         // 5. Statut SamirPay (identifiant enregistré) puis confirmation
-        const outcome = await reconcilePayment(payment as PaymentRecord, 'WEBHOOK');
+        const outcome = await reconcilePayment(current, 'WEBHOOK');
         const result = outcome === 'STILL_PENDING' ? 'CONFIRMATION_PENDING' : outcome;
-        return finish(result, null, payment.id);
+        return finish(adopted ? `ADOPTED_THEN_${result}` : result, null, current.id);
     } catch (err) {
         console.error(`[webhook SamirPay] erreur interne sur l'événement ${recorded.id} :`, err instanceof Error ? err.message : String(err));
         return finish('ERROR', err instanceof Error ? err.message.slice(0, 500) : 'erreur interne');

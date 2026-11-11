@@ -21,7 +21,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
-import { samirPayClient } from '@/lib/samirpay/client';
+import { initCashinOnce, recordAdoptedInit } from './cashin-init';
 import { isSamirPayError, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
 import { reserveQuota } from '@/lib/security/quota';
 import { normalizePayerPhone } from './payer-phone';
@@ -257,7 +257,9 @@ export async function startTicketCheckout(params: {
     // 6. Cashin direct SamirPay
     const callBackUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/samirpay?t=${token}`;
     try {
-        const init = await samirPayClient.initDirectPayment({
+        // Lot 9 bis (H4) : une seule relance au même orderId sur un délai dépassé ; 409 porteur de l'identifiant →
+        // transaction adoptée, paiement rendu et surveillé, aucun lien pour le client.
+        const outcome = await initCashinOnce({
             amount,
             orderId: ids.externalOrderId,
             callBackUrl,
@@ -265,6 +267,11 @@ export async function startTicketCheckout(params: {
             telephone: payerPhone,
             description: `Billets ${String(event.title ?? '')}`.slice(0, 100),
         });
+        if (outcome.kind === 'ADOPTED') {
+            await recordAdoptedInit(paymentId, outcome.transactionId);
+            return { status: 502, body: { error: 'Le service de paiement ne répond pas : réessayez.', code: 'PAYMENT_PROVIDER_UNCERTAIN', payment_id: paymentId } };
+        }
+        const init = outcome.init;
         const providerResponse = { paymentUrl: init.paymentUrl, deepLinks: init.deepLinks, qrCode: init.qrCode };
         const { data: updated, error: updErr } = await supabase
             .from('payments')

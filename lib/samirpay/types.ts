@@ -99,11 +99,17 @@ export type SamirPayErrorKind = 'REJECTED' | 'DUPLICATE' | 'NOT_FOUND' | 'UNAUTH
 export class SamirPayError extends Error {
     /** Lot 9 bis (H5, contrat 4.5) : `errorCode` des formats B et D, ou code de classement (`INVALID_ID`). */
     code?: string;
+    /**
+     * Lot 9 bis (H4, contrat 4.5) : identifiant de la transaction déjà créée pour cet orderId, lu dans le `message` d'un
+     * 409 au format D (`transactionId=<uuid>`) ; absent si le message ne le porte pas (jamais inventé).
+     */
+    existingTransactionId?: string;
 
-    constructor(readonly kind: SamirPayErrorKind, message: string, readonly httpStatus?: number, options: { code?: string } = {}) {
+    constructor(readonly kind: SamirPayErrorKind, message: string, readonly httpStatus?: number, options: { code?: string; existingTransactionId?: string } = {}) {
         super(message);
         this.name = 'SamirPayError';
         if (options.code !== undefined) this.code = options.code;
+        if (options.existingTransactionId !== undefined) this.existingTransactionId = options.existingTransactionId;
     }
 }
 

@@ -9,7 +9,7 @@
 import crypto from 'node:crypto';
 import { PublicError } from '@/lib/api/public-error';
 import { getServerEnv } from '@/lib/env';
-import { samirPayClient } from '@/lib/samirpay/client';
+import { initCashinOnce, recordAdoptedInit } from './cashin-init';
 import { isSamirPayError } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import type { CreatePaymentInput } from '@/lib/validations/payment';
@@ -222,9 +222,10 @@ export class PaymentService {
         }).select('*').single();
         if (insErr || !payment) throw new Error(`Création du paiement impossible : ${insErr?.message}`);
 
-        // 4. Cashin direct SamirPay
+        // 4. Cashin direct SamirPay. Lot 9 bis (H4) : une seule relance au même orderId sur un délai dépassé ; 409
+        //    porteur de l'identifiant → transaction adoptée, paiement rendu et surveillé, aucun lien pour le client.
         try {
-            const init = await samirPayClient.initDirectPayment({
+            const outcome = await initCashinOnce({
                 amount: fees.total_amount,
                 orderId: externalOrderId,
                 callBackUrl: `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/samirpay?t=${token}`,
@@ -232,11 +233,15 @@ export class PaymentService {
                 telephone: payerPhone,
                 description: description.slice(0, 100),
             });
-            const { data: updated, error: updErr } = await supabase.from('payments')
-                .update({ external_transaction_id: init.transactionId, provider_response: { paymentUrl: init.paymentUrl, deepLinks: init.deepLinks, qrCode: init.qrCode }, provider_status: 'INIT_ACCEPTED' })
-                .eq('id', payment.id).eq('status', 'PENDING').select('*').single();
-            if (updErr || !updated) throw new Error(`Enregistrement de l'identifiant SamirPay impossible : ${updErr?.message ?? 'paiement introuvable'}`);
-            return paymentView(updated);
+            if (outcome.kind === 'INITIATED') {
+                const init = outcome.init;
+                const { data: updated, error: updErr } = await supabase.from('payments')
+                    .update({ external_transaction_id: init.transactionId, provider_response: { paymentUrl: init.paymentUrl, deepLinks: init.deepLinks, qrCode: init.qrCode }, provider_status: 'INIT_ACCEPTED' })
+                    .eq('id', payment.id).eq('status', 'PENDING').select('*').single();
+                if (updErr || !updated) throw new Error(`Enregistrement de l'identifiant SamirPay impossible : ${updErr?.message ?? 'paiement introuvable'}`);
+                return paymentView(updated);
+            }
+            await recordAdoptedInit(payment.id, outcome.transactionId);
         } catch (err) {
             const kind = isSamirPayError(err) ? err.kind : 'INTERNAL';
             const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: payment.id, p_status: 'FAILED', p_reason: `INIT_${kind}` });
@@ -244,6 +249,8 @@ export class PaymentService {
             if (kind === 'INTERNAL') throw err;
             throw new PaymentInputError(kind === 'REJECTED' ? 'Paiement refusé par l’opérateur.' : 'Le service de paiement ne répond pas : réessayez.', `PAYMENT_PROVIDER_${kind}`, 502);
         }
+        // Transaction existante adoptée : aucun lien pour le client, le paiement rendu reste surveillé.
+        throw new PaymentInputError('Le service de paiement ne répond pas : réessayez.', 'PAYMENT_PROVIDER_UNCERTAIN', 502);
     }
 
     /**
