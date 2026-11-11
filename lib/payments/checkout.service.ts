@@ -142,8 +142,11 @@ export interface PendingTicketPayment {
 }
 
 /**
- * Lot 7 (contrat 3.5, GET /api/checkout/pending) : paiement de billets PENDING non échu du compte pour cet
- * événement (même règle que la garde de checkout_create_payment), ou null. Erreur de lecture levée.
+ * Lot 7 (contrat 3.5, GET /api/checkout/pending) : paiement de billets PENDING du compte pour cet événement (même
+ * règle que la garde de checkout_create_payment), ou null. Erreur de lecture levée.
+ * Lot 9 bis (R47, décision S10 de l'orchestrateur) : un PENDING dont la garde des places est échue bloque encore un
+ * second paiement (409 PAYMENT_PENDING) tant qu'il n'est ni annulé ni expiré ; il est donc montré lui aussi, pour que
+ * la personne puisse l'annuler (expires_at passé : la page d'attente propose d'abord l'annulation).
  */
 export async function findPendingTicketPayment(clientId: string, eventId: string): Promise<PendingTicketPayment | null> {
     const { data, error } = await getServiceRoleClient()
@@ -153,7 +156,6 @@ export async function findPendingTicketPayment(clientId: string, eventId: string
         .eq('event_id', eventId)
         .eq('payment_target', 'TICKET')
         .eq('status', 'PENDING')
-        .gt('held_expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -163,7 +165,7 @@ export async function findPendingTicketPayment(clientId: string, eventId: string
         payment_id: String(data.id),
         amount: Number(data.amount),
         operator: (data.operator as string | null) ?? null,
-        expires_at: String(data.held_expires_at),
+        expires_at: data.held_expires_at ? String(data.held_expires_at) : '',
         status_page_url: statusPageUrl(String(data.id)),
     };
 }
