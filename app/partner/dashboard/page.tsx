@@ -22,6 +22,7 @@ import {
     CheckCircle2,
     Clock,
     Download,
+    FilePlus2,
     FileSpreadsheet,
     FileText,
     QrCode,
@@ -47,6 +48,10 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StatusBanner } from '@/components/ui/StatusBanner';
+import { Modal } from '@/components/ui/Modal';
+import { TextInput } from '@/components/ui/Field';
+import { cn } from '@/components/ui/cn';
+import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { formatDate, formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import type { PartnerActivityItem, PartnerDashboardData, PartnerEventBreakdown } from '@/lib/partner/partner-dashboard.service';
 
@@ -58,6 +63,8 @@ const ClosingReportModal = dynamic(
 interface DashboardResponse {
     dashboard?: PartnerDashboardData;
     data?: PartnerDashboardData;
+    /** Lot 9 bis (R7, R54) : état du dossier servi par la route (complément possible tant que resubmitted_at est vide). */
+    partner?: { id: string; status: string; resubmitted_at: string | null; rejection_reason: string | null } | null;
     /** Lot 9 bis (R70, B88) : adresse de support lue côté serveur (SUPPORT_EMAIL), jamais écrite dans l'écran. */
     support_email?: string;
 }
@@ -86,6 +93,164 @@ const ACTIVITY_ICONS: Record<PartnerActivityItem['type'], { icon: React.ElementT
     WITHDRAWAL: { icon: Wallet, className: 'bg-surface-sunken text-fg' },
 };
 
+type DossierDoc = 'id_card' | 'business_doc';
+const ACCEPTED_DOCS = 'application/pdf,image/jpeg,image/png,image/webp';
+const REGISTRY_ID_MAX = 40;
+
+/** Dépôt d'une pièce (même route que l'inscription) : jeton de dépôt, ou erreur en français. */
+async function uploadDossierDocument(file: File, docType: DossierDoc): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('docType', docType);
+    let res: Response;
+    try {
+        res = await fetch('/api/partner/documents/upload', { method: 'POST', body: formData });
+    } catch (err) {
+        console.error('[tableau de bord] dépôt de pièce injoignable :', err instanceof Error ? err.message : String(err));
+        throw new Error('Connexion impossible : vérifiez votre réseau, puis réessayez.');
+    }
+    const httpCode = res.status;
+    const body = (await res.json().catch((err: unknown) => {
+        console.error(`[tableau de bord] dépôt ${docType} : réponse illisible, code HTTP`, httpCode, err);
+        return null;
+    })) as { uploadToken?: unknown; error?: unknown } | null;
+    if (!res.ok || typeof body?.uploadToken !== 'string') {
+        const what = docType === 'id_card' ? 'la pièce d’identité' : 'le document de l’entreprise';
+        throw new Error(typeof body?.error === 'string' && body.error ? body.error : `Dépôt de ${what} impossible. Réessayez.`);
+    }
+    return body.uploadToken;
+}
+
+/**
+ * Lot 9 bis (R54, B41, contrat 4.2 et 5.17) — complément d'un dossier refusé, une seule fois : les deux pièces déposées
+ * de nouveau, NINEA et RCCM facultatifs (40 caractères au plus), puis POST /api/partner/dossier/complete. Le dossier
+ * repasse EN_ATTENTE et les admins sont prévenus ; un refus de la route (déjà complété, dossier non refusé) est dit.
+ */
+function DossierCompleteModal({ isOpen, onClose, onDone }: { isOpen: boolean; onClose: () => void; onDone: (message: string) => void }) {
+    const [idCard, setIdCard] = React.useState<File | null>(null);
+    const [businessDoc, setBusinessDoc] = React.useState<File | null>(null);
+    const [ninea, setNinea] = React.useState('');
+    const [rccm, setRccm] = React.useState('');
+    const [errors, setErrors] = React.useState<Partial<Record<'idCard' | 'businessDoc' | 'ninea' | 'rccm', string>>>({});
+    const [failure, setFailure] = React.useState<string | null>(null);
+    const [progress, setProgress] = React.useState<string | null>(null);
+    const [isSending, setIsSending] = React.useState(false);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setIdCard(null);
+        setBusinessDoc(null);
+        setNinea('');
+        setRccm('');
+        setErrors({});
+        setFailure(null);
+        setProgress(null);
+    }, [isOpen]);
+
+    const submit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (isSending) return;
+        const next: typeof errors = {};
+        if (!idCard) next.idCard = 'Joignez la pièce d’identité du gérant (CNI ou passeport).';
+        if (!businessDoc) next.businessDoc = 'Joignez le document de l’entreprise (RCCM ou NINEA).';
+        if (ninea.trim().length > REGISTRY_ID_MAX) next.ninea = 'Le NINEA fait 40 caractères au plus.';
+        if (rccm.trim().length > REGISTRY_ID_MAX) next.rccm = 'Le RCCM fait 40 caractères au plus.';
+        setErrors(next);
+        setFailure(null);
+        if (Object.values(next).some(Boolean)) return;
+        setIsSending(true);
+        try {
+            setProgress('Envoi de la pièce d’identité…');
+            const idToken = await uploadDossierDocument(idCard as File, 'id_card');
+            setProgress('Envoi du document de l’entreprise…');
+            const businessToken = await uploadDossierDocument(businessDoc as File, 'business_doc');
+            setProgress('Envoi du dossier…');
+            const reply = await sendJson<{ ok?: boolean; message?: string }>('/api/partner/dossier/complete', 'POST', {
+                upload_ids: [idToken, businessToken],
+                ninea: ninea.trim() || null,
+                rccm: rccm.trim() || null,
+            });
+            onDone(typeof reply.message === 'string' && reply.message ? reply.message : 'Dossier envoyé : il est de nouveau en cours de vérification.');
+        } catch (err) {
+            console.error('[tableau de bord] complément du dossier refusé :', err instanceof ApiError ? err.code ?? 'sans code' : String(err));
+            setFailure(errorMessage(err, 'Dossier non envoyé. Réessayez.'));
+        } finally {
+            setProgress(null);
+            setIsSending(false);
+        }
+    };
+
+    const fileField = (key: 'idCard' | 'businessDoc', id: string, label: string, hint: string, file: File | null, setFile: (f: File | null) => void) => (
+        <div className={cn('space-y-2 rounded-2xl border border-dashed p-4', file ? 'border-success-border bg-success-bg' : 'border-border-strong bg-surface-sunken', errors[key] && 'border-danger')}>
+            <label htmlFor={id} className="block text-sm font-semibold text-fg">
+                {label}
+                <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+                <span className="sr-only"> (obligatoire)</span>
+            </label>
+            <p id={`${id}-aide`} className="text-sm text-fg-muted">{hint}</p>
+            <input
+                id={id}
+                type="file"
+                accept={ACCEPTED_DOCS}
+                disabled={isSending}
+                aria-describedby={`${id}-aide${errors[key] ? ` ${id}-erreur` : ''}`}
+                aria-invalid={errors[key] ? true : undefined}
+                onChange={(ev) => {
+                    setFile(ev.target.files?.[0] ?? null);
+                    setErrors((prev) => ({ ...prev, [key]: undefined }));
+                }}
+                className="block w-full text-sm text-fg file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-brand file:px-4 file:text-sm file:font-semibold file:text-on-brand"
+            />
+            {file && (
+                <p className="flex items-center gap-1.5 text-sm font-medium text-success-fg">
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    <span className="break-all">{`Fichier choisi : ${file.name}`}</span>
+                </p>
+            )}
+            {errors[key] && <p id={`${id}-erreur`} className="text-sm font-medium text-danger-fg">{errors[key]}</p>}
+        </div>
+    );
+
+    return (
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Compléter mon dossier"
+            subtitle="Une seule fois : votre dossier repasse en vérification."
+            icon={<FilePlus2 size={20} aria-hidden="true" />}
+            busy={isSending}
+            maxWidth="lg"
+            footer={
+                <div className="flex w-full flex-wrap justify-end gap-2">
+                    <Button type="button" variant="ghost" onClick={onClose} disabled={isSending}>Annuler</Button>
+                    <Button type="submit" form="complement-dossier" variant="primary" isLoading={isSending}>Envoyer mon dossier</Button>
+                </div>
+            }
+        >
+            <form id="complement-dossier" noValidate onSubmit={(ev) => void submit(ev)} className="space-y-4">
+                <p className="text-sm leading-relaxed text-fg-muted">
+                    Déposez de nouveau vos deux pièces, en tenant compte du motif du refus. PDF, JPEG, PNG ou WebP, 10 Mo au plus.
+                    Après cet envoi, le dossier ne pourra plus être complété ici.
+                </p>
+                {fileField('idCard', 'complement-piece-identite', 'Pièce d’identité du gérant', 'CNI ou passeport en cours de validité.', idCard, setIdCard)}
+                {fileField('businessDoc', 'complement-document-entreprise', 'Document de l’entreprise', 'Extrait RCCM ou attestation NINEA.', businessDoc, setBusinessDoc)}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <TextInput id="complement-ninea" label="NINEA (facultatif)" value={ninea} maxLength={REGISTRY_ID_MAX} disabled={isSending}
+                        onChange={(ev) => { setNinea(ev.target.value); setErrors((prev) => ({ ...prev, ninea: undefined })); }} error={errors.ninea} />
+                    <TextInput id="complement-rccm" label="RCCM (facultatif)" value={rccm} maxLength={REGISTRY_ID_MAX} disabled={isSending}
+                        onChange={(ev) => { setRccm(ev.target.value); setErrors((prev) => ({ ...prev, rccm: undefined })); }} error={errors.rccm} />
+                </div>
+                {progress && <p role="status" className="text-sm text-fg-muted">{progress}</p>}
+                {failure && (
+                    <StatusBanner tone="danger" announce="alert" title="Dossier non envoyé">
+                        {failure}
+                    </StatusBanner>
+                )}
+            </form>
+        </Modal>
+    );
+}
+
 /** Ouvre un export (PDF ou CSV servi par une route) dans un nouvel onglet. */
 function openExport(url: string): void {
     const win = window.open(url, '_blank', 'noopener,noreferrer');
@@ -108,6 +273,9 @@ export default function PartnerDashboardPage() {
     const { orders: liveOrders, connected } = usePartnerOrders(ordersOpen && partner ? partner.id : null);
 
     const [closing, setClosing] = React.useState<{ id: string; title: string } | null>(null);
+    const [isDossierOpen, setIsDossierOpen] = React.useState(false);
+    /** Lot 9 bis (R54) : complément possible une fois, tant que la route ne sert pas resubmitted_at. */
+    const canCompleteDossier = partner?.status === 'REJETE' && body?.partner?.status === 'REJETE' && !body.partner.resubmitted_at;
 
     // Démarrage de l'essai à la première visite d'un partenaire validé (action idempotente du serveur),
     // puis relecture : la durée et la date de fin affichées sont celles que le serveur a posées.
@@ -296,10 +464,14 @@ export default function PartnerDashboardPage() {
                         <StatusBanner
                             tone="danger"
                             title="Demande de compte partenaire refusée"
-                            action={supportEmail ? <LinkButton href={`mailto:${supportEmail}`} variant="secondary" size="sm">Contacter le support</LinkButton> : undefined}
+                            action={canCompleteDossier
+                                ? <Button variant="primary" size="sm" leftIcon={<FilePlus2 size={16} aria-hidden="true" />} onClick={() => setIsDossierOpen(true)}>Compléter mon dossier</Button>
+                                : supportEmail ? <LinkButton href={`mailto:${supportEmail}`} variant="secondary" size="sm">Contacter le support</LinkButton> : undefined}
                         >
                             {partner.rejectionReason ? <>Motif : {partner.rejectionReason}</> : 'Aucun motif n’a été précisé.'}{' '}
-                            Contactez le support pour corriger votre dossier.
+                            {canCompleteDossier
+                                ? 'Vous pouvez compléter votre dossier une fois : il repasse alors en vérification.'
+                                : 'Votre dossier a déjà été complété une fois. Contactez le support pour la suite.'}
                         </StatusBanner>
                     )}
                     {partner?.status === 'SUSPENDU' && (
@@ -493,6 +665,16 @@ export default function PartnerDashboardPage() {
                     </div>
                 </>
             )}
+
+            <DossierCompleteModal
+                isOpen={isDossierOpen}
+                onClose={() => setIsDossierOpen(false)}
+                onDone={(message) => {
+                    setIsDossierOpen(false);
+                    toast.success(message);
+                    void reload();
+                }}
+            />
 
             {closing && (
                 <ClosingReportModal isOpen onClose={() => setClosing(null)} eventId={closing.id} eventTitle={closing.title} />
