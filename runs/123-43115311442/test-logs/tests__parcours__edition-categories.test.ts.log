@@ -1,0 +1,209 @@
+TAP version 13
+# Subtest: F4 — création : POST /api/partner/events/[id]/categories (ticket_category_create)
+    # Subtest: tous les champs appliqués, rien d’ignoré (is_active: false, max_per_order, dates de vente en heure de Dakar)
+    ok 1 - tous les champs appliqués, rien d’ignoré (is_active: false, max_per_order, dates de vente en heure de Dakar)
+      ---
+      duration_ms: 48.634945
+      type: 'test'
+      ...
+    # Subtest: max_per_order 0, prix 1500,5 ou clé inconnue (sold_quantity) → 400 en français, aucune catégorie créée
+    ok 2 - max_per_order 0, prix 1500,5 ou clé inconnue (sold_quantity) → 400 en français, aucune catégorie créée
+      ---
+      duration_ms: 37.596918
+      type: 'test'
+      ...
+    # Subtest: Σ des quotas au-delà de la jauge → QUOTA_ABOVE_CAPACITY, aucune catégorie créée
+    ok 3 - Σ des quotas au-delà de la jauge → QUOTA_ABOVE_CAPACITY, aucune catégorie créée
+      ---
+      duration_ms: 16.826762
+      type: 'test'
+      ...
+    # Subtest: nom déjà pris (casse différente) → refusé, aucune catégorie créée
+    ok 4 - nom déjà pris (casse différente) → refusé, aucune catégorie créée
+      ---
+      duration_ms: 18.768108
+      type: 'test'
+      ...
+    1..4
+ok 1 - F4 — création : POST /api/partner/events/[id]/categories (ticket_category_create)
+  ---
+  duration_ms: 556.050838
+  type: 'suite'
+  ...
+# Subtest: F4 — modification sans vente : PATCH …/categories/[categoryId] (ticket_category_update)
+    # Subtest: name, description, dates de vente, max_per_order, is_visible et is_active appliqués (plus rien d’ignoré)
+    ok 1 - name, description, dates de vente, max_per_order, is_visible et is_active appliqués (plus rien d’ignoré)
+      ---
+      duration_ms: 21.004249
+      type: 'test'
+      ...
+    # Subtest: prix et quota modifiables sans vente ni réservation (garde-fou)
+    ok 2 - prix et quota modifiables sans vente ni réservation (garde-fou)
+      ---
+      duration_ms: 17.354037
+      type: 'test'
+      ...
+    # Subtest: hausse de quota d’une catégorie désactivée : elle reste désactivée (aucune réactivation implicite)
+    ok 3 - hausse de quota d’une catégorie désactivée : elle reste désactivée (aucune réactivation implicite)
+      ---
+      duration_ms: 19.082201
+      type: 'test'
+      ...
+    # Subtest: clé inconnue (sold_quantity, held_quantity, event_id) → 400 avec le champ refusé, rien n’est modifié
+    ok 4 - clé inconnue (sold_quantity, held_quantity, event_id) → 400 avec le champ refusé, rien n’est modifié
+      ---
+      duration_ms: 39.314782
+      type: 'test'
+      ...
+    # Subtest: renommer vers un nom déjà pris (casse différente) → refusé, rien n’est modifié
+    ok 5 - renommer vers un nom déjà pris (casse différente) → refusé, rien n’est modifié
+      ---
+      duration_ms: 16.98161
+      type: 'test'
+      ...
+    # Subtest: valeurs invalides (quota non numérique, prix décimal, fin de vente avant le début ou après la fin) → refus en français, sans message Postgres
+    ok 6 - valeurs invalides (quota non numérique, prix décimal, fin de vente avant le début ou après la fin) → refus en français, sans message Postgres
+      ---
+      duration_ms: 54.59937
+      type: 'test'
+      ...
+    1..6
+ok 2 - F4 — modification sans vente : PATCH …/categories/[categoryId] (ticket_category_update)
+  ---
+  duration_ms: 182.373256
+  type: 'suite'
+  ...
+# Subtest: F4 — catégories avec des ventes (événement publié)
+    # Subtest: quota sous les vendus → QUOTA_BELOW_SOLD, rien n’est modifié
+    ok 1 - quota sous les vendus → QUOTA_BELOW_SOLD, rien n’est modifié
+      ---
+      duration_ms: 18.833636
+      type: 'test'
+      ...
+    # Subtest: quota sous vendus + réservés → QUOTA_BELOW_HELD, sans message Postgres, rien n’est modifié
+    ok 2 - quota sous vendus + réservés → QUOTA_BELOW_HELD, sans message Postgres, rien n’est modifié
+      ---
+      duration_ms: 16.043421
+      type: 'test'
+      ...
+    # Subtest: quota égal à vendus + réservés : accepté (garde-fou)
+    ok 3 - quota égal à vendus + réservés : accepté (garde-fou)
+      ---
+      duration_ms: 15.474954
+      type: 'test'
+      ...
+    # Subtest: Σ des quotas au-delà de la jauge → QUOTA_ABOVE_CAPACITY, rien n’est modifié
+    ok 4 - Σ des quotas au-delà de la jauge → QUOTA_ABOVE_CAPACITY, rien n’est modifié
+      ---
+      duration_ms: 16.317885
+      type: 'test'
+      ...
+    # Subtest: prix d’une catégorie vendue → 409 PRICE_LOCKED_AFTER_SALES, rien n’est modifié
+    ok 5 - prix d’une catégorie vendue → 409 PRICE_LOCKED_AFTER_SALES, rien n’est modifié
+      ---
+      duration_ms: 16.657356
+      type: 'test'
+      ...
+    # Subtest: prix d’une catégorie qui n’a qu’une réservation en cours → 409 PRICE_LOCKED_AFTER_SALES
+    ok 6 - prix d’une catégorie qui n’a qu’une réservation en cours → 409 PRICE_LOCKED_AFTER_SALES
+      ---
+      duration_ms: 17.384202
+      type: 'test'
+      ...
+    # Subtest: champs non financiers d’une catégorie vendue (nom, description, max_per_order, visibilité) : appliqués
+    ok 7 - champs non financiers d’une catégorie vendue (nom, description, max_per_order, visibilité) : appliqués
+      ---
+      duration_ms: 14.790171
+      type: 'test'
+      ...
+    # Subtest: prix d’une catégorie sans vente ni réservation : modifiable (garde-fou)
+    ok 8 - prix d’une catégorie sans vente ni réservation : modifiable (garde-fou)
+      ---
+      duration_ms: 15.864287
+      type: 'test'
+      ...
+    # Subtest: suppression d’une catégorie vendue ou réservée → 409 CATEGORY_HAS_SALES, la réponse propose de la désactiver
+    ok 9 - suppression d’une catégorie vendue ou réservée → 409 CATEGORY_HAS_SALES, la réponse propose de la désactiver
+      ---
+      duration_ms: 32.674553
+      type: 'test'
+      ...
+    # Subtest: suppression d’une catégorie sans vente ni réservation : effective
+    ok 10 - suppression d’une catégorie sans vente ni réservation : effective
+      ---
+      duration_ms: 12.595535
+      type: 'test'
+      ...
+    1..10
+ok 3 - F4 — catégories avec des ventes (événement publié)
+  ---
+  duration_ms: 905.697861
+  type: 'suite'
+  ...
+# Subtest: F4 — statuts et droits
+    # Subtest: TERMINE et ANNULE → 409 EVENT_LOCKED pour la création, la modification et la suppression
+    ok 1 - TERMINE et ANNULE → 409 EVENT_LOCKED pour la création, la modification et la suppression
+      ---
+      duration_ms: 183.011523
+      type: 'test'
+      ...
+    # Subtest: partenaire B : création, modification et suppression sur l’événement de A refusées sans effet
+    ok 2 - partenaire B : création, modification et suppression sur l’événement de A refusées sans effet
+      ---
+      duration_ms: 42.09362
+      type: 'test'
+      ...
+    1..2
+ok 4 - F4 — statuts et droits
+  ---
+  duration_ms: 225.248739
+  type: 'suite'
+  ...
+# Subtest: 8.2 v — concurrence sur les quotas (cas T8 porté)
+    # Subtest: deux hausses simultanées du quota : deux 200, aucune mise à jour perdue, vendus intacts
+    ok 1 - deux hausses simultanées du quota : deux 200, aucune mise à jour perdue, vendus intacts
+      ---
+      duration_ms: 240.080925
+      type: 'test'
+      ...
+    1..1
+ok 5 - 8.2 v — concurrence sur les quotas (cas T8 porté)
+  ---
+  duration_ms: 240.187987
+  type: 'suite'
+  ...
+# Subtest: F4 — RPC et routes (catalogue et contrôles statiques)
+    # Subtest: RPC ticket_category_create, _update et _delete : SECURITY DEFINER, search_path = public, (p jsonb) RETURNS jsonb, réservées au service_role
+    ok 1 - RPC ticket_category_create, _update et _delete : SECURITY DEFINER, search_path = public, (p jsonb) RETURNS jsonb, réservées au service_role
+      ---
+      duration_ms: 16.12907
+      type: 'test'
+      ...
+    # Subtest: statique : les routes des catégories passent par les RPC ; DELETE exporté
+    ok 2 - statique : les routes des catégories passent par les RPC ; DELETE exporté
+      ---
+      duration_ms: 0.785844
+      type: 'test'
+      ...
+    1..2
+ok 6 - F4 — RPC et routes (catalogue et contrôles statiques)
+  ---
+  duration_ms: 17.046494
+  type: 'suite'
+  ...
+[INVARIANT] edition-categories — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] edition-categories — purge des réservations échues : {"expired":0}
+[INVARIANT] edition-categories — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] edition-categories — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] edition-categories — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] edition-categories — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] edition-categories — (j)(k)(l) : 0 violation(s)
+1..6
+# tests 25
+# suites 6
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2328.952901
