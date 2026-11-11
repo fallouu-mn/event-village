@@ -7,7 +7,8 @@
  * permission de l'action (lue sur `user_roles` et `admin_permissions`, jamais sur `users.role`), le SUPERADMIN
  * toujours ; un admin sans la permission reçoit 403 PERMISSION_MISSING, sans effet. Tout autre compte (client,
  * partenaire B) reçoit le refus actuel de la route : l'aide rend `NONE` et la route garde sa réponse (même statut,
- * aucun indice). Une lecture en échec donne 503 ADMIN_AUTH_UNAVAILABLE, jamais un accès par défaut.
+ * aucun indice). Une lecture des permissions en échec donne 503 ADMIN_AUTH_UNAVAILABLE, une lecture de l'événement en
+ * échec 500 EVENT_UNAVAILABLE ; jamais un accès par défaut.
  */
 import { NextResponse } from 'next/server';
 import {
@@ -17,6 +18,7 @@ import {
     permissionMissingResponse,
     type AdminPermission,
 } from '@/lib/admin/admin-auth';
+import { apiFailure } from '@/lib/api/public-error';
 import { serverIsAdmin, type ServerUser } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -58,8 +60,13 @@ export async function requireEventAccess(user: ServerUser, eventId: string, perm
             .eq('id', eventId)
             .maybeSingle();
         if (error) {
-            console.error(`[requireEventAccess] événement ${eventId} illisible : ${error.message}`);
-            return { kind: 'DENIED', response: adminAuthUnavailableResponse() };
+            // Reste S3 (A26, A32 du lot 9) : l'événement illisible est une panne de l'événement, pas de l'authentification
+            // de l'admin : 500 EVENT_UNAVAILABLE, journalisée, jamais une absence (pannes-absences, messages-bruts).
+            return {
+                kind: 'DENIED',
+                response: apiFailure('requireEventAccess', new Error(`événement ${eventId} illisible : ${error.message}`),
+                    { message: 'Événement momentanément indisponible.', code: 'EVENT_UNAVAILABLE', status: 500 }),
+            };
         }
         const rel = (data as { partners?: { user_id?: string } | Array<{ user_id?: string }> } | null)?.partners;
         const ownerId = Array.isArray(rel) ? rel[0]?.user_id : rel?.user_id;
