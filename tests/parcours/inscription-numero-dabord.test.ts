@@ -251,7 +251,7 @@ describe('7.3 — inscription : un tiers ne bloque plus un numéro ; parrainage 
         assert.deepEqual([user.first_name, user.last_name], ['Awa', 'Titulaire'], 'le compte est celui du titulaire');
     });
 
-    test('code de parrainage : relation CLIENT_TO_CLIENT aux taux de referral_config ; email fourni enregistré', async () => {
+    test('code de parrainage : relation CLIENT_TO_CLIENT aux taux de referral_config ; email fourni en attente de vérification, lien envoyé', async () => {
         const sponsor = await newBuyer('inscr-parrain');
         const { data: sp, error: spErr } = await service.from('users').select('referral_code, referral_status').eq('id', sponsor.userId).single();
         assert.equal(spErr, null, `parrain : ${spErr?.message}`);
@@ -268,9 +268,15 @@ describe('7.3 — inscription : un tiers ne bloque plus un numéro ; parrainage 
             sponsor_id: sponsor.userId, referral_type: 'CLIENT_TO_CLIENT', rate_n1_at_creation: Number(cfg.rate_n1), rate_n2_at_creation: Number(cfg.rate_n2),
             duration_months: cfg.duration_months, is_active: true,
         }], 'une relation parrain → filleul, taux figés à l\'inscription');
+        // Lot 9 bis (R87, T60, contrat 4.6) : l'adresse fournie attend sa vérification ; users.email garde l'adresse technique.
         const { data: user, error } = await service.from('users').select('email').eq('id', flow.userId!).single();
         assert.equal(error, null, `profil : ${error?.message}`);
-        assert.equal(user.email, email.toLowerCase(), 'email fourni enregistré');
+        assert.equal(user.email, `${flow.phone.replace('+', '')}@eventvillage.sn`, 'R87 : adresse technique tant que l’adresse fournie n’est pas vérifiée');
+        const { data: pending, error: pErr } = await service.from('users').select('email_pending, email_verified_at').eq('id', flow.userId!).single();
+        assert.equal(pErr, null, `adresse en attente : ${pErr?.message} — colonnes users.email_pending et users.email_verified_at (M10 du lot 9 bis)`);
+        assert.deepEqual([pending.email_pending, pending.email_verified_at], [email.toLowerCase(), null], 'email fourni enregistré en attente, non vérifié');
+        assert.deepEqual(getFakes().email.messagesTo(email).map((m) => m.subject), ['Vérifiez votre adresse email — Event Village'],
+            'un seul email à l’adresse fournie : le lien de vérification (11.1 N26)');
     });
 });
 
