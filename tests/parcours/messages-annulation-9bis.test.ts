@@ -262,7 +262,7 @@ async function inAppOf(userId: string, eventId: string): Promise<Row[]> {
 
 /** Espaces insécables et apostrophes typographiques ramenés à leur forme simple. */
 function norm(s: string): string {
-    return s.replace(/[  ]/g, ' ').replace(/[’‘]/g, '\'');
+    return s.replace(/[\u00a0\u202f]/g, ' ').replace(/[’‘]/g, '\'');
 }
 
 describe('9b.31 R13 : billet reçu par transfert, annonce à l\'acheteur d\'origine', () => {
