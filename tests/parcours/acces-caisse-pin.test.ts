@@ -408,7 +408,8 @@ describe('Retrait d’un contrôleur qui a une caisse OUVERT', () => {
             removes: 'assignment',
             run: async () => {
                 const patch = await handlerOf('../../app/api/partner/team/assignments/route', 'PATCH');
-                return { route: await invoke(patch, authed('/api/partner/team/assignments', 'PATCH', partner, { controller_id: ctrl.userId, event_ids: [], can_accept_cash: true })) };
+                // Lot 9 bis (R41) : corps par événement, le booléen global can_accept_cash est refusé (400 INVALID_FIELD)
+                return { route: await invoke(patch, authed('/api/partner/team/assignments', 'PATCH', partner, { controller_id: ctrl.userId, assignments: [] })) };
             },
         },
         {
