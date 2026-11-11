@@ -10,6 +10,10 @@
 --     3. notification_demo_recipients(p jsonb) (nouvelle, STABLE) : destinataires de démonstration d'un lot, lue par
 --        l'envoyeur et par les envois synchrones (lib/notifications/demo-guard.ts) ;
 --     4. reprise rejouable des comptes déjà semés (marque is_essai_fixture ou adresse du domaine du seed).
+--   Tâche I2 (contrat 5.64, B109 ; D-ree 2) :
+--     5. essai_check_reel(p jsonb DEFAULT '{}') (nouvelle, STABLE : PostgreSQL y refuse toute écriture) : ce qui
+--        ferait partir de vrais messages ou de l'argent vers des comptes de démonstration ; lue par
+--        npm run essai:check-reel (scripts/dev/essai-check-reel.mjs).
 -- Aucune fonction existante recopiée. Aucun verrou pris (lectures seules, puis une reprise de users par ligne).
 -- Aucun BEGIN ni COMMIT ; rejouable (ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, CREATE OR REPLACE, reprise
 -- gardée par IS DISTINCT FROM). DDL et fonctions d'abord, DML en fin de fichier.
@@ -94,6 +98,132 @@ REVOKE ALL ON FUNCTION public.notification_demo_recipients(jsonb) FROM PUBLIC, a
 GRANT EXECUTE ON FUNCTION public.notification_demo_recipients(jsonb) TO service_role;
 COMMENT ON FUNCTION public.notification_demo_recipients(jsonb) IS
     'Lot 9 bis (I1) : clés des destinataires de démonstration d''un lot (compte, numéro, adresse, événement d''une partenaire de démonstration). Service_role uniquement.';
+
+
+-- ============================================================================
+-- Tâche I2 — 5. essai_check_reel (nouvelle, STABLE)
+-- ============================================================================
+-- Rubriques (forme figée par tests/schema/essai-check-reel.test.ts) ; aucun numéro, aucune adresse, aucun nom rendu :
+--   outbox   : lignes PENDING ou SENDING hors IN_APP, total et détail par canal ;
+--   payments : paiements simulés PENDING ; 10 exemples { id, created_at, amount } ;
+--   cashouts : versements A_ENVOYER, ENVOYE ou INCERTAIN, simulés hors blocage SIMULATED (un versement simulé refusé
+--              par un serveur réel reste bloqué SIMULATED pour toujours, D-ree constat 10), ou réels vers un compte de
+--              démonstration (D-I2-1) ; 10 exemples { id, kind, status, amount } ;
+--   tickets  : billets VALIDE sur un événement ni ANNULE ni TERMINE dont la fin (event_end_at) est à venir, quand le
+--              porteur est un compte de démonstration, le paiement est simulé ou l'événement appartient à une
+--              partenaire de démonstration ; regroupés par événement { event_id, title, slug, status, start_date, count } ;
+--   seed_events_on_sale : événements PUBLIE à venir d'une partenaire de démonstration, information sans effet sur le
+--              code de sortie du script (D-I2-2) { event_id, title, slug, start_date }.
+-- `p` est réservé (aucune option) ; la signature (p jsonb) est celle de toutes les RPC appelées par PostgREST.
+CREATE OR REPLACE FUNCTION public.essai_check_reel(p jsonb DEFAULT '{}'::jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_outbox   jsonb;
+    v_payments jsonb;
+    v_cashouts jsonb;
+    v_tickets  jsonb;
+    v_seed     jsonb;
+BEGIN
+    SELECT jsonb_build_object(
+               'total', count(*),
+               'sms',   count(*) FILTER (WHERE o.channel = 'SMS'),
+               'email', count(*) FILTER (WHERE o.channel = 'EMAIL'),
+               'push',  count(*) FILTER (WHERE o.channel = 'PUSH'))
+      INTO v_outbox
+      FROM public.notification_outbox o
+     WHERE o.status IN ('PENDING', 'SENDING')
+       AND o.channel <> 'IN_APP';
+
+    WITH pending AS (
+        SELECT pay.id, pay.created_at, pay.amount
+          FROM public.payments pay
+         WHERE pay.simulated
+           AND pay.status::text = 'PENDING'
+    )
+    SELECT jsonb_build_object(
+               'total', (SELECT count(*) FROM pending),
+               'examples', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', x.id, 'created_at', x.created_at, 'amount', x.amount)
+                                                      ORDER BY x.created_at, x.id)
+                                       FROM (SELECT * FROM pending ORDER BY created_at, id LIMIT 10) x), '[]'::jsonb))
+      INTO v_payments;
+
+    WITH running AS (
+        SELECT c.id, c.kind, c.status, c.amount, c.created_at
+          FROM public.cashouts c
+         WHERE c.status IN ('A_ENVOYER', 'ENVOYE', 'INCERTAIN')
+           AND ((c.simulated AND c.blocked_reason IS DISTINCT FROM 'SIMULATED')
+                OR (NOT c.simulated AND EXISTS (SELECT 1 FROM public.users u
+                                                 WHERE u.id = c.beneficiary_user_id AND u.demo_account)))
+    )
+    SELECT jsonb_build_object(
+               'total', (SELECT count(*) FROM running),
+               'examples', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', x.id, 'kind', x.kind, 'status', x.status, 'amount', x.amount)
+                                                      ORDER BY x.created_at, x.id)
+                                       FROM (SELECT * FROM running ORDER BY created_at, id LIMIT 10) x), '[]'::jsonb))
+      INTO v_cashouts;
+
+    WITH demo_partners AS (
+        SELECT pa.id
+          FROM public.partners pa
+          JOIN public.users u ON u.id = pa.user_id
+         WHERE u.demo_account
+    ), per_event AS (
+        SELECT e.id, e.title, e.slug, e.status::text AS status, e.start_date, count(*) AS n
+          FROM public.tickets t
+          JOIN public.events e ON e.id = t.event_id
+          LEFT JOIN public.payments pay ON pay.id = t.payment_id
+          LEFT JOIN public.users holder ON holder.id = t.user_id
+         WHERE t.status::text = 'VALIDE'
+           AND e.status::text NOT IN ('ANNULE', 'TERMINE')
+           AND public.event_end_at(e.id) > now()
+           AND (COALESCE(holder.demo_account, FALSE)
+                OR COALESCE(pay.simulated, FALSE)
+                OR e.partner_id IN (SELECT dp.id FROM demo_partners dp))
+         GROUP BY e.id, e.title, e.slug, e.status, e.start_date
+    )
+    SELECT jsonb_build_object(
+               'total', COALESCE((SELECT sum(pe.n)::bigint FROM per_event pe), 0),
+               'events', COALESCE((SELECT jsonb_agg(jsonb_build_object('event_id', pe.id, 'title', pe.title, 'slug', pe.slug,
+                                                                       'status', pe.status, 'start_date', pe.start_date, 'count', pe.n)
+                                                    ORDER BY pe.start_date, pe.id)
+                                     FROM per_event pe), '[]'::jsonb))
+      INTO v_tickets;
+
+    WITH on_sale AS (
+        SELECT e.id, e.title, e.slug, e.start_date
+          FROM public.events e
+          JOIN public.partners pa ON pa.id = e.partner_id
+          JOIN public.users u ON u.id = pa.user_id
+         WHERE u.demo_account
+           AND e.status::text = 'PUBLIE'
+           AND public.event_end_at(e.id) > now()
+    )
+    SELECT jsonb_build_object(
+               'total', (SELECT count(*) FROM on_sale),
+               'events', COALESCE((SELECT jsonb_agg(jsonb_build_object('event_id', s.id, 'title', s.title, 'slug', s.slug, 'start_date', s.start_date)
+                                                    ORDER BY s.start_date, s.id)
+                                     FROM on_sale s), '[]'::jsonb))
+      INTO v_seed;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'outbox', v_outbox,
+        'payments', v_payments,
+        'cashouts', v_cashouts,
+        'tickets', v_tickets,
+        'seed_events_on_sale', v_seed);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.essai_check_reel(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.essai_check_reel(jsonb) TO service_role;
+COMMENT ON FUNCTION public.essai_check_reel(jsonb) IS
+    'Lot 9 bis (I2) : contrôle avant le passage en réel (file des notifications, paiements et versements simulés, billets de démonstration à venir). Lecture seule (STABLE), service_role uniquement.';
 
 
 -- ============================================================================
