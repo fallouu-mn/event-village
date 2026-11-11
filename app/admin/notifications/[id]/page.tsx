@@ -84,12 +84,15 @@ const OUTCOME_LABELS: Record<string, string> = { SEND: 'Envoyer', SKIP: 'Ne pas 
 const FAMILY_LABELS: Record<string, string> = { ESSENTIAL: 'Indispensable (toujours envoyée)', OPTIONAL: 'Optionnelle (selon les préférences)' };
 const TOPIC_LABELS: Record<string, string> = {
   REMINDERS: 'Rappels avant l’événement',
-  EVENT_UPDATES: 'Changements d’un événement',
+  // Lot 9 bis (R14, contrat 5.32) : un changement de date ou de lieu est indispensable ; ce sujet ne règle plus
+  // que la suspension et la reprise (même libellé que GET /api/notifications/preferences).
+  EVENT_UPDATES: 'Suspension et reprise d’un événement',
   PRO_ACTIVITY: 'Activité des ventes',
 };
 const SMS_POLICY_LABELS: Record<string, string> = {
   ALWAYS: 'SMS toujours envoyé',
-  IF_NO_PUSH: 'SMS seulement sans notification push remise',
+  // Lot 9 bis (R28, B83, contrat 5.39) : le service push accepte la notification, il ne garantit pas son affichage.
+  IF_NO_PUSH: 'SMS seulement si le push n’est pas accepté par le service push',
   NEVER: 'Jamais de SMS',
 };
 const SMS_OUTCOME_LABELS: Record<string, string> = {
