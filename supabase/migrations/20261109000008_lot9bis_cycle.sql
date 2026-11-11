@@ -24,6 +24,14 @@
 --     suspendu : son événement ne peut pas être remis en ligne avant sa réactivation. » quand la partenaire est
 --     SUSPENDU, admin compris (statut lu sans verrou, ordre 3.3).
 --
+-- Délégation fix(9b.41-SC) (R92, R104, R105, pour S-E) :
+--  1 bis. Ligne de transition SUSPENDU → ANNULE PARTENAIRE retirée (R105, B68) : seul un admin annule un SUSPENDU
+--     (event_cancel et event_actions lisent la table).
+--  3 ter. event_actions (même définition, point 3) : can_delete, propriétaire et brouillon jamais soumis (aucune ligne
+--     d'historique hors CREATION, même règle que events_delete_guard) (R92).
+-- 30. ticket_transfers_incoming(jsonb) : base 20261108000002_lot9_invitations.sql:206-260, recopie intégrale,
+--     signature et STABLE identiques. Changement : `kind` INVITATION (sans expéditeur) ou TRANSFER (R104).
+--
 -- Délégation fix(9b.18-SC) (R103, R102 ; B43, B44, pour S-B) :
 -- 16 bis. ticket_transfer_initiate (même définition, point 16) : transfert vers son propre numéro (formes +221… et
 --     221…, 9 derniers chiffres) refusé SELF_TRANSFER « Vous ne pouvez pas transférer un billet à votre propre
@@ -187,6 +195,10 @@ GRANT ALL ON TABLE public.controller_invitations TO service_role;
 INSERT INTO public.event_status_transitions (from_status, to_status, actor_kind, reason_required, channel, action_label)
 VALUES ('SUSPENDU', 'TERMINE', 'ADMIN', TRUE, 'TRANSITION', 'Clore l’événement')
 ON CONFLICT DO NOTHING;
+
+-- Délégation fix(9b.41-SC) (R105, B68) : seul un admin annule un événement SUSPENDU
+DELETE FROM public.event_status_transitions
+ WHERE from_status = 'SUSPENDU' AND to_status = 'ANNULE' AND actor_kind = 'PARTENAIRE' AND channel = 'CANCELLATION';
 
 
 -- ============================================================================
@@ -416,6 +428,10 @@ BEGIN
         'status', e.status::text,
         'actions', v_actions,
         'can_edit', a.is_owner AND e.status::text IN ('BROUILLON', 'VALIDE', 'PUBLIE', 'SUSPENDU'),
+        -- Lot 9 bis (R92) : « Supprimer le brouillon » seulement s'il n'a jamais été soumis (même règle que
+        -- events_delete_guard : aucune ligne d'historique hors CREATION)
+        'can_delete', a.is_owner AND e.status::text = 'BROUILLON'
+                      AND NOT EXISTS (SELECT 1 FROM public.event_status_history hh WHERE hh.event_id = v_event AND hh.channel <> 'CREATION'),
         -- Lot 9 bis (R51) : « Annuler » seulement si la table l'ouvre à un rôle de l'acteur (canal CANCELLATION)
         'can_cancel', EXISTS (SELECT 1 FROM public.event_status_transitions t
                                WHERE t.from_status = e.status AND t.to_status = 'ANNULE' AND t.channel = 'CANCELLATION'
@@ -2411,6 +2427,71 @@ $$;
 
 
 -- ============================================================================
+-- Délégation fix(9b.41-SC) — 30. ticket_transfers_incoming (recopie, 20261108000002_lot9_invitations.sql:206-260)
+-- ============================================================================
+-- Transferts entrants du compte (B3) : p = { actor_id } → { ok, items, phone_verification_required }.
+-- items : transferts PENDING non échus dont la cible est le numéro vérifié du compte, triés par échéance ;
+-- un numéro non vérifié ne montre aucun détail (seulement phone_verification_required). Lot 9 bis (R104) : `kind`
+-- INVITATION (sans expéditeur) ou TRANSFER, pour que l'écran choisisse son texte.
+CREATE OR REPLACE FUNCTION public.ticket_transfers_incoming(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_phone text;
+    v_identity text;
+    v_items jsonb := '[]'::jsonb;
+    v_verify boolean := false;
+BEGIN
+    IF v_actor IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Demande incomplète.');
+    END IF;
+    SELECT u.phone INTO v_phone FROM public.users u WHERE u.id = v_actor;
+    IF v_phone IS NULL OR v_phone !~ '^\+221[0-9]{9}$' THEN
+        RETURN jsonb_build_object('ok', true, 'items', v_items, 'phone_verification_required', false);
+    END IF;
+    v_identity := public.ticket_transfer_identity(v_phone, v_actor);
+
+    IF v_identity = 'MATCH' THEN
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                   'transfer_id', tr.id,
+                   'kind', CASE WHEN tr.from_user_id IS NULL THEN 'INVITATION' ELSE 'TRANSFER' END,
+                   'expires_at', tr.expires_at,
+                   'sender_display', CASE
+                       WHEN tr.from_user_id IS NULL THEN 'L’organisateur de l’événement'
+                       WHEN btrim(COALESCE(s.first_name, '')) <> '' AND btrim(COALESCE(s.last_name, '')) <> ''
+                           THEN btrim(s.first_name) || ' ' || upper(left(btrim(s.last_name), 1)) || '.'
+                       WHEN btrim(COALESCE(s.first_name, '')) <> '' THEN upper(left(btrim(s.first_name), 1)) || '***'
+                       WHEN btrim(COALESCE(s.last_name, '')) <> '' THEN upper(left(btrim(s.last_name), 1)) || '***'
+                       ELSE 'Un utilisateur Event Village' END,
+                   'ticket', jsonb_build_object('category_name', c.name, 'price', t.price),
+                   'event', jsonb_build_object('id', e.id, 'title', e.title, 'start_date', e.start_date, 'start_time', e.start_time,
+                                               'location', e.location, 'city', e.city, 'image_url', e.image_url)
+               ) ORDER BY tr.expires_at, tr.id), '[]'::jsonb)
+          INTO v_items
+          FROM public.ticket_transfers tr
+          JOIN public.tickets t ON t.id = tr.ticket_id
+          JOIN public.events e ON e.id = t.event_id
+          LEFT JOIN public.ticket_categories c ON c.id = t.category_id
+          LEFT JOIN public.users s ON s.id = tr.from_user_id
+         WHERE tr.to_phone_or_email = v_phone AND tr.status::text = 'PENDING' AND tr.expires_at > now()
+           AND tr.from_user_id IS DISTINCT FROM v_actor;
+    ELSIF v_identity = 'PHONE_NOT_VERIFIED' THEN
+        v_verify := EXISTS (SELECT 1 FROM public.ticket_transfers tr
+                             WHERE tr.to_phone_or_email = v_phone AND tr.status::text = 'PENDING' AND tr.expires_at > now()
+                               AND tr.from_user_id IS DISTINCT FROM v_actor);
+    END IF;
+
+    RETURN jsonb_build_object('ok', true, 'items', v_items, 'phone_verification_required', v_verify);
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -2442,7 +2523,8 @@ BEGIN
         'public.controller_invitations_mine(jsonb)',
         'public.controller_account_states(jsonb)',
         'public.controller_assignments_sync(jsonb)',
-        'public.pilotage_sales(jsonb)'
+        'public.pilotage_sales(jsonb)',
+        'public.ticket_transfers_incoming(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

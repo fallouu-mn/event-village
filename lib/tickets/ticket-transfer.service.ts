@@ -31,6 +31,8 @@ export interface InitiateTransferResult {
 
 export interface IncomingTransfer {
     transfer_id: string;
+    /** Lot 9 bis (R104) : INVITATION (organisateur, sans expéditeur) ou TRANSFER (un particulier). */
+    kind: 'INVITATION' | 'TRANSFER';
     expires_at: string;
     sender_display: string;
     ticket: { category_name: string | null; price: number };

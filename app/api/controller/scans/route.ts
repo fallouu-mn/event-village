@@ -21,6 +21,15 @@ type StatsReply = {
 
 const NOT_FOUND = { error: 'Événement introuvable ou non affecté.', code: 'NOT_FOUND' };
 
+/** Lot 9 bis (R100) : « Porte » ajouté seulement si le point d'entrée ne se nomme pas déjà (Porte, Entrée, Accès…). */
+const NAMED_ENTRY = /^(porte|portail|entr[ée]e|acc[èe]s|guichet)\b/i;
+
+function doorLabel(entryPoint: string | null): string {
+    if (!entryPoint) return 'Vos entrées';
+    const value = entryPoint.trim();
+    return NAMED_ENTRY.test(value) ? value : `Porte ${value}`;
+}
+
 /**
  * GET /api/controller/scans?event_id=… — chiffres et historique du contrôleur pour un événement (lot 7,
  * D42, contrat 3.3 ; règle du lot 5 « le serveur est la seule source des chiffres ») : point d'entrée de
@@ -46,7 +55,7 @@ export async function GET(req: NextRequest) {
         const entryPoint = typeof data.entry_point === 'string' && data.entry_point.trim() !== '' ? data.entry_point : null;
         return NextResponse.json({
             entry_point: entryPoint,
-            door_label: entryPoint ? `Porte ${entryPoint}` : 'Vos entrées',
+            door_label: doorLabel(entryPoint),
             door_entries: Number(data.door_entries ?? 0),
             my_entries: Number(data.my_entries ?? 0),
             my_refusals: Number(data.my_refusals ?? 0),

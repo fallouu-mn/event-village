@@ -84,7 +84,8 @@ export async function POST(req: NextRequest) {
                 category: String(t.category ?? ''),
                 status_label: ticketStatusLabel(t.status),
                 preview: t.preview,
-                preview_label: SCAN_RESULT_LABELS[t.preview],
+                // Lot 9 bis (R100) : avant la validation, l'entrée n'est que possible
+                preview_label: t.preview === 'valid' ? 'Entrée possible' : SCAN_RESULT_LABELS[t.preview],
             },
         }, { headers: NO_STORE });
     } catch (err) {

@@ -114,7 +114,7 @@ export async function GET(
         // Lot 3.2 : frais de service du billet (payés par l'acheteur) et total payé
         const serviceFee = Number(ticket.service_fee ?? 0);
         const feesFormatted = price > 0
-            ? `Frais de service : ${serviceFee.toLocaleString('fr-FR')} FCFA - Total paye : ${(price + serviceFee).toLocaleString('fr-FR')} FCFA`
+            ? `Frais de service : ${serviceFee.toLocaleString('fr-FR')} FCFA - Total payé :${(price + serviceFee).toLocaleString('fr-FR')} FCFA`
             : undefined;
 
         // 7. Génération du PDF vectoriel
