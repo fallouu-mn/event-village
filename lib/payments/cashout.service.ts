@@ -334,7 +334,15 @@ export class CashoutService {
             });
             const confirmed = res.status === 'SUCCESS';
             const now = new Date().toISOString();
-            await patch(row.id, { status: confirmed ? 'CONFIRME' : 'ENVOYE', sent_at: now, confirmed_at: confirmed ? now : null, samirpay_transaction_id: res.transactionId, provider_status: res.status });
+            // Lot 9 bis (H6, X2, fix(9b.H6-SV)) : frais réels, débit total (valeur absolue de netAmount), référence de
+            // l'opérateur et référence SamirPay écrits dans la même mise à jour que le statut, avant cashout_finalize
+            // (cashout_fee_apply y lit samirpay_fees). Une valeur absente n'est jamais inventée : la colonne reste NULL.
+            const providerFields: Record<string, unknown> = {};
+            if (res.fees !== undefined && res.fees !== null) providerFields.samirpay_fees = res.fees;
+            if (res.netAmount !== undefined && res.netAmount !== null) providerFields.samirpay_net_amount = Math.abs(res.netAmount);
+            if (res.refOperator) providerFields.samirpay_ref_operator = res.refOperator;
+            if (res.reference) providerFields.samirpay_reference = res.reference;
+            await patch(row.id, { status: confirmed ? 'CONFIRME' : 'ENVOYE', sent_at: now, confirmed_at: confirmed ? now : null, samirpay_transaction_id: res.transactionId, provider_status: res.status, ...providerFields });
             if (confirmed) await finalize(row, 'CONFIRME', res.transactionId);
             return { status: confirmed ? 'CONFIRME' : 'ENVOYE', fees: res.fees ?? null };
         } catch (err) {
