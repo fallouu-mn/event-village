@@ -15,7 +15,13 @@
  *    neuf rend autre chose que 2xx et aucun SMS n'arrive au faux MTarget ; GET /dev/paiements et
  *    POST /api/dev/samirpay/validate rendent 404, sans session.
  *
- * Sortie brute [FAKE-PROD], reprise au rapport. Code 0 si les deux lancements sont conformes, 1 sinon, 2 si les
+ * Lot 9 bis (I3, I5, T12) : troisième lancement, « réel sans https ». `NODE_ENV=production`, EV_INTEGRATIONS
+ * absente, SAMIRPAY_API_URL=https://samirpay.invalid/api (hors boucle locale, « .invalid » ne se résout jamais),
+ * NEXT_PUBLIC_APP_URL=http://localhost:3199 : le serveur doit sortir en erreur au démarrage avec le refus
+ * « [réel] Refus de démarrer … NEXT_PUBLIC_APP_URL … » (lib/integrations/real-mode.ts, instrumentation.ts). Un serveur
+ * démarré est un ÉCHEC, comme une autre cause d'arrêt. Les deux lancements précédents sont inchangés.
+ *
+ * Sortie brute [FAKE-PROD], reprise au rapport. Code 0 si les trois lancements sont conformes, 1 sinon, 2 si les
  * préconditions manquent. L'application e2e du port 3000 n'est pas touchée : même build, autre processus.
  */
 import { spawn } from 'node:child_process';
@@ -70,9 +76,36 @@ function childEnv(nodeEnv) {
     return env;
 }
 
-function startServer(nodeEnv) {
+/**
+ * Lot 9 bis (I3) : mode réel au sens de A9 (ni essai, ni EV_INTEGRATIONS=fake, SamirPay hors boucle locale) avec une
+ * adresse publique en http. Une clé EV_INTEGRATIONS venue d'un fichier vaut « real » (même lecture que l'absence,
+ * lib/integrations/registry.ts) : la chaîne vide serait refusée par lib/env.ts, pour une autre raison.
+ */
+function realEnv() {
+    const env = {
+        ...process.env,
+        NODE_ENV: 'production',
+        SAMIRPAY_API_URL: 'https://samirpay.invalid/api',
+        NEXT_PUBLIC_APP_URL: `http://localhost:${PORT}`,
+        NEXT_TELEMETRY_DISABLED: '1',
+        HOSTNAME: '127.0.0.1',
+        PORT: String(PORT),
+    };
+    for (const key of ['EV_INTEGRATIONS', 'EV_DEV_FAKE_SERVICES_URL', 'EV_ESSAI_SIMULATION']) delete env[key];
+    for (const name of ENV_FILES.production) {
+        const file = path.join(ROOT, name);
+        if (!fs.existsSync(file)) continue;
+        for (const key of Object.keys(parseEnvFile(file))) {
+            if (env[key] === undefined) env[key] = '';
+        }
+    }
+    if (env.EV_INTEGRATIONS !== undefined) env.EV_INTEGRATIONS = 'real';
+    return env;
+}
+
+function startServer(nodeEnv, env = childEnv(nodeEnv)) {
     const child = spawn(process.execPath, [nextBin, 'start', '-H', '127.0.0.1', '-p', String(PORT)], {
-        cwd: ROOT, env: childEnv(nodeEnv), stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const state = { child, output: [], exit: null };
     const collect = (chunk) => { state.output.push(...chunk.toString('utf8').split(/\r?\n/).filter(Boolean)); };
@@ -202,9 +235,38 @@ async function runMode(nodeEnv) {
     return problems;
 }
 
+/** Lot 9 bis (I3, I5) : en réel, adresse publique en http → refus de démarrer exigé ; un serveur démarré est un échec. */
+async function runRealWithoutHttps() {
+    const label = 'réel sans https';
+    log(`═══ ${label} : next start -p ${PORT}, EV_INTEGRATIONS absente, SAMIRPAY_API_URL hors boucle locale, NEXT_PUBLIC_APP_URL en http ═══`);
+    const state = startServer('production', realEnv());
+    let problems;
+    try {
+        if (await waitUntilServing(state)) {
+            problems = ['serveur démarré en réel avec NEXT_PUBLIC_APP_URL en http : le refus de démarrer (I3) n\'a pas eu lieu'];
+        } else {
+            const refused = state.exit.code !== 0 && state.output.some((l) => l.includes('Refus de démarrer') && l.includes('NEXT_PUBLIC_APP_URL'));
+            log(`${label} : serveur arrêté au démarrage (code ${state.exit.code}, signal ${state.exit.signal}${state.exit.error ? `, ${state.exit.error}` : ''})`);
+            problems = refused ? [] : ['serveur arrêté au démarrage sans le refus « [réel] Refus de démarrer » citant NEXT_PUBLIC_APP_URL : cette sortie ne prouve pas le refus'];
+        }
+    } catch (err) {
+        problems = [err instanceof Error ? err.message : String(err)];
+    } finally {
+        await stopServer(state);
+    }
+    if (problems.length > 0) {
+        log(`${label} : ÉCHEC, ${problems.length} écart(s) ; fin de la sortie du serveur :`);
+        for (const line of state.output.slice(-OUTPUT_TAIL_LINES)) log(`  ${line}`);
+    } else {
+        log(`${label} : conforme`);
+    }
+    return problems;
+}
+
 const failures = [];
 for (const nodeEnv of ['production', 'development']) {
     for (const problem of await runMode(nodeEnv)) failures.push(`${nodeEnv} : ${problem}`);
 }
-log(failures.length === 0 ? 'résultat : OK, simulé impossible sur le build, dans les deux lancements' : `résultat : ÉCHEC\n${failures.map((f) => `[${TAG}]   ${f}`).join('\n')}`);
+for (const problem of await runRealWithoutHttps()) failures.push(`réel sans https : ${problem}`);
+log(failures.length === 0 ? 'résultat : OK, simulé impossible sur le build dans les deux lancements, et réel sans https refusé' : `résultat : ÉCHEC\n${failures.map((f) => `[${TAG}]   ${f}`).join('\n')}`);
 process.exit(failures.length === 0 ? 0 : 1);
