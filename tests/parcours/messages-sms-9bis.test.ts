@@ -22,6 +22,12 @@
  * service, SMS non envoyé (affichage non garanti) », sans « remise » ; détail de la page admin « SMS seulement si le
  * push n’est pas accepté par le service push ». Statique, sans base. Rouge : « Notification push déjà remise »
  * (lib/notifications/outbox-labels.ts:53) et « … sans notification push remise » (app/admin/notifications/[id]/page.tsx:92).
+ *
+ * Lot 9 bis, tâche 40 (ex-10.0 d ; contrat 5.40, B84, 4.3) — une invitation échue ne parle plus de 48 h : l'invité
+ * (compte au numéro non vérifié à l'envoi, donc invitation PENDING) vérifie son numéro, l'échéance est passée, son
+ * acceptation (POST /api/tickets/transfers/[id]/claim) répond 410 TRANSFER_EXPIRED avec « Ce billet ne peut plus être
+ * accepté : le délai est dépassé. ». Rouge : « Ce transfert a expiré (délai de 48 h dépassé). »
+ * (lib/tickets/ticket-transfer.service.ts:140).
  * Envois comptés par numéro neuf et par texte exact, jamais globalement.
  */
 import '../helpers/env';
@@ -34,13 +40,13 @@ import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
 import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
 import { smsDateTime, smsSegments, smsVar } from '../../lib/notifications/sms-format';
-import { BASE_URL, randomSenegalPhone } from './helpers';
+import { BASE_URL, randomSenegalPhone, routeContext } from './helpers';
 import { importModule, newBuyer, service, type CategorySpec } from './paiement-helpers';
 import { buyConfirmed, newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { authed, type RouteResult } from './acces-helpers';
 import { advanceEventTo, assertRpcOk, createDraftEvent, rpcCancel, type DraftEvent } from './cycle-helpers';
-import { flushNotifications, getNotifSetting, outboxRows, setNotifSetting, smsMark, smsTo, withNotifSettings } from './notif-helpers';
-import { invoke, show } from './pilotage-helpers';
+import { flushNotifications, getNotifSetting, markPhoneVerified, outboxRows, setNotifSetting, smsMark, smsTo, withNotifSettings } from './notif-helpers';
+import { invoke, routeHandler, show } from './pilotage-helpers';
 
 type Row = Record<string, unknown>;
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
@@ -206,11 +212,39 @@ describe('9b.39 R28 : libellé de supervision du SMS de 3 heures remplacé par l
         const labels = (await importModule('../../lib/notifications/outbox-labels')) as Record<string, unknown>;
         const reasons = labels.OUTBOX_REASON_LABELS as Record<string, string> | undefined;
         assert.ok(reasons && typeof reasons === 'object', 'lib/notifications/outbox-labels.ts : OUTBOX_REASON_LABELS exporté');
-        const label = String(reasons.PUSH_DELIVERED ?? '');
+        const label = String(reasons.PUSH_DELIVERED ?? '').replace(/[\u00a0\u202f]/g, ' ');
         assert.doesNotMatch(label, /remis/i, `le libellé ne dit plus que le push est remis : « ${label} »`);
         assert.equal(label, 'Push accepté par le service, SMS non envoyé (affichage non garanti)', 'libellé du contrat (11.2, R28)');
         const page = fs.readFileSync(path.join(process.cwd(), 'app', 'admin', 'notifications', '[id]', 'page.tsx'), 'utf8');
         assert.match(page, /SMS seulement si le push n['’]est pas accepté par le service push/, 'détail de la page admin (contrat 5.39, écran E-D)');
         assert.doesNotMatch(page, /notification push remise/, 'ancien détail retiré');
+    });
+});
+
+// ── Ex-10.0 d : invitation échue sans « 48 h » ─────────────────────────────
+
+describe('9b.40 ex-10.0 d : le message d\'une invitation expirée ne parle plus de 48 h', () => {
+    test('acceptation d\'une invitation échue : 410 TRANSFER_EXPIRED, « Ce billet ne peut plus être accepté : le délai est dépassé. »', async () => {
+        const partner = await suitePartner();
+        const ev = await publishedEvent('Invit echue', `Invitation ${randomBytes(2).toString('hex')}`);
+        const invitee = await newBuyer('sms-echue', { firstName: 'Awa', lastName: 'Invitee' });
+        const inviteRoute = await routeHandler('../../app/api/partner/events/[id]/invitations/route', 'POST', 'POST /api/partner/events/[id]/invitations (lot 9)');
+        const sent = await invoke(inviteRoute, authed(`/api/partner/events/${ev.eventId}/invitations`, 'POST', partner,
+            { category_id: ev.categories[STANDARD].id, phones: [invitee.phoneE164], quantity: 1 }), routeContext({ id: ev.eventId }));
+        assert.equal(sent.status, 200, `invitation : ${show(sent)}`);
+        const { data, error } = await service.from('ticket_transfers').select('id').eq('to_phone_or_email', invitee.phoneE164).eq('status', 'PENDING');
+        assert.equal(error, null, `invitation en attente : ${error?.message}`);
+        assert.equal((data ?? []).length, 1, `précondition : une invitation PENDING vers un numéro non vérifié (${JSON.stringify(data)})`);
+        const transferId = String(data![0].id);
+        await markPhoneVerified(invitee.userId);
+        const { error: expErr } = await service.from('ticket_transfers').update({ expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('id', transferId);
+        assert.equal(expErr, null, `échéance passée : ${expErr?.message}`);
+
+        const claim = await routeHandler('../../app/api/tickets/transfers/[id]/claim/route', 'POST', 'POST /api/tickets/transfers/[id]/claim');
+        const res = await invoke(claim, authed(`/api/tickets/transfers/${transferId}/claim`, 'POST', invitee), routeContext({ id: transferId }));
+        assert.equal(res.status, 410, show(res));
+        assert.equal(res.body.code, 'TRANSFER_EXPIRED', show(res));
+        assert.doesNotMatch(String(res.body.error ?? ''), /48/, `aucune mention de 48 h : ${show(res)}`);
+        assert.equal(String(res.body.error ?? '').replace(/[\u00a0\u202f]/g, ' '), 'Ce billet ne peut plus être accepté : le délai est dépassé.', 'texte du contrat (B84, 4.3), espaces insécables admis');
     });
 });
