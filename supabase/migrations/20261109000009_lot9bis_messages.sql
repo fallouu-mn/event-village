@@ -65,6 +65,10 @@
 --   - tâche 22 (S-C, R43, B50, X11) : passage à TERMINE (cron depuis PUBLIE, clôture admin depuis SUSPENDU) avec au
 --     moins une caisse OUVERT → SHIFT_OPEN_AT_END à la propriétaire (open_shifts) ; depuis PUBLIE, il remplace
 --     EVENT_FINISHED (un seul avis par cas) ; jamais à l'annulation.
+--   - tâche 21 (S-C, R16, B47, X7) : event_update calcule l'ancienne et la nouvelle fin par event_end_from_v2 (M08,
+--     même règle que event_end_at : date et heure de fin ; date sans heure → 23:59 ; aucune fin → début + 6 h) au
+--     lieu de event_end_from à trois arguments (laissée telle quelle, plus aucun appelant ici) ; contrôle des fins de
+--     vente, report des fonds et données new_end_at en découlent.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -370,6 +374,7 @@ REVOKE ALL ON FUNCTION public.notif_event_status_changed() FROM PUBLIC, anon, au
 -- Tâche 32 : SMS d'un porteur dû dans 10 minutes, fusion à fenêtre fixe, immédiat si un début est à moins d'une heure.
 -- Tâche 33 : contrôleurs affectés (CONTROLLER_EVENT_CHANGED, in-app immédiat, SMS et email à 10 minutes, fusionnés).
 -- Tâche 5 (délégation, S-A) : event_start_changes écrit à chaque changement de début ; refund_open par porteur.
+-- Tâche 21 (délégation, S-C) : ancienne et nouvelle fin par event_end_from_v2 (sans fin : début + 6 h).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.event_update(p jsonb)
 RETURNS jsonb
@@ -575,8 +580,9 @@ BEGIN
     IF v_start_changed AND v_new_start <= now() THEN
         RETURN public.event_edit_refusal('EVENT_START_PAST', 'Le nouveau début de l''événement doit être dans le futur (heure de Dakar).', 'start_date');
     END IF;
-    v_old_end := public.event_end_from(e.start_date, e.end_date, e.end_time);
-    v_new_end := public.event_end_from(n_start_date, n_end_date, n_end_time);
+    -- Lot 9 bis (R16, B47, X7) : fin par event_end_from_v2 (M08), même règle que event_end_at (sans fin : début + 6 h)
+    v_old_end := public.event_end_from_v2(e.start_date, e.start_time, e.end_date, e.end_time);
+    v_new_end := public.event_end_from_v2(n_start_date, n_start_time, n_end_date, n_end_time);
     IF v_dates_changed AND n_end_date IS NOT NULL AND v_new_end <= v_new_start THEN
         RETURN public.event_edit_refusal('EVENT_END_BEFORE_START', 'La fin de l''événement doit être postérieure à son début.',
                                          CASE WHEN n_end_time IS NOT NULL THEN 'end_time' ELSE 'end_date' END);
