@@ -171,7 +171,7 @@ export default function ProfilePage() {
     },
     {
       href: '/wallet',
-      title: 'Portefeuille et parrainage',
+      title: 'Portefeuille de parrainage',
       description: 'Vos gains de parrainage et vos demandes de retrait',
       icon: Wallet,
       tone: 'success',
