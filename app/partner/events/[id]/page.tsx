@@ -28,6 +28,7 @@ import { EntriesTab } from '@/components/partner/pilotage/EntriesTab';
 import { TeamTab } from '@/components/partner/pilotage/TeamTab';
 import { CashTab } from '@/components/partner/pilotage/CashTab';
 import { ClosingTab } from '@/components/partner/pilotage/ClosingTab';
+import { CashRefundsList } from '@/components/partner/pilotage/CashRefundsList';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import type { EventAction, PilotageOverview } from '@/components/partner/pilotage/types';
 
@@ -39,6 +40,8 @@ import type { EventAction, PilotageOverview } from '@/components/partner/pilotag
  *  - En direct : ticket_scans, scan_incidents, controller_shifts et l'historique des statuts de CET
  *    événement (filtre event_id) déclenchent le rechargement de l'en-tête et de l'onglet affiché.
  *  - Annulation (tâche 5.8) : « Annuler l'événement » selon can_cancel, puis avancement des remboursements.
+ *  - Lot 9 bis (R20, B22) : un événement annulé montre aussi « Espèces à rembourser par l’organisateur »
+ *    (CashRefundsList : ventes au guichet, case « Remboursé » pour la propriétaire, lecture seule pour l'admin).
  */
 
 const TAB_IDS = ['apercu', 'ventes', 'invitations', 'entrees', 'equipe', 'caisse', 'cloture'] as const;
@@ -238,6 +241,7 @@ export default function PartnerEventPilotagePage() {
             )}
 
             {ov.status === 'ANNULE' && <RefundProgress eventId={eventId} isAdmin={false} />}
+            {ov.status === 'ANNULE' && <CashRefundsList eventId={eventId} signal={signal} />}
 
             <div className="flex flex-col gap-5">
                 <ScrollableTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as PilotageTabId)} ariaLabel="Rubriques du pilotage" idPrefix={TABS_PREFIX} />

@@ -18,6 +18,9 @@ import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-js
  *  - exige de retaper le titre (ConfirmDialog, requireText) ;
  *  - envoie { publicNotice, internalReason, confirmTitle } à …/partner/… ou …/admin/events/[id]/cancel.
  * La base revérifie tout (statut, titre, longueurs) dans une seule transaction.
+ * Lot 9 bis (R20, B22, contrat 5.4) : l'impact sert `counter { sales, tickets, total }` ; la fenêtre dit « Ventes au
+ * guichet : {n} billets, {montant} » et « Espèces à rembourser par l’organisateur (jamais par Event Village) », le
+ * même montant que la liste des espèces du pilotage (CashRefundsList) après l'annulation.
  */
 
 export interface EventCancelDialogProps {
@@ -33,8 +36,9 @@ interface CancellationImpact {
     tickets: { online: number; cash: number; free: number; invitations: number };
     buyers: number;
     online_refund_total: number;
-    cash_refund_total: number;
     pending_payments: number;
+    /** Lot 9 bis (R20, B22) : ventes au guichet (hors plateforme), jamais remboursées par Event Village. */
+    counter: { sales: number; tickets: number; total: number };
 }
 
 interface CancelResponse {
@@ -46,6 +50,11 @@ interface CancelResponse {
 const MIN_NOTICE = 10;
 const MIN_REASON = 3;
 const MAX_TEXT = 2000;
+
+/** « 0 billet », « 1 billet », « 3 billets ». */
+function ticketsLabel(n: number): string {
+    return n > 1 ? `${formatInteger(n)} billets` : `${formatInteger(n)} billet`;
+}
 
 function ImpactLine({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
     return (
@@ -160,10 +169,10 @@ export function EventCancelDialog({ eventId, eventTitle, scope, open, onClose, o
                     <dl className="rounded-2xl border border-border bg-surface-sunken px-4 py-1">
                         <ImpactLine label="Acheteurs à prévenir" value={formatInteger(impact.buyers)} />
                         <ImpactLine label="Billets payés en ligne" value={formatInteger(impact.tickets.online)} />
-                        <ImpactLine label="Billets payés en espèces" value={formatInteger(impact.tickets.cash)} />
+                        <ImpactLine label="Ventes au guichet" value={`${ticketsLabel(impact.counter.tickets)}, ${formatFcfa(impact.counter.total)}`} />
                         <ImpactLine label="Billets gratuits et invitations" value={formatInteger(impact.tickets.free + impact.tickets.invitations)} />
                         <ImpactLine label="Remboursement en ligne (automatique)" value={formatFcfa(impact.online_refund_total)} strong />
-                        <ImpactLine label="Espèces à rembourser par l’organisateur" value={formatFcfa(impact.cash_refund_total)} />
+                        <ImpactLine label="Espèces à rembourser par l’organisateur (jamais par Event Village)" value={formatFcfa(impact.counter.total)} />
                         {impact.pending_payments > 0 && (
                             <ImpactLine label="Paiements en cours (refusés puis remboursés)" value={formatInteger(impact.pending_payments)} />
                         )}

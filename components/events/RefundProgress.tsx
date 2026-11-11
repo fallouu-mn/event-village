@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BadgeCheck, Hourglass, RefreshCw, RotateCcw, SearchCheck, Wallet } from 'lucide-react';
+import { BadgeCheck, Banknote, Hourglass, RefreshCw, RotateCcw, SearchCheck, Wallet } from 'lucide-react';
 import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
@@ -14,6 +14,8 @@ import { useServerData } from '@/components/partner/useServerData';
  * Lu sur GET /api/partner/events/[id]/cancellation → { progress } (propriétaire ou admin) : versés, en
  * cours, en vérification, plus « à reprendre » pour l'admin (la route ne le sert qu'aux admins), et les
  * espèces que l'organisateur rembourse lui-même. Aucun calcul dans le navigateur.
+ * Lot 9 bis (R20, B22, contrat 5.4) : `counter_cash` (ventes au guichet, montant rendu et coché « Remboursé » dans
+ * la liste des espèces du pilotage).
  */
 
 export interface RefundProgressProps {
@@ -33,6 +35,12 @@ interface CancellationProgress {
     verifying: CountAndTotal;
     to_retry?: CountAndTotal;
     organizer_cash: CountAndTotal;
+    /** Lot 9 bis (R20, B22) : ventes au guichet à rendre par l'organisateur, et celles cochées « Remboursé ». */
+    counter_cash: CountAndTotal & { refunded_count: number; refunded_total: number };
+}
+
+function salesHint(refunded: number, count: number): string {
+    return `${formatInteger(refunded)} vente${refunded > 1 ? 's' : ''} sur ${formatInteger(count)} cochée${refunded > 1 ? 's' : ''} « Remboursé »`;
 }
 
 function refundsHint(c: CountAndTotal): string {
@@ -93,9 +101,18 @@ export function RefundProgress({ eventId, isAdmin, className }: RefundProgressPr
                             />
                         )}
                     </div>
+                    {progress.counter_cash.count > 0 && (
+                        <KpiCard
+                            label="Espèces du guichet rendues par l’organisateur"
+                            value={`${formatFcfa(progress.counter_cash.refunded_total)} sur ${formatFcfa(progress.counter_cash.total)}`}
+                            hint={`${salesHint(progress.counter_cash.refunded_count, progress.counter_cash.count)} (jamais remboursées par Event Village)`}
+                            tone={progress.counter_cash.refunded_count === progress.counter_cash.count ? 'success' : 'warning'}
+                            icon={<Banknote size={18} />}
+                        />
+                    )}
                     {progress.organizer_cash.count > 0 && (
                         <KpiCard
-                            label="Espèces à rembourser par l’organisateur"
+                            label="Billets payés hors plateforme, remboursés par l’organisateur"
                             value={formatFcfa(progress.organizer_cash.total)}
                             hint={`${refundsHint(progress.organizer_cash)} à régler directement aux participants payés en espèces`}
                             tone="neutral"
