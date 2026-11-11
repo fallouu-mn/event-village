@@ -325,6 +325,37 @@ async function eventTitle(eventId: string): Promise<string> {
 }
 
 /**
+ * Soumission BROUILLON → EN_ATTENTE. Lot 9 bis (R94, contrat 5.25) : la soumission refuse un début passé ; un
+ * brouillon « dans le passé » (événement en cours ou fini voulu par le test) est soumis avec ses dates avancées du
+ * nombre de jours nécessaire (heures et durée gardées), puis ses dates demandées lui sont rendues aussitôt.
+ */
+async function submitWithFutureStart(eventId: string, actorId: string): Promise<RpcCall> {
+    const { data, error } = await service.from('events').select('start_date, start_time, end_date, end_time').eq('id', eventId).single();
+    assert.equal(error, null, `dates de l'événement ${eventId} : ${error?.message}`);
+    const cols = data as DateColumns;
+    const time = String(cols.start_time ?? '00:00:00');
+    const startMs = Date.parse(`${cols.start_date}T${time.length === 5 ? `${time}:00` : time}Z`);
+    if (!(startMs <= Date.now() + 60_000)) return rpcTransition(eventId, actorId, 'EN_ATTENTE');
+    const days = Math.floor((Date.now() - startMs) / 86_400_000) + 2;
+    const plus = (d: string | null): string | null => {
+        if (!d) return null;
+        const x = new Date(`${d}T00:00:00Z`);
+        x.setUTCDate(x.getUTCDate() + days);
+        return x.toISOString().slice(0, 10);
+    };
+    const moved = { start_date: plus(cols.start_date), end_date: plus(cols.end_date) };
+    const { error: mErr } = await service.from('events').update(moved).eq('id', eventId);
+    assert.equal(mErr, null, `dates avancées pour la soumission de ${eventId} : ${mErr?.message}`);
+    try {
+        return await rpcTransition(eventId, actorId, 'EN_ATTENTE');
+    } finally {
+        const { error: rErr } = await service.from('events')
+            .update({ start_date: cols.start_date, end_date: cols.end_date }).eq('id', eventId);
+        assert.equal(rErr, null, `dates demandées rendues à ${eventId} : ${rErr?.message}`);
+    }
+}
+
+/**
  * Avance l'événement de son statut courant jusqu'à `target`, par les RPC du contrat :
  *  BROUILLON → EN_ATTENTE (partenaire), EN_ATTENTE → VALIDE (admin), VALIDE → PUBLIE (partenaire, ou admin
  *  avec publishedBy), PUBLIE → SUSPENDU (admin, motif), SUSPENDU → PUBLIE (admin, réactivation),
@@ -354,7 +385,7 @@ export async function advanceEventTo(eventId: string, target: EventStatus, opts:
         switch (step.kind) {
             case 'SUBMIT':
                 actorRole = 'PARTENAIRE';
-                call = await rpcTransition(eventId, partnerActor, 'EN_ATTENTE');
+                call = await submitWithFutureStart(eventId, partnerActor);
                 break;
             case 'VALIDATE':
                 actorRole = 'ADMIN';

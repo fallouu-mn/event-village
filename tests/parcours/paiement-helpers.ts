@@ -97,12 +97,12 @@ export interface HelperEventDates {
     end_time: string | null;
 }
 
-const THROUGH_PUBLICATION = new Set(['PUBLIE', 'SUSPENDU', 'TERMINE', 'ANNULE']);
+const THROUGH_SUBMISSION = new Set(['EN_ATTENTE', 'VALIDE', 'PUBLIE', 'SUSPENDU', 'TERMINE', 'ANNULE']);
 
-function helperEndMs(d: HelperEventDates): number {
-    const day = d.end_date ?? d.start_date;
-    const time = d.end_date && d.end_time ? d.end_time : '23:59:00';
-    return Date.parse(`${day}T${time.length === 5 ? `${time}:00` : time}Z`);
+function helperStartMs(d: HelperEventDates): number {
+    // Lot 9 bis (R94, contrat 5.25) : la soumission refuse un début passé (plus seulement une fin passée).
+    const time = d.start_time.length === 5 ? `${d.start_time}:00` : d.start_time;
+    return Date.parse(`${d.start_date}T${time}Z`);
 }
 
 function addDays(date: string, days: number): string {
@@ -111,9 +111,9 @@ function addDays(date: string, days: number): string {
     return d.toISOString().slice(0, 10);
 }
 
-/** Dates d'insertion : celles demandées, sauf fin passée d'un événement qui doit être publié (J+30, même durée). */
+/** Dates d'insertion : celles demandées, sauf début passé d'un événement qui doit être soumis (J+30, même durée). */
 export function helperInsertionDates(status: string, dates: HelperEventDates): HelperEventDates {
-    if (!THROUGH_PUBLICATION.has(status) || helperEndMs(dates) > Date.now() + 60_000) return dates;
+    if (!THROUGH_SUBMISSION.has(status) || helperStartMs(dates) > Date.now() + 60_000) return dates;
     const start = addDays(new Date().toISOString().slice(0, 10), 30);
     const span = dates.end_date ? Math.round((Date.parse(`${dates.end_date}T00:00:00Z`) - Date.parse(`${dates.start_date}T00:00:00Z`)) / 86_400_000) : 0;
     return { ...dates, start_date: start, end_date: dates.end_date ? addDays(start, span) : null };
