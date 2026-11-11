@@ -48,6 +48,7 @@ import { Button, buttonClasses } from '@/components/ui/Button';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { PaymentWaitingInfo, type PaymentWaitingItem } from '@/components/payment/PaymentWaitingInfo';
@@ -223,8 +224,8 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
           badge: 'En attente',
           chip: null,
           tone: 'pending',
-          title: 'Vérification en cours',
-          description: `Le délai de paiement est écoulé : nous attendons la réponse finale de ${label ?? 'l’opérateur'}.`,
+          title: 'Places plus garanties',
+          description: 'Vos places ne sont plus garanties. Si vous validez quand même le paiement, vos billets seront émis s’il reste des places ; sinon vous serez remboursé automatiquement.',
           icon: Hourglass,
         };
       }
@@ -757,6 +758,15 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
         <div className={cn('h-1.5 transition-colors', styles.bar)} aria-hidden="true" />
 
         <div className="space-y-6 p-6 sm:p-8">
+          {/* Lot 9 bis (R47, B10, contrat 5.6) : réservation échue, paiement toujours en attente chez nous et chez
+              l'opérateur. Aucun autre paiement n'est possible pour l'événement : la page propose d'abord d'annuler. */}
+          {isPending && expired && (
+            <StatusBanner tone="warning" title="Paiement toujours en attente.">
+              <p>Si vous n’avez pas validé sur votre téléphone, annulez-le : aucun autre paiement n’est possible pour cet événement tant que celui-ci n’est ni confirmé ni annulé.</p>
+              <p className="mt-1">Si vous avez déjà validé, attendez : vos billets arriveront, ou vous serez remboursé.</p>
+            </StatusBanner>
+          )}
+
           {/* État */}
           <header className="space-y-4 text-center">
             <div className="relative mx-auto h-20 w-20">
@@ -929,13 +939,27 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
 
           {/* Actions */}
           <div className="flex flex-col gap-2">
+            {/* Réservation échue (B10) : annuler devient l'action principale, avant toute autre. */}
+            {isPending && expired && (
+              <Button
+                variant="danger"
+                size="lg"
+                fullWidth
+                leftIcon={<XCircle size={16} aria-hidden="true" />}
+                disabled={isCancelling}
+                onClick={() => setConfirmCancel(true)}
+              >
+                Annuler ce paiement
+              </Button>
+            )}
+
             {isPending && stale && (
-              <Button variant="primary" size="lg" fullWidth leftIcon={<RefreshCw size={16} />} onClick={refresh}>
+              <Button variant="secondary" fullWidth leftIcon={<RefreshCw size={16} />} onClick={refresh}>
                 Actualiser le statut
               </Button>
             )}
 
-            {isPending && (
+            {isPending && !expired && (
               <Button
                 variant="ghost"
                 fullWidth
@@ -943,7 +967,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
                 onClick={() => setConfirmCancel(true)}
                 className="text-danger-fg hover:bg-danger-bg"
               >
-                Annuler le paiement
+                Annuler ce paiement
               </Button>
             )}
 
@@ -1016,7 +1040,7 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
         onConfirm={() => void handleCancel()}
         title="Annuler ce paiement ?"
         message="Nous vérifions d’abord auprès de l’opérateur : si vous avez déjà validé sur votre téléphone, le paiement est confirmé et vos billets émis. Sinon, la demande est abandonnée et la réservation libérée."
-        confirmLabel="Annuler le paiement"
+        confirmLabel="Annuler ce paiement"
         cancelLabel="Continuer le paiement"
         variant="danger"
         isLoading={isCancelling}
