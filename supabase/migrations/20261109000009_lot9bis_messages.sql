@@ -40,6 +40,12 @@
 -- dates et heures distincts sur un événement VALIDE, PUBLIE ou SUSPENDU ; clé par transaction) et
 -- trg_ticket_categories_admin_alert (catégorie ajoutée à un tel événement) ; EVENT_SUBMITTED_ACK à la soumission.
 -- Verrous : lectures sans verrou de partners et events, boîte d'envoi en dernier (3.3).
+-- Tâche 37 (R72, R79, R78 ; B77 à B79, X11) : PUBLIE → TERMINE sans caisse ouverte → EVENT_FINISHED ; la dernière
+-- caisse fermée d'un événement TERMINE → CLOSING_REPORT_READY (trigger nouveau trg_controller_shifts_report_ready) ;
+-- notification_daily_checks recopiée (base 20261105000002_lot7_sms.sql:449-516) → FUNDS_AVAILABLE une fois par
+-- événement terminé dont toutes les ventes sont disponibles ; ticket_invitation_create recopiée (base
+-- 20261108000002_lot9_invitations.sql:348-495) → in-app et push au compte vérifié ; notif_tickets_scanned recopiée
+-- (base 20261103000005_lot6_billetterie.sql:866-887) → avis regroupés par commande, dus à 2 minutes.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -58,6 +64,7 @@
 -- PUBLIE ↔ SUSPENDU → contrôleurs (in-app).
 -- Tâche 34 : ANNULE → destinataires des transferts en attente révoqués (numéro seul, NONE).
 -- Tâche 36 : BROUILLON → EN_ATTENTE → accusé EVENT_SUBMITTED_ACK à la propriétaire.
+-- Tâche 37 : PUBLIE → TERMINE sans caisse ouverte → EVENT_FINISHED à la propriétaire.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -75,6 +82,7 @@ DECLARE
     v_notice text;
     v_recipients uuid[];
     v_user uuid;
+    v_open integer;
     h record;
     n record;
 BEGIN
@@ -281,8 +289,18 @@ BEGIN
                 'type', 'CONTROLLER_EVENT_CANCELLED', 'key', 'CONTROLLER_EVENT_CANCELLED:' || NEW.event_id::text || ':' || h.user_id::text,
                 'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data));
         END LOOP;
+
+    ELSIF v_new = 'TERMINE' THEN
+        -- Lot 9 bis (R72, B77, X11) : un seul avis par cas à la propriétaire. Les rappels en attente sont annulés par
+        -- trg_notif_cancel_on_status. Caisses encore ouvertes lues sans verrou (shift_close passe par la caisse).
+        SELECT count(*)::integer INTO v_open
+          FROM public.controller_shifts s WHERE s.event_id = NEW.event_id AND s.status = 'OUVERT';
+        IF v_old = 'PUBLIE' AND v_open = 0 AND v_owner IS NOT NULL THEN
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'EVENT_FINISHED', 'key', 'EVENT_FINISHED:' || NEW.event_id::text,
+                'user_id', v_owner, 'event_id', NEW.event_id, 'data', v_data));
+        END IF;
     END IF;
-    -- → TERMINE : aucun avis (les rappels en attente sont annulés par trg_notif_cancel_on_status).
     RETURN NULL;
 END;
 $$;
@@ -1024,3 +1042,378 @@ CREATE TRIGGER trg_ticket_categories_admin_alert
     AFTER INSERT ON public.ticket_categories
     FOR EACH ROW
     EXECUTE FUNCTION public.notif_ticket_categories_admin_alert();
+
+
+-- ============================================================================
+-- 7. notif_controller_shifts_report_ready (nouvelle, trigger trg_controller_shifts_report_ready) — tâche 37 (R72)
+-- La dernière caisse ouverte d'un événement TERMINE se ferme (OUVERT → CLOTURE ou LITIGE) : CLOSING_REPORT_READY à
+-- la propriétaire, une fois (clé CLOSING_REPORT_READY:<event>). Deux clôtures concurrentes : verrou consultatif par
+-- événement pris avant le comptage, la seconde voit la première validée (READ COMMITTED, nouvelle image par
+-- instruction) ; aucune n'est perdue, la clé empêche le double.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.notif_controller_shifts_report_ready()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_status text;
+    v_owner uuid;
+BEGIN
+    SELECT e.status::text, pa.user_id INTO v_status, v_owner
+      FROM public.events e JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = NEW.event_id;
+    IF v_status IS DISTINCT FROM 'TERMINE' OR v_owner IS NULL THEN
+        RETURN NULL;
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtext('notif.closing_report_ready:' || NEW.event_id::text));
+    IF EXISTS (SELECT 1 FROM public.controller_shifts s WHERE s.event_id = NEW.event_id AND s.status = 'OUVERT') THEN
+        RETURN NULL;
+    END IF;
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'CLOSING_REPORT_READY', 'key', 'CLOSING_REPORT_READY:' || NEW.event_id::text,
+        'user_id', v_owner, 'event_id', NEW.event_id,
+        'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb)));
+    RETURN NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notif_controller_shifts_report_ready() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_controller_shifts_report_ready ON public.controller_shifts;
+CREATE TRIGGER trg_controller_shifts_report_ready
+    AFTER UPDATE OF status ON public.controller_shifts
+    FOR EACH ROW
+    WHEN (OLD.status = 'OUVERT' AND NEW.status IS DISTINCT FROM 'OUVERT')
+    EXECUTE FUNCTION public.notif_controller_shifts_report_ready();
+
+
+-- ============================================================================
+-- 8. notification_daily_checks (recopie de 20261105000002_lot7_sms.sql:449-516)
+-- Tâche 37 (R72, B77) : FUNDS_AVAILABLE à la propriétaire d'un événement TERMINE fini depuis moins de 30 jours dont
+-- toutes les ventes (écritures VENTE du compte ORGANISATEUR) sont disponibles à `now` ; une fois (clé
+-- FUNDS_AVAILABLE:<event>), 100 événements au plus par passage, sans montant. Un événement SUSPENDU n'est jamais
+-- TERMINE : ses fonds gelés (B14) ne sont pas annoncés ; partenaire suspendue : politique BLOCK du type.
+-- ============================================================================
+-- sms_today : SMS du jour de Dakar de v_now, lignes SMS SENT ou UNCERTAIN (journaux OTP compris), inchangé.
+-- optional_today : SMS optionnels réservés du jour (notif_sms_optional_used, même compteur que le budget).
+-- Alerte ADMIN_SMS_OPTIONAL_80 (in-app, email) aux admins notifications.read et signal SMS_OPTIONAL_80 quand
+-- optional_today ≥ ceil(0,8 × plafond), une seule fois par jour ; plafond 0 ou absent : ni seuil ni alerte.
+CREATE OR REPLACE FUNCTION public.notification_daily_checks(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_now       timestamptz;
+    v_day       date;
+    v_day_txt   text;
+    v_start     timestamptz;
+    v_count     integer;
+    v_cap       integer;
+    v_used      integer;
+    v_threshold integer;
+    v_prefix    text;
+    v_first     uuid;
+    v_n         integer;
+    v_alerted   boolean := false;
+    v_funds     integer := 0;
+    f           record;
+BEGIN
+    v_now := COALESCE(NULLIF(p->>'now', '')::timestamptz, now());
+    IF v_now < now() - interval '1 minute' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_NOW',
+            'message', 'Horloge refusée : une heure dans le passé n''est jamais acceptée.');
+    END IF;
+    v_day := (v_now AT TIME ZONE 'Africa/Dakar')::date;
+    v_day_txt := to_char(v_day, 'YYYY-MM-DD');
+    v_start := v_day::timestamp AT TIME ZONE 'Africa/Dakar';
+
+    SELECT count(*)::integer INTO v_count
+      FROM public.notification_outbox o
+     WHERE o.channel = 'SMS' AND o.status IN ('SENT', 'UNCERTAIN')
+       AND COALESCE(o.sent_at, o.finished_at) >= v_start
+       AND COALESCE(o.sent_at, o.finished_at) < v_start + interval '1 day';
+
+    v_cap := public.notif_setting_int('notif.sms_optional_daily_cap');
+    v_used := public.notif_sms_optional_used(v_day);
+    IF v_cap IS NOT NULL AND v_cap > 0 THEN
+        v_threshold := ceil((v_cap * 8)::numeric / 10)::integer;
+    END IF;
+
+    IF v_threshold IS NOT NULL AND v_used >= v_threshold THEN
+        PERFORM pg_advisory_xact_lock(hashtext('notif.sms_optional_80:' || v_day_txt));
+        v_prefix := 'ADMIN_SMS_OPTIONAL_80:' || v_day_txt || ':';
+        IF NOT EXISTS (SELECT 1 FROM public.notification_outbox o
+                        WHERE o.type = 'ADMIN_SMS_OPTIONAL_80'
+                          AND left(o.idempotency_key, length(v_prefix)) = v_prefix) THEN
+            v_n := public.notif_enqueue_admins(jsonb_build_object(
+                'type', 'ADMIN_SMS_OPTIONAL_80', 'ref', v_day_txt,
+                'data', jsonb_build_object('day', v_day_txt, 'used', v_used, 'cap', v_cap, 'threshold', v_threshold,
+                                           'percent', (100 * v_used::bigint / v_cap)::integer),
+                'now', v_now));
+            IF v_n > 0 THEN
+                SELECT o.id INTO v_first
+                  FROM public.notification_outbox o
+                 WHERE o.type = 'ADMIN_SMS_OPTIONAL_80' AND left(o.idempotency_key, length(v_prefix)) = v_prefix
+                 ORDER BY o.created_at, o.id LIMIT 1;
+                INSERT INTO public.admin_signals (kind, ref_id) VALUES ('SMS_OPTIONAL_80', v_first) ON CONFLICT DO NOTHING;
+                v_alerted := true;
+            END IF;
+        END IF;
+    END IF;
+
+    -- Lot 9 bis (R72, B77) : recettes disponibles d'un événement terminé, une fois par événement
+    FOR f IN
+        SELECT e.id, pa.user_id AS owner_id
+          FROM public.events e
+          JOIN public.partners pa ON pa.id = e.partner_id
+         WHERE e.status::text = 'TERMINE' AND pa.user_id IS NOT NULL
+           AND public.event_end_at(e.id) > v_now - interval '30 days'
+           AND EXISTS (SELECT 1 FROM public.finance_ledger l
+                        WHERE l.event_id = e.id AND l.owner_id = pa.user_id AND l.account_kind = 'ORGANISATEUR'
+                          AND l.entry_type = 'VENTE')
+           AND NOT EXISTS (SELECT 1 FROM public.finance_ledger l
+                            WHERE l.event_id = e.id AND l.owner_id = pa.user_id AND l.account_kind = 'ORGANISATEUR'
+                              AND l.entry_type = 'VENTE' AND l.available_at > v_now)
+           AND NOT EXISTS (SELECT 1 FROM public.notification_outbox o
+                            WHERE o.idempotency_key = 'FUNDS_AVAILABLE:' || e.id::text || ':IN_APP')
+         ORDER BY e.id
+         LIMIT 100
+    LOOP
+        v_funds := v_funds + public.notif_enqueue(jsonb_build_object(
+            'type', 'FUNDS_AVAILABLE', 'key', 'FUNDS_AVAILABLE:' || f.id::text,
+            'user_id', f.owner_id, 'event_id', f.id,
+            'data', COALESCE(public.notif_event_data(f.id), '{}'::jsonb), 'now', v_now));
+    END LOOP;
+
+    RETURN jsonb_build_object('ok', true, 'day', v_day_txt, 'sms_today', v_count,
+        'optional_today', v_used, 'optional_cap', v_cap, 'optional_threshold', v_threshold, 'alerted', v_alerted,
+        'funds_available', v_funds);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notification_daily_checks(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.notification_daily_checks(jsonb) TO service_role;
+
+
+-- ============================================================================
+-- 9. ticket_invitation_create (recopie de 20261108000002_lot9_invitations.sql:348-495)
+-- p = { actor_id, event_id, category_id, phones[], quantity, limits: { per_event_hour, per_phone_day } }.
+-- Droits : propriétaire, SUPERADMIN, ou ADMIN avec events.write (lu sur user_roles et admin_permissions, L15).
+-- Quotas réservés après les droits et le stock (AR15), dans la même transaction : un refus ne consomme rien.
+-- Réponse identique avec ou sans compte (L7). SMS sans actor_id ni user_id (AR15).
+-- Tâche 37 (R79, B78 ; renverse L10 du lot 9) : billet attribué à un compte vérifié → INVITATION_RECEIVED aussi en
+-- in-app et push au compte (même clé, lignes distinctes par canal) ; la ligne SMS reste au numéro, sans compte ni
+-- acteur (AR15). Verrous inchangés.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.ticket_invitation_create(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_event uuid := public.try_uuid(p->>'event_id');
+    v_category uuid := public.try_uuid(p->>'category_id');
+    v_phones text[];
+    v_quantity integer;
+    v_per_event integer;
+    v_per_phone integer;
+    v_total integer;
+    v_status text;
+    a record;
+    v_role text;
+    v_category_name text;
+    v_problems jsonb;
+    v_rules jsonb;
+    v_quota jsonb;
+    v_end timestamptz;
+    v_data jsonb;
+    v_phone text;
+    v_account uuid;
+    v_new uuid[];
+    v_masked text[] := ARRAY[]::text[];
+BEGIN
+    -- Étape 1 : forme (le chemin normal passe d'abord par Zod)
+    IF v_actor IS NULL OR v_event IS NULL OR v_category IS NULL
+       OR jsonb_typeof(p->'phones') IS DISTINCT FROM 'array'
+       OR COALESCE(p->>'quantity', '') !~ '^[1-4]$'
+       OR COALESCE(p->'limits'->>'per_event_hour', '') !~ '^[0-9]{1,9}$'
+       OR COALESCE(p->'limits'->>'per_phone_day', '') !~ '^[0-9]{1,9}$' THEN
+        RETURN public.pilotage_refusal('INVALID_INPUT');
+    END IF;
+    v_phones := ARRAY(SELECT jsonb_array_elements_text(p->'phones'));
+    IF cardinality(v_phones) NOT BETWEEN 1 AND 10
+       OR EXISTS (SELECT 1 FROM unnest(v_phones) AS x WHERE x IS NULL OR x !~ '^\+2217[05678][0-9]{7}$')
+       OR (SELECT count(DISTINCT x) FROM unnest(v_phones) AS x) <> cardinality(v_phones) THEN
+        RETURN public.pilotage_refusal('INVALID_INPUT');
+    END IF;
+    v_quantity := (p->>'quantity')::integer;
+    v_per_event := (p->'limits'->>'per_event_hour')::integer;
+    v_per_phone := (p->'limits'->>'per_phone_day')::integer;
+    v_total := cardinality(v_phones) * v_quantity;
+
+    -- Étape 2 : événement verrouillé (FOR SHARE : event_cancel et event_update attendent)
+    SELECT e.status::text INTO v_status FROM public.events e WHERE e.id = v_event FOR SHARE;
+    IF NOT FOUND THEN
+        RETURN public.pilotage_refusal('EVENT_NOT_FOUND');
+    END IF;
+
+    -- Étape 3 : droits
+    SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
+    IF NOT (a.is_owner OR a.is_staff) THEN
+        RETURN public.pilotage_refusal('EVENT_NOT_FOUND');
+    END IF;
+    IF NOT a.is_active THEN
+        RETURN public.pilotage_refusal('ACCOUNT_NOT_ACTIVE');
+    END IF;
+    IF NOT a.is_owner
+       AND NOT EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text = 'SUPERADMIN')
+       AND NOT EXISTS (SELECT 1 FROM public.admin_permissions ap WHERE ap.user_id = v_actor AND ap.permission = 'events.write') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Vous n’avez pas le droit d’envoyer des invitations pour cet événement.');
+    END IF;
+    v_role := CASE WHEN a.is_owner THEN 'PARTENAIRE' ELSE 'ADMIN' END;
+
+    -- Étape 4 : statut, lu sous le verrou
+    IF v_status NOT IN ('PUBLIE', 'VALIDE') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_ACTIVE', 'message', 'Cet événement n’accepte pas d’invitations pour le moment.');
+    END IF;
+
+    -- Étape 5 : catégorie de cet événement ; absente, l'étape 6 rend CATEGORY_NOT_FOUND
+    SELECT c.name INTO v_category_name FROM public.ticket_categories c
+     WHERE c.id = v_category AND c.event_id = v_event FOR UPDATE;
+
+    -- Étape 6 : contrôles de vente en liste blanche, toute catégorie étant admise quels que soient ses canaux
+    SELECT COALESCE(jsonb_agg(s.problem ORDER BY s.ord), '[]'::jsonb) INTO v_problems
+      FROM jsonb_array_elements(public.ticket_sale_problems(v_event,
+               jsonb_build_array(jsonb_build_object('category_id', v_category, 'quantity', v_total)))) WITH ORDINALITY AS s(problem, ord)
+     WHERE s.problem->>'code' IN ('INVALID_ITEMS', 'EVENT_NOT_FOUND', 'CATEGORY_NOT_FOUND', 'INVALID_QUANTITY',
+                                  'CATEGORY_INACTIVE', 'EVENT_PAST', 'INSUFFICIENT_STOCK');
+    IF jsonb_array_length(v_problems) > 0 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SALE_CHECK_FAILED', 'message', 'Ces invitations ne peuvent pas être envoyées.', 'problems', v_problems);
+    END IF;
+
+    -- Étape 7 : quotas, tout ou rien ; une règle événement et une règle numéro par numéro (L4)
+    SELECT jsonb_agg(q.rule) INTO v_rules
+      FROM (SELECT jsonb_build_object('scope', 'invitation_event', 'bucket', v_event::text, 'window_secs', 3600, 'max', v_per_event) AS rule
+              FROM unnest(v_phones)
+            UNION ALL
+            SELECT jsonb_build_object('scope', 'invitation_phone', 'bucket', x, 'window_secs', 86400, 'max', v_per_phone)
+              FROM unnest(v_phones) AS x) q;
+    v_quota := public.quota_reserve(v_rules);
+    IF NOT COALESCE((v_quota->>'allowed')::boolean, false) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'QUOTA_EXCEEDED', 'message', 'Limite d’invitations atteinte. Réessayez plus tard.',
+                                  'scope', v_quota->>'scope', 'retry_after_seconds', (v_quota->>'retry_after_seconds')::integer);
+    END IF;
+
+    -- Étape 8 : stock, puis billets numéro par numéro
+    UPDATE public.ticket_categories SET sold_quantity = sold_quantity + v_total WHERE id = v_category;
+    v_end := public.event_end_at(v_event);
+    v_data := COALESCE(public.notif_event_data(v_event), '{}'::jsonb);
+
+    FOREACH v_phone IN ARRAY v_phones LOOP
+        SELECT u.id INTO v_account
+          FROM public.users u
+         WHERE u.phone = v_phone AND public.ticket_transfer_identity(v_phone, u.id) = 'MATCH'
+         ORDER BY u.id
+         LIMIT 1;
+
+        WITH ins AS (
+            INSERT INTO public.tickets (event_id, category_id, user_id, ticket_number, price, qr_code, status, sale_channel, transfer_locked)
+            SELECT v_event, v_category, v_account,
+                   'TCK-' || to_char(now() AT TIME ZONE 'UTC', 'YYYYMMDD') || '-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10)),
+                   0, 'EV-QR-' || replace(gen_random_uuid()::text, '-', ''), 'VALIDE', 'INVITATION', v_account IS NULL
+              FROM generate_series(1, v_quantity)
+            RETURNING id
+        )
+        SELECT array_agg(id ORDER BY id) INTO v_new FROM ins;
+
+        IF v_account IS NULL THEN
+            INSERT INTO public.ticket_transfers (ticket_id, from_user_id, to_phone_or_email, status, claim_token_hash, expires_at)
+            SELECT x, NULL, v_phone, 'PENDING', NULL, v_end FROM unnest(v_new) AS x;
+        END IF;
+
+        -- Étape 9 : un SMS par numéro, sans actor_id ni user_id (AR15), hors quota par compte
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'INVITATION_RECEIVED', 'key', 'INVITATION_RECEIVED:' || v_new[1]::text,
+            'phone', v_phone, 'event_id', v_event,
+            'data', v_data || jsonb_build_object('ticket_count', v_quantity, 'ticket_id', v_new[1]),
+            'channels', jsonb_build_array('SMS')));
+        -- Lot 9 bis (R79, B78) : billets attribués à un compte vérifié → in-app et push au compte, sans acteur
+        IF v_account IS NOT NULL THEN
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'INVITATION_RECEIVED', 'key', 'INVITATION_RECEIVED:' || v_new[1]::text,
+                'user_id', v_account, 'event_id', v_event,
+                'data', v_data || jsonb_build_object('ticket_count', v_quantity, 'ticket_id', v_new[1]),
+                'channels', jsonb_build_array('IN_APP', 'PUSH')));
+        END IF;
+
+        v_masked := v_masked || ('+221***' || right(v_phone, 2));
+    END LOOP;
+
+    -- Étape 10 : audit, numéros masqués
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+    VALUES (v_actor, v_role, 'TICKET_INVITATIONS_SENT', 'events', v_event,
+            jsonb_build_object('category_id', v_category, 'category', v_category_name, 'phone_count', cardinality(v_phones),
+                               'ticket_count', v_total, 'quantity', v_quantity, 'phones_masked', to_jsonb(v_masked)));
+
+    RETURN jsonb_build_object('ok', true, 'ticket_count', v_total, 'phone_count', cardinality(v_phones));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.ticket_invitation_create(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.ticket_invitation_create(jsonb) TO service_role;
+
+
+-- ============================================================================
+-- 10. notif_tickets_scanned (recopie de 20261103000005_lot6_billetterie.sql:866-887)
+-- Billet contrôlé à l'entrée (ticket_scan, ticket_cash_checkin) : avis au porteur.
+-- Tâche 37 (R78, B79) : avis regroupés par commande (même porteur, même événement, même paiement, ou sans paiement),
+-- dus à maintenant + 2 minutes : la ligne IN_APP en attente du groupe est prise FOR UPDATE et ses lignes en attente
+-- (IN_APP, PUSH, EMAIL) comptent le billet (ticket_count) ; sinon un groupe neuf (clé TICKET_SCANNED:<premier billet>,
+-- ticket_count 1, payment_id). Verrous : billet (déjà tenu par le scan) → boîte d'envoi (3.3). Trigger inchangé.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.notif_tickets_scanned()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_group text;
+    v_count integer;
+BEGIN
+    SELECT o.group_key,
+           CASE WHEN o.template_data->>'ticket_count' ~ '^[0-9]{1,6}$' THEN (o.template_data->>'ticket_count')::integer ELSE 1 END
+      INTO v_group, v_count
+      FROM public.notification_outbox o
+     WHERE o.type = 'TICKET_SCANNED' AND o.channel = 'IN_APP' AND o.status = 'PENDING'
+       AND o.recipient_user_id = NEW.user_id AND o.event_id = NEW.event_id
+       AND (o.template_data->>'payment_id') IS NOT DISTINCT FROM NEW.payment_id::text
+     ORDER BY o.created_at, o.id
+     LIMIT 1
+       FOR UPDATE;
+    IF v_group IS NOT NULL THEN
+        UPDATE public.notification_outbox
+           SET template_data = jsonb_set(template_data, '{ticket_count}', to_jsonb(v_count + 1))
+         WHERE group_key = v_group AND type = 'TICKET_SCANNED' AND status = 'PENDING';
+        RETURN NULL;
+    END IF;
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'TICKET_SCANNED', 'key', 'TICKET_SCANNED:' || NEW.id::text,
+        'user_id', NEW.user_id, 'event_id', NEW.event_id, 'due_at', now() + interval '2 minutes',
+        'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb)
+                || jsonb_strip_nulls(jsonb_build_object('ticket_id', NEW.id, 'payment_id', NEW.payment_id, 'ticket_count', 1))));
+    RETURN NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notif_tickets_scanned() FROM PUBLIC, anon, authenticated;
