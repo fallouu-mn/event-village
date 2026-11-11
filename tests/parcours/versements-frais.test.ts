@@ -140,13 +140,22 @@ async function titleOf(eventId: string): Promise<string> {
     return String(data.title);
 }
 
+/**
+ * Contexte des routes d'annulation, qui lisent `params.id` sans await (params synchrones) : objet et promesse à la
+ * fois, patron cycle-annulation.test.ts:100-102. Avec routeContext seul (promesse), params.id vaut undefined et la
+ * route répond 404 EVENT_NOT_FOUND (run 118, cause C).
+ */
+function syncParams<T extends Record<string, string>>(params: T): { params: Promise<T> & T } {
+    return { params: Object.assign(Promise.resolve(params), params) };
+}
+
 async function cancelByPartner(owner: TestPartner, eventId: string): Promise<void> {
     const { POST } = await importModule(PARTNER_CANCEL_ROUTE);
     const res: Response = await POST(
         jsonRequest(`/api/partner/events/${eventId}/cancel`, 'POST', owner.accessToken, {
             internalReason: 'Test lot 9 bis : annulation', publicNotice: 'Événement annulé : les acheteurs sont remboursés.', confirmTitle: await titleOf(eventId),
         }),
-        routeContext({ id: eventId }),
+        syncParams({ id: eventId }),
     );
     assert.equal(res.status, 200, `annulation par la partenaire : ${show(await asResult(res))}`);
 }
@@ -158,7 +167,7 @@ async function cancelByAdmin(eventId: string): Promise<void> {
         jsonRequest(`/api/admin/events/${eventId}/cancel`, 'POST', superadmin.accessToken, {
             internalReason: 'Test lot 9 bis : annulation par l’administration', publicNotice: 'Événement annulé par Event Village.', confirmTitle: await titleOf(eventId),
         }),
-        routeContext({ id: eventId }),
+        syncParams({ id: eventId }),
     );
     assert.equal(res.status, 200, `annulation par l’administration : ${show(await asResult(res))}`);
 }
