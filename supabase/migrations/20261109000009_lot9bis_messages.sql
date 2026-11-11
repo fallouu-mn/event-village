@@ -76,6 +76,9 @@
 --     lieu … » du catalogue S2) ; à la fusion d'une ligne en attente (porteur, numéro seul, contrôleur), une adresse
 --     changée de nouveau retire new_address et address_cleared hérités : l'adresse posée puis retirée dans la fenêtre
 --     ne fuit plus.
+--   - tâche 49 (S-G, G.49, B97) : EVENT_CHANGED gagne sa ligne EMAIL au porteur (créée à 10 minutes et fusionnée,
+--     index uq_outbox_event_change_pending_email de M03) ; INVITATION_RECEIVED au compte vérifié passe aussi par
+--     email ; l'adresse vérifiée est exigée par notif_enqueue de M10 (S-G). Les lignes « numéro seul » restent SMS.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -384,6 +387,7 @@ REVOKE ALL ON FUNCTION public.notif_event_status_changed() FROM PUBLIC, anon, au
 -- Tâche 21 (délégation, S-C) : ancienne et nouvelle fin par event_end_from_v2 (sans fin : début + 6 h).
 -- Tâche 25 (délégation, S-C) : SALE_START_AFTER_EVENT quand un début de vente atteint la nouvelle fin.
 -- Tâche 41 (R80, délégation, S-E) : address_cleared ; à la fusion, l'ancienne adresse (posée ou retirée) est remplacée.
+-- Tâche 49 (G.49, délégation, S-G) : email du changement au porteur, dû à 10 minutes et fusionné comme le SMS.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.event_update(p jsonb)
 RETURNS jsonb
@@ -780,6 +784,32 @@ BEGIN
                     'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
                     'data', v_hdata, 'channels', jsonb_build_array('SMS'),
                     'skip', jsonb_build_object('SMS', 'TITLE_ONLY')));
+            END IF;
+
+            -- Lot 9 bis (G.49, B97, B71) : email du changement au compte, dû à 10 minutes et fusionné comme le SMS
+            -- (index uq_outbox_event_change_pending_email) ; titre seul : fusion seulement, aucune ligne nouvelle.
+            v_pending_id := NULL;
+            SELECT o.id, o.template_data INTO v_pending_id, v_pending_data
+              FROM public.notification_outbox o
+             WHERE o.event_id = v_event AND o.recipient_user_id = v_holder
+               AND o.type = 'EVENT_CHANGED' AND o.channel = 'EMAIL' AND o.status = 'PENDING'
+             ORDER BY o.created_at, o.id
+             LIMIT 1
+               FOR UPDATE;
+            IF v_pending_id IS NOT NULL THEN
+                UPDATE public.notification_outbox
+                   SET template_data = (v_pending_data - v_drop - 'refund_open') || v_hdata || jsonb_build_object('changed_fields', (
+                           SELECT COALESCE(jsonb_agg(f ORDER BY f), '[]'::jsonb)
+                             FROM (SELECT jsonb_array_elements_text(COALESCE(v_pending_data->'changed_fields', '[]'::jsonb)) AS f
+                                   UNION
+                                   SELECT unnest(v_changed)) x)),
+                       due_at = CASE WHEN v_urgent THEN LEAST(due_at, now()) ELSE due_at END,
+                       next_attempt_at = CASE WHEN v_urgent THEN LEAST(next_attempt_at, now()) ELSE next_attempt_at END
+                 WHERE id = v_pending_id;
+            ELSIF v_sms THEN
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
+                    'data', v_hdata, 'channels', jsonb_build_array('EMAIL'), 'due_at', v_due));
             END IF;
         END LOOP;
     END IF;
@@ -1350,6 +1380,7 @@ GRANT EXECUTE ON FUNCTION public.notification_daily_checks(jsonb) TO service_rol
 -- Tâche 37 (R79, B78 ; renverse L10 du lot 9) : billet attribué à un compte vérifié → INVITATION_RECEIVED aussi en
 -- in-app et push au compte (même clé, lignes distinctes par canal) ; la ligne SMS reste au numéro, sans compte ni
 -- acteur (AR15). Verrous inchangés.
+-- Tâche 49 (G.49, délégation, S-G) : la ligne du compte vérifié passe aussi par email.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.ticket_invitation_create(p jsonb)
 RETURNS jsonb
@@ -1486,13 +1517,14 @@ BEGIN
             'phone', v_phone, 'event_id', v_event,
             'data', v_data || jsonb_build_object('ticket_count', v_quantity, 'ticket_id', v_new[1]),
             'channels', jsonb_build_array('SMS')));
-        -- Lot 9 bis (R79, B78) : billets attribués à un compte vérifié → in-app et push au compte, sans acteur
+        -- Lot 9 bis (R79, B78 ; G.49, B97) : billets attribués à un compte vérifié → in-app, push et email au compte,
+        -- sans acteur
         IF v_account IS NOT NULL THEN
             PERFORM public.notif_enqueue(jsonb_build_object(
                 'type', 'INVITATION_RECEIVED', 'key', 'INVITATION_RECEIVED:' || v_new[1]::text,
                 'user_id', v_account, 'event_id', v_event,
                 'data', v_data || jsonb_build_object('ticket_count', v_quantity, 'ticket_id', v_new[1]),
-                'channels', jsonb_build_array('IN_APP', 'PUSH')));
+                'channels', jsonb_build_array('IN_APP', 'PUSH', 'EMAIL')));
         END IF;
 
         v_masked := v_masked || ('+221***' || right(v_phone, 2));
