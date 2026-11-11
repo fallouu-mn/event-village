@@ -105,7 +105,7 @@ export async function verifyStoredOtp(phone: string, code: string, purpose: OtpP
 export function otpFailureMessage(reason: OtpFailureReason): { message: string; status: number } {
     switch (reason) {
         case 'EXPIRED':
-            return { message: 'Le code OTP a expiré. Veuillez en demander un nouveau.', status: 400 };
+            return { message: 'Le code a expiré. Demandez-en un nouveau.', status: 400 };
         case 'TOO_MANY_ATTEMPTS':
             return { message: 'Trop de tentatives infructueuses. Veuillez demander un nouveau code.', status: 429 };
         default:

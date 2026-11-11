@@ -29,10 +29,11 @@ export async function refuseInactiveAccount(params: {
     if (error) {
         console.error(`[refuseInactiveAccount] journalisation du refus ${params.action} impossible :`, error.message);
     }
+    // Lot 9 bis (R75, D8) : le statut d'un tiers n'est jamais dit à la partenaire ; il reste au journal (old_value).
     const verb = params.action === 'CONTROLLER_INVITE_REFUSED_INACTIVE' ? 'invité' : 'affecté';
     return NextResponse.json(
         {
-            error: `Ce compte est au statut ${params.targetStatus} : il ne peut pas être ${verb}. Seul un administrateur peut le réactiver.`,
+            error: `Ce numéro ne peut pas être ${verb} pour le moment. Contactez le support si besoin.`,
             code: 'ACCOUNT_NOT_ACTIVE',
         },
         { status: 409 }

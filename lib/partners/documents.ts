@@ -74,14 +74,31 @@ export async function findUploadByToken(token: string): Promise<UploadRow | null
 
 export type RegistrationUploads = Record<DocType, UploadRow>;
 
+/**
+ * Lot 9 bis (R75) : refus d'une pièce dit en français, jamais par son code (`id_card`, `business_doc`) ; mêmes mots que
+ * l'écran d'inscription (app/partner/register/page.tsx).
+ */
+const DOC_REFUSALS: Record<DocType, { missing: string; used: string; expired: string }> = {
+    id_card: {
+        missing: 'La pièce d’identité est introuvable : déposez-la à nouveau.',
+        used: 'La pièce d’identité est déjà utilisée par une autre inscription : déposez-la à nouveau.',
+        expired: 'Le dépôt de la pièce d’identité a expiré : déposez-la à nouveau.',
+    },
+    business_doc: {
+        missing: 'Le document d’entreprise est introuvable : déposez-le à nouveau.',
+        used: 'Le document d’entreprise est déjà utilisé par une autre inscription : déposez-le à nouveau.',
+        expired: 'Le dépôt du document d’entreprise a expiré : déposez-le à nouveau.',
+    },
+};
+
 /** Vérifie les deux jetons d'une inscription : existants, du bon type, non rattachés, non expirés. */
 export async function resolveRegistrationUploads(tokens: Record<DocType, string>): Promise<{ ok: true; uploads: RegistrationUploads } | { ok: false; error: string }> {
     const uploads = {} as RegistrationUploads;
     for (const docType of DOC_TYPES) {
         const row = await findUploadByToken(tokens[docType]);
-        if (!row || row.doc_type !== docType) return { ok: false, error: `Pièce « ${docType} » introuvable : déposez-la à nouveau.` };
-        if (row.claimed_at) return { ok: false, error: `Pièce « ${docType} » déjà utilisée par une autre inscription : déposez-la à nouveau.` };
-        if (new Date(row.expires_at).getTime() <= Date.now()) return { ok: false, error: `Pièce « ${docType} » expirée : déposez-la à nouveau.` };
+        if (!row || row.doc_type !== docType) return { ok: false, error: DOC_REFUSALS[docType].missing };
+        if (row.claimed_at) return { ok: false, error: DOC_REFUSALS[docType].used };
+        if (new Date(row.expires_at).getTime() <= Date.now()) return { ok: false, error: DOC_REFUSALS[docType].expired };
         uploads[docType] = row;
     }
     return { ok: true, uploads };
