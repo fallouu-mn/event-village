@@ -24,6 +24,11 @@
 --     suspendu : son événement ne peut pas être remis en ligne avant sa réactivation. » quand la partenaire est
 --     SUSPENDU, admin compris (statut lu sans verrou, ordre 3.3).
 --
+-- Délégation fix(9b.12-SC) (R51 ; B31, B34, pour S-B) :
+--  3 bis. event_actions (même définition, point 3) : lecture par la propriétaire ou un admin events.read (ou
+--     events.write) ; actions ADMIN seulement avec events.write (admin_can) ; can_cancel lu dans la table (canal
+--     CANCELLATION ouvert à un rôle de l'acteur) au lieu du seul statut ; un admin sans permission : EVENT_NOT_FOUND.
+--
 -- Tâche 21 (R16 ; B47, B48, X7, A12) :
 --  4. event_end_from_v2(p_start_date, p_start_time, p_end_date, p_end_time) (nouvelle, LANGUAGE sql, IMMUTABLE) : fin
 --     d'un événement à partir de ses colonnes ; date et heure de fin ; date de fin sans heure → 23:59 ; aucune date de
@@ -339,6 +344,7 @@ DECLARE
     v_actions jsonb;
     v_last jsonb;
     v_ended boolean;
+    v_writer boolean;
 BEGIN
     BEGIN
         v_event := (p->>'event_id')::uuid;
@@ -350,12 +356,15 @@ BEGIN
     IF NOT FOUND THEN
         RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
     END IF;
-    SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
-    IF NOT (a.is_owner OR a.is_staff) THEN
+    -- Lot 9 bis (R51, B31) : la fiche se lit avec events.read ; les actions d'admin (et l'annulation par un admin)
+    -- exigent events.write, comme event_transition et event_cancel. Un admin sans aucune des deux : rien.
+    SELECT * INTO a FROM public.event_actor_profile_perm(v_event, v_actor, 'events.read');
+    v_writer := COALESCE(public.admin_can(v_actor, 'events.write'), FALSE);
+    IF NOT (a.is_owner OR a.is_staff OR v_writer) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
     END IF;
     IF a.is_owner THEN v_kinds := v_kinds || 'PARTENAIRE'::text; END IF;
-    IF a.is_staff THEN v_kinds := v_kinds || 'ADMIN'::text; END IF;
+    IF v_writer THEN v_kinds := v_kinds || 'ADMIN'::text; END IF;
 
     -- Lot 9 bis (R3) : aucune action que event_transition refuserait par la date
     v_ended := COALESCE(public.event_end_at(v_event) <= now(), FALSE);
@@ -390,7 +399,10 @@ BEGIN
         'status', e.status::text,
         'actions', v_actions,
         'can_edit', a.is_owner AND e.status::text IN ('BROUILLON', 'VALIDE', 'PUBLIE', 'SUSPENDU'),
-        'can_cancel', e.status::text IN ('VALIDE', 'PUBLIE', 'SUSPENDU'),
+        -- Lot 9 bis (R51) : « Annuler » seulement si la table l'ouvre à un rôle de l'acteur (canal CANCELLATION)
+        'can_cancel', EXISTS (SELECT 1 FROM public.event_status_transitions t
+                               WHERE t.from_status = e.status AND t.to_status = 'ANNULE' AND t.channel = 'CANCELLATION'
+                                 AND t.actor_kind = ANY (v_kinds)),
         'last_reason', v_last);
 END;
 $$;
