@@ -29,7 +29,7 @@
  *  - jours d'essai : 60 (activate_partner_trial, partenaire non fondateur) ;
  *  - dates et montants des textes attendus : fonctions de lib/notifications/sms-format.ts (formats
  *    prouvés par notif-modeles) ; titres, motifs et sociétés courts, en GSM-7, jamais tronqués ;
- *  - alert_queued est cherché à la racine de la réponse de clôture ou dans un objet imbriqué.
+ *  - alert_queued est cherché à la racine de la réponse de clôture ou dans un objet imbriqué. Lot 9 bis (T25, T38) : code de retrait avec le montant (R62), réactivation avec motif (B37), TRIAL_STARTED sans SMS et avec email (R31, G.49), inscription en deux appels (R53).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -39,7 +39,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
 import { signInAs } from '../helpers/fixtures';
-import { jsonRequest as publicRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 import { fakePay, importModule, newBuyer, service, setFakeMode, type Buyer, type CategorySpec, type SaleEvent } from './paiement-helpers';
 import {
     buyConfirmed, cashoutsByKey, createPartnerEvent, jsonRequest, newPartner, superadminId, withSettings,
@@ -507,7 +507,7 @@ function smsCodes(phone: string): string[] {
 async function withdraw(partner: TestPartner, amount: number): Promise<Row> {
     const { POST: otp } = await importModule('../../app/api/withdrawals/otp/route');
     const before0 = smsCodes(partner.phoneE164).length;
-    const o = await invoke(otp as Handler, jsonRequest('/api/withdrawals/otp', 'POST', partner.accessToken, { account: 'ORGANISATEUR' }));
+    const o = await withSettings(WITHDRAWAL_RULES, () => invoke(otp as Handler, jsonRequest('/api/withdrawals/otp', 'POST', partner.accessToken, { account: 'ORGANISATEUR', amount }))); // lot 9 bis (R62, T25)
     assert.equal(o.status, 200, `code de retrait : ${show(o)}`);
     const codes = smsCodes(partner.phoneE164);
     assert.ok(codes.length > before0, 'code de retrait reçu par SMS');
@@ -639,13 +639,13 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
     test('inscription par la route : un seul SMS (le code), PARTNER_REGISTERED_ACK in-app et email, aucune ligne SMS de la boîte d’envoi', async () => {
         const phone = randomSenegalPhone('76');
         const email = randomEmail('pros-inscription');
-        const { POST } = await importModule('../../app/api/partner/register/route');
-        const res = await invoke(POST as Handler, publicRequest('/api/partner/register', {
+        const reg = await registerPartnerTwoStep({ // lot 9 bis (R53, T38) : deux appels de la même route, code lu dans le faux SMS
             companyName: 'Inscription Test SARL', description: 'Organisateur fictif créé par les tests du lot 6.', address: '12 rue des Tests',
             city: 'Dakar', activities: ['ORGANISATEUR'], firstName: 'Fatou', lastName: 'Inscrite', phone, email,
             password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD, ...(await uploadRegistrationDocuments()),
-        }, { 'x-forwarded-for': `${freshIp()}, 10.0.0.1` }));
-        assert.ok(res.status < 300, `inscription partenaire : ${show(res)}`);
+        }, { headers: { 'x-forwarded-for': `${freshIp()}, 10.0.0.1` } });
+        assert.equal(reg.first.status, 200, `appel 1 (code envoyé, rien de créé) : ${show(reg.first)}`); const res = reg.second ?? reg.first;
+        assert.ok(reg.second !== null && res.status < 300, `inscription partenaire (appel 2, avec le code) : ${show(res)}`);
         assert.equal(getFakes().sms.messagesTo(phone).length, 1, 'un SMS synchrone : le code d’inscription');
         assert.match(getFakes().sms.messagesTo(phone)[0].message, /\b\d{6}\b/, 'le SMS est le code');
         const { data: user, error } = await service.from('users').select('id, status').eq('email', email).single();
@@ -717,7 +717,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assertSms(sent, p.phoneE164, mark, `Event Village : votre compte partenaire est suspendu. Motif : ${reason}. Contactez le support.`);
         await assertInApp(sent, { userId: p.userId, title: 'Compte suspendu', contains: [reason], actionUrl: '/partner/dashboard' });
 
-        await rpcOk('partner_status_set', { partner_id: p.partnerId, actor_id: admin, status: 'VALIDE' }, 'réactivation');
+        await rpcOk('partner_status_set', { partner_id: p.partnerId, actor_id: admin, status: 'VALIDE', reason: 'Plaintes traitées, compte rétabli' }, 'réactivation'); // lot 9 bis (B37, T25)
         assert.equal((await partnerRow(p.partnerId)).status, 'VALIDE', 'partners.status réactivé');
         assert.equal(await userStatus(p.userId), 'ACTIF', 'users.status réactivé');
         const rgroup = await singleGroup('PARTNER_REACTIVATED', `PARTNER_REACTIVATED:${p.partnerId}:tx`);
@@ -759,19 +759,21 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         await groupRows('PARTNER_SUSPENDED', group, ['EMAIL', 'IN_APP', 'SMS'], p.userId);
     });
 
-    test('période d’essai : TRIAL_STARTED (in-app, SMS) à la première activation seulement, SMS exact', async () => {
+    // Lot 9 bis (T25, R31 décision « un seul SMS à la validation », G.49) : TRIAL_STARTED en in-app et email, plus de SMS.
+    test('période d’essai : TRIAL_STARTED (in-app, email) à la première activation seulement, aucun SMS', async () => {
         const p = await newProPartner('essai');
         const first = await service.rpc('activate_partner_trial', { p_partner_id: p.partnerId });
         assert.equal(first.error, null, `activation : ${first.error?.message}`);
         assert.equal((first.data as Row).is_new_activation, true, `première activation : ${JSON.stringify(first.data)}`);
-        const rows = await groupRows('TRIAL_STARTED', `TRIAL_STARTED:${p.partnerId}`, ['IN_APP', 'SMS'], p.userId);
+        const rows = await groupRows('TRIAL_STARTED', `TRIAL_STARTED:${p.partnerId}`, ['EMAIL', 'IN_APP'], p.userId);
+        assert.equal((await outboxRows({ type: 'TRIAL_STARTED', userId: p.userId, channel: 'SMS' })).length, 0, 'aucune ligne SMS TRIAL_STARTED (R31, décision)');
         const again = await service.rpc('activate_partner_trial', { p_partner_id: p.partnerId });
         assert.equal(again.error, null, `seconde activation : ${again.error?.message}`);
         assert.equal((again.data as Row).is_new_activation, false, 'seconde activation : idempotente');
         assert.equal((await outboxRows({ type: 'TRIAL_STARTED', userId: p.userId })).length, 2, 'seconde activation : aucune nouvelle ligne');
         const mark = smsMark(p.phoneE164);
         const sent = await deliver(rows, new Date());
-        assertSms(sent, p.phoneE164, mark, "Event Village : votre période d'essai de 60 jours commence aujourd'hui. Bienvenue !");
+        assert.equal(smsTo(p.phoneE164, mark).length, 0, 'aucun SMS à l’activation de l’essai : le seul SMS est celui de la validation');
         await assertInApp(sent, { userId: p.userId, title: "Période d'essai activée", contains: ['60'], actionUrl: '/partner/dashboard' });
     });
 

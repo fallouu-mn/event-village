@@ -109,7 +109,7 @@ export interface ReminderEventOptions {
     startTime: string;
     /** Défaut : une catégorie « Standard » à 5 000 F CFA, 50 places. */
     categories?: CategorySpec[];
-    /** Durée en heures (défaut : 3) ; null : événement sans fin (fin = début à 23:59). */
+    /** Durée en heures (défaut : 3) ; null : événement sans fin (lot 9 bis, R16 : fin = début + 6 h ; avant : début à 23:59). */
     durationHours?: number | null;
     title?: string;
     location?: string;
@@ -367,6 +367,8 @@ export function emailsTo(address: string, since = 0): RecordedEmail[] {
 /**
  * Clés notif.* en vigueur au lot 7 : les 8 du lot 6 encore présentes, plus notif.sms_optional_daily_cap
  * (7.0 a) et notif.free_ticket_reminder_sms (7.0 b). notif.sms_daily_alert est supprimée (D15).
+ * Lot 9 bis (R31, T50, contrat 12.1) : + notif.sms_essential_daily_alert (2 000, entier de 1 à 1 000 000), clé distincte
+ * de l'ancienne notif.sms_daily_alert, qui reste retirée.
  */
 export type NotifSettingKey =
     | 'notif.reminder_j1_enabled'
@@ -378,7 +380,8 @@ export type NotifSettingKey =
     | 'notif.sms_quiet_start'
     | 'notif.sms_quiet_end'
     | 'notif.sms_optional_daily_cap'
-    | 'notif.free_ticket_reminder_sms';
+    | 'notif.free_ticket_reminder_sms'
+    | 'notif.sms_essential_daily_alert';
 
 /**
  * Clé supprimée au lot 7 (D15, migration 20261105000001). Acceptée par getNotifSetting, setNotifSetting et
@@ -387,7 +390,7 @@ export type NotifSettingKey =
  */
 export type RetiredNotifSettingKey = 'notif.sms_daily_alert';
 
-/** Défauts des clés en vigueur (contrat I1 du lot 6, M1 du lot 7). */
+/** Défauts des clés en vigueur (contrat I1 du lot 6, M1 du lot 7, 12.1 du lot 9 bis). */
 export const NOTIF_SETTING_DEFAULTS: Readonly<Record<NotifSettingKey, unknown>> = {
     'notif.reminder_j1_enabled': true,
     'notif.reminder_j1_hour': 10,
@@ -399,6 +402,7 @@ export const NOTIF_SETTING_DEFAULTS: Readonly<Record<NotifSettingKey, unknown>> 
     'notif.sms_quiet_end': 8,
     'notif.sms_optional_daily_cap': 700,
     'notif.free_ticket_reminder_sms': 'NEVER',
+    'notif.sms_essential_daily_alert': 2000,
 };
 
 export async function getNotifSetting(key: NotifSettingKey | RetiredNotifSettingKey): Promise<unknown> {

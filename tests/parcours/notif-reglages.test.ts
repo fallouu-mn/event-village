@@ -2,8 +2,9 @@
  * Lot 6, tâche 6.5 — réglages notif.* des rappels (contrat I1, décisions 24 et 25), sur le même mécanisme
  * historisé que finance.* (lot 3) et access.* (lot 4) : même RPC (finance_setting_set), même validation
  * (fin_setting_valid), même route (/api/admin/finance-settings), même page (/admin/finance-settings).
- *  - les 10 clés notif.* existent avec leur valeur par défaut et une description (lot 7, T4 : 9 − 1 + 2,
- *    notif.sms_daily_alert supprimée, notif.sms_optional_daily_cap et notif.free_ticket_reminder_sms ajoutées) ;
+ *  - les 11 clés notif.* existent avec leur valeur par défaut et une description (lot 7, T4 : 9 − 1 + 2,
+ *    notif.sms_daily_alert supprimée, notif.sms_optional_daily_cap et notif.free_ticket_reminder_sms ajoutées ;
+ *    lot 9 bis, T55 : + notif.sms_essential_daily_alert, 2 000, entier de 1 à 1 000 000, contrat 12.1, R31) ;
  *  - bornes de chaque clé par la RPC : valeurs admises appliquées, valeurs refusées (INVALID_VALUE) sans
  *    effet ni historique ; heure du J-1 de 6 à 20, heures du H-3 de 1 à 12, choix ALWAYS | IF_NO_PUSH |
  *    NEVER, plage de silence de 0 à 23 (début = fin admis : plage vide) ; lot 7 : plafond des SMS optionnels
@@ -17,10 +18,11 @@
  *    l'ADMIN, 200 pour le SUPERADMIN (entier, booléen, choix), valeur hors bornes et clé inconnue 400 ;
  *  - POST /api/admin/pricing (ADMIN avec pricing.manage, écriture service_role sans validation) : 403
  *    NOTIF_SETTING, ni modification ni création d'une clé notif.* ;
- *  - page /admin/finance-settings : 10 libellés exacts (unité « h » pour les heures), choix en français,
+ *  - page /admin/finance-settings : 11 libellés exacts (unité « h » pour les heures), choix en français,
  *    section « Notifications » (icône Bell), plus aucune entrée notif.sms_daily_alert ; lot 7 : section
  *    « Fonctionnalités » (interrupteurs features.*) — contrôle statique.
  * Lot 7 (7.0 a, 7.0 b, T4) : rouge jusqu'à fix(7.0a) (clés et bornes) et fix(7.0f) (libellés de la page).
+ * Lot 9 bis (T55) : rouge jusqu'à M01 (clé et bornes de notif.sms_essential_daily_alert) et à l'écran E-V (libellé).
  *
  * Rouge avant correctif : aucune clé notif.* n'existe (migration 20261103000003 absente) ;
  * finance_setting_set répond UNKNOWN_KEY pour toute clé notif.* ; notif_in_quiet_hours n'existe pas ;
@@ -84,7 +86,7 @@ function inner(v: unknown): unknown {
     return v && typeof v === 'object' && 'value' in (v as Row) ? (v as Row).value : v;
 }
 
-/** Valeurs courantes des 10 clés (chacune doit exister). */
+/** Valeurs courantes des 11 clés (chacune doit exister). */
 async function snapshot(): Promise<Map<NotifSettingKey, unknown>> {
     const out = new Map<NotifSettingKey, unknown>();
     for (const k of KEYS) out.set(k, await getNotifSetting(k));
@@ -127,6 +129,8 @@ const ACCEPTED: Array<[NotifSettingKey, unknown]> = [
     // Lot 7 (T4) : notif.sms_daily_alert supprimée ; bornes des deux clés du lot 7.
     ['notif.sms_optional_daily_cap', 0], ['notif.sms_optional_daily_cap', 1_000_000], ['notif.sms_optional_daily_cap', 700],
     ['notif.free_ticket_reminder_sms', 'SAME_AS_PAID'], ['notif.free_ticket_reminder_sms', 'NEVER'],
+    // Lot 9 bis (R31, T55) : seuil d'alerte des SMS indispensables du jour, entier de 1 à 1 000 000 (contrat 12.1).
+    ['notif.sms_essential_daily_alert', 1], ['notif.sms_essential_daily_alert', 1_000_000], ['notif.sms_essential_daily_alert', 2000],
 ];
 
 const REFUSED: Array<[NotifSettingKey, unknown]> = [
@@ -142,16 +146,19 @@ const REFUSED: Array<[NotifSettingKey, unknown]> = [
     ['notif.sms_optional_daily_cap', '700'], ['notif.sms_optional_daily_cap', null], ['notif.sms_optional_daily_cap', true],
     ['notif.free_ticket_reminder_sms', 'ALWAYS'], ['notif.free_ticket_reminder_sms', 'never'], ['notif.free_ticket_reminder_sms', ''],
     ['notif.free_ticket_reminder_sms', 1], ['notif.free_ticket_reminder_sms', null],
+    ['notif.sms_essential_daily_alert', 0], ['notif.sms_essential_daily_alert', -1], ['notif.sms_essential_daily_alert', 1_000_001],
+    ['notif.sms_essential_daily_alert', 2.5], ['notif.sms_essential_daily_alert', '2000'], ['notif.sms_essential_daily_alert', null],
+    ['notif.sms_essential_daily_alert', true],
 ];
 
 describe('6.5 Réglages notif.* (contrat I1)', () => {
-    test('les 10 clés notif.* existent avec leur valeur par défaut et une description', async () => {
-        assert.equal(KEYS.length, 10, 'dix clés : neuf du contrat I1, moins notif.sms_daily_alert, plus deux du lot 7 (M1)');
+    test('les 11 clés notif.* existent avec leur valeur par défaut et une description', async () => {
+        assert.equal(KEYS.length, 11, 'onze clés : neuf du contrat I1, moins notif.sms_daily_alert, plus deux du lot 7 (M1), plus notif.sms_essential_daily_alert (lot 9 bis, T55)');
         const { data, error } = await service.from('platform_settings').select('key, value, description').like('key', 'notif.%');
         assert.equal(error, null, `lecture des clés notif.* : ${error?.message}`);
         const rows = (data ?? []) as Array<{ key: string; value: unknown; description: string | null }>;
         assert.deepEqual(rows.map((r) => r.key).sort(), [...KEYS].sort(),
-            `clés notif.* en base : ${JSON.stringify(rows.map((r) => r.key))} (migrations 20261103000003 et 20261105000001 attendues)`);
+            `clés notif.* en base : ${JSON.stringify(rows.map((r) => r.key))} (migrations 20261103000003, 20261105000001 et 20261109000001 attendues)`);
         for (const key of KEYS) {
             const row = rows.find((r) => r.key === key)!;
             assert.deepEqual(inner(row.value), NOTIF_SETTING_DEFAULTS[key], `valeur par défaut de ${key}`);
@@ -264,7 +271,7 @@ describe('6.5 Réglages notif.* (contrat I1)', () => {
 });
 
 describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (contrat I1.6)', () => {
-    test('GET : l’ADMIN et le SUPERADMIN lisent les 10 clés notif.* et leur historique', async () => {
+    test('GET : l’ADMIN et le SUPERADMIN lisent les 11 clés notif.* et leur historique', async () => {
         // Lot 7 (T4) : marqueur posé sur notif.sms_optional_daily_cap (notif.sms_daily_alert est supprimée).
         const key: NotifSettingKey = 'notif.sms_optional_daily_cap';
         const saved = await getNotifSetting(key);
@@ -390,7 +397,7 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
         }
     });
 
-    test('page /admin/finance-settings : 10 libellés exacts, choix en français, section « Notifications », section « Fonctionnalités » (contrôle statique)', () => {
+    test('page /admin/finance-settings : 11 libellés exacts, choix en français, section « Notifications », section « Fonctionnalités » (contrôle statique)', () => {
         const page = readFileSync(path.join(process.cwd(), 'app/admin/finance-settings/page.tsx'), 'utf8');
         const apostrophe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, "(?:'|’|\\\\')");
         const labels: Record<NotifSettingKey, { label: string; kind: string; unit?: string }> = {
@@ -405,6 +412,8 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
             // Lot 7 (T4) : libellés des deux clés du lot 7 (contrat 4.6 : SETTING_META des 5 clés ; rédaction retenue ici).
             'notif.sms_optional_daily_cap': { label: 'Plafond quotidien des SMS optionnels', kind: 'integer' },
             'notif.free_ticket_reminder_sms': { label: 'SMS des rappels pour les billets gratuits', kind: 'choice' },
+            // Lot 9 bis (R31, T55) : libellé du contrat 12.1.
+            'notif.sms_essential_daily_alert': { label: 'Seuil d’alerte des SMS indispensables du jour', kind: 'integer' },
         };
         for (const key of KEYS) {
             const quoted = key.replace(/\./g, '\\.');

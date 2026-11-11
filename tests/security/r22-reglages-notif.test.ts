@@ -11,6 +11,7 @@
  * privilégiée dans tests/security) l'interdit ; la suite n'écrit rien dans la boîte d'envoi.
  * Lot 7 (7.0 a, T5) : liste des clés à jour (10) : notif.sms_daily_alert supprimée (D15),
  * notif.sms_optional_daily_cap et notif.free_ticket_reminder_sms ajoutées (M1) ; rouge jusqu'à fix(7.0a).
+ * Lot 9 bis (R31, T55) : 11 clés, + notif.sms_essential_daily_alert (contrat 12.1) ; rouge jusqu'à M01 (clé absente).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -22,7 +23,7 @@ const KEY = 'notif.reminder_h3_hours';
 const KEYS = [
     'notif.reminder_j1_enabled', 'notif.reminder_j1_hour', 'notif.reminder_h3_enabled', 'notif.reminder_h3_hours',
     'notif.j1_sms', 'notif.h3_sms', 'notif.sms_quiet_start', 'notif.sms_quiet_end',
-    'notif.sms_optional_daily_cap', 'notif.free_ticket_reminder_sms',
+    'notif.sms_optional_daily_cap', 'notif.free_ticket_reminder_sms', 'notif.sms_essential_daily_alert',
 ];
 
 async function readValue(client: SupabaseClient, key: string): Promise<unknown> {
@@ -32,7 +33,7 @@ async function readValue(client: SupabaseClient, key: string): Promise<unknown> 
 }
 
 describe('R22 — réglages des notifications', () => {
-    test('un ADMIN ne modifie aucune des 10 clés notif.* par REST (update ni upsert)', async () => {
+    test('un ADMIN ne modifie aucune des 11 clés notif.* par REST (update ni upsert)', async () => {
         const admin = await signInFixture('ADMIN');
         for (const key of KEYS) {
             const original = await readValue(admin.client, key);
