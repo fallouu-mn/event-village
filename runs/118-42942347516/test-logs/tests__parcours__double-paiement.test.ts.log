@@ -1,0 +1,154 @@
+TAP version 13
+[confirmation] paiement 22c9e711-4f80-4fc5-9022-797667b91adb encaissé mais non honorable (paiement en double du panier déjà réglé (b4d25cad-1662-4440-8b21-a3c7591ce5fa)) : remboursement
+[webhook SamirPay] événement 7a4e81ee-485a-49eb-a020-2d7395be35a0 : REFUND_REQUIRED
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+# Subtest: 8.2 a — le second paiement réussi d’un même panier est remboursé
+    # Subtest: 1. A annulé, B confirmé, succès tardif de A par webhook : A remboursé, un seul jeu, un REFUND_PAID, une alerte par admin
+    ok 1 - 1. A annulé, B confirmé, succès tardif de A par webhook : A remboursé, un seul jeu, un REFUND_PAID, une alerte par admin
+      ---
+      duration_ms: 442.178062
+      type: 'test'
+      ...
+[confirmation] paiement e2296717-7bf4-4326-8f7f-ed977c2a97e0 encaissé mais non honorable (paiement en double du panier déjà réglé (6a95a118-bcd8-4bad-90e1-035d99c243b0)) : remboursement
+[cashout] statut de l'envoi REFUND-TKT-bff12c73-f1c7-49e5-907d-e7e16475dab0 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-fb9062ed-a1ff-4193-8298-c1ed6c89e4b4 indisponible : Transaction introuvable (simulation)
+    # Subtest: 2. même chose par le cron : A EXPIRED, rattrapage tardif (RECONCILIATION), A remboursé
+    ok 2 - 2. même chose par le cron : A EXPIRED, rattrapage tardif (RECONCILIATION), A remboursé
+      ---
+      duration_ms: 349.14821
+      type: 'test'
+      ...
+[confirmation] paiement 3b760332-7650-4147-9615-5dbb74a8049b encaissé mais non honorable (paiement en double du panier déjà réglé (a6501282-788a-4981-83ad-8caece5f17dd)) : remboursement
+[webhook SamirPay] événement 89893817-b6e6-4f6d-8281-e8d5e107f393 : REFUND_REQUIRED
+    # Subtest: 3. ordre inverse : A expiré confirmé d’abord, B ensuite : B, second confirmé, est remboursé
+    ok 3 - 3. ordre inverse : A expiré confirmé d’abord, B ensuite : B, second confirmé, est remboursé
+      ---
+      duration_ms: 433.570642
+      type: 'test'
+      ...
+[confirmation] paiement 67628def-4563-4b6d-9399-e6cf7eec4821 encaissé mais non honorable (paiement en double du panier déjà réglé (a90e3f93-f9da-4daa-8455-9a8b4f5ab360)) : remboursement
+[webhook SamirPay] événement 7b816d0c-d279-4d62-9875-52cdabd44ba5 : REFUND_REQUIRED
+[webhook SamirPay] événement 7b816d0c-d279-4d62-9875-52cdabd44ba5 : REFUND_IN_PROGRESS
+    # Subtest: 4. rejeu du webhook : REFUND_IN_PROGRESS, pas de second cashout, pas de second envoi
+    ok 4 - 4. rejeu du webhook : REFUND_IN_PROGRESS, pas de second cashout, pas de second envoi
+      ---
+      duration_ms: 345.184633
+      type: 'test'
+      ...
+    # Subtest: 8. concurrence : deux payment_confirm sur deux connexions, le second attend le premier : un seul jeu
+    ok 5 - 8. concurrence : deux payment_confirm sur deux connexions, le second attend le premier : un seul jeu
+      ---
+      duration_ms: 338.25107
+      type: 'test'
+      ...
+    1..5
+ok 1 - 8.2 a — le second paiement réussi d’un même panier est remboursé
+  ---
+  duration_ms: 2379.142191
+  type: 'suite'
+  ...
+[confirmation] paiement 9e3bc9d0-ba0f-4fb1-ae30-44116d1ea219 encaissé mais non honorable (paiement en double du panier déjà réglé (21456026-750d-415d-bb9b-8360df19212e)) : remboursement
+[webhook SamirPay] événement 76249238-3d7d-4684-a6be-e7bb661d8dfe : REFUND_REQUIRED
+# Subtest: 8.2 a — remboursement du double paiement qui n’aboutit pas du premier coup
+    # Subtest: 9. refus de l’opérateur : ADMIN_REFUND_TO_RETRY à l’admin, la relance par la route aboutit
+    not ok 1 - 9. refus de l’opérateur : ADMIN_REFUND_TO_RETRY à l’admin, la relance par la route aboutit
+      ---
+      duration_ms: 284.50117
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/double-paiement.test.ts:2:20288'
+      failureType: 'testCodeFailure'
+      error: "Cannot find module '/home/runner/work/event-village/event-village/app/api/admin/cashouts/[id]/resend/route' imported from /home/runner/work/event-village/event-village/tests/parcours/paiement-helpers.ts"
+      code: 'ERR_MODULE_NOT_FOUND'
+      stack: |-
+        finalizeResolution (node:internal/modules/esm/resolve:275:11)
+        moduleResolve (node:internal/modules/esm/resolve:865:10)
+        defaultResolve (node:internal/modules/esm/resolve:989:11)
+        #cachedDefaultResolve (node:internal/modules/esm/loader:747:20)
+        #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:783:38)
+        nextStep (node:internal/modules/customization_hooks:189:26)
+        resolveBaseSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:11092)
+        resolveDirectorySync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:12398)
+        resolveTsPathsSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:13605)
+        resolve (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:16832)
+      ...
+[confirmation] paiement 4c2809d0-1631-4251-a188-69d6a2a91ba7 encaissé mais non honorable (paiement en double du panier déjà réglé (1155b0aa-9e63-4b8f-8d88-32959356b39d)) : remboursement
+[cashout] solde SamirPay indisponible, envoi REFUND-4c2809d0-1631-4251-a188-69d6a2a91ba7 différé : Solde SamirPay indisponible (simulation du test)
+[webhook SamirPay] événement f278236d-e537-4123-a914-e3e1f6f73eb6 : REFUND_REQUIRED
+[cashout] statut de l'envoi REFUND-TKT-bff12c73-f1c7-49e5-907d-e7e16475dab0 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-fb9062ed-a1ff-4193-8298-c1ed6c89e4b4 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-TKT-bff12c73-f1c7-49e5-907d-e7e16475dab0 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-fb9062ed-a1ff-4193-8298-c1ed6c89e4b4 indisponible : Transaction introuvable (simulation)
+    # Subtest: 10. getSolde indisponible au premier envoi : A_ENVOYER, rien avant 5 minutes, puis le cron verse une seule fois
+    not ok 2 - 10. getSolde indisponible au premier envoi : A_ENVOYER, rien avant 5 minutes, puis le cron verse une seule fois
+      ---
+      duration_ms: 306.264355
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/double-paiement.test.ts:2:23028'
+      failureType: 'testCodeFailure'
+      error: 'compteur cashouts_resumed du cron (L33, lot 9 bis 5.1) : {"ok":true,"reservations_expired":0,"pending_provider_not_found":1,"cashouts_confirmed":0,"cashouts_interrupted":0,"refunds_resumed":1,"refunds_resume_failed":0}'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/double-paiement.test.ts:424:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..2
+not ok 2 - 8.2 a — remboursement du double paiement qui n’aboutit pas du premier coup
+  ---
+  duration_ms: 591.164176
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/double-paiement.test.ts:2:20170'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 8.2 a — témoins : ce qui n’est pas un double paiement n’est jamais remboursé (L30)
+    # Subtest: 5. rachat séquentiel identique, après la confirmation du premier : deux jeux, aucun remboursement
+    ok 1 - 5. rachat séquentiel identique, après la confirmation du premier : deux jeux, aucun remboursement
+      ---
+      duration_ms: 239.267382
+      type: 'test'
+      ...
+    # Subtest: 6. panier différent (1 VIP annulé puis 2 VIP) : le succès tardif garde les deux jeux
+    ok 2 - 6. panier différent (1 VIP annulé puis 2 VIP) : le succès tardif garde les deux jeux
+      ---
+      duration_ms: 247.955994
+      type: 'test'
+      ...
+    # Subtest: 7. Y entièrement remboursé : X émet ses billets
+    ok 3 - 7. Y entièrement remboursé : X émet ses billets
+      ---
+      duration_ms: 268.925653
+      type: 'test'
+      ...
+    1..3
+ok 3 - 8.2 a — témoins : ce qui n’est pas un double paiement n’est jamais remboursé (L30)
+  ---
+  duration_ms: 756.535861
+  type: 'suite'
+  ...
+[INVARIANT] double-paiement — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] double-paiement — purge des réservations échues : {"expired":0}
+[INVARIANT] double-paiement — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] double-paiement — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] double-paiement — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] double-paiement — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] double-paiement — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] double-paiement — envoyeur : 725 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] double-paiement — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] double-paiement — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] double-paiement — (r)(s)(t) : 0 violation(s)
+1..3
+# tests 10
+# suites 3
+# pass 8
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4480.9247

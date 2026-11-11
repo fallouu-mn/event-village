@@ -1,0 +1,142 @@
+TAP version 13
+# Subtest: 4.2 Secrets dédiés (lib/env.ts)
+    # Subtest: TICKET_TOTP_MASTER_KEY et REGISSEUR_PIN_KEY présentes dans l’environnement de test et validées au démarrage
+    ok 1 - TICKET_TOTP_MASTER_KEY et REGISSEUR_PIN_KEY présentes dans l’environnement de test et validées au démarrage
+      ---
+      duration_ms: 0.933234
+      type: 'test'
+      ...
+    # Subtest: obligatoires, sans repli, d’au moins 32 caractères
+    ok 2 - obligatoires, sans repli, d’au moins 32 caractères
+      ---
+      duration_ms: 2.042583
+      type: 'test'
+      ...
+    # Subtest: distinctes des autres secrets (OTP, hook SMS, service_role) et l’une de l’autre
+    ok 3 - distinctes des autres secrets (OTP, hook SMS, service_role) et l’une de l’autre
+      ---
+      duration_ms: 2.404198
+      type: 'test'
+      ...
+    # Subtest: déclarées dans .env.example, .env.test.example et docs/deploiement-projet-neuf.md
+    ok 4 - déclarées dans .env.example, .env.test.example et docs/deploiement-projet-neuf.md
+      ---
+      duration_ms: 0.510849
+      type: 'test'
+      ...
+    1..4
+ok 1 - 4.2 Secrets dédiés (lib/env.ts)
+  ---
+  duration_ms: 496.940283
+  type: 'suite'
+  ...
+# Subtest: 4.2 Code dynamique : implémentation
+    # Subtest: lib/security/totp.ts : clé maître dédiée lue par lib/env, ni hook SMS ni service_role, timingSafeEqual
+    ok 1 - lib/security/totp.ts : clé maître dédiée lue par lib/env, ni hook SMS ni service_role, timingSafeEqual
+      ---
+      duration_ms: 0.242084
+      type: 'test'
+      ...
+    # Subtest: PIN régisseur : REGISSEUR_PIN_KEY, ni hook SMS ni service_role ; aucune autre dérivation depuis ces secrets
+    ok 2 - PIN régisseur : REGISSEUR_PIN_KEY, ni hook SMS ni service_role ; aucune autre dérivation depuis ces secrets
+      ---
+      duration_ms: 20.854464
+      type: 'test'
+      ...
+    # Subtest: billet émis par le checkout : totp_secret aléatoire de 64 hexadécimaux ; colonne NOT NULL avec défaut
+    ok 3 - billet émis par le checkout : totp_secret aléatoire de 64 hexadécimaux ; colonne NOT NULL avec défaut
+      ---
+      duration_ms: 21.629841
+      type: 'test'
+      ...
+    # Subtest: verifyTicketCode : pas de 20 s, tolérance ±1 pas, code de plus de 40 s refusé, code d’un autre billet refusé
+    ok 4 - verifyTicketCode : pas de 20 s, tolérance ±1 pas, code de plus de 40 s refusé, code d’un autre billet refusé
+      ---
+      duration_ms: 4.436186
+      type: 'test'
+      ...
+    1..4
+ok 2 - 4.2 Code dynamique : implémentation
+  ---
+  duration_ms: 47.506563
+  type: 'suite'
+  ...
+# Subtest: 4.2 Code dynamique au scan
+    # Subtest: code de plus de 40 s (passé ou futur) → qr_expired, non composté ; code de −15 s → valid
+    ok 1 - code de plus de 40 s (passé ou futur) → qr_expired, non composté ; code de −15 s → valid
+      ---
+      duration_ms: 58.131002
+      type: 'test'
+      ...
+    # Subtest: la colonne seule ne permet pas de calculer un code : TOTP « naïf » sur totp_secret refusé
+    ok 2 - la colonne seule ne permet pas de calculer un code : TOTP « naïf » sur totp_secret refusé
+      ---
+      duration_ms: 92.911153
+      type: 'test'
+      ...
+    # Subtest: transfert : code de l’ancien secret refusé, ancien porteur sans live-code, nouveau porteur accepté
+    not ok 3 - transfert : code de l’ancien secret refusé, ancien porteur sans live-code, nouveau porteur accepté
+      ---
+      duration_ms: 115.82024
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/acces-totp.test.ts:4:3911'
+      failureType: 'testCodeFailure'
+      error: "confirmPassword : route /api/account/password-confirm absente (R57, fix(9b.13)) : Cannot find module '/home/runner/work/event-village/event-village/app/api/account/password-confirm/route' imported from /home/runner/work/event-village/event-village/tests/parcours/helpers.ts"
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        confirmPassword (/home/runner/work/event-village/event-village/tests/parcours/helpers.ts:216:15)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async transferTicket (/home/runner/work/event-village/event-village/tests/parcours/acces-totp.test.ts:93:5)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/acces-totp.test.ts:297:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 3 - 4.2 Code dynamique au scan
+  ---
+  duration_ms: 267.148705
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/acces-totp.test.ts:4:2011'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 4.2 live-code
+    # Subtest: porteur : payload EVT1:<UUID>:<6 chiffres>, step_seconds 20, expires_in du serveur ; payload accepté au scan
+    ok 1 - porteur : payload EVT1:<UUID>:<6 chiffres>, step_seconds 20, expires_in du serveur ; payload accepté au scan
+      ---
+      duration_ms: 20.062091
+      type: 'test'
+      ...
+    # Subtest: tout autre compte → 404 : autre client, contrôleur affecté, partenaire propriétaire, administrateur
+    ok 2 - tout autre compte → 404 : autre client, contrôleur affecté, partenaire propriétaire, administrateur
+      ---
+      duration_ms: 189.424878
+      type: 'test'
+      ...
+    # Subtest: billet composté : plus de live-code
+    ok 3 - billet composté : plus de live-code
+      ---
+      duration_ms: 40.475481
+      type: 'test'
+      ...
+    1..3
+ok 4 - 4.2 live-code
+  ---
+  duration_ms: 250.190183
+  type: 'suite'
+  ...
+[INVARIANT] acces-totp — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] acces-totp — purge des réservations échues : {"expired":0}
+[INVARIANT] acces-totp — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] acces-totp — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] acces-totp — (g)(h)(i) : 0 violation(s)
+1..4
+# tests 14
+# suites 4
+# pass 13
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1132.6567

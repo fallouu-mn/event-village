@@ -1,0 +1,431 @@
+TAP version 13
+# Subtest: R48 — annulation en cours d’événement : billets déjà utilisés comptés
+    # Subtest: event_cancellation_impact : in_progress true, used_online { tickets: 1, amount: part du billet utilisé }
+    not ok 1 - event_cancellation_impact : in_progress true, used_online { tickets: 1, amount: part du billet utilisé }
+      ---
+      duration_ms: 7.523433
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts:2:2992'
+      failureType: 'testCodeFailure'
+      error: |-
+        événement commencé : in_progress (aujourd’hui absent) : {"ok":true,"buyers":1,"tickets":{"cash":0,"free":0,"online":1,"invitations":0},"pending_payments":0,"cash_refund_total":0,"online_refund_total":10500}
+        + actual - expected
+        
+        + undefined
+        - true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts:58:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: statique : EventCancelDialog avertit (« L’événement a commencé ») et exige la case « J’ai compris »
+    not ok 2 - statique : EventCancelDialog avertit (« L’événement a commencé ») et exige la case « J’ai compris »
+      ---
+      duration_ms: 0.569378
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts:2:4285'
+      failureType: 'testCodeFailure'
+      error: 'avertissement « L’événement a commencé : … billets déjà utilisés à l’entrée sont aussi remboursés »'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useCallback, useEffect, useState } from 'react';
+        import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+        import { Textarea } from '@/components/ui/Field';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { ErrorState } from '@/components/ui/EmptyState';
+        import { useToast } from '@/components/ui/Toast';
+        import { formatFcfa, formatInteger } from '@/lib/format';
+        import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
+        
+        
+        
+        export interface EventCancelDialogProps {
+            eventId: string;
+            eventTitle: string;
+            scope: 'partner' | 'admin';
+            open: boolean;
+            onClose: () => void;
+            onCancelled: () => void;
+        }
+        
+        interface CancellationImpact {
+            tickets: { online: number; cash: number; free: number; invitations: number };
+            buyers: number;
+            online_refund_total: number;
+            cash_refund_total: number;
+            pending_payments: number;
+        }
+        
+        interface CancelResponse {
+            success?: boolean;
+            message?: string;
+            refundsCreated?: number;
+        }
+        
+        const MIN_NOTICE = 10;
+        const MIN_REASON = 3;
+        const MAX_TEXT = 2000;
+        
+        function ImpactLine({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+            return (
+                <div className="flex items-baseline justify-between gap-3 border-b border-border py-2 last:border-b-0">
+                    <dt className="text-sm text-fg-muted">{label}</dt>
+                    <dd className={strong ? 'text-base font-bold text-fg tabular-nums' : 'text-sm font-semibold text-fg tabular-nums'}>{value}</dd>
+                </div>
+            );
+        }
+        
+        export function EventCancelDialog({ eventId, eventTitle, scope, open, onClose, onCancelled }: EventCancelDialogProps) {
+            const toast = useToast();
+            const [impact, setImpact] = useState<CancellationImpact | null>(null);
+            const [impactError, setImpactError] = useState<string | null>(null);
+            const [impactLoading, setImpactLoading] = useState(false);
+            const [publicNotice, setPublicNotice] = useState('');
+            const [internalReason, setInternalReason] = useState('');
+            const [touched, setTouched] = useState(false);
+            const [submitting, setSubmitting] = useState(false);
+            const [submitError, setSubmitError] = useState<string | null>(null);
+        
+            const loadImpact = useCallback(async () => {
+                setImpactLoading(true);
+                setImpactError(null);
+                try {
+                    const body = await fetchJson<{ impact?: CancellationImpact; progress?: unknown }>(`/api/partner/events/${eventId}/cancellation`);
+                    if (!body.impact) {
+                        setImpact(null);
+                        setImpactError('Cet événement est déjà annulé : l’avancement des remboursements est affiché sur sa page.');
+                        return;
+                    }
+                    setImpact(body.impact);
+                } catch (err) {
+                    setImpact(null);
+                    setImpactError(errorMessage(err, 'Lecture de l’impact de l’annulation impossible.'));
+                } finally {
+                    setImpactLoading(false);
+                }
+            }, [eventId]);
+        
+            useEffect(() => {
+                if (!open) return;
+                setPublicNotice('');
+                setInternalReason('');
+                setTouched(false);
+                setSubmitError(null);
+                void loadImpact();
+            }, [open, loadImpact]);
+        
+            const notice = publicNotice.trim();
+            const reason = internalReason.trim();
+            const noticeError = touched && notice.length < MIN_NOTICE ? `L’avis public doit contenir au moins ${MIN_NOTICE} caractères.` : undefined;
+            const reasonError = touched && reason.length < MIN_REASON ? `Le motif interne doit contenir au moins ${MIN_REASON} caractères.` : undefined;
+            const formValid = notice.length >= MIN_NOTICE && reason.length >= MIN_REASON;
+        
+            const submit = async (): Promise<void> => {
+                setTouched(true);
+                if (!formValid || !impact || submitting) return;
+                setSubmitting(true);
+                setSubmitError(null);
+                const payload = { publicNotice: notice, internalReason: reason, confirmTitle: eventTitle.trim() };
+                try {
+                    const result = scope === 'admin'
+                        ? await sendJson<CancelResponse>(`/api/admin/events/${eventId}/cancel`, 'POST', payload)
+                        : await sendJson<CancelResponse>(`/api/partner/events/${eventId}/cancel`, 'POST', payload);
+                    toast.success(result.message || 'Événement annulé. Les participants sont prévenus et les remboursements sont lancés.');
+                    onCancelled();
+                    onClose();
+                } catch (err) {
+                    setSubmitError(errorMessage(err, 'Annulation impossible pour le moment.'));
+                } finally {
+                    setSubmitting(false);
+                }
+            };
+        
+            return (
+                <ConfirmDialog
+                    isOpen={open}
+                    onClose={() => {
+                        if (!submitting) onClose();
+                    }}
+                    onConfirm={() => void submit()}
+                    title="Annuler l’événement ?"
+                    message="L’annulation est définitive : la vente s’arrête, les participants sont prévenus et les billets payés en ligne sont remboursés automatiquement."
+                    confirmLabel="Confirmer l’annulation"
+                    cancelLabel="Garder l’événement"
+                    variant="danger"
+                    isLoading={submitting}
+                    requireText={eventTitle}
+                    requireTextLabel={`Pour confirmer, saisissez le titre exact de l’événement : « ${eventTitle} »`}
+                    confirmDisabled={!impact || impactLoading || !formValid}
+                    maxWidth="lg"
+                >
+                    <section aria-labelledby="annulation-impact" className="flex flex-col gap-2">
+                        <h3 id="annulation-impact" className="text-base font-semibold text-fg">Impact de l’annulation</h3>
+                        {impactLoading && (
+                            <div className="flex flex-col gap-2" role="status" aria-busy="true" aria-label="Calcul de l’impact en cours">
+                                <span className="h-5 w-full rounded bg-surface-sunken motion-safe:animate-pulse" />
+                                <span className="h-5 w-4/5 rounded bg-surface-sunken motion-safe:animate-pulse" />
+                                <span className="h-5 w-3/5 rounded bg-surface-sunken motion-safe:animate-pulse" />
+                            </div>
+                        )}
+                        {!impactLoading && impactError && (
+                            <ErrorState
+                                title="Impact indisponible"
+                                description={impactError}
+                                onRetry={() => void loadImpact()}
+                                className="my-0 p-5"
+                            />
+                        )}
+                        {!impactLoading && impact && (
+                            <dl className="rounded-2xl border border-border bg-surface-sunken px-4 py-1">
+                                <ImpactLine label="Acheteurs à prévenir" value={formatInteger(impact.buyers)} />
+                                <ImpactLine label="Billets payés en ligne" value={formatInteger(impact.tickets.online)} />
+                                <ImpactLine label="Billets payés en espèces" value={formatInteger(impact.tickets.cash)} />
+                                <ImpactLine label="Billets gratuits et invitations" value={formatInteger(impact.tickets.free + impact.tickets.invitations)} />
+                                <ImpactLine label="Remboursement en ligne (automatique)" value={formatFcfa(impact.online_refund_total)} strong />
+                                <ImpactLine label="Espèces à rembourser par l’organisateur" value={formatFcfa(impact.cash_refund_total)} />
+                                {impact.pending_payments > 0 && (
+                                    <ImpactLine label="Paiements en cours (refusés puis remboursés)" value={formatInteger(impact.pending_payments)} />
+                                )}
+                            </dl>
+                        )}
+                    </section>
+        
+                    <Textarea
+                        label="Avis public aux participants"
+                        hint="Affiché sur la page de l’événement et envoyé aux acheteurs. Expliquez la raison et la suite (remboursement, report éventuel)."
+                        value={publicNotice}
+                        onChange={(e) => setPublicNotice(e.target.value)}
+                        onBlur={() => setTouched(true)}
+                        maxLength={MAX_TEXT}
+                        showCount
+                        required
+                        rows={3}
+                        disabled={submitting}
+                        error={noticeError}
+                    />
+                    <Textarea
+                        label="Motif interne"
+                        hint="Visible seulement de l’organisateur et de l’équipe Event Village, jamais publié."
+                        value={internalReason}
+                        onChange={(e) => setInternalReason(e.target.value)}
+                        onBlur={() => setTouched(true)}
+                        maxLength={MAX_TEXT}
+                        showCount
+                        required
+                        rows={2}
+                        disabled={submitting}
+                        error={reasonError}
+                    />
+                    {submitError && (
+                        <StatusBanner tone="danger" title="L’annulation n’a pas abouti" announce="alert">
+                            {submitError}
+                        </StatusBanner>
+                    )}
+                </ConfirmDialog>
+            );
+        }
+        
+        export default EventCancelDialog;
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts:70:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..2
+not ok 1 - R48 — annulation en cours d’événement : billets déjà utilisés comptés
+  ---
+  duration_ms: 566.672209
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts:2:2861'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] cycle9bis-annulation-en-cours — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cycle9bis-annulation-en-cours — purge des réservations échues : {"expired":0}
+[INVARIANT] cycle9bis-annulation-en-cours — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cycle9bis-annulation-en-cours — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cycle9bis-annulation-en-cours — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cycle9bis-annulation-en-cours — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cycle9bis-annulation-en-cours — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cycle9bis-annulation-en-cours — envoyeur : 1000 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cycle9bis-annulation-en-cours — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cycle9bis-annulation-en-cours — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cycle9bis-annulation-en-cours — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cycle9bis-annulation-en-cours — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cycle9bis-annulation-en-cours — schéma du lot 9 bis incomplet : 29 objet(s) manquant(s)
+[INVARIANT-LOT9BIS]   table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+[INVARIANT-LOT9BIS]   type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+[INVARIANT-LOT9BIS]   type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+[INVARIANT-LOT9BIS]   type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts
+  ---
+  duration_ms: 1114.947156
+  location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts:2:2727'
+  failureType: 'hookFailed'
+  error: |-
+    schéma du lot 9 bis incomplet (cycle9bis-annulation-en-cours) : invariants (w) impossibles à vérifier :
+    table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+    table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+    colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+    colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+    colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)
+    colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)
+    fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+    fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    + actual - expected
+    
+    + [
+    +   'table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)',
+    +   'table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)',
+    +   'colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)',
+    +   'colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)',
+    +   'colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)',
+    +   'fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)',
+    +   'fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)',
+    +   'type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)',
+    +   'type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)',
+    +   'type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: 'table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    1: 'table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    2: 'table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    3: 'table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    4: 'table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)'
+    5: 'table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    6: 'colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)'
+    7: 'colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    8: 'colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    9: 'colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    10: 'colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    11: 'colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    12: 'colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    13: 'colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)'
+    14: 'colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)'
+    15: 'colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)'
+    16: 'colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    17: 'colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    18: 'colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    19: 'valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)'
+    20: 'fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)'
+    21: 'fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    22: 'fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    23: 'fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    24: 'ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    25: 'type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    26: 'type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    27: 'type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    28: 'type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertLot9bisSchema (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:338:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertLot9bisInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:358:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-annulation-en-cours.test.ts:49:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..1
+# tests 2
+# suites 1
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1691.63636

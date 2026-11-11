@@ -1,0 +1,327 @@
+TAP version 13
+# Subtest: R50 — ventes par canal calculées par le serveur
+    # Subtest: by_channel : En ligne 1, En ligne gratuits 0, Au guichet 1 (5 000 F), Invitations 1 (0 F) ; somme = billets du pilotage
+    not ok 1 - by_channel : En ligne 1, En ligne gratuits 0, Au guichet 1 (5 000 F), Invitations 1 (0 F) ; somme = billets du pilotage
+      ---
+      duration_ms: 54.195269
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts:2:3518'
+      failureType: 'testCodeFailure'
+      error: 'by_channel servi par pilotage_sales (aujourd’hui absent) : {"ok":true,"by_day":[{"day":"2026-11-11","sold":2,"sold_cash":1,"sold_online":1,"revenue_online":5000}],"event_id":"10df2604-d188-4fdf-b5de-e75952d2d9e9","by_category":[{"name":"Standard","sold":2,"price":5000,"total":30,"is_active":true,"remaining":27,"sold_cash":1,"in_payment":0,"is_visible":true,"category_id":"1929ff92-bec4-4954-b40b-00fd2ebc0d9d","invitations":1,"sale_online":true,"sold_online'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts:64:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: statique : SalesTab affiche un tableau « Par canal » à partir de by_channel
+    not ok 2 - statique : SalesTab affiche un tableau « Par canal » à partir de by_channel
+      ---
+      duration_ms: 0.88962
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts:2:5210'
+      failureType: 'testCodeFailure'
+      error: 'titre « Par canal »'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React from 'react';
+        import { DataList, type DataColumn } from '@/components/ui/DataList';
+        import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+        import { KpiCardSkeleton } from '@/components/ui/KpiCard';
+        import { categoryChannelLabel } from '@/lib/events/category-channels';
+        import { formatFcfa, formatInteger, formatShortDate } from '@/lib/format';
+        import { useServerData, type ServerData } from '@/components/partner/useServerData';
+        import { BarList, PilotageSection } from './PilotageBlocks';
+        import { TicketRefundPanel } from './TicketRefundPanel';
+        import type { PilotageSales } from './types';
+        
+        type CategoryRow = PilotageSales['by_category'][number];
+        
+        const COLUMNS: DataColumn<CategoryRow>[] = [
+            {
+                key: 'name',
+                header: 'Catégorie',
+                hideOnCard: true,
+                render: (c) => (
+                    <span className="font-semibold">
+                        {c.name}
+                        {!c.is_active && <span className="ml-2 font-normal text-fg-muted">(inactive)</span>}
+                        {c.is_active && <span className="block text-sm font-normal text-fg-muted">{categoryChannelLabel(c)}</span>}
+                    </span>
+                ),
+            },
+            { key: 'price', header: 'Prix', align: 'right', render: (c) => formatFcfa(c.price) },
+            { key: 'sold', header: 'Vendus', align: 'right', render: (c) => formatInteger(c.sold) },
+            { key: 'in_payment', header: 'En cours de paiement', align: 'right', render: (c) => formatInteger(c.in_payment) },
+            { key: 'invitations', header: 'Invitations', align: 'right', render: (c) => formatInteger(c.invitations) },
+            // Catégorie inactive : plus aucune place en vente (remaining = 0 côté serveur). « 0 / 40 » contredisait la
+            // formule affichée au-dessus de la liste (relecture du run 77).
+            { key: 'remaining', header: 'Restants', align: 'right', render: (c) => (c.is_active ? `${formatInteger(c.remaining)} / ${formatInteger(c.total)}` : 'Vente fermée') },
+            { key: 'revenue', header: 'Recettes en ligne', align: 'right', render: (c) => formatFcfa(c.revenue_online) },
+        ];
+        
+        /** Chiffres des ventes : par catégorie (vendus, en cours de paiement, restants) et jour par jour. */
+        function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
+            const { data, error, loading, refreshing, reload } = sales;
+        
+            if (loading) {
+                return (
+                    <div className="flex flex-col gap-3" role="status" aria-busy="true" aria-label="Chargement des ventes">
+                        <KpiCardSkeleton className="min-h-40" />
+                        <KpiCardSkeleton className="min-h-40" />
+                    </div>
+                );
+            }
+            if (error || !data) {
+                return <ErrorState title="Ventes indisponibles" description={error ?? undefined} onRetry={() => void reload()} isRetrying={refreshing} />;
+            }
+        
+            const maxDay = Math.max(0, ...data.by_day.map((d) => d.sold));
+        
+            return (
+                <>
+                    <PilotageSection title="Par catégorie" description="Restants = quota de la catégorie moins les ventes, les invitations et les paiements en cours. Une catégorie inactive n’a plus de place en vente.">
+                        <DataList
+                            items={data.by_category}
+                            columns={COLUMNS}
+                            getKey={(c) => c.category_id}
+                            caption="Ventes par catégorie de billets"
+                            cardTitle={(c) => COLUMNS[0].render(c)}
+                            empty={<EmptyState title="Aucune catégorie" description="Ajoutez une catégorie de billets depuis la fiche de l’événement." className="my-0" />}
+                        />
+                    </PilotageSection>
+        
+                    <PilotageSection title="Évolution jour par jour" description="Billets vendus chaque jour, à l’heure de Dakar.">
+                        <BarList
+                            ariaLabel="Ventes par jour"
+                            unit={['billet', 'billets']}
+                            max={maxDay}
+                            emptyLabel="Aucune vente pour le moment."
+                            items={data.by_day.map((d) => ({
+                                key: d.day,
+                                label: <time dateTime={d.day}>{formatShortDate(d.day)}</time>,
+                                value: d.sold,
+                                detail: d.sold_cash > 0 ? `dont ${formatInteger(d.sold_cash)} en espèces` : undefined,
+                            }))}
+                        />
+                    </PilotageSection>
+                </>
+            );
+        }
+        
+        /**
+         * Onglet Ventes (contrat I). Le remboursement d'un billet (A4) reste monté hors des états de chargement et
+         * d'erreur des chiffres : une relecture en échec ne ferme pas une confirmation en cours.
+         */
+        export function SalesTab({ eventId, signal }: { eventId: string; signal: number }) {
+            const sales = useServerData<PilotageSales>(`/api/partner/events/${eventId}/pilotage/sales`, signal);
+        
+            return (
+                <div className="flex flex-col gap-6">
+                    <SalesFigures sales={sales} />
+                    <TicketRefundPanel eventId={eventId} onRefunded={() => void sales.reload()} />
+                </div>
+            );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts:88:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..2
+not ok 1 - R50 — ventes par canal calculées par le serveur
+  ---
+  duration_ms: 729.896387
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts:2:3429'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] cycle9bis-ventes-canal — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cycle9bis-ventes-canal — purge des réservations échues : {"expired":0}
+[INVARIANT] cycle9bis-ventes-canal — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cycle9bis-ventes-canal — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cycle9bis-ventes-canal — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cycle9bis-ventes-canal — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cycle9bis-ventes-canal — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cycle9bis-ventes-canal — envoyeur : 71 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cycle9bis-ventes-canal — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cycle9bis-ventes-canal — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cycle9bis-ventes-canal — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cycle9bis-ventes-canal — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cycle9bis-ventes-canal — schéma du lot 9 bis incomplet : 29 objet(s) manquant(s)
+[INVARIANT-LOT9BIS]   table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+[INVARIANT-LOT9BIS]   table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+[INVARIANT-LOT9BIS]   fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+[INVARIANT-LOT9BIS]   type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+[INVARIANT-LOT9BIS]   type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+[INVARIANT-LOT9BIS]   type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+[INVARIANT-LOT9BIS]   type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts
+  ---
+  duration_ms: 549.901555
+  location: '/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts:2:3302'
+  failureType: 'hookFailed'
+  error: |-
+    schéma du lot 9 bis incomplet (cycle9bis-ventes-canal) : invariants (w) impossibles à vérifier :
+    table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+    table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+    colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)
+    colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+    colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)
+    colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)
+    colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)
+    fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)
+    fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)
+    fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)
+    fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)
+    type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)
+    + actual - expected
+    
+    + [
+    +   'table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)',
+    +   'table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)',
+    +   'colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)',
+    +   'colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)',
+    +   'colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)',
+    +   'colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)',
+    +   'fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)',
+    +   'fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)',
+    +   'fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)',
+    +   'fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)',
+    +   'type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)',
+    +   'type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)',
+    +   'type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)',
+    +   'type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: 'table public.partner_suspension_cascades absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    1: 'table public.event_start_changes absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    2: 'table public.event_cash_refund_marks absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    3: 'table public.password_confirmations absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    4: 'table public.email_verifications absente — migration 20261109000010_lot9bis_email (contrat 6.2)'
+    5: 'table public.controller_invitations absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    6: 'colonne public.cashouts.delay_flagged_at absente — migration 20261109000007_lot9bis_versements (contrat 6.2)'
+    7: 'colonne public.cashouts.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    8: 'colonne public.cashouts.samirpay_net_amount absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    9: 'colonne public.cashouts.samirpay_ref_operator absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    10: 'colonne public.cashouts.samirpay_reference absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    11: 'colonne public.payments.samirpay_fees absente — migration 20261109000005_lot9bis_samirpay (contrat 6.2)'
+    12: 'colonne public.ticket_transfers.declined_at absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    13: 'colonne public.users.email_verified_at absente — migration 20261109000010_lot9bis_email (contrat 6.2)'
+    14: 'colonne public.users.email_pending absente — migration 20261109000010_lot9bis_email (contrat 6.2)'
+    15: 'colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (contrat 6.2)'
+    16: 'colonne public.partners.ninea absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    17: 'colonne public.partners.rccm absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    18: 'colonne public.partners.resubmitted_at absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    19: 'valeur DECLINED absente du type public.ticket_transfer_status — migration 20261109000002_lot9bis_transfert_statut (contrat 6.2)'
+    20: 'fonction public.cashouts_to_resume() absente — migration 20261109000007_lot9bis_versements (contrat 6.2)'
+    21: 'fonction public.admin_can(uuid,text) absente — migration 20261109000004_lot9bis_droits (contrat 6.2)'
+    22: 'fonction public.fin_frozen_amount(uuid,text,timestamptz) absente — migration 20261109000006_lot9bis_argent (contrat 6.2)'
+    23: 'fonction public.event_end_from_v2(date,time,date,time) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    24: 'ligne public.event_status_transitions (SUSPENDU, TERMINE, ADMIN) absente — migration 20261109000008_lot9bis_cycle (contrat 6.2)'
+    25: 'type REFUND_DELAYED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    26: 'type TICKET_CANCELLED absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    27: 'type EMAIL_VERIFICATION absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+    28: 'type SHIFT_OPEN_AT_END absent de public.notification_types — migration 20261109000003_lot9bis_registre (contrat 6.2)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertLot9bisSchema (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:338:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertLot9bisInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:358:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cycle9bis-ventes-canal.test.ts:58:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..1
+# tests 2
+# suites 1
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1289.718836
