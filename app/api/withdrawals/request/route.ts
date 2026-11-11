@@ -25,6 +25,8 @@ const REFUSAL_STATUS: Record<string, number> = {
     INSUFFICIENT_BALANCE: 409,
     // Lot 9 bis (R4, B14) : net d'un événement suspendu, gelé (fin_withdrawal_check)
     FUNDS_FROZEN: 409,
+    // Lot 9 bis (ex-10.0 a, B26) : 24 h après un changement de numéro ; `unlock_at` suit dans le corps
+    WITHDRAWAL_LOCKED_PHONE_CHANGE: 423,
     NOT_PARTNER: 403,
     ACCOUNT_NOT_ACTIVE: 403,
 };

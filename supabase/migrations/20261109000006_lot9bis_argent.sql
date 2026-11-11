@@ -78,6 +78,12 @@
 -- 15. ticket_refund_request : le porteur (tickets.user_id) est admis quand son droit de report est ouvert (as
 --     HOLDER, context POSTPONEMENT), sinon POSTPONEMENT_REFUND_CLOSED ; l'argent va au payeur d'origine (branche
 --     CASHOUT inchangée, p.client_id et p.payer_phone).
+--
+-- Tâche 9 (ex-10.0 a ; B26) :
+-- 16. fin_withdrawal_check : après le gel, refus WITHDRAWAL_LOCKED_PHONE_CHANGE (unlock_at = dernière ligne
+--     audit_logs ACCOUNT_PHONE_CHANGED du compte + 24 h fixes, à l'heure lue, clock_timestamp sous le verrou du
+--     retrait) pour les deux comptes ; aucune colonne, aucune recopie d'account_phone_finalize. Ordre final :
+--     statut, minimum, solde, gel, verrou de numéro, frais.
 -- ============================================================================
 
 
@@ -186,7 +192,8 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- 2.2 fin_withdrawal_check (tâche 2, B15) : règle unique d'un retrait, sans écriture ni verrou.
---     Ordre : statut du compte, minimum, solde, gel, frais et net. Rend { ok, minimum, fee_rate, fee_amount,
+--     Ordre : statut du compte, minimum, solde, gel, verrou de numéro (tâche 9), frais et net. Rend { ok, minimum,
+--     fee_rate, fee_amount,
 --     net_amount, available, frozen, withdrawable } ou { ok:false, code, message, … }.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fin_withdrawal_check(p_user uuid, p_kind text, p_gross numeric, p_at timestamptz)
@@ -206,6 +213,7 @@ DECLARE
     v_rate         numeric;
     v_fee          numeric;
     v_net          numeric;
+    v_unlock       timestamptz;
 BEGIN
     IF p_kind IS NULL OR p_kind NOT IN ('ORGANISATEUR', 'PARRAINAGE') THEN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ACCOUNT', 'message', 'Compte inconnu.');
@@ -249,6 +257,17 @@ BEGIN
     IF p_gross > v_withdrawable THEN
         RETURN jsonb_build_object('ok', false, 'code', 'FUNDS_FROZEN', 'frozen', v_frozen, 'withdrawable', v_withdrawable,
                                   'message', 'Une partie de vos fonds est gelée : un de vos événements est suspendu.');
+    END IF;
+
+    -- Lot 9 bis (ex-10.0 a, B26) : 24 h fixes après le dernier changement de numéro (audit écrit par
+    -- account_phone_finalize dans sa transaction), pour les deux comptes et tous les moyens de retrait
+    SELECT max(a.created_at) + interval '24 hours' INTO v_unlock
+      FROM public.audit_logs a
+     WHERE a.action = 'ACCOUNT_PHONE_CHANGED' AND a.object_type = 'users' AND a.object_id = p_user;
+    IF v_unlock IS NOT NULL AND v_unlock > v_at THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'WITHDRAWAL_LOCKED_PHONE_CHANGE', 'unlock_at', v_unlock,
+            'message', format('Retrait impossible pendant 24 h après un changement de numéro. Réessayez après le %s.',
+                              to_char(v_unlock AT TIME ZONE 'Africa/Dakar', 'DD/MM/YYYY "à" HH24:MI')));
     END IF;
 
     -- Frais et net
