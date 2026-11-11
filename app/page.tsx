@@ -328,7 +328,7 @@ export default function HomePage() {
           </ul>
           <div className="mt-7 flex flex-wrap gap-3">
             <LinkButton href="/partner/register" size="lg" rightIcon={<ArrowRight size={18} />}>
-              Devenir organisateur
+              Devenir partenaire
             </LinkButton>
           </div>
         </div>
@@ -366,7 +366,7 @@ export default function HomePage() {
                 { label: 'Explorer', href: '/explore' },
                 { label: 'Mes billets', href: '/tickets' },
                 ...(hallsEnabled ? [{ label: 'Salles', href: '/halls' }] : []),
-                { label: 'Devenir organisateur', href: '/partner/register' },
+                { label: 'Devenir partenaire', href: '/partner/register' },
               ].map((link) => (
                 <li key={link.href}>
                   <LinkButton href={link.href} variant="ghost" size="sm">

@@ -131,7 +131,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     { name: 'Explorer', href: '/explore', icon: Compass },
     { name: 'Mes billets', short: 'Billets', href: '/tickets', icon: Ticket },
     { name: 'Commandes', short: 'Achats', href: '/orders', icon: ShoppingBag, feature: ['halls', 'tables', 'orders'] },
-    { name: 'Portefeuille', short: 'Solde', href: '/wallet', icon: Wallet },
+    { name: 'Portefeuille', href: '/wallet', icon: Wallet },
   ]);
 
   // Navigation Services
