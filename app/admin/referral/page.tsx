@@ -19,8 +19,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { KpiCard } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
+import { formatInteger, formatPercent } from '@/lib/format';
 
 export interface RealUserRow {
   id: string;
@@ -35,6 +37,35 @@ export interface RealUserRow {
   updated_at: string;
 }
 
+/** Ligne active de referral_config, servie par GET /api/admin/referral/config (R67). */
+interface ReferralConfigRow {
+  sponsor_status: string;
+  referral_type: string;
+  rate_n1: number;
+  rate_n2: number;
+  duration_months: number;
+}
+
+type ConfigState =
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; standard: ReferralConfigRow | null; ambassador: ReferralConfigRow | null };
+
+/** Taux en points de pourcentage (7 → « 7 % »). */
+function rate(points: number): string {
+  return formatPercent(points / 100, 2);
+}
+
+/** Durée en mois (« 12 mois »). */
+function months(n: number): string {
+  return `${formatInteger(n)} mois`;
+}
+
+/**
+ * Lot 9 bis, tâche 41 (R67 ; contrat 5.41, D-txt E.41) : les cartes « Taux ambassadeur » et « Durée du parrainage »
+ * lisent la grille en base (lignes client vers client ; les lignes prestataire ne sont pas affichées) au lieu de
+ * valeurs écrites dans la page ; lecture en échec : message et « Réessayer », jamais une valeur de repli.
+ */
 export default function AdminReferralAmbassadorsPage() {
   const toast = useToast();
   const [usersList, setUsersList] = useState<RealUserRow[]>([]);
@@ -42,6 +73,29 @@ export default function AdminReferralAmbassadorsPage() {
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'STANDARD' | 'AMBASSADEUR'>('ALL');
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [config, setConfig] = useState<ConfigState>({ status: 'loading' });
+
+  const fetchConfig = useCallback(async () => {
+    setConfig({ status: 'loading' });
+    try {
+      const res = await fetch('/api/admin/referral/config', { cache: 'no-store' });
+      const data = await res.json().catch(() => null) as { configs?: ReferralConfigRow[]; error?: string } | null;
+      if (!res.ok || !Array.isArray(data?.configs)) {
+        console.error('[AdminReferral] configuration du parrainage :', res.status, data?.error ?? '');
+        setConfig({ status: 'error', message: typeof data?.error === 'string' && data.error ? data.error : 'Impossible de charger la configuration du parrainage.' });
+        return;
+      }
+      const pick = (sponsor: string) => data.configs?.find((r) => r.sponsor_status === sponsor && r.referral_type === 'CLIENT_TO_CLIENT') ?? null;
+      setConfig({ status: 'ready', standard: pick('STANDARD'), ambassador: pick('AMBASSADEUR') });
+    } catch (err) {
+      console.error('[AdminReferral] configuration du parrainage : réseau', err);
+      setConfig({ status: 'error', message: 'Impossible de charger la configuration du parrainage. Vérifiez votre connexion.' });
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchConfig();
+  }, [fetchConfig]);
 
   // Chargement des utilisateurs réels depuis Supabase
   const fetchUsers = useCallback(async () => {
@@ -132,26 +186,48 @@ export default function AdminReferralAmbassadorsPage() {
         </Button>
       </div>
 
-      {/* Grille des Règles Officielles CDC V3 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold uppercase text-slate-400">Total Utilisateurs Réels</span>
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white">{usersList.length}</h3>
-          <span className="text-xs text-slate-500">{standardCount} compte(s) standard</span>
-        </div>
-
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold uppercase text-[#FF5722]">Ambassadeurs Actifs</span>
-          <h3 className="text-2xl font-black text-[#FF5722]">{ambassadorsCount}</h3>
-          <span className="text-xs text-emerald-600 font-bold">Taux VIP CDC V3 : N1 7% • N2 2%</span>
-        </div>
-
-        <div className="p-5 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold uppercase text-slate-400">Durée de Validité CDC</span>
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white">24 Mois</h3>
-          <span className="text-xs text-slate-500">Pour tout filleul enregistré</span>
-        </div>
+      {/* Grille du parrainage : comptes lus par /api/admin/users, taux et durées par /api/admin/referral/config (R67) */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <KpiCard
+          label="Utilisateurs"
+          value={formatInteger(usersList.length)}
+          hint={`${formatInteger(standardCount)} compte(s) standard`}
+          icon={<Users size={18} />}
+          loading={isLoading}
+        />
+        <KpiCard
+          label="Ambassadeurs actifs"
+          value={formatInteger(ambassadorsCount)}
+          tone="brand"
+          icon={<Sparkles size={18} />}
+          loading={isLoading || config.status === 'loading'}
+          hint={config.status === 'ready'
+            ? (config.ambassador
+              ? `Taux ambassadeur : N1 ${rate(config.ambassador.rate_n1)}, N2 ${rate(config.ambassador.rate_n2)}`
+              : 'Taux ambassadeur non configuré')
+            : 'Taux ambassadeur indisponible'}
+        />
+        <KpiCard
+          label="Durée du parrainage"
+          icon={<Clock size={18} />}
+          loading={config.status === 'loading'}
+          value={config.status === 'ready' && config.standard ? months(config.standard.duration_months) : 'Indisponible'}
+          hint={config.status === 'ready'
+            ? `${config.standard ? 'Compte standard' : 'Compte standard : non configuré'} ; ${config.ambassador ? `${months(config.ambassador.duration_months)} pour un ambassadeur` : 'ambassadeur : non configuré'}`
+            : 'Durée non lue'}
+        />
       </div>
+
+      {config.status === 'error' && (
+        <StatusBanner
+          tone="danger"
+          announce="alert"
+          title="Taux et durées du parrainage indisponibles"
+          action={<Button variant="secondary" onClick={() => void fetchConfig()} leftIcon={<RefreshCw size={16} />}>Réessayer</Button>}
+        >
+          {config.message}
+        </StatusBanner>
+      )}
 
       {/* Lot 8, A1 (contrat 13.4, L86) : les taux et la durée ne s'enregistrent nulle part, l'écran ne propose plus de les saisir. */}
       <StatusBanner tone="neutral" title="La personnalisation des taux n’est pas disponible pour le moment." />
