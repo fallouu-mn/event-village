@@ -221,3 +221,21 @@ describe('Client SamirPay réel — conformité au contrat v1.2', () => {
         cashoutBehaviour = 'ok';
     });
 });
+
+// ── H7 (T13) : erreurs du transfert sortant, classées sans jamais supposer un refus ──
+
+describe('Client SamirPay réel — transferts sortants v1.2 (H7, contrat 4.5)', () => {
+    test('cashout : 409 au format A = transfert interrompu → UNCERTAIN, jamais REJECTED (aucun solde rendu, aucun renvoi)', async () => {
+        cashoutBehaviour = 'conflict';
+        await rejectsWithKind(client().sendCashout(CASHOUT), 'UNCERTAIN', '409 du transfert');
+        cashoutBehaviour = 'ok';
+    });
+
+    test('cashout : 400 « Solde insuffisant » → REJECTED INSUFFICIENT_BALANCE ; « minimum » ou « maximum autorisé » → REJECTED ACCOUNT_LIMIT ; autre 400 → OPERATOR_REFUSED', async () => {
+        for (const [behaviour, code] of [['insufficient', 'INSUFFICIENT_BALANCE'], ['limit-min', 'ACCOUNT_LIMIT'], ['limit-max', 'ACCOUNT_LIMIT'], ['reject', 'OPERATOR_REFUSED']] as const) {
+            cashoutBehaviour = behaviour;
+            await rejectsWithKind(client().sendCashout(CASHOUT), 'REJECTED', `400 ${behaviour}`, code);
+        }
+        cashoutBehaviour = 'ok';
+    });
+});

@@ -24,13 +24,19 @@ import {
     type SamirPayCashoutResult,
     type SamirPayDirectInitRequest,
     type SamirPayDirectInitResult,
+    type SamirPayErrorKind,
     type SamirPaySoldeResult,
     type SamirPayStatusResult,
     type SamirPayTransactionStatus,
 } from '../../lib/samirpay/types';
 
 export type FakeInitMode = 'success' | 'rejected' | 'timeout' | 'unauthorized';
-export type FakeCashoutMode = 'success' | 'rejected' | 'timeout' | 'timeout-after-send' | 'pending';
+/**
+ * Lot 9 bis (H7, T14) : conflict = 409 du transfert (interrompu, issue incertaine) ; insufficient = 400 « Solde
+ * insuffisant » (code INSUFFICIENT_BALANCE, rien n'est débité) ; limits = 400 hors des limites du compte (code
+ * ACCOUNT_LIMIT) ; rejected = refus 400 de l'opérateur (code OPERATOR_REFUSED, auparavant 409).
+ */
+export type FakeCashoutMode = 'success' | 'rejected' | 'timeout' | 'timeout-after-send' | 'pending' | 'conflict' | 'insufficient' | 'limits';
 
 export interface RecordedGatewayCall {
     method: 'initDirectPayment' | 'checkTransactionStatus' | 'getSolde' | 'sendCashout';
@@ -56,6 +62,14 @@ export interface FakeWebhook {
 
 const PHONE9 = /^[0-9]{9}$/;
 
+/**
+ * SamirPayError porteur des champs de la v1.2 (`code`, `existingTransactionId`, contrat 4.5), posés sur l'objet :
+ * le type les déclare à partir de fix(9b.H4) et fix(9b.H5) ; les services les lisent alors.
+ */
+function providerError(kind: SamirPayErrorKind, message: string, httpStatus: number | undefined, extra: { code?: string; existingTransactionId?: string } = {}): SamirPayError {
+    return Object.assign(new SamirPayError(kind, message, httpStatus), extra);
+}
+
 function normalizeStatus(s: string): SamirPayTransactionStatus {
     const up = s.toUpperCase();
     if (up === 'SUCCESS' || up === 'FAILED' || up === 'CANCELLED' || up === 'PENDING') return up;
@@ -67,6 +81,8 @@ export class FakeSamirPayGateway implements PaymentGateway {
     initMode: FakeInitMode = 'success';
     cashoutMode: FakeCashoutMode = 'success';
     balance = 10_000_000;
+    /** Lot 9 bis (H6, H7) : taux des frais réels renvoyés par un transfert (1,5 = 1,5 %), null = aucun frais renvoyé. */
+    cashoutFeeRate: number | null = null;
 
     private transactions = new Map<string, FakeTransaction>();
     private byOrder = new Map<string, string>();
@@ -76,6 +92,7 @@ export class FakeSamirPayGateway implements PaymentGateway {
         this.initMode = 'success';
         this.cashoutMode = 'success';
         this.balance = 10_000_000;
+        this.cashoutFeeRate = null;
         this.transactions.clear();
         this.byOrder.clear();
     }
@@ -144,15 +161,24 @@ export class FakeSamirPayGateway implements PaymentGateway {
         if (!PHONE9.test(payload.phoneNumber) || !SAMIRPAY_OPERATORS.includes(payload.operatorName) || !payload.firstName || !payload.lastName || !(payload.amount > 0)) {
             throw new SamirPayError('REJECTED', 'Paramètre manquant ou invalide (simulation du contrat)', 400);
         }
-        if (this.cashoutMode === 'rejected') throw new SamirPayError('REJECTED', 'Cashout refusé (simulation)', 409);
+        if (this.cashoutMode === 'rejected') throw providerError('REJECTED', 'Cashout refusé par l’opérateur (simulation)', 400, { code: 'OPERATOR_REFUSED' });
         if (this.cashoutMode === 'timeout') throw new SamirPayError('UNCERTAIN', 'Délai dépassé avant envoi (simulation)');
-        if (payload.amount > this.balance) throw new SamirPayError('REJECTED', 'Solde insuffisant (simulation)', 409);
+        if (this.cashoutMode === 'conflict') throw new SamirPayError('UNCERTAIN', 'Transfert interrompu, 409 (simulation)', 409);
+        if (this.cashoutMode === 'limits') throw providerError('REJECTED', 'Montant hors des limites du compte (simulation)', 400, { code: 'ACCOUNT_LIMIT' });
+        if (this.cashoutMode === 'insufficient' || payload.amount > this.balance) throw providerError('REJECTED', 'Solde insuffisant (simulation)', 400, { code: 'INSUFFICIENT_BALANCE' });
         const transactionId = crypto.randomUUID();
         this.balance -= payload.amount;
         const status: SamirPayTransactionStatus = this.cashoutMode === 'pending' ? 'PENDING' : 'SUCCESS';
         this.transactions.set(transactionId, { transactionId, orderId: null, kind: 'CASHOUT', status, callBackUrl: null, amount: payload.amount });
         if (this.cashoutMode === 'timeout-after-send') throw new SamirPayError('UNCERTAIN', 'Délai dépassé après envoi (simulation)');
-        return { transactionId, status };
+        const result: SamirPayCashoutResult = { transactionId, status };
+        if (this.cashoutFeeRate !== null) {
+            // v1.2 (§5.1) : frais réels, débit total (valeur absolue de netAmount), références SamirPay et opérateur
+            const fees = Math.round(payload.amount * this.cashoutFeeRate) / 100;
+            const tail = crypto.randomBytes(4).toString('hex').toUpperCase();
+            Object.assign(result, { fees, netAmount: payload.amount + fees, reference: `TX${tail}`, refOperator: payload.operatorName === 'WAVE' ? `pt-${tail.toLowerCase()}` : `CI${tail}` });
+        }
+        return result;
     }
 
     /**
