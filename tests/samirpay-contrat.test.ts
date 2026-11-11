@@ -239,3 +239,22 @@ describe('Client SamirPay réel — transferts sortants v1.2 (H7, contrat 4.5)',
         cashoutBehaviour = 'ok';
     });
 });
+
+// ── H4 (T13) : le 409 au format D donne l'identifiant de la transaction existante ──
+
+describe('Client SamirPay réel — orderId en double, identifiant repris (H4, contrat 4.5)', () => {
+    test('cashin direct : 409 D CONFLICT avec transactionId=<uuid> dans message → DUPLICATE et existingTransactionId ; sans identifiant → DUPLICATE seul', async () => {
+        const orderId = `ORD-EV-${Date.now()}-C0C0C0`;
+        const first = await client().initDirectPayment({ amount: 1000, orderId, callBackUrl: 'https://x.example/cb?t=1', operatorName: 'WAVE', telephone: '771234567' });
+        await assert.rejects(client().initDirectPayment({ amount: 1000, orderId, callBackUrl: 'https://x.example/cb?t=1', operatorName: 'WAVE', telephone: '771234567' }), (err: unknown) => {
+            assert.deepEqual({ kind: (err as { kind?: string }).kind, existing: (err as { existingTransactionId?: string }).existingTransactionId },
+                { kind: 'DUPLICATE', existing: first.transactionId }, `409 D : identifiant de la transaction existante (${(err as Error).message})`);
+            return true;
+        });
+        await assert.rejects(client().initDirectPayment({ amount: 1000, orderId, callBackUrl: 'https://x.example/cb?t=1', operatorName: 'WAVE', telephone: '771234567', description: 'doublon-sans-id' }), (err: unknown) => {
+            assert.deepEqual({ kind: (err as { kind?: string }).kind, existing: (err as { existingTransactionId?: string }).existingTransactionId },
+                { kind: 'DUPLICATE', existing: undefined }, `409 D sans identifiant lisible : aucun identifiant inventé (${(err as Error).message})`);
+            return true;
+        });
+    });
+});

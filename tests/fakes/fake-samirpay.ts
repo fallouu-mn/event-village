@@ -30,7 +30,12 @@ import {
     type SamirPayTransactionStatus,
 } from '../../lib/samirpay/types';
 
-export type FakeInitMode = 'success' | 'rejected' | 'timeout' | 'unauthorized';
+/**
+ * Lot 9 bis (H4, T14) : timeout-after-create = transaction créée puis délai dépassé sans statut HTTP, une fois (la
+ * relance au même orderId reçoit DUPLICATE porteur de l'identifiant) ; timeout-after-create-always = même chose à
+ * chaque appel (relance sans réponse, PO6) ; timeout-once = délai dépassé une fois, rien de créé, puis succès.
+ */
+export type FakeInitMode = 'success' | 'rejected' | 'timeout' | 'unauthorized' | 'timeout-after-create' | 'timeout-after-create-always' | 'timeout-once';
 /**
  * Lot 9 bis (H7, T14) : conflict = 409 du transfert (interrompu, issue incertaine) ; insufficient = 400 « Solde
  * insuffisant » (code INSUFFICIENT_BALANCE, rien n'est débité) ; limits = 400 hors des limites du compte (code
@@ -128,14 +133,26 @@ export class FakeSamirPayGateway implements PaymentGateway {
         this.record('initDirectPayment', payload as unknown as Record<string, unknown>);
         if (this.initMode === 'unauthorized') throw new SamirPayError('UNAUTHORIZED', 'Clés refusées (simulation)', 401);
         if (this.initMode === 'timeout') throw new SamirPayError('UNCERTAIN', 'Délai dépassé (simulation)');
+        if (this.initMode === 'timeout-once') {
+            this.initMode = 'success';
+            throw new SamirPayError('UNCERTAIN', 'Délai dépassé une fois (simulation)');
+        }
         if (this.initMode === 'rejected') throw new SamirPayError('REJECTED', 'Paiement refusé par l’opérateur (simulation)', 400);
         if (!(payload.amount > 0) || !payload.orderId || !payload.callBackUrl || !SAMIRPAY_OPERATORS.includes(payload.operatorName) || (payload.telephone && !PHONE9.test(payload.telephone))) {
             throw new SamirPayError('REJECTED', 'Paramètre manquant ou invalide (simulation du contrat)', 400);
         }
-        if (this.byOrder.has(payload.orderId)) throw new SamirPayError('DUPLICATE', 'orderId déjà utilisé (simulation)', 409);
+        const afterCreate = this.initMode === 'timeout-after-create' || this.initMode === 'timeout-after-create-always';
+        const existing = this.byOrder.get(payload.orderId);
+        if (existing && afterCreate) throw new SamirPayError('UNCERTAIN', 'Délai dépassé, transaction déjà créée (simulation)');
+        // v1.2 (§3.1, 409 au format D) : l'identifiant de la transaction existante est rendu avec le doublon
+        if (existing) throw providerError('DUPLICATE', `orderId déjà utilisé (transactionId=${existing}) (simulation)`, 409, { code: 'CONFLICT', existingTransactionId: existing });
         const transactionId = crypto.randomUUID();
         this.transactions.set(transactionId, { transactionId, orderId: payload.orderId, kind: 'CASHIN', status: 'PENDING', callBackUrl: payload.callBackUrl, amount: payload.amount });
         this.byOrder.set(payload.orderId, transactionId);
+        if (afterCreate) {
+            if (this.initMode === 'timeout-after-create') this.initMode = 'success';
+            throw new SamirPayError('UNCERTAIN', 'Délai dépassé après la création de la transaction (simulation)');
+        }
         return {
             transactionId,
             paymentUrl: `http://127.0.0.1:9/fake-samirpay/pay/${transactionId}`,
