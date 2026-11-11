@@ -16,7 +16,16 @@ const ROLE_CHANGE_REFUSALS: Record<string, [number, string]> = {
     SUPERADMIN_REQUIRED: [403, 'Seul un superadmin peut attribuer ou retirer le rôle de superadmin.'],
     INVALID_ROLE: [400, 'Rôle inconnu.'],
     USER_NOT_FOUND: [404, 'Utilisateur cible introuvable.'],
+    ADMIN_ROLE_SUPERADMIN_ONLY: [403, 'Seul un superadmin peut créer un administrateur ou changer ce rôle.'],
 };
+
+/** Lot 9 bis (R71, B33) : créer un admin, ajouter ou retirer le rôle ADMIN, suspendre un admin : SUPERADMIN seul. */
+function adminRoleSuperadminOnly(): NextResponse {
+    return NextResponse.json(
+        { error: ROLE_CHANGE_REFUSALS.ADMIN_ROLE_SUPERADMIN_ONLY[1], code: 'ADMIN_ROLE_SUPERADMIN_ONLY' },
+        { status: 403 }
+    );
+}
 
 const ASSIGNABLE_ROLES: readonly UserRoleType[] = ['CLIENT', 'PARTENAIRE', 'CONTROLEUR', 'ADMIN', 'SUPERADMIN'];
 
@@ -117,12 +126,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: `Rôle inconnu : ${String(role)}.` }, { status: 400 });
         }
 
-        // Protection contre l'élévation de privilèges
-        if (targetRole === 'SUPERADMIN' && auth.user!.role !== 'SUPERADMIN') {
-            return NextResponse.json(
-                { error: 'Seul un Superadmin peut créer un compte SUPERADMIN.' },
-                { status: 403 }
-            );
+        // Protection contre l'élévation de privilèges (lot 9 bis, R71) : rôles lus sur user_roles, jamais users.role ;
+        // refus avant toute création de compte GoTrue.
+        if ((targetRole === 'ADMIN' || targetRole === 'SUPERADMIN') && !auth.user!.roles.includes('SUPERADMIN')) {
+            return adminRoleSuperadminOnly();
         }
 
         const normalizedPhone = phone.trim().startsWith('+') ? phone.trim() : `+221${phone.trim().replace(/^0+/, '').replace(/\s+/g, '')}`;
@@ -293,6 +300,14 @@ export async function PATCH(req: NextRequest) {
                 { error: 'Impossible de modifier un compte SUPERADMIN sans être soi-même SUPERADMIN.' },
                 { status: 403 }
             );
+        }
+
+        // 3 bis. Lot 9 bis (R71, B33) : ajout ou retrait du rôle ADMIN, et statut d'un compte ADMIN, réservés au
+        //       SUPERADMIN (la RPC user_roles_set refait le contrôle des rôles en base).
+        if (!actorIsSuperadmin) {
+            const adminChanged = targetRoles !== null && targetRoles.includes('ADMIN') !== targetCurrentRoles.includes('ADMIN');
+            const adminStatus = status !== undefined && targetCurrentRoles.includes('ADMIN');
+            if (adminChanged || adminStatus) return adminRoleSuperadminOnly();
         }
 
         // 4. Rôles : ajout et retrait dans user_roles (le trigger recalcule users.role)

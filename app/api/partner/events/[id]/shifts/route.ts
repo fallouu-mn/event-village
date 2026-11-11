@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsAdmin, serverIsPartner } from '@/lib/auth/session';
+import { requireEventAccess } from '@/lib/auth/event-access';
+import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { asShiftRefusal, ShiftService } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/partner/events/[id]/shifts — sessions de caisse d'un événement, pour son partenaire
- * propriétaire ou un admin (404 sinon). Le haché du PIN régisseur n'est jamais renvoyé.
+ * propriétaire, ou un admin muni de events.read, ou le SUPERADMIN (lot 9 bis, R2 ; admin sans la permission : 403
+ * PERMISSION_MISSING ; tout autre compte : 404). Le haché du PIN régisseur n'est jamais renvoyé.
  */
 export async function GET(
     req: NextRequest,
@@ -23,9 +25,11 @@ export async function GET(
     if (!eventId) {
         return NextResponse.json({ error: 'ID événement manquant.' }, { status: 400 });
     }
+    const access = await requireEventAccess(user, eventId, 'events.read');
+    if (access.kind === 'DENIED') return access.response;
 
     try {
-        const shifts = await ShiftService.getEventShifts(eventId, { id: user.id, isAdmin: serverIsAdmin(user) });
+        const shifts = await ShiftService.getEventShifts(eventId, { id: user.id, isAdmin: access.kind === 'ADMIN' });
         return NextResponse.json({ success: true, shifts });
     } catch (err: unknown) {
         const refusal = asShiftRefusal(err);

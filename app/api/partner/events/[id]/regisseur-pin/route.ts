@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireActiveSession, serverIsAdmin, serverIsPartner } from '@/lib/auth/session';
+import { requireEventAccess } from '@/lib/auth/event-access';
+import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { asShiftRefusal, ShiftService } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ const BodySchema = z.object({
 
 /**
  * POST /api/partner/events/[id]/regisseur-pin — génération du code PIN régisseur (lot 4.7).
- *  - partenaire propriétaire de l'événement ou admin ;
+ *  - partenaire propriétaire de l'événement, ou admin muni de events.write, ou SUPERADMIN (lot 9 bis, R2) ;
  *  - { confirm: true } obligatoire (l'ancien code cesse d'être valable) ;
  *  - caisse(s) ouverte(s) : 409 OPEN_SHIFTS (avec leur nombre), sauf { confirmOpenShifts: true } ;
  *  - PIN renvoyé une seule fois en clair, jamais son haché ; génération journalisée (audit_logs).
@@ -32,6 +33,9 @@ export async function POST(
     if (!eventId) {
         return NextResponse.json({ error: 'ID événement manquant.' }, { status: 400 });
     }
+    // Lot 9 bis (R2, B31) : un admin doit avoir events.write, contrôlé avant toute lecture du corps ou écriture.
+    const access = await requireEventAccess(user, eventId, 'events.write');
+    if (access.kind === 'DENIED') return access.response;
 
     // Corps absent ou vide : aucune confirmation (refus explicite par le service)
     const text = await req.text();
@@ -52,7 +56,7 @@ export async function POST(
         const result = await ShiftService.generateRegisseurPin(eventId, user.id, {
             confirm: parsed.data.confirm,
             confirmOpenShifts: parsed.data.confirmOpenShifts,
-            actorIsAdmin: serverIsAdmin(user),
+            actorIsAdmin: access.kind === 'ADMIN',
             actorRole: user.role,
         });
         return NextResponse.json({

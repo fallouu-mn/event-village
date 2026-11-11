@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { type UserRoleType } from '@/lib/auth/roles';
+import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 
 export interface AdminAuthResult {
     authorized: boolean;
@@ -41,6 +42,43 @@ export const ADMIN_PERMISSIONS = [
 ] as const;
 
 export type AdminPermission = typeof ADMIN_PERMISSIONS[number];
+
+/** Lecture des permissions impossible (panne) : jamais un refus ni un accès par défaut, la route répond 503. */
+export class AdminPermissionsUnavailable extends Error {
+    constructor(userId: string, detail: string) {
+        super(`permissions de ${userId} illisibles : ${detail}`);
+        this.name = 'AdminPermissionsUnavailable';
+    }
+}
+
+/**
+ * Lot 9 bis, tâche 11 (R2, B30) — permissions effectives d'un compte, lues sur `user_roles` (jamais `users.role`) :
+ * SUPERADMIN → toutes ; ADMIN → ses lignes `admin_permissions` ; tout autre compte → aucune. Lève
+ * AdminPermissionsUnavailable si la lecture échoue.
+ */
+export async function loadAdminPermissions(userId: string, roles: readonly string[]): Promise<string[]> {
+    if (roles.includes('SUPERADMIN')) return [...ADMIN_PERMISSIONS];
+    if (!roles.includes('ADMIN')) return [];
+    const { data, error } = await getServiceRoleClient()
+        .from('admin_permissions')
+        .select('permission')
+        .eq('user_id', userId);
+    if (error) throw new AdminPermissionsUnavailable(userId, error.message);
+    return (data ?? []).map((p) => String(p.permission));
+}
+
+/** Refus 403 PERMISSION_MISSING (contrat 4.2) : texte français, code stable, permission nommée dans le corps. */
+export function permissionMissingResponse(permission: string): NextResponse {
+    return NextResponse.json(
+        { error: permissionMissingMessage(permission), code: 'PERMISSION_MISSING', permission },
+        { status: 403 }
+    );
+}
+
+/** Panne de lecture des droits : 503, jamais de repli. */
+export function adminAuthUnavailableResponse(): NextResponse {
+    return NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'ADMIN_AUTH_UNAVAILABLE' }, { status: 503 });
+}
 
 /**
  * Valide l'authentification et les permissions de l'administrateur appelant

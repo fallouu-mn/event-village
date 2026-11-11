@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsAdmin, serverIsPartner } from '@/lib/auth/session';
+import { requireEventAccess } from '@/lib/auth/event-access';
+import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +21,8 @@ export async function POST(req: NextRequest) {
 
 /**
  * GET /api/partner/events/[id]/promotion — dernière demande de promotion d'un événement (historique, lecture
- * seule), pour le partenaire propriétaire ou un admin ; sinon 404.
+ * seule), pour le partenaire propriétaire, ou un admin muni de events.read, ou le SUPERADMIN (lot 9 bis, R2 ; admin
+ * sans la permission : 403 PERMISSION_MISSING) ; sinon 404.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const activeSession = await requireActiveSession(req);
@@ -33,18 +35,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id: eventId } = await params;
     const supabase = getServiceRoleClient();
 
-    const { data: event, error: eventErr } = await supabase
-        .from('events')
-        .select('id, partners(user_id)')
-        .eq('id', eventId)
-        .maybeSingle();
+    const access = await requireEventAccess(user, eventId, 'events.read');
+    if (access.kind === 'DENIED') return access.response;
+    if (access.kind === 'NONE') {
+        return NextResponse.json({ error: 'Événement introuvable.', code: 'EVENT_NOT_FOUND' }, { status: 404 });
+    }
+    const { data: event, error: eventErr } = await supabase.from('events').select('id').eq('id', eventId).maybeSingle();
     if (eventErr) {
         console.error(`[GET promotion] événement ${eventId} illisible : ${eventErr.message}`);
         return NextResponse.json({ error: 'Lecture impossible pour le moment.', code: 'PROMOTION_READ_FAILED' }, { status: 500 });
     }
-    const partnerRel = (event as { partners?: { user_id?: string } | Array<{ user_id?: string }> } | null)?.partners;
-    const ownerId = Array.isArray(partnerRel) ? partnerRel[0]?.user_id : partnerRel?.user_id;
-    if (!event || (ownerId !== user.id && !serverIsAdmin(user))) {
+    if (!event) {
         return NextResponse.json({ error: 'Événement introuvable.', code: 'EVENT_NOT_FOUND' }, { status: 404 });
     }
 

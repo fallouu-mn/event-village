@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { requireEventAccess } from '@/lib/auth/event-access';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { CashoutService } from '@/lib/payments/cashout.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -13,6 +14,10 @@ const REFUSALS: Record<string, number> = {
     TICKET_NOT_REFUNDABLE: 409,
     PAYMENT_NOT_REFUNDABLE: 409,
     ALREADY_REFUNDED: 409,
+    // Lot 9 bis (contrat 4.1, R11) : refus de ticket_refund_request (M06)
+    REFUND_CLOSED_AFTER_EVENT: 403,
+    FORBIDDEN: 403,
+    ACCOUNT_NOT_ACTIVE: 403,
 };
 
 /** ticket_refund_request écrit le statut du billet dans son message (migration gelée du lot 3) : il ne sort pas d'ici. */
@@ -22,8 +27,8 @@ const REFUSAL_MESSAGES: Record<string, string> = {
 
 /**
  * POST /api/partner/events/[id]/tickets/[ticketId]/refund — remboursement d'un billet (lot 3.4).
- * Droits : le partenaire propriétaire de l'événement [id], ou un ADMIN / SUPERADMIN (rôles
- * user_roles) ; un CONTROLEUR n'a pas ce droit. Le billet doit appartenir à l'événement [id].
+ * Droits : le partenaire propriétaire de l'événement [id], ou un ADMIN muni de refunds.manage, ou le SUPERADMIN
+ * (lot 9 bis, R2 : requireEventAccess) ; un CONTROLEUR n'a pas ce droit. Le billet doit appartenir à l'événement [id].
  * Payé en ligne : versement par le module de cashout (clé REFUND-TKT-<billet>, part du paiement),
  * billet REMBOURSEMENT_EN_COURS jusqu'à la confirmation. Espèces : à rembourser par l'organisateur.
  */
@@ -31,11 +36,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const user = session.user;
-    const isAdmin = serverIsAdmin(user);
-    if (!isAdmin && !user.roles.includes('PARTENAIRE')) {
+    if (!serverIsAdmin(user) && !user.roles.includes('PARTENAIRE')) {
         return NextResponse.json({ error: 'Seul l’organisateur de l’événement ou un administrateur peut rembourser un billet.', code: 'FORBIDDEN' }, { status: 403 });
     }
     const { id: eventId, ticketId } = await Promise.resolve(context.params);
+    // Lot 9 bis (R2, B31) : un admin doit avoir refunds.manage, contrôlé avant toute lecture ou écriture.
+    const access = await requireEventAccess(user, eventId, 'refunds.manage');
+    if (access.kind === 'DENIED') return access.response;
+    const isAdmin = access.kind === 'ADMIN';
     let body: unknown;
     try {
         body = await req.json();

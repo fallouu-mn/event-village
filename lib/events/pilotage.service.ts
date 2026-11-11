@@ -42,13 +42,14 @@ export type ExportPurpose = (typeof EXPORT_PURPOSES)[number];
 
 /** Refus métier : statut HTTP, code stable, message en français. */
 export class PilotageError extends Error {
-    constructor(readonly status: number, readonly code: string, message: string) {
+    constructor(readonly status: number, readonly code: string, message: string, readonly permission?: string) {
         super(message);
         this.name = 'PilotageError';
     }
 
-    toBody(): { error: string; code: string } {
-        return { error: this.message, code: this.code };
+    /** Lot 9 bis (R2, contrat 4.2) : un refus PERMISSION_MISSING nomme la permission manquante dans le corps. */
+    toBody(): { error: string; code: string; permission?: string } {
+        return this.permission ? { error: this.message, code: this.code, permission: this.permission } : { error: this.message, code: this.code };
     }
 }
 
@@ -59,6 +60,8 @@ const REFUSAL_HTTP: Record<string, number> = {
     ACCOUNT_NOT_ACTIVE: 403,
     OWNER_ONLY: 403,
     FORBIDDEN: 403,
+    // Lot 9 bis (R2) : admin sans la permission de l'action (pilotage_access, participants_export, event_controller_set_cash)
+    PERMISSION_MISSING: 403,
     PURPOSE_REQUIRED: 400,
     INVALID_INPUT: 400,
     UNKNOWN_STATUS: 400,
@@ -75,6 +78,7 @@ interface RpcRefusal {
     ok: false;
     code?: string;
     message?: string;
+    permission?: string;
 }
 
 export type RpcBody = Record<string, unknown> & { ok: true };
@@ -97,7 +101,8 @@ export async function callLot5Rpc(rpc: string, p: Record<string, unknown>, failu
     if (body.ok !== true) {
         const refusal = body as unknown as RpcRefusal;
         const code = typeof refusal.code === 'string' ? refusal.code : 'FORBIDDEN';
-        throw new PilotageError(REFUSAL_HTTP[code] ?? 409, code, refusal.message || DEFAULT_MESSAGES[code] || 'Opération refusée.');
+        const permission = code === 'PERMISSION_MISSING' && typeof refusal.permission === 'string' ? refusal.permission : undefined;
+        throw new PilotageError(REFUSAL_HTTP[code] ?? 409, code, refusal.message || DEFAULT_MESSAGES[code] || 'Opération refusée.', permission);
     }
     return body as RpcBody;
 }

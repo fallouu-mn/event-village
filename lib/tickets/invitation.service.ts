@@ -31,6 +31,8 @@ const REFUSAL_STATUS: Readonly<Record<string, number>> = {
     EVENT_NOT_FOUND: 404,
     TICKET_NOT_FOUND: 404,
     FORBIDDEN: 403,
+    // Lot 9 bis (R2) : admin sans events.read (pilotage_access, M04) ; la permission est nommée dans le corps
+    PERMISSION_MISSING: 403,
     ACCOUNT_NOT_ACTIVE: 403,
     EVENT_NOT_ACTIVE: 409,
     SALE_CHECK_FAILED: 409,
@@ -67,6 +69,9 @@ function refusalOf(body: RpcBody, rpc: string): Error {
         const scope = typeof body.scope === 'string' ? body.scope : '';
         return new InvitationRefusal(QUOTA_MESSAGES[scope] ?? body.message, code, status,
             { retry_after_seconds: retryAfter }, { 'Retry-After': String(retryAfter) });
+    }
+    if (code === 'PERMISSION_MISSING' && typeof body.permission === 'string') {
+        return new InvitationRefusal(body.message, code, status, { permission: body.permission });
     }
     if (code === 'SALE_CHECK_FAILED') {
         const problems = saleProblems(body.problems);

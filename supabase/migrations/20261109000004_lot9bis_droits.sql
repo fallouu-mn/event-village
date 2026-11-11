@@ -1,0 +1,400 @@
+-- ============================================================================
+-- EVENT VILLAGE — LOT 9 BIS : les droits (M04, agent S-B ; contrat sections 3.1, 3.2, 3.3, 4.2, 5.11 à 5.19)
+-- ============================================================================
+-- Rejouable : aucun BEGIN ni COMMIT ; CREATE TABLE / INDEX IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, DROP … IF EXISTS
+-- puis ADD pour les contraintes et triggers, CREATE OR REPLACE, privilèges réappliqués ; aucune reprise de données.
+-- Écrite tâche après tâche (section 10), un commit par tâche ; le bloc des privilèges, en fin de fichier, grandit avec
+-- chaque tâche. Aucune permission n'est donnée par cette migration (A13, B32).
+--
+-- Tâche 11 (R2, R71 ; B30, B31, B33) :
+--  1. admin_can(p_actor, p_permission) (nouvelle, STABLE) : SUPERADMIN dans user_roles, ou ADMIN dans user_roles avec
+--     la ligne admin_permissions ; jamais users.role (règle 1B.8 ; has_admin_permission, qui le lit, reste inutilisée).
+--  2. event_actor_profile_perm(p_event, p_actor, p_permission) (nouvelle, STABLE) : même retour que
+--     event_actor_profile, is_staff := admin_can(p_actor, p_permission). Nom nouveau plutôt qu'une surcharge (A2, X8).
+--  3. event_actor_profile(uuid, uuid) : base 20261102000003_lot5_cycle.sql:191-205, signature et retour identiques ;
+--     corps = event_actor_profile_perm(…, 'events.write'). Resserre d'un coup event_transition, event_cancel,
+--     event_update, ticket_category_guard et les invitations : un admin sans events.write n'est plus « staff ».
+--     PL/pgSQL au lieu de SQL : la fonction ne cite qu'un objet créé plus haut dans ce fichier (règle section 1).
+--  4. pilotage_access(uuid, uuid) : base 20261102000005_lot5_pilotage.sql:135-157, recopie intégrale, signature et
+--     STABLE identiques. Changement : profil lu avec events.read ; un compte ADMIN ou SUPERADMIN sans la permission
+--     reçoit PERMISSION_MISSING (un tiers garde EVENT_NOT_FOUND, sans indice).
+--  5. pilotage_refusal(text) : base 20261102000005_lot5_pilotage.sql:159-171, recopie intégrale, signature et
+--     IMMUTABLE identiques. Changement : PERMISSION_MISSING, texte du contrat 4.2 et `permission: events.read`.
+--  6. participants_export(jsonb) : base 20261108000002_lot9_invitations.sql:268-335, recopie intégrale, signature et
+--     VOLATILE identiques. Changement : export avec contacts par un compte ADMIN ou SUPERADMIN non propriétaire →
+--     admin_can(partners.read) exigé (PERMISSION_MISSING `permission: partners.read`, contrôlé avant pilotage_access
+--     pour nommer la permission de l'action demandée), sans ligne participant_exports.
+--  7. event_controller_set_cash(jsonb) : base 20261102000005_lot5_pilotage.sql:967-1024, recopie intégrale,
+--     signature identique, VOLATILE écrit (défaut de la base). Changement : un admin muni de events.write (ou le
+--     SUPERADMIN) modifie le droit d'encaisser (avant : OWNER_ONLY pour tout admin) ; sans la permission :
+--     PERMISSION_MISSING ; le journal porte le rôle de l'acteur (PARTENAIRE ou ADMIN).
+--  8. user_roles_set(jsonb) : base 20261102000002_lot5_dette.sql:411-472, recopie intégrale, signature identique,
+--     VOLATILE écrit (défaut de la base). Changement : ajout OU retrait du rôle ADMIN par un acteur non SUPERADMIN →
+--     ADMIN_ROLE_SUPERADMIN_ONLY, rien d'écrit (R71, décision D3).
+-- Verrous : aucun nouveau (lectures sans verrou de user_roles et admin_permissions).
+-- ============================================================================
+
+
+-- ============================================================================
+-- Tâche 11 — 1. admin_can (nouvelle)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.admin_can(p_actor uuid, p_permission text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT p_actor IS NOT NULL AND p_permission IS NOT NULL AND (
+           EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = p_actor AND r.role::text = 'SUPERADMIN')
+        OR (EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = p_actor AND r.role::text = 'ADMIN')
+            AND EXISTS (SELECT 1 FROM public.admin_permissions ap WHERE ap.user_id = p_actor AND ap.permission = p_permission)))
+$$;
+
+
+-- ============================================================================
+-- Tâche 11 — 2. event_actor_profile_perm (nouvelle)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.event_actor_profile_perm(p_event uuid, p_actor uuid, p_permission text)
+RETURNS TABLE (is_owner boolean, is_staff boolean, is_active boolean)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p_actor IS NOT NULL AND EXISTS (
+               SELECT 1 FROM public.events e JOIN public.partners pa ON pa.id = e.partner_id
+                WHERE e.id = p_event AND pa.user_id = p_actor),
+           COALESCE(public.admin_can(p_actor, p_permission), FALSE),
+           p_actor IS NOT NULL AND EXISTS (
+               SELECT 1 FROM public.users u WHERE u.id = p_actor AND u.status::text = 'ACTIF');
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 11 — 3. event_actor_profile (recopie, 20261102000003_lot5_cycle.sql:191-205)
+-- ============================================================================
+-- Acteur d'une action sur un événement : propriétaire (partners.user_id), admin muni de events.write (lot 9 bis,
+-- R2 : admin_can, user_roles et admin_permissions), compte ACTIF
+CREATE OR REPLACE FUNCTION public.event_actor_profile(p_event uuid, p_actor uuid)
+RETURNS TABLE (is_owner boolean, is_staff boolean, is_active boolean)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT f.is_owner, f.is_staff, f.is_active
+      FROM public.event_actor_profile_perm(p_event, p_actor, 'events.write') f;
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 11 — 4. pilotage_access (recopie, 20261102000005_lot5_pilotage.sql:135-157)
+-- ============================================================================
+-- NULL si l'acteur peut lire le pilotage de l'événement, sinon le code du refus. Un tiers (partenaire
+-- B, client) reçoit EVENT_NOT_FOUND, comme pour un événement inconnu : aucune donnée, aucun indice.
+-- Lot 9 bis (R2) : un admin doit avoir events.read ; sans elle, PERMISSION_MISSING.
+CREATE OR REPLACE FUNCTION public.pilotage_access(p_event uuid, p_actor uuid)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    a record;
+BEGIN
+    IF p_event IS NULL OR p_actor IS NULL OR NOT EXISTS (SELECT 1 FROM public.events WHERE id = p_event) THEN
+        RETURN 'EVENT_NOT_FOUND';
+    END IF;
+    SELECT * INTO a FROM public.event_actor_profile_perm(p_event, p_actor, 'events.read');
+    IF NOT (a.is_owner OR a.is_staff) THEN
+        IF EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = p_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
+            RETURN 'PERMISSION_MISSING';
+        END IF;
+        RETURN 'EVENT_NOT_FOUND';
+    END IF;
+    IF NOT a.is_active THEN
+        RETURN 'ACCOUNT_NOT_ACTIVE';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 11 — 5. pilotage_refusal (recopie, 20261102000005_lot5_pilotage.sql:159-171)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.pilotage_refusal(p_code text)
+RETURNS jsonb
+LANGUAGE sql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT jsonb_build_object('ok', false, 'code', p_code, 'message', CASE p_code
+        WHEN 'EVENT_NOT_FOUND' THEN 'Événement introuvable.'
+        WHEN 'ACCOUNT_NOT_ACTIVE' THEN 'Votre compte n’est pas actif.'
+        WHEN 'INVALID_INPUT' THEN 'Demande invalide.'
+        WHEN 'PERMISSION_MISSING' THEN 'Action non autorisée : votre compte n’a pas la permission « Consulter les événements ».'
+        ELSE 'Accès refusé.' END)
+        || CASE WHEN p_code = 'PERMISSION_MISSING' THEN jsonb_build_object('permission', 'events.read') ELSE '{}'::jsonb END
+$$;
+
+
+-- ============================================================================
+-- Tâche 11 — 6. participants_export (recopie, 20261108000002_lot9_invitations.sql:268-335)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.participants_export(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event uuid := public.try_uuid(p->>'event_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_purpose text := NULLIF(btrim(COALESCE(p->>'purpose', '')), '');
+    v_contacts boolean;
+    v_code text;
+    v_title text;
+    v_rows jsonb;
+    v_count integer;
+    v_export uuid;
+BEGIN
+    -- Lot 9 bis (R2, B31) : téléphones et emails des participants pour un admin non propriétaire = partners.read
+    IF p->'include_contacts' = 'true'::jsonb
+       AND v_event IS NOT NULL AND v_actor IS NOT NULL
+       AND EXISTS (SELECT 1 FROM public.events WHERE id = v_event)
+       AND NOT (SELECT pr.is_owner FROM public.event_actor_profile_perm(v_event, v_actor, 'partners.read') pr)
+       AND EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN'))
+       AND NOT public.admin_can(v_actor, 'partners.read') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PERMISSION_MISSING', 'permission', 'partners.read',
+            'message', 'Action non autorisée : votre compte n’a pas la permission « Consulter les partenaires et leurs contacts ».');
+    END IF;
+    v_code := public.pilotage_access(v_event, v_actor);
+    IF v_code IS NOT NULL THEN
+        RETURN public.pilotage_refusal(v_code);
+    END IF;
+    IF jsonb_typeof(p->'include_contacts') IS DISTINCT FROM 'boolean' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT',
+                                  'message', 'Indiquez si le téléphone et l’email doivent figurer dans l’export.');
+    END IF;
+    v_contacts := (p->>'include_contacts')::boolean;
+    IF v_contacts AND (v_purpose IS NULL OR v_purpose NOT IN ('URGENT_EVENT_INFO', 'SAFETY_AND_RECEPTION')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PURPOSE_REQUIRED',
+            'message', 'Pour exporter le téléphone et l’email, choisissez une finalité : information urgente sur l’événement, ou sécurité et accueil.');
+    END IF;
+    IF NOT v_contacts THEN
+        v_purpose := NULL;
+    END IF;
+    SELECT title INTO v_title FROM public.events WHERE id = v_event;
+
+    -- Participants = billets VALIDE et UTILISE, invitations comprises ; ni paiement, ni prix, ni numéro de billet
+    SELECT COALESCE(jsonb_agg(r.line ORDER BY r.sort_name NULLS LAST, r.category, r.created_at, r.id), '[]'::jsonb), count(*)
+      INTO v_rows, v_count
+      FROM (
+          SELECT tk.id, tk.created_at, c.name AS category,
+                 public.pilotage_display_name(u.first_name, u.last_name) AS sort_name,
+                 jsonb_build_object(
+                     'name', COALESCE(public.pilotage_display_name(u.first_name, u.last_name),
+                                      CASE WHEN tk.user_id IS NULL AND tk.sale_channel = 'INVITATION' THEN 'Invitation en attente'
+                                           WHEN tk.user_id IS NULL THEN 'Vente au guichet' ELSE 'Participant sans nom' END),
+                     'category', c.name,
+                     'channel', CASE tk.sale_channel WHEN 'ONLINE' THEN 'En ligne' WHEN 'FREE' THEN 'Gratuit'
+                                     WHEN 'COUNTER' THEN 'Guichet' WHEN 'INVITATION' THEN 'Invitation' END,
+                     'status', public.pilotage_ticket_status_label(tk.status::text),
+                     'entered_at', CASE WHEN tk.status::text = 'UTILISE' THEN
+                                       COALESCE(to_char(COALESCE(tk.checked_in_at, sc.created_at) AT TIME ZONE 'Africa/Dakar', 'DD/MM/YYYY HH24:MI'),
+                                                'Entrée enregistrée')
+                                   END)
+                 || CASE WHEN v_contacts THEN jsonb_build_object('phone', u.phone, 'email', u.email) ELSE '{}'::jsonb END AS line
+            FROM public.tickets tk
+            JOIN public.ticket_categories c ON c.id = tk.category_id
+            LEFT JOIN public.users u ON u.id = tk.user_id
+            LEFT JOIN LATERAL (SELECT x.created_at FROM public.ticket_scans x
+                                WHERE x.ticket_id = tk.id AND x.accepted ORDER BY x.created_at LIMIT 1) sc ON TRUE
+           WHERE tk.event_id = v_event AND tk.status::text IN ('VALIDE', 'UTILISE')
+      ) r;
+
+    INSERT INTO public.participant_exports (event_id, actor_id, include_contacts, purpose, row_count)
+    VALUES (v_event, v_actor, v_contacts, v_purpose, v_count)
+    RETURNING id INTO v_export;
+
+    RETURN jsonb_build_object('ok', true, 'export_id', v_export, 'event_id', v_event, 'title', v_title,
+                              'include_contacts', v_contacts, 'purpose', v_purpose, 'row_count', v_count, 'rows', v_rows);
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 11 — 7. event_controller_set_cash (recopie, 20261102000005_lot5_pilotage.sql:967-1024)
+-- ============================================================================
+-- ── Permission espèces d'une affectation (propriétaire, ou admin events.write ; journalisée) ───
+-- p : { assignment_id, actor_id, can_accept_cash (booléen) }
+CREATE OR REPLACE FUNCTION public.event_controller_set_cash(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_assignment uuid := public.try_uuid(p->>'assignment_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_value boolean;
+    r record;
+    v_staff boolean;
+    v_open boolean;
+BEGIN
+    IF v_actor IS NULL OR jsonb_typeof(p->'can_accept_cash') IS DISTINCT FROM 'boolean' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Indiquez la permission espèces (oui ou non).');
+    END IF;
+    v_value := (p->>'can_accept_cash')::boolean;
+    IF v_assignment IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ASSIGNMENT_NOT_FOUND', 'message', 'Affectation introuvable.');
+    END IF;
+
+    SELECT ec.id, ec.event_id, ec.user_id, ec.can_accept_cash, pa.user_id AS owner_id
+      INTO r
+      FROM public.event_controllers ec
+      JOIN public.events e ON e.id = ec.event_id
+      JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE ec.id = v_assignment
+       FOR UPDATE OF ec;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ASSIGNMENT_NOT_FOUND', 'message', 'Affectation introuvable.');
+    END IF;
+    v_staff := FALSE;
+    IF r.owner_id IS DISTINCT FROM v_actor THEN
+        -- Lot 9 bis (R2, B31) : un admin muni de events.write (ou le SUPERADMIN) agit ; sans elle, refus nommé
+        v_staff := public.admin_can(v_actor, 'events.write');
+        IF NOT v_staff THEN
+            IF EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = v_actor AND ur.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PERMISSION_MISSING', 'permission', 'events.write',
+                    'message', 'Action non autorisée : votre compte n’a pas la permission « Gérer les événements ».');
+            END IF;
+            RETURN jsonb_build_object('ok', false, 'code', 'ASSIGNMENT_NOT_FOUND', 'message', 'Affectation introuvable.');
+        END IF;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Votre compte n’est pas actif.');
+    END IF;
+
+    UPDATE public.event_controllers SET can_accept_cash = v_value WHERE id = r.id;
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+    VALUES (v_actor, CASE WHEN v_staff THEN 'ADMIN' ELSE 'PARTENAIRE' END, 'CONTROLLER_CASH_PERMISSION_SET', 'event_controllers', r.id,
+            jsonb_build_object('can_accept_cash', r.can_accept_cash),
+            jsonb_build_object('can_accept_cash', v_value),
+            jsonb_build_object('event_id', r.event_id, 'controller_id', r.user_id));
+    v_open := EXISTS (SELECT 1 FROM public.controller_shifts s
+                       WHERE s.event_id = r.event_id AND s.controller_id = r.user_id AND s.status = 'OUVERT');
+
+    RETURN jsonb_build_object('ok', true, 'assignment_id', r.id, 'event_id', r.event_id, 'controller_id', r.user_id,
+                              'can_accept_cash', v_value, 'changed', r.can_accept_cash IS DISTINCT FROM v_value,
+                              'open_shift', v_open);
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 11 — 8. user_roles_set (recopie, 20261102000002_lot5_dette.sql:411-472)
+-- ============================================================================
+-- p : { user_id, roles text[], actor_id }. CLIENT toujours conservé. Si le trigger controller_removal_guard
+-- refuse le retrait de CONTROLEUR (caisse ouverte, EV409), aucun rôle n'est modifié.
+-- Lot 9 bis (R71) : le rôle ADMIN ne s'ajoute ni ne se retire que par un SUPERADMIN.
+CREATE OR REPLACE FUNCTION public.user_roles_set(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_target text[];
+    v_before text[];
+    v_invalid text[];
+    v_actor_super boolean;
+BEGIN
+    IF v_user IS NULL OR v_actor IS NULL OR jsonb_typeof(p->'roles') IS DISTINCT FROM 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Changement de rôles incomplet.');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status = 'ACTIF')
+       OR NOT EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role IN ('ADMIN', 'SUPERADMIN')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Changement de rôles réservé à un administrateur actif.');
+    END IF;
+    v_actor_super := EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role = 'SUPERADMIN');
+
+    SELECT array_agg(DISTINCT x ORDER BY x) INTO v_target
+      FROM (SELECT jsonb_array_elements_text(p->'roles') AS x UNION SELECT 'CLIENT') s;
+    SELECT array_agg(x ORDER BY x) INTO v_invalid
+      FROM unnest(v_target) AS x
+     WHERE x NOT IN (SELECT unnest(enum_range(NULL::public.user_role))::text);
+    IF v_invalid IS NOT NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ROLE', 'roles', to_jsonb(v_invalid), 'message', 'Rôle inconnu.');
+    END IF;
+
+    PERFORM 1 FROM public.users WHERE id = v_user FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'USER_NOT_FOUND', 'message', 'Compte introuvable.');
+    END IF;
+    SELECT COALESCE(array_agg(role::text ORDER BY role::text), ARRAY[]::text[]) INTO v_before
+      FROM public.user_roles WHERE user_id = v_user;
+    IF NOT v_actor_super AND ('SUPERADMIN' = ANY (v_target) OR 'SUPERADMIN' = ANY (v_before)) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SUPERADMIN_REQUIRED', 'message', 'Seul un superadmin peut attribuer ou retirer le rôle de superadmin.');
+    END IF;
+    IF NOT v_actor_super AND (('ADMIN' = ANY (v_target)) IS DISTINCT FROM ('ADMIN' = ANY (v_before))) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ADMIN_ROLE_SUPERADMIN_ONLY',
+                                  'message', 'Seul un superadmin peut créer un administrateur ou changer ce rôle.');
+    END IF;
+
+    BEGIN
+        DELETE FROM public.user_roles WHERE user_id = v_user AND NOT (role::text = ANY (v_target));
+        INSERT INTO public.user_roles (user_id, role)
+        SELECT v_user, x::public.user_role FROM unnest(v_target) AS x
+        ON CONFLICT (user_id, role) DO NOTHING;
+    EXCEPTION WHEN SQLSTATE 'EV409' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'CONTROLLER_HAS_OPEN_SHIFT',
+                                  'message', 'Ce contrôleur a une caisse ouverte : clôturez-la avant de lui retirer ce rôle.');
+    END;
+
+    RETURN jsonb_build_object('ok', true,
+        'before', to_jsonb(v_before),
+        'after', to_jsonb(v_target),
+        'added', COALESCE((SELECT jsonb_agg(x ORDER BY x) FROM unnest(v_target) x WHERE NOT (x = ANY (v_before))), '[]'::jsonb),
+        'removed', COALESCE((SELECT jsonb_agg(x ORDER BY x) FROM unnest(v_before) x WHERE NOT (x = ANY (v_target))), '[]'::jsonb));
+END;
+$$;
+
+
+-- ============================================================================
+-- Privilèges (toutes les fonctions du fichier) : service_role uniquement
+-- ============================================================================
+DO $$
+DECLARE
+    f text;
+BEGIN
+    FOREACH f IN ARRAY ARRAY[
+        'public.admin_can(uuid, text)',
+        'public.event_actor_profile_perm(uuid, uuid, text)',
+        'public.event_actor_profile(uuid, uuid)',
+        'public.pilotage_access(uuid, uuid)',
+        'public.pilotage_refusal(text)',
+        'public.participants_export(jsonb)',
+        'public.event_controller_set_cash(jsonb)',
+        'public.user_roles_set(jsonb)'
+    ] LOOP
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
+    END LOOP;
+END;
+$$;

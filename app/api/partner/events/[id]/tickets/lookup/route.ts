@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
+import { requireEventAccess } from '@/lib/auth/event-access';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { isEventId } from '@/lib/events/public-status';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -61,20 +62,23 @@ function isRefundable(status: string, mode: RefundMode, payment: PaymentRow | nu
 /**
  * GET /api/partner/events/[id]/tickets/lookup?number=TCK-… — fiche d'un billet à rembourser (lot 8, anomalie A4,
  * contrat 3.11). Droits de POST …/tickets/[ticketId]/refund : le partenaire propriétaire de l'événement [id], ou un
- * ADMIN / SUPERADMIN. Un billet d'un autre événement répond 404. Rien d'autre que le contrat : ni QR, ni téléphone,
+ * ADMIN muni de refunds.manage, ou le SUPERADMIN (lot 9 bis, R2). Un billet d'un autre événement répond 404. Rien d'autre que le contrat : ni QR, ni téléphone,
  * ni nom complet. Le numéro est lu comme à la saisie manuelle du scan : sans espaces autour, en capitales.
  */
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const user = session.user;
-    const isAdmin = serverIsAdmin(user);
 
     try {
-        if (!isAdmin && !user.roles.includes('PARTENAIRE')) {
+        if (!serverIsAdmin(user) && !user.roles.includes('PARTENAIRE')) {
             throw new PublicError('Seul l’organisateur de l’événement ou un administrateur peut consulter ce billet.', 'FORBIDDEN', 403);
         }
         const { id: eventId } = await Promise.resolve(context.params);
+        // Lot 9 bis (R2, B31, décision D2) : la fiche sert le panneau de remboursement, un admin doit avoir refunds.manage.
+        const access = await requireEventAccess(user, eventId, 'refunds.manage');
+        if (access.kind === 'DENIED') return access.response;
+        const isAdmin = access.kind === 'ADMIN';
         const number = (req.nextUrl.searchParams.get('number') ?? '').trim().toUpperCase();
         if (number.length < NUMBER_MIN || number.length > NUMBER_MAX) {
             throw new PublicError('Saisissez le numéro complet du billet.', 'INVALID_TICKET_NUMBER', 400);

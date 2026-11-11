@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
-import { requireActiveSession, serverIsPartner, serverIsAdmin } from '@/lib/auth/session';
+import { requireEventAccess } from '@/lib/auth/event-access';
+import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { EventService, EventServiceError } from '@/lib/events/event.service';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/partner/events/[id]
+ * GET /api/partner/events/[id] — fiche de l'événement : la propriétaire, ou un admin muni de events.read, ou le
+ * SUPERADMIN (lot 9 bis, R2 ; admin sans la permission : 403 PERMISSION_MISSING). Tout autre compte ne lit que ses
+ * propres événements (404 sinon, getEventById).
  */
 export async function GET(
     request: NextRequest,
@@ -21,9 +24,11 @@ export async function GET(
         }
 
         const { id } = await params;
+        const access = await requireEventAccess(user, id, 'events.read');
+        if (access.kind === 'DENIED') return access.response;
         const event = await EventService.getEventById(
             id,
-            serverIsAdmin(user) ? undefined : user.id
+            access.kind === 'ADMIN' ? undefined : user.id
         );
 
         return NextResponse.json({ success: true, event });
