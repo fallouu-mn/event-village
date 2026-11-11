@@ -23,6 +23,31 @@ interface PaymentRow {
     event_title: string | null;
 }
 
+/** Remboursements d'un paiement, au sens de GET /api/payments/[id]/status (refundDelayedOf). */
+const REFUND_KINDS = ['REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND'];
+const UNPAID_REFUND_STATES = ['A_ENVOYER', 'ENVOYE', 'INCERTAIN', 'ECHOUE'];
+
+/**
+ * Lot 9 bis (B9 ; décision de l'orchestrateur sur S11 : la promesse B9 l'emporte sur « route intacte » du 5.1) :
+ * paiements de la page dont un remboursement non versé est bloqué (hors simulation), refusé, incertain ou signalé en
+ * retard. Même règle que la page d'attente et que l'avis REFUND_DELAYED ; seuls les REFUND_PENDING sont lus, le libellé
+ * ne change que pour eux. Une erreur de lecture est levée (réponse 500, jamais un état deviné).
+ */
+async function delayedRefundPayments(rows: PaymentRow[]): Promise<Set<string>> {
+    const ids = rows.filter((r) => r.status === 'REFUND_PENDING').map((r) => r.id);
+    if (ids.length === 0) return new Set();
+    const { data, error } = await getServiceRoleClient().from('cashouts')
+        .select('payment_id, status, blocked_reason, delay_flagged_at')
+        .in('payment_id', ids)
+        .in('kind', REFUND_KINDS)
+        .in('status', UNPAID_REFUND_STATES);
+    if (error) throw new Error(`lecture des remboursements des paiements : ${error.message}`);
+    return new Set((data ?? [])
+        .filter((c) => c.status === 'INCERTAIN' || c.status === 'ECHOUE' || c.delay_flagged_at !== null
+            || (c.blocked_reason !== null && c.blocked_reason !== 'SIMULATED'))
+        .map((c) => String(c.payment_id)));
+}
+
 interface PaymentsReply {
     items: PaymentRow[];
     total_count: number;
@@ -46,6 +71,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         });
         if (error) throw error;
         const reply = data as PaymentsReply;
+        const delayed = await delayedRefundPayments(reply.items);
         return NextResponse.json({
             items: reply.items.map((row) => ({
                 id: row.id,
@@ -53,7 +79,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
                 amount: row.amount,
                 refunded_amount: row.refunded_amount,
                 operator_label: paymentOperatorLabel(row.operator, row.is_platform_payment),
-                status_label: paymentStatusLabel(row.status),
+                status_label: paymentStatusLabel(row.status, { refundDelayed: delayed.has(row.id) }),
                 target_label: paymentTargetLabel(row.target),
                 event_title: row.event_title,
             })),
@@ -71,6 +97,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 /**
  * GET /api/account/payments?page= — Mes paiements (lot 9, 9.2, contrat 4.3, L33). 20 par page, totaux sur tout le filtre.
  * Le compte vient de la session : tout paramètre de compte est ignoré. Libellés faits ici, aucun identifiant technique rendu.
+ * Lot 9 bis (B9) : un remboursement retardé se lit « Remboursement retardé, l’équipe Event Village s’en occupe. ».
  */
 export async function GET(req: NextRequest) {
     return noStore(await handle(req));
