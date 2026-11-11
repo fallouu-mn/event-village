@@ -35,6 +35,11 @@ export interface PartnerEventItem {
     actions: EventAction[];
     can_edit: boolean;
     can_cancel: boolean;
+    /**
+     * Lot 9 bis (R92 ; contrat 5.41) : suppression permise, décidée par event_actions (M08) : vrai pour un brouillon
+     * jamais soumis ; faux une fois soumis, même revenu en brouillon après un refus (events_delete_guard le refuserait).
+     */
+    can_delete?: boolean;
     last_reason: LastReason | null;
 }
 
@@ -139,7 +144,7 @@ export function PartnerEventCard({ event, pendingTo, onTransition, onCancel, onD
                             Annuler l’événement
                         </Button>
                     )}
-                    {event.status === 'BROUILLON' && (
+                    {event.can_delete === true && (
                         <Button variant="ghost" size="sm" leftIcon={<Trash2 size={18} />} disabled={busy} onClick={() => onDelete(event)} className="text-danger-fg">
                             Supprimer le brouillon
                         </Button>
