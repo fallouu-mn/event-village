@@ -13,7 +13,7 @@
  *
  * Rouge avant correctif : campagne créée à 0 destinataire (200), upsert écrit (200), 404 sur panne, verified: true sur
  * panne, aucun journal. after() : assertLot9Invariants, rouge jusqu'à M2 et M4.
- * Verts dès l'écriture (témoins, signalés) : chaque route sans panne ; compte réellement absent : 404 et son message.
+ * Verts dès l'écriture (témoins) : chaque route sans panne. Lot 9 bis, T61 (R84, règle changée) : compte absent → 200 neutre.
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
@@ -169,12 +169,12 @@ describe('A34 — POST /api/auth/send-otp', () => {
         assert.equal(await otpRows(phone), 0, 'aucun code enregistré sur une panne');
     });
 
-    test('témoin : compte vraiment absent, 404 et son message (vert dès l’écriture)', async () => {
+    test('compte vraiment absent : 200 neutre { success: true } (R84, lot 9 bis), aucun SMS, aucun code', async () => {
         const phone = randomSenegalPhone('76');
         const r = await reply(await requestReset(phone));
-        assert.equal(r.status, 404, show(r));
-        assert.equal(r.body.error, 'Aucun compte n\'est associé à ce numéro de téléphone.', show(r));
+        assert.deepEqual({ status: r.status, body: r.body }, { status: 200, body: { success: true } }, `réponse neutre (aujourd’hui 404) : ${show(r)}`);
         assert.equal(getFakes().sms.messagesTo(phone).length, 0, 'aucun SMS pour un compte absent');
+        assert.equal(await otpRows(phone), 0, 'aucun code enregistré pour un compte absent');
     });
 });
 

@@ -155,7 +155,7 @@ describe('8.2 v — export comptable CSV par la route (T10)', () => {
         assert.match(r.headers.get('content-disposition') ?? '', /^attachment; filename="EventVillage-Cloture-[^"]+\.csv"$/, 'pièce jointe nommée');
         assert.match(r.headers.get('cache-control') ?? '', /no-store/, 'aucun cache');
         const lines = csvLines(r);
-        assert.deepEqual(lines[0].slice(0, 3), ['Date', 'Evenement', 'Reference Transaction'], 'en-têtes du fichier');
+        assert.deepEqual(lines[0].slice(0, 3), ['Date', 'Événement', 'Référence de la transaction'], 'en-têtes du fichier, accentués (R77, lot 9 bis, T62)');
         for (const t of ticketsA) {
             const mine = lines.filter((l) => l[COL.ticket] === String(t.ticket_number));
             assert.equal(mine.length, 1, `une ligne pour le billet ${t.ticket_number}`);
