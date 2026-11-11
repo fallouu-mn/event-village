@@ -6,9 +6,13 @@
 --     1. account_password_finalize(p jsonb) : après le changement du mot de passe par GoTrue, en une transaction :
 --        autres sessions révoquées (même SQL que account_phone_finalize, 20261108000004_lot9_compte.sql:240-245),
 --        session courante gardée et confirmée (password_confirmations, R57), journal ACCOUNT_PASSWORD_CHANGED.
+--   Tâche 43 (R98 ; contrat 5.43, B90, décision D6) :
+--     2. quota_release(p_rules jsonb) : rend une unité réservée par quota_reserve (20261031000011_lot1c9_quotas.sql:35-92)
+--        quand l'action comptée n'a pas eu lieu (SMS d'invitation non parti) ; fenêtre courante seulement.
 -- Aucune fonction existante recopiée. Aucune table, aucune contrainte. Ordre des verrous : users FOR UPDATE, puis
 -- auth.refresh_tokens et auth.sessions du compte, puis password_confirmations (clé étrangère vers users : FOR KEY
--- SHARE sur la ligne déjà tenue). Aucun BEGIN ni COMMIT ; rejouable (CREATE OR REPLACE).
+-- SHARE sur la ligne déjà tenue) ; quota_release ne verrouille que les lignes de quota_counters qu'elle décrémente,
+-- dans l'ordre (scope, bucket, window_secs) de quota_reserve. Aucun BEGIN ni COMMIT ; rejouable (CREATE OR REPLACE).
 -- ============================================================================
 
 
@@ -78,3 +82,63 @@ REVOKE ALL ON FUNCTION public.account_password_finalize(jsonb) FROM PUBLIC, anon
 GRANT EXECUTE ON FUNCTION public.account_password_finalize(jsonb) TO service_role;
 COMMENT ON FUNCTION public.account_password_finalize(jsonb) IS
     'Lot 9 bis (R85) : après un changement de mot de passe, autres sessions révoquées, session courante confirmée, journal ACCOUNT_PASSWORD_CHANGED.';
+
+
+-- ============================================================================
+-- Tâche 43 (R98) — 2. quota_release (nouvelle)
+-- ============================================================================
+-- p_rules : tableau JSON de { scope, bucket, window_secs } (mêmes règles que la réservation ; max ignoré). Pour chaque
+-- règle, une unité est rendue sur la fenêtre COURANTE, calculée comme quota_reserve, si son compteur est positif. Une
+-- fenêtre changée entre la réservation et le rendu ne rend rien (l'unité appartient à la fenêtre close) : la règle est
+-- comptée dans not_released, que l'appelant journalise. Ordre des lignes : (scope, bucket, window_secs), comme
+-- quota_reserve, donc sans interblocage entre une réservation et un rendu concurrents.
+-- Retour : { released, not_released }. Règle incomplète : exception (erreur de programmation, jamais un refus).
+CREATE OR REPLACE FUNCTION public.quota_release(p_rules jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    r              record;
+    v_start        timestamptz;
+    v_released     integer := 0;
+    v_not_released integer := 0;
+BEGIN
+    IF p_rules IS NULL OR jsonb_typeof(p_rules) <> 'array' THEN
+        RAISE EXCEPTION 'quota_release : tableau de règles requis' USING ERRCODE = '22023';
+    END IF;
+
+    FOR r IN
+        SELECT x.scope, x.bucket, x.window_secs
+          FROM jsonb_to_recordset(p_rules) AS x(scope text, bucket text, window_secs integer)
+         ORDER BY x.scope, x.bucket, x.window_secs
+    LOOP
+        IF r.scope IS NULL OR r.bucket IS NULL OR r.window_secs IS NULL OR r.window_secs <= 0 THEN
+            RAISE EXCEPTION 'quota_release : règle incomplète %', row_to_json(r) USING ERRCODE = '22023';
+        END IF;
+        v_start := to_timestamp(floor(extract(epoch FROM now()) / r.window_secs) * r.window_secs);
+
+        UPDATE public.quota_counters AS c
+           SET hits = c.hits - 1
+         WHERE c.scope = r.scope
+           AND c.bucket = r.bucket
+           AND c.window_secs = r.window_secs
+           AND c.window_start = v_start
+           AND c.hits > 0;
+        IF FOUND THEN
+            v_released := v_released + 1;
+        ELSE
+            v_not_released := v_not_released + 1;
+        END IF;
+    END LOOP;
+
+    RETURN jsonb_build_object('released', v_released, 'not_released', v_not_released);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.quota_release(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.quota_release(jsonb) TO service_role;
+COMMENT ON FUNCTION public.quota_release(jsonb) IS
+    'Lot 9 bis (R98) : rend une unité de quota de la fenêtre courante quand l''action comptée n''a pas eu lieu. Service_role uniquement.';

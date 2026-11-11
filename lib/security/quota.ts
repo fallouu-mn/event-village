@@ -44,3 +44,38 @@ export async function reserveQuota(rules: QuotaRule[], label: string): Promise<Q
         return { allowed: false, reason: 'UNAVAILABLE', message };
     }
 }
+
+/** Règle à rendre : celle de la réservation, sans le plafond. */
+export type QuotaReleaseRule = Pick<QuotaRule, 'scope' | 'bucket' | 'windowSecs'>;
+
+export type QuotaReleaseResult =
+    | { ok: true; released: number; notReleased: number }
+    | { ok: false; message: string };
+
+/**
+ * Lot 9 bis, tâche 43 (R98 ; contrat 5.43, B90) — rend une unité réservée quand l'action comptée n'a pas eu lieu
+ * (SMS d'invitation non parti), par public.quota_release (fenêtre courante seulement). Une unité non rendue (fenêtre
+ * changée entre-temps) et un échec d'appel sont journalisés et rendus explicitement : l'appelant décide, rien n'est
+ * masqué ; l'action déjà faite n'est jamais annulée pour autant.
+ */
+export async function releaseQuota(rules: QuotaReleaseRule[], label: string): Promise<QuotaReleaseResult> {
+    if (rules.length === 0) return { ok: true, released: 0, notReleased: 0 };
+    try {
+        const { data, error } = await getServiceRoleClient().rpc('quota_release', {
+            p_rules: rules.map((r) => ({ scope: r.scope, bucket: r.bucket, window_secs: r.windowSecs })),
+        });
+        if (error) throw new Error(`${error.code ?? ''} ${error.message}`.trim());
+        const res = data as { released?: unknown; not_released?: unknown } | null;
+        const released = Number(res?.released);
+        const notReleased = Number(res?.not_released);
+        if (!Number.isInteger(released) || !Number.isInteger(notReleased)) throw new Error(`réponse inattendue : ${JSON.stringify(data)}`);
+        if (notReleased > 0) {
+            console.warn(`[QUOTA] ${label} : ${notReleased} unité(s) non rendue(s) (fenêtre changée depuis la réservation ou compteur à zéro)`);
+        }
+        return { ok: true, released, notReleased };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[QUOTA] ${label} : rendu de quota impossible : ${message}`);
+        return { ok: false, message };
+    }
+}
