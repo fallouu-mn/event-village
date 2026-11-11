@@ -68,7 +68,7 @@ const SCREENS: Screen[] = [
         selectors: ['main h1', 'h1'],
     },
     {
-        id: 'mes-billets', libelle: 'Mes billets', role: 'client', path: () => '/tickets', budgetRoute: '/tickets',
+        id: 'mes-billets', libelle: 'Mes billets', role: 'client', path: () => '/tickets?tab=a-venir', budgetRoute: '/tickets', // A10 (R45) : sans onglet, « Reçus » d'office (transfert entrant du seed), sans carte de billet
         selectors: ['article[aria-label^="Billet pour"]', 'main .border-dashed'],
     },
     {

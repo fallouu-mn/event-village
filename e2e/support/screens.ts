@@ -535,7 +535,7 @@ export const SCREENS: readonly Screen[] = [
     },
     // ── Client ──────────────────────────────────────────────────────────────
     {
-        id: 'mes-billets', titre: 'Mes billets (QR masqué)', role: 'client', needsIds: true, path: () => '/tickets',
+        id: 'mes-billets', titre: 'Mes billets (QR masqué)', role: 'client', needsIds: true, path: () => '/tickets?tab=a-venir', // A10 : sans onglet, « Reçus » d'office (transfert entrant du seed)
         masks: (page) => [page.getByRole('img', { name: /QR/i })],
     },
     {
@@ -771,7 +771,7 @@ export const SCREENS: readonly Screen[] = [
     // ── Lot 7 : billet hors ligne (7.1, E2) ─────────────────────────────────
     {
         id: 'billet-hors-ligne-disponible', titre: 'Mes billets — billet disponible hors ligne (service worker actif)', role: 'client', needsIds: true,
-        path: () => '/tickets', serviceWorkers: 'allow',
+        path: () => '/tickets?tab=a-venir', serviceWorkers: 'allow', // A10 (R45) : onglet des billets demandé, sinon « Reçus » d'office
         ready: async ({ page }) => {
             const state = page.locator('[data-ev-offline-state="available"]').first();
             await expect(state).toBeVisible({ timeout: 45_000 });
@@ -782,7 +782,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'billet-hors-ligne-a-telecharger', titre: 'Mes billets — billet pas encore enregistré sur le téléphone (téléchargement en cours)', role: 'client', needsIds: true,
-        path: () => '/tickets', holdRequests: [{ url: OFFLINE_CODES_URL, method: 'GET' }],
+        path: () => '/tickets?tab=a-venir', holdRequests: [{ url: OFFLINE_CODES_URL, method: 'GET' }], // A10 (R45)
         ready: async ({ page }) => {
             const state = page.locator('[data-ev-offline-state="missing"]').first();
             await expect(state).toBeVisible({ timeout: 30_000 });
@@ -792,7 +792,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'billet-hors-ligne-qr', titre: 'Billet hors ligne — QR affiché sans réseau (page servie par le service worker)', role: 'client', needsIds: true,
-        path: () => '/tickets', serviceWorkers: 'allow',
+        path: () => '/tickets?tab=a-venir', serviceWorkers: 'allow', // A10 (R45)
         // Billet de « ce soir » (contrôle déjà ouvert), pas celui de « la veille » : le seed ne modifie pas
         // access.scan_window_before_hours, donc le lot téléchargé la veille commence à l'ouverture du contrôle
         // (début − before_hours, D31) et la page affiche à juste titre « Le code d'entrée s'affichera ici à partir
@@ -1172,7 +1172,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'confirmation-mot-de-passe', titre: 'Mes billets — transfert : boîte « mot de passe » avant l’envoi (réponse imposée, rien ne part)', role: 'client', needsIds: true,
-        path: () => '/tickets',
+        path: () => '/tickets?tab=a-venir', // A10 (R45) : la carte et son bouton « Transférer » sont dans « À venir »
         // Le transfert ne part jamais au serveur : réponse 403 du contrat 4.2 imposée (le seed reste intact)
         stubResponses: [{ url: TRANSFER_URL, method: 'POST', status: 403, body: PASSWORD_CONFIRMATION_REQUIRED }],
         allowFailures: [TRANSFER_URL],
