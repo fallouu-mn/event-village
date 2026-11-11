@@ -9,7 +9,8 @@
  * destinataire (comme dette-annulation-transferts).
  *  1. A : BEGIN ; ticket_transfer_accept (sans COMMIT). B : event_cancel, bloqué (attente de verrou
  *     constatée). COMMIT de A ; B se termine. Le destinataire a sa ligne EVENT_CANCELLED de l'événement,
- *     l'expéditeur aucune ; aucune erreur 40P01.
+ *     l'expéditeur aucune ; aucune erreur 40P01. Lot 9 bis (R13, T58, règle changée) : le destinataire en mode
+ *     TRANSFERRED, l'expéditeur (acheteur d'origine) reçoit aussi EVENT_CANCELLED en mode AUTO ; rouge jusqu'à fix(9b.31).
  *  2. Ordre inverse : B tient event_cancel sans COMMIT, A attend ; après le COMMIT de B, A répond
  *     EVENT_NOT_ACTIVE ou TRANSFER_NOT_PENDING ; le porteur n'a pas changé ; aucune erreur 40P01.
  *  3. Course au milieu de event_cancel (trois connexions) : C tient les catégories de l'événement
@@ -169,6 +170,13 @@ async function outboxKeys(groupKey: string): Promise<string[]> {
     return (data ?? []).map((r) => String(r.idempotency_key)).sort();
 }
 
+/** Modes de remboursement (template_data.refund_mode) des lignes d'un groupe, distincts et triés. */
+async function cancelModes(groupKey: string): Promise<string[]> {
+    const { data, error } = await service.from('notification_outbox').select('template_data').eq('group_key', groupKey);
+    assert.equal(error, null, `boîte d'envoi ${groupKey} : ${error?.message}`);
+    return Array.from(new Set((data ?? []).map((r) => String((r.template_data as Row | null)?.refund_mode ?? '')))).sort();
+}
+
 async function transferStatus(id: string): Promise<string> {
     const { data, error } = await service.from('ticket_transfers').select('status').eq('id', id).single();
     assert.equal(error, null, `transfert ${id} : ${error?.message}`);
@@ -184,7 +192,7 @@ async function eventStatusOf(id: string): Promise<string> {
 // ── Scénarios ──────────────────────────────────────────────────────────────
 
 describe('7.0 c — course event_cancel / ticket_transfer_accept (deux et trois connexions)', () => {
-    test('1. A accepte sans COMMIT, B annule et attend ; après le COMMIT de A, le destinataire reçoit EVENT_CANCELLED, l’expéditeur non', async () => {
+    test('1. A accepte sans COMMIT, B annule et attend ; après le COMMIT de A, le destinataire reçoit EVENT_CANCELLED (mode TRANSFERRED), l’acheteur d’origine aussi (mode AUTO, lot 9 bis R13)', async () => {
         const s = await pendingTransfer('accepte-dabord');
         const a = await openConcurrentClient({ applicationName: 'ev-test-course-accept' });
         const b = await openConcurrentClient({ applicationName: 'ev-test-course-cancel' });
@@ -204,8 +212,14 @@ describe('7.0 c — course event_cancel / ticket_transfer_accept (deux et trois 
             assert.equal((await ticketRow(s.ticketId)).user_id, s.recipient.userId, 'billet au destinataire');
             const toRecipient = await outboxKeys(`EVENT_CANCELLED:${s.ev.eventId}:${s.recipient.userId}`);
             assert.ok(toRecipient.length > 0, 'le destinataire, porteur au moment de l’annulation, doit recevoir EVENT_CANCELLED');
-            assert.deepEqual(await outboxKeys(`EVENT_CANCELLED:${s.ev.eventId}:${s.sender.userId}`), [],
-                'l’expéditeur, qui n’a plus de billet de l’événement, ne doit pas recevoir EVENT_CANCELLED');
+            // Lot 9 bis (R13, T58, règle changée par la consigne) : le détenteur d'un billet reçu par transfert lit « le
+            // remboursement va à l'acheteur d'origine » (TRANSFERRED) ; l'acheteur d'origine, sans billet, est prévenu (AUTO).
+            assert.deepEqual(await cancelModes(`EVENT_CANCELLED:${s.ev.eventId}:${s.recipient.userId}`), ['TRANSFERRED'],
+                'R13 : le destinataire du transfert reçoit EVENT_CANCELLED en mode TRANSFERRED');
+            assert.ok((await outboxKeys(`EVENT_CANCELLED:${s.ev.eventId}:${s.sender.userId}`)).length > 0,
+                'R13 : l’acheteur d’origine, qui n’a plus de billet de l’événement, reçoit EVENT_CANCELLED');
+            assert.deepEqual(await cancelModes(`EVENT_CANCELLED:${s.ev.eventId}:${s.sender.userId}`), ['AUTO'],
+                'R13 : l’acheteur d’origine reçoit EVENT_CANCELLED en mode AUTO (le remboursement lui revient)');
         } finally {
             await a.close();
             await b.close();
