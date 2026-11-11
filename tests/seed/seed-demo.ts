@@ -60,6 +60,21 @@
  * Lot 9 (AR6, T29 ; commit fix(9-seed), après les migrations du lot) : fin par assertLot9Invariants('seed-demo'), qui
  * enchaîne (a) à (t), le schéma du lot, puis (t)(u)(v).
  *
+ * Lot 9 bis (contrat 7.2, 7.3, T5, T6 ; commit fix(9b.seed), après toutes les migrations du lot) :
+ *  - PIN régisseur obligatoire à l'ouverture d'une caisse (R42, A11) : le PIN de l'événement est généré par
+ *    ShiftService.generateRegisseurPin AVANT les ouvertures, puis passé à ShiftService.openShift (vérifié hors base,
+ *    shift_open reçoit pin_verified) ; le même PIN co-signe la clôture avec écart ;
+ *  - PAYMENT_HOLD_MINUTES n'est plus lue (H2 : réglage SUPERADMIN finance.payment_hold_minutes, 60 min au plus) : les
+ *    paiements laissés en cours ont leur fin de garde (payments.held_expires_at et stock_reservations.expires_at)
+ *    reculée de 240 min après leur création, pour rester « en cours » pendant les captures (préparation de données,
+ *    aucune assertion touchée) ;
+ *  - données des captures nouvelles : « Croisière musicale vers Gorée » commence dans ≈ 4 h (fenêtre de contrôle
+ *    ouverte) et reçoit une vente au guichet avec numéro avant son annulation (pilotage-especes-a-rembourser, R20) ;
+ *    adresse email en attente de vérification du client (profil-email-non-verifie, R87) ; invitation de contrôleur en
+ *    attente pour le client (invitation-controleur, R37) ; le transfert entrant du client (lot 6) garde son billet
+ *    verrouillé (R44) ;
+ *  - fin par assertLot9bisInvariants('seed-demo') : (a) à (v), schéma du lot 9 bis, puis (w1) à (w21).
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -81,7 +96,7 @@ import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
 import { inspect } from '../helpers/db';
 import { TEST_PASSWORD } from '../helpers/fixture-data';
-import { assertLot9Invariants } from '../helpers/lot9-invariants';
+import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
 import { missingRecetteSchema } from '../helpers/recette-invariants';
 import { missingTerrainSchema } from '../helpers/terrain-invariants';
 import { DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoIds } from '../../e2e/support/demo-ids';
@@ -91,9 +106,9 @@ if (process.env.EV_TEST_GUARD !== '1') {
     throw new Error('seed-demo : garde-fou de test non chargé (tests/helpers/env.ts).');
 }
 
-// Réglages propres à ce processus (jamais à l'application) : réservations « en cours de paiement »
-// encore actives pendant les captures, et quotas d'achat par compte non limitants pour le seed.
-process.env.PAYMENT_HOLD_MINUTES = '240';
+// Réglages propres à ce processus (jamais à l'application) : quotas d'achat par compte non limitants pour le seed.
+// Lot 9 bis (H2) : la durée de garde est le réglage finance.payment_hold_minutes ; les réservations « en cours de
+// paiement » restent actives pendant les captures par keepHoldActive (fin de garde reculée après la création).
 process.env.CHECKOUT_PER_USER_15MIN = '1000';
 process.env.CHECKOUT_PER_USER_DAY = '10000';
 process.env.SMS_PER_PHONE_DAY = '1000';
@@ -249,6 +264,9 @@ const PEOPLE: Record<DemoAccountKey, Person & { roles: string[]; primaryRole: st
     controleur3: { firstName: 'Lamine', lastName: 'Cissé', phone: '+221700000108', email: 'lamine.cisse@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
     partenaireNeuf: { firstName: 'Ndèye', lastName: 'Gning', phone: '+221700000109', email: 'ndeye.gning@demo.eventvillage.local', roles: ['CLIENT', 'PARTENAIRE'], primaryRole: 'PARTENAIRE' },
 };
+
+/** Lot 9 bis (R87) : adresse saisie par le client de démonstration, en attente de vérification (jamais une adresse technique). */
+const CLIENT_PENDING_EMAIL = 'fatou.mbaye.pro@demo.eventvillage.local';
 
 const BUYER_FIRST = ['Awa', 'Moussa', 'Aminata', 'Cheikh', 'Ndeye', 'Babacar', 'Mame', 'Alioune', 'Coumba', 'Pape', 'Rokhaya', 'Adama',
     'Fatoumata', 'Mamadou', 'Astou', 'Ibou', 'Yacine', 'Modou', 'Bineta', 'Saliou', 'Dieynaba', 'Omar', 'Marième', 'Assane'];
@@ -554,8 +572,10 @@ const EVENTS: EventSeed[] = [
         reason: 'Autorisation de la mairie en cours de renouvellement : reprise des ventes dès réception de l’arrêté.',
     },
     {
+        // Lot 9 bis (R20, capture pilotage-especes-a-rembourser) : début dans ≈ 4 h, fenêtre de contrôle ouverte, pour
+        // une vente au guichet avant l'annulation (counter_sale refuse un événement hors de sa fenêtre)
         key: 'annule', organizer: 'organisateur', title: 'Croisière musicale vers Gorée', category: 'CONCERT',
-        venue: 'Embarcadère du port de Dakar', city: 'Dakar', lat: 14.6730, lng: -17.4298, start: dayAt(18, 17, 30), hours: 3, capacity: 120,
+        venue: 'Embarcadère du port de Dakar', city: 'Dakar', lat: 14.6730, lng: -17.4298, start: soon(4 * 60), hours: 3, capacity: 120,
         palette: 'ocean', motif: 'vagues',
         description: 'Concert sur le pont d’une chaloupe, aller-retour vers l’île au coucher du soleil.',
         program: [{ time: '17:30', kind: 'ACTIVITE', title: 'Embarquement' }, { time: '18:15', kind: 'ARTISTE', title: 'Concert au large', participant: 'Trio Teranga Swing' }],
@@ -754,7 +774,10 @@ async function buyOnline(ev: CreatedEvent, buyer: Account, category: string, qty
     });
     const paymentId = String(outcome.body.payment_id ?? '');
     if (outcome.status !== 200 || !paymentId) fail(`checkout « ${ev.seed.title} » / ${category} ×${qty}`, `HTTP ${outcome.status} ${JSON.stringify(outcome.body)}`);
-    if (outcomeWanted === 'PENDING') return { paymentId, ticketIds: [], buyerId: buyer.userId, category };
+    if (outcomeWanted === 'PENDING') {
+        await keepHoldActive(paymentId);
+        return { paymentId, ticketIds: [], buyerId: buyer.userId, category };
+    }
     const payment = await loadPayment(paymentId);
     if (!payment?.external_transaction_id) fail(`paiement ${paymentId}`, 'identifiant SamirPay absent après le checkout');
     if (outcomeWanted === 'FAILED') {
@@ -855,12 +878,35 @@ async function assertSinglePendingPerBuyerAndEvent(): Promise<void> {
     if (duplicates.length > 0) fail('paiements en attente', `plusieurs paiements PENDING pour un même acheteur et un même événement : ${JSON.stringify(duplicates)}`);
 }
 
-async function openShift(ev: CreatedEvent, ctrl: Account, openingFloat: number): Promise<string> {
-    const { data, error } = await service.rpc('shift_open', { p: { user_id: ctrl.userId, event_id: ev.id, opening_float: openingFloat, pin_verified: false } });
-    if (error) fail(`shift_open ${ctrl.firstName}`, error);
-    const r = data as { ok?: boolean; shift_id?: string } | null;
-    if (!r?.ok || !r.shift_id) fail(`shift_open ${ctrl.firstName}`, `refusée : ${JSON.stringify(data)}`);
-    return r.shift_id;
+/**
+ * Lot 9 bis (H2) : fin de garde d'un paiement laissé en cours reculée de 240 min après sa création (paiement et
+ * réservations de stock), pour que la réservation reste active pendant les captures. La garde appliquée à la
+ * création (metadata.hold_minutes, lue par la page d'attente) n'est pas réécrite.
+ */
+const HOLD_EXTENSION_MINUTES = 240;
+async function keepHoldActive(paymentId: string): Promise<void> {
+    const until = new Date(Date.now() + HOLD_EXTENSION_MINUTES * 60_000).toISOString();
+    const { data, error } = await service.from('payments').update({ held_expires_at: until }).eq('id', paymentId).eq('status', 'PENDING').select('id');
+    if (error) fail(`fin de garde du paiement ${paymentId}`, error);
+    if ((data ?? []).length !== 1) fail(`fin de garde du paiement ${paymentId}`, 'paiement en cours introuvable');
+    const { data: holds, error: holdErr } = await service.from('stock_reservations').update({ expires_at: until })
+        .eq('payment_id', paymentId).eq('status', 'ACTIVE').select('id');
+    if (holdErr) fail(`réservations du paiement ${paymentId}`, holdErr);
+    if ((holds ?? []).length === 0) fail(`réservations du paiement ${paymentId}`, 'aucune réservation active');
+}
+
+/** Lot 9 bis (R42, A11) : PIN régisseur de l'événement, généré par sa propriétaire, renvoyé une fois en clair. */
+async function regisseurPin(ev: CreatedEvent): Promise<string> {
+    const generated = await ShiftService.generateRegisseurPin(ev.id, ev.ownerId, { confirm: true, confirmOpenShifts: true, actorRole: 'PARTENAIRE' });
+    if (!/^\d{4,8}$/.test(generated.pin)) fail(`PIN régisseur de « ${ev.seed.title} »`, 'PIN illisible');
+    return generated.pin;
+}
+
+/** Ouverture comme la route POST /api/controller/shifts/open : droit d'encaisser, PIN vérifié, puis shift_open. */
+async function openShift(ev: CreatedEvent, ctrl: Account, openingFloat: number, pin: string): Promise<string> {
+    const shift = await ShiftService.openShift(ctrl.userId, { eventId: ev.id, openingFloatAmount: openingFloat, regisseurPin: pin });
+    if (!shift.id || !shift.opening_confirmed_by_pin) fail(`ouverture de caisse de ${ctrl.firstName}`, `caisse ${JSON.stringify(shift.id)} non confirmée par le PIN`);
+    return shift.id;
 }
 
 async function counterSale(ev: CreatedEvent, ctrl: Account, category: string, qty: number, buyerPhone?: string): Promise<void> {
@@ -1154,9 +1200,11 @@ async function main(): Promise<void> {
     await assign(ceSoir, c1, 'Entrée principale', true);
     await assign(ceSoir, c2, 'Entrée VIP', true);
     await assign(ceSoir, c3, 'Entrée principale', true);
-    const shift1 = await openShift(ceSoir, c1, 10000);
-    const shift2 = await openShift(ceSoir, c2, 5000);
-    const shift3 = await openShift(ceSoir, c3, 5000);
+    // Lot 9 bis (R42, A11) : PIN généré avant les ouvertures, saisi à chacune, puis co-signature de la clôture avec écart
+    const pin = await regisseurPin(ceSoir);
+    const shift1 = await openShift(ceSoir, c1, 10000, pin);
+    const shift2 = await openShift(ceSoir, c2, 5000, pin);
+    const shift3 = await openShift(ceSoir, c3, 5000, pin);
 
     const online = (purchases.get(ceSoir.id) ?? []).filter((p) => p !== clientCeSoir);
     const scanned = new Set<string>();
@@ -1226,9 +1274,8 @@ async function main(): Promise<void> {
     await reportIncidents(ceSoir, c3, ['TIMEOUT']);
 
     // Clôtures : avec écart (justifié, PIN régisseur) et sans écart ; la caisse 1 reste ouverte
-    const pin = await ShiftService.generateRegisseurPin(ceSoir.id, ceSoir.ownerId, { confirm: true, confirmOpenShifts: true, actorRole: 'PARTENAIRE' });
     const expected2 = await shiftExpected(shift2);
-    await closeShift(c2, shift2, expected2 - 2000, 'Erreur de rendu de monnaie sur une vente VIP, signalée au régisseur en fin de service.', pin.pin);
+    await closeShift(c2, shift2, expected2 - 2000, 'Erreur de rendu de monnaie sur une vente VIP, signalée au régisseur en fin de service.', pin);
     await closeShift(c3, shift3, await shiftExpected(shift3));
     log(`caisses : ${shift1} ouverte, ${shift2} clôturée avec écart de −2 000 F, ${shift3} clôturée sans écart`);
 
@@ -1269,6 +1316,18 @@ async function main(): Promise<void> {
         expires_at: new Date(Date.now() + 48 * 3600_000).toISOString(),
     }, 'transfert vers le client de démonstration');
     const incomingTransferId = String(transfer.transfer_id ?? '');
+    // Lot 9 bis (R87, capture profil-email-non-verifie) : adresse saisie en attente de son lien de vérification
+    const { data: pendingRow, error: pendingErr } = await service.from('users')
+        .update({ email_pending: CLIENT_PENDING_EMAIL }).eq('id', client.userId).select('id');
+    if (pendingErr) fail('adresse en attente du client de démonstration', pendingErr);
+    if ((pendingRow ?? []).length !== 1) fail('adresse en attente du client de démonstration', 'compte introuvable');
+    // Lot 9 bis (R37, capture invitation-controleur) : invitation de contrôleur en attente (72 h), à accepter ou refuser
+    // par le client lui-même ; aucun rôle ni affectation n'est posé avant sa réponse
+    const invitation = await rpcOk('controller_invitation_create', {
+        actor_id: publie.ownerId, actor_role: 'PARTENAIRE', partner_id: publie.partnerId, user_id: client.userId,
+        assignments: [{ event_id: publie.id, can_accept_cash: false }],
+    }, 'invitation de contrôleur du client de démonstration');
+    log(`client : adresse ${CLIENT_PENDING_EMAIL} en attente, invitation de contrôleur ${String(invitation.invitation_id ?? '')} en attente`);
     const futureJ1 = await scheduleJ1(publie);
     const suspendedJ1 = await scheduleJ1(byKey('suspendu'));
     log(`rappels J-1 planifiés : ${futureJ1} ligne(s) à venir (« ${publie.seed.title} »), ${suspendedJ1} annulées par la suspension qui suit`);
@@ -1277,6 +1336,15 @@ async function main(): Promise<void> {
     const suspendu = byKey('suspendu');
     await transition(suspendu, admin, 'SUSPENDU', suspendu.seed.reason);
     const annule = byKey('annule');
+    // Lot 9 bis (R20, capture pilotage-especes-a-rembourser) : avant l'annulation, une vente au guichet avec le numéro de
+    // l'acheteur, par une caisse ouverte avec le PIN puis clôturée sans écart ; ses espèces restent à rembourser par
+    // l'organisatrice (jamais par Event Village)
+    await assign(annule, c3, 'Embarcadère', true);
+    const annulePin = await regisseurPin(annule);
+    const annuleShift = await openShift(annule, c3, 0, annulePin);
+    await counterSale(annule, c3, 'Pont inférieur', 2, '700000305');
+    await closeShift(c3, annuleShift, await shiftExpected(annuleShift));
+    log(`« ${annule.seed.title} » : 2 billets vendus au guichet avec numéro, caisse ${annuleShift} clôturée`);
     const cashoutIds = await cancelEvent(annule, annule.ownerId);
     const { data: cashouts, error: coErr } = await service.from('cashouts').select('id, beneficiary_user_id').in('id', cashoutIds);
     if (coErr) fail('lecture des remboursements', coErr);
@@ -1368,9 +1436,10 @@ async function main(): Promise<void> {
     writeDemoIds(ids);
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);
 
-    // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7 ; lot 8 (T31) : (r)(s)(t) ; lot 9 (T29) : (t)(u)(v)
-    log('invariants (a) à (v)…');
-    await assertLot9Invariants('seed-demo');
+    // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7 ; lot 8 (T31) : (r)(s)(t) ; lot 9 (T29) : (t)(u)(v) ;
+    // lot 9 bis (T5) : schéma du lot 9 bis, puis (w1) à (w21)
+    log('invariants (a) à (w)…');
+    await assertLot9bisInvariants('seed-demo');
 
     log(`OK en ${((Date.now() - started) / 1000).toFixed(1)}s`);
 }
