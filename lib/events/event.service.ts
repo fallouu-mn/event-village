@@ -116,15 +116,33 @@ function refusalToError(body: RpcRefusal): EventServiceError {
     return new EventServiceError(REFUSAL_HTTP[code] ?? 409, code, message, details);
 }
 
-type RpcCall = { data: unknown; error: { code: string; message: string } | null };
+type RpcCall = { data: unknown; error: { code: string; message: string; details?: string | null } | null };
 
 /**
  * Résultat d'une RPC d'édition (appel déjà lancé par l'appelant) : `{ ok:true, … }` renvoyé, refus métier →
  * EventServiceError, panne → 500 sans détail Postgres (journalisée).
  */
+/**
+ * Lot 9 bis (H8, B107, contrat 4.3) : refus du trigger trg_ticket_categories_min_price (M05), P0001
+ * « PRICE_BELOW_MINIMUM », minimum en DETAIL : 400 au texte du contrat. null pour toute autre erreur.
+ */
+function priceBelowMinimum(error: { code: string; message: string; details?: string | null }): EventServiceError | null {
+    if (error.code !== 'P0001' || error.message !== 'PRICE_BELOW_MINIMUM') return null;
+    const min = Number(error.details);
+    const shown = Number.isFinite(min) && min > 0 ? min.toLocaleString('fr-FR') : null;
+    if (!shown) console.error(`[EventService] PRICE_BELOW_MINIMUM sans minimum lisible : ${String(error.details)}`);
+    return new EventServiceError(400, 'PRICE_BELOW_MINIMUM',
+        shown
+            ? `Le prix d’un billet payant est d’au moins ${shown} F CFA. Pour un billet gratuit, indiquez 0.`
+            : 'Le prix d’un billet payant est inférieur au minimum autorisé. Pour un billet gratuit, indiquez 0.',
+        { field: 'price' });
+}
+
 async function editionResult<T extends Record<string, unknown>>(fn: string, call: Promise<RpcCall>): Promise<T> {
     const { data, error } = await call;
     if (error) {
+        const belowMinimum = priceBelowMinimum(error);
+        if (belowMinimum) throw belowMinimum;
         console.error(`[EventService] ${fn} : ${error.code} ${error.message}`);
         throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
     }

@@ -9,8 +9,7 @@
 import crypto from 'node:crypto';
 import { PublicError } from '@/lib/api/public-error';
 import { getServerEnv } from '@/lib/env';
-import { initCashinOnce, recordAdoptedInit } from './cashin-init';
-import { isSamirPayError } from '@/lib/samirpay/types';
+import { initCashinOnce, initFailureOf, recordAdoptedInit } from './cashin-init';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import type { CreatePaymentInput } from '@/lib/validations/payment';
 import { hashCallbackToken, paymentView } from './checkout.service';
@@ -243,11 +242,12 @@ export class PaymentService {
             }
             await recordAdoptedInit(payment.id, outcome.transactionId);
         } catch (err) {
-            const kind = isSamirPayError(err) ? err.kind : 'INTERNAL';
-            const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: payment.id, p_status: 'FAILED', p_reason: `INIT_${kind}` });
+            // Lot 9 bis (H8) : un 5xx de SamirPay donne PAYMENT_PROVIDER_INTERNAL ; seul un refus explicite est définitif.
+            const failure = initFailureOf(err);
+            const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: payment.id, p_status: 'FAILED', p_reason: failure?.reason ?? 'INIT_INTERNAL' });
             if (relErr) console.error(`[PaymentService] paiement ${payment.id} non marqué FAILED :`, relErr.message);
-            if (kind === 'INTERNAL') throw err;
-            throw new PaymentInputError(kind === 'REJECTED' ? 'Paiement refusé par l’opérateur.' : 'Le service de paiement ne répond pas : réessayez.', `PAYMENT_PROVIDER_${kind}`, 502);
+            if (!failure) throw err;
+            throw new PaymentInputError(failure.message, failure.code, 502);
         }
         // Transaction existante adoptée : aucun lien pour le client, le paiement rendu reste surveillé.
         throw new PaymentInputError('Le service de paiement ne répond pas : réessayez.', 'PAYMENT_PROVIDER_UNCERTAIN', 502);

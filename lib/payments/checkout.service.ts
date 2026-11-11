@@ -21,8 +21,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
-import { initCashinOnce, recordAdoptedInit } from './cashin-init';
-import { isSamirPayError, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+import { initCashinOnce, initFailureOf, recordAdoptedInit } from './cashin-init';
+import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
 import { readFinanceSetting } from '@/lib/finance/engine';
 import { reserveQuota } from '@/lib/security/quota';
 import { normalizePayerPhone } from './payer-phone';
@@ -326,15 +326,13 @@ export async function startTicketCheckout(params: {
         if (updErr || !updated) throw new Error(`Enregistrement de l'identifiant SamirPay impossible : ${updErr?.message ?? 'paiement introuvable'}`);
         return { status: 200, body: paymentView(updated) };
     } catch (err) {
-        const kind = isSamirPayError(err) ? err.kind : 'INTERNAL';
-        const reason = `INIT_${kind}`;
+        // Lot 9 bis (H8) : un 5xx de SamirPay donne PAYMENT_PROVIDER_INTERNAL ; seul un refus explicite est définitif.
+        const failure = initFailureOf(err);
+        const reason = failure?.reason ?? 'INIT_INTERNAL';
         const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: paymentId, p_status: 'FAILED', p_reason: reason });
         if (relErr) console.error(`[checkout] libération des réservations du paiement ${paymentId} impossible :`, relErr.message);
         console.error(`[checkout] cashin refusé pour le paiement ${paymentId} (${reason}) :`, err instanceof Error ? err.message : String(err));
-        if (kind === 'INTERNAL') throw err;
-        return {
-            status: 502,
-            body: { error: kind === 'REJECTED' ? 'Paiement refusé par l’opérateur.' : 'Le service de paiement ne répond pas : réessayez.', code: `PAYMENT_PROVIDER_${kind}`, payment_id: paymentId },
-        };
+        if (!failure) throw err;
+        return { status: 502, body: { error: failure.message, code: failure.code, payment_id: paymentId } };
     }
 }

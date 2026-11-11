@@ -7,7 +7,9 @@
  *  - 409 (orderId déjà utilisé) porteur de l'identifiant de la transaction existante : l'identifiant est adopté, le
  *    paiement est rendu (CANCELLED, motif INIT_CONFLICT_ADOPTED, provider_final faux) et reste surveillé par le
  *    cron des succès tardifs ; le client n'a reçu aucun lien et peut relancer un achat.
- * Tout autre échec est levé tel quel : l'appelant libère le paiement (payment_release FAILED, INIT_<nature>).
+ * Tout autre échec est levé tel quel : l'appelant libère le paiement (payment_release FAILED, INIT_<nature>) et
+ * répond selon initFailureOf. Lot 9 bis (H8, B107) : une réponse 5xx de SamirPay (500 au format D, par exemple un
+ * montant sous le minimum du compte) donne PAYMENT_PROVIDER_INTERNAL et un message clair ; jamais relancée.
  */
 import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError, type SamirPayDirectInitRequest, type SamirPayDirectInitResult } from '@/lib/samirpay/types';
@@ -17,6 +19,33 @@ import { rpcWithRetry } from './rpc';
 export type CashinInitOutcome =
     | { kind: 'INITIATED'; init: SamirPayDirectInitResult }
     | { kind: 'ADOPTED'; transactionId: string };
+
+/** Lot 9 bis (H8, contrat 4.5) : texte d'une erreur 5xx de SamirPay à l'initialisation. */
+export const PROVIDER_INTERNAL_MESSAGE = 'Le paiement n’a pas pu être lancé. Réessayez dans quelques minutes ; si le problème continue, contactez le support.';
+
+export interface InitFailure {
+    /** Motif posé sur le paiement par payment_release (FAILED). */
+    reason: string;
+    /** Code de la réponse 502 au client. */
+    code: string;
+    message: string;
+}
+
+/**
+ * Échec d'initialisation venu de SamirPay, traduit pour le client ; null pour une erreur interne (levée par
+ * l'appelant). Seuls INIT_REJECTED et INIT_UNAUTHORIZED rendent le paiement définitif (payment_release, M05).
+ */
+export function initFailureOf(err: unknown): InitFailure | null {
+    if (!isSamirPayError(err)) return null;
+    if (err.httpStatus !== undefined && err.httpStatus >= 500) {
+        return { reason: 'INIT_PROVIDER_INTERNAL', code: 'PAYMENT_PROVIDER_INTERNAL', message: PROVIDER_INTERNAL_MESSAGE };
+    }
+    return {
+        reason: `INIT_${err.kind}`,
+        code: `PAYMENT_PROVIDER_${err.kind}`,
+        message: err.kind === 'REJECTED' ? 'Paiement refusé par l’opérateur.' : 'Le service de paiement ne répond pas : réessayez.',
+    };
+}
 
 /** Motif du paiement rendu après l'adoption d'une transaction existante (provider_final faux). */
 export const ADOPTED_INIT_REASON = 'INIT_CONFLICT_ADOPTED';

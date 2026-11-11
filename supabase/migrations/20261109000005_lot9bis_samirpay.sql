@@ -34,7 +34,11 @@
 --     définitif que pour un refus explicite à l'initialisation (INIT_REJECTED, INIT_UNAUTHORIZED) ; CANCELLED lu
 --     chez SamirPay (PROVIDER_*) le reste ; tout autre FAILED (PROVIDER_FAILED lu au statut, INIT_UNCERTAIN, …) et
 --     l'adoption d'un identifiant (CANCELLED INIT_CONFLICT_ADOPTED) restent surveillés.
---  4. Privilèges (service_role seul).
+--  4. Prix minimum d'une catégorie payante (H8, B107) : trigger trg_ticket_categories_min_price (BEFORE INSERT OR
+--     UPDATE OF price ON ticket_categories) et sa fonction ticket_categories_min_price_guard() : prix > 0 sous
+--     finance.min_paid_price (M01, 100 par défaut) refusé P0001 PRICE_BELOW_MINIMUM (minimum en DETAIL) à la création
+--     ou quand le prix change ; gratuit et catégories anciennes au prix inchangé non touchés.
+--  5. Privilèges (service_role seul ; aucun EXECUTE sur la fonction de trigger).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -226,7 +230,46 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 4. Privilèges : service_role uniquement
+-- 4. Prix minimum d'une catégorie payante (H8, B107)
+--    Un trigger plutôt qu'une recopie de event_create, ticket_category_create et ticket_category_update : toute
+--    écriture d'un prix payant passe par lui. Gratuit (0) toujours admis ; une catégorie existante n'est contrôlée que
+--    si son prix change (quantité, dates, statut ou ventes : rien). Refus P0001 « PRICE_BELOW_MINIMUM », minimum en
+--    DETAIL, traduit en 400 par lib/events/event.service.ts. Réglage lu par fin_setting_num (M01 : 100 par défaut) :
+--    un réglage illisible fait échouer l'écriture (échec fermé).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ticket_categories_min_price_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_min numeric;
+BEGIN
+    IF NEW.price IS NULL OR NEW.price <= 0 THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NEW.price IS NOT DISTINCT FROM OLD.price THEN
+        RETURN NEW;
+    END IF;
+    v_min := public.fin_setting_num('finance.min_paid_price');
+    IF NEW.price < v_min THEN
+        RAISE EXCEPTION 'PRICE_BELOW_MINIMUM'
+            USING ERRCODE = 'P0001', DETAIL = trim(to_char(v_min, 'FM9999999990')),
+                  HINT = 'Prix d''un billet payant sous le minimum finance.min_paid_price';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_ticket_categories_min_price ON public.ticket_categories;
+CREATE TRIGGER trg_ticket_categories_min_price
+    BEFORE INSERT OR UPDATE OF price ON public.ticket_categories
+    FOR EACH ROW EXECUTE FUNCTION public.ticket_categories_min_price_guard();
+
+-- ----------------------------------------------------------------------------
+-- 5. Privilèges : service_role uniquement
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -241,3 +284,5 @@ BEGIN
     END LOOP;
 END;
 $$;
+-- Fonction de trigger : aucun EXECUTE pour les rôles de l'API (fonctions-privileges, groupe c), rien à accorder
+REVOKE ALL ON FUNCTION public.ticket_categories_min_price_guard() FROM PUBLIC, anon, authenticated;
