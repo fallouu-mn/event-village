@@ -114,7 +114,8 @@ function EventMapWhenVisible(props: { latitude: number; longitude: number; venue
  *  - Lot 7 (7.3, E4) : bandeau PendingPaymentBanner (paiement déjà en attente, GET /api/checkout/pending) ;
  *    reprise du panier d'un paiement échoué (?reprise=<paiement>) ; PaymentModal et EventMap en next/dynamic,
  *    la carte n'étant chargée qu'à l'approche de sa zone (IntersectionObserver).
- *  - Lot 9 bis (R104 ; contrat 5.41, B91, D-txt E.41) : billetterie fermée expliquée par le serveur
+ *  - Lot 9 bis (R36, R104 ; contrat 5.25 et 5.41, B59, B91, D-txt E.41) : fin de l'événement (`endFormatted`, servie
+ *    seulement si une date de fin est saisie) sous « Date et heure » ; billetterie fermée expliquée par le serveur
  *    (`salesEnded` : vente en ligne terminée ; `hasHeldSeats` : places retenues par des paiements en cours, qui peuvent
  *    se libérer) ; panier gardé 30 minutes dans sessionStorage (`ev-cart:{id}`) quand l'achat renvoie à la connexion,
  *    rétabli au retour dans la limite de ce qui est encore achetable, puis effacé.
@@ -157,6 +158,8 @@ interface PublicEvent {
   posterUrl: string | null;
   dateFormatted: string;
   time: string;
+  /** Fin lisible (« jusqu’à 23:00 », « jusqu’au samedi 14 novembre à 02:00 »), absente sans date de fin saisie. */
+  endFormatted?: string;
   venue: string;
   city?: string | null;
   latitude?: number | null;
@@ -899,6 +902,9 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <InfoTile icon={<CalendarDays size={20} />} label="Date et heure">
               {capitalize(event.dateFormatted)} à&nbsp;{event.time}
+              {event.endFormatted && (
+                <span className="block text-sm font-normal text-fg-muted">{capitalize(event.endFormatted)}</span>
+              )}
             </InfoTile>
             <InfoTile icon={<MapPin size={20} />} label="Lieu">
               {place}
