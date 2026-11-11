@@ -19,6 +19,10 @@
 -- Tâche 31 (R13, B70) : à l'annulation, l'acheteur d'origine (payeur d'un paiement en ligne de billets encore
 -- valables) est prévenu même sans billet (clé EVENT_CANCELLED:<event>:<compte>, mode AUTO, prioritaire) ; le porteur
 -- d'un billet payé par un autre compte reçoit le mode TRANSFERRED (« Remboursement à l'acheteur d'origine. »).
+-- Tâche 32 (R14, R26, B71) : EVENT_CHANGED est indispensable (registre M03) ; le SMS d'un porteur est créé à
+-- maintenant + 10 minutes et fusionné sur une fenêtre fixe depuis le premier changement (la ligne en attente garde
+-- son échéance) ; immédiat si l'ancien ou le nouveau début est à moins d'une heure (échéance ramenée à maintenant à
+-- la fusion) ; in-app et push immédiats.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -213,6 +217,7 @@ REVOKE ALL ON FUNCTION public.notif_event_status_changed() FROM PUBLIC, anon, au
 -- Tâche 30 : numéros sans compte (invitations non réclamées, acheteurs au guichet) prévenus d'un changement de date
 -- ou de lieu, SMS dû à maintenant + 10 min (tout de suite si un début est à moins d'une heure), fusionné par numéro ;
 -- réponse et audit + notified_phones.
+-- Tâche 32 : SMS d'un porteur dû dans 10 minutes, fusion à fenêtre fixe, immédiat si un début est à moins d'une heure.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.event_update(p jsonb)
 RETURNS jsonb
@@ -536,7 +541,9 @@ BEGIN
                 'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
                 'data', v_data, 'channels', jsonb_build_array('IN_APP', 'PUSH')));
 
-            -- SMS regroupé : la ligne en attente du porteur pour cet événement reçoit l'union des champs
+            -- SMS regroupé : la ligne en attente du porteur pour cet événement reçoit l'union des champs ; lot 9 bis
+            -- (R26, B71) : fenêtre fixe de 10 minutes depuis le premier changement, jamais prolongée, ramenée à
+            -- maintenant si un début est à moins d'une heure.
             v_pending_id := NULL;
             SELECT o.id, o.template_data INTO v_pending_id, v_pending_data
               FROM public.notification_outbox o
@@ -551,7 +558,9 @@ BEGIN
                            SELECT COALESCE(jsonb_agg(f ORDER BY f), '[]'::jsonb)
                              FROM (SELECT jsonb_array_elements_text(COALESCE(v_pending_data->'changed_fields', '[]'::jsonb)) AS f
                                    UNION
-                                   SELECT unnest(v_changed)) x))
+                                   SELECT unnest(v_changed)) x)),
+                       due_at = CASE WHEN v_urgent THEN LEAST(due_at, now()) ELSE due_at END,
+                       next_attempt_at = CASE WHEN v_urgent THEN LEAST(next_attempt_at, now()) ELSE next_attempt_at END
                  WHERE id = v_pending_id;
                 IF v_sms THEN
                     v_sms_queued := v_sms_queued + 1;
@@ -560,7 +569,7 @@ BEGIN
             IF v_sms AND v_pending_id IS NULL THEN
                 PERFORM public.notif_enqueue(jsonb_build_object(
                     'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
-                    'data', v_data, 'channels', jsonb_build_array('SMS')));
+                    'data', v_data, 'channels', jsonb_build_array('SMS'), 'due_at', v_due));
                 IF EXISTS (SELECT 1 FROM public.notification_outbox o
                             WHERE o.idempotency_key = v_nkey || ':SMS' AND o.status = 'PENDING') THEN
                     v_sms_queued := v_sms_queued + 1;

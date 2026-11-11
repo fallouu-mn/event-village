@@ -9,9 +9,11 @@ export const dynamic = 'force-dynamic';
 /**
  * Lot 6 (contrat H1, H2) — préférences de notification du compte connecté.
  *
- * GET : sujets optionnels (« Rappels avant l'événement », « Changements d'un événement », et pour un
+ * GET : sujets optionnels (« Rappels avant l'événement », « Suspension et reprise d'un événement », et pour un
  *   partenaire « Activité de vos ventes »), une ligne par canal avec son état (absence de ligne en base =
  *   activé), et la liste des messages indispensables, toujours envoyés.
+ *   Lot 9 bis (R14, B71) : un changement de date ou de lieu est indispensable (registre M03) ; le sujet
+ *   EVENT_UPDATES ne règle plus que la suspension et la reprise.
  * PUT { topic, channel, enabled } : un sujet optionnel et un canal ; tout autre sujet (indispensable,
  *   inconnu), canal inconnu ou valeur non booléenne → 400 INVALID_PREFERENCE, sans écriture.
  * Compte ACTIF ou EN_ATTENTE ; suspendu → 403 ; sans session → 401. Écritures par la RPC
@@ -32,8 +34,8 @@ const TOPIC_TEXT: Record<Topic, { label: string; description: string }> = {
         description: 'La veille et quelques heures avant le début d’un événement dont vous avez un billet (et, pour un contrôleur, la veille de chaque affectation).',
     },
     EVENT_UPDATES: {
-        label: 'Changements d’un événement',
-        description: 'Nouvelle date, nouveau lieu, suspension ou reprise d’un événement dont vous avez un billet.',
+        label: 'Suspension et reprise d’un événement',
+        description: 'Suspension ou reprise d’un événement dont vous avez un billet.',
     },
     PRO_ACTIVITY: {
         label: 'Activité de vos ventes',
@@ -56,10 +58,11 @@ const ESSENTIALS = [
     'Annulations',
     'Remboursements',
     'Sécurité du compte',
+    'Changements de date ou de lieu',
 ];
 
 const INVALID_PREFERENCE_MESSAGE =
-    'Préférence inconnue : seuls les rappels, les changements d’un événement et l’activité des ventes se règlent, canal par canal. Les messages indispensables sont toujours envoyés.';
+    'Préférence inconnue : seuls les rappels, la suspension et la reprise d’un événement et l’activité des ventes se règlent, canal par canal. Les messages indispensables sont toujours envoyés.';
 
 const PutSchema = z.object({
     topic: z.enum(TOPICS),
