@@ -5,6 +5,7 @@ import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController } from '@/lib/events/event-status';
 import { dakarInstant } from '@/lib/validations/event';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { maskPersonName } from '@/lib/security/mask';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,12 +57,76 @@ interface TeamMember {
     last_name: string | null;
     phone: string | null;
     status: string | null;
-    /** Compte créé par l'invitation (nom provisoire « Contrôleur »), pas encore activé par le contrôleur. */
+    /** Compte créé par l'invitation, pas encore activé par le contrôleur (lot 9 bis : état réel, R39). */
     pending_activation: boolean;
+    /**
+     * Lot 9 bis (R39, R37, contrat 4.3) : ACTIVATED (compte activé ou établi), PENDING_ACTIVATION (compte créé par
+     * l'invitation, jamais activé : « Renvoyer le SMS »), INVITATION_PENDING (titulaire invité, pas encore d'accord).
+     */
+    account_state: AccountState;
     /** Encaissement des espèces autorisé sur au moins une affectation. */
     can_accept_cash: boolean;
     assignments_count: number;
     assignments: MemberAssignment[];
+    /** Invitation en attente (INVITATION_PENDING) : identifiant et échéance. */
+    invitation?: { id: string; expires_at: string };
+}
+
+type AccountState = 'ACTIVATED' | 'PENDING_ACTIVATION' | 'INVITATION_PENDING';
+type ServiceClient = ReturnType<typeof getServiceRoleClient>;
+
+/** État réel des comptes (RPC controller_account_states, auth.users) ; une panne lève. */
+async function readAccountStates(supabase: ServiceClient, userIds: string[]): Promise<Map<string, AccountState>> {
+    const states = new Map<string, AccountState>();
+    if (userIds.length === 0) return states;
+    const { data, error } = await supabase.rpc('controller_account_states', { p: { user_ids: userIds } });
+    if (error) throw new Error(`controller_account_states : ${error.code ?? ''} ${error.message}`);
+    const reply = data as { ok?: boolean; items?: Array<{ user_id: string; account_state: AccountState }> } | null;
+    if (!reply || reply.ok !== true || !Array.isArray(reply.items)) throw new Error(`controller_account_states : réponse inattendue ${JSON.stringify(data)}`);
+    for (const item of reply.items) states.set(String(item.user_id), item.account_state === 'PENDING_ACTIVATION' ? 'PENDING_ACTIVATION' : 'ACTIVATED');
+    return states;
+}
+
+/** Invitations de contrôleur en attente et non échues de la partenaire (toutes pour un admin) ; une panne lève. */
+async function readPendingInvitations(supabase: ServiceClient, partnerId: string | null, assigned: Map<string, TeamMember>): Promise<TeamMember[]> {
+    let query = supabase
+        .from('controller_invitations')
+        .select('id, user_id, expires_at')
+        .eq('status', 'PENDING')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+    if (partnerId) query = query.eq('partner_id', partnerId);
+    const { data, error } = await query;
+    if (error) throw new Error(`invitations de contrôleur en attente : ${error.message}`);
+    const rows = (data ?? []).filter((r: { user_id: string }) => !assigned.has(String(r.user_id)));
+    if (rows.length === 0) return [];
+    const { data: people, error: pErr } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, status')
+        .in('id', Array.from(new Set(rows.map((r: { user_id: string }) => String(r.user_id)))));
+    if (pErr) throw new Error(`titulaires des invitations : ${pErr.message}`);
+    const byId = new Map((people ?? []).map((u: { id: string; first_name: string | null; last_name: string | null; status: string | null }) => [u.id, u]));
+    const seen = new Set<string>();
+    const invited: TeamMember[] = [];
+    for (const r of rows as Array<{ id: string; user_id: string; expires_at: string }>) {
+        if (seen.has(r.user_id)) continue;
+        seen.add(r.user_id);
+        const u = byId.get(r.user_id);
+        invited.push({
+            user_id: r.user_id,
+            first_name: maskPersonName(u?.first_name, u?.last_name),
+            last_name: null,
+            phone: null,
+            status: u?.status ?? null,
+            pending_activation: false,
+            account_state: 'INVITATION_PENDING',
+            can_accept_cash: false,
+            assignments_count: 0,
+            assignments: [],
+            invitation: { id: r.id, expires_at: r.expires_at },
+        });
+    }
+    return invited;
 }
 
 export async function GET(req: NextRequest) {
@@ -183,7 +248,8 @@ export async function GET(req: NextRequest) {
                     last_name: u?.last_name ?? null,
                     phone: u?.phone ?? null,
                     status: u?.status ?? null,
-                    pending_activation: (u?.first_name ?? '') === 'Contrôleur' && !u?.last_name,
+                    pending_activation: false,
+                    account_state: 'ACTIVATED',
                     can_accept_cash: false,
                     assignments_count: 0,
                     assignments: [],
@@ -203,11 +269,23 @@ export async function GET(req: NextRequest) {
         }
         const members = Array.from(membersById.values());
 
+        // Lot 9 bis (R39, B63) : état réel de chaque compte (auth.users), plus deviné au prénom
+        const states = await readAccountStates(supabase, members.map((m) => m.user_id));
+        for (const m of members) {
+            const state = states.get(m.user_id);
+            if (!state) throw new Error(`controller_account_states : compte ${m.user_id} absent de la réponse`);
+            m.account_state = state;
+            m.pending_activation = state === 'PENDING_ACTIVATION';
+        }
+        // Lot 9 bis (R37, B62) : invitations en attente du titulaire (nom masqué, aucune affectation) ; hors du compte
+        // des membres, qui reste celui des contrôleurs affectés.
+        const invited = await readPendingInvitations(supabase, partnerId, membersById);
+
         return NextResponse.json({
             success:           true,
             controllers,
             events:            legacyEvents,
-            members,
+            members:           [...members, ...invited],
             members_count:     members.length,
             assignments_count: rawAssignments.length,
             assignable_events: assignableEvents,

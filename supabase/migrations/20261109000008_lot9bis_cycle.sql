@@ -89,6 +89,24 @@
 -- 22. ticket_category_update(jsonb) : base 20261106000001_lot8_canaux.sql:900-1041, recopie intégrale, signature et
 --     VOLATILE identiques. Changement : un début de vente modifié au-delà ou à la fin de l'événement est refusé
 --     SALE_START_AFTER_EVENT « Le début de vente doit précéder la fin de l’événement. ».
+--
+-- Tâche 26 (R37, R38, R39, R41 ; B62 à B64, D9, D10, D15 ; R102 et l'audit de la tâche 19 portés par la RPC commune) :
+-- 23. Table controller_invitations (DDL en tête) : invitation d'un compte existant à devenir contrôleur d'une
+--     partenaire, PENDING 72 h, ACCEPTED, DECLINED ou EXPIRED (expirée à la lecture) ; RLS sans politique,
+--     service_role seul.
+-- 24. controller_invitation_create(p jsonb) (nouvelle) : invitation et CONTROLLER_INVITATION (SMS, in-app, push,
+--     email) dans la même transaction, aucun rôle ni affectation ; une invitation en attente de la même partenaire
+--     pour le même compte est remplacée (EXPIRED).
+-- 25. controller_invitation_respond(p jsonb) (nouvelle) : titulaire seul, compte ACTIF, invitation PENDING non
+--     échue ; acceptation : rôle CONTROLEUR (user_roles), affectations aux événements encore VALIDE ou PUBLIE de la
+--     partenaire en une instruction (CONTROLLER_ASSIGNED par le trigger existant, D9) ; refus : DECLINED. Verrous :
+--     invitation FOR UPDATE → user_roles → event_controllers (3.3).
+-- 26. controller_invitations_mine(p jsonb) (nouvelle, STABLE) : invitations en attente non échues du compte.
+-- 27. controller_account_states(p jsonb) (nouvelle, STABLE) : état réel d'un compte de contrôleur lu dans
+--     auth.users (marque is_temporary_controller_account) : ACTIVATED ou PENDING_ACTIVATION (R39).
+-- 28. controller_assignments_sync(p jsonb) (nouvelle) : affectations d'un contrôleur chez une partenaire en une
+--     transaction (retraits, ajouts, droit d'encaisser par événement, R41 ; tout ou rien, R102) et journal
+--     CONTROLLER_ASSIGNMENTS_UPDATED dedans (tâche 19) ; un droit d'encaisser absent garde la valeur actuelle.
 -- ============================================================================
 
 
@@ -110,6 +128,27 @@ ALTER TABLE public.ticket_scans ADD CONSTRAINT ticket_scans_result_check CHECK (
     'valid', 'already_used', 'invalid', 'cancelled', 'refunded', 'wrong_event', 'event_cancelled', 'event_ended',
     'event_suspended', 'event_not_open', 'payment_required', 'cash_required', 'qr_expired', 'dynamic_qr_required',
     'manual_entry_refused', 'forbidden', 'transfer_pending'));
+
+-- Tâche 26 — 23. Invitations de contrôleur (R37) : le titulaire d'un compte existant accepte lui-même
+CREATE TABLE IF NOT EXISTS public.controller_invitations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    partner_id UUID NOT NULL REFERENCES public.partners(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    created_by UUID NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
+    assignments JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(assignments) = 'array'),
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '72 hours'),
+    responded_at TIMESTAMPTZ,
+    CONSTRAINT controller_invitations_dates CHECK (expires_at > created_at)
+);
+CREATE INDEX IF NOT EXISTS idx_controller_invitations_user ON public.controller_invitations (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_controller_invitations_partner ON public.controller_invitations (partner_id, status);
+COMMENT ON TABLE public.controller_invitations IS
+    'Lot 9 bis (R37) : invitation d''un compte existant à contrôler les événements d''une partenaire ; aucun rôle ni affectation avant l''acceptation du titulaire (72 h). Service_role uniquement.';
+ALTER TABLE public.controller_invitations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.controller_invitations FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.controller_invitations TO service_role;
 
 
 -- ============================================================================
@@ -1857,6 +1896,332 @@ $$;
 
 
 -- ============================================================================
+-- Tâche 26 — 24. controller_invitation_create (nouvelle)
+-- ============================================================================
+-- p : { actor_id, partner_id, user_id, assignments[{ event_id, can_accept_cash }] } → { ok, invitation_id, expires_at }.
+-- Le compte invité est ACTIF ; chaque événement est à la partenaire et VALIDE ou PUBLIE (mêmes refus que la route).
+CREATE OR REPLACE FUNCTION public.controller_invitation_create(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_partner uuid := public.try_uuid(p->>'partner_id');
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_assignments jsonb;
+    v_company text;
+    v_events jsonb;
+    v_id uuid;
+    v_expires timestamptz;
+BEGIN
+    IF v_actor IS NULL OR v_partner IS NULL OR v_user IS NULL OR jsonb_typeof(p->'assignments') IS DISTINCT FROM 'array'
+       OR jsonb_array_length(p->'assignments') = 0 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Invitation incomplète.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p->'assignments') a
+                WHERE public.try_uuid(a->>'event_id') IS NULL
+                   OR jsonb_typeof(a->'can_accept_cash') NOT IN ('boolean', 'null')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Invitation incomplète.');
+    END IF;
+    SELECT COALESCE(NULLIF(btrim(pa.commercial_name), ''), pa.company_name) INTO v_company
+      FROM public.partners pa WHERE pa.id = v_partner;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_NOT_FOUND', 'message', 'Organisateur introuvable.');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_user AND u.status::text = 'ACTIF') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Ce compte n''est pas actif.');
+    END IF;
+
+    -- Une ligne par événement (le dernier droit d'encaisser donné l'emporte), événements de la partenaire seulement
+    SELECT jsonb_agg(jsonb_build_object('event_id', x.event_id, 'can_accept_cash', x.cash) ORDER BY x.event_id)
+      INTO v_assignments
+      FROM (SELECT DISTINCT ON (public.try_uuid(a->>'event_id')) public.try_uuid(a->>'event_id') AS event_id,
+                   COALESCE((a->>'can_accept_cash')::boolean, FALSE) AS cash
+              FROM jsonb_array_elements(p->'assignments') WITH ORDINALITY AS t(a, o)
+             ORDER BY public.try_uuid(a->>'event_id'), o DESC) x;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_assignments) a
+                LEFT JOIN public.events e ON e.id = (a->>'event_id')::uuid
+                WHERE e.id IS NULL OR e.partner_id IS DISTINCT FROM v_partner) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_OWNED', 'message', 'Vous n''êtes pas propriétaire de tous les événements sélectionnés.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_assignments) a
+                JOIN public.events e ON e.id = (a->>'event_id')::uuid
+                WHERE e.status::text NOT IN ('VALIDE', 'PUBLIE')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_ELIGIBLE', 'message', 'Seuls les événements validés ou publiés peuvent être affectés.');
+    END IF;
+
+    -- Une seule invitation en attente par partenaire et par compte : la précédente est remplacée
+    UPDATE public.controller_invitations
+       SET status = 'EXPIRED', responded_at = now()
+     WHERE partner_id = v_partner AND user_id = v_user AND status = 'PENDING';
+
+    INSERT INTO public.controller_invitations (partner_id, user_id, created_by, assignments)
+    VALUES (v_partner, v_user, v_actor, v_assignments)
+    RETURNING id, expires_at INTO v_id, v_expires;
+
+    SELECT jsonb_agg(jsonb_build_object(
+               'event_id', e.id, 'title', e.title,
+               'start_at', (e.start_date + COALESCE(e.start_time, time '00:00')) AT TIME ZONE 'Africa/Dakar')
+           ORDER BY e.start_date, e.start_time, e.id)
+      INTO v_events
+      FROM public.events e
+     WHERE e.id IN (SELECT (a->>'event_id')::uuid FROM jsonb_array_elements(v_assignments) a);
+
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'CONTROLLER_INVITATION', 'key', 'CONTROLLER_INVITATION:' || v_id::text,
+        'user_id', v_user, 'actor_id', v_actor,
+        'data', jsonb_build_object('invitation_id', v_id, 'company', v_company, 'expires_at', v_expires, 'events', v_events)));
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value, metadata)
+    VALUES (v_actor, COALESCE(NULLIF(p->>'actor_role', ''), 'PARTENAIRE'), 'CONTROLLER_INVITATION_CREATED', 'controller_invitations', v_id,
+            jsonb_build_object('user_id', v_user, 'assignments', v_assignments),
+            jsonb_build_object('partner_id', v_partner, 'expires_at', v_expires));
+
+    RETURN jsonb_build_object('ok', true, 'invitation_id', v_id, 'expires_at', v_expires);
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 26 — 25. controller_invitation_respond (nouvelle)
+-- ============================================================================
+-- p : { invitation_id, actor_id, accept } → { ok, status, assigned_event_ids? }. Tiers ou invitation inconnue :
+-- INVITATION_NOT_FOUND (aucun indice) ; déjà traitée : INVITATION_NOT_PENDING ; échue : INVITATION_EXPIRED.
+CREATE OR REPLACE FUNCTION public.controller_invitation_respond(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_id uuid := public.try_uuid(p->>'invitation_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_accept boolean;
+    inv record;
+    v_assigned uuid[];
+BEGIN
+    IF v_id IS NULL OR v_actor IS NULL OR jsonb_typeof(p->'accept') IS DISTINCT FROM 'boolean' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Réponse incomplète.');
+    END IF;
+    v_accept := (p->>'accept')::boolean;
+    SELECT * INTO inv FROM public.controller_invitations WHERE id = v_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVITATION_NOT_FOUND', 'message', 'Invitation introuvable.');
+    END IF;
+    IF inv.user_id IS DISTINCT FROM v_actor THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVITATION_NOT_FOUND', 'message', 'Invitation introuvable.');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Votre compte n''est pas actif.');
+    END IF;
+    IF inv.status <> 'PENDING' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVITATION_NOT_PENDING', 'status', inv.status, 'message', 'Cette invitation a déjà reçu une réponse.');
+    END IF;
+    IF inv.expires_at <= now() THEN
+        UPDATE public.controller_invitations SET status = 'EXPIRED', responded_at = now() WHERE id = inv.id;
+        RETURN jsonb_build_object('ok', false, 'code', 'INVITATION_EXPIRED', 'message', 'Cette invitation a expiré.');
+    END IF;
+
+    IF NOT v_accept THEN
+        UPDATE public.controller_invitations SET status = 'DECLINED', responded_at = now() WHERE id = inv.id;
+        INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+        VALUES (v_actor, 'CLIENT', 'CONTROLLER_INVITATION_DECLINED', 'controller_invitations', inv.id,
+                jsonb_build_object('partner_id', inv.partner_id));
+        RETURN jsonb_build_object('ok', true, 'status', 'DECLINED');
+    END IF;
+
+    -- Rôle CONTROLEUR ajouté au compte, sans toucher au reste (users.role recalculé par le trigger de user_roles)
+    INSERT INTO public.user_roles (user_id, role) VALUES (v_actor, 'CLIENT'), (v_actor, 'CONTROLEUR')
+    ON CONFLICT (user_id, role) DO NOTHING;
+    -- Affectations aux événements encore VALIDE ou PUBLIE de la partenaire, en une instruction (un SMS regroupé)
+    WITH ins AS (
+        INSERT INTO public.event_controllers (event_id, user_id, can_accept_cash, created_by)
+        SELECT e.id, v_actor, COALESCE((a->>'can_accept_cash')::boolean, FALSE), inv.created_by
+          FROM jsonb_array_elements(inv.assignments) a
+          JOIN public.events e ON e.id = public.try_uuid(a->>'event_id')
+         WHERE e.partner_id = inv.partner_id AND e.status::text IN ('VALIDE', 'PUBLIE')
+        ON CONFLICT (event_id, user_id) DO NOTHING
+        RETURNING event_id
+    )
+    SELECT COALESCE(array_agg(event_id ORDER BY event_id), ARRAY[]::uuid[]) INTO v_assigned FROM ins;
+    UPDATE public.controller_invitations SET status = 'ACCEPTED', responded_at = now() WHERE id = inv.id;
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value, metadata)
+    VALUES (v_actor, 'CLIENT', 'CONTROLLER_INVITATION_ACCEPTED', 'controller_invitations', inv.id,
+            jsonb_build_object('assigned_event_ids', to_jsonb(v_assigned)), jsonb_build_object('partner_id', inv.partner_id));
+    RETURN jsonb_build_object('ok', true, 'status', 'ACCEPTED', 'assigned_event_ids', to_jsonb(v_assigned));
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 26 — 26. controller_invitations_mine (nouvelle)
+-- ============================================================================
+-- p : { actor_id } → { ok, items[{ id, company, events[{ id, title, start_at }], expires_at }] } : invitations en
+-- attente non échues du compte, plus anciennes d'abord.
+CREATE OR REPLACE FUNCTION public.controller_invitations_mine(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_items jsonb;
+BEGIN
+    IF v_actor IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT');
+    END IF;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'id', ci.id,
+               'company', COALESCE(NULLIF(btrim(pa.commercial_name), ''), pa.company_name),
+               'events', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                                          'id', e.id, 'title', e.title,
+                                          'start_at', (e.start_date + COALESCE(e.start_time, time '00:00')) AT TIME ZONE 'Africa/Dakar')
+                                      ORDER BY e.start_date, e.start_time, e.id)
+                                     FROM public.events e
+                                    WHERE e.id IN (SELECT public.try_uuid(a->>'event_id') FROM jsonb_array_elements(ci.assignments) a)),
+                                  '[]'::jsonb),
+               'expires_at', ci.expires_at) ORDER BY ci.created_at, ci.id), '[]'::jsonb)
+      INTO v_items
+      FROM public.controller_invitations ci
+      JOIN public.partners pa ON pa.id = ci.partner_id
+     WHERE ci.user_id = v_actor AND ci.status = 'PENDING' AND ci.expires_at > now();
+    RETURN jsonb_build_object('ok', true, 'items', v_items);
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 26 — 27. controller_account_states (nouvelle)
+-- ============================================================================
+-- p : { user_ids[] } → { ok, items[{ user_id, account_state }] } : PENDING_ACTIVATION pour un compte créé par une
+-- invitation et jamais activé (marque is_temporary_controller_account vraie dans auth.users), ACTIVATED sinon.
+CREATE OR REPLACE FUNCTION public.controller_account_states(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_items jsonb;
+BEGIN
+    IF jsonb_typeof(p->'user_ids') IS DISTINCT FROM 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT');
+    END IF;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'user_id', u.id,
+               'account_state', CASE WHEN COALESCE(a.raw_user_meta_data->>'is_temporary_controller_account', 'false') = 'true'
+                                     THEN 'PENDING_ACTIVATION' ELSE 'ACTIVATED' END) ORDER BY u.id), '[]'::jsonb)
+      INTO v_items
+      FROM public.users u
+      LEFT JOIN auth.users a ON a.id = u.id
+     WHERE u.id IN (SELECT public.try_uuid(x) FROM jsonb_array_elements_text(p->'user_ids') AS x);
+    RETURN jsonb_build_object('ok', true, 'items', v_items);
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 26 — 28. controller_assignments_sync (nouvelle)
+-- ============================================================================
+-- p : { actor_id, actor_role, controller_id, partner_id?, assignments[{ event_id, can_accept_cash? }] } →
+-- { ok, added[], removed[], updated }. Périmètre : événements de partner_id (tous si NULL, admin). Retraits, ajouts et
+-- droit d'encaisser en une transaction ; une caisse ouverte sur un retrait lève CONTROLLER_HAS_OPEN_SHIFT (EV409,
+-- trigger existant) et rien n'est écrit ; un droit d'encaisser absent (null) garde la valeur actuelle (false à
+-- l'ajout). Journal CONTROLLER_ASSIGNMENTS_UPDATED dans la transaction : refusé, tout est annulé.
+CREATE OR REPLACE FUNCTION public.controller_assignments_sync(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_ctrl uuid := public.try_uuid(p->>'controller_id');
+    v_partner uuid := public.try_uuid(p->>'partner_id');
+    v_role text := COALESCE(NULLIF(p->>'actor_role', ''), 'PARTENAIRE');
+    v_req jsonb;
+    v_requested uuid[];
+    v_current uuid[];
+    v_added uuid[];
+    v_removed uuid[];
+    v_updated integer := 0;
+BEGIN
+    IF v_actor IS NULL OR v_ctrl IS NULL OR jsonb_typeof(p->'assignments') IS DISTINCT FROM 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Affectations illisibles.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p->'assignments') a
+                WHERE public.try_uuid(a->>'event_id') IS NULL
+                   OR COALESCE(jsonb_typeof(a->'can_accept_cash'), 'null') NOT IN ('boolean', 'null')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Affectations illisibles.');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_ctrl) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'CONTROLLER_NOT_FOUND', 'message', 'Contrôleur introuvable.');
+    END IF;
+
+    -- Une ligne par événement (la dernière l'emporte)
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('event_id', x.event_id, 'can_accept_cash', x.cash) ORDER BY x.event_id), '[]'::jsonb)
+      INTO v_req
+      FROM (SELECT DISTINCT ON (public.try_uuid(a->>'event_id')) public.try_uuid(a->>'event_id') AS event_id,
+                   CASE WHEN jsonb_typeof(a->'can_accept_cash') = 'boolean' THEN (a->>'can_accept_cash')::boolean END AS cash
+              FROM jsonb_array_elements(p->'assignments') WITH ORDINALITY AS t(a, o)
+             ORDER BY public.try_uuid(a->>'event_id'), o DESC) x;
+    SELECT COALESCE(array_agg((a->>'event_id')::uuid), ARRAY[]::uuid[]) INTO v_requested FROM jsonb_array_elements(v_req) a;
+
+    IF EXISTS (SELECT 1 FROM unnest(v_requested) r(id) LEFT JOIN public.events e ON e.id = r.id
+                WHERE e.id IS NULL OR (v_partner IS NOT NULL AND e.partner_id IS DISTINCT FROM v_partner)) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_OWNED', 'message', 'Vous n''êtes pas propriétaire de tous les événements sélectionnés.');
+    END IF;
+
+    SELECT COALESCE(array_agg(ec.event_id), ARRAY[]::uuid[]) INTO v_current
+      FROM public.event_controllers ec JOIN public.events e ON e.id = ec.event_id
+     WHERE ec.user_id = v_ctrl AND (v_partner IS NULL OR e.partner_id = v_partner);
+    SELECT COALESCE(array_agg(r.id ORDER BY r.id), ARRAY[]::uuid[]) INTO v_added FROM unnest(v_requested) r(id) WHERE NOT r.id = ANY (v_current);
+    SELECT COALESCE(array_agg(c.id ORDER BY c.id), ARRAY[]::uuid[]) INTO v_removed FROM unnest(v_current) c(id) WHERE NOT c.id = ANY (v_requested);
+
+    -- Seuls les événements confirmés (VALIDE ou PUBLIE) sont nouvellement affectés
+    IF EXISTS (SELECT 1 FROM public.events e WHERE e.id = ANY (v_added) AND e.status::text NOT IN ('VALIDE', 'PUBLIE')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_ELIGIBLE', 'message', 'Seuls les événements validés ou publiés peuvent être affectés.');
+    END IF;
+
+    IF cardinality(v_removed) > 0 THEN
+        DELETE FROM public.event_controllers WHERE user_id = v_ctrl AND event_id = ANY (v_removed);
+    END IF;
+    IF cardinality(v_added) > 0 THEN
+        INSERT INTO public.event_controllers (event_id, user_id, can_accept_cash, created_by)
+        SELECT (a->>'event_id')::uuid, v_ctrl, COALESCE((a->>'can_accept_cash')::boolean, FALSE), v_actor
+          FROM jsonb_array_elements(v_req) a
+         WHERE (a->>'event_id')::uuid = ANY (v_added);
+    END IF;
+    UPDATE public.event_controllers ec
+       SET can_accept_cash = (a->>'can_accept_cash')::boolean
+      FROM jsonb_array_elements(v_req) a
+     WHERE ec.user_id = v_ctrl AND ec.event_id = (a->>'event_id')::uuid
+       AND NOT ec.event_id = ANY (v_added)
+       AND jsonb_typeof(a->'can_accept_cash') = 'boolean'
+       AND ec.can_accept_cash IS DISTINCT FROM (a->>'can_accept_cash')::boolean;
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+    VALUES (v_actor, v_role, 'CONTROLLER_ASSIGNMENTS_UPDATED', 'event_controllers', v_ctrl,
+            jsonb_build_object('event_ids', to_jsonb(v_current)),
+            jsonb_build_object('event_ids', to_jsonb(v_requested), 'added', to_jsonb(v_added), 'removed', to_jsonb(v_removed),
+                               'cash_updated', v_updated),
+            jsonb_build_object('partner_id', v_partner, 'controller_id', v_ctrl));
+
+    RETURN jsonb_build_object('ok', true, 'added', to_jsonb(v_added), 'removed', to_jsonb(v_removed), 'updated', v_updated);
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -1882,7 +2247,12 @@ BEGIN
         'public.ticket_invitations_list(jsonb)',
         'public.pilotage_scan_result_label(text)',
         'public.ticket_card_states(jsonb)',
-        'public.ticket_category_update(jsonb)'
+        'public.ticket_category_update(jsonb)',
+        'public.controller_invitation_create(jsonb)',
+        'public.controller_invitation_respond(jsonb)',
+        'public.controller_invitations_mine(jsonb)',
+        'public.controller_account_states(jsonb)',
+        'public.controller_assignments_sync(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

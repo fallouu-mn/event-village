@@ -100,12 +100,10 @@ export async function DELETE(
             .maybeSingle();
         if (ctrlErr) throw new Error(`lecture du contrôleur : ${ctrlErr.message}`);
 
-        // 3. Rôle CONTROLEUR retiré par la RPC : sessions révoquées, OTP résiduels supprimés
+        // 3. Rôle CONTROLEUR retiré par la RPC : sessions révoquées, OTP résiduels supprimés. Lot 9 bis (R40, B63) : la
+        //    marque d'activation n'est plus réécrite (un compte activé l'a déjà à false ; un compte jamais activé la
+        //    garde, et une réinvitation lui envoie un nouveau code).
         if (roleRemoved) {
-            const { error: metaErr } = await supabase.auth.admin.updateUserById(controllerId, {
-                user_metadata: { is_temporary_controller_account: false },
-            });
-            if (metaErr) console.warn('[DELETE team/controller] métadonnée is_temporary_controller_account :', metaErr.message);
             if (!(await revokeUserSessions(controllerId, { reason: 'CONTROLLER_REMOVED', actorId: user.id }))) {
                 return NextResponse.json({ error: 'Rôle Contrôleur retiré, mais la révocation des sessions a échoué. Réessayez.', code: 'SESSIONS_NOT_REVOKED' }, { status: 500 });
             }

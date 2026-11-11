@@ -15,6 +15,7 @@ import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { addUserRole, grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
+import { createControllerInvitation } from '../controller-invitation';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +90,64 @@ export async function POST(req: NextRequest) {
         }
         const normalizedPhone = e164;
 
+        // 0 bis. Lot 9 bis (R38, B63) : compte du numéro lu avant le quota. « Renvoyer le SMS » vers un compte déjà
+        //    activé (ou établi) n'enverrait rien : refus 409 ALREADY_ACTIVATED sans rien consommer.
+        // Lot 1C.1 : égalité exacte sur les deux formes stockées du même numéro (+221… et 221…)
+        const { data: matches, error: lookupErr } = await supabase
+            .from('users')
+            .select('id, role, status, first_name, last_name')
+            .in('phone', phoneStorageForms(normalizedPhone))
+            .limit(2);
+        if (lookupErr) {
+            console.error('[invite-controller] recherche du compte par téléphone :', lookupErr.message);
+            return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+        }
+        if ((matches ?? []).length > 1) {
+            console.error(`[invite-controller] plusieurs comptes portent le numéro ${normalizedPhone}`);
+            return NextResponse.json({
+                error: 'Plusieurs comptes correspondent à ce numéro. Contactez le support.',
+                code: 'AMBIGUOUS_PHONE',
+            }, { status: 409 });
+        }
+        const existingProfile = (matches ?? [])[0] ?? null;
+        // Lot 7 (D22) : compte existant encore temporaire (créé par une invitation, jamais activé)
+        let isPendingActivation = false;
+        let alreadyController = false;
+        if (existingProfile) {
+            // Lot 7 (D22) : un compte créé par une invitation et jamais activé (aucun mot de passe choisi)
+            // reçoit un nouveau code d'activation ; un compte établi garde ses identifiants (lot 1C.1).
+            const { data: existingAuth, error: existingAuthErr } = await supabase.auth.admin.getUserById(existingProfile.id);
+            if (existingAuthErr || !existingAuth?.user) {
+                console.error('[invite-controller] lecture du compte d’authentification :', existingAuthErr?.message ?? 'compte absent');
+                return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+            }
+            isPendingActivation = existingAuth.user.user_metadata?.is_temporary_controller_account === true;
+
+            // Vérifier si l'utilisateur possède déjà le rôle CONTROLEUR via user_roles
+            const { data: existingRoles, error: existingRolesErr } = await supabase
+                .from('user_roles')
+                .select('role')
+                .eq('user_id', existingProfile.id);
+            if (existingRolesErr) {
+                console.error('[invite-controller] lecture des rôles :', existingRolesErr.message);
+                return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+            }
+            const currentRoles = (existingRoles || []).map(r => r.role as string);
+            alreadyController =
+                currentRoles.includes('CONTROLEUR') ||
+                currentRoles.includes('ADMIN') ||
+                currentRoles.includes('SUPERADMIN') ||
+                existingProfile.role === 'CONTROLEUR' ||
+                existingProfile.role === 'ADMIN' ||
+                existingProfile.role === 'SUPERADMIN';
+        }
+        if (parse.data.resend && existingProfile && !isPendingActivation) {
+            return NextResponse.json({
+                error: 'Ce contrôleur a déjà activé son compte : aucun SMS n’est renvoyé.',
+                code: 'ALREADY_ACTIVATED',
+            }, { status: 409 });
+        }
+
         // 0. Lot 4.8 : quotas en base, réservés ensemble (tout ou rien) avant tout autre contrôle — chaque
         //    tentative compte : INVITE_PER_PARTNER_HOUR par partenaire, INVITE_PER_PHONE_DAY par numéro
         //    invité (tous partenaires confondus). Garde indisponible : refus (503). Les SMS envoyés sont
@@ -133,30 +192,9 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
-        // 2. Trouver ou créer le compte contrôleur
+        // 2. Trouver ou créer le compte contrôleur (compte du numéro lu en 0 bis)
         let controllerUserId: string;
         let isNewUser = false;
-        // Lot 7 (D22) : compte existant encore temporaire (créé par une invitation, jamais activé)
-        let isPendingActivation = false;
-
-        // Lot 1C.1 : égalité exacte sur les deux formes stockées du même numéro (+221… et 221…)
-        const { data: matches, error: lookupErr } = await supabase
-            .from('users')
-            .select('id, role, status, first_name, last_name')
-            .in('phone', phoneStorageForms(normalizedPhone))
-            .limit(2);
-        if (lookupErr) {
-            console.error('[invite-controller] recherche du compte par téléphone :', lookupErr.message);
-            return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
-        }
-        if ((matches ?? []).length > 1) {
-            console.error(`[invite-controller] plusieurs comptes portent le numéro ${normalizedPhone}`);
-            return NextResponse.json({
-                error: 'Plusieurs comptes correspondent à ce numéro. Contactez le support.',
-                code: 'AMBIGUOUS_PHONE',
-            }, { status: 409 });
-        }
-        const existingProfile = (matches ?? [])[0] ?? null;
 
         if (existingProfile) {
             // Lot 1B.6 : un compte non ACTIF (SUSPENDU, SUPPRIME…) n'est jamais réactivé par une invitation.
@@ -171,44 +209,43 @@ export async function POST(req: NextRequest) {
             }
             controllerUserId = existingProfile.id;
 
-            // Lot 7 (D22) : un compte créé par une invitation et jamais activé (aucun mot de passe choisi)
-            // reçoit un nouveau code d'activation ; un compte établi garde ses identifiants (lot 1C.1).
-            const { data: existingAuth, error: existingAuthErr } = await supabase.auth.admin.getUserById(existingProfile.id);
-            if (existingAuthErr || !existingAuth?.user) {
-                console.error('[invite-controller] lecture du compte d’authentification :', existingAuthErr?.message ?? 'compte absent');
-                return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
-            }
-            isPendingActivation = existingAuth.user.user_metadata?.is_temporary_controller_account === true;
-
-            // Vérifier si l'utilisateur possède déjà le rôle CONTROLEUR via user_roles
-            const { data: existingRoles, error: existingRolesErr } = await supabase
-                .from('user_roles')
-                .select('role')
-                .eq('user_id', existingProfile.id);
-            if (existingRolesErr) {
-                console.error('[invite-controller] lecture des rôles :', existingRolesErr.message);
-                return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
-            }
-            const currentRoles = (existingRoles || []).map(r => r.role as string);
-            const alreadyController =
-                currentRoles.includes('CONTROLEUR') ||
-                currentRoles.includes('ADMIN') ||
-                currentRoles.includes('SUPERADMIN') ||
-                existingProfile.role === 'CONTROLEUR' ||
-                existingProfile.role === 'ADMIN' ||
-                existingProfile.role === 'SUPERADMIN';
-
             if (!alreadyController) {
                 // Lot 1C.1 : confirmation explicite obligatoire (« resend » ne la contourne plus).
                 // Le partenaire ne voit que le nom masqué du titulaire : ni identifiant, ni rôles.
+                const displayName = maskPersonName(existingProfile.first_name, existingProfile.last_name);
                 if (!confirm_promotion) {
-                    const displayName = maskPersonName(existingProfile.first_name, existingProfile.last_name);
                     return NextResponse.json({
                         requires_confirmation: true,
                         code: 'EXISTING_ACCOUNT',
                         existing_user: { display_name: displayName, phone: normalizedPhone },
                         message: `Ce numéro appartient déjà à un compte Event Village (${displayName}). Confirmez-vous l'affectation de ce titulaire comme contrôleur de vos événements ? Son identité et ses identifiants ne seront pas modifiés.`,
                     }, { status: 200 });
+                }
+
+                // Lot 9 bis (R37, B62) : un compte établi devient contrôleur seulement s'il accepte lui-même :
+                // invitation (72 h) et CONTROLLER_INVITATION mis en file par la RPC, aucun rôle ni affectation ici.
+                // Un compte encore temporaire (créé par une invitation, jamais activé) consent à l'activation : il
+                // garde le chemin du code d'activation ci-dessous.
+                if (!isPendingActivation) {
+                    const ownPartner = serverHasRole(user, 'PARTENAIRE');
+                    const invited = await createControllerInvitation(supabase, {
+                        actorId: user.id,
+                        actorRole: ownPartner ? 'PARTENAIRE' : 'ADMIN',
+                        partnerId: ownPartner ? String(partnerEvents[0].partner_id) : null,
+                        userId: existingProfile.id,
+                        assignments: targetEventIds.map((evId) => ({ event_id: evId, can_accept_cash })),
+                    });
+                    if (invited.response) return invited.response;
+                    return NextResponse.json({
+                        success: true,
+                        assignments: [],
+                        assignment: null,
+                        is_new_user: false,
+                        invitation_id: invited.invitationId,
+                        invitation_expires_at: invited.expiresAt,
+                        notification: 'QUEUED',
+                        message: `Invitation envoyée : ${displayName} doit l’accepter dans l’application avant d’être affecté.`,
+                    }, { status: 201 });
                 }
 
                 // MULTI-RÔLE : ajout de CONTROLEUR sans toucher au compte (ni nom, ni email,
@@ -437,8 +474,11 @@ export async function POST(req: NextRequest) {
                 ? `Contrôleur assigné avec succès ${msgSuffix}.`
                 : `Droits mis à jour ${msgSuffix}.`;
         // Lot 4.8 : le partenaire sait si le SMS est parti (refus de la garde anti-abus compris).
+        // Lot 9 bis (R38) : un SMS n'est annoncé que s'il part (affectation nouvelle d'un compte établi, par le trigger).
         const actionMsg = !issueActivationCode
-            ? `${baseMsg} Le contrôleur est prévenu dans l'application et par SMS.`
+            ? (anyNewlyAssigned
+                ? `${baseMsg} Le contrôleur est prévenu dans l'application et par SMS.`
+                : `${baseMsg} Aucune nouvelle affectation : aucun SMS n'est envoyé.`)
             : smsSent
                 ? `${baseMsg} SMS avec code d'activation envoyé.`
                 : `${baseMsg} SMS non envoyé (${smsRefusal ?? 'SMS_NOT_DELIVERED'}) : renvoyez l'invitation plus tard.`;
