@@ -994,13 +994,14 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             assert.equal(s[ch]?.family, 'OPTIONAL');
             assert.equal(s[ch]?.topic, 'REMINDERS');
         }
-        assert.equal(r.nPref, 3, `REMINDER_H3 : ${show(r.pref)}`);
+        assert.equal(r.nPref, 4, `REMINDER_H3 : ${show(r.pref)}`); // lot 9 bis (G.49, B97, X20) : EMAIL ajouté au H-3
         const p = byChannel(r.pref);
         assert.equal(p.PUSH?.status, 'SKIPPED', `PUSH désactivé : ${show(r.pref)}`);
         assert.equal(p.PUSH?.reason, 'PREFERENCE_DISABLED');
         assert.deepEqual(p.PUSH?.decision?.preference, { topic: 'REMINDERS', channel: 'PUSH', enabled: false }, 'instantané de la préférence');
         assert.equal(p.IN_APP?.status, 'PENDING');
         assert.equal(p.SMS?.status, 'PENDING');
+        assert.equal(p.EMAIL?.status, 'PENDING', 'EMAIL vers une adresse vérifiée (R87, B96)');
     });
 
     test('compte suspendu ou partenaire suspendu : SKIPPED ACCOUNT_SUSPENDED sous politique BLOCK, avant la préférence ; ALLOW passe', async () => {
