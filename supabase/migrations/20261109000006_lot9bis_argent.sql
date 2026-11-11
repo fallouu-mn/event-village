@@ -47,6 +47,21 @@
 --     - refus du paiement (PAYMENT_NOT_REFUNDABLE, ALREADY_REFUNDED) décidés avant toute écriture, puis une ligne
 --       audit_logs TICKET_REFUND_REQUESTED (object_type tickets, metadata { as, context, reason, mode, amount })
 --       dans la transaction (contrat 6.3, w20), puis les écritures des trois branches, inchangées.
+--
+-- Tâche 4 (R20, §76 ; B22) :
+--  8. Table event_cash_refund_marks : seules les marques « Remboursé » sont stockées (clé primaire payment_id :
+--     une marque par vente, irréversible) ; la liste est calculée en direct.
+--  9. event_cash_refunds(p) (nouvelle, STABLE) : ventes au guichet d'un événement ANNULE (paiements hors
+--     plateforme, TICKET, SUCCESS, montant > 0), référence du reçu, billets, montant, numéro masqué, vendeur,
+--     marque ; totaux ; can_mark pour la seule propriétaire ACTIF. Lecture : propriétaire ou admin_can(events.read)
+--     (M04) ; un compte ADMIN sans la permission reçoit PERMISSION_MISSING, tout autre acteur EVENT_NOT_FOUND.
+-- 10. event_cash_refund_mark(p) (nouvelle) : propriétaire ACTIF seule (un compte ADMIN ou SUPERADMIN reçoit
+--     FORBIDDEN, un tiers EVENT_NOT_FOUND), événement ANNULE, vente de la liste ; idempotent (ALREADY_MARKED rend
+--     la marque), irréversible ; audit CASH_REFUND_MARKED dans la transaction. Aucun verrou explicite : une course
+--     sur la clé primaire (unique_violation) rend ALREADY_MARKED (3.3).
+-- 11. event_cancellation_impact : base 20261102000003_lot5_cycle.sql:687-758, recopie intégrale, signature
+--     (jsonb → jsonb) et STABLE identiques. Changement : `counter { sales, tickets, total }` (ventes au guichet de
+--     l'événement, billets de ces ventes, montant), champs existants inchangés.
 -- ============================================================================
 
 
@@ -81,6 +96,24 @@ COMMENT ON TABLE public.partner_suspension_cascades IS
 ALTER TABLE public.partner_suspension_cascades ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.partner_suspension_cascades FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.partner_suspension_cascades TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- 1.2 event_cash_refund_marks (tâche 4, B22) : marque « Remboursé » d'une vente au guichet d'un événement annulé.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.event_cash_refund_marks (
+    payment_id uuid PRIMARY KEY REFERENCES public.payments(id) ON DELETE CASCADE,
+    event_id   uuid NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    marked_by  uuid NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
+    marked_at  timestamptz NOT NULL DEFAULT now(),
+    note       text,
+    CONSTRAINT event_cash_refund_marks_note_chk CHECK (note IS NULL OR char_length(note) <= 500)
+);
+CREATE INDEX IF NOT EXISTS idx_event_cash_refund_marks_event ON public.event_cash_refund_marks (event_id);
+COMMENT ON TABLE public.event_cash_refund_marks IS
+    'Lot 9 bis (R20, B22) : espèces d''une vente au guichet rendues par l''organisateur après l''annulation ; marque irréversible, une par paiement. Service_role uniquement.';
+ALTER TABLE public.event_cash_refund_marks ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.event_cash_refund_marks FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.event_cash_refund_marks TO service_role;
 
 
 -- ============================================================================
@@ -192,6 +225,164 @@ BEGIN
 
     RETURN jsonb_build_object('ok', true, 'minimum', v_min, 'fee_rate', v_rate, 'fee_amount', v_fee, 'net_amount', v_net,
                               'available', v_available, 'frozen', v_frozen, 'withdrawable', v_withdrawable);
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 2.3 event_cash_refunds (tâche 4, R20, B22) : liste des espèces à rendre par l'organisateur, calculée en direct.
+--     p : { event_id, actor_id } → { ok, items[], count, total, refunded_count, refunded_total, can_mark }.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.event_cash_refunds(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event  uuid := public.try_uuid(p->>'event_id');
+    v_actor  uuid := public.try_uuid(p->>'actor_id');
+    v_status text;
+    v_owner  uuid;
+    v_active boolean;
+    v_items  jsonb;
+    v_count  bigint;
+    v_total  numeric;
+    v_rcount bigint;
+    v_rtotal numeric;
+BEGIN
+    SELECT e.status::text, pa.user_id INTO v_status, v_owner
+      FROM public.events e JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = v_event;
+    IF v_event IS NULL OR v_actor IS NULL OR NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+    v_active := EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF');
+    IF v_owner IS DISTINCT FROM v_actor AND NOT public.admin_can(v_actor, 'events.read') THEN
+        IF EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PERMISSION_MISSING', 'permission', 'events.read',
+                'message', 'Action non autorisée : votre compte n’a pas la permission « Consulter les événements ».');
+        END IF;
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+    IF NOT v_active THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Votre compte n’est pas actif.');
+    END IF;
+    IF v_status <> 'ANNULE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_CANCELLED',
+                                  'message', 'La liste des espèces à rembourser n’existe que pour un événement annulé.');
+    END IF;
+
+    WITH sales AS (
+        SELECT pay.id, pay.amount, COALESCE(pay.paid_at, pay.created_at) AS sold_at, pay.payer_phone,
+               public.try_uuid(pay.metadata->>'seller_id') AS seller_id
+          FROM public.payments pay
+         WHERE pay.event_id = v_event AND NOT pay.is_platform_payment AND pay.payment_target::text = 'TICKET'
+           AND pay.status::text = 'SUCCESS' AND pay.amount > 0
+    )
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'payment_id', s1.id,
+               'reference', upper(left(s1.id::text, 8)),
+               'ticket_count', (SELECT count(*) FROM public.tickets tk WHERE tk.payment_id = s1.id),
+               'amount', s1.amount,
+               'phone_masked', CASE WHEN NULLIF(regexp_replace(COALESCE(s1.payer_phone, ''), '[^0-9]', '', 'g'), '') IS NULL THEN NULL
+                                    ELSE '*** ** ' || right(regexp_replace(s1.payer_phone, '[^0-9]', '', 'g'), 2) END,
+               'sold_at', s1.sold_at,
+               'seller', NULLIF(btrim(concat_ws(' ', su.first_name, su.last_name)), ''),
+               'refunded_at', m.marked_at,
+               'refunded_by', NULLIF(btrim(concat_ws(' ', mu.first_name, mu.last_name)), ''))
+             ORDER BY s1.sold_at, s1.id), '[]'::jsonb),
+           count(*), COALESCE(sum(s1.amount), 0),
+           count(m.payment_id), COALESCE(sum(s1.amount) FILTER (WHERE m.payment_id IS NOT NULL), 0)
+      INTO v_items, v_count, v_total, v_rcount, v_rtotal
+      FROM sales s1
+      LEFT JOIN public.users su ON su.id = s1.seller_id
+      LEFT JOIN public.event_cash_refund_marks m ON m.payment_id = s1.id
+      LEFT JOIN public.users mu ON mu.id = m.marked_by;
+
+    RETURN jsonb_build_object('ok', true, 'items', v_items, 'count', v_count, 'total', v_total,
+                              'refunded_count', v_rcount, 'refunded_total', v_rtotal,
+                              'can_mark', v_owner = v_actor AND v_active);
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 2.4 event_cash_refund_mark (tâche 4, R20, B22) : « Remboursé » coché par la propriétaire.
+--     p : { event_id, payment_id, actor_id, note? } → { ok, code?, mark { payment_id, refunded_at, refunded_by, note } }.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.event_cash_refund_mark(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event   uuid := public.try_uuid(p->>'event_id');
+    v_payment uuid := public.try_uuid(p->>'payment_id');
+    v_actor   uuid := public.try_uuid(p->>'actor_id');
+    v_note    text := NULLIF(btrim(COALESCE(p->>'note', '')), '');
+    v_status  text;
+    v_owner   uuid;
+    v_amount  numeric;
+    m         record;
+BEGIN
+    SELECT e.status::text, pa.user_id INTO v_status, v_owner
+      FROM public.events e JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = v_event;
+    IF v_event IS NULL OR v_actor IS NULL OR NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+    IF v_owner IS DISTINCT FROM v_actor THEN
+        IF EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN',
+                                      'message', 'Seul l’organisateur de l’événement marque les espèces rendues.');
+        END IF;
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Votre compte n’est pas actif.');
+    END IF;
+    IF v_status <> 'ANNULE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_CANCELLED',
+                                  'message', 'La liste des espèces à rembourser n’existe que pour un événement annulé.');
+    END IF;
+    SELECT pay.amount INTO v_amount
+      FROM public.payments pay
+     WHERE pay.id = v_payment AND pay.event_id = v_event AND NOT pay.is_platform_payment
+       AND pay.payment_target::text = 'TICKET' AND pay.status::text = 'SUCCESS' AND pay.amount > 0;
+    IF v_payment IS NULL OR NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PAYMENT_NOT_FOUND', 'message', 'Vente introuvable dans la liste des espèces à rembourser.');
+    END IF;
+    IF v_note IS NOT NULL AND char_length(v_note) > 500 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'La note est limitée à 500 caractères.');
+    END IF;
+
+    SELECT * INTO m FROM public.event_cash_refund_marks WHERE payment_id = v_payment;
+    IF NOT FOUND THEN
+        BEGIN
+            INSERT INTO public.event_cash_refund_marks (payment_id, event_id, marked_by, note)
+            VALUES (v_payment, v_event, v_actor, v_note)
+            RETURNING * INTO m;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+            VALUES (v_actor, 'PARTENAIRE', 'CASH_REFUND_MARKED', 'payments', v_payment,
+                    jsonb_build_object('event_id', v_event, 'payment_id', v_payment, 'amount', v_amount, 'note', v_note));
+            RETURN jsonb_build_object('ok', true,
+                'mark', jsonb_build_object('payment_id', m.payment_id, 'refunded_at', m.marked_at, 'refunded_by_id', m.marked_by,
+                                           'refunded_by', (SELECT NULLIF(btrim(concat_ws(' ', u.first_name, u.last_name)), '')
+                                                             FROM public.users u WHERE u.id = m.marked_by),
+                                           'note', m.note));
+        EXCEPTION WHEN unique_violation THEN
+            -- Course sur la clé primaire : la marque concurrente fait foi (lue ci-dessous)
+            SELECT * INTO m FROM public.event_cash_refund_marks WHERE payment_id = v_payment;
+        END;
+    END IF;
+    RETURN jsonb_build_object('ok', true, 'code', 'ALREADY_MARKED',
+        'message', 'Cette vente est déjà marquée remboursée.',
+        'mark', jsonb_build_object('payment_id', m.payment_id, 'refunded_at', m.marked_at, 'refunded_by_id', m.marked_by,
+                                   'refunded_by', (SELECT NULLIF(btrim(concat_ws(' ', u.first_name, u.last_name)), '')
+                                                     FROM public.users u WHERE u.id = m.marked_by),
+                                   'note', m.note));
 END;
 $$;
 
@@ -688,6 +879,93 @@ BEGIN
 END;
 $$;
 
+-- ----------------------------------------------------------------------------
+-- 3.5 event_cancellation_impact (recopie de 20261102000003_lot5_cycle.sql:687-758) : + counter (tâche 4).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.event_cancellation_impact(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event uuid;
+    v_actor uuid;
+    a record;
+    k record;
+    v_online_total numeric;
+    v_pending integer;
+    v_counter jsonb;
+BEGIN
+    BEGIN
+        v_event := (p->>'event_id')::uuid;
+        v_actor := (p->>'actor_id')::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END;
+    IF NOT EXISTS (SELECT 1 FROM public.events WHERE id = v_event) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+    SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
+    IF NOT (a.is_owner OR a.is_staff) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+
+    WITH t AS (
+        SELECT tk.id, tk.user_id, tk.price, tk.payment_id,
+               CASE WHEN tk.sale_channel = 'INVITATION' THEN 'INVITATION'
+                    WHEN COALESCE(tk.price, 0) = 0 THEN 'FREE'
+                    WHEN pay.is_platform_payment THEN 'ONLINE'
+                    ELSE 'CASH' END AS kind
+          FROM public.tickets tk
+          LEFT JOIN public.payments pay ON pay.id = tk.payment_id
+         WHERE tk.event_id = v_event AND tk.status::text = 'VALIDE'
+    )
+    SELECT count(*) FILTER (WHERE kind = 'ONLINE') AS online,
+           count(*) FILTER (WHERE kind = 'CASH') AS cash,
+           count(*) FILTER (WHERE kind = 'FREE') AS free,
+           count(*) FILTER (WHERE kind = 'INVITATION') AS invitations,
+           count(DISTINCT user_id) AS buyers,
+           COALESCE(sum(price) FILTER (WHERE kind = 'CASH' AND payment_id IS NOT NULL), 0) AS cash_total
+      INTO k FROM t;
+
+    SELECT COALESCE(sum(pay.amount - COALESCE((SELECT sum(rf.amount) FROM public.refunds rf
+                                                WHERE rf.payment_id = pay.id AND rf.settlement = 'PLATEFORME'), 0)), 0)
+      INTO v_online_total
+      FROM public.payments pay
+     WHERE pay.is_platform_payment AND pay.payment_target::text = 'TICKET'
+       AND pay.status::text IN ('SUCCESS', 'PARTIAL') AND pay.amount > 0
+       AND (pay.event_id = v_event
+            OR pay.id IN (SELECT tk.payment_id FROM public.tickets tk WHERE tk.event_id = v_event AND tk.payment_id IS NOT NULL));
+
+    SELECT count(*) INTO v_pending
+      FROM public.payments pay
+     WHERE pay.is_platform_payment AND pay.payment_target::text = 'TICKET' AND pay.status::text = 'PENDING'
+       AND (pay.event_id = v_event
+            OR EXISTS (SELECT 1 FROM public.stock_reservations sr JOIN public.ticket_categories c ON c.id = sr.category_id
+                        WHERE sr.payment_id = pay.id AND c.event_id = v_event));
+
+    -- Lot 9 bis (R20, B22) : ventes au guichet (hors plateforme), jamais remboursées par Event Village
+    SELECT jsonb_build_object('sales', count(*),
+                              'tickets', COALESCE(sum((SELECT count(*) FROM public.tickets tk WHERE tk.payment_id = pay.id)), 0),
+                              'total', COALESCE(sum(pay.amount), 0))
+      INTO v_counter
+      FROM public.payments pay
+     WHERE pay.event_id = v_event AND NOT pay.is_platform_payment AND pay.payment_target::text = 'TICKET'
+       AND pay.status::text = 'SUCCESS' AND pay.amount > 0;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'tickets', jsonb_build_object('online', k.online, 'cash', k.cash, 'free', k.free, 'invitations', k.invitations),
+        'buyers', k.buyers,
+        'online_refund_total', GREATEST(v_online_total, 0),
+        'cash_refund_total', k.cash_total,
+        'pending_payments', v_pending,
+        'counter', v_counter);
+END;
+$$;
+
 
 -- ============================================================================
 -- 9. Privilèges : service_role uniquement
@@ -702,7 +980,10 @@ BEGIN
         'public.finance_account_balance(uuid, text)',
         'public.withdrawal_request(jsonb)',
         'public.partner_status_set(jsonb)',
-        'public.ticket_refund_request(uuid, uuid, text)'
+        'public.ticket_refund_request(uuid, uuid, text)',
+        'public.event_cash_refunds(jsonb)',
+        'public.event_cash_refund_mark(jsonb)',
+        'public.event_cancellation_impact(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
