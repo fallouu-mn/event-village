@@ -1,0 +1,341 @@
+TRIAGE DU RUN « AVANT » DU LOT 9 BIS — run 118 (42942347516), sha 44d850c, branche lot9bis/cycle-evenement
+Sources : docs/lot9bis-logs/ci-run118-triage-brut.txt ; journaux origin/ci-results:runs/118-42942347516/test-logs/* ;
+ci-run118-verify.log ; ci-run118-e2e.log ; ci-run118-run.txt ; ci-run118-js-budget.tsv ; S/lot9bis-design.md (sections 5, 9, 10) ;
+S/lot9bis-red-results.md. Lecture seule : aucune base, aucun fichier de code touché.
+
+================================================================================================
+BILAN CHIFFRÉ
+================================================================================================
+Suites : 307, dont 181 vertes et 126 rouges ; 0 expirée (verify.log : « TOTAL : 307 suite(s) — 181 réussie(s), 126 en échec, 0 expirée(s) »).
+Les 126 rouges se répartissent ainsi :
+  (1) attendues, rouges pour la bonne raison ............................ 110
+  (2) attendues, mais rouges (au moins en partie) pour une MAUVAISE raison  10
+  (3) NON attendues ......................................................   6
+Origine des 126 rouges : 61 suites nouvelles, 59 suites existantes modifiées, 6 non modifiées (design-systeme, attendue, et les 5 de 3a).
+
+Il y a 4 causes de fond, et 3 d'entre elles en couvrent 13 sur 16 :
+  A. lot9bis-verrou-numero laisse 3 comptes dont le numéro diffère entre public.users et auth.users. C'est l'invariant
+     (v) du lot 9, et la violation se propage aux 25 suites suivantes qui le vérifient (5 non attendues, 20 rouges par ailleurs).
+  B. Le quota PARTNER_REGISTER_PER_IP_HOUR est saturé : l'inscription se fait désormais en deux appels, sans IP, dans le
+     même seau « unknown » (4 suites).
+  C. Des tests montent une route dont les params sont synchrones avec routeContext() (Promise), d'où un 404
+     « Événement introuvable » (2 suites).
+  D. Cas isolés : données de test mal construites, statut 200 attendu au lieu de 201, résidu SYNC_LOG (4 suites).
+
+Contrôles demandés (détail en fin de fichier) :
+  - Annoncées vertes : migrations-gelees, documents-prives, ordre-suites, rls-toutes-tables, fonctions-privileges et T14
+    sont VERTES. Les suites « vérifiées sans modification » (section 9) sont vertes, sauf migration-lot9-rejouable et
+    nettoyage-sur-place (T48), qui tombent par la cause A.
+  - [INVARIANT-LOT9BIS] : aucune ligne w1 à w21 n'a été évaluée. La garde de schéma s'arrête avant (29 objets
+    manquants), dans les 55 appels. w8 à w11 et w17 sont donc vides PAR CONSTRUCTION : ce n'est pas une preuve.
+    Invariants (a) à (u) : 0 violation. (v) : 3 violations, de lot9bis-verrou-numero à la fin (cause A).
+  - e2e : 32 captures en échec, toutes nouvelles ou modifiées en T9, chacune pour la raison annoncée. MAIS les 3 écrans
+    fumee-superadmin n'ont pas tourné, y compris la capture EXISTANTE admin-remboursements-a-reprendre (écart E1).
+  - fake-prod : rouge attendu par RI (T12, I3 absent). Les deux lancements existants restent conformes.
+  - Durée : le job a pris 2793 s (46,5 min) pour une limite de 75 min. verify : 949 s. e2e : 1566 s (26,1 min) pour une
+    limite de 65 min, dont 1134 s de captures (32 échecs de 15 à 30 s chacun).
+
+================================================================================================
+CAS (2) ET (3) — À INSTRUIRE AVANT S0
+================================================================================================
+
+--- (3) NON ATTENDUES ---
+
+3a. CAUSE A, cascade de l'invariant (v). Correcteur : RA, qui corrige lot9bis-verrou-numero (cas 2.1). Rien à changer
+    dans les 5 suites ci-dessous.
+    Cinq suites existantes, non modifiées et vertes au lot 9. Le seul échec de chacune est son after() (failureType
+    'hookFailed') :
+      tests/parcours/nettoyage-sur-place.test.ts      ok=13 notok=1  (T48 « vérifié sans modification »)
+      tests/parcours/pannes-absences.test.ts          ok=27 notok=1
+      tests/parcours/parrainage-boucle-update.test.ts ok=9  notok=1
+      tests/schema/migration-lot9-rejouable.test.ts   ok=7  notok=1  (section 9 : « vérifiés sans modification »)
+      tests/security/r27-avatars.test.ts              ok=21 notok=1
+    Erreur brute (identique dans les 5) :
+      error: |-
+        invariants (t)(u)(v) violés (nettoyage-sur-place) :
+        (v) 40da9ca1-8e06-4338-8c74-d73629e884b1 : numéro différent entre le profil et l'authentification après un changement
+        (v) 7810ceda-7170-4e17-8447-1e8559ed7f85 : numéro différent entre le profil et l'authentification après un changement
+        (v) 88233952-5e75-40b6-b5b4-0d1825fbf95c : numéro différent entre le profil et l'authentification après un changement
+    Première apparition : verify.log:37954, dans la suite lot9bis-verrou-numero. Elle est absente de toutes les suites
+    qui la précèdent (ordre alphabétique) et présente dans les 25 suites suivantes qui appellent assertLot9Invariants.
+
+3b. tests/parcours/notif-admin.test.ts (ok=15 notok=6). Suite adaptée en T32, mais le cas qui casse n'est PAS touché
+    par T32.
+    Cas : « statut FAILED : uniquement des FAILED, les 3 de la suite en tête (created_at DESC), can_retry vrai ; compteurs
+    par statut ».
+    Erreur brute : error: 'can_retry vrai pour une ligne FAILED' (expected: true, actual: false)
+    Lieu : notif-admin.test.ts:240. La ligne est d'avant le lot (git blame) et inchangée.
+    Mécanisme : la liste ?status=FAILED&pageSize=50 est globale. Or can_retry = (status = 'FAILED' AND origin = 'OUTBOX')
+    (supabase/migrations/20261103000008_lot6_supervision.sql:189). Une ligne FAILED d'origine SYNC_LOG, écrite par une
+    suite antérieure, fait donc tomber l'assertion.
+    Cause probable (non prouvée sans base) : tests/parcours/invitations-controleur-quota.test.ts:102. Cette suite RE neuve
+    passe avant notif-admin. Elle force getFakes().sms.rejectNext() sur l'invitation synchrone d'un contrôleur, ce qui
+    écrit un journal SYNC_LOG FAILED (lib/notifications/sync-log.ts:17), et son after() (:45) ne le retire pas.
+    Les autres cas rouges de notif-admin sont attendus (T32) : motifs EMAIL_NOT_VERIFIED, DEMO_ACCOUNT et
+    DEMO_GUARD_UNAVAILABLE sans libellé ; refus sans code PERMISSION_MISSING.
+    Correcteur : RE (retirer ou neutraliser sa ligne SYNC_LOG FAILED dans l'after() de invitations-controleur-quota). Ne
+    pas affaiblir notif-admin:240. À confirmer au prochain run.
+
+--- (2) ATTENDUES, MAUVAISE RAISON ---
+
+2.1 tests/parcours/lot9bis-verrou-numero.test.ts (ok=0 notok=6). Groupe RA, commit cd2e5714, test(9b.9).
+    Les 4 cas sont rouges pour la bonne raison : retrait accepté (« changement par la RPC : retrait ORGANISATEUR accepté
+    juste après un changement de numéro »), 200 au lieu de 423, et confirmPassword absent pour le cas 4.
+    MAIS la suite crée le défaut (v) qui casse son propre after() et celui de 24 autres suites :
+      error: |-
+        invariants (t)(u)(v) violés (lot9bis-verrou-numero) :
+        (v) 40da9ca1-… / (v) 7810ceda-… / (v) 88233952-… : numéro différent entre le profil et l'authentification après un changement
+    Lieu : lot9bis-verrou-numero.test.ts:110-119 (finalizePhone). La suite appelle account_phone_finalize directement par
+    le service_role, sans mettre auth.users à jour (la vraie route appelle GoTrue). Les 3 comptes viennent des cas 1 à 3.
+    Ce défaut restera APRÈS les correctifs : l'after() de cette suite et des suivantes restera rouge.
+    Correctif proposé : aligner auth.users avant l'appel, comme email-regle-envoi.test.ts:192
+    (service.auth.admin.updateUserById(id, { phone, phone_confirm: true })). Correcteur : RA.
+
+2.2 Cause B, quota d'inscription saturé (429 PARTNER_REGISTER_RATE_LIMITED). Correcteur : RB, propriétaire de
+    tests/parcours/helpers.ts.
+    Mécanisme : registerPartnerTwoStep (tests/parcours/helpers.ts:173-190) n'envoie aucun en-tête IP par défaut. Le
+    quota se compte dans le seau « unknown » (app/api/partner/register/route.ts:38). La CI le fixe à
+    PARTNER_REGISTER_PER_IP_HOUR=100 (.github/workflows/verify.yml:227). Chaque inscription coûte désormais deux unités
+    (appels 1 et 2), et le seuil est atteint à partir de dossier-partenaire-9bis. Le correctif fix(9b.17) n'y change rien.
+    Correctif proposé : une IP aléatoire par défaut dans registerPartnerTwoStep, comme le fait
+    ecritures-ignorees.test.ts:201 (/64 IPv6 aléatoire), ou un en-tête explicite dans chaque suite.
+    Suites touchées :
+    a) tests/parcours/partenaire-en-attente.test.ts (ok=0 notok=7). Suite RB neuve (R7), ENTIÈREMENT masquée : son
+       before() échoue et aucun des 4 cas ne s'exécute (« test did not finish before its parent and was cancelled »).
+         error: inscription, appel 1 : HTTP 429 {"error":"Trop de tentatives d’inscription depuis cette connexion. Réessayez plus tard.","code":"PARTNER_REGISTER_RATE_LIMITED","retryAfterSeconds":3117}
+         Lieu : partenaire-en-attente.test.ts:72 (registerPending), appelé par :93 (before)
+    b) tests/parcours/dossier-partenaire-9bis.test.ts (ok=0 notok=10). Suite RB neuve. R53-1 et R54 sont rouges pour la
+       bonne raison, mais R53-2, R53-3 et R90 sont masqués :
+         error: R53 : mauvais code : {"error":"Trop de tentatives d’inscription …","code":"PARTNER_REGISTER_RATE_LIMITED","retryAfterSeconds":3409} — 429 !== 400
+         error: inscription avec NINEA et RCCM : {…"PARTNER_REGISTER_RATE_LIMITED"…} — undefined !== 201
+         (R53-3 : « appel 2 avec le bon code : undefined », sans appel 2)
+    c) tests/parcours/otp-serveur.test.ts (ok=3 notok=2). Adaptation T38 (RB). Elle devait être rouge par l'appel 2 refusé.
+         error: 'inscription partenaire, appel 1 : HTTP 429 {…"PARTNER_REGISTER_RATE_LIMITED","retryAfterSeconds":3157}'
+    d) tests/parcours/email-optionnel.test.ts (ok=1 notok=4). Adaptation T38 par RG, qui utilise l'aide de RB.
+         Le cas 1 tombe sur : 'inscription partenaire, appel 1 : HTTP 429 …' — 429 !== 200 (email-optionnel.test.ts:82).
+         Le cas G53-10 est rouge pour la bonne raison (réponse 4.6 absente).
+
+2.3 Cause C, contexte de route mal monté (routeContext = { params: Promise }) sur des routes qui lisent params.id de
+    façon synchrone.
+    a) tests/parcours/versements-frais.test.ts (ok=1 notok=11). Groupe RVH, commit af3b8768, test(9b.H7). Correcteur : RVH.
+         error: annulation par la partenaire : HTTP 404 {"error":"Événement introuvable.","code":"EVENT_NOT_FOUND"} — 404 !== 200 (H7-c, H7-d)
+         error: annulation par l’administration : HTTP 404 {…"EVENT_NOT_FOUND"} — 404 !== 200 (H7-e)
+         Lieux : versements-frais.test.ts:149 et :161 (routeContext({ id })). Les routes concernées lisent params.id sans
+         await : app/api/partner/events/[id]/cancel/route.ts:24-27 et app/api/admin/events/[id]/cancel/route.ts:23-30.
+         Correctif proposé : { params: Object.assign(Promise.resolve(p), p) }, comme versements-reprise.test.ts:99-100.
+         Les autres cas (H7-b, H7-f, H6-a à H6-c) sont rouges pour la bonne raison : colonnes samirpay_* absentes, 400
+         classé ECHOUE.
+    b) tests/parcours/textes-base-9bis.test.ts (ok=1 notok=23). Groupe RE, commit b5eafc3b, test(9b.41). Correcteur : RE.
+         Deux erreurs de montage ou de données :
+         - R104, fiche publique (2 cas) : error: fiche publique : HTTP 404 {"error":"Événement introuvable."} — 404 !== 200
+           Lieu : textes-base-9bis.test.ts:147 (publicSheet, routeContext). La route app/api/events/[id]/route.ts:53-56
+           lit params.id de façon synchrone, et isEventId(undefined) rend 404. Correctif : le contexte de
+           canaux-vente.test.ts:190.
+         - R104, kind INVITATION/TRANSFER : error: un transfert d’invitation en attente — 0 !== 1 (textes-base-9bis.test.ts:191).
+           Cause : markPhoneVerified(recipient) est appelé AVANT ticket_invitation_create (:182). Un numéro qui
+           correspond à un compte reçoit le billet directement, sans transfert
+           (supabase/migrations/20261108000002_lot9_invitations.sql:455-475, v_account IS NULL seulement). Correctif :
+           vérifier le numéro après l'invitation, comme messages-sms-9bis.test.ts:238.
+         Les autres cas (R80, R92, R105, R84, R86, R67, R100, R75) sont rouges pour la bonne raison.
+
+2.4 Cas isolés, groupe RD :
+    a) tests/parcours/messages-sms-9bis.test.ts (ok=0 notok=14). Commit e63fcbfa, test(9b.40). Correcteur : RD.
+         Cas « acceptation d'une invitation échue : 410 TRANSFER_EXPIRED » :
+         error: échéance passée : new row for relation "ticket_transfers" violates check constraint "chk_ticket_transfers_dates" (code 23514)
+         Lieu : messages-sms-9bis.test.ts:239-241. La suite met expires_at à maintenant − 60 s sans reculer created_at, ce
+         que refuse CHECK (expires_at > created_at) (supabase/migrations/20260908000001_ticket_transfers_p2p.sql:50). La
+         donnée ne pourra pas passer même après les correctifs. Correctif : reculer aussi created_at, comme
+         notif-transferts.test.ts:366.
+         Les autres cas (R29, R31, R27, R28) sont rouges pour la bonne raison.
+    b) tests/parcours/messages-comptes-9bis.test.ts (ok=2 notok=12). Commits b5efb17c et 599bd7bb, test(9b.34). Correcteur : RD.
+         Cas R23 : error: 'titre de test « Transfert revoque 8fe0 » : 20 caractères GSM-7 au plus'
+         Lieu : messages-comptes-9bis.test.ts:208 publishedEvent('Transfert revoque'). « Transfert revoque » plus un
+         suffixe de 5 caractères font 22 caractères, et shortTitle (:73) en exige 20 au plus. Le cas ne s'exécute jamais.
+         Correctif : un libellé de 15 caractères au plus.
+         Les autres cas (R22, R59 PGRST202, R79) sont rouges pour la bonne raison.
+    c) tests/parcours/messages-acteurs-9bis.test.ts (ok=2 notok=8). Commits 429ab6a8 et 3f19eb43, test(9b.33). Correcteur : RD.
+         Cas R33 annulation : error: invitation d'un client comme contrôleur : HTTP 201 {"success":true,"assignments":[…]} — 201 !== 200
+         Lieu : messages-acteurs-9bis.test.ts:156 (assert.equal(invite.status, 200)). Le contrat fixé par RC rend 201 à
+         la création de l'invitation : dette-retrait-controleur:295-300 garde 201, et cycle9bis-equipe.test.ts:128
+         accepte 200 ou 201. Le cas restera donc rouge après fix(9b.26). Correctif : accepter 201, ou 200 et 201 comme
+         RC, et garder l'assertion du message.
+         Les autres cas (R15, R33 suspension et lieu) sont rouges pour la bonne raison (types absents).
+
+Remarque sur la cause A : 20 autres suites rouges (classées (1) ou (2)) ont, en plus, leur after() rouge par (v) au
+lieu de la garde de schéma :
+  messages-acteurs-9bis, messages-annulation-9bis, messages-changement-9bis, messages-comptes-9bis, messages-fin-9bis,
+  messages-sms-9bis, mot-de-passe-recent, paiement-attente-9bis, paiement-init-relance, paiement-prix-minimum,
+  paiement-reservation-v12, paiement-succes-tardif-v12, paiement-webhook-signature, partenaire-en-attente,
+  textes-base-9bis, textes-pdf-9bis, versements-frais, versements-reprise, migration-lot9bis-rejouable,
+  lot9bis-verrou-numero (la source).
+
+================================================================================================
+CAS (1) — ATTENDUES, BONNE RAISON (une ligne par suite ; [n] = ok/notok du triage brut)
+================================================================================================
+Abréviations : « route absente » = Cannot find module app/api/… ; « confirmPassword » = route
+/api/account/password-confirm absente (R57, fix(9b.13)) ; « garde » = after() rouge sur la garde de schéma du lot 9 bis
+(29 objets manquants), attendue jusqu'à M12.
+
+parcours/acces-caisse-pin [19/2] T47 : ouverture sans PIN acceptée (200 au lieu de 400 PIN_REQUIRED), acces-caisse-pin.test.ts:482.
+parcours/acces-limiteurs [23/2] T39 : /api/auth/login absente (route absente).
+parcours/acces-qr [13/2] T34 : confirmPassword.
+parcours/acces-totp [16/2] T34 : confirmPassword.
+parcours/admin-remboursements [2/16] T16 : liste au format 4.1 absente (ids de cashout absents, total et since absents, 4 lignes au lieu de 6 dans l'oracle), RefundsToRetry sans « Renvoyer ».
+parcours/attribution-roles [2/2] T38 : appel 2 refusé, car l'appel 1 crée déjà le compte (400 INVALID_DOCUMENT_UPLOAD « Pièce « id_card » déjà utilisée », et non le 409 annoncé par RB : même cause, autre code).
+parcours/audit-transactionnel [1/8] neuve 9b.19 : actions acceptées sans journal (200), route mark-paid absente, garde.
+parcours/commissions-fin-evenement [1/8] neuve 9b.7 : available_at = confirmation + 7 j, referral_commissions_realign absente ; témoin 4a vert, garde.
+parcours/compte-mot-de-passe [0/12] neuve 9b.42 : /api/account/password absente, PasswordChangeDialog absent, garde.
+parcours/compte-numero [10/48] T35 : confirmPassword (40 cas).
+parcours/compte-profil [14/22] T36 : confirmPassword (16 cas).
+parcours/confirmation-achat [23/8] T34 et T59 : colonne users.email_verified_at absente (M10), confirmPassword.
+parcours/connexion-serveur [2/9] neuve 9b.14 : /api/auth/login absente, resolve-phone rend encore email, userId, status et role ; garde.
+parcours/controleur-9bis [0/8] neuve 9b.18 : activation d'un compte suspendu (200), affectation partielle acceptée, SELF_TRANSFER accepté, confirmPassword ; garde.
+parcours/course-annulation-transfert [0/6] T34 et T58 : confirmPassword.
+parcours/course-verrous-lot9 [10/2] T34 : confirmPassword (cas 3).
+parcours/course-verrous-lot9bis [0/5] neuve 9b.23 : scan rendu « valid » au lieu de transfer_pending, TICKET_NOT_TRANSFERABLE ; garde.
+parcours/cycle-cron [8/3] T43 : fin par défaut à 23:59 et non début + 6 h.
+parcours/cycle-transitions [31/2] T41 : table des transitions sans SUSPENDU→TERMINE ADMIN.
+parcours/cycle9bis-annulation-en-cours [0/4] neuve 9b.27 : in_progress et used_online absents, avertissement absent ; garde.
+parcours/cycle9bis-billet-pdf [0/3] neuve 9b.29 (statique) : valeurs inventées encore présentes, lectures { data } sans contrôle d'erreur.
+parcours/cycle9bis-caisse [1/13] neuve 9b.22 : open_shift absent, CashTab sans « Fermer », PIN facultatif, SHIFT_OPEN_AT_END absent ; témoin vert, garde.
+parcours/cycle9bis-carte-billet [0/9] neuve 9b.24 : codeVisible, price et serviceFee absents de GET /api/tickets ; garde.
+parcours/cycle9bis-cloture-admin [1/9] neuve 9b.20 : TRANSITION_NOT_ALLOWED (ligne SUSPENDU→TERMINE absente) ; témoin vert, garde.
+parcours/cycle9bis-equipe [0/15] neuve 9b.26 : rôle posé tout de suite (201), table controller_invitations absente (PGRST205), route controller-invitations absente ; garde.
+parcours/cycle9bis-fenetre-scan [1/10] neuve 9b.21 : champ scan absent, scanner sur isEventEligibleForController, scan/state absente ; garde.
+parcours/cycle9bis-soumission-fiche [0/12] neuve 9b.25 : message « complétez-le », endFormatted absent, soumission acceptée ; garde.
+parcours/cycle9bis-transfert [0/18] neuve 9b.23 : route decline absente, confirmPassword, bascule « Reçus » absente ; garde.
+parcours/cycle9bis-ventes-canal [0/4] neuve 9b.28 : by_channel absent, « Par canal » absent ; garde.
+parcours/decouverte-recherche-lot9bis [2/9] neuve 9b.45 : lib/text/fold absent, recherche sensible aux accents ; témoins verts, garde.
+parcours/design-systeme [333/14] T3 (section 10) : 6 .tsx du lot absents (13 cas, comme annoncé par R0).
+parcours/dette-annulation-transferts [0/7] T34 : confirmPassword.
+parcours/dette-retrait-controleur [12/2] T49 : affectation posée sans invitation en attente (:300).
+parcours/dette-transferts [9/18] T34 : confirmPassword (13 cas).
+parcours/documents-inscription [2/5] T38 : appel 2 refusé (400 « Pièce « id_card » déjà utilisée », voir attribution-roles).
+parcours/double-paiement [10/3] T18 : route cashouts/[id]/resend absente, compteur cashouts_resumed absent.
+parcours/droits-admin-9bis [5/9] neuve 9b.11 : un ADMIN crée, promeut, rétrograde et suspend un ADMIN (200) ; garde.
+parcours/droits-boutons-9bis [1/14] neuve 9b.12 : can_cancel présent, admin_permissions absent, refus sans code, hasPermission absent ; garde.
+parcours/droits-partenaire-9bis [0/32] neuve 9b.11 : un ADMIN sans permission obtient 200 (deux routes répondent 500 au format assignments[]), OWNER_ONLY ; garde.
+parcours/ecritures-ignorees [11/3] T38 : appel 2 refusé (400 « Pièce déjà utilisée » ; contrat 4.2 : 201).
+parcours/edition-validation [20/2] T45 : fin de vente bornée à 23:59 et non à début + 6 h.
+parcours/email-regle-envoi [2/30] neuve 9b.49 à 9b.53 : EMAIL absent du catalogue et du registre, colonne email_verified_at absente (PGRST204), libellés absents ; 2 gardes vertes, garde de schéma.
+parcours/email-verification [1/38] neuve 9b.47 et 9b.48 : textes absents, routes email/resend et verify absentes, confirmPassword, lien de récupération fabriqué ; R87-c : appel 2 refusé (400 « Pièce déjà utilisée ») ; témoin 401 vert, garde.
+parcours/equipe-eligibilite [16/2] T49 : rôle CONTROLEUR posé sans invitation en attente.
+parcours/essai-check-reel [0/6] neuve I2 : demo_account et essai_check_reel absents (M12) ; garde.
+parcours/essai-comptes-demo [0/10] neuve I1 : colonne demo_account absente (PGRST204), M12 absente ; garde.
+parcours/essai-seed-dev-9bis [0/6] neuve 9b.44 : aucune permission sur l'admin du seed, essai de 90 j ; garde.
+parcours/essai-seed-dev [11/2] T63 : users.demo_account absente (42703).
+parcours/fiche-partenaire-9bis [1/13] neuve 9b.15 : transitions interdites acceptées, PartnerStatusDialog absent ; garde.
+parcours/finance-commissions [6/3] T21 : available_at = confirmation + 7 j.
+parcours/finance-remboursement-billet [4/2] T27 : ADMIN sans refunds.manage obtient 200.
+parcours/finance-retraits [14/2] T22 : disponibilité à début 23:59 + 48 h, et non début + 6 h + 48 h.
+parcours/inscription-numero-dabord [15/2] T60 : adresse saisie écrite directement (aucune adresse technique).
+parcours/invitation-identite [4/2] T49 : rôle posé à la confirmation (201 avec affectation).
+parcours/invitations-annulation [10/2] T56 : aucun TICKET_CANCELLED (type absent).
+parcours/invitations-controleur-quota [0/5] neuve 9b.43 : 429 à la 4ᵉ affectation, unité comptée à la confirmation et non rendue ; garde (voir aussi 3b pour l'effet de bord).
+parcours/invitations-reclamation [8/2] T34 : confirmPassword.
+parcours/invitations [36/2] T57 : ni in-app ni push au compte vérifié.
+parcours/lectures-ignorees [19/2] T61 : 404 « Aucun compte n'est associé… » au lieu de 200 neutre.
+parcours/legacy-exports-partenaire [11/2] T62 : en-têtes sans accents.
+parcours/lot9bis-abonnement [0/4] neuve 9b.8 : le paiement remet le dossier VALIDE, abonnement d'un dossier REJETE accepté (201) ; garde.
+parcours/lot9bis-fonds-suspension [1/14] neuve 9b.2 : retrait accepté (pas de FUNDS_FROZEN), clé frozen absente, pas de cascade, republication acceptée ; témoin vert, garde.
+parcours/lot9bis-guichet-annulation [0/8] neuve 9b.4 : routes cash-refunds absentes, counter et counter_cash absents ; garde.
+parcours/lot9bis-invariant [0/62] neuve infra : chaque cas tombe sur un objet absent ou sur « schéma du lot 9 bis incomplet » (aucune erreur Postgres brute).
+parcours/lot9bis-remboursement-fin [2/5] neuve 9b.3 : remboursement après la fin accepté (200), refund_closed_reason absent ; 2 témoins verts, garde.
+parcours/lot9bis-report [0/10] neuve 9b.5 : route tickets/[id]/refund absente, postponementRefund absent, table event_start_changes absente ; garde.
+parcours/lot9bis-retrait-devis [0/7] neuve 9b.10 : code envoyé sans contrôle du montant (200), withdrawal_min_amount absent ; garde.
+parcours/messages-annulation-9bis [0/8] neuve 9b.30 et 9b.31 : aucune ligne aux numéros sans compte, aide absente, confirmPassword ; after() rouge par (v) (cause A).
+parcours/messages-changement-9bis [2/14] neuve 9b.32 et 9b.36 : EVENT_CHANGED encore OPTIONAL (QUIET_HOURS, PREFERENCE_DISABLED, SMS_OPTIONAL_CAP), types ADMIN_EVENT_CHANGED et EVENT_SUBMITTED_ACK absents ; after() (v).
+parcours/messages-fin-9bis [1/7] neuve 9b.37 : EVENT_FINISHED, SHIFT_OPEN_AT_END et FUNDS_AVAILABLE absents, TICKET_SCANNED non regroupé ; after() (v).
+parcours/mot-de-passe-recent [0/11] neuve 9b.13 : route password-confirm absente, actions sensibles acceptées sans confirmation (200) ; after() (v).
+parcours/notif-canaux [28/8] T53 : SMS en UCS-2 (Gala 日本), email_verified_at absente (M10), adresse @deleted.eventvillage.sn envoyée (SENT).
+parcours/notif-migration [23/4] T37 : types, RPC et triggers nouveaux absents du registre et des fonctions.
+parcours/notif-modeles [10/21] T51 : types absents du catalogue (REFUND_DELAYED…), textes, smsVar, refund_mode inconnu (TemplateDataError annoncée par RD).
+parcours/notif-outbox [34/6] T52 : registre incomplet, colonne email_verified_at absente.
+parcours/notif-preferences [14/2] T54 : libellé du sujet EVENT_UPDATES.
+parcours/notif-pros [24/3] T25 et T38 : appel 2 refusé (400 « Pièce déjà utilisée »), TRIAL_STARTED encore en SMS.
+parcours/notif-rappels-annulation [9/2] T34 : confirmPassword.
+parcours/notif-reglages [4/9] T55 : clé notif.sms_essential_daily_alert absente (M01).
+parcours/notif-transferts [3/11] T34 : confirmPassword (7 cas).
+parcours/paiement-attente-9bis [1/10] neuve 9b.6 : second paiement accepté (200), bandeau et bouton absents, PAYMENT_REFUND_STARTED et REFUND_DELAYED absents ; témoin vert ; after() (v).
+parcours/paiement-attente-lot7 [11/2] T20 : 200 au lieu de 409 tant que le premier paiement est PENDING.
+parcours/paiement-init-relance [1/6] neuve H4 : aucune relance au même orderId (1 appel au lieu de 2) ; témoin e vert ; after() (v).
+parcours/paiement-prix-minimum [1/6] neuve H8 : finance.min_paid_price absente, texte de l'erreur 500 différent ; témoin vert ; after() (v).
+parcours/paiement-reservation-v12 [0/7] neuve H2 : clé finance.payment_hold_minutes inconnue (UNKNOWN_KEY), textes absents ; after() (v).
+parcours/paiement-succes-tardif-v12 [2/7] neuve H5 et H1 : FAILED définitif jamais relu ; 2 témoins verts ; after() (v).
+parcours/paiement-webhook-signature [3/7] neuve H3 : signature non vérifiée, signature_present absent ; témoins 5, 6 et 8 verts ; after() (v).
+parcours/pilotage-acces [11/2] T26 : ADMIN sans permission obtient 200.
+parcours/pilotage-apercu-ventes [9/2] T29 : ADMIN sans permission obtient 200.
+parcours/pilotage-equipe-caisse [7/2] T31 : OWNER_ONLY au lieu de PERMISSION_MISSING.
+parcours/pilotage-remboursement-billet [15/2] T28 : ADMIN sans refunds.manage obtient 200.
+parcours/remboursement-relance [0/6] T17 : route cashouts/[id]/resend absente.
+parcours/scanner-reprise [29/3] T46 : scan.open et scan/state absents.
+parcours/securite-admin-lot7 [12/2] T19 : route cashouts/[id]/resend absente.
+parcours/textes-pdf-9bis [0/5] neuve 9b.41 : textes du PDF sans accents ; after() (v).
+parcours/textes-sms-9bis [1/14] neuve 9b.41 (sans base) : préfixe, textes M11 à M17, « 1 autres », « .... », « change de lieu » ; 1 témoin vert (9 rouges annoncés, 9 constatés).
+parcours/versements-reprise [0/15] neuve 9b.1 : routes resend et mark-paid absentes, retraits et lignes de plus de 30 min absents de la liste, retrait d'un compte suspendu versé ; after() (v).
+samirpay-contrat [3/12] T13 : client v1.0 (qrCode, urls.OM, errorMessage B, solde, 409 → REJECTED, existingTransactionId) ; 3 verts comme annoncé.
+schema/essai-check-reel [0/22] neuve I2 : scripts/dev/essai-check-reel.mjs absent, ligne package.json absente.
+schema/essai-comptes-demo [0/17] neuve I1 : lib/notifications/demo-guard.ts absent, M12 absente, libellés absents.
+schema/essai-faux-samirpay [13/2] T15 : qrCode du faux HTTP en URL (v1.0) ; 11 cas sur 12 verts, comme annoncé.
+schema/essai-reel-demarrage [0/27] neuve I3 : lib/integrations/real-mode.ts absent (24 cas).
+schema/migration-lot9bis-rejouable [0/15] neuve infra : « migration du lot 9 bis absente » (aucune des 12) ; after() (v).
+schema/recette-matrice [20/3] T4 : écart WhatsApp absent, essais 1 à 69 au lieu de 76, bannière promise à l'essai 1 ; citations vertes.
+schema/samirpay-v12-statique [0/9] neuve H3 : lib/samirpay/webhook-signature.ts absent, corps non lu en octets.
+schema/textes-techniques-9bis [2/44] neuve 9b.41 et 9b.46 : termes et textes écartés encore présents, glossaire et INVALID_SN_PHONE_MESSAGE absents ; témoin R81 vert.
+security/r22-reglages-notif [2/2] T55 : clé notif.sms_essential_daily_alert absente.
+security/r28-middleware-matrice [17/2] T40 : /verify-email redirigée (307) et /api/account/email/verify en 401.
+security/r3-fonctions-rpc [391/36] T2 : les 35 RPC du lot rendent PGRST202 au lieu de 42501 (35 cas, comme annoncé par R0).
+security/r7-profil-colonnes [4/2] T64 : colonne demo_account absente.
+(Total des lignes (1) : 110.)
+
+================================================================================================
+CONTRÔLES DEMANDÉS — DÉTAIL
+================================================================================================
+1. Suites annoncées vertes (verify.log) :
+   tests/schema/migrations-gelees.test.ts PASS · tests/schema/documents-prives.test.ts PASS · tests/schema/ordre-suites.test.ts PASS
+   tests/schema/rls-toutes-tables.test.ts PASS · tests/schema/fonctions-privileges.test.ts PASS
+   T14 (faux SamirPay enrichi) : aucune suite existante qui l'emploie, hors section 9, n'est rouge. essai-integrations
+   (X14) PASS.
+   Autres « vérifiées sans modification » : planification-crons, migration-lot6, lot7 et lot8-rejouable, cycle-annulation,
+   admin-evenements (T42), essai-simule (signalé par RVH) et notif-controleurs (signalé par RC) sont PASS.
+   migration-lot9-rejouable et nettoyage-sur-place (T48) sont rouges, uniquement par la cause A (cas 3a).
+   Annoncées rouges en section 10 mais vertes, comme l'avaient dit les écrivains : otp-objet (T23, Zod ignore amount),
+   dette-suspendu-temps-reel (T24, pas de cascade), pilotage-cloture-export (T30, aucun cas négatif), partenaire-lot7
+   (T33), cycle-visibilite (T44), statut-compte (T38, non modifiée). Aucune conséquence.
+   Suite nouvelle verte : documents-prives seulement, comme annoncé.
+
+2. [INVARIANT-LOT9BIS] (verify.log, 1650 lignes) : il y a 55 appels, et chacun s'arrête sur « schéma du lot 9 bis
+   incomplet : 29 objet(s) manquant(s) ». On compte 0 ligne « (w) : n violation(s) » et 0 ligne w1 à w21. w8 à w11 et w17
+   sont donc NON ÉVALUÉS : vides par construction, ce qui n'en fait pas une preuve de vacuité. Ils se liront au premier
+   run où M02 à M12 sont présentes.
+   Autres invariants : [INVARIANT], -FIN, -ACCES, -CYCLE, -NOTIF, -TERRAIN et -RECETTE sont à 0 partout. Les seules
+   exceptions sont les deux violations fabriquées exprès par pilotage-invariant (verify.log:49291 et :49300, test
+   « détecte une divergence fabriquée », vert).
+   [INVARIANT-LOT9] (t)(u)(v) : 3 violations (v) dans 25 suites, à partir de lot9bis-verrou-numero (cause A).
+   L'e2e est à 0 partout, y compris [INVARIANT-LOT9] recette-admin : 0.
+
+3. e2e (ci-run118-e2e.log) :
+   - Captures : « index des captures : 379 entrée(s), 32 en échec ». Les 32 se répartissent en 16 sur mobile et 16 sur
+     desktop :
+       7 écrans nouveaux × 2 thèmes : verification-email, confirmation-mot-de-passe, invitation-controleur,
+       mes-billets-recus-refuser, profil-email-non-verifie, profil-mot-de-passe, pilotage-especes-a-rembourser ;
+       plus scanner-transfert-en-cours (nouveau, sombre) et caisse-ouverture (existant, modifié en T9, sombre).
+     Chaque échec tombe sur l'élément annoncé par R-E2E : texte ou bouton absent (attente de 15 à 30 s), statut HTTP du
+     document pour invitation-controleur (404, :253 de captures.spec), aria-required ou « facultatif » pour
+     caisse-ouverture, data-scan-result pour le scanner. C'est conforme : 32 annoncés, 32 constatés.
+   - ÉCART E1 (non attendu au sens du contrat : « captures existantes vertes ») : les 3 écrans fumee-superadmin
+     (admin-versements-marquer-verse, admin-fiche-partenaire-suspendre et l'EXISTANT admin-remboursements-a-reprendre)
+     n'ont pas tourné. On ne trouve aucune occurrence dans ci-run118-e2e.log. ROLE_ORDER, en e2e/captures.spec.ts:60,
+     ne contient pas 'fumee-superadmin'. La capture existante disparaît sans être signalée, ce qui affaiblit le
+     contrôle. R-E2E l'avait signalé comme bloquant. Correcteur : R-E2E en vague F, ou l'orchestrateur, avec une ligne
+     à ajouter à ROLE_ORDER. À trancher avant le run « après ».
+   - Recette actes 1 à 9 : 9 passed. Phases fumee, terrain, pwa, perf, emails et dev-page : OK.
+   - fake-prod : ÉCHEC, attendu par RI (T12, rouge jusqu'à fix(9b.I3)). Les lancements production et development sont
+     « conforme ». Le troisième lancement échoue : « réel sans https : serveur démarré en réel avec NEXT_PUBLIC_APP_URL en
+     http : le refus de démarrer (I3) n'a pas eu lieu ». C'est la bonne raison.
+
+4. Durée et budget : job_elapsed_s = 2793 (46,5 min), pour une limite de 75 min (verify.yml:28). L'étape verify prend
+   949 s. L'étape e2e prend 1566 s, pour une limite de 65 min : captures 1134 s, perf 189 s, terrain 126 s, recette
+   66 s. L'estimation du chore(9b.ci), de 52 à 58 min, était prudente : la marge est d'environ 28 min.
+   js-budget : les 5 routes sont OK, mais « / » fait 216802 octets pour un budget de 217000, soit une marge de
+   198 octets. C'est un risque pour les écrans de la vague E (/tickets : 239012 pour 241000).
