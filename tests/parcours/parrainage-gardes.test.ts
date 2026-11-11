@@ -2,7 +2,7 @@
  * Lot 8, tâche 8.3 d, anomalie A11 (contrat 13.4, CDC §104) — preuve de l'anti-fraude du parrainage : auto-parrainage
  * et boucles, sans test jusqu'ici. GARDE-FOUS ANNONCÉS VERTS DÈS L'ÉCRITURE (AR7) : le code n'est pas changé, tout rouge
  * est une anomalie à instruire.
- *  1. inscription avec son propre code : compte créé, aucune relation ; témoin : le code d'un autre crée la relation ;
+ *  1. inscription avec son propre code : refusée comme code inconnu (lot 9 bis, R86), aucun compte ; témoin : le code d'un autre crée la relation ;
  *  2. base : chk_no_self_referral refuse sponsor = filleul ;
  *  3. boucles, trigger check_no_circular_referral : A → B → A et A → B → C → A refusées ; la chaîne A → B → C reste
  *     permise (témoin) ;
@@ -87,11 +87,11 @@ function clientOf(user: Buyer) {
 }
 
 describe('A11 — auto-parrainage (§104)', () => {
-    test('inscription avec son propre code : compte créé, aucune relation', async () => {
+    test('inscription avec son propre code : refusée comme code inconnu (lot 9 bis, R86, B87), aucun compte, aucune relation', async () => {
         const { phone, code } = await phoneWithFreeCode();
-        const flow = await registerClientFlow({ phone, referralCode: code, headers: freshIp() });
-        assert.equal(await codeOwner(code), flow.userId, 'précondition : le code saisi est bien celui du nouveau compte');
-        assert.deepEqual(await relations(flow.userId!), [], 'aucune relation vers soi-même');
+        const flow = await registerClientFlow({ phone, referralCode: code, headers: freshIp() }, { expectOk: false });
+        assert.equal(flow.start.status, 200, `démarrage : ${JSON.stringify(flow.start.body)}`); assert.equal(flow.register?.status, 400, `code encore à personne : ${JSON.stringify(flow.register?.body)}`); assert.equal(flow.register?.body.code, 'REFERRAL_CODE_UNKNOWN');
+        assert.equal(flow.userId, null, 'aucun compte créé'); assert.equal(await codeOwner(code), null, 'le code saisi n’est toujours à personne : pas de compte qui se parraine lui-même');
     });
 
     test('témoin : le code d’un autre compte crée la relation', async () => {
