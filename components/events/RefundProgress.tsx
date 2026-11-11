@@ -5,6 +5,7 @@ import { BadgeCheck, Banknote, Hourglass, RefreshCw, RotateCcw, SearchCheck, Wal
 import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { formatFcfa, formatInteger } from '@/lib/format';
 import { useServerData } from '@/components/partner/useServerData';
 
@@ -16,6 +17,8 @@ import { useServerData } from '@/components/partner/useServerData';
  * espèces que l'organisateur rembourse lui-même. Aucun calcul dans le navigateur.
  * Lot 9 bis (R20, B22, contrat 5.4) : `counter_cash` (ventes au guichet, montant rendu et coché « Remboursé » dans
  * la liste des espèces du pilotage).
+ * Lot 9 bis (B9, contrat 5.1) : `delayed` (remboursements de l'événement présents dans « Versements à reprendre »)
+ * donne le bandeau « Retardé : l’équipe Event Village s’en occupe » ; il recoupe les autres compteurs, il ne s'y ajoute pas.
  */
 
 export interface RefundProgressProps {
@@ -35,6 +38,8 @@ interface CancellationProgress {
     verifying: CountAndTotal;
     to_retry?: CountAndTotal;
     organizer_cash: CountAndTotal;
+    /** Lot 9 bis (B9) : remboursements présents dans « Versements à reprendre » (bloqués, échoués ou en retard). */
+    delayed: CountAndTotal;
     /** Lot 9 bis (R20, B22) : ventes au guichet à rendre par l'organisateur, et celles cochées « Remboursé ». */
     counter_cash: CountAndTotal & { refunded_count: number; refunded_total: number };
 }
@@ -81,6 +86,13 @@ export function RefundProgress({ eventId, isAdmin, className }: RefundProgressPr
 
             {!loading && !error && progress && (
                 <div className="flex flex-col gap-3">
+                    {progress.delayed.count > 0 && (
+                        <StatusBanner tone="warning" title="Retardé : l’équipe Event Village s’en occupe">
+                            <p className="tabular-nums">
+                                {`${refundsHint(progress.delayed)} (${formatFcfa(progress.delayed.total)}) : versement retardé, repris par l’équipe Event Village. Rien n’est à faire de votre côté.`}
+                            </p>
+                        </StatusBanner>
+                    )}
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         <KpiCard label="Versés" value={formatFcfa(progress.paid.total)} hint={refundsHint(progress.paid)} tone="success" icon={<BadgeCheck size={18} />} />
                         <KpiCard label="En cours" value={formatFcfa(progress.in_progress.total)} hint={refundsHint(progress.in_progress)} tone="info" icon={<Hourglass size={18} />} />
