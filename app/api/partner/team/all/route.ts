@@ -345,29 +345,17 @@ export async function DELETE(req: NextRequest) {
             partnerId = p.id;
         }
 
-        // 2. Récupérer les événements appartenant à ce partenaire
-        let eventsQuery = supabase.from('events').select('id, title');
-        if (partnerId) {
-            eventsQuery = eventsQuery.eq('partner_id', partnerId);
-        }
-        const { data: partnerEvents, error: evErr } = await eventsQuery;
-        if (evErr) {
-            console.error('[DELETE team/all] events query error:', evErr.message);
-            return NextResponse.json({ error: 'Impossible de récupérer les événements du partenaire.' }, { status: 500 });
-        }
-
-        if (!partnerEvents || partnerEvents.length === 0) {
-            return NextResponse.json({ success: true, message: 'Aucun événement pour ce partenaire.' });
-        }
-
-        const partnerEventIds = partnerEvents.map(e => e.id);
-
-        // 3. Trouver les assignations de ce contrôleur pour ces événements exclusivement
-        const { data: assignmentsToDelete, error: aErr } = await supabase
+        // 2-3. Affectations de ce contrôleur, limitées aux événements du partenaire par une jointure (lot 9 bis,
+        //      reste S3 : la liste de tous les identifiants d'événements passée en filtre `in` dépassait la longueur
+        //      d'URL de PostgREST pour un admin, « URI too long », 500) ; un admin agit sur toutes les équipes.
+        let assignmentsQuery = supabase
             .from('event_controllers')
-            .select('id, event_id')
-            .eq('user_id', controllerId)
-            .in('event_id', partnerEventIds);
+            .select('id, event_id, events!inner(partner_id)')
+            .eq('user_id', controllerId);
+        if (partnerId) {
+            assignmentsQuery = assignmentsQuery.eq('events.partner_id', partnerId);
+        }
+        const { data: assignmentsToDelete, error: aErr } = await assignmentsQuery;
 
         if (aErr) {
             console.error('[DELETE team/all] event_controllers query error:', aErr.message);
