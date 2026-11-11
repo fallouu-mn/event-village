@@ -4,7 +4,7 @@ import { randomInt } from 'crypto';
 import crypto from 'crypto';
 import { requireActiveSession, serverIsPartner, serverHasRole, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
+import { INVALID_SN_PHONE_MESSAGE, phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
 import { maskPersonName } from '@/lib/security/mask';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { storeOtp } from '@/lib/auth/otp-store';
@@ -22,6 +22,19 @@ export const dynamic = 'force-dynamic';
 
 /** Fenêtre du quota INVITE_PER_PHONE_DAY (une journée), la même à la réservation et au rendu. */
 const PHONE_WINDOW_SECS = 86_400;
+
+/**
+ * Lot 9 bis (R75, D-txt 2) : raison d'un SMS d'activation non parti, dite en mots ; le code reste dans `sms_refusal`
+ * et au journal, jamais dans le message montré au partenaire.
+ */
+function smsRefusalReason(code: string | null): string {
+    switch (code) {
+        case 'SMS_RATE_LIMITED': return 'trop d’envois vers ce numéro aujourd’hui';
+        case 'SMS_ACCOUNT_LIMIT_REACHED': return 'limite d’envois de votre compte atteinte pour aujourd’hui';
+        case 'SMS_DAILY_CAP_REACHED': return 'limite d’envois de la plateforme atteinte pour aujourd’hui';
+        default: return 'le service SMS n’a pas confirmé l’envoi';
+    }
+}
 
 const InviteSchema = z.object({
     event_id:        z.string().uuid('ID événement invalide.').optional(),
@@ -94,7 +107,7 @@ export async function POST(req: NextRequest) {
         const e164 = toSenegaleseE164(phone);
         if (!e164) {
             return NextResponse.json({
-                error: 'Numéro de téléphone sénégalais invalide (ex : 77 123 45 67).',
+                error: INVALID_SN_PHONE_MESSAGE,
                 code: 'INVALID_PHONE',
             }, { status: 400 });
         }
@@ -508,7 +521,7 @@ export async function POST(req: NextRequest) {
                 : `${baseMsg} Aucune nouvelle affectation : aucun SMS n'est envoyé.`)
             : smsSent
                 ? `${baseMsg} SMS avec code d'activation envoyé.`
-                : `${baseMsg} SMS non envoyé (${smsRefusal ?? 'SMS_NOT_DELIVERED'}) : renvoyez l'invitation plus tard.`;
+                : `${baseMsg} SMS non envoyé : ${smsRefusalReason(smsRefusal)}. Renvoyez l’invitation plus tard.`;
 
         return NextResponse.json({
             success:      true,
