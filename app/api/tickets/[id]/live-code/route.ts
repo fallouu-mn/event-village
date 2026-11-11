@@ -31,7 +31,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 
     const { data: ticket, error } = await getServiceRoleClient()
         .from('tickets')
-        .select('id, user_id, status, totp_secret')
+        .select('id, user_id, status, totp_secret, transfer_locked')
         .eq('id', id)
         .maybeSingle();
     if (error) {
@@ -41,6 +41,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     if (!ticket || ticket.user_id !== session.user.id) return NextResponse.json({ error: 'Billet introuvable.' }, { status: 404 });
     if (ticket.status !== 'VALIDE') {
         return NextResponse.json({ error: 'Ce billet n’est plus valable à l’entrée.', status: ticket.status }, { status: 409 });
+    }
+    // Lot 9 bis (R19, B52) : un billet engagé dans un transfert en attente n'entre pas ; aucun code n'est servi.
+    if (ticket.transfer_locked === true) {
+        return NextResponse.json({ error: 'Ce billet est en cours de transfert.', code: 'TRANSFER_PENDING' }, { status: 409 });
     }
     const now = new Date();
     const code = generateTicketCode(ticket.id as string, String(ticket.totp_secret), now);

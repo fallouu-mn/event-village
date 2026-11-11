@@ -80,13 +80,22 @@ export interface TicketTransferRecord {
     from_user_id: string;
     to_user_id: string | null;
     to_phone_or_email: string;
-    status: 'PENDING' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED';
+    /** Lot 9 bis (R46, B55) : DECLINED, refusé par son destinataire. */
+    status: 'PENDING' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED' | 'DECLINED';
     claim_token_hash: string | null;
     created_at: string;
     expires_at: string;
     claimed_at: string | null;
     cancelled_at: string | null;
     expired_at: string | null;
+    declined_at: string | null;
+}
+
+export interface DeclineTransferResult {
+    transfer_id: string;
+    ticket_id: string;
+    /** TRANSFER : le billet reste à l'expéditeur ; INVITATION : l'invitation est annulée, la place rendue. */
+    kind: 'TRANSFER' | 'INVITATION';
 }
 
 /** Refus métier : statut HTTP, code stable et message destinés à l'utilisateur. */
@@ -143,6 +152,15 @@ const ACCEPT_REFUSALS: Record<string, { status: number; message: string }> = {
     TICKET_NOT_TRANSFERABLE: { status: 409, message: 'Ce billet n’est plus transférable.' },
     // Lot 7 (D20) : événement ni PUBLIE ni VALIDE (suspendu, annulé, terminé) au moment de l'acceptation
     EVENT_NOT_ACTIVE: { status: 409, message: 'Cet événement n’accepte plus de transfert.' },
+};
+
+/**
+ * Refus de ticket_transfer_decline (lot 9 bis, R46, contrat 4.3) : mêmes codes et mêmes statuts que l'acceptation
+ * (un tiers et l'expéditeur reçoivent la même réponse, aucune fuite) ; échu : texte de l'ex-10.0 d.
+ */
+const DECLINE_REFUSALS: Record<string, { status: number; message: string }> = {
+    ...ACCEPT_REFUSALS,
+    TRANSFER_EXPIRED: { status: 410, message: 'Ce billet ne peut plus être accepté : le délai est dépassé.' },
 };
 
 export class TicketTransferService {
@@ -234,6 +252,30 @@ export class TicketTransferService {
             event_title: String(body.event_title ?? ''),
             claimed_at: String(body.claimed_at),
         };
+    }
+
+    /**
+     * Refus d'un transfert par son destinataire (lot 9 bis, R46) : RPC ticket_transfer_decline, appel unique (un
+     * second essai après un commit serait refusé à tort). Transfert d'un particulier : DECLINED, billet rendu libre à
+     * l'expéditeur, prévenu ; invitation : billet annulé, place rendue. Refus identiques à ceux de l'acceptation.
+     */
+    public static async declineTransfer(userId: string, transferId: string): Promise<DeclineTransferResult> {
+        if (!userId) refuse('Authentification requise pour refuser un billet.', 401, 'UNAUTHENTICATED');
+        const { data, error } = await getServiceRoleClient().rpc('ticket_transfer_decline', {
+            p: { transfer_id: transferId, actor_id: userId },
+        });
+        if (error) throw new Error(`ticket_transfer_decline : ${error.code ?? ''} ${error.message}`);
+        const body = (data ?? null) as RpcReply | null;
+        if (!body) throw new Error('ticket_transfer_decline : réponse vide');
+        if (body.ok !== true) {
+            const code = String(body.code ?? '');
+            const refusal = DECLINE_REFUSALS[code];
+            if (!refusal) throw new Error(`ticket_transfer_decline : refus inattendu ${JSON.stringify(body)}`);
+            refuse(refusal.message, refusal.status, code);
+        }
+        const kind = body.kind;
+        if (kind !== 'TRANSFER' && kind !== 'INVITATION') throw new Error(`ticket_transfer_decline : réponse incomplète ${JSON.stringify(body)}`);
+        return { transfer_id: String(body.transfer_id ?? transferId), ticket_id: String(body.ticket_id ?? ''), kind };
     }
 
     /**

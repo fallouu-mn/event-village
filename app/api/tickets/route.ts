@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { eventEndAt } from '@/lib/events/event-end';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
@@ -33,6 +34,22 @@ export async function GET(req: NextRequest) {
         }
 
         const supabase = getServiceRoleClient();
+
+        // Lot 9 bis (R44, B56) : un transfert échu que le cron horaire n'a pas encore traité est expiré à la lecture
+        // (EXPIRED, verrou levé, avis TRANSFER_EXPIRED à la même clé que le cron), avant de lire les billets.
+        const { data: lockedRows, error: lockedErr } = await supabase
+            .from('tickets')
+            .select('id')
+            .eq('user_id', effectiveUserId)
+            .eq('transfer_locked', true);
+        if (lockedErr) throw new Error(`billets en cours de transfert : ${lockedErr.message}`);
+        if ((lockedRows ?? []).length > 0) {
+            const { data: expired, error: expireErr } = await supabase.rpc('ticket_transfers_expire', {
+                p: { ticket_ids: (lockedRows ?? []).map((r: { id: string }) => r.id) },
+            });
+            if (expireErr) throw new Error(`ticket_transfers_expire : ${expireErr.code ?? ''} ${expireErr.message}`);
+            if ((expired as { ok?: unknown } | null)?.ok !== true) throw new Error(`ticket_transfers_expire : réponse inattendue ${JSON.stringify(expired)}`);
+        }
 
         const { data: tickets, error } = await supabase
             .from('tickets')
@@ -121,7 +138,7 @@ export async function GET(req: NextRequest) {
             const dayNumber = String(startDate.getDate()).padStart(2, '0');
             const timeFormatted = t.events?.start_time ? t.events.start_time.substring(0, 5) : '20:00';
             const dateFormatted = `${dayNumber} ${monthShort} ${startDate.getFullYear()}`;
-            // Lot 5 : à venir tant que l'événement n'est pas fini (fin, ou début à 23:59 Dakar : event_end_at) ; un
+            // Lot 5 : à venir tant que l'événement n'est pas fini (fin, ou début + 6 h, lot 9 bis : event_end_at) ; un
             // billet pour ce soir n'est plus classé dans l'historique dès minuit UTC du jour.
             const isUpcoming = t.status === 'VALIDE' && Boolean(t.events?.start_date) && eventEndAt(t.events).getTime() >= Date.now();
             const activeTransfer = pendingTransfersMap[t.id] || null;
@@ -150,7 +167,6 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({ tickets: formatted });
     } catch (err: unknown) {
-        console.error('[API /api/tickets] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+        return apiFailure('GET /api/tickets', err, { message: 'Impossible de charger vos billets.', code: 'TICKETS_UNAVAILABLE' });
     }
 }

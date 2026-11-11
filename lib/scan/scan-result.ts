@@ -20,6 +20,8 @@ export const SCAN_RESULTS = [
     'qr_expired',
     'dynamic_qr_required',
     'manual_entry_refused',
+    // Lot 9 bis (R19, B52) : billet engagé dans un transfert en attente, refusé à l'entrée (rien de composté)
+    'transfer_pending',
     'rate_limited',
     'network_error',
     'server_error',
@@ -56,6 +58,7 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     qr_expired: 'QR expiré : demandez au client de rafraîchir son billet',
     dynamic_qr_required: 'QR dynamique requis (billet ouvert dans l’application)',
     manual_entry_refused: 'Saisie manuelle refusée',
+    transfer_pending: 'Transfert en cours',
     rate_limited: 'Trop de scans : patientez quelques secondes',
     network_error: 'Erreur réseau : réessayez',
     server_error: 'Erreur serveur : réessayez',
@@ -67,6 +70,9 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
  * (trois fois avec la ligne « réessayez », relecture du run 98). Le message de la réponse (contrat 3.5) ne change pas.
  */
 export const NOT_PROCESSED_DETAIL = 'Aucune entrée enregistrée.';
+
+/** Lot 9 bis (R19, contrat 5.23) : texte affiché sous le titre « Transfert en cours ». */
+export const TRANSFER_PENDING_DETAIL = 'Billet en cours de transfert : il doit être accepté ou le transfert annulé avant l’entrée.';
 
 // ── Lot 7 (7.2, contrat 6.2) — catégories du résultat plein écran ─────────
 
@@ -86,6 +92,7 @@ export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
     wrong_event: 'refuse',
     dynamic_qr_required: 'refuse',
     manual_entry_refused: 'refuse',
+    transfer_pending: 'refuse',
     payment_required: 'refuse',
     qr_expired: 'refuse',
     event_not_open: 'hors_fenetre',
