@@ -52,7 +52,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { PaymentWaitingInfo, type PaymentWaitingItem } from '@/components/payment/PaymentWaitingInfo';
-import { formatDateTime, formatFcfa, formatTime } from '@/lib/format';
+import { formatFcfa, formatTime } from '@/lib/format';
 import {
   clearPaymentHandoff,
   isMobileDevice,
@@ -76,8 +76,11 @@ const POLL_INTERVAL_MS = 3_000;
 /** Après plusieurs échecs réseau consécutifs, le sondage ralentit. */
 const POLL_BACKOFF_MS = 10_000;
 const BACKOFF_AFTER_FAILURES = 3;
-/** Délai laissé à la réconciliation après l'échéance avant d'arrêter le sondage automatique. */
-const GRACE_AFTER_EXPIRY_MS = 120_000;
+/**
+ * Délai laissé à la réconciliation après la fin de validité du paiement chez SamirPay (paymentDeadline, création
+ * + 60 minutes ; à défaut l'échéance de la réservation) avant d'arrêter le sondage automatique.
+ */
+const GRACE_AFTER_DEADLINE_MS = 120_000;
 const SUCCESS_REDIRECT_SECONDS = 6;
 const PAYMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Destinations internes acceptées depuis la route (chemin commençant par « / », jamais « // »). */
@@ -97,6 +100,10 @@ interface PaymentStatusView {
   operator: string | null;
   /** Échéance de la réservation (expires_at), en millisecondes ; null si le paiement n'en a pas. */
   expiresAt: number | null;
+  /** Lot 9 bis (H2) : durée de garde des places appliquée à ce paiement (holdMinutes), en minutes ; null sans réservation. */
+  holdMinutes: number | null;
+  /** Lot 9 bis (H2) : fin de validité du paiement chez SamirPay (paymentDeadline), en millisecondes ; null si inconnue. */
+  paymentDeadline: number | null;
   /** Lot 9 bis (B9) : un remboursement de ce paiement est retardé (refundDelayed). */
   refundDelayed: boolean;
   ticketIds: string[];
@@ -163,6 +170,14 @@ function readItems(value: unknown): PaymentWaitingItem[] {
   });
 }
 
+/** Date ISO facultative en millisecondes ; undefined si elle est présente mais illisible (réponse hors contrat). */
+function readInstant(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return undefined;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
 /** Réponse de GET /api/payments/<id>/status ; null si elle ne respecte pas le contrat. */
 function parseStatusBody(body: unknown): PaymentStatusView | null {
   if (!isRecord(body)) return null;
@@ -170,13 +185,10 @@ function parseStatusBody(body: unknown): PaymentStatusView | null {
   if (typeof b.payment_id !== 'string' || typeof b.status !== 'string') return null;
   if (typeof b.amount !== 'number' || !Number.isFinite(b.amount)) return null;
   if (b.operator !== null && b.operator !== undefined && typeof b.operator !== 'string') return null;
-  let expiresAt: number | null = null;
-  if (b.expires_at !== null && b.expires_at !== undefined) {
-    if (typeof b.expires_at !== 'string') return null;
-    const parsed = Date.parse(b.expires_at);
-    if (Number.isNaN(parsed)) return null;
-    expiresAt = parsed;
-  }
+  const expiresAt = readInstant(b.expires_at);
+  const paymentDeadline = readInstant(b.paymentDeadline);
+  if (expiresAt === undefined || paymentDeadline === undefined) return null;
+  const holdMinutes = readAmount(b.holdMinutes);
   if (!Array.isArray(b.ticket_ids) || !b.ticket_ids.every((t) => typeof t === 'string')) return null;
   const event = isRecord(b.event) && typeof b.event.title === 'string'
     ? { title: b.event.title, startAt: nonEmptyString(b.event.start_at) }
@@ -191,6 +203,8 @@ function parseStatusBody(body: unknown): PaymentStatusView | null {
     serviceFee: readAmount(b.service_fee),
     operator: typeof b.operator === 'string' ? b.operator : null,
     expiresAt,
+    holdMinutes: holdMinutes !== null && holdMinutes > 0 ? holdMinutes : null,
+    paymentDeadline,
     refundDelayed: b.refundDelayed === true,
     ticketIds: b.ticket_ids as string[],
     targetType,
@@ -405,7 +419,9 @@ function usePaymentStatusPolling(id: string | null) {
           active = false;
           return;
         }
-        if (view.expiresAt !== null && Date.now() > view.expiresAt + GRACE_AFTER_EXPIRY_MS) {
+        // Lot 9 bis (H2) : suivi jusqu'à la fin de validité chez SamirPay, pas seulement jusqu'à l'échéance des places.
+        const end = view.paymentDeadline ?? view.expiresAt;
+        if (end !== null && Date.now() > end + GRACE_AFTER_DEADLINE_MS) {
           active = false;
           setStale(true);
           return;
@@ -812,18 +828,19 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
 
           {showSteps && <ProgressSteps done={payment.status === 'SUCCESS'} label={label} />}
 
-          {/* Compte à rebours jusqu'à l'échéance de la réservation (expires_at) */}
-          {isPending && expiresAt !== null && remainingMs !== null && (
+          {/* Compte à rebours jusqu'à l'échéance de la réservation (expires_at), puis suivi jusqu'à la fin de
+              validité du paiement chez l'opérateur (paymentDeadline, lot 9 bis H2) */}
+          {isPending && !expired && expiresAt !== null && remainingMs !== null && (
             <div className="rounded-2xl border border-border bg-surface-sunken p-3.5">
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="flex items-center gap-2 text-fg">
                   <Clock size={16} className="shrink-0 text-brand-fg" aria-hidden="true" />
-                  {expired ? 'Délai écoulé' : 'Réservation valable encore'}
+                  Places gardées encore
                 </span>
                 {/* Police du système (pas de font-mono, absente du système de design) et sur une ligne :
                     à 390 px, « 3 h 58 min » passait sur deux lignes (relecture du run 77) */}
                 <span className="whitespace-nowrap text-base font-bold tabular-nums text-brand-fg">
-                  {expired ? '00:00' : formatRemaining(remainingMs)}
+                  {formatRemaining(remainingMs)}
                 </span>
               </div>
               <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-brand-bg" aria-hidden="true">
@@ -833,13 +850,19 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
                 />
               </div>
               <p className="mt-2 text-sm text-fg-muted">
-                {expired ? (
-                  'Vérification du statut final auprès de l’opérateur…'
-                ) : (
-                  <>
-                    Échéance le <time dateTime={new Date(expiresAt).toISOString()} className="tabular-nums">{formatDateTime(expiresAt)}</time> : passé ce délai, la réservation est libérée.
-                  </>
+                {payment.holdMinutes !== null && (
+                  <>Vos places sont gardées <span className="tabular-nums">{payment.holdMinutes}</span> minutes. Validez le paiement sur votre téléphone avant l’échéance.{' '}</>
                 )}
+                Échéance à <time dateTime={new Date(expiresAt).toISOString()} className="tabular-nums">{formatTime(expiresAt)}</time>.
+              </p>
+            </div>
+          )}
+
+          {isPending && expired && !stale && payment.paymentDeadline !== null && now <= payment.paymentDeadline && (
+            <div className="flex items-start gap-2 rounded-2xl border border-border bg-surface-sunken p-3.5 text-sm text-fg-muted">
+              <Clock size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
+              <p>
+                La demande de paiement reste valable jusqu’à <time dateTime={new Date(payment.paymentDeadline).toISOString()} className="font-semibold tabular-nums text-fg">{formatTime(payment.paymentDeadline)}</time> : cette page suit sa confirmation jusque-là.
               </p>
             </div>
           )}
