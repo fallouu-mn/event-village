@@ -15,7 +15,8 @@
  *    + notif.sms_optional_daily_cap et notif.free_ticket_reminder_sms, − notif.sms_daily_alert), variables
  *    d'environnement (withEnv), clés VAPID générées (newVapidKeys, withVapid), abonnement de navigateur
  *    à clés P-256 réelles (fakeBrowserSubscription).
- *  - Comptes : markPhoneVerified (users.phone_verified_at, contrat B1), newAdmin (rôle et permissions).
+ *  - Comptes : markPhoneVerified (users.phone_verified_at, contrat B1), markEmailVerified (lot 9 bis, G.49),
+ *    newAdmin (rôle et permissions).
  *  - Lignes de boîte d'envoi écrites directement (insertOutboxRow, deleteOutboxRows) pour les tests admin.
  * Règle : compter par numéro neuf ou par clé d'idempotence, jamais globalement ni sur un compte du seed.
  */
@@ -552,6 +553,16 @@ export async function markPhoneVerified(userId: string, at: Date = new Date()): 
     const { data, error } = await service.from('users').update({ phone_verified_at: at.toISOString() }).eq('id', userId).select('id');
     assert.equal(error, null, `markPhoneVerified ${userId} : ${error?.message} (code ${error?.code}) — colonne users.phone_verified_at du contrat B1, migration 20261103000002`);
     assert.equal((data ?? []).length, 1, `markPhoneVerified : compte ${userId} introuvable`);
+}
+
+/**
+ * Lot 9 bis (G.49, B96, T53) : pose users.email_verified_at (colonne de M10) ; un message n'est envoyé par email qu'à
+ * une adresse vérifiée. Échoue en nommant la colonne si elle manque.
+ */
+export async function markEmailVerified(userId: string, at: Date = new Date()): Promise<void> {
+    const { data, error } = await service.from('users').update({ email_verified_at: at.toISOString() }).eq('id', userId).select('id');
+    assert.equal(error, null, `markEmailVerified ${userId} : ${error?.message} (code ${error?.code}) — colonne users.email_verified_at, migration M10 du lot 9 bis`);
+    assert.equal((data ?? []).length, 1, `markEmailVerified : compte ${userId} introuvable`);
 }
 
 export interface TestAdmin extends Buyer {

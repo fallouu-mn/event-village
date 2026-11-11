@@ -30,7 +30,7 @@
  *
  * Rouge avant correctif : notification_outbox, push_subscriptions et l'envoyeur n'existent pas
  * (insertOutboxRow échoue, PGRST205), lib/push/web-push.adapter.ts est absent, l'adaptateur MTarget n'a
- * ni délai ni issue `outcome`, web-push n'est pas une dépendance.
+ * ni délai ni issue `outcome`, web-push n'est pas une dépendance. Lot 9 bis (T53) : R27 (caractère hors GSM-7 retiré), adresse « deleted. » technique, destinataires email vérifiés (G.49).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -49,7 +49,7 @@ import { newPartner, type TestPartner } from './finance-helpers';
 import { randomSenegalPhone } from './helpers';
 import {
     addMinutes, assertNotificationInvariants, dispatchAt, emailsTo, fakeBrowserSubscription, insertOutboxRow, loadLotModule,
-    newVapidKeys, outboxRows, pushTo, smsMark, smsTo, withEnv, withVapid,
+    markEmailVerified, newVapidKeys, outboxRows, pushTo, smsMark, smsTo, withEnv, withVapid,
     type FakeBrowserSubscription, type OutboxInsert, type OutboxRow, type VapidKeys,
 } from './notif-helpers';
 
@@ -269,7 +269,7 @@ describe('6.2 SMS : encodage tracé par l\'envoyeur (contrat F2, C3)', () => {
     test('GSM-7 et UCS-2 : texte exact, un SMS, encodage et segments dans decision.delivery', async () => {
         const cases: Array<{ title: string; expected: string }> = [
             { title: 'Gala Dakar', expected: 'Event Village : le transfert du billet Gala Dakar a été annulé par son propriétaire.' },
-            { title: 'Gala 日本 Dakar', expected: 'Event Village : le transfert du billet Gala 日本 Dakar a été annulé par son propriétaire.' },
+            { title: 'Gala 日本 Dakar', expected: 'Event Village : le transfert du billet Gala Dakar a été annulé par son propriétaire.' }, // lot 9 bis (R27, T53) : GSM-7, caractères retirés
         ];
         for (const c of cases) {
             const phone = randomSenegalPhone('76');
@@ -393,8 +393,8 @@ function header(headers: Record<string, string> | undefined, name: string): stri
 
 describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
     test('sans RESEND_API_KEY : SKIPPED EMAIL_NOT_CONFIGURED, aucun appel, un seul avertissement pour deux passages', async () => {
-        const a = await newBuyer('canaux-mail-a');
-        const b = await newBuyer('canaux-mail-b');
+        const a = await newBuyer('canaux-mail-a'); await markEmailVerified(a.userId); // lot 9 bis (G.49, T53) : adresse vérifiée, seul EMAIL_NOT_CONFIGURED en cause
+        const b = await newBuyer('canaux-mail-b'); await markEmailVerified(b.userId);
         const rows = [
             await dueRow({ type: 'PASSWORD_CHANGED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_user_id: a.userId }),
             await dueRow({ type: 'PASSWORD_CHANGED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_user_id: b.userId }),
@@ -423,12 +423,12 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
         const fake = `${buyer.phoneE164.replace(/\D/g, '')}@eventvillage.sn`;
         const { error } = await service.from('users').update({ email: fake }).eq('id', buyer.userId);
         assert.equal(error, null, `email factice du compte : ${error?.message}`);
-        const explicit = `221${String(Date.now()).slice(-9)}@eventvillage.sn`;
+        const explicit = `221${String(Date.now()).slice(-9)}@eventvillage.sn`; const deleted = `${randomUUID()}@deleted.eventvillage.sn`; // lot 9 bis (B100, T53) : adresse « deleted. » technique
         const rows = [
             await dueRow({ type: 'PASSWORD_CHANGED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_user_id: buyer.userId }),
-            await dueRow({ type: 'PASSWORD_CHANGED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_email: explicit }),
+            await dueRow({ type: 'PASSWORD_CHANGED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_email: explicit }), await dueRow({ type: 'PASSWORD_CHANGED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_email: deleted }),
         ];
-        const marks = [getFakes().email.messagesTo(fake).length, getFakes().email.messagesTo(explicit).length];
+        const marks = [getFakes().email.messagesTo(fake).length, getFakes().email.messagesTo(explicit).length, getFakes().email.messagesTo(deleted).length];
         await dispatchAt(new Date(), { ids: rows.map((r) => r.id) });
         for (const r of rows) {
             const done = await rowOf(r.id);
@@ -436,11 +436,11 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
             assert.equal(done.reason, 'NO_REAL_EMAIL');
         }
         assert.equal(getFakes().email.messagesTo(fake).length - marks[0], 0, 'adresse factice du compte jamais destinataire');
-        assert.equal(getFakes().email.messagesTo(explicit).length - marks[1], 0, 'adresse factice explicite jamais destinataire');
+        assert.equal(getFakes().email.messagesTo(explicit).length - marks[1], 0, 'adresse factice explicite jamais destinataire'); assert.equal(getFakes().email.messagesTo(deleted).length - marks[2], 0, 'adresse « deleted. » jamais destinataire');
     });
 
     test('message indispensable : HTML échappé (titre <script>), version texte, bouton vers l’application, sans désabonnement, clé d’idempotence transmise', async () => {
-        const buyer = await newBuyer('canaux-mail-ess');
+        const buyer = await newBuyer('canaux-mail-ess'); await markEmailVerified(buyer.userId); // lot 9 bis (G.49, B96, T53)
         const hostile = '<script>alert("x")</script> & Cie';
         const row = await dueRow({
             type: 'PURCHASE_CONFIRMED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_user_id: buyer.userId, group_key: `PURCHASE_CONFIRMED:${randomUUID()}`,
@@ -468,7 +468,7 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
     });
 
     test('famille optionnelle : pied « Ne plus recevoir ces emails » et en-tête List-Unsubscribe vers la page de préférences', async () => {
-        const partner: TestPartner = await newPartner('canaux-mail-opt');
+        const partner: TestPartner = await newPartner('canaux-mail-opt'); await markEmailVerified(partner.userId); // lot 9 bis (G.49, B96, T53)
         const row = await dueRow({
             type: 'FIRST_TICKET_SOLD', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channel: 'EMAIL', recipient_user_id: partner.userId,
             group_key: `FIRST_TICKET_SOLD:${randomUUID()}`, template_data: eventData('Gala Dakar'),
@@ -492,7 +492,7 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
     });
 
     test('refus du fournisseur : à réessayer → relance dans 1 min ; définitif → FAILED EMAIL_REJECTED', async () => {
-        const buyer = await newBuyer('canaux-mail-refus');
+        const buyer = await newBuyer('canaux-mail-refus'); await markEmailVerified(buyer.userId); // lot 9 bis (G.49, B96, T53)
         const row = await dueRow({ type: 'PASSWORD_CHANGED', family: 'ESSENTIAL', channel: 'EMAIL', recipient_user_id: buyer.userId });
         const t = new Date();
         getFakes().email.failNext('Resend 503 (simulation)', { retryable: true });
