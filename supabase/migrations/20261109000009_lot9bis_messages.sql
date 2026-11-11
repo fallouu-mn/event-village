@@ -46,6 +46,10 @@
 -- événement terminé dont toutes les ventes sont disponibles ; ticket_invitation_create recopiée (base
 -- 20261108000002_lot9_invitations.sql:348-495) → in-app et push au compte vérifié ; notif_tickets_scanned recopiée
 -- (base 20261103000005_lot6_billetterie.sql:866-887) → avis regroupés par commande, dus à 2 minutes.
+-- Tâche 38 (R29, R31 ; B80, B81) : notif_on_password_changed recopiée (base 20261103000006_lot6_pros_admin.sql:
+-- 923-950) ne prévient pas l'activation d'un compte coquille de contrôleur ; notification_daily_checks compte les SMS
+-- indispensables du jour et réémet ADMIN_SMS_DAILY_THRESHOLD au seuil notif.sms_essential_daily_alert (M01), une
+-- fois par jour (TRIAL_STARTED sans SMS : registre M03 ; smsVar R27 : S2).
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -1096,6 +1100,10 @@ CREATE TRIGGER trg_controller_shifts_report_ready
 -- toutes les ventes (écritures VENTE du compte ORGANISATEUR) sont disponibles à `now` ; une fois (clé
 -- FUNDS_AVAILABLE:<event>), 100 événements au plus par passage, sans montant. Un événement SUSPENDU n'est jamais
 -- TERMINE : ses fonds gelés (B14) ne sont pas annoncés ; partenaire suspendue : politique BLOCK du type.
+-- Tâche 38 (R31, B81) : essential_today = SMS indispensables du jour (SENDING, SENT, UNCERTAIN ; file et journaux
+-- synchrones ; COALESCE(claimed_at, sent_at, finished_at), index idx_outbox_sms_essential_day de M03) ; au seuil
+-- notif.sms_essential_daily_alert, ADMIN_SMS_DAILY_THRESHOLD aux admins notifications.read et signal
+-- SMS_DAILY_THRESHOLD, une fois par jour.
 -- ============================================================================
 -- sms_today : SMS du jour de Dakar de v_now, lignes SMS SENT ou UNCERTAIN (journaux OTP compris), inchangé.
 -- optional_today : SMS optionnels réservés du jour (notif_sms_optional_used, même compteur que le budget).
@@ -1122,6 +1130,9 @@ DECLARE
     v_n         integer;
     v_alerted   boolean := false;
     v_funds     integer := 0;
+    v_essential integer;
+    v_essential_threshold integer;
+    v_essential_alerted boolean := false;
     f           record;
 BEGIN
     v_now := COALESCE(NULLIF(p->>'now', '')::timestamptz, now());
@@ -1167,6 +1178,36 @@ BEGIN
         END IF;
     END IF;
 
+    -- Lot 9 bis (R31, B81) : SMS indispensables du jour (file et journaux synchrones ; réservés, envoyés ou incertains),
+    -- alerte ADMIN_SMS_DAILY_THRESHOLD aux admins notifications.read et signal SMS_DAILY_THRESHOLD au seuil réglable
+    -- notif.sms_essential_daily_alert, une seule fois par jour (verrou et préfixe de clé du jour).
+    SELECT count(*)::integer INTO v_essential
+      FROM public.notification_outbox o
+     WHERE o.channel = 'SMS' AND o.family = 'ESSENTIAL' AND o.status IN ('SENDING', 'SENT', 'UNCERTAIN')
+       AND COALESCE(o.claimed_at, o.sent_at, o.finished_at) >= v_start
+       AND COALESCE(o.claimed_at, o.sent_at, o.finished_at) < v_start + interval '1 day';
+    v_essential_threshold := public.notif_setting_int('notif.sms_essential_daily_alert');
+    IF v_essential_threshold IS NOT NULL AND v_essential_threshold > 0 AND v_essential >= v_essential_threshold THEN
+        PERFORM pg_advisory_xact_lock(hashtext('notif.sms_essential_daily_alert:' || v_day_txt));
+        v_prefix := 'ADMIN_SMS_DAILY_THRESHOLD:' || v_day_txt || ':';
+        IF NOT EXISTS (SELECT 1 FROM public.notification_outbox o
+                        WHERE o.type = 'ADMIN_SMS_DAILY_THRESHOLD'
+                          AND left(o.idempotency_key, length(v_prefix)) = v_prefix) THEN
+            v_n := public.notif_enqueue_admins(jsonb_build_object(
+                'type', 'ADMIN_SMS_DAILY_THRESHOLD', 'ref', v_day_txt,
+                'data', jsonb_build_object('day', v_day_txt, 'count', v_essential, 'threshold', v_essential_threshold),
+                'now', v_now));
+            IF v_n > 0 THEN
+                SELECT o.id INTO v_first
+                  FROM public.notification_outbox o
+                 WHERE o.type = 'ADMIN_SMS_DAILY_THRESHOLD' AND left(o.idempotency_key, length(v_prefix)) = v_prefix
+                 ORDER BY o.created_at, o.id LIMIT 1;
+                INSERT INTO public.admin_signals (kind, ref_id) VALUES ('SMS_DAILY_THRESHOLD', v_first) ON CONFLICT DO NOTHING;
+                v_essential_alerted := true;
+            END IF;
+        END IF;
+    END IF;
+
     -- Lot 9 bis (R72, B77) : recettes disponibles d'un événement terminé, une fois par événement
     FOR f IN
         SELECT e.id, pa.user_id AS owner_id
@@ -1193,6 +1234,7 @@ BEGIN
 
     RETURN jsonb_build_object('ok', true, 'day', v_day_txt, 'sms_today', v_count,
         'optional_today', v_used, 'optional_cap', v_cap, 'optional_threshold', v_threshold, 'alerted', v_alerted,
+        'essential_today', v_essential, 'essential_threshold', v_essential_threshold, 'essential_alerted', v_essential_alerted,
         'funds_available', v_funds);
 END;
 $$;
@@ -1417,3 +1459,41 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.notif_tickets_scanned() FROM PUBLIC, anon, authenticated;
+
+
+-- ============================================================================
+-- 11. notif_on_password_changed (recopie de 20261103000006_lot6_pros_admin.sql:923-950)
+-- Mot de passe défini ou modifié (réinitialisation par le navigateur, profil du contrôleur, activation d'un
+-- contrôleur) : trigger sur auth.users. Clé : compte et instant de la modification.
+-- Tâche 38 (R29, B80) : aucun avis à l'activation d'un compte coquille de contrôleur (la même écriture pose le mot
+-- de passe et retire le marqueur is_temporary_controller_account, après le code reçu par SMS) ; toute pose
+-- ultérieure reste prévenue. Trigger on_auth_user_password_changed inchangé.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.notif_on_password_changed()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = NEW.id) THEN
+        RETURN NEW;
+    END IF;
+    -- Lot 9 bis (R29) : activation du compte coquille, aucune alerte de sécurité
+    IF COALESCE(OLD.raw_user_meta_data->>'is_temporary_controller_account', '') = 'true'
+       AND COALESCE(NEW.raw_user_meta_data->>'is_temporary_controller_account', '') <> 'true' THEN
+        RETURN NEW;
+    END IF;
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'PASSWORD_CHANGED',
+        'key', 'PASSWORD_CHANGED:' || NEW.id::text || ':'
+               || COALESCE(floor(extract(epoch FROM NEW.updated_at) * 1000000)::bigint::text, 'tx' || txid_current()::text),
+        'user_id', NEW.id,
+        'data', '{}'::jsonb
+    ));
+    RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notif_on_password_changed() FROM PUBLIC, anon, authenticated;
