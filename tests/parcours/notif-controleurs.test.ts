@@ -209,7 +209,7 @@ describe('6.6 Contrôleur — affectation (trg_event_controllers_notify, J2.4)',
         const { PATCH } = await importModule('../../app/api/partner/team/assignments/route');
         const mark = smsMark(ctrl.phoneE164);
         const res = await invoke(PATCH as Handler, authed('/api/partner/team/assignments', 'PATCH', partner,
-            { controller_id: ctrl.userId, event_ids: evs.map((e) => e.eventId), can_accept_cash: false }));
+            { controller_id: ctrl.userId, assignments: evs.map((e) => ({ event_id: e.eventId, can_accept_cash: false })) })); // lot 9 bis (R41, B64, contrat 4.3) : droit d'encaisser par événement, champ global refusé
         assert.equal(res.status, 200, `affectations : ${show(res)}`);
         assert.equal(res.body.notification, 'QUEUED', `réponse : notification QUEUED (J2.4) : ${show(res)}`);
         assert.ok(!('sms_sent' in res.body), `réponse : plus de sms_sent : ${show(res)}`);
