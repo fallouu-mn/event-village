@@ -28,6 +28,7 @@
  * Interprétations retenues : date limite du SMS par smsShortDateTime (lib/notifications/sms-format.ts) ;
  * l'ancien transfert vers un email est écrit directement par le service_role (plus aucune route ne le
  * permet), billet verrouillé comme par ticket_transfer_initiate.
+ * Lot 9 bis (R57, T34) : mot de passe confirmé (confirmPassword) avant les transferts, une fois par session.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -37,7 +38,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
-import { BASE_URL, jsonRequest as publicRequest, routeContext } from './helpers';
+import { BASE_URL, confirmPassword, jsonRequest as publicRequest, routeContext, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { authed, ticketRow, type RouteResult } from './acces-helpers';
@@ -116,7 +117,12 @@ function hasKeyDeep(body: unknown, key: string): boolean {
     return Object.values(body as Row).some((v) => hasKeyDeep(v, key));
 }
 
+/** Lot 9 bis (R57, T34) : mot de passe confirmé une fois par session avant les transferts (10 minutes, quota par compte). */
+const confirmedSessions = new Map<string, Promise<void>>();
+
 async function initiate(from: Buyer, ticketId: string, recipient: string): Promise<RouteResult> {
+    if (!confirmedSessions.has(from.accessToken)) confirmedSessions.set(from.accessToken, confirmPassword(from, STRONG_PASSWORD));
+    await confirmedSessions.get(from.accessToken);
     const { POST } = await importModule(TRANSFER_ROUTE);
     return invoke(POST as Handler, authed(`/api/tickets/${ticketId}/transfer`, 'POST', from, { recipient }), routeContext({ id: ticketId }));
 }

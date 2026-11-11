@@ -29,7 +29,7 @@
  * notif.free_ticket_reminder_sms = NEVER, la ligne SMS des rappels serait SKIPPED FREE_TICKETS_ONLY dès la
  * planification et ne pourrait plus passer à CANCELLED. La suite prouve l'annulation des rappels d'un porteur
  * ordinaire : SAME_AS_PAID est posé le temps de la suite (valeur lue avant, remise en fin de suite), attentes
- * inchangées. Rouge jusqu'à fix(7.0a) (réglage absent avant la migration 20261105000001).
+ * inchangées. Rouge jusqu'à fix(7.0a) (réglage absent avant la migration 20261105000001). Lot 9 bis (R57, T34) : mot de passe confirmé avant le transfert.
  *
  * Rouge avant correctif : scheduleReminders (lib/notifications/reminders.ts), la RPC de planification, la
  * boîte d'envoi et les triggers trg_notif_cancel_on_status / trg_notif_cancel_on_reschedule n'existent pas
@@ -43,7 +43,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { Client } from 'pg';
 import type { NextRequest } from 'next/server';
 import { inRolledBackTransaction, inspect } from '../helpers/db';
-import { routeContext } from './helpers';
+import { confirmPassword, routeContext, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
 import { buyConfirmed, newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { authed, ticketRow } from './acces-helpers';
@@ -241,7 +241,7 @@ async function invoke(handler: Handler, req: NextRequest, ctx?: unknown): Promis
  * réclamation par le destinataire (contrat B4). Renvoie l'id du transfert réclamé.
  */
 async function transferTo(owner: Buyer, ticketId: string, to: Buyer): Promise<string> {
-    const { POST: initiate } = (await importModule(TRANSFER_ROUTE)) as { POST: Handler };
+    const { POST: initiate } = (await importModule(TRANSFER_ROUTE)) as { POST: Handler }; await confirmPassword(owner, STRONG_PASSWORD); // lot 9 bis (R57, T34)
     const init = await invoke(initiate, authed(`/api/tickets/${ticketId}/transfer`, 'POST', owner, { recipient: to.phoneE164 }), routeContext({ id: ticketId }));
     assert.equal(init.status, 200, `initiation du transfert : HTTP ${init.status} ${JSON.stringify(init.body).slice(0, 300)}`);
     const { data, error } = await service.from('ticket_transfers').select('id').eq('ticket_id', ticketId).eq('status', 'PENDING');
