@@ -113,6 +113,21 @@ function errorDetail(raw: unknown): { message: string | null; code?: string; for
 
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
+/**
+ * Lot 9 bis (H7, contrat 4.5) : motif d'un refus 400 du transfert (format A). Les mots classants sont SUPPOSÉS
+ * conformes à la v1.2 (à confirmer en bac à sable) : « Solde insuffisant » → INSUFFICIENT_BALANCE (rien n'est
+ * débité, repris quand le solde revient) ; « minimum autorisé » ou « maximum autorisé » → ACCOUNT_LIMIT ; tout autre
+ * 400 → OPERATOR_REFUSED.
+ */
+export type CashoutRefusalCode = 'INSUFFICIENT_BALANCE' | 'ACCOUNT_LIMIT' | 'OPERATOR_REFUSED';
+
+export function cashoutRefusalCode(message: string | null): CashoutRefusalCode {
+    const m = (message ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    if (/solde insuffisant/.test(m)) return 'INSUFFICIENT_BALANCE';
+    if (/(minimum|maximum) autorise/.test(m)) return 'ACCOUNT_LIMIT';
+    return 'OPERATOR_REFUSED';
+}
+
 /** Classement d'un échec : nature d'un 409, et nature d'une réponse hors contrat (404 d'une route, 2xx inattendu). */
 interface FailureRules {
     conflict: SamirPayErrorKind;
@@ -273,7 +288,14 @@ export class SamirPayHttpClient implements PaymentGateway {
             firstName: payload.firstName,
             lastName: payload.lastName,
         });
-        if (res.status !== 200 && res.status !== 201) throw this.failure(res, 'Cashout', { conflict: 'REJECTED', unexpected: 'UNCERTAIN' });
+        if (res.status !== 200 && res.status !== 201) {
+            // v1.2 (H7) : un 409 est un transfert interrompu, issue incertaine (jamais un refus : aucun solde rendu,
+            // aucun renvoi automatique) ; un 400 est un refus sans débit, classé pour que le versement soit bloqué
+            // (solde, limites) plutôt qu'échoué.
+            const err = this.failure(res, 'Cashout', { conflict: 'UNCERTAIN', unexpected: 'UNCERTAIN' });
+            if (err.kind === 'REJECTED' && res.status === 400) err.code = cashoutRefusalCode(errorDetail(res.body).message);
+            throw err;
+        }
         // Envoi peut-être effectué : toute forme inattendue est INCERTAINE, jamais un échec ni un succès supposés.
         const a = readA(res.body);
         const tx = a?.status === 'success' ? a.body : null;

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
+import { observedCashoutFeeRates } from '@/lib/admin/finance-reconciliation';
+import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 
@@ -30,9 +32,19 @@ export async function GET(req: NextRequest) {
         console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message);
         return NextResponse.json({ error: 'Réglages indisponibles.' }, { status: 500 });
     }
+    // Lot 9 bis (H7, X5, B29) : frais SamirPay réels constatés sur 90 jours, pour l'avertissement de l'écran
+    // quand le taux de retrait réglé leur est inférieur (null tant qu'aucun frais réel n'est connu).
+    let observed: Awaited<ReturnType<typeof observedCashoutFeeRates>>;
+    try {
+        observed = await observedCashoutFeeRates();
+    } catch (err) {
+        return apiFailure('GET /api/admin/finance-settings', err, { message: 'Réglages indisponibles.', code: 'SETTINGS_UNAVAILABLE', status: 500 });
+    }
     return NextResponse.json({
         settings: (settings ?? []).map((s) => ({ ...s, value: (s.value as { value?: unknown })?.value })),
         history: history ?? [],
+        observed_cashout_fee_rate: observed.rate,
+        observed_cashout_fee_max: observed.max,
     });
 }
 
