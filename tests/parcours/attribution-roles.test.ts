@@ -14,10 +14,10 @@ import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { bearer, loadFixtures, signInAs } from '../helpers/fixtures';
-import { POST as partnerRegister } from '../../app/api/partner/register/route';
+// Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
 import { POST as adminCreateUser } from '../../app/api/admin/users/route';
 import { POST as inviteController } from '../../app/api/partner/team/invite/route';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 
 const service = getServiceRoleClient();
 
@@ -44,7 +44,7 @@ describe('Attribution des rôles par les routes serveur', () => {
     test('inscription partenaire → PARTENAIRE dans user_roles et pour la session', async () => {
         const email = randomEmail('partenaire');
         const phone = randomSenegalPhone('77');
-        const res = await partnerRegister(jsonRequest('/api/partner/register', {
+        const reg = await registerPartnerTwoStep({
             companyName: 'Parcours Test SARL',
             description: 'Organisateur fictif créé par la suite de tests.',
             address: '12 rue des Tests',
@@ -57,17 +57,17 @@ describe('Attribution des rôles par les routes serveur', () => {
             password: STRONG_PASSWORD,
             confirmPassword: STRONG_PASSWORD,
             ...(await uploadRegistrationDocuments()),
-        }));
-        const body = await res.json();
-        assert.ok(res.status < 300, `inscription partenaire : HTTP ${res.status} ${JSON.stringify(body)}`);
+        });
+        const res = reg.second ?? reg.first; const body = res.body;
+        assert.ok(reg.second !== null && res.status < 300, `inscription partenaire (appel 2, code vérifié) : HTTP ${res.status} ${JSON.stringify(body)}`);
 
-        const { data: user, error } = await service.from('users').select('id, role, status').eq('email', email).single();
+        const { data: user, error } = await service.from('users').select('id, role, status').in('phone', [phone, phone.replace(/^\+/, '')]).single();
         assert.equal(error, null, `profil partenaire : ${error?.message}`);
         assert.ok((await rolesOf(user.id)).includes('PARTENAIRE'), 'user_roles doit contenir PARTENAIRE');
 
         const { data: partner } = await service.from('partners').select('status').eq('user_id', user.id).single();
         assert.equal(partner?.status, 'EN_ATTENTE');
-        await assertSessionRole(email, STRONG_PASSWORD, 'PARTENAIRE');
+        const { data: authUser, error: authErr } = await service.auth.admin.getUserById(user.id); assert.equal(authErr, null, authErr?.message); await assertSessionRole(String(authUser.user?.email ?? email), STRONG_PASSWORD, 'PARTENAIRE');
     });
 
     test('création d\'un compte CONTROLEUR par un SUPERADMIN → CONTROLEUR dans user_roles et pour la session', async () => {

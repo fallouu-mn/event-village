@@ -31,13 +31,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { POST as postPermissions } from '../../app/api/admin/permissions/route';
-import { POST as registerPartner } from '../../app/api/partner/register/route';
+// Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
 import { hashUploadToken } from '../../lib/partners/documents';
 import { inspect, openConcurrentClient } from '../helpers/db';
 import { bearer, signInAs } from '../helpers/fixtures';
 import { assertLot9Invariants } from '../helpers/lot9-invariants';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments, type RegistrationDocuments } from './helpers';
+import { jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments, type RegistrationDocuments } from './helpers';
 import { SENTINEL, reply, type Reply } from './panne-helpers';
 import { service } from './paiement-helpers';
 import { newAdminWith } from './terrain-helpers';
@@ -213,7 +213,7 @@ async function candidate(label: string): Promise<Candidate> {
 }
 
 async function register(c: Candidate): Promise<Reply> {
-    return reply(await registerPartner(jsonRequest('/api/partner/register', {
+    const reg = await registerPartnerTwoStep({
         companyName: c.company,
         description: 'Organisateur fictif de la suite ecritures-ignorees.',
         address: '5 rue du Lot 9',
@@ -226,7 +226,7 @@ async function register(c: Candidate): Promise<Reply> {
         password: STRONG_PASSWORD,
         confirmPassword: STRONG_PASSWORD,
         ...c.docs,
-    }, freshIp())));
+    }, { headers: freshIp() }); const last = reg.second ?? reg.first; return { status: last.status, body: last.body, text: JSON.stringify(last.body) }; // réponse du dernier appel
 }
 
 async function partnersOf(company: string): Promise<Row[]> {
@@ -235,12 +235,12 @@ async function partnersOf(company: string): Promise<Row[]> {
     return (data ?? []) as Row[];
 }
 
-async function authAccounts(email: string): Promise<number> {
-    return inspect(async (db) => Number((await db.query<{ n: number }>('SELECT count(*)::int AS n FROM auth.users WHERE email = $1', [email])).rows[0].n));
+async function authAccounts(phone: string): Promise<number> { // lot 9 bis (T38) : par numéro, l'email saisi n'est plus l'adresse du compte (adresse en attente, R87)
+    return inspect(async (db) => Number((await db.query<{ n: number }>("SELECT count(*)::int AS n FROM auth.users WHERE phone IN ($1, ltrim($1, '+'))", [phone])).rows[0].n));
 }
 
-async function publicAccounts(email: string): Promise<number> {
-    const { count, error } = await service.from('users').select('id', { count: 'exact', head: true }).eq('email', email);
+async function publicAccounts(phone: string): Promise<number> {
+    const { count, error } = await service.from('users').select('id', { count: 'exact', head: true }).in('phone', [phone, phone.replace(/^\+/, '')]);
     assert.equal(error, null, `comptes : ${error?.message}`);
     return count ?? 0;
 }
@@ -256,8 +256,8 @@ async function uploadsOf(c: Candidate): Promise<Array<{ id: string; claimed_at: 
 /** Rien ne reste d'une inscription refusée : ni fiche, ni compte de connexion, ni profil. */
 async function assertNothingLeft(c: Candidate): Promise<void> {
     assert.deepEqual(await partnersOf(c.company), [], 'fiche partenaire orpheline');
-    assert.equal(await authAccounts(c.email), 0, 'compte de connexion non retiré : le numéro reste pris au nouvel essai');
-    assert.equal(await publicAccounts(c.email), 0, 'profil non retiré');
+    assert.equal(await authAccounts(c.phone), 0, 'compte de connexion non retiré : le numéro reste pris au nouvel essai');
+    assert.equal(await publicAccounts(c.phone), 0, 'profil non retiré');
 }
 
 const failActivities = (company: string): string => `
@@ -311,8 +311,8 @@ describe('A33 — POST /api/partner/register', () => {
         const failed = await withTrigger('partner_activities', failActivities(c.company), () => register(c));
         assert.equal(failed.status, 500, show(failed));
         const again = await register(c);
-        assert.equal(again.status, 200, `nouvel essai refusé : ${show(again)}`);
-        assert.equal(again.body.success, true, show(again));
+        assert.equal(again.status, 201, `nouvel essai refusé (appel 2 : 201, contrat 4.2) : ${show(again)}`);
+        assert.equal(await publicAccounts(c.phone), 1, `nouvel essai : un compte créé : ${show(again)}`);
         assert.equal((await partnersOf(c.company)).length, 1, 'une seule fiche');
     });
 
@@ -334,7 +334,7 @@ describe('A33 — POST /api/partner/register', () => {
     test('succès : un seul appel à la RPC, aucune écriture REST directe, tout est écrit ensemble', async () => {
         const c = await candidate('ok');
         const { r, rpcCalls, directWrites } = await registerTraced(c);
-        assert.equal(r.status, 200, show(r));
+        assert.equal(r.status, 201, `appel 2 avec le bon code : 201 (contrat 4.2) : ${show(r)}`);
         assert.deepEqual(directWrites, [], 'écritures directes de la route, hors transaction');
         assert.equal(rpcCalls, 1, `${rpcCalls} appel(s) à partner_register_finalize, un seul attendu`);
         const partners = await partnersOf(c.company);

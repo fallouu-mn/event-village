@@ -16,10 +16,10 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
-import { POST as registerPartner } from '../../app/api/partner/register/route';
+// Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 import { registerStart, registerSubmit } from './terrain-helpers';
 
 /** Code du dernier SMS contenant un code à 6 chiffres (l'inscription partenaire envoie ensuite un avis sans code). */
@@ -104,9 +104,9 @@ describe('Parcours OTP serveur', () => {
         assert.equal(after?.verified, true, 'le code doit être marqué vérifié en base');
     });
 
-    test('inscription partenaire → otp_codes → verify-otp depuis une autre instance', async () => {
+    test('inscription partenaire → otp_codes → code vérifié depuis une autre instance (appel 2 de la route, lot 9 bis R53)', async () => {
         const phone = randomSenegalPhone('78');
-        const res = await registerPartner(jsonRequest('/api/partner/register', {
+        const body = {
             companyName: 'OTP Test SARL',
             description: 'Organisateur fictif créé par la suite de tests OTP.',
             address: '3 rue des Codes',
@@ -119,10 +119,19 @@ describe('Parcours OTP serveur', () => {
             password: STRONG_PASSWORD,
             confirmPassword: STRONG_PASSWORD,
             ...(await uploadRegistrationDocuments()),
-        }));
-        const body = await res.json();
-        assert.ok(res.status < 300, `inscription partenaire : HTTP ${res.status} ${JSON.stringify(body)}`);
+        };
+        // Lot 9 bis (T38) : l'appel 1 envoie le code et ne crée rien ; le code est persisté non vérifié, puis l'appel 2,
+        // fait comme depuis une autre instance (mémoire du processus vidée), le vérifie en base et crée le compte.
+        const first = await registerPartnerTwoStep(body, { stopAfterFirst: true });
+        assert.ok(first.first.status < 300, `inscription partenaire, appel 1 : HTTP ${first.first.status} ${JSON.stringify(first.first.body)}`);
         const code = codeFromLastSms(phone);
-        await verifyFromAnotherInstance(phone, code, await assertStoredUnverified(phone, code));
+        const storedId = await assertStoredUnverified(phone, code);
+        forgetProcessMemory();
+        const { POST: register } = await import('../../app/api/partner/register/route');
+        const second = await register(jsonRequest('/api/partner/register', { ...body, otpCode: code }));
+        const secondBody = await second.json();
+        assert.ok(second.status < 300, `inscription partenaire, appel 2 avec le code : HTTP ${second.status} ${JSON.stringify(secondBody)}`);
+        const { data: after } = await getServiceRoleClient().from('otp_codes').select('verified').eq('id', storedId).single();
+        assert.equal(after?.verified, true, 'le code doit être marqué vérifié en base');
     });
 });

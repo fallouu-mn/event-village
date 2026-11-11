@@ -18,8 +18,8 @@ import { getServiceRoleClient } from '../../lib/supabase/server';
 import { bearer, signInAs } from '../helpers/fixtures';
 import { POST as upload } from '../../app/api/partner/documents/upload/route';
 import { GET as signedUrl } from '../../app/api/partner/documents/signed-url/route';
-import { POST as registerPartner } from '../../app/api/partner/register/route';
-import { BASE_URL, MINIMAL_PDF, jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments, uploadRequest } from './helpers';
+// Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
+import { BASE_URL, MINIMAL_PDF, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments, uploadRequest } from './helpers';
 
 function getSigned(query: string, headers: Record<string, string> = {}): Promise<Response> {
     return signedUrl(new NextRequest(`${BASE_URL}/api/partner/documents/signed-url?${query}`, { method: 'GET', headers }));
@@ -28,7 +28,7 @@ function getSigned(query: string, headers: Record<string, string> = {}): Promise
 async function registerWithDocuments() {
     const docs = await uploadRegistrationDocuments();
     const email = randomEmail('kyc');
-    const res = await registerPartner(jsonRequest('/api/partner/register', {
+    const phone = randomSenegalPhone('77'); const reg = await registerPartnerTwoStep({
         companyName: 'KYC Test SARL',
         description: 'Organisateur fictif pour les tests de pièces justificatives.',
         address: '5 rue des Pièces',
@@ -36,18 +36,18 @@ async function registerWithDocuments() {
         activities: ['ORGANISATEUR'],
         firstName: 'Khady',
         lastName: 'Kyc',
-        phone: randomSenegalPhone('77'),
+        phone,
         email,
         password: STRONG_PASSWORD,
         confirmPassword: STRONG_PASSWORD,
         ...docs,
-    }));
-    const body = await res.json();
-    assert.ok(res.status < 300, `inscription : HTTP ${res.status} ${JSON.stringify(body)}`);
+    });
+    const res = reg.second ?? reg.first; const body = res.body;
+    assert.ok(reg.second !== null && res.status < 300, `inscription (appel 2, code vérifié) : HTTP ${res.status} ${JSON.stringify(body)}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: session, error } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data: account, error: accErr } = await getServiceRoleClient().from('users').select('id').in('phone', [phone, phone.slice(1)]).single(); assert.equal(accErr, null, accErr?.message); const { data: own, error: ownErr } = await getServiceRoleClient().from('partners').select('id').eq('user_id', account.id).single(); assert.equal(ownErr, null, ownErr?.message); const { data: authUser } = await getServiceRoleClient().auth.admin.getUserById(String(account.id)); const { data: session, error } = await anon.auth.signInWithPassword({ email: String(authUser.user?.email ?? email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion du partenaire : ${error?.message}`);
-    return { docs, partnerId: body.partnerId as string, ownerToken: session.session!.access_token };
+    return { docs, partnerId: String(own.id), ownerToken: session.session!.access_token };
 }
 
 describe('Documents d’inscription partenaire', () => {
