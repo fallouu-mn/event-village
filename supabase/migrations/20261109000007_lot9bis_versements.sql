@@ -36,6 +36,9 @@
 --     cashouts_to_resume), visible de la propriétaire et des admins (B9). Tâche 4 (fix(9b.4-SV), R20, B22) : ajout
 --     de `counter_cash` { count, total, refunded_count, refunded_total } (ventes au guichet de l'événement, même
 --     périmètre que event_cash_refunds de M06, marques de event_cash_refund_marks, table de M06).
+--     Tâche 11 (fix(9b.11-SV), R2) : l'acteur est lu par event_actor_profile_perm(…, 'events.read') (M04) au lieu
+--     de event_actor_profile (events.write) ; un compte ADMIN ou SUPERADMIN sans la permission reçoit
+--     PERMISSION_MISSING `permission: events.read`, tout autre acteur EVENT_NOT_FOUND. `to_retry` reste aux admins.
 --
 -- Tâche 6 (R47, R30, B10, B11 ; H1 pour l'avis) :
 --  5 (suite). notif_cashouts_notify : à la création d'un REFUND (paiement encaissé sans billet possible, ou en
@@ -611,8 +614,15 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.events WHERE id = v_event) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
     END IF;
-    SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
+    -- Lot 9 bis (tâche 11, R2, fix(9b.11-SV)) : lecture réservée à la propriétaire ou à un admin events.read
+    -- (event_actor_profile_perm, M04) ; un compte ADMIN ou SUPERADMIN sans la permission reçoit PERMISSION_MISSING,
+    -- tout autre acteur EVENT_NOT_FOUND, sans indice (même règle que event_cash_refunds de M06).
+    SELECT * INTO a FROM public.event_actor_profile_perm(v_event, v_actor, 'events.read');
     IF NOT (a.is_owner OR a.is_staff) THEN
+        IF EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PERMISSION_MISSING', 'permission', 'events.read',
+                'message', 'Action non autorisée : votre compte n’a pas la permission « Consulter les événements ».');
+        END IF;
         RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
     END IF;
 

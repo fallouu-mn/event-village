@@ -18,6 +18,7 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CashoutService, sendOutcomeLabel } from '@/lib/payments/cashout.service';
 import { EventLifecycleError, refusalToError, type LifecycleRefusal } from '@/lib/events/event-lifecycle.service';
+import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 
 export interface EventCancellationInput {
     publicNotice: string;
@@ -90,7 +91,16 @@ async function callLifecycleRpc<T>(fn: string, p: Record<string, unknown>, what:
         console.error(`[EventCancellationService] ${fn} : réponse vide`);
         throw new Error(`${what} impossible pour le moment.`);
     }
-    if (body.ok !== true) throw refusalToError(body as unknown as LifecycleRefusal);
+    if (body.ok !== true) {
+        // Lot 9 bis (R2, fix(9b.11-SV)) : un admin sans la permission de lecture reçoit 403 PERMISSION_MISSING,
+        // permission nommée (contrat 4.2), sans aucun chiffre.
+        if (body.code === 'PERMISSION_MISSING') {
+            const permission = typeof body.permission === 'string' ? body.permission : 'events.read';
+            const message = typeof body.message === 'string' && body.message ? body.message : permissionMissingMessage(permission);
+            throw new EventLifecycleError(403, 'PERMISSION_MISSING', message, { permission });
+        }
+        throw refusalToError(body as unknown as LifecycleRefusal);
+    }
     return body as unknown as T;
 }
 
