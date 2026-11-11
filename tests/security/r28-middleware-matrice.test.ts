@@ -156,3 +156,14 @@ describe('R28 — lot 9 bis : connexion côté serveur (R58)', () => {
         assert.ok(res.passedThrough, `/api/auth/login sans session : servie attendue, HTTP ${res.status} ${res.location ?? ''}`);
     });
 });
+
+describe('R28 — lot 9 bis : vérification de l’email (R87), publique', () => {
+    test('/verify-email et /api/account/email/verify servis sans session (lien reçu par email, rouge jusqu’à fix(9b.48))', async () => {
+        const failures: string[] = [];
+        for (const pathname of ['/verify-email', '/api/account/email/verify']) {
+            const res = await callMiddleware(pathname, []);
+            if (!res.passedThrough) failures.push(`${pathname} : servi sans session attendu, HTTP ${res.status} ${res.location ?? ''}`);
+        }
+        assert.deepEqual(failures, [], `écarts :\n${failures.join('\n')}`);
+    });
+});
