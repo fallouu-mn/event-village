@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Clock, HelpCircle, Lock, Send, Share2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/Field';
@@ -10,6 +11,12 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { formatDateTime } from '@/lib/format';
 import { deleteOfflineLots } from '@/lib/tickets/offline-store';
+
+/** Boîte « mot de passe » chargée à la demande (lot 9 bis, R57 ; contrat 5.13 : hors du premier chargement). */
+const PasswordConfirmDialog = dynamic(
+  () => import('@/components/auth/PasswordConfirmDialog').then((m) => m.PasswordConfirmDialog),
+  { ssr: false },
+);
 
 /**
  * Transfert d'un billet (lot 6, contrat B5 et amendement 2 : vers un numéro de téléphone seulement).
@@ -22,6 +29,9 @@ import { deleteOfflineLots } from '@/lib/tickets/offline-store';
  *  - Modale partagée (components/ui/Modal : focus, Échap, Fermer de 44 px), tokens du système de design.
  *  - Lot 7 (7.1) : au succès, le lot de codes hors ligne du billet est supprimé du téléphone (la version du
  *    secret tournera à l'acceptation ; d'ici là, le billet verrouillé n'a plus de code d'entrée).
+ *  - Lot 9 bis (R57, contrat 4.2 et 5.13) : la route refuse en 403 PASSWORD_CONFIRMATION_REQUIRED quand le mot de passe
+ *    n'a pas été saisi sur la session depuis moins de 10 minutes. Ce refus ouvre PasswordConfirmDialog ; une fois le mot
+ *    de passe accepté (clic « Confirmer »), le même transfert, vers le même numéro, repart une fois.
  */
 
 export interface TransferTicketData {
@@ -50,6 +60,8 @@ interface TransferSuccess {
 
 const HELP_TEXT = 'Le destinataire recevra un SMS. Il devra se connecter avec ce numéro pour accepter le billet sous 48 h.';
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
+/** Code du refus « mot de passe récent exigé » (lib/auth/password-confirm.ts). */
+const PASSWORD_CONFIRMATION_REQUIRED = 'PASSWORD_CONFIRMATION_REQUIRED';
 
 /** Contrôle de forme seulement (8 à 15 chiffres, indicatif facultatif) ; la validation fait foi côté serveur. */
 function looksLikePhone(value: string): boolean {
@@ -64,6 +76,8 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [success, setSuccess] = useState<TransferSuccess | null>(null);
+  /** Numéro du transfert refusé faute de mot de passe récent : la boîte « mot de passe » est ouverte. */
+  const [pendingRecipient, setPendingRecipient] = useState<string | null>(null);
 
   if (!ticket) return null;
 
@@ -72,6 +86,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
     setFieldError(null);
     setServerError(null);
     setSuccess(null);
+    setPendingRecipient(null);
   };
 
   const handleClose = () => {
@@ -118,6 +133,11 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
       return;
     }
     setFieldError(null);
+    await send(value);
+  };
+
+  /** Envoi du transfert ; relancé tel quel après la confirmation du mot de passe. */
+  const send = async (value: string) => {
     setServerError(null);
     setIsSubmitting(true);
     try {
@@ -129,12 +149,16 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
         },
         body: JSON.stringify({ recipient: value }),
       });
-      let data: { success?: boolean; error?: unknown; transfer?: { ticket_number?: unknown; recipient?: unknown; expires_at?: unknown } } = {};
+      let data: { success?: boolean; error?: unknown; code?: unknown; transfer?: { ticket_number?: unknown; recipient?: unknown; expires_at?: unknown } } = {};
       try {
         data = await res.json();
       } catch (err) {
         console.error(`[TransferModal] réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
         setServerError(`Réponse inattendue du serveur (erreur ${res.status}).`);
+        return;
+      }
+      if (res.status === 403 && data.code === PASSWORD_CONFIRMATION_REQUIRED) {
+        setPendingRecipient(value);
         return;
       }
       if (!res.ok || data.success !== true || !data.transfer) {
@@ -188,6 +212,22 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
   );
 
   return (
+    <>
+    {pendingRecipient !== null && (
+      <PasswordConfirmDialog
+        isOpen
+        onClose={() => {
+          setPendingRecipient(null);
+          setServerError('Transfert interrompu : votre mot de passe est demandé pour continuer.');
+        }}
+        onConfirmed={() => {
+          const value = pendingRecipient;
+          setPendingRecipient(null);
+          void send(value);
+        }}
+        actionHint="Le billet sera envoyé juste après."
+      />
+    )}
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
@@ -283,5 +323,6 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
         </form>
       )}
     </Modal>
+    </>
   );
 };
