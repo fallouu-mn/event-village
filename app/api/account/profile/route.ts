@@ -7,6 +7,7 @@ import {
     noStore,
     technicalEmailOf,
 } from '@/lib/auth/account-sync';
+import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
 import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
 import { isTechnicalAddress } from '@/lib/notifications/channels';
@@ -60,6 +61,19 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
     try {
         const supabase = getServiceRoleClient();
+        // Lot 9 bis (R57, B35, tâche 13) : changer d'adresse (nouvelle adresse en attente, ou adresse vidée) exige un mot
+        // de passe saisi depuis moins de 10 minutes sur la session, avant tout effet. Les refus de validation (400)
+        // passent avant ; un enregistrement sans changement d'adresse ne demande rien.
+        const { data: row, error: rowErr } = await supabase.from('users').select('email_pending').eq('id', user.id).maybeSingle();
+        if (rowErr) return refuse(rowErr);
+        const pending = (row?.email_pending as string | null | undefined) ?? null;
+        const emailChange = typedEmail
+            ? (currentEmail ?? '').toLowerCase() !== email && pending !== email
+            : authChange || pending !== null;
+        if (emailChange) {
+            const recent = await requireRecentPassword(req, user.id);
+            if (recent) return recent;
+        }
         if (typedEmail && (currentEmail ?? '').toLowerCase() !== email) {
             if ((await identityTaken(user.id, email, null)).emailTaken) return refuse(EMAIL_TAKEN);
         }
@@ -111,7 +125,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
  * Le compte vient de la session. Lot 9 bis (R87, contrat 4.6) : une adresse saisie est mise en attente
  * (account_profile_finalize) et reçoit un lien de vérification ; auth.users n'est écrit que pour l'adresse vidée
  * (ordre AR2 : identité libre (AM1), auth.admin.updateUserById, RPC, compensation). Réponse
- * { ok, email_technical, email_pending, email_verification }.
+ * { ok, email_technical, email_pending, email_verification }. Tout changement d'adresse exige un mot de passe saisi
+ * depuis moins de 10 minutes sur la session (R57 : 403 PASSWORD_CONFIRMATION_REQUIRED, requireRecentPassword).
  */
 export async function PATCH(req: NextRequest) {
     return noStore(await handle(req));
