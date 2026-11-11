@@ -3,6 +3,8 @@
  * Exigence de la consigne : « le partenaire B ne voit rien de l'événement de A ».
  *  - GET /api/partner/events/[id]/pilotage/{overview,sales,entries,team,cash,closing} et
  *    POST …/participants-export : partenaire propriétaire avec compte ACTIF → 200 ; admin → 200 ;
+ *    lot 9 bis (R2, T26, renforcé) : l'admin est un admin events.read ; sans permission → 403 PERMISSION_MISSING sans
+ *    donnée ; export avec contacts sans partners.read → 403, avec → 200 (rouge jusqu'à fix(9b.11)) ;
  *    partenaire B → 404 sans aucune donnée (et 200 sur son propre événement, témoin) ; client, même
  *    porteur d'un billet de l'événement → 403 ou 404 ; sans session → 401 ; événement inconnu → 404 ;
  *    compte du partenaire propriétaire SUSPENDU → refusé (401, 403 ou 404), sans donnée ;
@@ -38,8 +40,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import ts from 'typescript';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
-import { signInAs, type SignedInUser } from '../helpers/fixtures';
 import { disposeClients, signedInClient } from '../helpers/realtime';
+import { newAdminWith } from './terrain-helpers';
+import type { TestAdmin } from './notif-helpers';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { newController, scan, ticketPayload, type RouteResult } from './acces-helpers';
@@ -56,7 +59,10 @@ let evB: DraftEvent;
 let evS: DraftEvent;
 let client: Buyer;
 let controller: Buyer;
-let admin: SignedInUser;
+/** Lot 9 bis (R2, T26) : admin events.read, admin sans permission, admin events.read + partners.read (contacts). */
+let admin: TestAdmin;
+let adminBare: TestAdmin;
+let adminContacts: TestAdmin;
 
 after(async () => {
     await assertLifecycleInvariants('pilotage-acces');
@@ -98,7 +104,9 @@ describe('5.10 Isolation : le partenaire B ne voit rien de l’événement de A'
         controller = await newController(partnerA, evA.eventId, { label: 'pil-acces' });
         const res = await scan(controller, { eventId: evA.eventId, payload: await ticketPayload(String(tickets[0].id)) });
         assert.equal(res.body.result, 'valid', `scan du jeu : ${show(res)}`);
-        admin = await signInAs('ADMIN');
+        admin = await newAdminWith(['events.read'], { label: 'pil-acces-lecture' });
+        adminBare = await newAdminWith([], { label: 'pil-acces-nu' });
+        adminContacts = await newAdminWith(['events.read', 'partners.read'], { label: 'pil-acces-contacts' });
     });
 
     test('propriétaire : 200 sur les six onglets et l’export (témoin)', async () => {
@@ -129,13 +137,27 @@ describe('5.10 Isolation : le partenaire B ne voit rien de l’événement de A'
         assertExportRefused(await participantsExport(null, evA.eventId, { includeContacts: false }), [401], 'sans session, export');
     });
 
-    test('admin : 200 sur les six onglets et l’export', async () => {
+    test('admin : events.read → 200 sur les six onglets et l’export ; sans permission → 403 PERMISSION_MISSING sans donnée ; contacts : partners.read exigé', async () => {
         for (const tab of PILOTAGE_TABS) {
             const res = await pilotageGet(admin, evA.eventId, tab);
-            assert.equal(res.status, 200, `admin, pilotage/${tab} : ${show(res)}`);
+            assert.equal(res.status, 200, `admin events.read, pilotage/${tab} : ${show(res)}`);
+            const bare = await pilotageGet(adminBare, evA.eventId, tab);
+            assertRefusal(bare, [403], `admin sans permission, pilotage/${tab}`);
+            assert.equal(bare.body.code, 'PERMISSION_MISSING', `admin sans permission, pilotage/${tab} : ${show(bare)}`);
         }
         const exp = await participantsExport(admin, evA.eventId, { includeContacts: false });
-        assert.equal(exp.status, 200, `admin, export : ${showExport(exp)}`);
+        assert.equal(exp.status, 200, `admin events.read, export : ${showExport(exp)}`);
+        const bareExp = await participantsExport(adminBare, evA.eventId, { includeContacts: false });
+        assertExportRefused(bareExp, [403], 'admin sans permission, export');
+        assert.equal(bareExp.json?.code, 'PERMISSION_MISSING', `admin sans permission, export : ${showExport(bareExp)}`);
+        const contacts = { includeContacts: true, purpose: 'URGENT_EVENT_INFO' };
+        const noContacts = await participantsExport(admin, evA.eventId, contacts);
+        assertExportRefused(noContacts, [403], 'admin events.read sans partners.read, export avec contacts');
+        assert.equal(noContacts.json?.code, 'PERMISSION_MISSING', `export avec contacts sans partners.read : ${showExport(noContacts)}`);
+        assert.equal(noContacts.json?.permission, 'partners.read', `permission nommée : ${showExport(noContacts)}`);
+        const withContacts = await participantsExport(adminContacts, evA.eventId, contacts);
+        assert.equal(withContacts.status, 200, `admin events.read + partners.read, export avec contacts : ${showExport(withContacts)}`);
+        assert.match(withContacts.contentType, /text\/csv/i, 'fichier CSV servi');
     });
 
     test('événement inconnu : 404, même pour un partenaire ou un admin', async () => {

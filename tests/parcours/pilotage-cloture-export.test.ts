@@ -37,7 +37,8 @@ import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
-import { signInAs, type SignedInUser } from '../helpers/fixtures';
+import { newAdminWith } from './terrain-helpers';
+import type { TestAdmin } from './notif-helpers';
 import { service, type Buyer } from './paiement-helpers';
 import { advanceEventTo, eventStatus } from './cycle-helpers';
 import {
@@ -46,11 +47,12 @@ import {
 } from './pilotage-helpers';
 
 let ds: KnownDataset;
-let admin: SignedInUser;
+/** Lot 9 bis (R2, T30) : l'admin qui exporte est un admin events.read (la fixture ADMIN n'a aucune permission). */
+let admin: TestAdmin;
 
 before(async () => {
     ds = await buildKnownDataset('cloture');
-    admin = await signInAs('ADMIN');
+    admin = await newAdminWith(['events.read'], { label: 'cloture-lecture' });
 });
 
 after(async () => {
@@ -309,7 +311,7 @@ describe('5.10 Export des participants : POST …/participants-export', () => {
         }
     });
 
-    test('chaque export journalisé : acteur, contacts, finalité, nombre de lignes, sans donnée de participant ; l’admin aussi', async () => {
+    test('chaque export journalisé : acteur, contacts, finalité, nombre de lignes, sans donnée de participant ; l’admin events.read aussi', async () => {
         const res = await participantsExport(admin, ds.eventId, { includeContacts: false });
         assertCsv(res, 'export par l’admin');
         const rows = await exportsOf(ds.eventId);

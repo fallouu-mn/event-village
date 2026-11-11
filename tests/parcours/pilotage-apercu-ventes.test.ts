@@ -32,18 +32,18 @@ import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
-import { signInAs, type SignedInUser } from '../helpers/fixtures';
+import { newAdminWith } from './terrain-helpers'; import type { TestAdmin } from './notif-helpers';
 import {
-    buildKnownDataset, dakarDay, eventTicketRows, EXPECTED, ETUDIANT, findItem, listAt, numberAt, pilotageOk, PREVENTE, STANDARD, VIP,
+    buildKnownDataset, dakarDay, eventTicketRows, EXPECTED, ETUDIANT, findItem, listAt, numberAt, pilotageGet, pilotageOk, PREVENTE, show, STANDARD, VIP,
     type KnownDataset,
 } from './pilotage-helpers';
 
 let ds: KnownDataset;
-let admin: SignedInUser;
+let admin: TestAdmin; let adminBare: TestAdmin; // lot 9 bis (R2, T29) : admin events.read + events.write (actions de l'admin), admin sans permission
 
 before(async () => {
     ds = await buildKnownDataset('apercu');
-    admin = await signInAs('ADMIN');
+    admin = await newAdminWith(['events.read', 'events.write'], { label: 'apercu-admin' }); adminBare = await newAdminWith([], { label: 'apercu-nu' });
 });
 
 after(async () => {
@@ -104,7 +104,7 @@ describe('5.10 Aperçu : GET …/pilotage/overview', () => {
             `taux de présence = 7 / (10 + 1) ≈ ${EXPECTED.entries.attendance_rate.toFixed(4)} (rapport de 0 à 1), reçu ${rate}`);
     });
 
-    test('admin : 200 et mêmes chiffres ; l’action « suspendre » lui est proposée avec motif obligatoire', async () => {
+    test('admin events.read + events.write : 200 et mêmes chiffres ; l’action « suspendre » lui est proposée avec motif obligatoire', async () => {
         const body = await pilotageOk(admin, ds.eventId, 'overview', 'l’admin');
         assert.equal(body.status, 'PUBLIE');
         assert.equal(numberAt(body, 'tickets.sold', 'vendus (admin)'), EXPECTED.tickets.sold);
@@ -122,6 +122,17 @@ describe('5.10 Aperçu : GET …/pilotage/overview', () => {
         const suspend = actions.find((a) => a.to === 'SUSPENDU');
         assert.ok(suspend, `admin sur un événement PUBLIE : action SUSPENDU proposée (table D1) : ${JSON.stringify(actions)}`);
         assert.equal(suspend.reason_required, true, `suspension : motif obligatoire (D1) : ${JSON.stringify(suspend)}`);
+    });
+
+    test('lot 9 bis (R2, T29) : admin sans permission → 403 PERMISSION_MISSING sur l’aperçu et les ventes, sans aucun chiffre', async () => {
+        for (const tab of ['overview', 'sales'] as const) {
+            const res = await pilotageGet(adminBare, ds.eventId, tab);
+            assert.equal(res.status, 403, `R2 : admin sans permission, pilotage/${tab} → 403 attendu : ${show(res)}`);
+            assert.equal(res.body.code, 'PERMISSION_MISSING', `admin sans permission, pilotage/${tab} : ${show(res)}`);
+            for (const key of ['tickets', 'revenue', 'entries', 'by_category', 'by_day', 'actions']) {
+                assert.equal(res.body[key], undefined, `admin sans permission, pilotage/${tab} : aucune donnée (${key}) : ${show(res)}`);
+            }
+        }
     });
 });
 

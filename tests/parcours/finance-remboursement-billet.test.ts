@@ -1,7 +1,7 @@
 /**
  * Lot 3.4 — remboursement unitaire réel d'un billet (contrat D, constats R23 / ticketing-finance-5).
  *  - route POST /api/partner/events/[id]/tickets/[ticketId]/refund : partenaire propriétaire de
- *    l'événement [id] ou ADMIN / SUPERADMIN (rôles user_roles) ; CONTROLEUR refusé (403) ; partenaire
+ *    l'événement [id] ou ADMIN muni de refunds.manage / SUPERADMIN (lot 9 bis, R2, T27 : renforcé) ; CONTROLEUR refusé (403) ; partenaire
  *    étranger refusé ; billet d'un autre événement → 404 ;
  *  - billet payé en ligne : cashout TICKET_REFUND de clé REFUND-TKT-<ticketId>, montant = prix + frais
  *    de service du billet ; billet REMBOURSEMENT_EN_COURS puis REMBOURSE à la confirmation du versement ;
@@ -26,7 +26,7 @@ import {
     paymentRow, withSettings, type TestPartner,
 } from './finance-helpers';
 import { categoryState, fakePay, importModule, newBuyer, service, setFakeMode, type Buyer, type SaleEvent } from './paiement-helpers';
-import { flushNotifications, outboxRows } from './notif-helpers';
+import { flushNotifications, outboxRows } from './notif-helpers'; import { newAdminWith } from './terrain-helpers';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
@@ -126,7 +126,7 @@ async function cashSale(buyer: Buyer, sale: SaleEvent, category: string): Promis
 }
 
 describe('Accès à la route de remboursement', () => {
-    test('CONTROLEUR 403, partenaire étranger refusé, billet d’un autre événement 404, ADMIN accepté', async () => {
+    test('CONTROLEUR 403, partenaire étranger refusé, billet d’un autre événement 404, ADMIN sans refunds.manage 403 sans versement, ADMIN refunds.manage accepté', async () => {
         const buyer = await newBuyer('remb-acces');
         const { tickets } = await buyConfirmed(buyer, ev, [['Standard', 1]]);
         const t = String(tickets[0].id);
@@ -144,9 +144,9 @@ describe('Accès à la route de remboursement', () => {
         assert.equal((await ticket(t)).status, 'VALIDE', 'billet intact après les refus');
         assert.equal((await cashoutsByKey(`REFUND-TKT-${t}`)).length, 0, 'aucun cashout après les refus');
 
-        const admin = await signInAs('ADMIN');
-        const ok = await requestRefund(admin.accessToken, ev.eventId, t);
-        assert.equal(ok.status, 200, `ADMIN : HTTP ${ok.status} ${JSON.stringify(ok.body)}`);
+        const other = await newAdminWith(['events.read', 'events.write'], { label: 'remb-sans-perm' }); const denied = await requestRefund(other.accessToken, ev.eventId, t);
+        assert.equal(denied.status, 403, `R2 : ADMIN sans refunds.manage → 403 : HTTP ${denied.status} ${JSON.stringify(denied.body)}`); assert.equal((await cashoutsByKey(`REFUND-TKT-${t}`)).length, 0, 'aucun cashout pour l’ADMIN sans refunds.manage');
+        const admin = await newAdminWith(['refunds.manage'], { label: 'remb-perm' }); const ok = await requestRefund(admin.accessToken, ev.eventId, t); assert.equal(ok.status, 200, `ADMIN refunds.manage : HTTP ${ok.status} ${JSON.stringify(ok.body)}`);
         assert.equal((await cashoutsByKey(`REFUND-TKT-${t}`)).length, 1, 'cashout créé à la demande de l’ADMIN');
     });
 });

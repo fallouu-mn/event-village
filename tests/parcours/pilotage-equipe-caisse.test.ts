@@ -4,7 +4,7 @@
  *    l'événement, avec l'identifiant de l'affectation, le nom, le point d'entrée et la permission espèces ;
  *  - PATCH /api/partner/team/assignments/[id] { canAcceptCash } : par affectation (et non plus pour
  *    tous les événements d'un contrôleur), propriétaire seul, journalisé ; partenaire B → 404, admin
- *    refusé, corps invalide → 400, affectation inconnue → 404 ;
+ *    sans permission refusé (lot 9 bis, R2, T31 : admin events.write accepté), corps invalide → 400, affectation inconnue → 404 ;
  *  - GET …/pilotage/cash (RPC pilotage_cash) : caisses ouvertes et clôturées (fonds, espèces
  *    encaissées, déclaré hors fonds, écart, justification), espèces par contrôleur, PIN régisseur
  *    { hasPin, updatedAt } sans jamais le haché ; régénération par la route du lot 4, confirmée.
@@ -29,7 +29,7 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
-import { signInAs, type SignedInUser } from '../helpers/fixtures';
+import { newAdminWith } from './terrain-helpers'; import type { TestAdmin } from './notif-helpers';
 import { service } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
 import { assignController } from './acces-helpers';
@@ -41,13 +41,13 @@ import {
 
 let ds: KnownDataset;
 let partnerB: TestPartner;
-let admin: SignedInUser;
+let admin: TestAdmin; let adminWriter: TestAdmin; // lot 9 bis (R2, T31) : admin sans permission, admin events.write
 let otherEvent: DraftEvent;
 
 before(async () => {
     ds = await buildKnownDataset('equipe');
     partnerB = await newPartner('pil-equipe-b');
-    admin = await signInAs('ADMIN');
+    admin = await newAdminWith([], { label: 'equipe-nu' }); adminWriter = await newAdminWith(['events.write'], { label: 'equipe-ecrit' });
     otherEvent = await createDraftEvent(ds.partner, 'pilotage-equipe-autre', [{ name: STANDARD, price: 1_000, total: 5 }]);
     await assignController(ds.partner, ds.c4.userId, otherEvent.eventId, false);
 });
@@ -109,15 +109,18 @@ describe('PATCH /api/partner/team/assignments/[id] { canAcceptCash }', () => {
         assert.equal(row.can_accept_cash, true, 'onglet Équipe : permission espèces de C4 mise à jour');
     });
 
-    test('partenaire B : 404 sans effet ; admin : refusé ; corps invalide : 400 ; affectation inconnue : 404', async () => {
+    test('partenaire B : 404 sans effet ; admin sans permission : 403 PERMISSION_MISSING ; corps invalide : 400 ; affectation inconnue : 404 ; admin events.write : accepté (lot 9 bis, R2)', async () => {
         assert.equal(await cashPermission(ds.eventId, ds.c4.userId), true, 'garde-fou : permission accordée par le test précédent');
         const byB = await patchAssignment(partnerB, ds.assignments.c4, { canAcceptCash: false });
         assert.equal(byB.status, 404, `partenaire B : 404 attendu, ${show(byB)}`);
         assert.ok(!JSON.stringify(byB.body).includes(ds.c4.lastName), `partenaire B : aucune donnée de l’affectation : ${show(byB)}`);
         assert.equal(await cashPermission(ds.eventId, ds.c4.userId), true, 'partenaire B : affectation inchangée');
 
+        // Lot 9 bis (R2, T31, règle changée par la consigne 11) : l'admin sans permission est refusé en 403 PERMISSION_MISSING
+        // (avant : tout admin refusé, OWNER_ONLY) ; l'admin events.write est accepté, en fin de test.
         const byAdmin = await patchAssignment(admin, ds.assignments.c4, { canAcceptCash: false });
-        assert.ok([403, 404].includes(byAdmin.status), `admin : modification réservée au propriétaire (403 ou 404), ${show(byAdmin)}`);
+        assert.equal(byAdmin.status, 403, `admin sans permission : 403 attendu, ${show(byAdmin)}`);
+        assert.equal(byAdmin.body.code, 'PERMISSION_MISSING', `admin sans permission : code du refus, ${show(byAdmin)}`);
         assert.equal(await cashPermission(ds.eventId, ds.c4.userId), true, 'admin : affectation inchangée');
 
         const invalid = await patchAssignment(ds.partner, ds.assignments.c4, { canAcceptCash: 'oui' });
@@ -127,6 +130,11 @@ describe('PATCH /api/partner/team/assignments/[id] { canAcceptCash }', () => {
 
         const unknown = await patchAssignment(ds.partner, randomUUID(), { canAcceptCash: false });
         assert.equal(unknown.status, 404, `affectation inconnue : 404 attendu, ${show(unknown)}`);
+
+        const byWriter = await patchAssignment(adminWriter, ds.assignments.c4, { canAcceptCash: false });
+        assert.equal(byWriter.status, 200, `R2 : admin events.write → 200 attendu, ${show(byWriter)}`);
+        assert.equal(await cashPermission(ds.eventId, ds.c4.userId), false, 'admin events.write : permission espèces de C4 retirée');
+        assert.equal(await cashPermission(otherEvent.eventId, ds.c4.userId), false, 'admin events.write : l’autre affectation de C4 reste inchangée');
     });
 });
 

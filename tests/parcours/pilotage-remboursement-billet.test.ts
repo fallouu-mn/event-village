@@ -33,7 +33,7 @@ import { authed, createTimedEvent, scan, ticketPayload, ticketRow, type RouteRes
 import { buyConfirmed, createPartnerEvent, newPartner, type TestPartner } from './finance-helpers';
 import { BASE_URL } from './helpers';
 import { importModule, newBuyer, service, setFakeMode, type Buyer, type SaleEvent } from './paiement-helpers';
-import { issueFreeTicket } from './terrain-helpers';
+import { issueFreeTicket, newAdminWith } from './terrain-helpers';
 
 type Row = Record<string, unknown>;
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
@@ -139,8 +139,8 @@ describe('A4 — GET …/tickets/lookup : droits de la route de remboursement', 
         const number = bought.ticket_number;
         assert.equal(ticketOf(await lookup(partner.accessToken, ev.eventId, number)).id, bought.id, 'propriétaire');
 
-        const adminUser = await signInAs('ADMIN');
-        assert.equal(ticketOf(await lookup(adminUser.accessToken, ev.eventId, number)).id, bought.id, 'ADMIN');
+        const adminUser = await newAdminWith(['refunds.manage'], { label: 'lookup-perm' }); const adminWithout = await newAdminWith(['events.read', 'events.write'], { label: 'lookup-sans' });
+        assert.equal(ticketOf(await lookup(adminUser.accessToken, ev.eventId, number)).id, bought.id, 'ADMIN refunds.manage (lot 9 bis, R2, T28)'); const withoutRes = await lookup(adminWithout.accessToken, ev.eventId, number); assert.equal(withoutRes.status, 403, `R2 : ADMIN sans refunds.manage → 403 : ${show(withoutRes)}`); assert.equal(withoutRes.body.ticket, undefined, 'aucune fiche pour l’ADMIN sans refunds.manage');
 
         const foreign = await lookup(other.accessToken, ev.eventId, number);
         assert.equal(foreign.status, 403, `autre partenaire : ${show(foreign)}`);
