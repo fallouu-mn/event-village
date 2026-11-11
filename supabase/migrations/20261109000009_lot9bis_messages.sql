@@ -56,6 +56,9 @@
 --   - tâche 2 (S-A, R5, A7, B17) : une transition de la cascade de suspension d'une partenaire (marqueur
 --     transactionnel ev.partner_cascade = '1' posé par partner_status_set, M06) ne met ni EVENT_SUSPENDED ni
 --     EVENT_REACTIVATED en file à la partenaire ; porteurs (in-app, push) et contrôleurs (in-app) restent prévenus.
+--   - tâche 5 (S-A, R32, B23) : event_update écrit event_start_changes (ancien et nouveau début, acteur) à chaque
+--     changement de début, puis met refund_open dans les données EVENT_CHANGED du porteur dont un billet ouvre le
+--     remboursement d'un report (ticket_postponement_refund_open, M06) : variante « report » du SMS et de l'in-app.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -331,6 +334,7 @@ REVOKE ALL ON FUNCTION public.notif_event_status_changed() FROM PUBLIC, anon, au
 -- réponse et audit + notified_phones.
 -- Tâche 32 : SMS d'un porteur dû dans 10 minutes, fusion à fenêtre fixe, immédiat si un début est à moins d'une heure.
 -- Tâche 33 : contrôleurs affectés (CONTROLLER_EVENT_CHANGED, in-app immédiat, SMS et email à 10 minutes, fusionnés).
+-- Tâche 5 (délégation, S-A) : event_start_changes écrit à chaque changement de début ; refund_open par porteur.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.event_update(p jsonb)
 RETURNS jsonb
@@ -390,6 +394,7 @@ DECLARE
     v_holder uuid;
     v_nkey text;
     v_data jsonb;
+    v_hdata jsonb;
     v_pending_id uuid;
     v_pending_data jsonb;
     v_urgent boolean := false;
@@ -618,6 +623,14 @@ BEGIN
            updated_at = now()
      WHERE id = v_event;
 
+    -- Lot 9 bis (R32, B23) : changement de début journalisé ; le droit au remboursement d'un report se mesure depuis
+    -- le début en vigueur à l'achat (ticket_postponement_refund_open, M06). Ordre : events NKU → catégories →
+    -- event_start_changes (clé étrangère vers l'événement déjà tenu) → boîte d'envoi.
+    IF v_start_changed THEN
+        INSERT INTO public.event_start_changes (event_id, old_start_at, new_start_at, actor_id)
+        VALUES (v_event, v_old_start, v_new_start, v_actor);
+    END IF;
+
     -- Fonds : une fin qui recule repousse la disponibilité des crédits VENTE pas encore disponibles ; jamais d'avancement
     IF v_new_end > v_old_end THEN
         UPDATE public.finance_ledger l
@@ -651,9 +664,15 @@ BEGIN
     IF v_notified > 0 THEN
         FOREACH v_holder IN ARRAY v_holders LOOP
             v_nkey := 'EVENT_CHANGED:' || v_event::text || ':' || v_holder::text || ':v' || v_version::text;
+            -- Lot 9 bis (R32, B23) : report qui ouvre le remboursement d'un billet du porteur (règle de M06, lue après
+            -- l'écriture du nouveau début et de event_start_changes) → variante « report » du modèle
+            v_hdata := v_data || CASE WHEN EXISTS (SELECT 1 FROM public.tickets t
+                                                    WHERE t.event_id = v_event AND t.user_id = v_holder
+                                                      AND public.ticket_postponement_refund_open(t.id))
+                                      THEN jsonb_build_object('refund_open', true) ELSE '{}'::jsonb END;
             PERFORM public.notif_enqueue(jsonb_build_object(
                 'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
-                'data', v_data, 'channels', jsonb_build_array('IN_APP', 'PUSH')));
+                'data', v_hdata, 'channels', jsonb_build_array('IN_APP', 'PUSH')));
 
             -- SMS regroupé : la ligne en attente du porteur pour cet événement reçoit l'union des champs ; lot 9 bis
             -- (R26, B71) : fenêtre fixe de 10 minutes depuis le premier changement, jamais prolongée, ramenée à
@@ -668,7 +687,7 @@ BEGIN
                FOR UPDATE;
             IF v_pending_id IS NOT NULL THEN
                 UPDATE public.notification_outbox
-                   SET template_data = (v_pending_data - 'migrated_from') || v_data || jsonb_build_object('changed_fields', (
+                   SET template_data = (v_pending_data - 'migrated_from' - 'refund_open') || v_hdata || jsonb_build_object('changed_fields', (
                            SELECT COALESCE(jsonb_agg(f ORDER BY f), '[]'::jsonb)
                              FROM (SELECT jsonb_array_elements_text(COALESCE(v_pending_data->'changed_fields', '[]'::jsonb)) AS f
                                    UNION
@@ -683,7 +702,7 @@ BEGIN
             IF v_sms AND v_pending_id IS NULL THEN
                 PERFORM public.notif_enqueue(jsonb_build_object(
                     'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
-                    'data', v_data, 'channels', jsonb_build_array('SMS'), 'due_at', v_due));
+                    'data', v_hdata, 'channels', jsonb_build_array('SMS'), 'due_at', v_due));
                 IF EXISTS (SELECT 1 FROM public.notification_outbox o
                             WHERE o.idempotency_key = v_nkey || ':SMS' AND o.status = 'PENDING') THEN
                     v_sms_queued := v_sms_queued + 1;
@@ -692,7 +711,7 @@ BEGIN
                 -- Titre seul : aucun SMS, trace SKIPPED (le SMS déjà en attente porte le nouveau titre)
                 PERFORM public.notif_enqueue(jsonb_build_object(
                     'type', 'EVENT_CHANGED', 'key', v_nkey, 'user_id', v_holder, 'event_id', v_event,
-                    'data', v_data, 'channels', jsonb_build_array('SMS'),
+                    'data', v_hdata, 'channels', jsonb_build_array('SMS'),
                     'skip', jsonb_build_object('SMS', 'TITLE_ONLY')));
             END IF;
         END LOOP;
