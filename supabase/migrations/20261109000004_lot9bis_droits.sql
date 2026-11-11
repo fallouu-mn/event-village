@@ -54,6 +54,12 @@
 --  8 bis. user_roles_set (même définition, point 8) écrit son journal ROLES_SET (acteur, rôles avant et après) dans la
 --     transaction, après le changement : un journal refusé annule le changement de rôles.
 -- 14. Trigger trg_audit_cashouts AFTER INSERT OR UPDATE OF status, blocked_reason ON cashouts (audit_log_changes).
+--
+-- Délégation fix(9b.23-SB) (R63 ; B54, pour S-C) :
+-- 15. account_phone_finalize(jsonb) : base 20261108000004_lot9_compte.sql:203-270, recopie intégrale, signature et
+--     VOLATILE identiques. Changement : transferts PENDING vers l'ancien numéro annulés dans la transaction (expéditeur :
+--     billet déverrouillé, TRANSFER_RECIPIENT_CHANGED ; invitation sans expéditeur : billet ANNULE, place rendue, sans
+--     avis) ; `transfers_cancelled` dans la réponse et le journal.
 -- ============================================================================
 
 
@@ -719,6 +725,130 @@ CREATE TRIGGER trg_audit_cashouts
 
 
 -- ============================================================================
+-- Délégation fix(9b.23-SB) (R63 ; B54) — 15. account_phone_finalize (recopie, 20261108000004_lot9_compte.sql:203-270)
+-- ============================================================================
+-- p = { user_id, new_phone, expected_phone, new_email, keep_session_id }, en une transaction : profil, autres sessions,
+-- SMS à l'ancien numéro, audit. keep_session_id est obligatoire : jamais de révocation totale par défaut.
+-- Lot 9 bis (R63, B54) : les transferts PENDING vers l'ancien numéro sont annulés dans la même transaction. Transfert
+-- d'un expéditeur : CANCELLED, billet déverrouillé (rendu à l'expéditeur), TRANSFER_RECIPIENT_CHANGED à l'expéditeur.
+-- Invitation sans expéditeur : CANCELLED, billet VALIDE → ANNULE, place rendue (sold_quantity − 1), sans avis.
+-- Verrous : users FOR UPDATE → catégories des invitations ORDER BY id FOR NO KEY UPDATE → transferts ORDER BY id
+-- FOR UPDATE → billets (ordre 3.3 : catégories avant transferts, transferts avant billets ; la catégorie d'un billet ne
+-- change jamais, lue d'abord sans verrou comme ticket_invitation_cancel).
+CREATE OR REPLACE FUNCTION public.account_phone_finalize(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user      uuid := NULLIF(p->>'user_id', '')::uuid;
+    v_new       text := NULLIF(btrim(COALESCE(p->>'new_phone', '')), '');
+    v_expected  text := p->>'expected_phone';
+    v_new_email text := NULLIF(btrim(COALESCE(p->>'new_email', '')), '');
+    v_keep      uuid := NULLIF(p->>'keep_session_id', '')::uuid;
+    v_old       text;
+    v_role      text;
+    v_old_e164  text;
+    v_sessions  integer;
+    v_queued    integer := 0;
+    v_tr        record;
+    v_tk        record;
+    v_cancelled integer := 0;
+BEGIN
+    IF v_user IS NULL OR v_keep IS NULL OR v_new IS NULL OR v_new !~ '^\+221[0-9]{9}$' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT');
+    END IF;
+
+    SELECT u.phone, u.role::text INTO v_old, v_role FROM public.users u WHERE u.id = v_user FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'USER_NOT_FOUND');
+    END IF;
+    IF v_old IS DISTINCT FROM v_expected THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PHONE_CONFLICT');
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.users u WHERE u.id <> v_user AND u.phone IN (v_new, ltrim(v_new, '+'))) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PHONE_TAKEN');
+    END IF;
+
+    UPDATE public.users
+       SET phone = v_new, phone_verified_at = now(), email = COALESCE(v_new_email, email)
+     WHERE id = v_user;
+
+    UPDATE auth.refresh_tokens
+       SET revoked = true, updated_at = now()
+     WHERE user_id = v_user::text
+       AND session_id IS DISTINCT FROM v_keep
+       AND revoked IS DISTINCT FROM true;
+    DELETE FROM auth.sessions WHERE user_id = v_user AND id <> v_keep;
+    GET DIAGNOSTICS v_sessions = ROW_COUNT;
+
+    IF v_old ~ '^\+?221[0-9]{9}$' THEN
+        v_old_e164 := '+' || ltrim(v_old, '+');
+
+        -- Lot 9 bis (R63, B54) : transferts en attente vers l'ancien numéro annulés (le destinataire n'a plus ce numéro).
+        PERFORM 1
+           FROM public.ticket_categories c
+          WHERE c.id IN (SELECT t.category_id
+                           FROM public.ticket_transfers x JOIN public.tickets t ON t.id = x.ticket_id
+                          WHERE x.status::text = 'PENDING' AND x.from_user_id IS NULL
+                            AND x.to_phone_or_email IN (v_old_e164, ltrim(v_old_e164, '+')))
+          ORDER BY c.id
+            FOR NO KEY UPDATE;
+        FOR v_tr IN
+            SELECT x.id, x.ticket_id, x.from_user_id
+              FROM public.ticket_transfers x
+             WHERE x.status::text = 'PENDING' AND x.to_phone_or_email IN (v_old_e164, ltrim(v_old_e164, '+'))
+             ORDER BY x.id
+               FOR UPDATE
+        LOOP
+            SELECT t.id, t.status::text AS status, t.category_id, t.event_id INTO v_tk
+              FROM public.tickets t WHERE t.id = v_tr.ticket_id FOR UPDATE;
+            UPDATE public.ticket_transfers SET status = 'CANCELLED', cancelled_at = now() WHERE id = v_tr.id;
+            v_cancelled := v_cancelled + 1;
+            IF v_tr.from_user_id IS NULL THEN
+                -- Invitation à réclamer : billet annulé et place rendue, aucun avis (B54)
+                IF v_tk.status = 'VALIDE' THEN
+                    UPDATE public.tickets SET status = 'ANNULE', transfer_locked = FALSE, updated_at = now() WHERE id = v_tk.id;
+                    UPDATE public.ticket_categories SET sold_quantity = sold_quantity - 1 WHERE id = v_tk.category_id;
+                ELSE
+                    UPDATE public.tickets SET transfer_locked = FALSE, updated_at = now() WHERE id = v_tk.id;
+                END IF;
+            ELSE
+                UPDATE public.tickets SET transfer_locked = FALSE, updated_at = now() WHERE id = v_tk.id;
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'TRANSFER_RECIPIENT_CHANGED', 'key', 'TRANSFER_RECIPIENT_CHANGED:' || v_tr.id::text,
+                    'user_id', v_tr.from_user_id, 'event_id', v_tk.event_id,
+                    'data', COALESCE(public.notif_event_data(v_tk.event_id), '{}'::jsonb)
+                            || jsonb_build_object('transfer_id', v_tr.id, 'ticket_id', v_tk.id)));
+            END IF;
+        END LOOP;
+
+        -- Sans user_id : l'envoyeur viserait le numéro du compte, c'est-à-dire le nouveau (L30).
+        v_queued := public.notif_enqueue(jsonb_build_object(
+            'type', 'PHONE_CHANGED',
+            'key', 'PHONE_CHANGED:' || v_user::text || ':' || txid_current()::text,
+            'phone', v_old_e164,
+            'data', '{}'::jsonb));
+    END IF;
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+    VALUES (v_user, v_role, 'ACCOUNT_PHONE_CHANGED', 'users', v_user, jsonb_build_object(
+        'old_phone_masked', CASE WHEN v_old IS NULL THEN NULL ELSE '*** ** ' || right(v_old, 2) END,
+        'new_phone_masked', '*** ** ' || right(v_new, 2),
+        'sms_queued', v_queued > 0,
+        'sessions_revoked', v_sessions,
+        'transfers_cancelled', v_cancelled));
+
+    RETURN jsonb_build_object('ok', true, 'sessions_revoked', v_sessions, 'transfers_cancelled', v_cancelled);
+EXCEPTION WHEN unique_violation THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'PHONE_TAKEN');
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -736,7 +866,8 @@ BEGIN
         'public.user_roles_set(jsonb)',
         'public.admin_user_status_set(jsonb)',
         'public.partner_register_finalize(jsonb)',
-        'public.partner_dossier_resubmit(jsonb)'
+        'public.partner_dossier_resubmit(jsonb)',
+        'public.account_phone_finalize(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
