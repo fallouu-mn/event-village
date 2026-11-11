@@ -3265,37 +3265,41 @@ Aucun pour la disponibilité ni l'annulation. Retrait : étape 16.10.
 
 ### Étape 17.1 — Compte client suspendu avec des billets
 
-1. **Qui, où, quel bouton.** Aïda, ou Moussa avec `users.write`, `/admin/users`, bouton « Suspendre ». Réactivation : même bouton, « Réactiver ». Preuve : `app/admin/users/page.tsx:423`.
-2. **Ce qu'il saisit.** Aucun, ni motif ni confirmation. Erreur : « Erreur lors du changement de statut. ». Preuve : `app/admin/users/page.tsx:148`.
-3. **Ce que fait le système.** Compte « Suspendu », sessions fermées, message « Le compte de {prénom} {nom} a été suspendu. », exemple « Le compte de Fatou Essai a été suspendu. ». **Les billets ne changent pas** : ils restent « Valable ». À l'entrée, le scan ne lit pas le statut du détenteur : un QR déjà enregistré hors ligne, ou la saisie manuelle avec pièce, valide l'entrée. Annulation de l'événement : remboursement normal. Transfert déjà envoyé par lui : accepté normalement. Transfert vers lui : invisible. La durée exacte d'accès après la suspension est NON VÉRIFIÉ : elle dépend de la durée du jeton, réglée hors du dépôt. Preuve : `app/api/admin/users/route.ts:318-358`, `M/20261108000005_lot9_nettoyage.sql:21-216`, `M/20261103000002_lot6_outbox.sql:446`.
+1. **Qui, où, quel bouton.** Aïda, ou Moussa avec `users.write`, `/admin/users`, bouton « Suspendre », depuis le lot 9 bis avec la fenêtre « Suspendre le compte » ; réactivation : « Réactiver », fenêtre « Réactiver le compte ». Un compte partenaire se suspend depuis sa fiche (étape 2.9) ; un compte ADMIN, par le SUPERADMIN seul. Preuve : `app/admin/users/page.tsx:205`, `:905-925`.
+2. **Ce qu'il saisit.** Depuis le lot 9 bis, « Motif de la suspension » (ou « Motif de la réactivation »), obligatoire, aide « Au moins 3 caractères. Ce motif est communiqué au titulaire du compte. ». Texte : « {prénom} {nom} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. Il est prévenu avec votre motif. ». Erreur : « Erreur lors du changement de statut. », ou le refus du serveur. Preuve : `app/admin/users/page.tsx:912-920`, `:222`.
+3. **Ce que fait le système.** Compte « Suspendu », sessions fermées, décision écrite au journal d'audit dans la même opération, message « Le compte de {prénom} {nom} a été suspendu. », exemple « Le compte de Fatou Essai a été suspendu. ». **Les billets ne changent pas** : ils restent « Valable ». À l'entrée, le scan ne lit pas le statut du détenteur : par décision écrite au lot 9 bis, ses billets payés restent valables à l'entrée ; un QR déjà enregistré hors ligne, ou la saisie manuelle avec pièce, valide l'entrée. Annulation de l'événement : remboursement normal. Transfert déjà envoyé par lui : accepté normalement. Transfert vers lui : invisible. La durée exacte d'accès après la suspension est NON VÉRIFIÉ : elle dépend de la durée du jeton, réglée hors du dépôt. Preuve : `app/api/admin/users/route.ts`, `M/20261109000004_lot9bis_droits.sql` (`admin_user_status_set`), `M/20261108000005_lot9_nettoyage.sql:21-216`, `M/20261103000002_lot6_outbox.sql:446`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
 |---|---|---|---|---|
-| Aucun. | — | — | — | — |
+| Fatou, à la suspension (depuis le lot 9 bis, envoyé malgré la suspension) | SMS | indispensable | prochain passage de la file | modèle « Event Village : votre compte est suspendu. Motif : {reason}. Vos billets payés restent valables à l'entrée. Contactez le support. » ; exemple « Event Village : votre compte est suspendu. Motif : Paiements contestés. Vos billets payés restent valables à l'entrée. Contactez le support. » (140 caractères, 1 segment ; motif coupé à 35 caractères) |
+| Fatou, même cas | cloche, email si l'adresse est vérifiée | indispensable | prochain passage de la file | titre « Compte suspendu » ; exemple « Votre compte est suspendu. Motif : Paiements contestés. Vos billets payés restent valables à l'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d'identité. Contactez le support. » |
+| Fatou, à la réactivation | SMS | indispensable | prochain passage de la file | modèle « Event Village : votre compte est réactivé. Vous pouvez de nouveau vous connecter : {APP_URL}/login » ; exemple « Event Village : votre compte est réactivé. Vous pouvez de nouveau vous connecter : https://eventvillage.sn/login » (112 caractères, 1 segment) |
+| Fatou, même cas | cloche, email si l'adresse est vérifiée | indispensable | prochain passage de la file | titre « Compte réactivé » ; « Votre compte est réactivé : vous pouvez de nouveau vous connecter. » |
 
-Aucun message pour la suspension ni la reprise. Ensuite, les messages liés à l'achat et à l'argent partent quand même ; rappels, transferts, entrée validée, changements et suspension d'un événement sont bloqués. Preuve : `M/20261103000002_lot6_outbox.sql:77-109`, `:377-386`.
+Preuve : `ACCOUNT_SUSPENDED`, `ACCOUNT_REACTIVATED` (`lib/notifications/catalog.ts:1559-1577`). Ensuite, les messages liés à l'achat et à l'argent partent quand même ; rappels, transferts, entrée validée, changements et suspension d'un événement sont bloqués. Preuve : `M/20261103000002_lot6_outbox.sql:77-109`, `:377-386`.
 
 5. **Ce que les autres voient.** Fatou ne peut plus se connecter, ni afficher un QR en ligne.
 6. **Ce qui est impossible.** Tout ce qui passe par sa session : « Votre compte est suspendu. Veuillez contacter le support. », « Votre compte n'est pas actif. Contactez le support. ». Suspendre un SUPERADMIN : pas de bouton.
-7. **Test et essai.** Test : `tests/parcours/statut-compte.test.ts:180` « client SUSPENDU → /api/tickets/[id]/live-code refusé (ACCOUNT_NOT_ACTIVE) » ; `tests/parcours/notif-rappels.test.ts:586` « invitation → rappel ; billet de guichet (sans porteur) → rien ; compte suspendu → lignes SKIPPED ACCOUNT_SUSPENDED (trace) » ; `tests/parcours/notif-outbox.test.ts:1006` « compte suspendu ou partenaire suspendu : SKIPPED ACCOUNT_SUSPENDED sous politique BLOCK, avant la préférence ; ALLOW passe » ; `tests/parcours/finance-retraits.test.ts:468` « compte SUSPENDU : retrait, code de retrait et solde refusés (ACCOUNT_NOT_ACTIVE) ». Aucun test du scan d'un détenteur suspendu. Essai : aucun pour un client.
+7. **Test et essai.** Test : `tests/parcours/messages-comptes-9bis.test.ts:235` « suspension avec motif : ACCOUNT_SUSPENDED SMS SENT malgré le statut, texte exact ; réactivation : ACCOUNT_REACTIVATED, texte exact » ; `tests/parcours/messages-comptes-9bis.test.ts:275` « règle d'entrée (B74, A8) : billet payé d'un client suspendu, code valide scanné → valid » ; `tests/parcours/statut-compte.test.ts:180` « client SUSPENDU → /api/tickets/[id]/live-code refusé (ACCOUNT_NOT_ACTIVE) » ; `tests/parcours/notif-rappels.test.ts:586` « invitation → rappel ; billet de guichet (sans porteur) → rien ; compte suspendu → lignes SKIPPED ACCOUNT_SUSPENDED (trace) » ; `tests/parcours/notif-outbox.test.ts:1006` « compte suspendu ou partenaire suspendu : SKIPPED ACCOUNT_SUSPENDED sous politique BLOCK, avant la préférence ; ALLOW passe » ; `tests/parcours/finance-retraits.test.ts:468` « compte SUSPENDU : retrait, code de retrait et solde refusés (ACCOUNT_NOT_ACTIVE) ». Essai : Essai 73 de `docs/recette-billetterie.md`, ajouté au lot 9 bis.
 
 ### Étape 17.2 — Partenaire suspendu avec un événement publié
 
-1. **Qui, où, quel bouton.** Aïda, `/admin/users`, « Suspendre » (étape 2.9). Le second chemin, avec motif, n'a pas d'écran. Preuve : `app/api/admin/partners/[id]/status/route.ts:69`, `app/admin/dashboard/page.tsx:286`.
-2. **Ce qu'il saisit.** Aucun.
-3. **Ce que fait le système.** Aucun des deux chemins ne touche les événements. **L'événement reste « Publié », visible, en vente.** Les ventes continuent d'être créditées à Mariama. Rappels maintenus. Scan et caisse maintenus. Preuve : `M/20261106000001_lot8_canaux.sql:211-277`, `M/20261102000003_lot5_cycle.sql:1112-1117`, `app/api/events/route.ts:38-41`, `M/20261101000010_lot4_scan.sql:60`.
+1. **Qui, où, quel bouton.** Depuis le lot 9 bis, Aïda, fiche « Dossier du partenaire », « Suspendre », avec motif (étape 2.9). Preuve : `app/admin/dashboard/page.tsx:668-672`.
+2. **Ce qu'il saisit.** Le motif.
+3. **Ce que fait le système.** Depuis le lot 9 bis : chaque événement « Publié » de Mariama passe « Suspendu », motif « Organisateur suspendu », avec une trace de cette suspension en cascade ; la fiche publique l'annonce, la vente, le scan et l'ouverture de caisse s'arrêtent (étape 13.2) ; rappels annulés ; un paiement ouvert avant et réussi après n'émet aucun billet et est remboursé ; tous les fonds de Mariama sont gelés. À la réactivation, seuls les événements suspendus par la cascade, encore suspendus et non terminés, reviennent « Publié » (étape 2.10). Un événement de la cascade dont la fin passe pendant la suspension reste « Suspendu » : l'admin le clôt (étape 13.4). Preuve : `M/20261109000006_lot9bis_argent.sql:772` (`partner_status_set`), `partner_suspension_cascades`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
 |---|---|---|---|---|
-| Aucun. | — | — | — | — |
+| Mariama | SMS, cloche, email | indispensable | prochain passage de la file | « Compte suspendu » avec le motif, textes de l'étape 2.9 |
+| Détenteurs et contrôleurs des événements suspendus | cloche, push, email ; contrôleurs : cloche, email | optionnel pour les détenteurs, indispensable pour les contrôleurs | prochain passage de la file | « Événement suspendu », textes de l'étape 13.1 |
 
-Par l'écran, aucun. Les avis destinés à Mariama (premier billet, catégorie complète) ne lui parviennent plus.
+Aucun avis par événement à Mariama (décision écrite au lot 9 bis) : elle a déjà le message de son compte. Les avis de ventes (premier billet, catégorie complète) ne lui parviennent plus.
 
-5. **Ce que les autres voient.** Clients : rien ne change, aucun signe sur la fiche. Aïda et Moussa peuvent encore suspendre ou annuler l'événement. Mariama : plus de connexion, plus de pilotage, plus de retrait.
-6. **Ce qui est impossible.** Tout accès de Mariama.
-7. **Test et essai.** Test : `tests/parcours/statut-compte.test.ts:172` « partenaire SUSPENDU → /api/partner/events refusé (ACCOUNT_NOT_ACTIVE) » ; `tests/parcours/dette-suspendu-temps-reel.test.ts:546` « suspendu (PATCH /api/admin/partners/[id]/status) puis reconnecté : rien sur les huit tables, le témoin reçoit chaque changement ». Aucun test d'une vente sous partenaire suspendu. Essai : Essai 55 de `docs/recette-billetterie.md`, déconnexion seulement.
+5. **Ce que les autres voient.** Clients : fiche « Événement suspendu », plus de vente ; Mes billets dit l'événement suspendu. Aïda et Moussa peuvent encore annuler l'événement, mais pas le republier avant la réactivation de Mariama. Mariama : plus de connexion, plus de pilotage, plus de retrait.
+6. **Ce qui est impossible.** Tout accès de Mariama. Republier un de ses événements : « Le partenaire est suspendu : son événement ne peut pas être remis en ligne avant sa réactivation. ».
+7. **Test et essai.** Test : `tests/parcours/lot9bis-fonds-suspension.test.ts:316` « R5 reproduit : suspension par la route → l’événement PUBLIE passe SUSPENDU (motif, rôle ADMIN), une trace de cascade, aucun EVENT_SUSPENDED à la partenaire » ; `tests/parcours/lot9bis-fonds-suspension.test.ts:350` « paiement ouvert avant la suspension, succès après : aucune VENTE ni billet, paiement remboursé (REFUND_REQUIRED) » ; `tests/parcours/lot9bis-fonds-suspension.test.ts:375` « réactivation : seul l’événement cascadé intact revient PUBLIE » ; `tests/parcours/statut-compte.test.ts:172` « partenaire SUSPENDU → /api/partner/events refusé (ACCOUNT_NOT_ACTIVE) » ; `tests/parcours/dette-suspendu-temps-reel.test.ts:546` « suspendu (PATCH /api/admin/partners/[id]/status) puis reconnecté : rien sur les huit tables, le témoin reçoit chaque changement ». Essai : Essai 55 de `docs/recette-billetterie.md`, réécrit au lot 9 bis (fiche partenaire, cascade).
 
 ### Étape 17.3 — Contrôleur retiré pendant le scan
 
@@ -3309,10 +3313,11 @@ Par l'écran, aucun. Les avis destinés à Mariama (premier billet, catégorie c
 | Ibrahima | SMS | indispensable | prochain passage de la file | modèle « Event Village : votre affectation à l'entrée de {title} est retirée. » ; exemple « Event Village : votre affectation à l'entrée de Gala de la Teranga est retirée. » (79 caractères, 1 segment) |
 | Ibrahima | cloche | indispensable | prochain passage de la file | titre « Affectation retirée » ; modèle « Vous ne contrôlez plus l'entrée de « {title} ». » ; exemple « Vous ne contrôlez plus l'entrée de « Gala de la Teranga ». » |
 | Ibrahima | push | indispensable | prochain passage de la file | titre « Affectation retirée » ; modèle « Vous ne contrôlez plus l'entrée de « {title} ». » ; exemple « Vous ne contrôlez plus l'entrée de « Gala de la Teranga ». » |
+| Ibrahima, si son adresse est vérifiée | email | indispensable | prochain passage de la file | depuis le lot 9 bis, objet « Affectation retirée — Event Village », texte de la cloche |
 
 Preuve : `CONTROLLER_UNASSIGNED` (`M/20261103000006_lot6_pros_admin.sql:588`).
 
-5. **Ce que les autres voient.** Ibrahima, à chaque lecture : « Contrôle non autorisé », « Vous n’êtes pas autorisé à contrôler cet événement. ». À la relecture : « Contrôle précédent non repris », « Vous n’êtes plus affecté à l’événement que vous contrôliez : choisissez un événement. ». Mariama : il disparaît de l'équipe. Preuve : `components/scan/scan-client.ts:345`, `app/controller/scanner/page.tsx:323`, `:799`.
+5. **Ce que les autres voient.** Ibrahima, à la lecture suivante, depuis le lot 9 bis : « Vous ne contrôlez plus cet événement », et le scanner relit aussitôt ses affectations. À la relecture : « Contrôle précédent non repris », « Vous n’êtes plus affecté à l’événement que vous contrôliez : choisissez un événement. ». Mariama : il disparaît de l'équipe. Preuve : `components/scan/scan-client.ts:340-346`, `app/controller/scanner/page.tsx:323`, `:799`.
 6. **Ce qui est impossible.** Retirer un contrôleur qui a une caisse ouverte : « Ce contrôleur a une caisse ouverte : clôturez-la avant de le retirer. ». Preuve : `lib/shifts/shift.service.ts:119`.
 7. **Test et essai.** Test : `tests/parcours/dette-retrait-controleur.test.ts:214` « garde-fou : le partenaire A retire son contrôleur → 200, affectations de A supprimées » ; `tests/parcours/dette-retrait-controleur.test.ts:243` « garde-fou : bonne URL → 200, affectation retirée, l’autre affectation reste » ; `tests/parcours/dette-retrait-controleur.test.ts:267` « T3 : retrait de la dernière affectation → rôle CLIENT, statut ACTIF (jamais SUSPENDU), commande intacte » ; `tests/parcours/notif-controleurs.test.ts:236` « DELETE /api/partner/team/all : CONTROLLER_UNASSIGNED par affectation, un SMS agrégé, rappels PENDING du compte annulés NO_LONGER_ASSIGNED » ; `tests/parcours/acces-caisse-pin.test.ts:442` « ${p.label} : refusé (${p.kind === 'route' ? '409 ' : ''}CONTROLLER_HAS_OPEN_SHIFT), affectation et rôle conservés ». Essai : aucun.
 
@@ -3320,16 +3325,17 @@ Preuve : `CONTROLLER_UNASSIGNED` (`M/20261103000006_lot6_pros_admin.sql:588`).
 
 1. **Qui, où, quel bouton.** Fatou ou Lamine, `/profile`, « Changer de numéro » (étape 1.11).
 2. **Ce qu'il saisit.** Le nouveau numéro, le code SMS.
-3. **Ce que fait le système.** Un transfert vise un numéro, jamais un compte, et le changement de numéro ne le touche pas.
+3. **Ce que fait le système.** Un transfert vise un numéro, jamais un compte. Depuis le lot 9 bis, quand le destinataire change de numéro, les transferts en attente vers l'ancien numéro sont annulés.
 
 | Cas | Effet |
 |---|---|
-| Fatou (expéditrice) change de numéro | Rien ne change. Lamine peut accepter, Fatou peut annuler. |
-| Lamine (destinataire) change de A vers B avant d'accepter | Le transfert reste visé sur A. Il disparaît de « Reçus ». En l'ouvrant : « Ce transfert est introuvable. ». Sortie : Fatou annule, ou attend 48 heures. |
-| Le numéro A est repris par quelqu'un d'autre | Son nouveau titulaire, une fois son numéro vérifié, voit le transfert et peut l'accepter. |
+| Fatou (expéditrice) change de numéro | Rien ne change. Lamine peut accepter, Fatou peut annuler. Fatou ne peut plus retirer d'argent pendant 24 heures. |
+| Lamine (destinataire) change de A vers B avant d'accepter | Depuis le lot 9 bis, le transfert est annulé, le billet revient à Fatou, qui est prévenue. Il disparaît de « Reçus ». |
+| Une invitation non réclamée visait A | Depuis le lot 9 bis, l'invitation est annulée et sa place rendue, sans avis. |
+| Le numéro A est repris par quelqu'un d'autre | Depuis le lot 9 bis, plus rien ne l'attend : les transferts vers A ont été annulés. |
 | Un transfert était déjà adressé au nouveau numéro B | Il apparaît dans « Reçus » de Lamine dès la confirmation. |
 
-Preuve : `M/20261108000004_lot9_compte.sql:203`, `M/20261108000002_lot9_invitations.sql:206`, `M/20261103000002_lot6_outbox.sql:446`, `tests/parcours/compte-numero.test.ts:563`, `:980`.
+Preuve : `M/20261109000004_lot9bis_droits.sql:802-837`, `M/20261108000002_lot9_invitations.sql:206`, `M/20261103000002_lot6_outbox.sql:446`, `tests/parcours/compte-numero.test.ts:563`.
 
 4. **Messages reçus.**
 
@@ -3337,17 +3343,17 @@ Preuve : `M/20261108000004_lot9_compte.sql:203`, `M/20261108000002_lot9_invitati
 |---|---|---|---|---|
 | Le nouveau numéro | SMS | indispensable | immédiat | modèle « Event Village : votre code de vérification est {code}. Valable 10 minutes. » ; exemple « Event Village : votre code de vérification est 483920. Valable 10 minutes. » (74 caractères, 1 segment) |
 | L'ancien numéro | SMS | indispensable | prochain passage de la file | modèle « Event Village : le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support. » ; exemple « Event Village : le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support. » (100 caractères, 1 segment) |
-| Le numéro A, si Fatou annule ensuite | SMS | indispensable | prochain passage de la file | modèle « Event Village : le transfert du billet {title} a été annulé par son propriétaire. » ; exemple « Event Village : le transfert du billet Gala de la Teranga a été annulé par son propriétaire. » (92 caractères, 1 segment) |
+| Fatou, quand Lamine change de numéro (depuis le lot 9 bis) | cloche, push, email si l'adresse est vérifiée | indispensable | prochain passage de la file | titre « Transfert annulé » ; exemple « Le destinataire de votre billet pour « Gala de la Teranga » a changé de numéro : le transfert est annulé et le billet reste dans vos billets. » |
 
-Rien sur le transfert au moment du changement. Preuve : `PHONE_CHANGED` (`M/20261108000004_lot9_compte.sql:252`, `app/api/account/phone/confirm/route.ts:101`) ; `TRANSFER_CANCELLED` (`M/20261103000005_lot6_billetterie.sql:212`).
+Preuve : `PHONE_CHANGED` (`M/20261109000004_lot9bis_droits.sql:839-856`) ; `TRANSFER_RECIPIENT_CHANGED` (`M/20261109000004_lot9bis_droits.sql:833`, `lib/notifications/catalog.ts:1437-1446`).
 
-5. **Ce que les autres voient.** Fatou : carte « Transfert en cours vers {numéro masqué} », sans changement ni signal.
-6. **Ce qui est impossible.** Recibler un transfert sur le nouveau numéro. Numéro non vérifié : « Confirmez d'abord votre numéro par un code SMS. ».
-7. **Test et essai.** Test : `tests/parcours/compte-numero.test.ts:980` « transfert vers l’ancien numéro : plus visible et non reciblé ; vers le nouveau : visible après le changement » ; `tests/parcours/compte-numero.test.ts:563` « email technique : l’ancien numéro peut de nouveau s’inscrire (D-cpt C3) ». Essai : Essais 27 et 67 de `docs/recette-billetterie.md` séparément, aucun sur le croisement, `docs/essai-local.md` section 8.15.
+5. **Ce que les autres voient.** Fatou : depuis le lot 9 bis, son billet redevient normal, QR revenu, avec l'avis ci-dessus.
+6. **Ce qui est impossible.** Recibler un transfert sur le nouveau numéro : Fatou doit en lancer un nouveau. Changer de numéro sans mot de passe récent. Numéro non vérifié : « Confirmez d'abord votre numéro par un code SMS. ».
+7. **Test et essai.** Test : `tests/parcours/cycle9bis-transfert.test.ts:249` « transfert vers l’ancien numéro : CANCELLED, verrou levé, TRANSFER_RECIPIENT_CHANGED (in-app) à l’expéditeur » ; `tests/parcours/cycle9bis-transfert.test.ts:261` « invitation sans expéditeur vers l’ancien numéro : transfert CANCELLED, billet ANNULE, place rendue, aucun avis » ; `tests/parcours/compte-numero.test.ts:980` « transfert vers l’ancien numéro : plus visible et non reciblé ; vers le nouveau : visible après le changement » ; `tests/parcours/compte-numero.test.ts:563` « email technique : l’ancien numéro peut de nouveau s’inscrire (D-cpt C3) ». Essai : Essai 74 de `docs/recette-billetterie.md`, ajouté au lot 9 bis pour ce croisement, `docs/essai-local.md` section 8.15.
 
 # Chapitre 18. Ce que voient l'admin et le SUPERADMIN
 
-Aïda (SUPERADMIN) a toutes les permissions. Moussa (ADMIN) n'a que les siennes. Tout admin actif entre dans `/admin/*` ; le menu ne cache que le journal. Preuve : `lib/admin/admin-auth.ts:186`, `middleware.ts:218`, `components/layout/AppLayout.tsx:198`, `:237`, `:334`.
+Aïda (SUPERADMIN) a toutes les permissions. Moussa (ADMIN) n'a que les siennes. Tout admin actif entre dans `/admin/*` ; le menu ne cache que le journal. Depuis le lot 9 bis, les boutons dont il n'a pas la permission sont masqués, et tout refus nomme la permission en français. Seul le SUPERADMIN crée, promeut, rétrograde ou suspend un admin. Preuve : `lib/admin/admin-auth.ts:186`, `middleware.ts:218`, `components/layout/AppLayout.tsx:198`, `:237`, `:334`.
 
 ### Étape 18.1 — Tableau de bord
 
@@ -3368,23 +3374,24 @@ Aïda (SUPERADMIN) a toutes les permissions. Moussa (ADMIN) n'a que les siennes.
 
 1. **Qui, où, quel bouton.** `/admin/notifications`, permission `notifications.read`. Titre « Notifications », « Supervision des envois : application, SMS, email et notifications push. Chiffres arrêtés à l’heure de Dakar. ». Preuve : `app/admin/notifications/page.tsx:445`.
 2. **Ce qu'il saisit.** Filtres : onglets par statut, « Rechercher », « Canal », « Type », « Du », « Au ». 20 par page.
-3. **Ce que fait le système.** Compteurs « SMS aujourd'hui », « SMS optionnels aujourd'hui », « SMS ce mois-ci ». Liste : « Date », « Type », « Canal », « Destinataire » (masqué), « Statut », « Motif », « Détail ». Statuts : « En attente », « En cours d'envoi », « Envoyée », « En échec », « Non envoyée », « Annulée », « Incertaine ». Table « Par jour et par canal ». Preuve : `lib/notifications/outbox-labels.ts:14-22`, `M/20261105000002_lot7_sms.sql:849`.
+3. **Ce que fait le système.** Compteurs « SMS aujourd'hui », « SMS optionnels aujourd'hui », « SMS ce mois-ci ». Liste : « Date », « Type », « Canal », « Destinataire » (masqué), « Statut », « Motif », « Détail ». Statuts : « En attente », « En cours d'envoi », « Envoyée », « En échec », « Non envoyée », « Annulée », « Incertaine ». Depuis le lot 9 bis, les emails y figurent comme les autres canaux, avec leurs motifs, par exemple « Adresse email non vérifiée » ou « Non envoyé : compte de démonstration ». Table « Par jour et par canal ». Preuve : `lib/notifications/outbox-labels.ts:14-22`, `:68-70`, `M/20261105000002_lot7_sms.sql:849`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
 |---|---|---|---|---|
-| Aïda et les admins avec `notifications.read` | cloche | indispensable | prochain passage de la file | titre « Envoi en échec » ; modèle « Une notification « Confirmation d’achat » par {channel} a échoué après {attempts} tentatives. » ; exemple « Une notification « Confirmation d’achat » par SMS a échoué après 5 tentatives. » |
+| Aïda et les admins avec `notifications.read`, si les SMS indispensables du jour dépassent le seuil (depuis le lot 9 bis, une fois par jour) | cloche, email | indispensable | contrôle quotidien | titre « Volume de SMS indispensables élevé » ; modèle « {count} SMS indispensables envoyés aujourd'hui (seuil d'alerte : {threshold}). Ils n'ont pas de plafond : vérifiez leur origine dans la supervision. » ; exemple « 2 150 SMS indispensables envoyés aujourd'hui (seuil d'alerte : 2 000). Ils n'ont pas de plafond : vérifiez leur origine dans la supervision. » |
+| Aïda et les admins avec `notifications.read` | cloche, et depuis le lot 9 bis email | indispensable | prochain passage de la file | titre « Envoi en échec » ; modèle « Une notification « Confirmation d’achat » par {channel} a échoué après {attempts} tentatives. » ; exemple « Une notification « Confirmation d’achat » par SMS a échoué après 5 tentatives. » |
 | Aïda et les admins avec `notifications.read` | cloche | indispensable | prochain passage de la file | titre « SMS optionnels : 80 % du plafond » ; modèle « {used} SMS optionnels envoyés aujourd'hui sur un plafond de {cap}. Au-delà, rappels et annonces partent sans SMS. » ; exemple « 560 SMS optionnels envoyés aujourd'hui sur un plafond de 700. Au-delà, rappels et annonces partent sans SMS. » |
 | Aïda et les admins avec `notifications.read` | email | indispensable | prochain passage de la file | objet « SMS optionnels : {percent} % du plafond — Event Village » ; modèle : SMS optionnels : {percent} % du plafond<br>{used} SMS optionnels envoyés aujourd'hui sur un plafond de {cap}. Au-delà, rappels et annonces partent sans SMS.<br>Ouvrir Event Village : {APP_URL}/admin/notifications<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn ; exemple : SMS optionnels : 80 % du plafond<br>560 SMS optionnels envoyés aujourd'hui sur un plafond de 700. Au-delà, rappels et annonces partent sans SMS.<br>Ouvrir Event Village : https://eventvillage.sn/admin/notifications<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn |
 | Aïda et les admins avec `notifications.read` | cloche | indispensable | prochain passage de la file | titre « Budget SMS de demain insuffisant » ; modèle « {planned} SMS de rappel prévus le {day} pour {cap} disponibles (plafond {cap}). Les rappels au-delà partiront sans SMS. » ; exemple « 812 SMS de rappel prévus le ven. 6 nov. 2026 pour 700 disponibles (plafond 700). Les rappels au-delà partiront sans SMS. » |
 | Aïda et les admins avec `notifications.read` | email | indispensable | prochain passage de la file | objet « Budget SMS de demain insuffisant — Event Village » ; modèle : Budget SMS de demain insuffisant<br>{planned} SMS de rappel prévus le {day} pour {cap} disponibles (plafond {cap}). Les rappels au-delà partiront sans SMS.<br>Ouvrir Event Village : {APP_URL}/admin/notifications<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn ; exemple : Budget SMS de demain insuffisant<br>812 SMS de rappel prévus le ven. 6 nov. 2026 pour 700 disponibles (plafond 700). Les rappels au-delà partiront sans SMS.<br>Ouvrir Event Village : https://eventvillage.sn/admin/notifications<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn |
-| Aïda et les admins avec `notifications.read` | cloche | indispensable | prochain passage de la file | titre « Plafond de SMS atteint » ; modèle « Le plafond de {cap} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar). » ; exemple « Le plafond de 1 000 SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar). » |
-| Aïda et les admins avec `notifications.read` | cloche | indispensable | prochain passage de la file | titre « Quota de SMS hors code atteint » ; modèle « La part des SMS hors codes de connexion ({limit} sur {cap} par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar). » ; exemple « La part des SMS hors codes de connexion (700 sur 1 000 par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar). » |
+| Aïda et les admins avec `notifications.read` | cloche, et depuis le lot 9 bis email | indispensable | prochain passage de la file | titre « Plafond de SMS atteint » ; modèle « Le plafond de {cap} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar). » ; exemple « Le plafond de 1 000 SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar). » |
+| Aïda et les admins avec `notifications.read` | cloche, et depuis le lot 9 bis email | indispensable | prochain passage de la file | titre « Quota de SMS hors code atteint » ; modèle « La part des SMS hors codes de connexion ({limit} sur {cap} par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar). » ; exemple « La part des SMS hors codes de connexion (700 sur 1 000 par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar). » |
 
-Aucun admin ne reçoit de SMS. Preuve : `ADMIN_NOTIFICATION_FAILED` (`M/20261103000002_lot6_outbox.sql:647`) ; `ADMIN_SMS_OPTIONAL_80` (`M/20261105000002_lot7_sms.sql:497`) ; `ADMIN_SMS_FORECAST` (`M/20261105000002_lot7_sms.sql:807`).
+Aucun admin ne reçoit de SMS. Les emails partent vers les adresses vérifiées seulement. Preuve : `ADMIN_SMS_DAILY_THRESHOLD` (`lib/notifications/catalog.ts:1245-1253`, `M/20261109000009_lot9bis_messages.sql:52-55`) ; `ADMIN_NOTIFICATION_FAILED` (`M/20261103000002_lot6_outbox.sql:647`) ; `ADMIN_SMS_OPTIONAL_80` (`M/20261105000002_lot7_sms.sql:497`) ; `ADMIN_SMS_FORECAST` (`M/20261105000002_lot7_sms.sql:807`).
 
 5. **Ce que les autres voient.** Aucun.
-6. **Ce qui est impossible.** Sans permission : « Accès refusé », « Vous n'avez pas la permission de consulter les notifications. ». Aucune relance depuis la liste. Preuve : `app/api/admin/notifications/route.ts:25`.
+6. **Ce qui est impossible.** Sans permission : « Accès refusé », depuis le lot 9 bis avec le refus « Action non autorisée : votre compte n’a pas la permission « Consulter les envois de messages ». ». Aucune relance depuis la liste. Preuve : `app/api/admin/notifications/route.ts:25`, `lib/admin/admin-auth.ts:70-74`.
 7. **Test et essai.** Test : `tests/parcours/notif-admin.test.ts:234` « statut FAILED : uniquement des FAILED, les 3 de la suite en tête (created_at DESC), can_retry vrai ; compteurs par statut » ; `tests/parcours/notif-admin.test.ts:252` « pagination : page_size 2, page 1 puis page 2, sans recouvrement ; 20 par défaut » ; `tests/parcours/notif-admin.test.ts:265` « canal, type et période : chaque filtre restreint la liste ; période en jours de Dakar » ; `tests/parcours/notif-admin.test.ts:285` « filtre inconnu (statut, canal, type) → 400 INVALID_FILTER » ; `tests/parcours/notif-admin.test.ts:293` « destinataire masqué : numéro « +221 77 *** ** 45 », email « aw***@domaine », compte par son nom, jamais d’endpoint push » ; `tests/parcours/notif-admin.test.ts:397` « par différence autour de lignes de la suite : SMS envoyés (journal OTP compris), échecs, incertains, non envoyés, annulés ; email ; seuil » ; `tests/parcours/notif-admin.test.ts:449` « sans session 401 ; client 403 ; ADMIN sans permission 403 partout ; lecture seule : lecture oui, relance 403 ; SUPERADMIN : lecture ». Essai : Essai 54 de `docs/recette-billetterie.md`.
 
 ### Étape 18.3 — Détail et relance d'une notification
@@ -3401,14 +3408,14 @@ Aucun admin ne reçoit de SMS. Preuve : `ADMIN_NOTIFICATION_FAILED` (`M/20261103
 La notification relancée repart vers son destinataire, rien d'autre.
 
 5. **Ce que les autres voient.** Le destinataire reçoit le message au prochain passage de la file.
-6. **Ce qui est impossible.** « Seule une notification en échec peut être relancée. » ; « Un code à usage unique ne se renvoie pas : la personne doit en demander un nouveau. » ; « Un message plus récent sur ce changement est déjà en attente : cette notification ne repart pas. ». Bandeaux « Relance non proposée » ; « Remise non confirmée », « Le fournisseur a peut-être remis ce message : il n’est jamais renvoyé, ni automatiquement ni à la main, pour éviter un doublon. ». Moussa sans droit : bouton absent, « Permission manquante : notifications.write ».
+6. **Ce qui est impossible.** « Seule une notification en échec peut être relancée. » ; « Un code à usage unique ne se renvoie pas : la personne doit en demander un nouveau. » ; « Un message plus récent sur ce changement est déjà en attente : cette notification ne repart pas. ». Bandeaux « Relance non proposée » ; « Remise non confirmée », « Le fournisseur a peut-être remis ce message : il n’est jamais renvoyé, ni automatiquement ni à la main, pour éviter un doublon. ». Moussa sans droit : bouton absent ; un appel direct reçoit, depuis le lot 9 bis, « Action non autorisée : votre compte n’a pas la permission « Relancer les envois de messages ». ». Depuis le lot 9 bis, la fiche d'un SMS de 3 heures explique la règle : « SMS seulement si le push n’est pas accepté par le service push », et le motif « Push accepté par le service, SMS non envoyé (affichage non garanti) ».
 7. **Test et essai.** Test : `tests/parcours/notif-admin.test.ts:317` « détail : ligne sans claim_token, destinataire, décision, données ; can_retry selon le statut ; inconnue → 404 NOT_FOUND » ; `tests/parcours/notif-admin.test.ts:348` « journal OTP : template_data réduit à { purpose }, aucun code ni lien, jamais relançable » ; `tests/parcours/notif-admin.test.ts:518` « RPC notification_retry : acteur ADMIN en lecture seule, ADMIN suspendu ou client → FORBIDDEN, ligne intacte » ; `tests/parcours/notif-admin.test.ts:530` « route : lecture seule 403, ADMIN suspendu 403 ; la ligne reste FAILED » ; `tests/parcours/notif-admin.test.ts:538` « notifications.write : FAILED → PENDING, tentatives remises à zéro, motif effacé, manual_retries 1, audit ; seconde relance 409 » ; `tests/parcours/notif-admin.test.ts:562` « SENT, UNCERTAIN, SKIPPED, CANCELLED, PENDING, SENDING → 409 NOT_RETRYABLE, message exact, ligne inchangée » ; `tests/parcours/notif-admin.test.ts:577` « SUPERADMIN : relance d’une ligne FAILED ; ligne inconnue → 404 ». Essai : Essai 54 de `docs/recette-billetterie.md`.
 
 ### Étape 18.4 — Réglages
 
 1. **Qui, où, quel bouton.** `/admin/finance-settings`, titre « Réglages de la plateforme », « Chaque modification est historisée et ne s’applique qu’aux opérations futures. Modification réservée aux superadministrateurs. ». Accès par le lien de `/admin/finance`, ou l'adresse. Sections « Finance », « Contrôle d’accès », « Notifications », « Fonctionnalités ». Bouton « Modifier », puis « Enregistrer ». Preuve : `app/admin/finance-settings/page.tsx:245`.
 2. **Ce qu'il saisit.** La valeur et un motif de 3 à 300 caractères. Erreurs : « Saisissez une valeur numérique. » ; « Indiquez le motif de la modification (3 caractères au moins). ».
-3. **Ce que fait le système.** Message « Réglage « {libellé} » enregistré. Il s’applique aux prochaines opérations. », exemple « Réglage « Frais de retrait » enregistré. Il s’applique aux prochaines opérations. ». Non rétroactif.
+3. **Ce que fait le système.** Message « Réglage « {libellé} » enregistré. Il s’applique aux prochaines opérations. », exemple « Réglage « Frais de retrait » enregistré. Il s’applique aux prochaines opérations. ». Non rétroactif. Depuis le lot 9 bis, trois réglages de plus : « Durée de garde des places pendant un paiement (minutes) », 10 par défaut, de 5 à 60 ; « Prix minimum d’un billet payant (F CFA) », 100 par défaut ; « Seuil d’alerte des SMS indispensables du jour », 2 000 par défaut. Sous « Frais de retrait », les frais SamirPay réellement constatés sur 90 jours, et, s'ils dépassent le réglage, l'avertissement « Frais de retrait sous le coût réel », « Attention : les frais de retrait ({réglé} %) sont inférieurs aux frais SamirPay constatés ({constaté} %). Chaque retrait coûte alors de l’argent à Event Village. ». Les montants sont en « F CFA ». Preuve : `app/admin/finance-settings/page.tsx:65-91`, `:184-198`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -3416,14 +3423,14 @@ La notification relancée repart vers son destinataire, rien d'autre.
 | Aucun. | — | — | — | — |
 
 5. **Ce que les autres voient.** Les opérations futures.
-6. **Ce qui est impossible.** Moussa voit « Modifier » ; à l'enregistrement, bandeau « Réglage non enregistré », « Opération réservée exclusivement au SUPERADMIN. ». Preuve : `app/admin/finance-settings/page.tsx:302`, `app/api/admin/finance-settings/route.ts:21`, `:46`.
-7. **Test et essai.** Test : `tests/parcours/finance-reglages.test.ts:78` « les 10 clés finance.* existent avec leur valeur par défaut » ; `tests/parcours/acces-reglages.test.ts:71` « GET : l’ADMIN et le SUPERADMIN lisent les réglages access.* et leur historique » ; `tests/parcours/notif-reglages.test.ts:169` « finance_setting_set (SUPERADMIN) : chaque valeur admise par le contrat est appliquée ». Essai : Essais 52 et 53 de `docs/recette-billetterie.md`.
+6. **Ce qui est impossible.** Depuis le lot 9 bis, Moussa ne voit pas « Modifier » et lit « Lecture seule : seul un superadministrateur peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures. » ; un appel direct reçoit « Opération réservée exclusivement au SUPERADMIN. ». Preuve : `app/admin/finance-settings/page.tsx:204`, `:301-303`, `:358`, `app/api/admin/finance-settings/route.ts:21`, `:46`.
+7. **Test et essai.** Test : `tests/parcours/paiement-reservation-v12.test.ts:74` « 2. bornes : 4 et 61 refusés (INVALID_VALUE), 5 et 60 acceptés ; un ADMIN est refusé (FORBIDDEN) » ; `tests/parcours/versements-frais.test.ts` (avertissement des frais de retrait sous le coût constaté) ; `tests/parcours/droits-boutons-9bis.test.ts` (« Modifier » masqué hors SUPERADMIN) ; `tests/parcours/finance-reglages.test.ts:78` « les 10 clés finance.* existent avec leur valeur par défaut » ; `tests/parcours/acces-reglages.test.ts:71` « GET : l’ADMIN et le SUPERADMIN lisent les réglages access.* et leur historique » ; `tests/parcours/notif-reglages.test.ts:169` « finance_setting_set (SUPERADMIN) : chaque valeur admise par le contrat est appliquée ». Essai : Essais 52 et 53 de `docs/recette-billetterie.md`.
 
 ### Étape 18.5 — Journal d'audit
 
 1. **Qui, où, quel bouton.** Aïda seule, `/admin/audit`. Filtres « Action », « Entité / Objet ». Bouton « Examiner » : fenêtre « Audit Log #{id} • {action} », exemple « Audit Log #1042 • UPDATE_USER », « Ancienne Valeur (Old Value) », « Nouvelle Valeur (New Value) », « Métadonnées ». Preuve : `app/api/admin/audit/route.ts:18`, `app/admin/audit/page.tsx:140`.
 2. **Ce qu'il saisit.** Les filtres.
-3. **Ce que fait le système.** 100 lignes au plus, sans pagination. Colonnes « Horodatage », « Utilisateur », « Rôle à l’action », « Action », « Objet », « ID Objet », « Détails JSON », en codes bruts. Preuve : `app/admin/audit/page.tsx:61`.
+3. **Ce que fait le système.** 100 lignes au plus, sans pagination. Colonnes « Horodatage », « Utilisateur », « Rôle à l’action », « Action », « Objet », « ID Objet », « Détails JSON », en codes bruts ; l'écran n'a pas changé au lot 9 bis (renvoyé au lot 14). Depuis le lot 9 bis, les décisions sur l'argent, les rôles et les permissions sont écrites au journal dans la même opération : si l'écriture du journal échoue, l'action échoue. Preuve : `app/admin/audit/page.tsx:61`, `M/20261109000004_lot9bis_droits.sql` (tâche 19).
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -3438,7 +3445,7 @@ La notification relancée repart vers son destinataire, rien d'autre.
 
 1. **Qui, où, quel bouton.** `/admin/finance`, permission `payments.read`, titre « Rapprochement financier ». Preuve : `app/admin/finance/page.tsx:141`.
 2. **Ce qu'il saisit.** « Statut », période « Tout », « 30 jours », « 7 jours ».
-3. **Ce que fait le système.** Cartes « Volume encaissé », « Frais de service perçus », « Frais agrégateur (SamirPay) », « Revenu net Event Village », « Reversements partenaires », « Remboursements versés » ; « Commissions de parrainage », « Revenu net après parrainage », « Retraits versés », « Écarts de rapprochement ». Tableau « Paiements rapprochés ».
+3. **Ce que fait le système.** Cartes « Volume encaissé », « Frais de service perçus », « Frais agrégateur (SamirPay) », « Revenu net Event Village », « Reversements partenaires », « Remboursements versés » ; « Commissions de parrainage », « Revenu net après parrainage », « Retraits versés », « Écarts de rapprochement ». Depuis le lot 9 bis, section « Frais SamirPay », « Frais réellement prélevés sur les versements confirmés de la période, comparés à l’estimation au taux de retrait réglé. » : « Frais réels des versements », l'estimation, l'écart (« Les versements coûtent plus que l’estimation. », « … moins … », « Aucun écart. ») ; pour les encaissements, la v1.2 de SamirPay ne donne pas les frais : l'écran le dit. Puis « Versements à reprendre » (étape 14.8). Tableau « Paiements rapprochés ». Preuve : `app/admin/finance/page.tsx:266-300`, `:312`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -3448,12 +3455,12 @@ La notification relancée repart vers son destinataire, rien d'autre.
 Les alertes sont aux étapes 14.3, 14.5 et 15.2.
 
 5. **Ce que les autres voient.** Aucun.
-6. **Ce qui est impossible.** Sans permission : « Permission manquante : payments.read ». Lister les retraits, les commissions, ou la fiche d'un partenaire : aucun écran.
-7. **Test et essai.** Test : `tests/parcours/finance-hors-plateforme.test.ts:132` « vente en ligne de 1 000 F : volume admin + 1 050, revenu EV + 34,25 (net des paiements plateforme) ». Essai : Essai 56 de `docs/recette-billetterie.md`.
+6. **Ce qui est impossible.** Sans permission, depuis le lot 9 bis : « Action non autorisée : votre compte n’a pas la permission « Consulter les paiements ». ». Lister tous les retraits ou toutes les commissions : renvoyé au lot 13.
+7. **Test et essai.** Test : `tests/parcours/finance-hors-plateforme.test.ts:132` « vente en ligne de 1 000 F : volume admin + 1 050, revenu EV + 34,25 (net des paiements plateforme) » ; `tests/parcours/versements-frais.test.ts` (frais réels servis au rapprochement). Essai : Essai 56 de `docs/recette-billetterie.md`.
 
 ### Étape 18.7 — Remboursements à reprendre
 
-1. **Qui, où, quel bouton.** `/admin/finance`, section « Remboursements à reprendre », permission `refunds.manage`. Détail à l'étape 14.8.
+1. **Qui, où, quel bouton.** `/admin/finance`, section, depuis le lot 9 bis, « Versements à reprendre », retraits compris, permission `refunds.manage`. Détail à l'étape 14.8.
 2. **Ce qu'il saisit.** Aucun.
 3. **Ce que fait le système.** Comme à l'étape 14.8.
 4. **Messages reçus.**
@@ -3464,13 +3471,13 @@ Les alertes sont aux étapes 14.3, 14.5 et 15.2.
 
 Les alertes sont citées intégralement à l'étape 14.5.
 
-5. **Ce que les autres voient.** Fatou : « Remboursé » après confirmation.
-6. **Ce qui est impossible.** Conclure un envoi incertain. Moussa sans droit : « Reprise des remboursements réservée », « Votre compte n’a pas la permission de gérer les remboursements. ».
-7. **Test et essai.** Test : `tests/parcours/admin-remboursements.test.ts:180` « sans session 401 ; client, partenaire, ADMIN sans la permission 403 ; SUSPENDU 403 ; avec la permission et SUPERADMIN 200 » ; `tests/parcours/admin-remboursements.test.ts:300` « refus de SamirPay : état ECHOUE, relance possible, titre de l’événement, numéro masqué » ; `tests/parcours/admin-remboursements.test.ts:310` « issue incertaine : état INCERTAIN, jamais de relance » ; `tests/parcours/remboursement-relance.test.ts:143` « ECHOUE : remis à envoyer puis envoyé, CONFIRME, billet REMBOURSE, audit CASHOUT_RESENT » ; `tests/parcours/remboursement-relance.test.ts:181` « SOLDE_INSUFFISANT : rebloqué sans envoi tant que le solde manque, envoyé une fois le solde revenu » ; `tests/parcours/remboursement-relance.test.ts:211` « INCERTAIN : refusé, aucun envoi, aucun audit, statut inchangé ». Essai : Essais 58 et 60 de `docs/recette-billetterie.md`.
+5. **Ce que les autres voient.** Fatou : « Remboursement retardé, l’équipe Event Village s’en occupe. » tant que c'est bloqué, puis « Remboursé » après confirmation. Mariama : « Retardé » sur un retrait.
+6. **Ce qui est impossible.** Renvoyer un versement qui a pu partir ; un versement incertain se conclut par « Marquer versé » avec la référence (étape 14.8). Moussa sans droit : « Reprise des versements réservée », « Votre compte n’a pas la permission de gérer les remboursements et les versements. ».
+7. **Test et essai.** Test : `tests/parcours/versements-reprise.test.ts` ; `tests/parcours/admin-remboursements.test.ts:180` « sans session 401 ; client, partenaire, ADMIN sans la permission 403 ; SUSPENDU 403 ; avec la permission et SUPERADMIN 200 » ; `tests/parcours/admin-remboursements.test.ts:300` « refus de SamirPay : état ECHOUE, relance possible, titre de l’événement, numéro masqué » ; `tests/parcours/admin-remboursements.test.ts:310` « issue incertaine : état INCERTAIN, jamais de relance » ; `tests/parcours/remboursement-relance.test.ts:143` « ECHOUE : remis à envoyer puis envoyé, CONFIRME, billet REMBOURSE, audit CASHOUT_RESENT » ; `tests/parcours/remboursement-relance.test.ts:181` « SOLDE_INSUFFISANT : rebloqué sans envoi tant que le solde manque, envoyé une fois le solde revenu » ; `tests/parcours/remboursement-relance.test.ts:211` « INCERTAIN : refusé, aucun envoi, aucun audit, statut inchangé ». Essai : Essais 58 et 60 de `docs/recette-billetterie.md`, Essai 75 pour un retrait.
 
 ### Étape 18.8 — Parrainage et ambassadeurs
 
-1. **Qui, où, quel bouton.** `/admin/referral`, titre « Gestion des Ambassadeurs & Parrainage ». Bouton « Promouvoir Ambassadeur ⭐ » ou « Rétrograder ». Bandeau « La personnalisation des taux n’est pas disponible pour le moment. ». Preuve : `app/admin/referral/page.tsx:118`.
+1. **Qui, où, quel bouton.** `/admin/referral`, titre « Gestion des Ambassadeurs & Parrainage ». Bouton « Promouvoir Ambassadeur ⭐ » ou « Rétrograder ». Bandeau « La personnalisation des taux n’est pas disponible pour le moment. ». Depuis le lot 9 bis, la carte « Durée du parrainage » lit la grille en base : « 12 mois », « Compte standard ; 24 mois pour un ambassadeur », au lieu de « 24 Mois » pour tous ; sans la permission `referrals.manage`, « Durée non lue ». Preuve : `app/admin/referral/page.tsx:118`, `:211-217`, `app/api/admin/referral/config/route.ts`.
 2. **Ce qu'il saisit.** Les filtres.
 3. **Ce que fait le système.** Le statut du client change les taux des prochaines relations seulement. Non rétroactif. Preuve : `app/api/admin/users/route.ts:283`.
 4. **Messages reçus.**
@@ -3486,29 +3493,29 @@ Les alertes sont citées intégralement à l'étape 14.5.
 ### Étape 18.9 — Moussa, avec puis sans permission
 
 1. **Qui, où, quel bouton.** Aïda, `/admin/users`, bouton « Permissions » (étape 0.2).
-2. **Ce qu'il saisit.** Les cases.
-3. **Ce que fait le système.** Message « Les permissions de l'administrateur {prénom} {nom} ont été enregistrées. », exemple « Les permissions de l'administrateur Moussa Essai ont été enregistrées. ».
+2. **Ce qu'il saisit.** Les cases, depuis le lot 9 bis libellées en français (étape 0.2).
+3. **Ce que fait le système.** Message « Les permissions de l'administrateur {prénom} {nom} ont été enregistrées. », exemple « Les permissions de l'administrateur Moussa Essai ont été enregistrées. ». Depuis le lot 9 bis, le changement est écrit au journal d'audit dans la même opération. Le tableau dit l'état après le lot 9 bis ; « refus en français » veut dire « Action non autorisée : votre compte n’a pas la permission « {libellé} ». ».
 
 | Besoin | Permission | Sans la permission |
 |---|---|---|
-| Voir un événement | `events.read` | « Permission manquante : events.read » |
-| Valider, publier, suspendre, réactiver, terminer, annuler | `events.write` | boutons affichés, au clic « Permission manquante : events.write » ; contournable (revue critique) |
-| Voir la supervision | `notifications.read` | « Accès refusé » |
+| Voir un événement, son pilotage et la liste « Espèces à rembourser » | `events.read` (« Consulter les événements ») | refus en français |
+| Valider, publier, suspendre, réactiver, terminer, clore, annuler, gérer l'équipe et les caisses d'un événement | `events.write` (« Gérer les événements ») | boutons masqués ; refus en français, aussi par les adresses de la partenaire |
+| Voir la supervision | `notifications.read` | « Accès refusé » et refus en français |
 | Relancer une notification | `notifications.write` | bouton absent |
-| Voir le rapprochement | `payments.read` | « Permission manquante : payments.read » |
-| Voir et relancer les remboursements | `refunds.manage` | « Reprise des remboursements réservée » |
-| Voir les partenaires | `partners.read` | « Votre compte n’a pas l’autorisation de consulter les partenaires. » |
-| Valider ou refuser un partenaire | `partners.validate` | « Permission manquante : partners.validate » |
-| Lire ou modifier les comptes | `users.read`, `users.write` | « Permission manquante : users.write » |
+| Voir le rapprochement | `payments.read` | refus en français |
+| Voir et décider des versements à reprendre ; rembourser un billet | `refunds.manage` (« Gérer les remboursements ») | « Reprise des versements réservée » ; refus en français |
+| Voir les partenaires ; exporter les contacts des participants | `partners.read` | « Votre compte n’a pas l’autorisation de consulter les partenaires. » ; refus en français |
+| Valider ou refuser un partenaire ; le réactiver | `partners.validate` | boutons masqués ; refus en français |
+| Suspendre un partenaire | `partners.suspend` | bouton masqué ; refus en français |
+| Lire ou modifier les comptes non admin | `users.read`, `users.write` | refus en français |
 | Indicateurs | `statistics.read` | « Indicateurs indisponibles » |
-| Tarifs | `pricing.manage` | « Permission manquante : pricing.manage » |
-| Campagnes | `communications.manage` | « Permission manquante : communications.manage » |
-| Rembourser un billet | aucune | tout admin (revue critique) |
-| Pilotage, liste et contacts des participants | aucune | tout admin |
-| Modifier les réglages | SUPERADMIN | « Opération réservée exclusivement au SUPERADMIN. » |
+| Grille du parrainage | `referrals.manage` | « Durée non lue » |
+| Campagnes | `communications.manage` | refus en français |
+| Créer, promouvoir, rétrograder ou suspendre un admin | SUPERADMIN | refus, sans aucune écriture |
+| Modifier les réglages | SUPERADMIN | « Modifier » masqué ; « Opération réservée exclusivement au SUPERADMIN. » |
 | Journal d'audit | SUPERADMIN | « Réservé au superadmin » |
 
-Preuve : `lib/admin/admin-auth.ts:186`, `:204-210`, `app/api/partner/events/[id]/tickets/[ticketId]/refund/route.ts:34-35`, `M/20261102000005_lot5_pilotage.sql:135-157`.
+Depuis le lot 9 bis, la page `/admin/pricing` n'enregistre plus rien : elle renvoie vers les réglages. Preuve : `lib/admin/admin-auth.ts:70-74`, `lib/admin/permission-labels.ts:8-25`, `lib/auth/event-access.ts`, `app/api/partner/events/[id]/tickets/[ticketId]/refund/route.ts:43-44`, `app/admin/pricing/page.tsx`.
 
 4. **Messages reçus.**
 
@@ -3518,7 +3525,7 @@ Preuve : `lib/admin/admin-auth.ts:186`, `:204-210`, `app/api/partner/events/[id]
 
 5. **Ce que les autres voient.** Moussa : effet à sa prochaine lecture. Il reçoit aussi les alertes liées à ces permissions.
 6. **Ce qui est impossible.** Pour un SUPERADMIN : « Le Superadmin dispose de toutes les permissions par défaut. ». Pour Moussa : « Opération réservée exclusivement au SUPERADMIN. ».
-7. **Test et essai.** Test : `tests/parcours/securite-admin-lot7.test.ts:177` « témoin : admin ACTIF (users.read, notifications.read) → 200 sur /api/admin/users et /api/admin/notifications » ; `tests/parcours/securite-admin-lot7.test.ts:188` « admin ${status} (session valide) → 403 ACCOUNT_NOT_ACTIVE sur /api/admin/users, /api/admin/notifications et verifyAdminAuth ». Essai : Essai 53 de `docs/recette-billetterie.md`, pour les réglages seulement.
+7. **Test et essai.** Test : `tests/parcours/droits-admin-9bis.test.ts:91` « ADMIN users.write crée un compte ADMIN → 403 ADMIN_ROLE_SUPERADMIN_ONLY, aucun compte GoTrue ni profil créé » ; `tests/parcours/droits-admin-9bis.test.ts:116` « ADMIN users.write promeut un client ADMIN → 403 ADMIN_ROLE_SUPERADMIN_ONLY, rôles inchangés » ; `tests/parcours/droits-partenaire-9bis.test.ts` (chaque adresse de la partenaire : anonyme, client, autre partenaire, admin sans puis avec permission, SUPERADMIN) ; `tests/parcours/droits-boutons-9bis.test.ts` (boutons masqués, refus en français) ; `tests/parcours/securite-admin-lot7.test.ts:177` « témoin : admin ACTIF (users.read, notifications.read) → 200 sur /api/admin/users et /api/admin/notifications » ; `tests/parcours/securite-admin-lot7.test.ts:188` « admin ${status} (session valide) → 403 ACCOUNT_NOT_ACTIVE sur /api/admin/users, /api/admin/notifications et verifyAdminAuth ». Essai : Essai 53 de `docs/recette-billetterie.md`, recalé au lot 9 bis (« Modifier » masqué à l'admin).
 
 # Annexe A. Les machines à états
 
