@@ -2,6 +2,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { accountBalance } from '@/lib/finance/ledger';
 import { formatFcfa } from '@/lib/format';
 import { dakarInstant } from '@/lib/validations/event';
+import { supportEmail } from '@/lib/support';
 
 /**
  * Tableau de bord, rapport de clôture (et son PDF) et export comptable du partenaire (lot 3, contrat G).
@@ -952,7 +953,7 @@ export class PartnerDashboardService {
         stream += `${pageWidth - 230} ${infoY + 26} Td\n(Societe: ${escapePdfText(data.partner.companyName.slice(0, 30))}) Tj\nET\n`;
 
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${pageWidth - 230} ${infoY + 12} Td\n(Contact: ${escapePdfText(data.partner.phone || data.partner.email || 'support@event-village.sn')}) Tj\nET\n`;
+        stream += `${pageWidth - 230} ${infoY + 12} Td\n(Contact: ${escapePdfText(data.partner.phone || data.partner.email || supportEmail())}) Tj\nET\n`;
 
         // 4. Section : VENTES PAR CATÉGORIE (Tableau Vectoriel)
         const tableY = infoY - 26;
@@ -1066,7 +1067,7 @@ export class PartnerDashboardService {
         stream += `36 ${footerY + 22} m ${pageWidth - 36} ${footerY + 22} l S\n`;
 
         stream += 'BT\n/F1 7.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `36 ${footerY + 10} Td\n(Genere automatiquement par Event Village Senegal -- contact@event-village.sn) Tj\nET\n`;
+        stream += `36 ${footerY + 10} Td\n(Genere automatiquement par Event Village Senegal -- ${escapePdfText(supportEmail())}) Tj\nET\n`;
 
         stream += 'BT\n/F2 7.5 Tf\n0.35 0.40 0.50 rg\n';
         stream += `36 ${footerY} Td\n(Reference : ${escapePdfText(data.reportId)}) Tj\nET\n`;

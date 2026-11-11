@@ -3,6 +3,7 @@
  * l'application (renouvelé toutes les 20 s) ou, sans téléphone, avec le numéro du billet et une pièce
  * d'identité au nom du titulaire (saisie manuelle au contrôle).
  */
+import { supportEmail } from '@/lib/support';
 
 export interface TicketPdfData {
     ticketNumber: string;
@@ -244,7 +245,7 @@ export class TicketPdfService {
         stream += '/F1 7.5 Tf\n';
         stream += '0.45 0.52 0.60 rg\n';
         stream += `${cardX + 28} ${footerY} Td\n`;
-        stream += `(Event Village Senegal -- Plateforme officielle de billetterie -- support@event-village.sn) Tj\n`;
+        stream += `(Event Village Senegal -- Plateforme officielle de billetterie -- ${escapePdfText(supportEmail())}) Tj\n`;
         stream += 'ET\n';
 
         // Sceau de sécurité / Version
