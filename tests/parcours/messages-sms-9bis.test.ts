@@ -237,7 +237,9 @@ describe('9b.40 ex-10.0 d : le message d\'une invitation expirée ne parle plus 
         assert.equal((data ?? []).length, 1, `précondition : une invitation PENDING vers un numéro non vérifié (${JSON.stringify(data)})`);
         const transferId = String(data![0].id);
         await markPhoneVerified(invitee.userId);
-        const { error: expErr } = await service.from('ticket_transfers').update({ expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('id', transferId);
+        // created_at reculé aussi : CHECK (expires_at > created_at) de chk_ticket_transfers_dates (patron notif-transferts.test.ts:366).
+        const { error: expErr } = await service.from('ticket_transfers')
+            .update({ created_at: new Date(Date.now() - 49 * 3600_000).toISOString(), expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('id', transferId);
         assert.equal(expErr, null, `échéance passée : ${expErr?.message}`);
 
         const claim = await routeHandler('../../app/api/tickets/transfers/[id]/claim/route', 'POST', 'POST /api/tickets/transfers/[id]/claim');
