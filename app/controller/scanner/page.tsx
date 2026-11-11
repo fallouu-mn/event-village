@@ -39,6 +39,15 @@
  *  4. Caisse ouverte relue sur /api/controller/shifts/active aux mêmes moments.
  *  5. Caméra coupée en arrière-plan ; au retour (ou après un rechargement), écran « Reprendre le contrôle » qui la
  *     relance en un geste, sans repasser par le choix de l'événement.
+ *
+ * Lot 9 bis :
+ *  - R16 (B48, contrat 4.3) : le contrôle est ouvert quand le serveur le dit (`scan.open` de chaque affectation, même
+ *    règle que ticket_scan), jamais d'après le statut de l'événement ; bandeaux « Contrôle ouvert à partir du … » et
+ *    « Contrôle fermé depuis le … » ; affectations relues à l'heure d'ouverture et à l'heure de fermeture ;
+ *  - R17 (B49) : onglet Caisse visible tant qu'une caisse du contrôleur est ouverte (`open_shift`), même si son droit
+ *    d'encaisser a été retiré : il peut encore la clôturer ;
+ *  - R107 : un 403 du scan (« Vous ne contrôlez plus cet événement ») fait relire les affectations ; une affectation
+ *    retirée ramène à l'écran de choix.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -67,8 +76,8 @@ import {
     type ScanReturnReason,
 } from '@/lib/scan/scan-session';
 import { deferredPart, useDeferredPart } from '@/lib/scan/deferred-part';
-import { EVENT_STATUS_META, isEventEligibleForController, isEventStatus } from '@/lib/events/event-status';
-import { formatEventDateTime, formatTime } from '@/lib/format';
+import { EVENT_STATUS_META, isEventStatus } from '@/lib/events/event-status';
+import { formatDate, formatEventDateTime, formatTime, toDate } from '@/lib/format';
 import { triggerHapticFeedback } from '@/lib/hardware/feedback';
 import type { ShiftSummary } from '@/lib/shifts/shift.service';
 
@@ -103,11 +112,23 @@ interface EventInfo {
     status: string;
 }
 
+/** État du contrôle servi par le serveur (R16) : `problem` = event_not_open, event_ended, event_suspended, event_cancelled… */
+interface ScanState {
+    open: boolean;
+    problem: string | null;
+    opens_at: string | null;
+    closes_at: string | null;
+}
+
 interface Assignment {
     id: string;
     can_accept_cash: boolean;
     entry_point: string | null;
     counter_sale_enabled: boolean;
+    /** null : état non servi, le contrôle est tenu pour fermé (jamais deviné d'après le statut). */
+    scan: ScanState | null;
+    /** Caisse ouverte du contrôleur sur cet événement (R17), null sans caisse. */
+    open_shift: string | null;
     events: EventInfo;
 }
 
@@ -150,10 +171,69 @@ const MAX_INCIDENTS_PER_REPORT = 20;
 /** Mémoire de l'appareil (lib/scan/scan-session) : surface du contrôleur. */
 const SURFACE = 'controleur' as const;
 
-/** Libellé (EVENT_STATUS_META) d'un événement fermé au contrôle : terminé, suspendu ou annulé ; null sinon. */
-function closedStatusLabel(status?: string): string | null {
-    if (status !== 'TERMINE' && status !== 'SUSPENDU' && status !== 'ANNULE') return null;
-    return isEventStatus(status) ? EVENT_STATUS_META[status].label : null;
+/** Plus long délai d'une minuterie du navigateur (2^31 − 1 ms, environ 24 jours). */
+const MAX_TIMER_MS = 2_147_483_647;
+/** Relecture des affectations un peu après l'heure d'ouverture ou de fermeture dite par le serveur. */
+const BOUNDARY_GRACE_MS = 1000;
+
+function readScanState(raw: unknown): ScanState | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const s = raw as Record<string, unknown>;
+    return {
+        open: s.open === true,
+        problem: typeof s.problem === 'string' ? s.problem : null,
+        opens_at: typeof s.opens_at === 'string' ? s.opens_at : null,
+        closes_at: typeof s.closes_at === 'string' ? s.closes_at : null,
+    };
+}
+
+/** Le contrôle ouvrira plus tard (fenêtre pas encore commencée), et à quelle heure ; null sinon. */
+function upcomingOpening(scan: ScanState | null): Date | null {
+    if (!scan || scan.open || scan.problem !== 'event_not_open') return null;
+    const at = toDate(scan.opens_at);
+    return at && at.getTime() > Date.now() ? at : null;
+}
+
+/** Libellé court d'un contrôle fermé (écran de choix, message de reprise) ; null si le serveur le dit ouvert. */
+function closedLabel(a: Assignment): string | null {
+    if (a.scan?.open === true) return null;
+    const status = a.events?.status;
+    if (a.scan?.problem === 'event_not_open') return upcomingOpening(a.scan) ? 'À venir' : 'Non publié';
+    if (isEventStatus(status) && (status === 'TERMINE' || status === 'SUSPENDU' || status === 'ANNULE')) return EVENT_STATUS_META[status].label;
+    return a.scan ? 'Indisponible' : 'État inconnu';
+}
+
+/** Bandeau d'un contrôle fermé, d'après l'état servi (jamais d'après le seul statut de l'événement). */
+function closedBanner(scan: ScanState | null): { tone: 'danger' | 'warning'; title: string; text: string } {
+    if (!scan) {
+        return { tone: 'warning', title: 'État du contrôle inconnu', text: 'Le serveur n’a pas indiqué si le contrôle est ouvert : rechargez la page.' };
+    }
+    if (scan.problem === 'event_cancelled') {
+        return { tone: 'danger', title: 'Événement annulé', text: 'Événement annulé : aucune entrée n’est possible, les billets sont remboursés.' };
+    }
+    if (scan.problem === 'event_suspended') {
+        return { tone: 'danger', title: 'Événement suspendu', text: 'Les contrôles d’accès sont suspendus sur cet événement.' };
+    }
+    if (scan.problem === 'event_ended') {
+        const closed = toDate(scan.closes_at);
+        return {
+            tone: 'warning', title: 'Contrôle fermé',
+            text: closed
+                ? `Contrôle fermé depuis le ${formatDate(closed)} à ${formatTime(closed)} : les scans ne sont plus autorisés sur cet événement.`
+                : 'Contrôle fermé : les scans ne sont plus autorisés sur cet événement.',
+        };
+    }
+    const opening = upcomingOpening(scan);
+    if (opening) {
+        return {
+            tone: 'warning', title: 'Contrôle pas encore ouvert',
+            text: `Contrôle ouvert à partir du ${formatDate(opening)} à ${formatTime(opening)}. Le scan s’activera de lui-même à cette heure.`,
+        };
+    }
+    if (scan.problem === 'event_not_open') {
+        return { tone: 'warning', title: 'Événement non publié', text: 'Le contrôle ouvrira quand l’événement sera publié.' };
+    }
+    return { tone: 'warning', title: 'Contrôle fermé', text: 'Le contrôle n’est pas ouvert sur cet événement.' };
 }
 
 function readAutoReturn(): number {
@@ -238,7 +318,8 @@ export default function ControllerScannerPage() {
     const accountIdRef = useRef(accountId);
     accountIdRef.current = accountId;
     const canCashRef = useRef(false);
-    canCashRef.current = selected?.can_accept_cash === true;
+    // Caisse relue si le contrôleur peut encaisser ou s'il a encore une caisse ouverte (R17)
+    canCashRef.current = selected?.can_accept_cash === true || (selected?.open_shift ?? null) !== null;
     /** Un POST de scan est en cours dans cette page (le scan en attente n'est alors jamais renvoyé en double). */
     const inFlightRef = useRef(false);
     /** Le contrôleur a quitté l'application pendant l'envoi en cours (useScannerReturn). */
@@ -303,10 +384,13 @@ export default function ControllerScannerPage() {
                 can_accept_cash: a.can_accept_cash === true,
                 entry_point: typeof a.entry_point === 'string' && a.entry_point.trim() !== '' ? a.entry_point : null,
                 counter_sale_enabled: a.counter_sale_enabled === true,
+                scan: readScanState(a.scan),
+                open_shift: typeof a.open_shift === 'string' && a.open_shift !== '' ? a.open_shift : null,
                 events: (a.events ?? {}) as EventInfo,
             }));
-            // Événements ouverts au contrôle d'abord, puis par date
-            list.sort((x, y) => Number(isEventEligibleForController(y.events?.status)) - Number(isEventEligibleForController(x.events?.status))
+            if (list.some((a) => a.scan === null)) console.warn('[scanner] état du contrôle absent d’une affectation : contrôle tenu pour fermé');
+            // Événements ouverts au contrôle (dit par le serveur) d'abord, puis par date
+            list.sort((x, y) => Number(y.scan?.open === true) - Number(x.scan?.open === true)
                 || String(x.events?.date ?? '').localeCompare(String(y.events?.date ?? '')));
             setAssignments(list);
             if (data.controller) {
@@ -324,7 +408,7 @@ export default function ControllerScannerPage() {
                 if (typeof data.controller?.id === 'string') clearScanSession(SURFACE, data.controller.id);
             }
             setSelectedId((cur) => (cur && list.some((a) => a.id === cur) ? cur
-                : (list.find((a) => isEventEligibleForController(a.events?.status)) ?? list[0])?.id ?? null));
+                : (list.find((a) => a.scan?.open === true) ?? list[0])?.id ?? null));
             setLoadError('');
         } catch (err) {
             console.warn('[scanner] affectations : réseau indisponible', err instanceof Error ? err.message : String(err));
@@ -442,7 +526,7 @@ export default function ControllerScannerPage() {
         setStats(null);
         setStatsError(null);
         void fetchStats();
-        if (selected?.can_accept_cash) void fetchActiveShift();
+        if (canCashRef.current) void fetchActiveShift();
         else setActiveShift(null);
         resumePendingRef.current('montage');
         import('@/components/scan/ManualEntryForm').catch((err: unknown) => console.warn('[scanner] saisie manuelle non préchargée :', err instanceof Error ? err.message : String(err)));
@@ -455,7 +539,19 @@ export default function ControllerScannerPage() {
                 })
             .subscribe();
         return () => { void supabase.removeChannel(channel); };
-    }, [started, eventId, selected?.can_accept_cash, fetchStats, fetchActiveShift, scheduleStats]);
+    }, [started, eventId, selected?.can_accept_cash, selected?.open_shift, fetchStats, fetchActiveShift, scheduleStats]);
+
+    // ── Minuterie (R16) : affectations relues à l'heure d'ouverture ou de fermeture du contrôle dite par le serveur ──
+    const selectedScan = selected?.scan ?? null;
+    const boundary = selectedScan ? (selectedScan.open ? selectedScan.closes_at : upcomingOpening(selectedScan)?.toISOString() ?? null) : null;
+    useEffect(() => {
+        const at = toDate(boundary);
+        if (!at) return;
+        const delay = at.getTime() - Date.now() + BOUNDARY_GRACE_MS;
+        if (delay <= 0 || delay > MAX_TIMER_MS) return;
+        const timer = setTimeout(() => { void fetchAssignments({ quiet: true }); }, delay);
+        return () => clearTimeout(timer);
+    }, [boundary, fetchAssignments]);
 
     // ── Reprise de session (A10) : événement et mode retenus, repris si l'événement est encore ouvert au contrôle ──
     useEffect(() => {
@@ -470,12 +566,13 @@ export default function ControllerScannerPage() {
             return;
         }
         const title = match.events?.title || 'Événement sans titre';
-        if (!isEventEligibleForController(match.events?.status)) {
+        // Lot 9 bis (R16) : repris seulement si le serveur dit le contrôle ouvert (match.scan.open)
+        if (match.scan?.open !== true) {
             clearScanSession(SURFACE, accountId);
-            const closed = closedStatusLabel(match.events?.status);
-            setRestoreNotice(closed
-                ? `Le contrôle de « ${title} » est fermé (${closed}) : choisissez un événement.`
-                : `Le contrôle de « ${title} » n’est pas ouvert : choisissez un événement.`);
+            const opening = upcomingOpening(match.scan);
+            setRestoreNotice(opening
+                ? `Le contrôle de « ${title} » n’est pas encore ouvert (ouverture le ${formatDate(opening)} à ${formatTime(opening)}) : choisissez un événement.`
+                : `Le contrôle de « ${title} » est fermé (${closedLabel(match) ?? 'Indisponible'}) : choisissez un événement.`);
             return;
         }
         lastValidRef.current = null;
@@ -595,8 +692,11 @@ export default function ControllerScannerPage() {
             setStage('idle');
             return;
         }
+        // R107 : refus 403 (« Vous ne contrôlez plus cet événement ») : affectations relues ; une affectation retirée
+        // ramène à l'écran de choix, un contrôle fermé entre-temps affiche son bandeau
+        if (outcome.failure === 'forbidden') void fetchAssignments({ quiet: true });
         presentOutcome(outcome, payload, recoveredAt);
-    }, [presentOutcome, redirectIfSessionExpired]);
+    }, [presentOutcome, redirectIfSessionExpired, fetchAssignments]);
 
     const runScanRef = useRef(runScan);
     runScanRef.current = runScan;
@@ -789,7 +889,7 @@ export default function ControllerScannerPage() {
             title: a.events?.title || 'Événement sans titre',
             dateLabel: formatEventDateTime(a.events?.date ?? null, a.events?.start_time ?? null),
             location: a.events?.location ?? null,
-            closedLabel: closedStatusLabel(a.events?.status),
+            closedLabel: closedLabel(a),
             entryPoint: a.entry_point,
         }));
         return (
@@ -816,9 +916,12 @@ export default function ControllerScannerPage() {
 
     // ── Rendu : contrôle en cours ──
 
-    const eventStatus = selected.events?.status;
-    const eligible = isEventEligibleForController(eventStatus);
+    // R16 : le serveur dit si le contrôle est ouvert (même règle que ticket_scan), le statut seul ne décide plus
+    const eligible = selected.scan?.open === true;
+    const banner = eligible ? null : closedBanner(selected.scan);
     const canCash = selected.can_accept_cash;
+    // R17 : l'onglet Caisse reste tant qu'une caisse est ouverte, même après le retrait du droit d'encaisser
+    const canCashTab = canCash || selected.open_shift !== null;
     const showCounter = canCash && selected.counter_sale_enabled;
     const outcome = shown?.outcome ?? null;
     const modalOpen = showOpenShift || showCloseShift || zSummary !== null;
@@ -827,7 +930,7 @@ export default function ControllerScannerPage() {
     const tabs = [
         { id: 'controle', label: 'Contrôle' },
         ...(showCounter ? [{ id: 'guichet', label: 'Guichet' }] : []),
-        ...(canCash ? [{ id: 'caisse', label: 'Caisse' }] : []),
+        ...(canCashTab ? [{ id: 'caisse', label: 'Caisse' }] : []),
     ];
     const currentArea: Area = tabs.some((t) => t.id === area) ? area : 'controle';
 
@@ -850,18 +953,9 @@ export default function ControllerScannerPage() {
 
     const control = (
         <div className="flex flex-col gap-3">
-            {!eligible ? (
-                <StatusBanner
-                    tone={eventStatus === 'SUSPENDU' || eventStatus === 'ANNULE' ? 'danger' : 'warning'}
-                    title={eventStatus === 'SUSPENDU' ? 'Événement suspendu'
-                        : eventStatus === 'TERMINE' ? 'Événement terminé'
-                        : eventStatus === 'ANNULE' ? 'Événement annulé'
-                        : 'Événement non publié'}
-                >
-                    {eventStatus === 'SUSPENDU' ? 'Les contrôles d’accès sont suspendus sur cet événement.'
-                        : eventStatus === 'TERMINE' ? 'Les scans ne sont plus autorisés sur cet événement.'
-                        : eventStatus === 'ANNULE' ? 'Événement annulé : aucune entrée n’est possible, les billets sont remboursés.'
-                        : 'Le contrôle ouvrira quand l’événement sera publié.'}
+            {banner ? (
+                <StatusBanner tone={banner.tone} title={banner.title}>
+                    {banner.text}
                 </StatusBanner>
             ) : (
                 <>
@@ -964,9 +1058,16 @@ export default function ControllerScannerPage() {
 
     const cashArea = (
         <div className="flex flex-col gap-3">
+            {!canCash && (
+                <StatusBanner tone="warning" title="Droit d’encaisser retiré">
+                    {activeShift
+                        ? 'Vous n’encaissez plus sur cet événement : clôturez votre caisse ouverte pour remettre les espèces.'
+                        : 'Vous n’encaissez plus sur cet événement et aucune caisse n’est ouverte.'}
+                </StatusBanner>
+            )}
             {ScannerShiftBanner ? (
                 <ScannerShiftBanner
-                    canAcceptCash={canCash}
+                    canAcceptCash={canCash || activeShift !== null}
                     activeShift={activeShift}
                     onOpenShiftClick={() => setShowOpenShift(true)}
                     onCloseShiftClick={() => setShowCloseShift(true)}
@@ -1058,7 +1159,7 @@ export default function ControllerScannerPage() {
                     onShiftOpened={() => { void fetchActiveShift(); }}
                 />
             )}
-            {canCash && activeShift && (
+            {canCashTab && activeShift && (
                 <CloseShiftModal
                     isOpen={showCloseShift}
                     onClose={() => setShowCloseShift(false)}
@@ -1066,6 +1167,8 @@ export default function ControllerScannerPage() {
                     onShiftClosed={(summary) => {
                         setActiveShift(null);
                         setZSummary(summary);
+                        // R17 : caisse fermée sans droit d'encaisser, l'onglet Caisse disparaît à la relecture
+                        if (!canCash) void fetchAssignments({ quiet: true });
                     }}
                 />
             )}

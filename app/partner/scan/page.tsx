@@ -21,6 +21,10 @@
  *     demande que le verdict de la lecture d'origine (8.2 e, L45), sans ligne en base le billet reste à rescanner ;
  *  5. caméra coupée en arrière-plan, écran « Reprendre le contrôle » au retour (pas de caisse ici : point 4
  *     sans objet pour le partenaire).
+ *
+ * Lot 9 bis (R16, B48, contrat 4.3) : la liste ne retient que les événements dont le serveur dit le contrôle ouvert
+ * (GET /api/controller/scan/state, même règle que ticket_scan) : un PUBLIE dans sa fenêtre, mais aussi un TERMINE
+ * tant que la fenêtre après la fin reste ouverte ; plus aucune décision d'après le seul statut.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -42,6 +46,11 @@ import {
 } from '@/lib/scan/scan-session';
 
 interface PartnerEvent { id: string; title: string; start_date?: string; status?: string }
+
+/** Au plus 50 événements par lecture de l'état du contrôle (route scan/state). */
+const MAX_STATE_EVENTS = 50;
+/** Statuts dont le contrôle peut être ouvert (scan_event_problem) ; l'ouverture elle-même est dite par le serveur. */
+const SCANNABLE_STATUSES = ['PUBLIE', 'TERMINE'];
 
 /** Chiffres et historique servis par GET /api/controller/scans (jamais comptés dans la page). */
 interface ServedStats {
@@ -114,11 +123,12 @@ export default function PartnerScanPage() {
         router.replace(`/login?redirect=${encodeURIComponent(PAGE_PATH)}`);
     }, [router]);
 
-    // ── Événements publiés du partenaire (`quiet` : relecture au retour, un échec est journalisé sans écran d'erreur) ──
+    // ── Événements du partenaire ouverts au contrôle (`quiet` : relecture au retour, un échec est journalisé sans écran
+    // d'erreur) : liste lue, puis état du contrôle dit par le serveur (scan/state), seuls les événements ouverts restent ──
     const fetchEvents = useCallback(async (opts: { quiet?: boolean } = {}): Promise<PartnerEvent[] | null> => {
         const quiet = opts.quiet === true;
         try {
-            const res = await fetch('/api/partner/events?status=PUBLIE', { cache: 'no-store' });
+            const res = await fetch('/api/partner/events', { cache: 'no-store' });
             if (res.status === 401) {
                 goToLogin();
                 return null;
@@ -129,7 +139,28 @@ export default function PartnerScanPage() {
                 else setEventsError(data.error || 'Impossible de charger vos événements.');
                 return null;
             }
-            const list = ((data.events ?? []) as PartnerEvent[]).filter((e) => e.status === 'PUBLIE');
+            const candidates = ((data.events ?? []) as PartnerEvent[])
+                .filter((e) => SCANNABLE_STATUSES.includes(String(e.status)))
+                .sort((x, y) => String(y.start_date ?? '').localeCompare(String(x.start_date ?? '')))
+                .slice(0, MAX_STATE_EVENTS);
+            let list: PartnerEvent[] = [];
+            if (candidates.length > 0) {
+                const stateRes = await fetch(`/api/controller/scan/state?event_ids=${candidates.map((e) => encodeURIComponent(e.id)).join(',')}`, { cache: 'no-store' });
+                if (stateRes.status === 401) {
+                    goToLogin();
+                    return null;
+                }
+                const state = await stateRes.json();
+                if (!stateRes.ok || !Array.isArray(state.items)) {
+                    if (quiet) console.warn('[partner/scan] état du contrôle non relu au retour :', stateRes.status, state.error);
+                    else setEventsError(state.error || 'L’état du contrôle de vos événements n’a pas pu être lu.');
+                    return null;
+                }
+                const open = new Set((state.items as Array<{ event_id?: unknown; open?: unknown }>)
+                    .filter((i) => i.open === true).map((i) => String(i.event_id)));
+                list = candidates.filter((e) => open.has(e.id))
+                    .sort((x, y) => String(x.start_date ?? '').localeCompare(String(y.start_date ?? '')));
+            }
             setEvents(list);
             setEventsError(null);
             return list;
@@ -399,7 +430,7 @@ export default function PartnerScanPage() {
                 </div>
             ) : events.length === 0 ? (
                 <div role="status" className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg">
-                    Aucun événement publié à contrôler.
+                    Aucun événement ouvert au contrôle en ce moment : le contrôle ouvre quelques heures avant le début et ferme quelques heures après la fin.
                 </div>
             ) : (
                 <Select
