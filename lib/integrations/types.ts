@@ -29,8 +29,11 @@ export interface SmsSendResult {
     recipient: string;
     error?: string;
     rawResponse?: unknown;
-    /** Lot 1C.9 : refus de la garde anti-abus (aucun SMS envoyé) ; lot 4.8 : limite par compte déclencheur. */
-    code?: 'SMS_RATE_LIMITED' | 'SMS_DAILY_CAP_REACHED' | 'SMS_ACCOUNT_LIMIT_REACHED' | 'SMS_GUARD_UNAVAILABLE';
+    /**
+     * Lot 1C.9 : refus de la garde anti-abus (aucun SMS envoyé) ; lot 4.8 : limite par compte déclencheur.
+     * Lot 9 bis (I1) : SMS_DEMO_ACCOUNT, destinataire de démonstration hors simulation (aucun SMS envoyé).
+     */
+    code?: 'SMS_RATE_LIMITED' | 'SMS_DAILY_CAP_REACHED' | 'SMS_ACCOUNT_LIMIT_REACHED' | 'SMS_GUARD_UNAVAILABLE' | 'SMS_DEMO_ACCOUNT';
     retryAfterSeconds?: number;
     /**
      * Lot 6 (E6) : issue de l'envoi ; `success === (outcome === 'SENT')`. Les refus de la garde portent
