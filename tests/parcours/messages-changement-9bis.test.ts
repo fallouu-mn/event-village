@@ -96,7 +96,7 @@ async function eventWithHolder(label: string, opts: { startsInHours?: number } =
     }
     await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: partner.userId });
     const holder = await newBuyer(`chg-${label.replace(/\s+/g, '').slice(0, 10)}`);
-    await buyConfirmed(holder, ev, [[STANDARD, 1]]);
+    await buyConfirmed(holder, ev, [[STANDARD, 1]]); await dispatchAt(new Date(), { eventIds: [ev.eventId] }); // confirmation d’achat remise avant toute marque
     return { ev, holder };
 }
 

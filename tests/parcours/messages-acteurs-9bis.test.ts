@@ -112,7 +112,7 @@ describe('9b.33 R15 : partenaire prévenue d\'une annulation par un admin, admin
         const ev = await publishedEvent('Annul admin');
         const buyer = await newBuyer('act-acheteur');
         await buyConfirmed(buyer, ev, [[STANDARD, 1]]);
-        const mark = smsMark(partner.phoneE164);
+        await flushNotifications({ eventIds: [ev.eventId] }); const mark = smsMark(partner.phoneE164); // avis antérieurs (validation, premier billet) remis avant la marque
 
         assertRpcOk(await rpcCancel(ev.eventId, await superadminId(), cancelInput(ev)), 'annulation par un admin');
 
@@ -155,7 +155,7 @@ describe('9b.33 R33 : contrôleurs affectés prévenus (annulation et changement
             { event_ids: [ev.eventId], phone: invited.phoneE164, confirm_promotion: true }));
         // 201 à la création de l'invitation, comme dette-retrait-controleur.test.ts:295 (contrat de RC, inchangé par fix(9b.26)).
         assert.equal(invite.status, 201, `invitation d'un client comme contrôleur : ${show(invite)}`);
-        const mark = smsMark(controller.phoneE164);
+        await flushNotifications({ eventIds: [ev.eventId] }); const mark = smsMark(controller.phoneE164); // avis d’affectation remis avant la marque
         const invitedMark = smsMark(invited.phoneE164);
         const date = await smsStart(ev.eventId);
 

@@ -191,7 +191,7 @@ describe('9b.38 R27 : émojis et caractères hors alphabet SMS retirés du texte
         const { data, error } = await service.from('events').select('start_date, start_time').eq('id', ev.eventId).single();
         assert.equal(error, null, `événement : ${error?.message}`);
         const date = smsDateTime(`${String(data.start_date)}T${String(data.start_time).length === 5 ? `${String(data.start_time)}:00` : String(data.start_time)}.000Z`);
-        const mark = smsMark(holder.phoneE164);
+        await flushNotifications({ eventIds: [ev.eventId] }); const mark = smsMark(holder.phoneE164); // confirmation d’achat remise avant la marque
         const partner = await suitePartner();
         assertRpcOk(await rpcCancel(ev.eventId, partner.userId, { publicNotice: 'Salle indisponible ce soir', internalReason: 'Test du lot 9 bis', confirmTitle: ev.title }), 'annulation');
         await flushNotifications({ eventIds: [ev.eventId] });

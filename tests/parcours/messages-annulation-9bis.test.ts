@@ -163,7 +163,7 @@ describe('9b.30 R12 : SMS indispensable aux numéros sans compte (invitation non
     test('invitation non réclamée, annulation par la partenaire : EVENT_CANCELLED par SMS au numéro, sans compte, texte exact', async () => {
         const ev = await publishedEvent('Invit annul');
         const phone = await pendingInvitation(ev);
-        const mark = smsMark(phone);
+        await flushNotifications({ eventIds: [ev.eventId] }); const mark = smsMark(phone); // SMS d’invitation remis avant la marque
         const date = await smsStart(ev.eventId);
 
         assertRpcOk(await rpcCancel(ev.eventId, partner.userId, { publicNotice: PUBLIC_NOTICE, internalReason: INTERNAL_REASON, confirmTitle: ev.title }), 'annulation par la partenaire');
@@ -191,7 +191,7 @@ describe('9b.30 R12 : SMS indispensable aux numéros sans compte (invitation non
         assert.equal(withPhone.status, 200, `vente au guichet avec numéro : ${show(withPhone)}`);
         const withoutPhone = await counterSale(seller, ev, null);
         assert.equal(withoutPhone.status, 200, `vente au guichet sans numéro : ${show(withoutPhone)}`);
-        const mark = smsMark(phone);
+        await flushNotifications({ eventIds: [ev.eventId] }); const mark = smsMark(phone); // reçu du guichet remis avant la marque
         const date = await smsStart(ev.eventId);
 
         assertRpcOk(await rpcCancel(ev.eventId, await superadminId(), { publicNotice: PUBLIC_NOTICE, internalReason: INTERNAL_REASON, confirmTitle: ev.title }), 'annulation par un admin');
@@ -277,7 +277,7 @@ describe('9b.31 R13 : billet reçu par transfert, annonce à l\'acheteur d\'orig
         const { data: t, error: tErr } = await service.from('tickets').select('user_id').eq('id', ticketId).single();
         assert.equal(tErr, null, `billet : ${tErr?.message}`);
         assert.equal(t.user_id, lamine.userId, 'précondition : le billet est à Lamine, Fatou n\'en a plus');
-        const laMark = smsMark(lamine.phoneE164);
+        await flushNotifications({ eventIds: [ev.eventId] }); const laMark = smsMark(lamine.phoneE164); // avis d’achat et de transfert remis avant la marque
         const date = await smsStart(ev.eventId);
 
         assertRpcOk(await rpcCancel(ev.eventId, partner.userId, { publicNotice: PUBLIC_NOTICE, internalReason: INTERNAL_REASON, confirmTitle: ev.title }), 'annulation par la partenaire');

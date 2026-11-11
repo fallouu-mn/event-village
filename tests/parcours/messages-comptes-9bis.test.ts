@@ -134,7 +134,7 @@ describe('9b.34 R22 : TICKET_CANCELLED au détenteur d\'une invitation, d\'un bi
         const ev = await publishedEvent('Invit numero');
         const phone = randomSenegalPhone('76');
         const ticketId = await invite(ev, phone);
-        const mark = smsMark(phone);
+        await flushNotifications({ eventIds: [ev.eventId] }); const mark = smsMark(phone); // SMS d’invitation remis avant la marque
         const date = await smsStart(ev.eventId);
         await cancelInvitation(ev, ticketId);
 
@@ -214,7 +214,7 @@ describe('9b.34 R23 : destinataire d\'un transfert révoqué par l\'annulation p
         const initiate = await routeHandler(TRANSFER_ROUTE, 'POST', 'POST /api/tickets/[id]/transfer');
         const init = await invoke(initiate, authed(`/api/tickets/${ticketId}/transfer`, 'POST', holder, { recipient }), routeContext({ id: ticketId }));
         assert.equal(init.status, 200, `initiation du transfert : ${show(init)}`);
-        const mark = smsMark(recipient);
+        await flushNotifications({ eventIds: [ev.eventId] }); const mark = smsMark(recipient); // offre de transfert remise avant la marque
         const date = await smsStart(ev.eventId);
 
         assertRpcOk(await rpcCancel(ev.eventId, partner.userId, { publicNotice: PUBLIC_NOTICE, internalReason: 'Test du lot 9 bis', confirmTitle: ev.title }), 'annulation');
