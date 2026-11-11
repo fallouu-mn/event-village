@@ -2095,7 +2095,7 @@ La tâche des rappels tourne toutes les 5 minutes (`supabase/ops/schedule-crons.
 | Fatou, détentrice | SMS | optionnel | échéance 10 h, puis prochain passage de la file | modèle « Event Village : rappel, {title} demain à {start_at}, {location}. Vos billets : {APP_URL}/tickets » ; exemple « Event Village : rappel, Gala de la Teranga demain à 20:00, CICAD. Vos billets : https://eventvillage.sn/tickets » (111 caractères, 1 segment) |
 | Fatou, détentrice | cloche | optionnel | échéance 10 h, puis prochain passage de la file | titre « Rappel : c'est demain » ; modèle « « {title} » demain à {start_at}, {location}, {city}. Vos billets sont dans Mes billets. » ; exemple « « Gala de la Teranga » demain à 20:00, CICAD, Diamniadio. Vos billets sont dans Mes billets. » |
 | Fatou, détentrice | push | optionnel | échéance 10 h, puis prochain passage de la file | titre « Rappel : c'est demain » ; modèle « « {title} » demain à {start_at}, {location}, {city}. Vos billets sont dans Mes billets. » ; exemple « « Gala de la Teranga » demain à 20:00, CICAD, Diamniadio. Vos billets sont dans Mes billets. » |
-| Fatou, détentrice | email | optionnel | échéance 10 h, puis prochain passage de la file | objet « Rappel : c'est demain — Event Village » ; modèle : Rappel : c'est demain<br>« {title} » demain à {start_at}, {location}, {city}. Vos billets sont dans Mes billets.<br>Ouvrir Event Village : {APP_URL}/tickets<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn<br>Ne plus recevoir ces emails : {APP_URL}/profile/notifications?topic=REMINDERS ; exemple : Rappel : c'est demain<br>« Gala de la Teranga » demain à 20:00, CICAD, Diamniadio. Vos billets sont dans Mes billets.<br>Ouvrir Event Village : https://eventvillage.sn/tickets<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn<br>Ne plus recevoir ces emails : https://eventvillage.sn/profile/notifications?topic=REMINDERS |
+| Fatou, détentrice, si son adresse est vérifiée (depuis le lot 9 bis) | email | optionnel | échéance 10 h, puis prochain passage de la file | objet « Rappel : c'est demain — Event Village » ; modèle : Rappel : c'est demain<br>« {title} » demain à {start_at}, {location}, {city}. Vos billets sont dans Mes billets.<br>Ouvrir Event Village : {APP_URL}/tickets<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn<br>Ne plus recevoir ces emails : {APP_URL}/profile/notifications?topic=REMINDERS ; exemple : Rappel : c'est demain<br>« Gala de la Teranga » demain à 20:00, CICAD, Diamniadio. Vos billets sont dans Mes billets.<br>Ouvrir Event Village : https://eventvillage.sn/tickets<br>—<br>Message automatique d'Event Village, merci de ne pas y répondre. Support : support@eventvillage.sn<br>Ne plus recevoir ces emails : https://eventvillage.sn/profile/notifications?topic=REMINDERS |
 
 Preuve : `REMINDER_J1`, `M/20261105000002_lot7_sms.sql:638`. Le SMS est perdu en heures calmes ou au-delà du budget, sans report.
 
@@ -2106,8 +2106,9 @@ Preuve : `REMINDER_J1`, `M/20261105000002_lot7_sms.sql:638`. Le SMS est perdu en
 | Ibrahima | SMS | optionnel | veille à 18 h, puis prochain passage de la file | modèle « Event Village : demain {title} à {start_at}, point {entry_point}, espèces autorisées. Connexion : {APP_URL}/login » ; exemple « Event Village : demain Gala de la Teranga à 20:00, point Porte Nord, espèces autorisées. Connexion : https://eventvillage.sn/login » (130 caractères, 1 segment) |
 | Ibrahima | cloche | optionnel | veille à 18 h, puis prochain passage de la file | titre « Contrôle demain » ; modèle « Demain « {title} » à {start_at}, point d'entrée {entry_point}, espèces autorisées. » ; exemple « Demain « Gala de la Teranga » à 20:00, point d'entrée Porte Nord, espèces autorisées. » |
 | Ibrahima | push | optionnel | veille à 18 h, puis prochain passage de la file | titre « Contrôle demain » ; modèle « Demain « {title} » à {start_at}, point d'entrée {entry_point}, espèces autorisées. » ; exemple « Demain « Gala de la Teranga » à 20:00, point d'entrée Porte Nord, espèces autorisées. » |
+| Ibrahima, si son adresse est vérifiée | email | optionnel | veille à 18 h, puis prochain passage de la file | depuis le lot 9 bis, objet « Contrôle demain — Event Village », texte de la cloche |
 
-Preuve : `CONTROLLER_REMINDER`, `M/20261105000002_lot7_sms.sql:706`.
+Preuve : `CONTROLLER_REMINDER`, `M/20261105000002_lot7_sms.sql:706`, `lib/notifications/catalog.ts:1136-1148`.
 
 6. **Ce qui est impossible.** Un rattrapage : billet acheté après l'échéance, ou tâche arrêtée plus de 15 minutes. Rappels annulés à la suspension, à l'annulation, à la fin, au report, au changement de détenteur.
 7. **Test et essai.** Test : `tests/parcours/notif-rappels.test.ts:320` « rien à 09:59 la veille ; à 10:00 une ligne par canal, clé avec le début, échéance 10:00 ; pas de H-3 à cette heure » ; `tests/parcours/notif-rappels.test.ts:335` « tolérance de 15 min : premier passage à 10:14 → créé (échéance 10:00) ; premier passage à 10:16 → rien, ni ensuite » ; `tests/parcours/notif-rappels.test.ts:354` « rappels désactivés (notif.reminder_j1_enabled, notif.reminder_h3_enabled = false) : rien ; réactivés dans la fenêtre : créés » ; `tests/parcours/notif-rappels.test.ts:460` « achat tardif (heure réelle) : billet acheté après l’échéance du H-3 → aucun rappel ; témoin acheté avant → rappel » ; `tests/parcours/notif-rappels.test.ts:554` « 5 billets d’un compte → une ligne par canal ; deux planifications et deux envois → aucun doublon, un seul SMS au texte exact » ; `tests/parcours/notif-rappels.test.ts:586` « invitation → rappel ; billet de guichet (sans porteur) → rien ; compte suspendu → lignes SKIPPED ACCOUNT_SUSPENDED (trace) ». Essai : Essai 48 de `docs/recette-billetterie.md`, `docs/essai-local.md` section 8.7.
@@ -2125,7 +2126,9 @@ Preuve : `CONTROLLER_REMINDER`, `M/20261105000002_lot7_sms.sql:706`.
 | Fatou, détentrice | cloche | optionnel | échéance, puis prochain passage de la file ; SMS seulement si le push n'est pas accepté, perdu en heures calmes ou au-delà du budget | titre « C'est bientôt » ; modèle « « {title} » commence à {start_at} ({location}). Ouvrez votre billet dans l'application avant d'arriver : il restera disponible sans réseau. » ; exemple « « Gala de la Teranga » commence à 20:00 (CICAD). Ouvrez votre billet dans l'application avant d'arriver : il restera disponible sans réseau. » |
 | Fatou, détentrice | push | optionnel | échéance, puis prochain passage de la file ; SMS seulement si le push n'est pas accepté, perdu en heures calmes ou au-delà du budget | titre « C'est bientôt » ; modèle « « {title} » commence à {start_at} ({location}). Ouvrez votre billet dans l'application avant d'arriver : il restera disponible sans réseau. » ; exemple « « Gala de la Teranga » commence à 20:00 (CICAD). Ouvrez votre billet dans l'application avant d'arriver : il restera disponible sans réseau. » |
 
-Pas d'email. Preuve : `REMINDER_H3`, `M/20261105000002_lot7_sms.sql:310-324`.
+| Fatou, détentrice, si son adresse est vérifiée | email | optionnel | échéance, puis prochain passage de la file | depuis le lot 9 bis, objet « C'est bientôt — Event Village », texte de la cloche |
+
+Depuis le lot 9 bis, ce rappel part aussi par email. Preuve : `REMINDER_H3`, `M/20261105000002_lot7_sms.sql:310-324`, `lib/notifications/catalog.ts:823-833`.
 
 5. **Ce que les autres voient.** Aucun.
 6. **Ce qui est impossible.** Identique à l'étape 9.1. Un événement qui commence entre 01:00 et 10:59 n'a jamais de SMS trois heures avant : l'échéance tombe en heures calmes.
@@ -2134,8 +2137,8 @@ Pas d'email. Preuve : `REMINDER_H3`, `M/20261105000002_lot7_sms.sql:310-324`.
 ### Étape 9.3 — Préférences du client
 
 1. **Qui, où, quel bouton.** Fatou, `/profile/notifications`, titre « Préférences de notification », « Choisissez comment Event Village vous prévient. Les messages indispensables partent toujours. ». Preuve : `app/profile/notifications/page.tsx:245`.
-2. **Ce qu'il saisit.** Interrupteurs par sujet et par canal (« Application », « SMS », « Email », « Notifications push »). Sujets : « Rappels avant l'événement », « Changements d'un événement », et pour un partenaire « Activité de vos ventes ». Section « Toujours envoyées » : « Codes de connexion », « Confirmations d’achat et reçus », « Billets transférés », « Annulations », « Remboursements », « Sécurité du compte ».
-3. **Ce que fait le système.** Sans réglage, tout est activé. Un canal coupé n'envoie rien pour ce sujet. Message « {sujet} : {canal} activé. » ou désactivé, exemple « Rappels avant l'événement : SMS désactivé. ». Preuve : `M/20261103000002_lot6_outbox.sql:389-398`.
+2. **Ce qu'il saisit.** Interrupteurs par sujet et par canal (« Application », « SMS », « Email », « Notifications push »). Depuis le lot 9 bis, sujets : « Rappels avant l’événement », « Suspension et reprise d’un événement » (le changement de date ou de lieu est devenu indispensable), et pour un partenaire « Activité de vos ventes ». Section « Toujours envoyées » : « Codes de connexion », « Confirmations d’achat et reçus », « Billets transférés », « Annulations », « Remboursements », « Sécurité du compte », « Changements de date ou de lieu ». Sans adresse vérifiée, chaque bascule « Email » est désactivée, décrite « Adresse email non vérifiée », sous le bandeau « Emails non disponibles », « Ajoutez et vérifiez une adresse email dans votre profil pour recevoir ces emails. », bouton « Ouvrir mon profil ». Preuve : `app/api/notifications/preferences/route.ts:31-61`, `app/profile/notifications/page.tsx:52`, `:283-290`, `:331`.
+3. **Ce que fait le système.** Sans réglage, tout est activé. Un canal coupé n'envoie rien pour ce sujet. Depuis le lot 9 bis, l'email se règle sujet par sujet comme le push ; les messages indispensables ne se coupent pas. Message « {sujet} : {canal} activé. » ou désactivé, exemple « Rappels avant l'événement : SMS désactivé. ». Preuve : `M/20261103000002_lot6_outbox.sql:389-398`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2143,14 +2146,14 @@ Pas d'email. Preuve : `REMINDER_H3`, `M/20261105000002_lot7_sms.sql:310-324`.
 | Aucun. | — | — | — | — |
 
 5. **Ce que les autres voient.** Supervision des admins : motif « non envoyée ».
-6. **Ce qui est impossible.** Couper un message indispensable : « Préférence inconnue : seuls les rappels, les changements d’un événement et l’activité des ventes se règlent, canal par canal. Les messages indispensables sont toujours envoyés. ». Preuve : `M/20261103000002_lot6_outbox.sql:1328`.
-7. **Test et essai.** Test : `tests/parcours/notif-preferences.test.ts:234` « client : sujets « Rappels avant l’événement » et « Changements d’un événement », 4 canaux activés, indispensables listés, pas d’« Activité de vos ventes » » ; `tests/parcours/notif-preferences.test.ts:254` « partenaire : « Activité de vos ventes » en plus ; RPC notification_preferences_get : is_partner » ; `tests/parcours/notif-preferences.test.ts:278` « PUT REMINDERS/SMS désactivé puis réactivé : seul ce canal change, ligne notification_preferences » ; `tests/parcours/notif-preferences.test.ts:297` « sujet inconnu, canal inconnu, valeur non booléenne, indispensable → 400 INVALID_PREFERENCE, aucune écriture » ; `tests/parcours/notif-preferences.test.ts:367` « à l’insertion : SMS SKIPPED PREFERENCE_DISABLED (stage ENQUEUE) ; autres canaux en attente ; préférence d’un autre sujet sans effet » ; `tests/parcours/notif-preferences.test.ts:414` « tous les optionnels coupés : l’achat crée sa confirmation sans PREFERENCE_DISABLED et le SMS part ». Essai : Essai 47 de `docs/recette-billetterie.md`.
+6. **Ce qui est impossible.** Couper un message indispensable, depuis le lot 9 bis : « Préférence inconnue : seuls les rappels, la suspension et la reprise d’un événement et l’activité des ventes se règlent, canal par canal. Les messages indispensables sont toujours envoyés. ». Recevoir un email sans adresse vérifiée. Preuve : `app/api/notifications/preferences/route.ts:63-64`.
+7. **Test et essai.** Test : `tests/parcours/notif-preferences.test.ts:234` « client : sujets « Rappels avant l’événement » et « Changements d’un événement », 4 canaux activés, indispensables listés, pas d’« Activité de vos ventes » » ; `tests/parcours/notif-preferences.test.ts:254` « partenaire : « Activité de vos ventes » en plus ; RPC notification_preferences_get : is_partner » ; `tests/parcours/notif-preferences.test.ts:278` « PUT REMINDERS/SMS désactivé puis réactivé : seul ce canal change, ligne notification_preferences » ; `tests/parcours/notif-preferences.test.ts:297` « sujet inconnu, canal inconnu, valeur non booléenne, indispensable → 400 INVALID_PREFERENCE, aucune écriture » ; `tests/parcours/notif-preferences.test.ts:367` « à l’insertion : SMS SKIPPED PREFERENCE_DISABLED (stage ENQUEUE) ; autres canaux en attente ; préférence d’un autre sujet sans effet » ; `tests/parcours/notif-preferences.test.ts:414` « tous les optionnels coupés : l’achat crée sa confirmation sans PREFERENCE_DISABLED et le SMS part » ; `tests/parcours/email-regle-envoi.test.ts` (email réglable par sujet, indispensables jamais coupés, page des préférences) ; `tests/parcours/messages-changement-9bis.test.ts:148` « préférence EVENT_UPDATES/SMS coupée : SMS PENDING à l'écriture puis SENT ». Essai : Essai 47 de `docs/recette-billetterie.md`.
 
 ### Étape 9.4 — Push contre SMS
 
 1. **Qui, où, quel bouton.** La file des messages.
 2. **Ce qu'il saisit.** Aucun.
-3. **Ce que fait le système.** La veille, SMS et push partent ensemble. Trois heures avant, le SMS attend le résultat du push, au plus 15 minutes. Push accepté par le service : pas de SMS. Push absent, sauté ou en échec : SMS envoyé. « Accepté » ne veut pas dire « affiché » sur le téléphone. Preuve : `M/20261105000002_lot7_sms.sql:310-324`, `lib/notifications/dispatcher.ts:450-475`.
+3. **Ce que fait le système.** La veille, SMS et push partent ensemble. Trois heures avant, le SMS attend le résultat du push, au plus 15 minutes. Push accepté par le service : pas de SMS. Push absent, sauté ou en échec : SMS envoyé. « Accepté » ne veut pas dire « affiché » sur le téléphone : ce choix de coût est gardé par décision au lot 9 bis, et la supervision le dit désormais honnêtement, « Push accepté par le service, SMS non envoyé (affichage non garanti) » ; la fiche d'une notification explique la règle « SMS seulement si le push n’est pas accepté ». Preuve : `M/20261105000002_lot7_sms.sql:310-324`, `lib/notifications/dispatcher.ts`, `lib/notifications/outbox-labels.ts:54`, `app/admin/notifications/[id]/page.tsx`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2161,7 +2164,7 @@ Les textes sont ceux de l'étape 9.2.
 
 5. **Ce que les autres voient.** Aucun.
 6. **Ce qui est impossible.** Régler ce choix depuis le profil : c'est un réglage du SUPERADMIN.
-7. **Test et essai.** Test : `tests/parcours/notif-rappels.test.ts:505` « notif.h3_sms = IF_NO_PUSH : push accepté → SMS SKIPPED PUSH_DELIVERED ; sans appareil → SMS envoyé au texte exact ; push urgent ». Essai : aucun essai numéroté, `docs/essai-local.md` section 8.7.
+7. **Test et essai.** Test : `tests/parcours/notif-rappels.test.ts:505` « notif.h3_sms = IF_NO_PUSH : push accepté → SMS SKIPPED PUSH_DELIVERED ; sans appareil → SMS envoyé au texte exact ; push urgent » ; `tests/parcours/messages-sms-9bis.test.ts` (libellé de supervision). Essai : aucun essai numéroté, `docs/essai-local.md` section 8.7.
 
 ### Étape 9.5 — Billets gratuits
 
@@ -2184,7 +2187,7 @@ Les textes sont ceux des étapes 9.1 et 9.2, sans le SMS.
 
 1. **Qui, où, quel bouton.** La file des messages.
 2. **Ce qu'il saisit.** Aucun.
-3. **Ce que fait le système.** De 22 h à 8 h, heure de Dakar, seuls les SMS optionnels sont touchés. Effet définitif : le SMS n'est jamais envoyé, il n'est pas reporté à 8 h. Cloche, push et email partent. Preuve : `M/20261103000003_lot6_reglages.sql:34-37`, `M/20261103000002_lot6_outbox.sql:347-351`, `M/20261105000002_lot7_sms.sql:293`.
+3. **Ce que fait le système.** De 22 h à 8 h, heure de Dakar, seuls les SMS optionnels sont touchés. Depuis le lot 9 bis, le changement de date ou de lieu n'en fait plus partie : il part aussi la nuit (étape 5.4). Effet définitif : le SMS n'est jamais envoyé, il n'est pas reporté à 8 h. Cloche, push et email partent. Preuve : `M/20261103000003_lot6_reglages.sql:34-37`, `M/20261103000002_lot6_outbox.sql:347-351`, `M/20261105000002_lot7_sms.sql:293`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2199,13 +2202,13 @@ Aucun SMS optionnel.
 
 # Chapitre 10. Le jour J
 
-**À partir de quand le scanner fonctionne.** Le contrôle ouvre 6 heures avant le début et ferme 6 heures après la fin. Sans date de fin saisie, la fin vaut 23:59 le jour du début. Pour le Gala de la Teranga, samedi 14 novembre à 20:00 sans fin saisie : ouvert de 14:00 à dimanche 05:59. Le serveur accepte les événements « Publié » et « Terminé ». L'écran, lui, n'accepte que « Validé » ou « Publié » : il se ferme plus tôt que le serveur (étape 10.1). Preuve : `M/20261101000009_lot4_reglages_acces.sql:14-15`, `M/20261102000003_lot5_cycle.sql:857-868`, `:886`, `lib/events/event-status.ts:14`.
+**À partir de quand le scanner fonctionne.** Le contrôle ouvre 6 heures avant le début et ferme 6 heures après la fin. Depuis le lot 9 bis, sans date de fin saisie, la fin vaut le début plus 6 heures (étape 3.2). Pour le Gala de la Teranga, samedi 14 novembre à 20:00 sans fin saisie : fin dimanche 02:00, contrôle ouvert de samedi 14:00 à dimanche 08:00. Le serveur accepte les événements « Publié » et « Terminé ». Depuis le lot 9 bis, l'écran suit ce que dit le serveur pour chaque affectation (contrôle ouvert ou non, heure d'ouverture, heure de fermeture) et ne se ferme plus avant lui. Preuve : `M/20261101000009_lot4_reglages_acces.sql:14-15`, `M/20261109000008_lot9bis_cycle.sql` (`scan_states`, `event_end_from_v2`), `app/controller/scanner/page.tsx:44-45`, `:115-120`.
 
 ### Étape 10.1 — Ouvrir le scanner
 
 1. **Qui, où, quel bouton.** Ibrahima, `/controller/scanner`. Pendant le chargement : « Chargement de vos événements… ». Preuve : `middleware.ts:210-211`.
 2. **Ce qu'il saisit.** Aucun.
-3. **Ce que fait le système.** Lit ses affectations. Rien n'est écrit. Si l'événement est passé à « Terminé » (vers 00:03 pour un événement sans date de fin), au prochain retour dans l'application ou rechargement la caméra est remplacée par « Événement terminé », « Les scans ne sont plus autorisés sur cet événement. », alors que le serveur accepterait encore les scans jusqu'à 05:59. Preuve : `app/controller/scanner/page.tsx:337`, `:500`, `:717`, `:853-865`, `M/20261102000003_lot5_cycle.sql:838-849`.
+3. **Ce que fait le système.** Lit ses affectations et, depuis le lot 9 bis, l'état du contrôle de chacune, servi par le serveur. Rien n'est écrit. La caméra reste disponible tant que le serveur autorise le contrôle, même après le passage à « Terminé ». Fermé, l'écran dit pourquoi : « Contrôle pas encore ouvert », « Contrôle ouvert à partir du {date} à {heure}. Le scan s’activera de lui-même à cette heure. », exemple « Contrôle ouvert à partir du 14 novembre 2026 à 14:00. Le scan s’activera de lui-même à cette heure. » ; « Contrôle fermé », « Contrôle fermé depuis le {date} à {heure} : les scans ne sont plus autorisés sur cet événement. » ; « Événement suspendu », « Les contrôles d’accès sont suspendus sur cet événement. » ; « Événement annulé », « Événement annulé : aucune entrée n’est possible, les billets sont remboursés. » ; « Événement non publié », « Le contrôle ouvrira quand l’événement sera publié. ». Preuve : `app/controller/scanner/page.tsx:190-236`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2216,13 +2219,13 @@ Le rappel de la veille est à l'étape 9.1.
 
 5. **Ce que les autres voient.** Aucun.
 6. **Ce qui est impossible.** Sans affectation : « Aucun événement assigné ». Erreur : « Vos événements n’ont pas pu être chargés », « Réseau indisponible : vos événements n’ont pas pu être chargés. ». Compte non actif : « Votre compte n'est pas actif. Contactez le support. ». Preuve : `lib/auth/session.ts:60`.
-7. **Test et essai.** Test : `tests/parcours/scan-controleur-stats.test.ts:318` « entry_point et counter_sale_enabled de l’affectation ; entrée de la veille à 23 h 50 comptée dans les arrivées » ; `e2e/recette.spec.ts:616` « acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, ancien code, saisie manuelle, guichet, reprise, clôture ». Essai : Essai 30 de `docs/recette-billetterie.md`, `docs/essai-local.md` sections 8.8 et 9.
+7. **Test et essai.** Test : `tests/parcours/cycle9bis-fenetre-scan.test.ts:121` « TERMINE fini il y a 2 h, fenêtre de 6 h : scan.open = true, problem null, bornes de la fenêtre ; ticket_scan accepte (témoin) » ; `tests/parcours/cycle9bis-fenetre-scan.test.ts:138` « VALIDE à venir (dans 10 h) : scan.open = false, problem event_not_open, opens_at = début − 6 h » ; `tests/parcours/cycle9bis-fenetre-scan.test.ts:155` « scanner : eligible = scan.open ; bandeaux d’ouverture et de fermeture » ; `tests/parcours/cycle9bis-fenetre-scan.test.ts:171` « sans fin, début 22:00 → lendemain 04:00 ; début 08:00 → 14:00 » ; `tests/parcours/scan-controleur-stats.test.ts:318` « entry_point et counter_sale_enabled de l’affectation ; entrée de la veille à 23 h 50 comptée dans les arrivées » ; `e2e/recette.spec.ts:616` « acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, ancien code, saisie manuelle, guichet, reprise, clôture ». Essai : Essais 30 et 72 de `docs/recette-billetterie.md`, `docs/essai-local.md` sections 8.8 et 9.
 
 ### Étape 10.2 — Choisir l'événement
 
 1. **Qui, où, quel bouton.** Ibrahima, écran « Commencer le contrôle », « {nom}, choisissez l’événement, vérifiez votre porte, puis lancez la caméra. », exemple « Ibrahima, choisissez l’événement, vérifiez votre porte, puis lancez la caméra. », liste « Événement à contrôler », bouton « Commencer le contrôle ». Preuve : `components/scan/ScannerStartScreen.tsx:45-47`, `:98`.
-2. **Ce qu'il saisit.** Un événement. Événement fermé : « {statut} : contrôle fermé », exemple « Terminé : contrôle fermé ». Sans porte : « Aucune porte ne vous est attribuée : le compteur affichera vos propres entrées. Le téléphone vibre à chaque résultat ; aucun son n’est émis. ». Preuve : `components/scan/ScannerStartScreen.tsx:78`.
-3. **Ce que fait le système.** Le choix est gardé sur l'appareil 24 heures au plus. Aucune contrainte d'heure n'empêche de démarrer, et l'heure d'ouverture n'est affichée nulle part. Preuve : `lib/scan/scan-session.ts:62`, `:143`.
+2. **Ce qu'il saisit.** Un événement. Événement fermé : « {état} : contrôle fermé », depuis le lot 9 bis d'après l'état servi, par exemple « À venir : contrôle fermé ». Sans porte : « Aucune porte ne vous est attribuée : le compteur affichera vos propres entrées. Le téléphone vibre à chaque résultat ; aucun son n’est émis. ». Preuve : `components/scan/ScannerStartScreen.tsx:78`.
+3. **Ce que fait le système.** Le choix est gardé sur l'appareil 24 heures au plus. Depuis le lot 9 bis, l'heure d'ouverture est affichée tant que le contrôle n'est pas ouvert (étape 10.1), et le scan s'active seul à cette heure. Preuve : `lib/scan/scan-session.ts:62`, `:143`, `app/controller/scanner/page.tsx:190-201`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2230,7 +2233,7 @@ Le rappel de la veille est à l'étape 9.1.
 | Aucun. | — | — | — | — |
 
 5. **Ce que les autres voient.** Aucun.
-6. **Ce qui est impossible.** Événement non éligible à l'écran : pas de caméra, bandeau : « Événement non publié », « Le contrôle ouvrira quand l’événement sera publié. » ; « Événement suspendu », « Les contrôles d’accès sont suspendus sur cet événement. » ; « Événement terminé », « Les scans ne sont plus autorisés sur cet événement. » ; « Événement annulé », « Événement annulé : aucune entrée n’est possible, les billets sont remboursés. ». Preuve : `app/controller/scanner/page.tsx:856-864`.
+6. **Ce qui est impossible.** Contrôle fermé selon le serveur : pas de caméra, bandeaux de l'étape 10.1. Preuve : `app/controller/scanner/page.tsx:205-236`.
 7. **Test et essai.** Test : `tests/parcours/scanner-reprise.test.ts:360` « scanner : session relue, reprise seulement si l’affectation existe et que l’événement est ouvert, sinon message » ; `e2e/recette.spec.ts:616` « acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, ancien code, saisie manuelle, guichet, reprise, clôture ». Essai : Essai 30 de `docs/recette-billetterie.md`.
 
 ### Étape 10.3 — Mode et écran de contrôle
@@ -2276,14 +2279,15 @@ Pas de SMS, et rien pour une vente au guichet. Preuve : `TICKET_SCANNED` (`M/202
 |---|---|---|---|
 | Billet déjà utilisé | « Billet déjà utilisé » | brun, flèche de retour | détenteur ; « Entré à {HH:MM} », exemple « Entré à 20:42 », ou « Déjà validé par vous à {HH:MM} » si par ce contrôleur depuis moins de 30 secondes ; « Billet : … » |
 | Billet d'un autre événement | « Billet d’un autre événement » | rouge, octogone | aucune donnée du billet |
-| QR expiré | « QR expiré : demandez au client de rafraîchir son billet » | rouge, octogone | détenteur, billet |
+| QR expiré | depuis le lot 9 bis « QR expiré : demandez au client d’ouvrir son billet dans l’application » | rouge, octogone | détenteur, billet |
+| Billet en cours de transfert (depuis le lot 9 bis) | « Transfert en cours », puis « Billet en cours de transfert : il doit être accepté ou le transfert annulé avant l’entrée. » | rouge, octogone | détenteur, billet |
 | Billet annulé | « Billet annulé » | rouge, octogone | détenteur, billet |
 | Billet remboursé ou en cours | « Billet remboursé » | rouge, octogone | détenteur, billet |
 | Billet inconnu | « Billet invalide » | rouge, octogone | aucune |
 | Paiement absent | « Paiement requis » | rouge, octogone | détenteur, billet |
 | QR qui n'est pas dynamique | « QR dynamique requis (billet ouvert dans l’application) » | rouge, octogone | aucune |
 
-Ordre des contrôles : un QR périmé d'un billet déjà utilisé donne « QR expiré », pas « Billet déjà utilisé ». Preuve : `M/20261108000005_lot9_nettoyage.sql:144-203`, `lib/scan/scan-result.ts:9-27`, `lib/hardware/feedback.ts:15-22`, `app/controller/scanner/page.tsx:1001-1002`.
+Ordre des contrôles : un QR périmé d'un billet déjà utilisé donne « QR expiré », pas « Billet déjà utilisé ». Preuve : `M/20261109000008_lot9bis_cycle.sql` (`ticket_scan`), `lib/scan/scan-result.ts:44-75`, `lib/hardware/feedback.ts:15-22`.
 
 4. **Messages reçus.**
 
@@ -2320,25 +2324,25 @@ Un QR périmé pendant une suspension donne « QR expiré ». Preuve : `M/202611
 | Aucun. | — | — | — | — |
 
 5. **Ce que les autres voient.** Comme à l'étape 10.5.
-6. **Ce qui est impossible.** Savoir à quelle heure ouvre le contrôle : aucune heure n'est affichée. Preuve : `lib/scan/scan-result.ts:54`.
+6. **Ce qui est impossible.** Scanner hors de la fenêtre. Depuis le lot 9 bis, l'heure d'ouverture est affichée avant l'ouverture (étape 10.1). Preuve : `app/controller/scanner/page.tsx:225-231`.
 7. **Test et essai.** Test : `tests/parcours/acces-fenetre.test.ts:95` « 8 h avant le début → event_not_open » ; `tests/parcours/acces-fenetre.test.ts:99` « 5 h avant le début, en cours, 5 h après la fin → valid » ; `tests/parcours/acces-fenetre.test.ts:105` « fin + 6 h dépassée → event_ended » ; `tests/parcours/acces-fenetre.test.ts:111` « non PUBLIE (VALIDE non publié, BROUILLON) → event_not_open » ; `tests/parcours/acces-fenetre.test.ts:116` « ANNULE → event_cancelled ; SUSPENDU → event_suspended ; TERMINE → event_ended » ; `tests/parcours/acces-fenetre.test.ts:126` « access.scan_window_before_hours : un événement dans 8 h s’ouvre avec 10 h, pas avec 6 h » ; `tests/parcours/acces-fenetre.test.ts:132` « access.scan_window_after_hours : un événement fini il y a 3 h se ferme avec 2 h, reste ouvert avec 6 h ». Essai : aucun essai numéroté dédié.
 
 ### Étape 10.7 — Le scan d'un billet en cours de transfert
 
 1. **Qui, où, quel bouton.** Ibrahima présente le scanner à un billet dont le transfert à Lamine est en attente.
 2. **Ce qu'il saisit.** Le QR (Fatou n'en a plus à l'écran, mais peut en avoir un en lot hors ligne sur un autre appareil), ou le numéro du billet en saisie manuelle.
-3. **Ce que fait le système.** **Il n'y a pas de résultat « transfert en cours ».** Le scan ne regarde pas le verrou : le billet est validé au nom de l'expéditeur, écran de l'étape 10.4. Le sort d'un lot de codes hors ligne déjà téléchargé avant un transfert est NON VÉRIFIÉ sur un vrai téléphone : le serveur refuse seulement un nouveau lot. Preuve : `M/20261108000005_lot9_nettoyage.sql:174-186`, `:275-296`, `app/api/tickets/[id]/live-code/route.ts:42`, `TicketCard.tsx:209`.
+3. **Ce que fait le système.** Depuis le lot 9 bis, le scan et la saisie manuelle lisent le verrou du transfert : résultat « Transfert en cours », « Billet en cours de transfert : il doit être accepté ou le transfert annulé avant l’entrée. », billet inchangé, une ligne refusée enregistrée. En saisie manuelle, la vérification annonce le même refus. Un code hors ligne téléchargé avant le transfert est refusé de la même façon, et le serveur ne sert plus de code dynamique. Un transfert déjà échu est traité au moment du scan, puis le billet entre normalement. Preuve : `M/20261109000008_lot9bis_cycle.sql` (`ticket_scan`, `ticket_manual_lookup`), `lib/scan/scan-result.ts:61`, `:74-75`, `app/api/tickets/[id]/live-code/route.ts:56-59`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
 |---|---|---|---|---|
 | Aucun. | — | — | — | — |
 
-L'avis d'entrée de l'étape 10.4 part à Fatou. Lamine n'est pas prévenu.
+Aucun message pour ce refus.
 
-5. **Ce que les autres voient.** Lamine, s'il accepte ensuite : « Ce billet n'est plus transférable. ». Preuve : `lib/tickets/ticket-transfer.service.ts:135-146`.
-6. **Ce qui est impossible.** Bloquer l'entrée d'un billet en transfert.
-7. **Test et essai.** Test : aucun. Essai : aucun.
+5. **Ce que les autres voient.** Mariama : un refus de plus dans l'onglet Entrées. Fatou doit annuler son transfert, ou Lamine l'accepter, avant l'entrée.
+6. **Ce qui est impossible.** Faire entrer un billet en cours de transfert.
+7. **Test et essai.** Test : `tests/parcours/cycle9bis-transfert.test.ts:186` « saisie manuelle : vérification preview transfer_pending, puis entrée refusée transfer_pending, billet toujours VALIDE » ; `tests/parcours/cycle9bis-transfert.test.ts:201` « QR et code dynamique : live-code 409 TRANSFER_PENDING ; un QR calculé avec le secret est refusé transfer_pending » ; `tests/parcours/cycle9bis-transfert.test.ts:359` « scan d’un billet dont le transfert est échu : entrée acceptée (témoin) et transfert expiré par le scan ». Essai : aucun.
 
 ### Étape 10.8 — Incidents techniques
 
@@ -2349,15 +2353,15 @@ L'avis d'entrée de l'étape 10.4 part à Fatou. Lamine n'est pas prévenu.
 | Cas | Titre exact | Message |
 |---|---|---|
 | Hors ligne | « Hors ligne : rien n’est validé » | « Hors ligne : rien n’est validé. Faites patienter le spectateur et reprenez au retour du réseau. » |
-| Délai dépassé (3 essais) | « Réseau trop lent : rien n’est validé » | « Réseau trop lent : rien n’est validé. Faites patienter et réessayez. » |
-| Coupure réseau | « Réseau indisponible : rien n’est validé » | « Erreur réseau : réessayez » |
+| Délai dépassé (3 essais) | depuis le lot 9 bis « Résultat inconnu : scannez de nouveau » | « Réseau trop lent : résultat inconnu. Scannez de nouveau le même billet. » |
+| Coupure réseau | depuis le lot 9 bis « Résultat inconnu : scannez de nouveau » | « Erreur réseau : réessayez » |
 | Erreur serveur | « Erreur serveur : réessayez » | « Erreur serveur pendant le contrôle. » |
 | Cadence (30 scans en 10 s) | « Trop de scans : patientez quelques secondes » | Aucun. |
 | Scan repris sans trace | « Scan non traité : scannez le billet de nouveau » | « Aucune entrée enregistrée. » |
-| Non autorisé | « Contrôle non autorisé » | « Vous n’êtes pas autorisé à contrôler cet événement. » |
+| Non autorisé | depuis le lot 9 bis « Vous ne contrôlez plus cet événement », et le scanner relit ses affectations | « Vous n’êtes pas autorisé à contrôler cet événement. » |
 | Requête refusée | « Requête refusée par le serveur » | message du serveur |
 
-Preuve : `components/scan/CombatFlashOverlay.tsx:198`, `components/scan/scan-client.ts:293`, `lib/hardware/feedback.ts:21`.
+Depuis le lot 9 bis, seul le hors-ligne garantit qu'aucune entrée n'a été faite : après un délai ou une coupure, le billet a pu être validé, d'où « Résultat inconnu » et le nouveau scan, qui rend le verdict d'origine sans double entrée. Preuve : `components/scan/CombatFlashOverlay.tsx:198`, `components/scan/scan-client.ts:175`, `:206-207`, `:340-356`, `lib/hardware/feedback.ts:21`.
 
 4. **Messages reçus.**
 
@@ -2373,7 +2377,7 @@ Preuve : `components/scan/CombatFlashOverlay.tsx:198`, `components/scan/scan-cli
 
 1. **Qui, où, quel bouton.** Ibrahima, bouton « Saisie manuelle ». Champ « Numéro du billet », aide « Spectateur sans téléphone : saisissez le numéro imprimé sur son billet, puis vérifiez le titulaire avant de valider. », exemple « TCK-20261101-XXXXXXXXXX ». Bouton « Vérifier le billet ». Preuve : `components/scan/ManualEntryForm.tsx:82-86`, `:94`.
 2. **Ce qu'il saisit.** Le numéro, 4 caractères au moins. Puis la case « Pièce d’identité conforme au titulaire », « Le nom sur la pièce correspond au titulaire ci-dessus. Obligatoire. », bouton « Pièce conforme, valider l’entrée ». Réponses : « Aucun billet de cet événement ne porte ce numéro », « Vérifiez la saisie avec le spectateur. Aucune entrée n’a été validée. » ; « Vérification impossible », « Vous n’êtes pas autorisé à vérifier un billet de cet événement. », « Trop de vérifications : patientez quelques secondes. », « Réseau trop lent : réessayez la vérification. », « Réseau indisponible : réessayez la vérification. », « Hors ligne : la vérification reprendra au retour du réseau. ». Preuve : `components/scan/ManualEntryForm.tsx:143-151`.
-3. **Ce que fait le système.** Premier temps : la lecture n'enregistre aucune entrée, et l'écran affiche « Titulaire », « Catégorie », « Billet », « Résultat prévu ». Second temps : l'entrée est validée, sans contrôle du QR. Preuve : `M/20261108000005_lot9_nettoyage.sql:222-308`.
+3. **Ce que fait le système.** Premier temps : la lecture n'enregistre aucune entrée, et l'écran affiche « Titulaire », « Catégorie », « Billet », « Résultat prévu ». Depuis le lot 9 bis, un billet en cours de transfert y est annoncé « Transfert en cours » et refusé à la validation. Second temps : l'entrée est validée, sans contrôle du QR. Preuve : `M/20261109000008_lot9bis_cycle.sql` (`ticket_manual_lookup`, `ticket_scan`), `components/scan/ManualEntryForm.tsx:118-125`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2436,7 +2440,7 @@ Preuve : `TICKET_SCANNED` (`M/20261103000005_lot6_billetterie.sql:883-887`).
 
 1. **Qui, où, quel bouton.** Mariama, `/partner/scan` (`/scan` y renvoie), titre « Contrôle des entrées », liste « Événement contrôlé », événements publiés seulement. Boutons « Caméra », « Saisie manuelle », lien « Tableau de bord ». Preuve : `app/partner/scan/page.tsx:121`, `:132`, `:366`.
 2. **Ce qu'il saisit.** Le QR. La saisie manuelle est refusée par défaut.
-3. **Ce que fait le système.** Même contrôle que pour Ibrahima. Résultat dans une carte, 4 secondes, sans plein écran ni vibration. Preuve : `app/partner/scan/page.tsx:64-66`.
+3. **Ce que fait le système.** Même contrôle que pour Ibrahima ; depuis le lot 9 bis, la liste suit aussi l'état du contrôle dit par le serveur pour chacun de ses événements. Résultat dans une carte, 4 secondes, sans plein écran ni vibration. Preuve : `app/partner/scan/page.tsx:64-66`, `tests/parcours/cycle9bis-fenetre-scan.test.ts:209`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2452,12 +2456,12 @@ Preuve : `TICKET_SCANNED` (`M/20261103000005_lot6_billetterie.sql:883-887`).
 
 # Chapitre 11. Le guichet et la caisse
 
-L'onglet « Caisse » apparaît si le contrôleur a le droit d'encaisser ; l'onglet « Guichet », si en plus le guichet est activé sur la plateforme. Preuve : `app/controller/scanner/page.tsx:822`, `:829-830`.
+L'onglet « Caisse » apparaît si le contrôleur a le droit d'encaisser, et, depuis le lot 9 bis, tant qu'une de ses caisses reste ouverte, même après le retrait de ce droit ; l'onglet « Guichet », si en plus le guichet est activé sur la plateforme. Preuve : `app/controller/scanner/page.tsx:47`, `:923`.
 
 ### Étape 11.1 — Ouvrir la caisse
 
 1. **Qui, où, quel bouton.** Ibrahima, onglet « Caisse », état « Caisse fermée », « Encaissement en espèces bloqué », « Ouvrez votre caisse avec le régisseur avant de vendre au guichet. », bouton « Ouvrir ma caisse ». Fenêtre « Ouvrir ma caisse », bouton « Ouvrir la caisse ». Preuve : `components/scan/ScannerShiftBanner.tsx:86-95`, `components/shifts/ShiftModals.tsx:107`, `:139`.
-2. **Ce qu'il saisit.** « Fonds de caisse remis par le régisseur (F CFA) », aide « Montant en espèces remis pour rendre la monnaie. 0 si aucun fonds n’est remis. » ; erreur « Saisissez un montant entier en francs, sans virgule (par exemple 2 750). ». « Code PIN du régisseur (facultatif) », aide « Facultatif à l’ouverture. Saisi, il est vérifié et l’ouverture est marquée confirmée par le régisseur. ». Le PIN n'est donc pas obligatoire à l'ouverture. Preuve : `components/shifts/ShiftModals.tsx:75`, `:116-117`, `:128-129`, `lib/shifts/shift.service.ts:324`.
+2. **Ce qu'il saisit.** « Fonds de caisse remis par le régisseur (F CFA) », aide « Montant en espèces remis pour rendre la monnaie. 0 si aucun fonds n’est remis. » ; erreur « Saisissez un montant entier en francs, sans virgule (par exemple 2 750). ». Depuis le lot 9 bis, « Code PIN du régisseur », obligatoire, aide « PIN obligatoire : le régisseur le saisit lui-même pour confirmer l’ouverture de la caisse. » ; sans PIN : « Saisissez le code PIN du régisseur. ». Preuve : `components/shifts/ShiftModals.tsx:80`, `:126-139`, `lib/shifts/shift.service.ts:189-190`, `:333`.
 3. **Ce que fait le système.** La caisse est « Ouverte », avec son fonds. Une seule caisse ouverte par personne et par événement. Preuve : `M/20261102000003_lot5_cycle.sql:963-999`.
 4. **Messages reçus.**
 
@@ -2466,13 +2470,13 @@ L'onglet « Caisse » apparaît si le contrôleur a le droit d'encaisser ; l'ong
 | Aucun. | — | — | — | — |
 
 5. **Ce que les autres voient.** Ibrahima : « Caisse ouverte depuis {HH:MM} », exemple « Caisse ouverte depuis 19:30 », « Fonds de caisse », « Encaissé », « Total attendu en caisse », bouton « Clôturer ma caisse ». Mariama, en direct : onglet Caisse, badge « Caisse ouverte ». Preuve : `components/scan/ScannerShiftBanner.tsx:47-69`, `app/partner/events/[id]/page.tsx:85`.
-6. **Ce qui est impossible.** Bandeau « Ouverture refusée » : « Cet événement n’est pas encore ouvert au contrôle. » ; « Cet événement est terminé. » ; « Cet événement est suspendu. » ; « Cet événement est annulé. » ; « Ouverture de caisse réservée au contrôleur affecté avec la permission espèces, au partenaire propriétaire ou à un admin. » ; « Une session de caisse est déjà ouverte pour cet événement. Clôturez-la avant d’en ouvrir une nouvelle. » ; « Code PIN régisseur incorrect. » ; « Code PIN régisseur incomplet (4 à 8 chiffres). » ; « Aucun code PIN régisseur n’a été généré par l’organisateur pour cet événement. » ; « Trop de tentatives de code PIN. Réessayez dans {n} s. », exemple « Trop de tentatives de code PIN. Réessayez dans 120 s. » ; « Réseau indisponible : la caisse n’est pas ouverte. Réessayez. ». Preuve : `lib/shifts/shift.service.ts:211-216`.
-7. **Test et essai.** Test : `tests/parcours/acces-encaissement.test.ts:69` « ouverture de caisse : partenaire propriétaire et admin ouvrent leur caisse ; contrôleur sans permission espèces refusé » ; `tests/parcours/acces-encaissement.test.ts:85` « ouvertures simultanées pour le même contrôleur et le même événement : une seule caisse OUVERT » ; `tests/parcours/acces-encaissement.test.ts:155` « RPC shift_open : SECURITY DEFINER, search_path = public, réservée au service_role » ; `e2e/recette.spec.ts:632` « ouverture du contrôle à sa porte et de la caisse ». Essai : Essai 36 de `docs/recette-billetterie.md`, `docs/essai-local.md` section 8.9.
+6. **Ce qui est impossible.** Bandeau « Ouverture refusée » : « Cet événement n’est pas encore ouvert au contrôle. » ; « Cet événement est terminé. » ; « Cet événement est suspendu. » ; « Cet événement est annulé. » ; « Ouverture de caisse réservée au contrôleur affecté avec la permission espèces, au partenaire propriétaire ou à un admin. » ; « Une session de caisse est déjà ouverte pour cet événement. Clôturez-la avant d’en ouvrir une nouvelle. » ; « Code PIN régisseur incorrect. » ; « Code PIN régisseur incomplet (4 à 8 chiffres). » ; depuis le lot 9 bis « Aucun code PIN régisseur pour cet événement : l’organisateur le génère dans l’onglet Caisse du pilotage. » ; « Trop de tentatives de code PIN. Réessayez dans {n} s. », exemple « Trop de tentatives de code PIN. Réessayez dans 120 s. » ; « Réseau indisponible : la caisse n’est pas ouverte. Réessayez. ». Preuve : `lib/shifts/shift.service.ts:211-216`.
+7. **Test et essai.** Test : `tests/parcours/acces-encaissement.test.ts:69` « ouverture de caisse : partenaire propriétaire et admin ouvrent leur caisse ; contrôleur sans permission espèces refusé » ; `tests/parcours/acces-encaissement.test.ts:85` « ouvertures simultanées pour le même contrôleur et le même événement : une seule caisse OUVERT » ; `tests/parcours/acces-encaissement.test.ts:155` « RPC shift_open : SECURITY DEFINER, search_path = public, réservée au service_role » ; `e2e/recette.spec.ts:632` « ouverture du contrôle à sa porte et de la caisse » ; `tests/parcours/cycle9bis-caisse.test.ts` (PIN exigé à l'ouverture, PIN_NOT_SET, clôture par la partenaire ou l'admin, alerte de caisse ouverte à la fin). Essai : Essai 36 de `docs/recette-billetterie.md`, `docs/essai-local.md` section 8.9.
 
 ### Étape 11.2 — Vente au guichet
 
 1. **Qui, où, quel bouton.** Ibrahima, onglet « Guichet ». Sans caisse : « Caisse fermée », « Ouvrez votre caisse avec le régisseur avant de vendre un billet au guichet. », bouton « Ouvrir ma caisse ». Boutons « Ajouter un billet {catégorie} », « Retirer un billet {catégorie} ». Bouton final « J’ai reçu {montant} : valider la vente », exemple « J’ai reçu 10 000 F CFA : valider la vente », sinon « Choisissez au moins un billet ». Preuve : `components/scan/CounterSalePanel.tsx:193-195`, `:265`.
-2. **Ce qu'il saisit.** Les quantités, 50 au plus par catégorie. Les catégories vendues au guichet seulement, avec la mention « Sur place uniquement » si elles ne sont pas vendues en ligne. « Numéro de l’acheteur (facultatif) », aide « Pour lui envoyer un reçu par SMS. Le billet n’est rattaché à aucun compte. ». Erreurs : « Aucune catégorie de billet n’est en vente pour cet événement. » ; « Vente au guichet fermée » ; « Votre affectation n’autorise pas l’encaissement d’espèces. » ; « La vente au guichet est désactivée pour la plateforme. » ; « Total indisponible » ; « Vente non enregistrée » ; « Réseau indisponible : la vente n’est pas confirmée. Réessayez, elle ne sera pas comptée deux fois. ». Preuve : `components/scan/CounterSalePanel.tsx:169`, `:212`, `:234-235`.
+2. **Ce qu'il saisit.** Les quantités, 50 au plus par catégorie. Les catégories vendues au guichet seulement, avec la mention « Sur place uniquement » si elles ne sont pas vendues en ligne. « Numéro de l’acheteur (facultatif) », aide, depuis le lot 9 bis, « Pour être prévenu en cas de changement ou d’annulation. Le billet n’est rattaché à aucun compte. ». Erreurs : « Aucune catégorie de billet n’est en vente pour cet événement. » ; « Vente au guichet fermée » ; « Votre affectation n’autorise pas l’encaissement d’espèces. » ; « La vente au guichet est désactivée pour la plateforme. » ; « Total indisponible » ; « Vente non enregistrée » ; « Réseau indisponible : la vente n’est pas confirmée. Réessayez, elle ne sera pas comptée deux fois. ». Preuve : `components/scan/CounterSalePanel.tsx:169`, `:212`, `:234-235`.
 3. **Ce que fait le système.** En une seule fois : paiement en espèces, hors plateforme, au prix affiché, sans frais ; billets sans compte, déjà « Utilisé » ; stock pris ; total attendu de la caisse augmenté. Seule compte la fenêtre de contrôle, pas la fenêtre de vente en ligne. Écran : « Vente enregistrée : {n} entrées, {montant} encaissés. Reçu SMS envoyé à l’acheteur. », exemple « Vente enregistrée : 2 entrées, 10 000 F CFA encaissés. Reçu SMS envoyé à l’acheteur. », ou « Le reçu SMS n’a pas pu être envoyé. ». Preuve : `M/20261106000001_lot8_canaux.sql:314-478`, `:436-443`, `components/scan/CounterSalePanel.tsx:159-161`.
 4. **Messages reçus.**
 
@@ -2480,7 +2484,7 @@ L'onglet « Caisse » apparaît si le contrôleur a le droit d'encaisser ; l'ong
 |---|---|---|---|---|
 | Le numéro saisi, sans compte | SMS | indispensable | prochain passage de la file | modèle « Event Village : achat au guichet pour {title}, {ticket_count} billets, {amount}. Entrée validée. Réf. {reference}. » ; exemple « Event Village : achat au guichet pour Gala de la Teranga, 2 billets, 10 000 F CFA. Entrée validée. Réf. 1F6E2B9C. » (113 caractères, 1 segment) |
 
-Sans numéro : aucun message. L'avis d'entrée n'est pas émis pour le guichet. Preuve : `COUNTER_RECEIPT` (`M/20261106000001_lot8_canaux.sql:462`, `app/api/controller/counter-sale/route.ts:150`).
+Sans numéro : aucun message. L'avis d'entrée n'est pas émis pour le guichet. Depuis le lot 9 bis, ce numéro reçoit aussi les SMS indispensables d'un changement de date ou de lieu (étape 5.4) et d'une annulation (étape 14.5). Preuve : `COUNTER_RECEIPT` (`M/20261106000001_lot8_canaux.sql:462`, `app/api/controller/counter-sale/route.ts:150`), `components/scan/CounterSalePanel.tsx:234-235`, `M/20261109000009_lot9bis_messages.sql:10-18`.
 
 5. **Ce que les autres voient.** Mariama, en direct : Ventes, Entrées, Caisse. Rescanner un billet de guichet donne « Billet déjà utilisé ».
 6. **Ce qui est impossible.** Vendre sans caisse. Vendre une catégorie sans canal guichet. Vente par la partenaire ou l'admin. Refus cités : « La vente au guichet est désactivée. » ; « Vente réservée au contrôleur affecté à l'événement. » ; « Permission espèces requise. » ; « Ouvrez une caisse avant de vendre. » ; « Cet événement n'est pas ouvert à la vente au guichet. » ; « Une catégorie de ce panier n'est pas vendue au guichet. » ; « Vente impossible : vérifiez les catégories et les quantités. » ; « Numéro de l’acheteur invalide : mobile sénégalais attendu. ».
@@ -2512,12 +2516,13 @@ Sans numéro : aucun message. L'avis d'entrée n'est pas émis pour le guichet. 
 |---|---|---|---|---|
 | Mariama | SMS | indispensable | prochain passage de la file | modèle « Event Village : caisse de {controller_name} fermée ({title}) avec un écart de -{difference}. {APP_URL}/partner/events » ; exemple « Event Village : caisse de Ibrahima Sow fermée (Gala de la Teranga) avec un écart de -2 500 F CFA. https://eventvillage.sn/partner/events » (136 caractères, 1 segment) |
 | Mariama | cloche | indispensable | prochain passage de la file | titre « Écart de caisse » ; modèle « La caisse de {controller_name} pour « {title} » est fermée avec un écart de -{difference}. Justification : {justification} » ; exemple « La caisse de Ibrahima Sow pour « Gala de la Teranga » est fermée avec un écart de -2 500 F CFA. Justification : Erreur de monnaie rendue. » |
-| Mariama | push | indispensable | prochain passage de la file | titre « Écart de caisse » ; modèle « La caisse de {controller_name} pour « {title} » est fermée avec un écart de -{difference}. Justification : {justification} » ; exemple « La caisse de Ibrahima Sow pour « Gala de la Teranga » est fermée avec un écart de -2 500 F CFA. Justification : Erreur de monnaie rendue. » |
+| Mariama | push | indispensable | prochain passage de la file | titre « Écart de caisse » ; modèle « La caisse de {controller_name} pour « {title} » est fermée avec un écart de -{difference}. Justification : {justification} » ; exemple « La caisse de Ibrahima Sow pour « Gala de la Teranga » est fermée avec un écart de -2 500 F CFA. Justification : Erreur de monnaie rendue. » |
+| Mariama, si son adresse est vérifiée | email | indispensable | prochain passage de la file | depuis le lot 9 bis, objet « Écart de caisse — Event Village », texte de la cloche |
 
 Preuve : `SHIFT_DISCREPANCY` (`M/20261103000006_lot6_pros_admin.sql:269`, `lib/shifts/shift.service.ts:409`).
 
 5. **Ce que les autres voient.** Mariama : colonne « Écart » et justification, indicateur « Écart cumulé ». Aucun écran pour l'admin. Preuve : `components/partner/pilotage/CashTab.tsx:36-46`, `app/api/admin/shifts/audit/route.ts:20`.
-6. **Ce qui est impossible.** Clôturer un écart sans justification ou sans PIN. Sans PIN généré : bloqué jusqu'à ce que Mariama en crée un (étape 6.8).
+6. **Ce qui est impossible.** Clôturer un écart sans justification ou sans PIN. Sans PIN généré : bloqué jusqu'à ce que Mariama en crée un (étape 6.8) ; depuis le lot 9 bis, une clôture sans écart est aussi refusée tant qu'aucun PIN n'existe (« Aucun code PIN régisseur pour cet événement : l’organisateur le génère dans l’onglet Caisse du pilotage. »). Preuve : `lib/shifts/shift.service.ts:181`, `:200-201`.
 7. **Test et essai.** Test : `tests/parcours/dette-cloture-caisse.test.ts:202` « clôture avec écart justifié et PIN : CLOTURE, écart = déclaré − attendu, justification, co-signature, une alerte in-app sans emoji » ; `tests/parcours/dette-cloture-caisse.test.ts:220` « garde-fou : écart sans justification, ou justification de moins de 10 caractères → 400 JUSTIFICATION_REQUIRED, caisse OUVERT » ; `tests/parcours/dette-cloture-caisse.test.ts:233` « garde-fou : écart justifié avec un PIN faux → 401 PIN_INVALID ; sans PIN → 400 PIN_REQUIRED ; caisse OUVERT » ; `tests/parcours/dette-cloture-caisse.test.ts:247` « écart négatif (espèces manquantes) : JUSTIFICATION_REQUIRED puis PIN_REQUIRED portent expected, declared et discrepancy = −1000 ; caisse OUVERT » ; `tests/parcours/dette-cloture-caisse.test.ts:290` « double clôture simultanée avec écart justifié : une seule réussit, une seule alerte au partenaire » ; `tests/parcours/notif-pros.test.ts:455` « caisse clôturée avec écart : SHIFT_DISCREPANCY (in-app, SMS, push) au partenaire, alert_queued, SMS exact ; sans écart : rien » ; `e2e/terrain.spec.ts:924` « 12. clôture de caisse avec écart, sans réponse imposée : refus 400, écart du serveur affiché, puis clôture juste ». Essai : Essai 38 de `docs/recette-billetterie.md`.
 
 ### Étape 11.5 — Rapport de caisse
@@ -2537,21 +2542,21 @@ Preuve : `SHIFT_DISCREPANCY` (`M/20261103000006_lot6_pros_admin.sql:269`, `lib/s
 
 ### Étape 11.6 — Clôture par la partenaire ou l'admin
 
-1. **Qui, où, quel bouton.** Le serveur l'accepte, mais **aucun écran ne le permet** : seule la fenêtre du scanner appelle la clôture. Preuve : `components/shifts/ShiftModals.tsx:190`.
-2. **Ce qu'il saisit.** Aucun, faute d'écran.
-3. **Ce que fait le système.** Si cette voie est appelée directement, la caisse est clôturée au nom de la partenaire ou de l'admin.
+1. **Qui, où, quel bouton.** Depuis le lot 9 bis, Mariama, ou un admin avec `events.write`, `/partner/events/{id}?tab=caisse`, section « Sessions de caisse », bouton « Fermer cette caisse » sur chaque caisse encore ouverte, par exemple quand le contrôleur est indisponible. Il ouvre la même fenêtre « Clôturer ma caisse » que le scanner. Preuve : `components/partner/pilotage/CashTab.tsx:22`, `:56-68`.
+2. **Ce qu'il saisit.** Comme aux étapes 11.3 et 11.4 : le montant compté, et, en cas d'écart, la justification et le PIN du régisseur.
+3. **Ce que fait le système.** La caisse est clôturée au nom de la partenaire ou de l'admin, avec le même calcul d'écart. Un admin sans `events.write` est refusé, sauf s'il est lui-même le contrôleur de la caisse. Preuve : `lib/shifts/shift.service.ts`, `M/20261109000008_lot9bis_cycle.sql` (`shift_close`).
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
 |---|---|---|---|---|
-| Ibrahima, seulement par la voie sans écran | cloche | indispensable | prochain passage de la file | titre « Caisse fermée » ; modèle « Votre caisse pour « {title} » a été fermée par l'organisateur. Montant déclaré : {declared}. » ; exemple « Votre caisse pour « Gala de la Teranga » a été fermée par l'organisateur. Montant déclaré : 47 500 F CFA. » |
-| Ibrahima, seulement par la voie sans écran | push | indispensable | prochain passage de la file | titre « Caisse fermée » ; modèle « Votre caisse pour « {title} » a été fermée par l'organisateur. Montant déclaré : {declared}. » ; exemple « Votre caisse pour « Gala de la Teranga » a été fermée par l'organisateur. Montant déclaré : 47 500 F CFA. » |
+| Ibrahima | cloche | indispensable | prochain passage de la file | titre « Caisse fermée » ; modèle « Votre caisse pour « {title} » a été fermée par l'organisateur. Montant déclaré : {declared}. » ; exemple « Votre caisse pour « Gala de la Teranga » a été fermée par l'organisateur. Montant déclaré : 47 500 F CFA. » |
+| Ibrahima | push | indispensable | prochain passage de la file | titre « Caisse fermée » ; modèle « Votre caisse pour « {title} » a été fermée par l'organisateur. Montant déclaré : {declared}. » ; exemple « Votre caisse pour « Gala de la Teranga » a été fermée par l'organisateur. Montant déclaré : 47 500 F CFA. » |
 
-Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
+Depuis le lot 9 bis, Ibrahima le reçoit aussi par email si son adresse est vérifiée. En cas d'écart, Mariama reçoit l'alerte de l'étape 11.4. Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
 
-5. **Ce que les autres voient.** Aucun, faute d'écran.
-6. **Ce qui est impossible.** Clôturer depuis l'interface. Conséquence : si le droit d'encaisser est retiré avec une caisse ouverte, la caisse reste ouverte sans sortie (revue critique).
-7. **Test et essai.** Test : `tests/parcours/dette-cloture-caisse.test.ts:300` « le partenaire propriétaire clôture la caisse d’un contrôleur : 200, closed_by = partenaire » ; `tests/parcours/dette-cloture-caisse.test.ts:309` « un admin clôture avec écart justifié et PIN : 200, closed_by = admin » ; `tests/parcours/notif-controleurs.test.ts:314` « fermée par le partenaire ou par un admin : SHIFT_CLOSED_BY_OTHER (in-app, push) au contrôleur ; fermée par lui-même : rien ». Essai : aucun.
+5. **Ce que les autres voient.** Ibrahima : sa caisse est fermée, l'onglet Caisse disparaît s'il n'a plus le droit d'encaisser. Mariama : la caisse passe dans les caisses clôturées, son Z est dans l'onglet Clôture.
+6. **Ce qui est impossible.** Clôturer sans PIN généré. Un admin sans `events.write` ne clôture que sa propre caisse.
+7. **Test et essai.** Test : `tests/parcours/cycle9bis-caisse.test.ts` (« Fermer cette caisse » dans l'onglet, onglet Caisse du contrôleur gardé tant qu'une caisse est ouverte) ; `tests/parcours/dette-cloture-caisse.test.ts:300` « le partenaire propriétaire clôture la caisse d’un contrôleur : 200, closed_by = partenaire » ; `tests/parcours/dette-cloture-caisse.test.ts:309` « un admin clôture avec écart justifié et PIN : 200, closed_by = admin » ; `tests/parcours/notif-controleurs.test.ts:314` « fermée par le partenaire ou par un admin : SHIFT_CLOSED_BY_OTHER (in-app, push) au contrôleur ; fermée par lui-même : rien ». Essai : Essai 38 de `docs/recette-billetterie.md`.
 
 # Chapitre 12. Le pilotage pendant l'événement
 
@@ -2559,22 +2564,22 @@ Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
 
 1. **Qui, où, quel bouton.** Mariama, `/partner/events/{id}`, retour « Mes événements ». Onglets « Aperçu », « Ventes », « Invitations », « Entrées », « Équipe », « Caisse », « Clôture ». Boutons « Modifier », « Annuler l'événement » selon le statut. Preuve : `app/partner/events/[id]/page.tsx:46-54`, `:166`, `:205-213`.
 2. **Ce qu'il saisit.** Aucun.
-3. **Ce que fait le système.** Lecture seule. La page se met à jour seule pour les scans, les incidents, les caisses et l'historique des statuts. **Pas pour les ventes** : une vente en ligne ne recharge rien. L'indicateur « En direct » est masqué pour un événement annulé ou terminé. Preuve : `app/partner/events/[id]/page.tsx:57-58`, `:80-90`, `:173`, `components/partner/useServerData.ts:60-66`.
+3. **Ce que fait le système.** Lecture seule. La page se met à jour seule pour les scans, les incidents, les caisses et l'historique des statuts. **Pas pour les ventes** : une vente en ligne ne recharge rien ; ce point est renvoyé à un lot suivant (R49). L'indicateur « En direct » est masqué pour un événement annulé ou terminé. Preuve : `app/partner/events/[id]/page.tsx:57-58`, `:80-90`, `:173`, `components/partner/useServerData.ts:60-66`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
 |---|---|---|---|---|
 | Aucun. | — | — | — | — |
 
-5. **Ce que les autres voient.** L'admin n'a pas de lien vers cet écran, mais son adresse lui répond.
+5. **Ce que les autres voient.** Depuis le lot 9 bis, un admin avec `events.read` ouvre cet écran par « Ouvrir le pilotage » sur la fiche admin (étape 4.2) ; ses actions demandent `events.write`, l'export des contacts `partners.read`. Un admin sans aucune de ces permissions est refusé, « Action non autorisée : votre compte n’a pas la permission « Consulter les événements ». ».
 6. **Ce qui est impossible.** Autre partenaire, client, événement inconnu : « Événement introuvable. ». Compte non actif : « Votre compte n’est pas actif. ». Écran : « Le pilotage n’a pas pu être chargé », « Événement introuvable ou non autorisé. ». Preuve : `lib/events/pilotage.service.ts:67-72`, `app/partner/events/[id]/page.tsx:149-150`.
-7. **Test et essai.** Test : `tests/parcours/pilotage-acces.test.ts:104` « propriétaire : 200 sur les six onglets et l’export (témoin) » ; `tests/parcours/pilotage-acces.test.ts:258` « onglets du composant partagé Tabs : Aperçu, Ventes, Entrées, Équipe, Caisse, Clôture » ; `tests/parcours/pilotage-acces.test.ts:268` « indicateurs KpiCard et temps réel par useRealtimeRefresh (ticket_scans, scan_incidents, controller_shifts) » ; `tests/parcours/pilotage-acces.test.ts:282` « aucun calcul d’agrégat dans le navigateur : ni reduce, ni filter(…).length, ni lecture directe des tables ou des anciennes routes ». Essai : Essai 39 de `docs/recette-billetterie.md`, sans section dédiée dans `docs/essai-local.md`.
+7. **Test et essai.** Test : `tests/parcours/pilotage-acces.test.ts:104` « propriétaire : 200 sur les six onglets et l’export (témoin) » ; `tests/parcours/droits-partenaire-9bis.test.ts` (admin avec puis sans permission sur chaque adresse du pilotage) ; `tests/parcours/pilotage-acces.test.ts:258` « onglets du composant partagé Tabs : Aperçu, Ventes, Entrées, Équipe, Caisse, Clôture » ; `tests/parcours/pilotage-acces.test.ts:268` « indicateurs KpiCard et temps réel par useRealtimeRefresh (ticket_scans, scan_incidents, controller_shifts) » ; `tests/parcours/pilotage-acces.test.ts:282` « aucun calcul d’agrégat dans le navigateur : ni reduce, ni filter(…).length, ni lecture directe des tables ou des anciennes routes ». Essai : Essai 39 de `docs/recette-billetterie.md`, sans section dédiée dans `docs/essai-local.md`.
 
 ### Étape 12.2 — Onglet « Aperçu » : les chiffres
 
 1. **Qui, où, quel bouton.** Mariama, `/partner/events/{id}?tab=apercu`.
 2. **Ce qu'il saisit.** Aucun.
-3. **Ce que fait le système.** « Billetterie », « Billets valides et utilisés, hors invitations. » : « Billets vendus », « Places en vente », « Places restantes » (« Dans les catégories actives, sans compter {n} en cours de paiement », exemple « Dans les catégories actives, sans compter 3 en cours de paiement »), « Invitations ». Événement annulé : « Vente », « Arrêtée », « Événement annulé : aucune place n’est plus proposée ». « Contrôle d’accès », « Passages validés au scan et au guichet. » : « Entrées » (« dont {n} au guichet », exemple « dont 12 au guichet »), « Taux de présence ». « Recettes », « Montants des billets, remboursements déduits pour les ventes en ligne. » : « En ligne », « En espèces », « Remboursé ». Bas de page : « Chiffres calculés le {date}. ». Après une annulation, « Billets vendus » tombe au nombre de billets déjà utilisés. Preuve : `components/partner/pilotage/OverviewTab.tsx:27-63`, `:66-83`, `:85-100`, `M/20261102000005_lot5_pilotage.sql:212-301`.
+3. **Ce que fait le système.** « Billetterie », « Billets valides et utilisés, hors invitations. » : « Billets vendus », « Places en vente », « Places restantes » (« Dans les catégories actives, sans compter {n} en cours de paiement », exemple « Dans les catégories actives, sans compter 3 en cours de paiement »), « Invitations ». Événement annulé : « Vente », « Arrêtée », « Événement annulé : aucune place n’est plus proposée ». Depuis le lot 9 bis, événement suspendu : « Vente », « Suspendue », « Événement suspendu : la vente reprendra à la réactivation », au lieu de « Places en vente ». « Contrôle d’accès », « Passages validés au scan et au guichet. » : « Entrées » (« dont {n} au guichet », exemple « dont 12 au guichet »), « Taux de présence ». « Recettes », « Montants des billets, remboursements déduits pour les ventes en ligne. » : « En ligne », « En espèces », « Remboursé ». Bas de page : « Chiffres calculés le {date}. ». Après une annulation, « Billets vendus » tombe au nombre de billets déjà utilisés. Preuve : `components/partner/pilotage/OverviewTab.tsx:10-18`, `:42-63`, `M/20261102000005_lot5_pilotage.sql:212-301`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2589,7 +2594,7 @@ Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
 
 1. **Qui, où, quel bouton.** Mariama, `?tab=ventes`.
 2. **Ce qu'il saisit.** Aucun pour les chiffres. Le remboursement d'un billet est au chapitre 15.
-3. **Ce que fait le système.** « Par catégorie » : « Catégorie », « Prix », « Vendus », « En cours de paiement », « Invitations », « Restants » (« {n} / {total} », exemple « 188 / 200 », ou « Vente fermée »), « Recettes en ligne ». « Évolution jour par jour », « Billets vendus chaque jour, à l’heure de Dakar. », détail « dont {n} en espèces ». **Il n'y a pas d'écran des ventes par canal** : les données existent, mais aucun composant n'affiche le nombre de billets par canal. Le seul découpage visible est « En ligne » et « En espèces » en montant. Preuve : `components/partner/pilotage/SalesTab.tsx:16-37`, `:70-82`, `M/20261106000001_lot8_canaux.sql:1187-1280`.
+3. **Ce que fait le système.** « Par catégorie » : « Catégorie », « Prix », « Vendus », « En cours de paiement », « Invitations », « Restants » (« {n} / {total} », exemple « 188 / 200 », ou « Vente fermée »), « Recettes en ligne ». « Évolution jour par jour », « Billets vendus chaque jour, à l’heure de Dakar. », détail « dont {n} en espèces ». Depuis le lot 9 bis, section « Par canal », « Billets valables ou déjà utilisés, comptés par le serveur : vendus en ligne, gratuits pris en ligne, vendus au guichet et invitations. », colonnes « Canal », « Billets », « Montant », lignes « En ligne », « En ligne, gratuits », « Au guichet », « Invitations » ; chaque billet compte dans un seul canal. Indisponible : « Répartition par canal indisponible pour le moment. ». Preuve : `components/partner/pilotage/SalesTab.tsx:16-37`, `:93-103`, `M/20261109000008_lot9bis_cycle.sql:2407-2416` (`pilotage_sales`).
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2597,8 +2602,8 @@ Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
 | Aucun. | — | — | — | — |
 
 5. **Ce que les autres voient.** Aucun.
-6. **Ce qui est impossible.** Lire les ventes par canal en nombre de billets.
-7. **Test et essai.** Test : `tests/parcours/pilotage-apercu-ventes.test.ts:129` « par catégorie : vendus, en cours de paiement, restants (Standard, VIP, Étudiant) ; catégorie inactive sans vente » ; `tests/parcours/pilotage-apercu-ventes.test.ts:147` « Σ par catégorie = totaux de l’aperçu (une seule source de vérité) » ; `tests/parcours/pilotage-apercu-ventes.test.ts:161` « jour par jour en Africa/Dakar : chaque jour = billets vendus émis ce jour-là, Σ = vendus, ordre chronologique ». Essai : aucun, hors l'Essai 41 de `docs/recette-billetterie.md` qui lit la séparation en ligne et espèces.
+6. **Ce qui est impossible.** Modifier un chiffre.
+7. **Test et essai.** Test : `tests/parcours/cycle9bis-ventes-canal.test.ts` (ventes par canal servies par le serveur, section « Par canal ») ; `tests/parcours/pilotage-apercu-ventes.test.ts:129` « par catégorie : vendus, en cours de paiement, restants (Standard, VIP, Étudiant) ; catégorie inactive sans vente » ; `tests/parcours/pilotage-apercu-ventes.test.ts:147` « Σ par catégorie = totaux de l’aperçu (une seule source de vérité) » ; `tests/parcours/pilotage-apercu-ventes.test.ts:161` « jour par jour en Africa/Dakar : chaque jour = billets vendus émis ce jour-là, Σ = vendus, ordre chronologique ». Essai : aucun, hors l'Essai 41 de `docs/recette-billetterie.md` qui lit la séparation en ligne et espèces.
 
 ### Étape 12.4 — Onglet « Entrées »
 
@@ -2619,7 +2624,7 @@ Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
 
 1. **Qui, où, quel bouton.** Mariama, `?tab=caisse` et `?tab=cloture`.
 2. **Ce qu'il saisit.** Caisse : le code PIN (étape 6.8). Clôture : le formulaire d'export (étape 12.6).
-3. **Ce que fait le système.** Caisse : « Espèces encaissées », « Caisses ouvertes », « Caisses clôturées ». **Mariama n'a aucun bouton pour clôturer une caisse.** Clôture : « Montant net organisateur », « Disponibilité des fonds », « Absents » ; « Rapport de clôture » ; « Z de caisse » ; « Export des participants ». La liste nominative des absents n'est donnée qu'après la fin. Preuve : `components/partner/pilotage/CashTab.tsx:118-120`, `components/partner/pilotage/ClosingTab.tsx:164-225`, `components/shifts/ShiftModals.tsx:190`, `M/20261102000005_lot5_pilotage.sql:789-893`.
+3. **Ce que fait le système.** Caisse : « Espèces encaissées », « Caisses ouvertes », « Caisses clôturées ». Depuis le lot 9 bis, Mariama peut fermer une caisse ouverte (étape 11.6), et une alerte part à la fin de l'événement si une caisse est restée ouverte (étape 16.1). Clôture : « Montant net organisateur », « Disponibilité des fonds », « Absents » ; « Rapport de clôture » ; « Z de caisse » ; « Export des participants ». La liste nominative des absents n'est donnée qu'après la fin. Preuve : `components/partner/pilotage/CashTab.tsx:150`, `:205-212`, `components/partner/pilotage/ClosingTab.tsx:164-225`, `M/20261102000005_lot5_pilotage.sql:789-893`.
 4. **Messages reçus.**
 
 | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
@@ -2627,7 +2632,7 @@ Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
 | Aucun. | — | — | — | — |
 
 5. **Ce que les autres voient.** Aucun.
-6. **Ce qui est impossible.** Lire la liste des absents avant la fin. Clôturer une caisse.
+6. **Ce qui est impossible.** Lire la liste des absents avant la fin.
 7. **Test et essai.** Test : `tests/parcours/pilotage-cloture-export.test.ts:179` « absents : nombre en direct (billets VALIDE), aucune liste nominative avant la fin » ; `tests/parcours/pilotage-cloture-export.test.ts:191` « Z de caisse de S1 : déclaré hors fonds, attendu, écart, détail SCAN / GUICHET et par catégorie » ; `tests/parcours/pilotage-cloture-export.test.ts:215` « montant net et plage de disponibilité des fonds (min et max des crédits VENTE de l’événement) » ; `tests/parcours/pilotage-cloture-export.test.ts:341` « après la fin : liste nominative des absents (nom, catégorie), même nombre ; fonds inchangés » ; `tests/parcours/pilotage-equipe-caisse.test.ts:134` « caisses ouvertes et clôturées : fonds, espèces encaissées, déclaré hors fonds, écart, justification ». Essai : Essai 41 de `docs/recette-billetterie.md`.
 
 ### Étape 12.6 — Export des participants
@@ -2643,7 +2648,7 @@ Preuve : `SHIFT_CLOSED_BY_OTHER` (`M/20261103000006_lot6_pros_admin.sql:289`).
 
 Message à l'écran : « Export téléchargé. Il est enregistré dans le journal des exports. ».
 
-5. **Ce que les autres voient.** Le journal des exports n'a pas d'écran.
+5. **Ce que les autres voient.** Le journal des exports n'a pas d'écran. Depuis le lot 9 bis, un admin n'exporte les contacts qu'avec la permission `partners.read` (« Consulter les partenaires et leurs contacts »).
 6. **Ce qui est impossible.** Contacts sans finalité : « Pour exporter le téléphone et l’email, choisissez une finalité : information urgente sur l’événement, ou sécurité et accueil. ». Erreurs : « L’export n’a pas abouti », « Export impossible pour le moment. », « Connexion impossible. Vérifiez votre réseau, puis réessayez. ».
 7. **Test et essai.** Test : `tests/parcours/pilotage-cloture-export.test.ts:230` « sans contacts : CSV UTF-8 avec BOM, en-têtes français, nom / catégorie / statut (libellé) / heure d’entrée, sans paiement, numéro, téléphone ni email » ; `tests/parcours/pilotage-cloture-export.test.ts:279` « contacts sans finalité, ou finalité hors de la liste fermée : 400 PURPOSE_REQUIRED, aucun fichier » ; `tests/parcours/pilotage-cloture-export.test.ts:293` « contacts avec une finalité de la liste fermée : téléphone et email ajoutés, toujours sans donnée de paiement » ; `tests/parcours/pilotage-cloture-export.test.ts:312` « chaque export journalisé : acteur, contacts, finalité, nombre de lignes, sans donnée de participant ; l’admin aussi ». Essai : Essai 40 de `docs/recette-billetterie.md`.
 
