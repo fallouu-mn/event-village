@@ -8,7 +8,9 @@
  * (lib/push/config.ts, pushChannelAvailable : SKIPPED PUSH_NOT_CONFIGURED).
  *
  * Une adresse factice (« <chiffres>@eventvillage.sn », créée pour un compte inscrit par téléphone) n'est
- * jamais destinataire (SKIPPED NO_REAL_EMAIL).
+ * jamais destinataire (SKIPPED NO_REAL_EMAIL). Lot 9 bis (B100) : la règle couvre tout le domaine eventvillage.sn et
+ * ses sous-domaines (dont « <uuid>@deleted.eventvillage.sn » d'un compte anonymisé) ; la base décide, ce contrôle
+ * est une défense en profondeur.
  */
 
 const WARNED = Symbol.for('event-village.email-disabled-warned');
@@ -30,11 +32,17 @@ export function emailChannelAvailable(): boolean {
     return false;
 }
 
-const PLACEHOLDER_EMAIL_RE = /^[0-9]+@eventvillage\.sn$/i;
+/** Lot 9 bis (B100) : adresse technique, jamais destinataire ni saisissable (domaine eventvillage.sn et sous-domaines). */
+export const TECHNICAL_EMAIL_RE = /@([a-z0-9-]+\.)*eventvillage\.sn$/i;
+
+/** true pour une adresse technique (B100). */
+export function isTechnicalAddress(address: string): boolean {
+    return TECHNICAL_EMAIL_RE.test(address.trim());
+}
 
 /** true pour une adresse réelle (contient « @ » et n'est pas une adresse factice d'un compte par téléphone). */
 export function isDeliverableEmail(address: unknown): address is string {
     if (typeof address !== 'string') return false;
     const a = address.trim();
-    return a.indexOf('@') > 0 && a.length <= 254 && !PLACEHOLDER_EMAIL_RE.test(a);
+    return a.indexOf('@') > 0 && a.length <= 254 && !TECHNICAL_EMAIL_RE.test(a);
 }

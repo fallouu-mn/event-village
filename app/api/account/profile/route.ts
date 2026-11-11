@@ -8,8 +8,11 @@ import {
     technicalEmailOf,
 } from '@/lib/auth/account-sync';
 import { requireActiveSession } from '@/lib/auth/session';
+import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
+import { isTechnicalAddress } from '@/lib/notifications/channels';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AccountProfileSchema } from '@/lib/validations/account';
+import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +23,8 @@ const EMAIL_CONFLICT = new PublicError('Votre profil a été modifié entre-temp
 const SYNC_FAILED = new PublicError('L’enregistrement n’a pas pu aboutir. Réessayez avec la même adresse ; si le problème persiste, contactez le support.', 'ACCOUNT_SYNC_FAILED', 500);
 
 const refuse = (err: unknown): NextResponse => apiFailure(CONTEXT, err, FALLBACK);
+
+interface FinalizeReply { ok?: boolean; code?: string; email_state?: string; email_pending?: string | null }
 
 async function handle(req: NextRequest): Promise<NextResponse> {
     const session = await requireActiveSession(req);
@@ -38,6 +43,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: issue?.message ?? 'Données invalides.', code: 'INVALID_FIELD', field: issue?.path[0] ?? null }, { status: 400 });
     }
     const { first_name, last_name, email: typedEmail } = parsed.data;
+    // Lot 9 bis (B100) : tout le domaine technique est réservé, sous-domaines compris (deleted.eventvillage.sn).
+    if (typedEmail && isTechnicalAddress(typedEmail)) {
+        return NextResponse.json({ error: RESERVED_EMAIL_MESSAGE, code: 'INVALID_FIELD', field: 'email' }, { status: 400 });
+    }
 
     // Email vidé : email technique du numéro, jamais NULL (L24). Sans numéro, il n'y en a pas.
     if (!typedEmail && !user.phone) {
@@ -45,11 +54,16 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
     const email = typedEmail || technicalEmailOf(user.phone as string);
     const currentEmail = user.email ?? null;
-    const emailChanged = (currentEmail ?? '').toLowerCase() !== email;
+    // Lot 9 bis (R87) : seule l'adresse vidée (technique) s'écrit tout de suite dans auth.users ; une adresse saisie
+    // attend sa vérification (users.email_pending) et n'atteint auth.users qu'à la validation du lien.
+    const authChange = !typedEmail && (currentEmail ?? '').toLowerCase() !== email;
 
     try {
         const supabase = getServiceRoleClient();
-        if (emailChanged) {
+        if (typedEmail && (currentEmail ?? '').toLowerCase() !== email) {
+            if ((await identityTaken(user.id, email, null)).emailTaken) return refuse(EMAIL_TAKEN);
+        }
+        if (authChange) {
             if ((await identityTaken(user.id, email, null)).emailTaken) return refuse(EMAIL_TAKEN);
             const { error } = await supabase.auth.admin.updateUserById(user.id, { email, email_confirm: true });
             if (error) {
@@ -61,16 +75,32 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         const { data, error } = await supabase.rpc('account_profile_finalize', {
             p: { user_id: user.id, first_name, last_name, email, expected_email: currentEmail },
         });
-        const reply = data as { ok?: boolean; code?: string } | null;
+        const reply = data as FinalizeReply | null;
         if (error || reply?.ok !== true) {
             console.error(`[${CONTEXT}] finalisation refusée :`, error ? error.message : (reply?.code ?? 'réponse vide'));
-            if (emailChanged && !(await compensateAuthIdentity(user.id, 'profile', 'email'))) return refuse(SYNC_FAILED);
+            if (authChange && !(await compensateAuthIdentity(user.id, 'profile', 'email'))) return refuse(SYNC_FAILED);
             if (reply?.code === 'EMAIL_TAKEN') return refuse(EMAIL_TAKEN);
             if (reply?.code === 'EMAIL_CONFLICT') return refuse(EMAIL_CONFLICT);
             return NextResponse.json({ error: FALLBACK.message, code: FALLBACK.code }, { status: 500 });
         }
 
-        return NextResponse.json({ ok: true, email_technical: !typedEmail });
+        // Nouvelle adresse en attente : lien de vérification, au mieux (le profil propose « Renvoyer le lien »).
+        let emailVerification: EmailVerificationState | null = null;
+        if (reply.email_state === 'PENDING') {
+            try {
+                emailVerification = emailVerificationState(await sendEmailVerification(user.id));
+            } catch (mailErr) {
+                console.error(`[${CONTEXT}] lien de vérification du compte ${user.id} non envoyé :`, mailErr instanceof Error ? mailErr.message : String(mailErr));
+                emailVerification = 'NOT_SENT';
+            }
+        }
+
+        return NextResponse.json({
+            ok: true,
+            email_technical: !typedEmail,
+            email_pending: reply.email_pending ?? null,
+            email_verification: emailVerification,
+        });
     } catch (err) {
         return refuse(err);
     }
@@ -78,7 +108,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
 /**
  * PATCH /api/account/profile — prénom, nom, email du client connecté (lot 9, 9.2, contrat 4.3 et 5.3).
- * Le compte vient de la session. Ordre AR2 : identité libre (AM1), auth.admin.updateUserById, RPC de finalisation.
+ * Le compte vient de la session. Lot 9 bis (R87, contrat 4.6) : une adresse saisie est mise en attente
+ * (account_profile_finalize) et reçoit un lien de vérification ; auth.users n'est écrit que pour l'adresse vidée
+ * (ordre AR2 : identité libre (AM1), auth.admin.updateUserById, RPC, compensation). Réponse
+ * { ok, email_technical, email_pending, email_verification }.
  */
 export async function PATCH(req: NextRequest) {
     return noStore(await handle(req));

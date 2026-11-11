@@ -10,10 +10,21 @@
  *    après un délai dépassé ne crée pas de second email chez Resend ;
  *  - délai maximal de 15 s par appel (au-delà : relance permise, la clé d'idempotence évite un doublon) ;
  *  - `retryable` : vrai pour HTTP 429, 5xx, délai dépassé ou réseau ; faux pour un refus (4xx).
+ *
+ * Lot 9 bis (tâche 48) : `timeoutMs` facultatif dans la charge (lien de vérification synchrone : 5 s), borné à 1 à
+ * 15 s ; sans lui, 15 s comme avant.
  */
 import type { EmailAdapter, EmailSendPayload, EmailSendResult } from '@/lib/integrations/types';
 
 const TIMEOUT_MS = 15_000;
+const MIN_TIMEOUT_MS = 1_000;
+
+/** Délai de l'appel : `timeoutMs` de la charge s'il est un entier de 1 à 15 s, sinon 15 s. */
+function timeoutOf(payload: EmailSendPayload): number {
+    const wanted = (payload as EmailSendPayload & { timeoutMs?: unknown }).timeoutMs;
+    if (typeof wanted !== 'number' || !Number.isInteger(wanted)) return TIMEOUT_MS;
+    return Math.min(Math.max(wanted, MIN_TIMEOUT_MS), TIMEOUT_MS);
+}
 
 /** En-têtes de message admis (aucun en-tête d'adressage ni de routage fourni par l'appelant). */
 const FORBIDDEN_MESSAGE_HEADERS = new Set(['to', 'from', 'cc', 'bcc', 'reply-to', 'subject', 'sender', 'return-path']);
@@ -66,7 +77,7 @@ export class ResendHttpAdapter implements EmailAdapter {
                     ...(extraHeaders ? { headers: extraHeaders } : {}),
                     ...(payload.replyTo ? { reply_to: payload.replyTo } : {}),
                 }),
-                signal: AbortSignal.timeout(TIMEOUT_MS),
+                signal: AbortSignal.timeout(timeoutOf(payload)),
             });
         } catch (err) {
             const msg = err instanceof Error ? `${err.name}: ${err.message}` : 'network_error';

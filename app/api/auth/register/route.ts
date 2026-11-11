@@ -3,6 +3,8 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { RegisterWithCodeSchema, toSenegaleseE164 } from '@/lib/validations/auth';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { findExistingAccount } from '@/lib/auth/existing-account';
+import { technicalEmailOf } from '@/lib/auth/account-sync';
+import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
@@ -71,7 +73,10 @@ async function linkReferral(userId: string, referralCode: string): Promise<void>
  *     OTP_VERIFY_RATE_LIMITED), puis code REGISTER vérifié ET consommé en base (otp_check, 5 essais au plus)
  *     AVANT toute création : 400 INVALID_CODE, 400 CODE_EXPIRED, 429 TOO_MANY_ATTEMPTS ;
  *  5. création du compte (auth.users, puis public.users ACTIF avec phone_verified_at : le numéro est prouvé
- *     par le code) ; parrainage comme avant.
+ *     par le code) ; parrainage comme avant ;
+ *  6. lot 9 bis (R87, contrat 4.6) : auth.users et users.email = adresse technique, adresse saisie dans
+ *     users.email_pending, lien de vérification envoyé au mieux ; réponse + email_pending, email_verification.
+ *     Domaine eventvillage.sn et sous-domaines refusés à l'étape 1 (400 INVALID_FIELD sur email, B100).
  * Le compte n'existe donc jamais avant la vérification du code (faille du lot 6 corrigée : un tiers ne peut
  * plus créer un compte ACTIF au numéro d'autrui). La route n'envoie plus aucun SMS : le code part de
  * POST /api/auth/register/start.
@@ -111,12 +116,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Le code de vérification comporte 6 chiffres.', code: 'INVALID_CODE' }, { status: 400 });
     }
 
-    const effectiveEmail = (email ?? '').trim().toLowerCase() || `${phone.replace('+', '')}@eventvillage.sn`;
+    // Lot 9 bis (R87, B96, contrat 4.6) : GoTrue et users.email reçoivent l'adresse technique du numéro ; l'adresse
+    // saisie attend son lien de vérification dans users.email_pending (jamais identifiant de connexion avant).
+    const typedEmail = (email ?? '').trim().toLowerCase();
+    const technicalEmail = technicalEmailOf(phone);
     const supabase = getServiceRoleClient();
 
     try {
         // 3. Compte existant (aucun essai de code consommé)
-        if (await findExistingAccount(phone, effectiveEmail)) {
+        if (await findExistingAccount(phone, typedEmail || technicalEmail)) {
             return NextResponse.json({ error: ACCOUNT_EXISTS_MESSAGE, code: 'ACCOUNT_ALREADY_EXISTS' }, { status: 409 });
         }
 
@@ -140,7 +148,7 @@ export async function POST(req: NextRequest) {
 
         // 5. Création du compte (numéro prouvé par le code)
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-            email: effectiveEmail,
+            email: technicalEmail,
             phone,
             password,
             email_confirm: true,
@@ -169,7 +177,8 @@ export async function POST(req: NextRequest) {
             first_name: firstName,
             last_name: lastName,
             phone,
-            email: effectiveEmail,
+            email: technicalEmail,
+            email_pending: typedEmail || null,
             role: 'CLIENT',
             status: 'ACTIF',
             referral_status: 'STANDARD',
@@ -195,11 +204,25 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Lien de vérification de l'adresse saisie, au mieux : un échec n'empêche pas l'inscription (le profil propose
+        // « Renvoyer le lien »). L'écran se connecte avec `email` (adresse technique).
+        let emailVerification: EmailVerificationState | null = null;
+        if (typedEmail) {
+            try {
+                emailVerification = emailVerificationState(await sendEmailVerification(userId));
+            } catch (mailErr) {
+                console.error(`[API /api/auth/register] lien de vérification du compte ${userId} non envoyé :`, mailErr instanceof Error ? mailErr.message : String(mailErr));
+                emailVerification = 'NOT_SENT';
+            }
+        }
+
         return NextResponse.json({
             success: true,
             userId,
             phone,
-            email: effectiveEmail,
+            email: technicalEmail,
+            email_pending: typedEmail || null,
+            ...(emailVerification ? { email_verification: emailVerification } : {}),
             message: 'Compte créé : votre numéro est vérifié.',
         });
     } catch (err) {

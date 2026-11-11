@@ -1,0 +1,99 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { apiFailure, PublicError } from '@/lib/api/public-error';
+import {
+    authUpdateRefusedAsTaken,
+    compensateAuthIdentity,
+    identityTaken,
+    noStore,
+} from '@/lib/auth/account-sync';
+import { hashVerificationToken, isVerificationToken } from '@/lib/email/verification';
+import { getServiceRoleClient } from '@/lib/supabase/server';
+
+export const dynamic = 'force-dynamic';
+
+const CONTEXT = 'POST /api/account/email/verify';
+const FALLBACK = { message: 'La vérification n’a pas pu aboutir. Réessayez dans un instant.', code: 'EMAIL_VERIFY_FAILED' };
+
+const REFUSALS: Readonly<Record<string, PublicError>> = {
+    EMAIL_LINK_INVALID: new PublicError('Ce lien n’est pas valable. Demandez un nouveau lien depuis votre profil.', 'EMAIL_LINK_INVALID', 400),
+    EMAIL_LINK_EXPIRED: new PublicError('Ce lien a expiré (24 heures). Demandez un nouveau lien depuis votre profil.', 'EMAIL_LINK_EXPIRED', 410),
+    EMAIL_LINK_USED: new PublicError('Ce lien a déjà servi.', 'EMAIL_LINK_USED', 409),
+    EMAIL_TAKEN: new PublicError('Cette adresse est déjà vérifiée sur un autre compte Event Village.', 'EMAIL_TAKEN', 409),
+    EMAIL_CONFLICT: new PublicError('Votre profil a été modifié entre-temps. Demandez un nouveau lien depuis votre profil.', 'EMAIL_CONFLICT', 409),
+};
+const SYNC_FAILED = new PublicError(
+    'La vérification n’a pas pu aboutir. Réessayez avec le même lien ; si le problème persiste, contactez le support.',
+    'ACCOUNT_SYNC_FAILED',
+    500,
+);
+
+interface CheckReply { ok?: boolean; code?: string; user_id?: string; email?: string; current_email?: string | null; auth_update?: boolean }
+interface FinalizeReply { ok?: boolean; code?: string }
+
+const refuse = (err: unknown): NextResponse => apiFailure(CONTEXT, err, FALLBACK);
+
+async function handle(req: NextRequest): Promise<NextResponse> {
+    let body: unknown;
+    try {
+        body = await req.json();
+    } catch {
+        return NextResponse.json({ error: 'Demande illisible : corps JSON attendu.', code: 'INVALID_BODY' }, { status: 400 });
+    }
+    const token = (body as { token?: unknown } | null)?.token;
+    if (!isVerificationToken(token)) return refuse(REFUSALS.EMAIL_LINK_INVALID);
+    const tokenHash = hashVerificationToken(token);
+
+    try {
+        const supabase = getServiceRoleClient();
+
+        // 1. Contrôle du lien, sans écriture.
+        const { data: checkData, error: checkErr } = await supabase.rpc('email_verification_check', { p: { token_hash: tokenHash } });
+        if (checkErr) return refuse(checkErr);
+        const check = checkData as CheckReply | null;
+        if (check?.ok !== true) {
+            const refusal = check?.code ? REFUSALS[check.code] : undefined;
+            return refuse(refusal ?? new Error(`email_verification_check : ${check?.code ?? 'réponse vide'}`));
+        }
+        const userId = String(check.user_id ?? '');
+        const email = String(check.email ?? '');
+        if (!userId || !email) return refuse(new Error('email_verification_check : réponse incomplète'));
+        const authUpdate = check.auth_update === true;
+
+        // 2. Ordre AR2 : identité libre (AM1), puis auth.users, puis la RPC de validation, compensation en cas d'échec.
+        if (authUpdate) {
+            if ((await identityTaken(userId, email, null)).emailTaken) return refuse(REFUSALS.EMAIL_TAKEN);
+            const { error } = await supabase.auth.admin.updateUserById(userId, { email, email_confirm: true });
+            if (error) {
+                if (await authUpdateRefusedAsTaken(error, userId, email, null)) return refuse(REFUSALS.EMAIL_TAKEN);
+                return refuse(error);
+            }
+        }
+
+        const { data, error } = await supabase.rpc('email_verification_finalize', {
+            p: { token_hash: tokenHash, expected_email: check.current_email ?? null },
+        });
+        const reply = data as FinalizeReply | null;
+        if (error || reply?.ok !== true) {
+            console.error(`[${CONTEXT}] validation refusée pour le compte ${userId} :`, error ? error.message : (reply?.code ?? 'réponse vide'));
+            if (authUpdate && !(await compensateAuthIdentity(userId, 'email-verify', 'email'))) return refuse(SYNC_FAILED);
+            const refusal = reply?.code ? REFUSALS[reply.code] : undefined;
+            if (refusal) return refuse(refusal);
+            return NextResponse.json({ error: FALLBACK.message, code: FALLBACK.code }, { status: 500 });
+        }
+        return NextResponse.json({ ok: true });
+    } catch (err) {
+        return refuse(err);
+    }
+}
+
+/**
+ * POST /api/account/email/verify — lot 9 bis, tâche 48 (R87, G53-1 à G53-4 ; contrat 4.6) : validation d'un lien de
+ * vérification d'adresse. Publique (le lien arrive par email), { token } ; n'ouvre AUCUNE session. Ordre :
+ * email_verification_check → identité libre → auth.admin.updateUserById({ email, email_confirm }) →
+ * email_verification_finalize → en cas d'échec, compensation de auth.users vers la valeur relue de public.users.
+ * 200 { ok } ; 400 EMAIL_LINK_INVALID ; 410 EMAIL_LINK_EXPIRED ; 409 EMAIL_LINK_USED, EMAIL_TAKEN, EMAIL_CONFLICT ;
+ * 500 ACCOUNT_SYNC_FAILED. Le jeton n'est ni journalisé ni renvoyé : seul son SHA-256 part en base.
+ */
+export async function POST(req: NextRequest) {
+    return noStore(await handle(req));
+}

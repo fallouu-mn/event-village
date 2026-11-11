@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
+
+/** Lot 9 bis (B100) : refus d'une adresse du domaine technique, à l'inscription comme au profil. */
+export const RESERVED_EMAIL_MESSAGE = 'Cette adresse est réservée. Saisissez votre propre adresse email.';
 
 /**
  * Normalise un numéro de téléphone sénégalais vers le format E.164 (+221XXXXXXXXX)
@@ -109,7 +113,11 @@ export const RegisterWithCodeSchema = z.object({
     code: z.string().trim().optional(),
     firstName: z.string().trim().min(2, 'Le prénom doit contenir au moins 2 caractères').max(80, 'Le prénom est trop long'),
     lastName: z.string().trim().min(2, 'Le nom doit contenir au moins 2 caractères').max(80, 'Le nom est trop long'),
-    email: z.string().trim().email('Adresse email invalide').optional().or(z.literal('')),
+    // Lot 9 bis (B100, G53-7) : le domaine technique eventvillage.sn et ses sous-domaines sont réservés (sinon un compte
+    // prendrait l'adresse technique d'un autre numéro).
+    email: z.string().trim().email('Adresse email invalide')
+        .refine((value) => !TECHNICAL_EMAIL_RE.test(value), RESERVED_EMAIL_MESSAGE)
+        .optional().or(z.literal('')),
     password: StrongPasswordSchema,
     referralCode: z.string().trim().max(64, 'Code de parrainage invalide').optional(),
 });

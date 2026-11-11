@@ -24,7 +24,7 @@ import { EmailService } from '@/lib/email/email.service';
 import { getPushAdapter } from '@/lib/integrations/registry';
 import type { PushMessage, PushSendOptions, PushSendResult, PushTarget } from '@/lib/integrations/types';
 import { NOTIFICATION_CATALOG, renderNotification, TemplateDataError } from '@/lib/notifications/catalog';
-import { emailChannelAvailable } from '@/lib/notifications/channels';
+import { emailChannelAvailable, TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 import { smsSegments } from '@/lib/notifications/sms-format';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { getPushConfig, pushChannelAvailable } from '@/lib/push/config';
@@ -164,7 +164,6 @@ const PUSH_BODY_MAX = 160;
 const PUSH_PAYLOAD_MAX_BYTES = 2048;
 const DAY_SECONDS = 86_400;
 const HIGH_URGENCY_TYPES = ['REMINDER_H3', 'EVENT_CANCELLED', 'PUSH_TEST'];
-const FAKE_EMAIL = /^[0-9]+@eventvillage\.sn$/i;
 
 const MISSING_SETTING_WARNED = Symbol.for('event-village.notif-sms-optional-daily-cap-missing-warned');
 type ProcessFlags = typeof globalThis & { [MISSING_SETTING_WARNED]?: boolean };
@@ -327,7 +326,9 @@ async function deliverEmail(item: ClaimedItem, data: Record<string, unknown>, ct
     // Canal facultatif : sans RESEND_API_KEY, aucun appel (un seul avertissement par processus, channels.ts).
     if (!emailChannelAvailable()) return skipped(item, 'EMAIL_NOT_CONFIGURED');
     const to = item.recipient.email;
-    if (!to || to.indexOf('@') <= 0 || FAKE_EMAIL.test(to)) return skipped(item, 'NO_REAL_EMAIL');
+    // Lot 9 bis (B100) : adresse technique (domaine eventvillage.sn et sous-domaines), défense en profondeur ; la
+    // réservation a déjà retenu toute adresse technique ou non vérifiée (NO_REAL_EMAIL, EMAIL_NOT_VERIFIED).
+    if (!to || to.indexOf('@') <= 0 || TECHNICAL_EMAIL_RE.test(to)) return skipped(item, 'NO_REAL_EMAIL');
     let mail: { subject: string; html: string; text: string };
     try {
         const tpl = prepare(item, data, ctx);
