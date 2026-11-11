@@ -25,13 +25,17 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { NOTIFICATION_CATALOG } from '../../lib/notifications/catalog';
+import { OUTBOX_REASON_LABELS, OUTBOX_TYPE_LABELS } from '../../lib/notifications/outbox-labels';
+import { getFakes } from '../fakes';
 import { inRolledBackTransaction } from '../helpers/db';
 import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
 import { authed, createTimedEvent, newController } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, type DraftEvent } from './cycle-helpers';
 import { buyConfirmed, jsonRequest as financeRequest, newPartner, type TestPartner } from './finance-helpers';
 import { confirmPassword, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
-import { markEmailVerified, markPhoneVerified, outboxRows, type OutboxRow } from './notif-helpers';
+import {
+    flushNotifications, insertOutboxRow, markEmailVerified, markPhoneVerified, newAdmin, outboxRows, smsTo, type OutboxRow,
+} from './notif-helpers';
 import { newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 
@@ -382,5 +386,95 @@ describe('9b.51 G.51 — contenu des emails (rendu du catalogue, sans base)', ()
             ['Numéro de téléphone modifié', 'Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.'], 'titre et fond de l’email');
         assert.equal(plain(tpl.email!(tpl.sample, { appUrl: RENDER_APP }).subject), 'Numéro de téléphone modifié — Event Village', 'sujet');
         assert.deepEqual(emailFaults('PHONE_CHANGED'), []);
+    });
+});
+
+// ── Tâche 52 : supervision et indépendance du SMS (G.52, B99) ──────────────
+
+const RESEND_ROUTE = '../../app/api/account/email/resend/route';
+const ADMIN_NOTIFICATIONS_ROUTE = '../../app/api/admin/notifications/route';
+/** Délai d'un email lent : assez long pour que l'ordre « SMS avant le premier email fini » soit sans ambiguïté. */
+const SLOW_EMAIL_MS = 1500;
+
+/** Ligne due tout de suite (une seconde dans le passé), écrite par le service_role comme une mise en file. */
+async function dueRow(row: Row): Promise<OutboxRow> {
+    const due = new Date(Date.now() - 1000).toISOString();
+    return insertOutboxRow({ type: 'PURCHASE_CONFIRMED', template_data: catalogSample('PURCHASE_CONFIRMED'), due_at: due, next_attempt_at: due, ...row });
+}
+
+describe('9b.52 G.52 — un email lent ou refusé ne retarde ni ne bloque le SMS ; supervision des emails', () => {
+    test('10 lignes EMAIL lentes et 1 SMS dans le même lot : le SMS est remis avant la fin du premier email (un groupe d’envoi par canal, B99)', async () => {
+        const buyer = await verifiedAccount('lent');
+        const phone = randomSenegalPhone('76');
+        const emails: OutboxRow[] = [];
+        for (let i = 0; i < 10; i++) emails.push(await dueRow({ channel: 'EMAIL', recipient_user_id: buyer.userId }));
+        const sms = await dueRow({ channel: 'SMS', recipient_phone: phone });
+        const fake = getFakes().email;
+        const since = fake.messagesTo(buyer.email).length;
+        fake.delayNext(SLOW_EMAIL_MS, 10);
+        try {
+            await flushNotifications({ ids: [...emails.map((r) => r.id), sms.id] });
+        } finally {
+            const left = fake.clearQueued();
+            assert.deepEqual(left, { failures: 0, delays: 0 }, 'les dix emails ont été tentés (délais consommés)');
+        }
+        const rows = await outboxRows({ ids: [...emails.map((r) => r.id), sms.id] });
+        assert.deepEqual(rows.map((r) => r.status).sort(), Array(11).fill('SENT'), `toutes les lignes SENT : ${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))}`);
+        const delivered = smsTo(phone);
+        assert.equal(delivered.length, 1, 'un SMS remis');
+        const mails = fake.messagesTo(buyer.email).slice(since);
+        assert.equal(mails.length, 10, 'dix emails envoyés');
+        const firstEmailDone = Math.min(...mails.map((m) => Date.parse(m.finishedAt)));
+        assert.ok(Date.parse(delivered[0].at) < firstEmailDone,
+            `SMS remis à ${delivered[0].at}, après la fin du premier email (${new Date(firstEmailDone).toISOString()}) : `
+            + 'les emails passent avant les SMS et partagent les 5 places (dispatcher.ts:503-513, M/20261105000002:202)');
+    });
+
+    test('garde (vert sur le fond, M10 pour la pose de l’adresse vérifiée) : email refusé (failNext) → EMAIL FAILED EMAIL_REJECTED, le SMS du même lot SENT', async () => {
+        const buyer = await verifiedAccount('refus');
+        const phone = randomSenegalPhone('76');
+        const email = await dueRow({ channel: 'EMAIL', recipient_user_id: buyer.userId });
+        const sms = await dueRow({ channel: 'SMS', recipient_phone: phone });
+        const fake = getFakes().email;
+        fake.failNext('Adresse refusée par le fournisseur (simulation)');
+        try {
+            await flushNotifications({ ids: [email.id, sms.id] });
+        } finally {
+            assert.deepEqual(fake.clearQueued(), { failures: 0, delays: 0 }, 'l’email a été tenté (refus consommé)');
+        }
+        const [e] = await outboxRows({ ids: [email.id] });
+        const [s] = await outboxRows({ ids: [sms.id] });
+        assert.deepEqual([e.status, e.reason], ['FAILED', 'EMAIL_REJECTED'], 'email refusé');
+        assert.deepEqual([s.status, s.reason], ['SENT', null], 'SMS envoyé malgré l’email refusé');
+        assert.equal(smsTo(phone).length, 1, 'un SMS remis');
+    });
+
+    test('supervision (sans base) : motif EMAIL_NOT_VERIFIED « Adresse email non vérifiée » ; EMAIL_VERIFICATION a un libellé humain', () => {
+        assert.equal(OUTBOX_REASON_LABELS.EMAIL_NOT_VERIFIED, 'Adresse email non vérifiée', 'libellé du motif (11.2, G.52)');
+        const label = OUTBOX_TYPE_LABELS.EMAIL_VERIFICATION;
+        assert.ok(typeof label === 'string' && label.trim() !== '' && !/[A-Z]{2,}_[A-Z]/.test(label),
+            `libellé humain du type EMAIL_VERIFICATION attendu (11.2 : OUTBOX_TYPE_LABELS de chacun des 26 types) : ${String(label)}`);
+    });
+
+    test('journal EMAIL_VERIFICATION (SYNC_LOG, sans jeton) visible dans la supervision avec l’adresse masquée', async () => {
+        const a = await newBuyer('regle-journal'); // adresse réelle non vérifiée d'avant le lot (B98) : cible du renvoi
+        const resend = await routeHandler(RESEND_ROUTE, 'POST', 'POST /api/account/email/resend (contrat 4.6)');
+        const r = await invoke(resend, authed('/api/account/email/resend', 'POST', a, {}));
+        assert.equal(r.status, 200, `renvoi du lien : ${show(r)}`);
+        const journal = await outboxRows({ type: 'EMAIL_VERIFICATION', userId: a.userId });
+        assert.equal(journal.length, 1, `une ligne de journal par lien envoyé : ${describeRows(journal)}`);
+        const j = journal[0];
+        assert.deepEqual([j.origin, j.channel, j.status, j.reason, (j.recipient_email ?? '').toLowerCase()], ['SYNC_LOG', 'EMAIL', 'SENT', null, a.email.toLowerCase()]);
+        assert.deepEqual(j.template_data, { purpose: 'EMAIL_VERIFY' }, 'données du journal : l’objet seul, jamais le jeton');
+        const admin = await newAdmin('regle-journal', ['notifications.read']);
+        const list = await routeHandler(ADMIN_NOTIFICATIONS_ROUTE, 'GET', 'GET /api/admin/notifications');
+        const res = await invoke(list, authed('/api/admin/notifications?type=EMAIL_VERIFICATION&channel=EMAIL&pageSize=50', 'GET', admin));
+        assert.equal(res.status, 200, `supervision : ${show(res)}`);
+        const item = ((res.body.items ?? []) as Row[]).find((i) => i.id === j.id);
+        assert.ok(item, `ligne du journal absente de la supervision : ${show(res)}`);
+        const masked = String(item.recipient_masked);
+        assert.equal(masked.toLowerCase().includes(a.email.toLowerCase()), false, `adresse en clair dans la supervision : ${masked}`);
+        assert.match(masked, /^.{1,2}\*\*\*@test\.eventvillage\.local$/, `adresse masquée (règle de la supervision) : ${masked}`);
+        assert.deepEqual([item.type, item.status], ['EMAIL_VERIFICATION', 'SENT']);
     });
 });
