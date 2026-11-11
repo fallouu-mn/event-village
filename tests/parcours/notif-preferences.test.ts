@@ -18,7 +18,7 @@
  *    ligne PUSH_TEST à la minute (double clic dédoublonné), aucun envoi depuis la route, push remis au
  *    passage de l'envoyeur ; quota PUSH_TEST_PER_USER_HOUR → 429, par compte.
  * Horloge simulée seulement par `now` de scheduleAt / dispatchAt (jamais dans le passé) ; réglages des
- * rappels posés à leurs défauts le temps des cas (withNotifSettings) ; comptage par numéro neuf.
+ * rappels posés à leurs défauts le temps des cas (withNotifSettings) ; comptage par numéro neuf. Lot 9 bis (R14, T54, décision) : sujet EVENT_UPDATES « Suspension et reprise d’un événement », « Changements de date ou de lieu » ajouté aux indispensables (fin de liste).
  *
  * Rouge avant correctif : app/api/notifications/preferences et app/api/notifications/essai-push n'existent
  * pas ; ni notification_preferences, ni push_subscriptions, ni la boîte d'envoi, ni les RPC
@@ -52,11 +52,11 @@ type Channel = (typeof CHANNELS)[number];
 const CHANNEL_LABELS: Record<Channel, string> = { IN_APP: 'Application', SMS: 'SMS', EMAIL: 'Email', PUSH: 'Notifications push' };
 const TOPIC_LABELS: Record<string, string> = {
     REMINDERS: "Rappels avant l'événement",
-    EVENT_UPDATES: "Changements d'un événement",
+    EVENT_UPDATES: "Suspension et reprise d'un événement", // lot 9 bis (R14, T54) : la date et le lieu deviennent indispensables
     PRO_ACTIVITY: 'Activité de vos ventes',
 };
 const ESSENTIALS = [
-    'Codes de connexion', "Confirmations d'achat et reçus", 'Billets transférés', 'Annulations', 'Remboursements', 'Sécurité du compte',
+    'Codes de connexion', "Confirmations d'achat et reçus", 'Billets transférés', 'Annulations', 'Remboursements', 'Sécurité du compte', 'Changements de date ou de lieu', // lot 9 bis (R14, T54)
 ];
 const NO_DEVICE_ERROR = "Activez d'abord les notifications sur cet appareil.";
 const TEST_PUSH_MESSAGE = "Notification d'essai envoyée : elle arrive dans la minute.";
