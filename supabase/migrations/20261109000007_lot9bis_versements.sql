@@ -34,6 +34,15 @@
 --  6. event_cancellation_progress(p jsonb) : recopie intégrale de 20261102000003_lot5_cycle.sql:761-824, même
 --     signature ; ajout du compteur `delayed` { count, total } (remboursements de l'événement présents dans
 --     cashouts_to_resume), visible de la propriétaire et des admins (B9).
+--
+-- Tâche 6 (R47, R30, B10, B11 ; H1 pour l'avis) :
+--  5 (suite). notif_cashouts_notify : à la création d'un REFUND (paiement encaissé sans billet possible, ou en
+--     double du même panier : payments.metadata.duplicate_of), PAYMENT_REFUND_STARTED au client avant tout
+--     versement (montant et opérateur du paiement, variante « double ») ; un seul émetteur, ce trigger.
+--  7. checkout_create_payment(p jsonb) : recopie intégrale de 20261105000006_lot7_client.sql:24-136, même
+--     signature ; seule la condition « held_expires_at > now() » de la garde 3 bis est retirée : un paiement de
+--     billets PENDING bloque tout second paiement du même compte pour le même événement jusqu'à son issue
+--     (PAYMENT_PENDING, message inchangé). H2 passe la durée lue au réglage par hold_minutes (signature inchangée).
 -- ============================================================================
 
 
@@ -308,6 +317,10 @@ DECLARE
     -- Lot 9 bis (B11) : un seul avis de retard par versement, mis en file en fin de fonction
     v_refund_delayed     boolean := false;
     v_withdrawal_delayed boolean := false;
+    -- Lot 9 bis (R30, H1) : paiement remboursé, lu à la création d'un REFUND
+    v_pay_amount    numeric;
+    v_pay_operator  text;
+    v_duplicate_of  text;
 BEGIN
     IF NOT (v_status_new OR v_blocked_new OR v_delay_new) THEN
         RETURN NEW;
@@ -351,6 +364,24 @@ BEGIN
             'event_id', v_event,
             'data', v_event_data || jsonb_build_object('cashout_id', NEW.id, 'amount', NEW.amount)
         ));
+    END IF;
+
+    -- 1 bis. Lot 9 bis (R30, H1, B11) : paiement encaissé sans billet possible, ou en double du même panier
+    --        (payments.metadata.duplicate_of), remboursé : le client est prévenu à la création, avant tout versement.
+    IF TG_OP = 'INSERT' AND NEW.kind = 'REFUND' AND (v_user IS NOT NULL OR v_phone IS NOT NULL) THEN
+        SELECT p.amount, p.operator::text, NULLIF(p.metadata->>'duplicate_of', '')
+          INTO v_pay_amount, v_pay_operator, v_duplicate_of
+          FROM public.payments p WHERE p.id = NEW.payment_id;
+        PERFORM public.notif_enqueue(jsonb_strip_nulls(jsonb_build_object(
+            'type', 'PAYMENT_REFUND_STARTED',
+            'key', 'PAYMENT_REFUND_STARTED:' || NEW.id::text,
+            'user_id', v_user,
+            'phone', v_phone,
+            'event_id', v_event,
+            'data', v_event_data || jsonb_strip_nulls(jsonb_build_object(
+                'cashout_id', NEW.id, 'payment_id', NEW.payment_id, 'amount', COALESCE(v_pay_amount, NEW.amount),
+                'operator', COALESCE(NEW.operator::text, v_pay_operator), 'duplicate_of', v_duplicate_of))
+        )));
     END IF;
 
     -- 2. Remboursement bloqué (motif posé alors qu'il attend l'envoi)
@@ -612,6 +643,125 @@ END;
 $$;
 
 
+-- ----------------------------------------------------------------------------
+-- 7. checkout_create_payment(p jsonb) — recopie intégrale de 20261105000006_lot7_client.sql:24-136 (voir l'en-tête)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.checkout_create_payment(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_items jsonb := p->'items';
+    v_problems jsonb;
+    v_existing uuid;
+    v_pending uuid;
+    v_payment_id uuid;
+    v_expires timestamptz := now() + make_interval(mins => GREATEST(1, COALESCE((p->>'hold_minutes')::int, 15)));
+    v_item record;
+    v_price numeric;
+    v_breakdown jsonb;
+BEGIN
+    -- 1. Verrou des catégories du panier, par identifiant croissant
+    PERFORM 1 FROM public.ticket_categories
+     WHERE id IN (SELECT (e->>'category_id')::uuid FROM jsonb_array_elements(v_items) e)
+     ORDER BY id FOR UPDATE;
+
+    -- 2. Réservations échues de ces catégories : rendues avant le contrôle
+    UPDATE public.stock_reservations
+       SET status = 'EXPIRED', closed_at = now(), close_reason = 'EXPIRED'
+     WHERE status = 'ACTIVE' AND expires_at <= now()
+       AND category_id IN (SELECT (e->>'category_id')::uuid FROM jsonb_array_elements(v_items) e);
+
+    -- 3. Double soumission (même clé d'idempotence fournie par le client)
+    IF p->>'client_idempotency_key' IS NOT NULL THEN
+        SELECT id INTO v_existing FROM public.payments
+         WHERE client_id = (p->>'client_id')::uuid AND client_idempotency_key = p->>'client_idempotency_key';
+        IF FOUND THEN
+            RETURN jsonb_build_object('ok', false, 'duplicate', true, 'payment_id', v_existing);
+        END IF;
+    END IF;
+
+    -- 3 bis. Lot 7 (D4) : un paiement de billets PENDING du même compte pour le même événement
+    --        interdit d'en créer un second (autre clé, autre onglet, autre opérateur). Verrou consultatif
+    --        du couple (compte, événement) : deux demandes simultanées sont sérialisées, la seconde voit le
+    --        paiement validé par la première. Lot 9 bis (R47, B10) : la garde vaut jusqu'à ce que ce paiement
+    --        soit confirmé, annulé, échoué ou expiré, même après l'échéance de sa réservation.
+    PERFORM pg_advisory_xact_lock(hashtext('checkout:' || (p->>'client_id') || ':' || (p->>'event_id')));
+    SELECT id INTO v_pending FROM public.payments
+     WHERE client_id = (p->>'client_id')::uuid AND event_id = (p->>'event_id')::uuid
+       AND payment_target::text = 'TICKET' AND status::text = 'PENDING'
+     ORDER BY created_at DESC LIMIT 1;
+    IF FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PAYMENT_PENDING', 'payment_id', v_pending,
+            'message', 'Un paiement est déjà en attente pour cet événement.');
+    END IF;
+
+    -- 4. Contrôles partagés, sous verrou
+    v_problems := public.ticket_sale_problems((p->>'event_id')::uuid, v_items);
+    IF jsonb_array_length(v_problems) > 0 THEN
+        RETURN jsonb_build_object('ok', false, 'problems', v_problems);
+    END IF;
+    FOR v_item IN SELECT (e->>'category_id')::uuid AS category_id, (e->>'unit_price')::numeric AS unit_price FROM jsonb_array_elements(v_items) e LOOP
+        SELECT price INTO v_price FROM public.ticket_categories WHERE id = v_item.category_id;
+        IF v_price IS DISTINCT FROM v_item.unit_price THEN
+            RETURN jsonb_build_object('ok', false, 'problems', jsonb_build_array(jsonb_build_object('category_id', v_item.category_id, 'code', 'PRICE_CHANGED', 'message', 'Le prix a changé : rechargez la page.')));
+        END IF;
+    END LOOP;
+
+    -- 5. Montants : moteur financier unique (aucun montant du corps n'est utilisé)
+    IF NULLIF(p->>'operator', '') IS NULL THEN
+        RAISE EXCEPTION 'checkout_create_payment : opérateur obligatoire pour un paiement';
+    END IF;
+    v_breakdown := public.finance_compute('TICKET',
+        (SELECT jsonb_agg(jsonb_build_object('category_id', e->>'category_id', 'unit_price', c.price, 'quantity', (e->>'quantity')::int) ORDER BY ord)
+           FROM jsonb_array_elements(v_items) WITH ORDINALITY AS t(e, ord)
+           JOIN public.ticket_categories c ON c.id = (e->>'category_id')::uuid),
+        p->>'operator');
+
+    -- 6. Paiement PENDING, taux et délai de disponibilité recopiés
+    INSERT INTO public.payments (
+        transaction_id, external_order_id, client_id, partner_id, event_id, payment_target, amount, currency,
+        is_platform_payment, aggregator, facial_amount, aggregator_fee, service_fee, gross_event_village_revenue,
+        net_event_village_revenue, partner_payout_amount, service_fee_rate, aggregator_fee_rate,
+        payout_delay_hours, payout_hold_enabled, status, idempotency_key, held_expires_at,
+        operator, payer_phone, callback_token_hash, client_idempotency_key, metadata
+    ) VALUES (
+        p->>'transaction_id', p->>'external_order_id', (p->>'client_id')::uuid, NULLIF(p->>'partner_id', '')::uuid,
+        (p->>'event_id')::uuid, 'TICKET',
+        (v_breakdown->>'total_amount')::numeric, 'XOF', TRUE, 'SAMIRPAY',
+        (v_breakdown->>'facial_amount')::numeric, (v_breakdown->>'aggregator_fee')::numeric,
+        (v_breakdown->>'service_fee')::numeric, (v_breakdown->>'gross_event_village_revenue')::numeric,
+        (v_breakdown->>'net_event_village_revenue')::numeric, (v_breakdown->>'partner_payout_amount')::numeric,
+        (v_breakdown->>'service_fee_rate')::numeric, (v_breakdown->>'aggregator_fee_rate')::numeric,
+        public.fin_setting_num('finance.payout_delay_hours')::int, public.fin_setting_bool('finance.payout_hold_enabled'),
+        'PENDING', 'IDEMP-' || (p->>'external_order_id'), v_expires,
+        NULLIF(p->>'operator', ''), NULLIF(p->>'payer_phone', ''), p->>'callback_token_hash', p->>'client_idempotency_key',
+        COALESCE(p->'metadata', '{}'::jsonb)
+    )
+    ON CONFLICT (client_id, client_idempotency_key) WHERE client_idempotency_key IS NOT NULL DO NOTHING
+    RETURNING id INTO v_payment_id;
+    IF v_payment_id IS NULL THEN
+        SELECT id INTO v_existing FROM public.payments
+         WHERE client_id = (p->>'client_id')::uuid AND client_idempotency_key = p->>'client_idempotency_key';
+        RETURN jsonb_build_object('ok', false, 'duplicate', true, 'payment_id', v_existing);
+    END IF;
+
+    -- 7. Réservations de tout le panier, frais de service unitaires compris (le trigger
+    --    incrémente held_quantity ; la contrainte sold + held <= total protège en dernier ressort)
+    INSERT INTO public.stock_reservations (payment_id, category_id, quantity, unit_price, unit_service_fee, expires_at)
+    SELECT v_payment_id, (l->>'category_id')::uuid, (l->>'quantity')::int, (l->>'unit_price')::numeric,
+           (l->>'unit_service_fee')::numeric, v_expires
+      FROM jsonb_array_elements(v_breakdown->'lines') l;
+
+    RETURN jsonb_build_object('ok', true, 'payment_id', v_payment_id, 'expires_at', v_expires,
+                              'amount', (v_breakdown->>'total_amount')::numeric, 'breakdown', v_breakdown);
+END;
+$$;
+
+
 -- ============================================================================
 -- Privilèges : service_role uniquement (règle 1A.3)
 -- ============================================================================
@@ -624,7 +774,8 @@ BEGIN
         'public.cashouts_flag_delayed()',
         'public.cashout_admin_decide(jsonb)',
         'public.notif_cashouts_notify()',
-        'public.event_cancellation_progress(jsonb)'
+        'public.event_cancellation_progress(jsonb)',
+        'public.checkout_create_payment(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
