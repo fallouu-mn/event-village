@@ -142,7 +142,7 @@ describe('9b.34 R22 : TICKET_CANCELLED au détenteur d\'une invitation, d\'un bi
         assert.deepEqual(rows.map((r) => [r.channel, r.recipient_user_id, r.event_id]), [['SMS', null, ev.eventId]],
             `une ligne SMS au numéro, sans compte : ${describeRows(rows)}`);
         await flushNotifications({ eventIds: [ev.eventId] });
-        assert.deepEqual(smsTo(phone, mark).map((m) => m.text),
+        assert.deepEqual(smsTo(phone, mark).map((m) => m.message),
             [`Event Village : votre invitation pour ${ev.title} du ${date} est annulée par l'organisateur.`],
             'un SMS au numéro, texte exact (11.1 N18, invitation)');
     });
@@ -184,9 +184,9 @@ describe('9b.34 R22 : TICKET_CANCELLED au détenteur d\'une invitation, d\'un bi
         assert.ok(cashRows.some((r) => r.channel === 'SMS') && cashRows.every((r) => r.template_data.kind === 'CASH'), `TICKET_CANCELLED CASH : ${describeRows(cashRows)}`);
 
         await flushNotifications({ eventIds: [ev.eventId] });
-        assert.deepEqual(smsTo(freeHolder.phoneE164, freeMark).map((m) => m.text),
+        assert.deepEqual(smsTo(freeHolder.phoneE164, freeMark).map((m) => m.message),
             [`Event Village : votre billet gratuit pour ${ev.title} du ${date} est annulé par l'organisateur.`], 'SMS exact (11.1 N18, gratuit)');
-        assert.deepEqual(smsTo(cashHolder.phoneE164, cashMark).map((m) => m.text),
+        assert.deepEqual(smsTo(cashHolder.phoneE164, cashMark).map((m) => m.message),
             [`Event Village : votre billet pour ${ev.title} du ${date} est annulé. Remboursement par l'organisateur.`], 'SMS exact (11.1 N18, espèces)');
     });
 
@@ -223,7 +223,7 @@ describe('9b.34 R23 : destinataire d\'un transfert révoqué par l\'annulation p
         assert.deepEqual(rows.map((r) => [r.channel, r.recipient_user_id, r.event_id]), [['SMS', null, ev.eventId]],
             `une ligne SMS au numéro du destinataire du transfert révoqué : ${describeRows(rows)}`);
         await flushNotifications({ eventIds: [ev.eventId] });
-        assert.deepEqual(smsTo(recipient, mark).map((m) => m.text),
+        assert.deepEqual(smsTo(recipient, mark).map((m) => m.message),
             [`Event Village : ${ev.title} du ${date} est annulé. Le billet qui vous était destiné n'est plus valable.`],
             'un SMS au destinataire, texte exact (11.2 M2, numéro seul NONE)');
     });
@@ -246,7 +246,7 @@ describe('9b.34 R59 : client suspendu ou réactivé prévenu par SMS avec motif 
         await flushNotifications({ ids: sRows.map((r) => r.id) });
         const sSms = (await outboxRows({ type: 'ACCOUNT_SUSPENDED', userId: client.userId, channel: 'SMS' }));
         assert.deepEqual(sSms.map((r) => [r.status, r.reason]), [['SENT', null]], `SMS envoyé malgré la suspension (politique ALLOW) : ${describeRows(sSms)}`);
-        assert.deepEqual(smsTo(client.phoneE164, mark).map((m) => m.text),
+        assert.deepEqual(smsTo(client.phoneE164, mark).map((m) => m.message),
             [`Event Village : votre compte est suspendu. Motif : ${SUSPEND_REASON}. Vos billets payés restent valables à l'entrée. Contactez le support.`],
             'SMS exact (11.1 N19)');
 
@@ -256,7 +256,7 @@ describe('9b.34 R59 : client suspendu ou réactivé prévenu par SMS avec motif 
         assert.equal(reactivated.data?.ok, true, `réactivation refusée : ${JSON.stringify(reactivated.data)}`);
         const rRows = await outboxRows({ type: 'ACCOUNT_REACTIVATED', userId: client.userId });
         await flushNotifications({ ids: rRows.map((r) => r.id) });
-        assert.deepEqual(smsTo(client.phoneE164, second).map((m) => m.text),
+        assert.deepEqual(smsTo(client.phoneE164, second).map((m) => m.message),
             [`Event Village : votre compte est réactivé. Vous pouvez de nouveau vous connecter : ${APP_URL}/login`], 'SMS exact (11.1 N20)');
     });
 
