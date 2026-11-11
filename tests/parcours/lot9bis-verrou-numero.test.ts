@@ -106,11 +106,18 @@ function sessionIdOf(accessToken: string): string {
     return String(payload.session_id);
 }
 
-/** account_phone_finalize (même RPC que POST /api/account/phone/confirm) ; rend le nouveau numéro. */
+/**
+ * account_phone_finalize (même RPC que POST /api/account/phone/confirm) ; rend le nouveau numéro.
+ * Ordre de la route (AR2) : l'API d'authentification d'abord, puis la RPC (patron email-regle-envoi.test.ts:192).
+ * Sans cet alignement, le profil et auth.users divergent et l'invariant (v) du lot 9 tombe dans toutes les suites
+ * suivantes (triage du run 118, cause A).
+ */
 async function finalizePhone(user: Buyer): Promise<string> {
     const { data: current, error: curErr } = await service.from('users').select('phone').eq('id', user.userId).single();
     assert.equal(curErr, null, `numéro actuel : ${curErr?.message}`);
     const next = randomSenegalPhone('78');
+    const { error: authErr } = await service.auth.admin.updateUserById(user.userId, { phone: next, phone_confirm: true });
+    assert.equal(authErr, null, `numéro d’authentification : ${authErr?.message}`);
     const { data, error } = await service.rpc('account_phone_finalize', {
         p: { user_id: user.userId, new_phone: next, expected_phone: current.phone, keep_session_id: sessionIdOf(user.accessToken) },
     });
