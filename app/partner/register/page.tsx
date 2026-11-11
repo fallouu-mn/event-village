@@ -413,6 +413,17 @@ export default function PartnerRegisterPage() {
           <p className="mx-auto max-w-md text-base leading-relaxed text-fg-muted">
             Votre numéro est vérifié. Notre équipe examine votre dossier et vos pièces.
           </p>
+          {emailLink && (
+            emailLink.sent && emailLink.to ? (
+              <p className="mx-auto max-w-md break-words text-sm leading-relaxed text-fg">
+                Un lien de vérification a été envoyé à <strong className="font-semibold">{emailLink.to}</strong>. Il est valable 24 heures.
+              </p>
+            ) : (
+              <p className="mx-auto max-w-md text-sm leading-relaxed text-fg">
+                Le lien n’a pas pu être envoyé. Renvoyez-le depuis votre profil.
+              </p>
+            )
+          )}
           <ol className="mx-auto max-w-md space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-left text-sm text-fg">
             <li>1. Vérification des pièces, en général sous 24 à 48 heures.</li>
             <li>2. Un SMS vous prévient dès la validation de votre compte.</li>
@@ -558,6 +569,7 @@ export default function PartnerRegisterPage() {
                 hint="Le code de vérification est envoyé à ce numéro. Il ne doit pas déjà servir à un compte."
                 value={phone} onChange={(e) => { setPhone(e.target.value); clearError('phone'); }} error={fieldErrors.phone} className="tabular-nums" />
               <TextInput id={FIELD_IDS.email} label="Email professionnel" type="email" required autoComplete="email" placeholder="direction@etablissement.sn"
+                hint="Recommandé : recevez vos billets et confirmations par email. Un lien de vérification vous est envoyé ; l’adresse ne reçoit rien d’autre tant qu’elle n’est pas vérifiée."
                 value={email} onChange={(e) => { setEmail(e.target.value); clearError('email'); }} error={fieldErrors.email} />
               <TextInput id={FIELD_IDS.password} label="Mot de passe" type="password" required autoComplete="new-password" value={password}
                 onChange={(e) => { setPassword(e.target.value); clearError('password'); }} error={fieldErrors.password} />
