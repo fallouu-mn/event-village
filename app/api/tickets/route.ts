@@ -179,6 +179,19 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        // Lot 9 bis (R32, B23, délégation de S-A) : droit au remboursement total ouvert par un report de plus de 24 h
+        // (tickets_postponement_offers : montant prix + frais, jusqu'au nouveau début, argent à l'acheteur d'origine).
+        const offerMap = new Map<string, { amount: number; until: string; toOriginalBuyer: boolean }>();
+        if (ticketIds.length > 0) {
+            const { data: offers, error: offersErr } = await supabase.rpc('tickets_postponement_offers', { p: { user_id: effectiveUserId } });
+            if (offersErr) throw new Error(`tickets_postponement_offers : ${offersErr.code ?? ''} ${offersErr.message}`);
+            const offersBody = (offers ?? null) as { ok?: unknown; items?: unknown } | null;
+            if (offersBody?.ok !== true || !Array.isArray(offersBody.items)) throw new Error(`tickets_postponement_offers : réponse inattendue ${JSON.stringify(offers).slice(0, 200)}`);
+            for (const o of offersBody.items as Array<{ ticket_id: string; amount: number | string; until: string; to_original_buyer: boolean }>) {
+                offerMap.set(String(o.ticket_id), { amount: Number(o.amount), until: new Date(o.until).toISOString(), toOriginalBuyer: o.to_original_buyer === true });
+            }
+        }
+
         const formatted = (tickets || []).map((t: any) => {
             const cardState = cardMap.get(t.id);
             if (!cardState) throw new Error(`ticket_card_states : billet ${t.id} absent de la réponse`);
@@ -221,6 +234,7 @@ export async function GET(req: NextRequest) {
                 transferAllowed: cardState.transfer_allowed === true,
                 eventNotice: cardState.notice ?? null,
                 refundDelayed: delayedTickets.has(t.id) || (typeof t.payment_id === 'string' && delayedPayments.has(t.payment_id)),
+                postponementRefund: offerMap.get(t.id) ?? null,
             };
         });
 
