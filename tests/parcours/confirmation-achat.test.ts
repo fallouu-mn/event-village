@@ -81,7 +81,7 @@ const P3 = 'En cas de problème à l\'entrée, présentez le numéro de votre bi
 const PHRASES = [P1, P2, P3] as const;
 const BUTTON = 'Voir mes billets';
 const GENERIC_BUTTON = 'Ouvrir Event Village';
-const SUPPORT_MAILTO = 'mailto:support@eventvillage.sn';
+const SUPPORT_MAILTO = `mailto:${process.env.SUPPORT_EMAIL ?? 'support@eventvillage.sn'}`; // lot 9 bis (R70, B88) : adresse lue dans SUPPORT_EMAIL, comme lib/support.ts
 /** Mention écartée par D95 (elle ne tient pas au pire cas). */
 const SMS_MENTION = 'Billets dans l\'appli, rubrique Mes billets.';
 
