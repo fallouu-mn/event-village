@@ -341,7 +341,7 @@ describe('5.10 Export des participants : POST …/participants-export', () => {
 
 describe('5.10 Clôture après la fin de l’événement', () => {
     test('après la fin : liste nominative des absents (nom, catégorie), même nombre ; fonds inchangés', async () => {
-        await advanceEventTo(ds.eventId, 'TERMINE', { finishShift: { startsInHours: -8, durationHours: 4 } });
+        await advanceEventTo(ds.eventId, 'TERMINE', { finishShift: await endAfterOwnerRefund() }); // lot 9 bis (R11, w20) : fin passée, mais après le remboursement de P4
         assert.equal(await eventStatus(ds.eventId), 'TERMINE', 'garde-fou : événement terminé');
 
         const body = await pilotageOk(ds.partner, ds.eventId, 'closing', 'le partenaire propriétaire');
@@ -363,3 +363,18 @@ describe('5.10 Clôture après la fin de l’événement', () => {
         assert.ok(Math.abs(from - expectedFunds) < 1_000, `fin avancée : disponibilité des fonds jamais avancée (${new Date(expectedFunds).toISOString()}), reçu ${JSON.stringify(body.finance)}`);
     });
 });
+
+/**
+ * Lot 9 bis (R11, invariant w20) : la fin avancée tombe entre le remboursement du billet de P4, demandé par l'organisateur
+ * pendant la construction du jeu, et maintenant. Une fin à « maintenant − 4 h » placerait ce remboursement après la fin,
+ * ce que ticket_refund_request refuse à l'organisateur (REFUND_CLOSED_AFTER_EVENT) : un historique impossible.
+ */
+async function endAfterOwnerRefund(): Promise<{ startsInHours: number; durationHours: number }> {
+    const { data, error } = await service.from('audit_logs').select('created_at').eq('action', 'TICKET_REFUND_REQUESTED')
+        .eq('metadata->>event_id', ds.eventId).order('created_at', { ascending: false }).limit(1);
+    assert.equal(error, null, `journal TICKET_REFUND_REQUESTED : ${error?.message}`);
+    assert.equal((data ?? []).length, 1, 'remboursement du billet de P4 journalisé (pilotage-helpers)');
+    const endAt = new Date(String((data as Row[])[0].created_at)).getTime() + 2_000;
+    assert.ok(endAt < Date.now(), `fin placée entre le remboursement et maintenant (${new Date(endAt).toISOString()})`);
+    return { startsInHours: (endAt - Date.now()) / 3600_000 - 4, durationHours: 4 };
+}
