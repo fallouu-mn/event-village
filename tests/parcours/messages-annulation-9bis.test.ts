@@ -18,6 +18,14 @@
  * numéro, chaque cas échoue sur le nombre de lignes ; les écrans gardent leurs anciens textes
  * (components/scan/CounterSalePanel.tsx:235, components/events/EventForm.tsx:745). after() : la garde de schéma
  * du lot 9 bis nomme les objets absents jusqu'à M12 (attendu, contrat section 10).
+ *
+ * Lot 9 bis, tâche 31 (R13 ; contrat 5.31, B70, 11.2 M2) — billet reçu par transfert : Fatou achète, transfère à
+ * Lamine qui accepte (mot de passe confirmé avant le transfert, R57), puis la partenaire annule. La ligne in-app de
+ * Lamine (mode TRANSFERRED) dit « acheteur d'origine » et non « Votre remboursement est en cours » ; son SMS dit
+ * « Remboursement à l'acheteur d'origine. » (texte exact, 11.2 M2) ; Fatou, sans billet, reçoit EVENT_CANCELLED
+ * (clé `EVENT_CANCELLED:<event>:<fatou>`) en mode AUTO. Rouge : le mode est AUTO dès que le porteur détient un billet
+ * payé en ligne (M/20261103000005:1308-1312) et Fatou, sans billet, est hors de la boucle des porteurs ; la route de
+ * confirmation du mot de passe manque jusqu'à fix(9b.13) (l'aide confirmPassword la nomme).
  * Envois comptés par numéro neuf (randomSenegalPhone) et par texte exact, jamais globalement.
  */
 import '../helpers/env';
@@ -28,12 +36,12 @@ import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
 import { smsDateTime } from '../../lib/notifications/sms-format';
-import { randomSenegalPhone, routeContext } from './helpers';
-import { eventTickets, service, type Buyer, type CategorySpec } from './paiement-helpers';
-import { jsonRequest, newPartner, superadminId, type TestPartner } from './finance-helpers';
+import { confirmPassword, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
+import { eventTickets, newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
+import { buyConfirmed, jsonRequest, newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { authed, newController, type RouteResult } from './acces-helpers';
 import { advanceEventTo, assertRpcOk, createDraftEvent, rpcCancel, shiftEventDates, type DraftEvent } from './cycle-helpers';
-import { flushNotifications, outboxRows, smsMark, smsTo, type OutboxRow } from './notif-helpers';
+import { flushNotifications, markPhoneVerified, outboxRows, smsMark, smsTo, type OutboxRow } from './notif-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 
 type Row = Record<string, unknown>;
@@ -47,6 +55,8 @@ const EVENT_ROUTE = '../../app/api/partner/events/[id]/route';
 const PIN_ROUTE = '../../app/api/partner/events/[id]/regisseur-pin/route';
 const OPEN_ROUTE = '../../app/api/controller/shifts/open/route';
 const COUNTER_ROUTE = '../../app/api/controller/counter-sale/route';
+const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
+const CLAIM_ROUTE = '../../app/api/tickets/transfers/[id]/claim/route';
 const PUBLIC_NOTICE = 'Salle indisponible ce soir';
 const INTERNAL_REASON = 'Test du lot 9 bis';
 
@@ -223,5 +233,74 @@ describe('9b.30 R12 : SMS indispensable aux numéros sans compte (invitation non
         assert.ok(form.includes('SMS partiront dans 10 minutes (vos corrections d’ici là y seront regroupées).'),
             'message de l\'éditeur après un changement (contrat 5.30, écrans E-D)');
         assert.ok(!form.includes('SMS en file d’envoi'), 'ancien message « SMS en file d’envoi » retiré');
+    });
+});
+
+// ── R13 : billet reçu par transfert ────────────────────────────────────────
+
+/** Transfert accepté par les routes : mot de passe confirmé (R57), initiation vers le numéro vérifié, réclamation. */
+async function transferAccepted(from: Buyer, ticketId: string, to: Buyer): Promise<void> {
+    await confirmPassword(from, STRONG_PASSWORD);
+    const initiate = await routeHandler(TRANSFER_ROUTE, 'POST', 'POST /api/tickets/[id]/transfer');
+    const init = await invoke(initiate, authed(`/api/tickets/${ticketId}/transfer`, 'POST', from, { recipient: to.phoneE164 }), routeContext({ id: ticketId }));
+    assert.equal(init.status, 200, `initiation du transfert : ${show(init)}`);
+    const { data, error } = await service.from('ticket_transfers').select('id').eq('ticket_id', ticketId).eq('status', 'PENDING');
+    assert.equal(error, null, `transfert PENDING : ${error?.message}`);
+    assert.equal((data ?? []).length, 1, 'un transfert PENDING');
+    const transferId = String(data![0].id);
+    const claim = await routeHandler(CLAIM_ROUTE, 'POST', 'POST /api/tickets/transfers/[id]/claim');
+    const res = await invoke(claim, authed(`/api/tickets/transfers/${transferId}/claim`, 'POST', to), routeContext({ id: transferId }));
+    assert.equal(res.status, 200, `acceptation du transfert : ${show(res)}`);
+}
+
+/** Notifications in-app du compte rattachées à l'événement (metadata), écrites par l'envoyeur. */
+async function inAppOf(userId: string, eventId: string): Promise<Row[]> {
+    const { data, error } = await service.from('notifications').select('id, title, content, metadata').eq('user_id', userId);
+    assert.equal(error, null, `notifications de ${userId} : ${error?.message}`);
+    return ((data ?? []) as Row[]).filter((n) => JSON.stringify(n.metadata ?? {}).includes(eventId));
+}
+
+/** Espaces insécables et apostrophes typographiques ramenés à leur forme simple. */
+function norm(s: string): string {
+    return s.replace(/[  ]/g, ' ').replace(/[’‘]/g, '\'');
+}
+
+describe('9b.31 R13 : billet reçu par transfert, annonce à l\'acheteur d\'origine', () => {
+    test('Lamine (billet reçu) : mode TRANSFERRED, « acheteur d\'origine », SMS exact ; Fatou (acheteuse, sans billet) : EVENT_CANCELLED en mode AUTO', async () => {
+        const ev = await publishedEvent('Transfert annul');
+        const fatou = await newBuyer('msg-fatou', { firstName: 'Fatou', lastName: 'Acheteuse' });
+        const lamine = await newBuyer('msg-lamine', { firstName: 'Lamine', lastName: 'Destinataire' });
+        await markPhoneVerified(lamine.userId);
+        const purchase = await buyConfirmed(fatou, ev, [[STANDARD, 1]]);
+        const ticketId = String(purchase.tickets[0].id);
+        await transferAccepted(fatou, ticketId, lamine);
+        const { data: t, error: tErr } = await service.from('tickets').select('user_id').eq('id', ticketId).single();
+        assert.equal(tErr, null, `billet : ${tErr?.message}`);
+        assert.equal(t.user_id, lamine.userId, 'précondition : le billet est à Lamine, Fatou n\'en a plus');
+        const laMark = smsMark(lamine.phoneE164);
+        const date = await smsStart(ev.eventId);
+
+        assertRpcOk(await rpcCancel(ev.eventId, partner.userId, { publicNotice: PUBLIC_NOTICE, internalReason: INTERNAL_REASON, confirmTitle: ev.title }), 'annulation par la partenaire');
+
+        const laRows = await outboxRows({ type: 'EVENT_CANCELLED', eventId: ev.eventId, userId: lamine.userId });
+        assert.ok(laRows.length > 0, 'Lamine, porteur au moment de l\'annulation, est prévenu');
+        assert.deepEqual(Array.from(new Set(laRows.map((r) => r.template_data.refund_mode))), ['TRANSFERRED'],
+            `mode TRANSFERRED pour le billet reçu par transfert (B70) : ${describeRows(laRows)}`);
+
+        const faRows = await outboxRows({ type: 'EVENT_CANCELLED', keyPrefix: `EVENT_CANCELLED:${ev.eventId}:${fatou.userId}` });
+        assert.ok(faRows.length > 0, `Fatou, acheteuse d'origine sans billet, reçoit EVENT_CANCELLED (clé EVENT_CANCELLED:<event>:<fatou>) : ${describeRows(faRows)}`);
+        assert.ok(faRows.every((r) => r.recipient_user_id === fatou.userId && r.template_data.refund_mode === 'AUTO'),
+            `mode AUTO pour l'acheteuse d'origine (son remboursement est réel) : ${describeRows(faRows)}`);
+
+        await flushNotifications({ eventIds: [ev.eventId] });
+        const notes = await inAppOf(lamine.userId, ev.eventId);
+        const cancelNotes = notes.filter((n) => norm(String(n.title)) === 'Événement annulé');
+        assert.equal(cancelNotes.length, 1, `une notification in-app « Événement annulé » pour Lamine : ${JSON.stringify(notes)}`);
+        const content = norm(String(cancelNotes[0].content));
+        assert.match(content, /acheteur d'origine/, `la notification de Lamine dit « acheteur d'origine » : ${content}`);
+        assert.doesNotMatch(content, /Votre remboursement est en cours/, `aucune promesse de remboursement à Lamine : ${content}`);
+        assert.deepEqual(smsTo(lamine.phoneE164, laMark).map((m) => m.text),
+            [`Event Village : ${ev.title} du ${date} est annulé. Remboursement à l'acheteur d'origine. ${APP_URL}/tickets`],
+            'SMS de Lamine, texte exact (11.2 M2, mode TRANSFERRED)');
     });
 });
