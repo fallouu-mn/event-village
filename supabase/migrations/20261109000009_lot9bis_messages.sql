@@ -23,6 +23,12 @@
 -- maintenant + 10 minutes et fusionné sur une fenêtre fixe depuis le premier changement (la ligne en attente garde
 -- son échéance) ; immédiat si l'ancien ou le nouveau début est à moins d'une heure (échéance ramenée à maintenant à
 -- la fusion) ; in-app et push immédiats.
+-- Tâche 33 (R15, R33, B72) : annulation par un admin → EVENT_CANCELLED_BY_ADMIN à la propriétaire (avis public) ;
+-- annulation par la partenaire → ADMIN_EVENT_CANCELLED aux admins events.read (motif interne) ; contrôleurs affectés
+-- (event_controllers : affectations acceptées) : CONTROLLER_EVENT_CANCELLED (SMS) à l'annulation,
+-- CONTROLLER_EVENT_STATUS (in-app) à la suspension et à la reprise, CONTROLLER_EVENT_CHANGED (in-app immédiat, SMS
+-- et email à 10 minutes, fusionnés) au changement de date ou de lieu ; notif_cancel_on_status recopiée (base
+-- 20261103000004_lot6_rappels.sql:215-237) annule aussi le changement en attente d'un contrôleur.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -37,6 +43,8 @@
 -- 1. notif_event_status_changed (recopie de 20261103000005_lot6_billetterie.sql:1206-1323)
 -- Tâche 30 : branche ANNULE, numéros sans compte (invitations non réclamées NONE, acheteurs au guichet ORGANIZER).
 -- Tâche 31 : branche ANNULE, acheteurs d'origine prévenus (AUTO), porteurs d'un billet reçu en mode TRANSFERRED.
+-- Tâche 33 : ANNULE → propriétaire (annulation admin) ou admins events.read (annulation partenaire), contrôleurs ;
+-- PUBLIE ↔ SUSPENDU → contrôleurs (in-app).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -111,6 +119,14 @@ BEGIN
                 'type', 'EVENT_SUSPENDED_HOLDER', 'key', 'EVENT_SUSPENDED_HOLDER:' || NEW.id::text || ':' || h.user_id::text,
                 'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data));
         END LOOP;
+        -- Lot 9 bis (R33, B72) : contrôleurs affectés (affectations acceptées), in-app et email, jamais de SMS
+        FOR h IN
+            SELECT ec.user_id FROM public.event_controllers ec WHERE ec.event_id = NEW.event_id ORDER BY ec.user_id
+        LOOP
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'CONTROLLER_EVENT_STATUS', 'key', 'CONTROLLER_EVENT_STATUS:' || NEW.id::text || ':' || h.user_id::text,
+                'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data || jsonb_build_object('status', v_new)));
+        END LOOP;
 
     ELSIF v_old = 'SUSPENDU' AND v_new = 'PUBLIE' THEN
         IF v_owner IS NOT NULL THEN
@@ -126,6 +142,14 @@ BEGIN
             PERFORM public.notif_enqueue(jsonb_build_object(
                 'type', 'EVENT_REACTIVATED_HOLDER', 'key', 'EVENT_REACTIVATED_HOLDER:' || NEW.id::text || ':' || h.user_id::text,
                 'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data));
+        END LOOP;
+        -- Lot 9 bis (R33, B72) : contrôleurs affectés, in-app et email
+        FOR h IN
+            SELECT ec.user_id FROM public.event_controllers ec WHERE ec.event_id = NEW.event_id ORDER BY ec.user_id
+        LOOP
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'CONTROLLER_EVENT_STATUS', 'key', 'CONTROLLER_EVENT_STATUS:' || NEW.id::text || ':' || h.user_id::text,
+                'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data || jsonb_build_object('status', v_new)));
         END LOOP;
 
     ELSIF v_new = 'ANNULE' THEN
@@ -203,6 +227,33 @@ BEGIN
                     'public_notice', NULLIF(btrim(COALESCE(v_notice, '')), ''),
                     'refund_mode', n.mode, 'recipient_kind', 'PHONE', 'ticket_id', n.ticket_id))));
         END LOOP;
+
+        -- Lot 9 bis (R15, B72) : annulation par un admin → la propriétaire, avec l'avis public (jamais le motif
+        -- interne), avant tout versement ; annulation par la partenaire → admins events.read, motif interne.
+        IF NEW.actor_role = 'ADMIN' THEN
+            IF v_owner IS NOT NULL THEN
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'EVENT_CANCELLED_BY_ADMIN', 'key', 'EVENT_CANCELLED_BY_ADMIN:' || NEW.id::text,
+                    'user_id', v_owner, 'event_id', NEW.event_id,
+                    'data', v_data || jsonb_strip_nulls(jsonb_build_object('public_notice', NULLIF(btrim(COALESCE(v_notice, '')), '')))));
+            END IF;
+        ELSIF NEW.actor_role = 'PARTENAIRE' THEN
+            PERFORM public.notif_enqueue_admins(jsonb_build_object(
+                'type', 'ADMIN_EVENT_CANCELLED', 'ref', NEW.id::text, 'event_id', NEW.event_id,
+                'data', v_data || jsonb_strip_nulls(jsonb_build_object(
+                    'company', v_company,
+                    'reason', (SELECT NULLIF(btrim(COALESCE(c.internal_reason, '')), '')
+                                 FROM public.event_cancellations c WHERE c.event_id = NEW.event_id)))));
+        END IF;
+
+        -- Lot 9 bis (R33, B72) : contrôleurs affectés (affectations acceptées), SMS et in-app
+        FOR h IN
+            SELECT ec.user_id FROM public.event_controllers ec WHERE ec.event_id = NEW.event_id ORDER BY ec.user_id
+        LOOP
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'CONTROLLER_EVENT_CANCELLED', 'key', 'CONTROLLER_EVENT_CANCELLED:' || NEW.event_id::text || ':' || h.user_id::text,
+                'user_id', h.user_id, 'event_id', NEW.event_id, 'data', v_data));
+        END LOOP;
     END IF;
     -- → TERMINE : aucun avis (les rappels en attente sont annulés par trg_notif_cancel_on_status).
     RETURN NULL;
@@ -218,6 +269,7 @@ REVOKE ALL ON FUNCTION public.notif_event_status_changed() FROM PUBLIC, anon, au
 -- ou de lieu, SMS dû à maintenant + 10 min (tout de suite si un début est à moins d'une heure), fusionné par numéro ;
 -- réponse et audit + notified_phones.
 -- Tâche 32 : SMS d'un porteur dû dans 10 minutes, fusion à fenêtre fixe, immédiat si un début est à moins d'une heure.
+-- Tâche 33 : contrôleurs affectés (CONTROLLER_EVENT_CHANGED, in-app immédiat, SMS et email à 10 minutes, fusionnés).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.event_update(p jsonb)
 RETURNS jsonb
@@ -281,6 +333,7 @@ DECLARE
     v_pending_data jsonb;
     v_urgent boolean := false;
     v_due timestamptz;
+    v_ch text;
     n record;
 BEGIN
     IF v_event IS NULL THEN
@@ -645,6 +698,47 @@ BEGIN
         END LOOP;
     END IF;
 
+    -- Lot 9 bis (R33, B72) : contrôleurs affectés (affectations acceptées) prévenus d'un changement de date ou de lieu :
+    -- in-app tout de suite ; SMS et email dus dans 10 minutes, fusionnés comme EVENT_CHANGED (ligne en attente du
+    -- contrôleur, index uq_outbox_controller_change_pending_sms pour le SMS) ; titre seul : fusion seulement.
+    IF cardinality(v_changed) > 0 THEN
+        FOR n IN
+            SELECT ec.user_id FROM public.event_controllers ec WHERE ec.event_id = v_event ORDER BY ec.user_id
+        LOOP
+            v_nkey := 'CONTROLLER_EVENT_CHANGED:' || v_event::text || ':' || n.user_id::text || ':v' || v_version::text;
+            IF v_sms THEN
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'CONTROLLER_EVENT_CHANGED', 'key', v_nkey, 'user_id', n.user_id, 'event_id', v_event,
+                    'data', v_data, 'channels', jsonb_build_array('IN_APP')));
+            END IF;
+            FOREACH v_ch IN ARRAY ARRAY['SMS', 'EMAIL'] LOOP
+                v_pending_id := NULL;
+                SELECT o.id, o.template_data INTO v_pending_id, v_pending_data
+                  FROM public.notification_outbox o
+                 WHERE o.event_id = v_event AND o.recipient_user_id = n.user_id
+                   AND o.type = 'CONTROLLER_EVENT_CHANGED' AND o.channel = v_ch AND o.status = 'PENDING'
+                 ORDER BY o.created_at, o.id
+                 LIMIT 1
+                   FOR UPDATE;
+                IF v_pending_id IS NOT NULL THEN
+                    UPDATE public.notification_outbox
+                       SET template_data = v_pending_data || v_data || jsonb_build_object('changed_fields', (
+                               SELECT COALESCE(jsonb_agg(f ORDER BY f), '[]'::jsonb)
+                                 FROM (SELECT jsonb_array_elements_text(COALESCE(v_pending_data->'changed_fields', '[]'::jsonb)) AS f
+                                       UNION
+                                       SELECT unnest(v_changed)) x)),
+                           due_at = CASE WHEN v_urgent THEN LEAST(due_at, now()) ELSE due_at END,
+                           next_attempt_at = CASE WHEN v_urgent THEN LEAST(next_attempt_at, now()) ELSE next_attempt_at END
+                     WHERE id = v_pending_id;
+                ELSIF v_sms THEN
+                    PERFORM public.notif_enqueue(jsonb_build_object(
+                        'type', 'CONTROLLER_EVENT_CHANGED', 'key', v_nkey, 'user_id', n.user_id, 'event_id', v_event,
+                        'data', v_data, 'channels', jsonb_build_array(v_ch), 'due_at', v_due));
+                END IF;
+            END LOOP;
+        END LOOP;
+    END IF;
+
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
     VALUES (v_actor, 'PARTENAIRE', CASE WHEN v_post THEN 'EVENT_LIVE_UPDATED' ELSE 'EVENT_UPDATED' END, 'EVENT', v_event,
             jsonb_build_object('status', e.status::text,
@@ -660,3 +754,35 @@ $$;
 
 REVOKE ALL ON FUNCTION public.event_update(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_update(jsonb) TO service_role;
+
+
+-- ============================================================================
+-- 3. notif_cancel_on_status (recopie de 20261103000004_lot6_rappels.sql:215-237)
+-- Tâche 33 (R33) : à ANNULE ou TERMINE, le changement en attente d'un contrôleur (CONTROLLER_EVENT_CHANGED) est
+-- annulé comme celui des porteurs. Trigger trg_notif_cancel_on_status inchangé.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.notif_cancel_on_status()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    UPDATE public.notification_outbox
+       SET status = 'CANCELLED', reason = 'EVENT_' || NEW.new_status::text, finished_at = now()
+     WHERE event_id = NEW.event_id
+       AND status = 'PENDING'
+       AND type IN ('REMINDER_J1', 'REMINDER_H3', 'CONTROLLER_REMINDER');
+    IF NEW.new_status::text IN ('ANNULE', 'TERMINE') THEN
+        UPDATE public.notification_outbox
+           SET status = 'CANCELLED', reason = 'NO_LONGER_RELEVANT', finished_at = now()
+         WHERE event_id = NEW.event_id
+           AND status = 'PENDING'
+           AND type IN ('EVENT_CHANGED', 'CONTROLLER_EVENT_CHANGED');
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.notif_cancel_on_status() FROM PUBLIC, anon, authenticated;
