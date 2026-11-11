@@ -114,6 +114,10 @@ function EventMapWhenVisible(props: { latitude: number; longitude: number; venue
  *  - Lot 7 (7.3, E4) : bandeau PendingPaymentBanner (paiement déjà en attente, GET /api/checkout/pending) ;
  *    reprise du panier d'un paiement échoué (?reprise=<paiement>) ; PaymentModal et EventMap en next/dynamic,
  *    la carte n'étant chargée qu'à l'approche de sa zone (IntersectionObserver).
+ *  - Lot 9 bis (R104 ; contrat 5.41, B91, D-txt E.41) : billetterie fermée expliquée par le serveur
+ *    (`salesEnded` : vente en ligne terminée ; `hasHeldSeats` : places retenues par des paiements en cours, qui peuvent
+ *    se libérer) ; panier gardé 30 minutes dans sessionStorage (`ev-cart:{id}`) quand l'achat renvoie à la connexion,
+ *    rétabli au retour dans la limite de ce qui est encore achetable, puis effacé.
  */
 
 type Availability = 'AVAILABLE' | 'LOW' | 'SOLD_OUT';
@@ -161,6 +165,10 @@ interface PublicEvent {
   banner: { kind: BannerKind; title: string; message: string } | null;
   cancellation?: { publicNotice: string; cancelledAt: string; refundInfo: string };
   isFullySoldOut: boolean;
+  /** Une catégorie a des places retenues par un paiement en cours (elles peuvent se libérer). */
+  hasHeldSeats?: boolean;
+  /** Toutes les ventes en ligne sont closes. */
+  salesEnded?: boolean;
   program: ProgramItem[];
   practicalInfo?: {
     address?: string | null;
@@ -194,6 +202,9 @@ const PROGRAM_KIND_LABEL: Record<string, string> = {
 };
 
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
+/** R104 (B91) : panier gardé le temps d'une connexion (sessionStorage, propre à l'onglet). */
+const CART_KEY_PREFIX = 'ev-cart:';
+const CART_TTL_MS = 30 * 60 * 1000;
 const PAYMENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -208,6 +219,42 @@ function readRetryItems(body: unknown): Array<{ categoryId: string; quantity: nu
     const quantity = readAmount(raw.quantity);
     return categoryId && quantity !== null && quantity > 0 ? [{ categoryId, quantity: Math.floor(quantity) }] : [];
   });
+}
+
+/** Garde la sélection avant le passage par la connexion ; stockage indisponible : journalisé, la page continue. */
+function saveCart(eventId: string, cart: Record<string, number>): void {
+  if (Object.keys(cart).length === 0) return;
+  try {
+    sessionStorage.setItem(`${CART_KEY_PREFIX}${eventId}`, JSON.stringify({ at: Date.now(), cart }));
+  } catch (err) {
+    console.warn('[événement] panier non gardé (stockage du navigateur indisponible) :', err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** Relit et efface la sélection gardée ; null si absente, illisible ou plus vieille que 30 minutes. */
+function takeSavedCart(eventId: string): Record<string, number> | null {
+  let raw: string | null;
+  try {
+    raw = sessionStorage.getItem(`${CART_KEY_PREFIX}${eventId}`);
+    if (raw !== null) sessionStorage.removeItem(`${CART_KEY_PREFIX}${eventId}`);
+  } catch (err) {
+    console.warn('[événement] panier gardé illisible (stockage du navigateur indisponible) :', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const saved: unknown = JSON.parse(raw);
+    if (!isRecord(saved) || typeof saved.at !== 'number' || !isRecord(saved.cart)) return null;
+    if (Date.now() - saved.at > CART_TTL_MS) return null;
+    const cart: Record<string, number> = {};
+    for (const [categoryId, qty] of Object.entries(saved.cart)) {
+      if (typeof qty === 'number' && Number.isInteger(qty) && qty > 0) cart[categoryId] = qty;
+    }
+    return cart;
+  } catch (err) {
+    console.warn('[événement] panier gardé illisible :', err instanceof Error ? err.message : String(err));
+    return null;
+  }
 }
 
 /** Tranche de stock et état de la vente d'une formule, en mots (la couleur ne porte jamais seule le sens). */
@@ -357,6 +404,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   // Relecture du bandeau « paiement déjà en attente » (fermeture de la modale).
   const [pendingRefresh, setPendingRefresh] = useState(0);
   const repriseDoneRef = useRef(false);
+  const savedCartDoneRef = useRef(false);
   const [isClaimingFree, setIsClaimingFree] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
   // Clé d'idempotence du panier gratuit : conservée tant que le panier et l'issue incertaine ne changent pas.
@@ -483,6 +531,29 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       }
     })();
   }, [phase, event, isAuthLoading, isAuthenticated, toast]);
+
+  // R104 (B91) : retour de la connexion avec une sélection gardée (moins de 30 minutes) : elle est rétablie dans la
+  // limite de ce qui est encore achetable. Une seule fois par chargement ; la reprise d'un paiement échoué l'emporte.
+  useEffect(() => {
+    if (savedCartDoneRef.current || phase !== 'ready' || !event) return;
+    savedCartDoneRef.current = true;
+    const saved = takeSavedCart(eventId);
+    if (!saved || !event.purchasable) return;
+    if (new URLSearchParams(window.location.search).get('reprise')) return;
+    const next: Record<string, number> = {};
+    for (const [categoryId, qty] of Object.entries(saved)) {
+      const cat = event.categories.find((c) => c.id === categoryId);
+      const limit = cat && cat.isAvailable ? Math.max(0, Math.min(cat.maxPerOrder || 10, cat.remainingHint ?? Number.POSITIVE_INFINITY)) : 0;
+      const kept = Math.min(qty, limit);
+      if (kept > 0) next[categoryId] = kept;
+    }
+    if (Object.keys(next).length === 0) {
+      toast.info('Les billets choisis avant la connexion ne sont plus disponibles.');
+      return;
+    }
+    setCart(next);
+    toast.info('Votre sélection est reprise : vérifiez-la puis continuez.');
+  }, [phase, event, eventId, toast]);
 
   const retry = async () => {
     setIsRetrying(true);
@@ -618,6 +689,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     if (!event.purchasable) return;
     if (!isAuthenticated) {
       toast.error('Connectez-vous pour acheter un billet.');
+      saveCart(eventId, cart);
       router.push(`/login?redirect=${encodeURIComponent(`/events/${eventId}`)}`);
       return;
     }
@@ -662,6 +734,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         if (!isUncertainOutcome(res.status)) freeCheckoutAttempt.reset();
         if (res.status === 401) {
           toast.error(failure.message);
+          saveCart(eventId, cart);
           router.push(`/login?redirect=${encodeURIComponent(`/events/${eventId}`)}`);
           return;
         }
@@ -1072,9 +1145,13 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                 <p className="mt-1 text-sm text-fg-muted">
                   {event.banner
                     ? 'La vente de billets est fermée pour cet événement.'
-                    : event.isFullySoldOut
-                      ? 'Toutes les places ont été vendues.'
-                      : 'Aucune formule n’est en vente pour le moment. Revenez bientôt : cette page se met à jour d’elle-même.'}
+                    : event.salesEnded
+                      ? 'La vente en ligne est terminée pour cet événement.'
+                      : event.isFullySoldOut
+                        ? (event.hasHeldSeats
+                          ? 'Toutes les places sont vendues ou en cours de paiement. Des places peuvent se libérer : cette page se met à jour d’elle-même.'
+                          : 'Toutes les places ont été vendues.')
+                        : 'Aucune catégorie n’est en vente pour le moment. Revenez bientôt : cette page se met à jour d’elle-même.'}
                 </p>
               </div>
 
