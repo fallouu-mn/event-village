@@ -18,6 +18,10 @@ import { PilotageSection } from './PilotageBlocks';
  * confirme le montant et le mode (ConfirmDialog) : le POST …/tickets/[ticketId]/refund ne part que de cette
  * seconde étape. La fiche sert à décider, le serveur recontrôle sous verrou et son montant fait foi au résultat.
  * Un billet gratuit encore valable se traite ici aussi : rien n'est versé et le billet est annulé (mode AUCUN).
+ * Lot 9 bis (R11, B21, contrat 5.3) : après la fin de l'événement, la fiche sert `refundable = false` et
+ * `refund_closed_reason = 'EVENT_ENDED'` à la propriétaire : le panneau le dit (« L’événement est terminé : seul Event
+ * Village peut encore rembourser ce billet. ») sans proposer d'action ; les refus REFUND_CLOSED_AFTER_EVENT et
+ * FORBIDDEN du POST sont dits en clair.
  */
 
 type RefundMode = 'CASHOUT' | 'ORGANISATEUR' | 'AUCUN';
@@ -33,6 +37,8 @@ interface TicketSheet {
     holder_short: string | null;
     refundable: boolean;
     refund_mode: RefundMode;
+    /** Lot 9 bis (R11, B21) : EVENT_ENDED quand la propriétaire ne peut plus rembourser (événement terminé). */
+    refund_closed_reason: 'EVENT_ENDED' | null;
 }
 
 interface RefundReply {
@@ -93,6 +99,14 @@ const REFUSAL_MESSAGES: Record<string, string> = {
     TICKET_NOT_REFUNDABLE: 'Ce billet n’est plus remboursable : son état a changé depuis la recherche.',
     PAYMENT_NOT_REFUNDABLE: 'Le paiement de ce billet ne peut pas être remboursé.',
     ALREADY_REFUNDED: 'Ce paiement est déjà entièrement remboursé.',
+    // Lot 9 bis (R11, B21, contrat 4.1) : après la fin, seul Event Village (refunds.manage) rembourse.
+    REFUND_CLOSED_AFTER_EVENT: 'L’événement est terminé : seul Event Village peut encore rembourser ce billet. Contactez le support.',
+    FORBIDDEN: 'Remboursement réservé à l’organisateur ou à un administrateur habilité.',
+};
+
+/** Pourquoi la propriétaire ne peut plus rembourser, dit sur la fiche (lookup : refund_closed_reason). */
+const CLOSED_REASON_MESSAGES: Record<'EVENT_ENDED', string> = {
+    EVENT_ENDED: 'L’événement est terminé : seul Event Village peut encore rembourser ce billet.',
 };
 
 /** Montant annoncé avant la décision : en ligne, prix et frais de service ; en espèces, le prix seul, comme la RPC. */
@@ -284,6 +298,10 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
                                     {copy.action}
                                 </Button>
                             </>
+                        ) : sheet.refund_closed_reason && sheet.status === 'VALIDE' ? (
+                            <StatusBanner tone="info" title="Remboursement réservé à Event Village">
+                                {CLOSED_REASON_MESSAGES[sheet.refund_closed_reason]} Le client peut contacter le support Event Village.
+                            </StatusBanner>
                         ) : (
                             <StatusBanner tone="neutral" title="Ce billet n’est pas remboursable">
                                 Seul un billet encore valable, dont le paiement est confirmé, peut être remboursé.
