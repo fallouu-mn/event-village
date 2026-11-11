@@ -54,9 +54,14 @@ interface SubscriptionResponse {
     subscription: SubscriptionData;
     plans: SubscriptionPlan[];
     trial_percent_used?: number | null;
+    /** Lot 9 bis (R70, B88) : adresse de support lue côté serveur (SUPPORT_EMAIL), jamais écrite dans l'écran. */
+    support_email?: string;
 }
 
-const SUPPORT_MAIL = 'mailto:support@eventvillage.sn?subject=Changer%20d%E2%80%99offre';
+/** Lien « Contacter le support » vers l'adresse servie par la route, objet prérempli. */
+function supportMailto(email: string): string {
+    return `mailto:${email}?subject=${encodeURIComponent('Changer d’offre')}`;
+}
 
 function priceLabel(plan: SubscriptionPlan): string {
     return plan.price > 0 ? `${formatFcfa(plan.price)} ${plan.billing_period_label}` : 'Gratuit';
@@ -67,6 +72,7 @@ export default function PartnerSubscriptionPage() {
     const sub = data?.subscription ?? null;
     const plans = data?.plans ?? [];
     const percent = sub?.trial_percent_used ?? data?.trial_percent_used ?? null;
+    const supportEmail = typeof data?.support_email === 'string' && data.support_email.includes('@') ? data.support_email : null;
 
     return (
         <div className="mx-auto max-w-4xl space-y-8 py-6 pb-24">
@@ -224,9 +230,11 @@ export default function PartnerSubscriptionPage() {
                                     <p className="text-sm text-fg-muted">
                                         Le changement d’offre se fait avec l’équipe Event Village : il n’est pas encore possible en ligne.
                                     </p>
-                                    <LinkButton href={SUPPORT_MAIL} variant="secondary" size="sm" leftIcon={<Mail size={16} />}>
-                                        Contacter le support
-                                    </LinkButton>
+                                    {supportEmail && (
+                                        <LinkButton href={supportMailto(supportEmail)} variant="secondary" size="sm" leftIcon={<Mail size={16} aria-hidden="true" />}>
+                                            Contacter le support
+                                        </LinkButton>
+                                    )}
                                 </div>
                             </>
                         )}
