@@ -253,7 +253,7 @@ describe('Commissions de parrainage (lot 3.5)', () => {
         assert.ok(!/DO\s+NOTHING/i.test(statements), `${last} : ON CONFLICT DO NOTHING laisserait en production les taux de 0011 (DO UPDATE attendu)`);
     });
 
-    test('achat d’un billet de 1 000 F par un filleul : N1 1,71 F et N2 0,69 F sur 34,25 F, EN ATTENTE jusqu’à la confirmation + 7 jours, crédit PARRAINAGE en attente', async () => {
+    test('achat d’un billet de 1 000 F par un filleul : N1 1,71 F et N2 0,69 F sur 34,25 F, EN ATTENTE jusqu’à la fin de l’événement + 7 jours, crédit PARRAINAGE en attente', async () => {
         const chain = await sponsorChain('base');
         const p = await buyConfirmed(chain.filleul, ev, [['Standard', 1]]);
         // Annexe C : 1 000 + 50 = 1 050 ; agrégateur 1,5 % × 1 050 = 15,75 ; revenu net EV 34,25
@@ -265,9 +265,9 @@ describe('Commissions de parrainage (lot 3.5)', () => {
 
         const days = Number(await getSetting(DELAY_KEY));
         assert.equal(days, 7, 'délai de disponibilité par défaut');
-        const due = ms(p.payment.paid_at) + days * DAY_MS;
+        const due = (await eventEndMs(ev.eventId)) + days * DAY_MS; // lot 9 bis (R106, B12, T21) : fin de l'événement + 7 j
         for (const c of [n1, n2]) {
-            assert.ok(Math.abs(ms(c.available_at) - due) <= 60_000, `available_at ${c.available_at} ≈ confirmation ${p.payment.paid_at} + ${days} j`);
+            assert.ok(Math.abs(ms(c.available_at) - due) <= 60_000, `available_at ${c.available_at} ≈ fin de l’événement ${new Date(due - days * DAY_MS).toISOString()} + ${days} j (et non la confirmation ${p.payment.paid_at})`);
         }
 
         for (const [who, c] of [[chain.n1, n1], [chain.n2, n2]] as const) {
@@ -281,7 +281,7 @@ describe('Commissions de parrainage (lot 3.5)', () => {
         }
     });
 
-    test('délai réglable de 7 à 14 jours (finance.referral_availability_days), recopié sur la commission à sa naissance (non rétroactif)', async () => {
+    test('délai réglable de 7 à 14 jours (finance.referral_availability_days), compté depuis la fin de l’événement, recopié sur la commission à sa naissance (non rétroactif)', async () => {
         const saved = await getSetting(DELAY_KEY);
         const actor = await superadminId();
         try {
@@ -298,13 +298,13 @@ describe('Commissions de parrainage (lot 3.5)', () => {
         const chain = await sponsorChain('delai');
         const p7 = await buyConfirmed(chain.filleul, ev, [['Standard', 1]]);
         const { n1: c7 } = await initialCommissions(p7, chain);
-        assert.ok(Math.abs(ms(c7.available_at) - (ms(p7.payment.paid_at) + 7 * DAY_MS)) <= 60_000, `délai de 7 j : ${c7.available_at}`);
+        assert.ok(Math.abs(ms(c7.available_at) - ((await eventEndMs(ev.eventId)) + 7 * DAY_MS)) <= 60_000, `délai de 7 j après la fin de l’événement (R106) : ${c7.available_at}`);
 
         await withSettings({ [DELAY_KEY]: 10 }, async () => {
             const p10 = await buyConfirmed(chain.filleul, ev, [['Standard', 1]]);
             const { n1: c10 } = await initialCommissions(p10, chain);
             assert.equal(c10.status, 'PENDING');
-            assert.ok(Math.abs(ms(c10.available_at) - (ms(p10.payment.paid_at) + 10 * DAY_MS)) <= 60_000, `délai de 10 j : ${c10.available_at}`);
+            assert.ok(Math.abs(ms(c10.available_at) - ((await eventEndMs(ev.eventId)) + 10 * DAY_MS)) <= 60_000, `délai de 10 j après la fin de l’événement (R106) : ${c10.available_at}`);
         });
 
         const { data: again, error } = await service.from('referral_commissions').select('available_at').eq('id', c7.id).single();
@@ -507,3 +507,19 @@ describe('Commissions de parrainage (lot 3.5)', () => {
         assert.ok(rLive.available_at && Math.abs(ms(rLive.available_at) - ms(live.available_at)) <= 1000, `date de disponibilité exposée : ${JSON.stringify(rLive)}`);
     });
 });
+
+// ── Lot 9 bis (R106, B12, T21) ─────────────────────────────────────────────
+
+/**
+ * Fin de l'événement des achats de la suite : date et heure de fin saisies (createPartnerEvent, heure de Dakar = UTC).
+ * Règle changée par la consigne (A.7) : une commission de billet est disponible 7 jours après la fin de l'événement,
+ * plus 7 jours après la confirmation. Rouge jusqu'à fix(9b.7) (calculate_referral_commissions, M07). Aide placée en
+ * fin de fichier : les lignes citées par docs/recette-billetterie.md ne bougent pas.
+ */
+async function eventEndMs(eventId: string): Promise<number> {
+    const { data, error } = await service.from('events').select('end_date, end_time').eq('id', eventId).single();
+    assert.equal(error, null, `dates de l'événement ${eventId} : ${error?.message}`);
+    assert.ok(data!.end_date && data!.end_time, `précondition : date et heure de fin saisies (${JSON.stringify(data)})`);
+    const t = String(data!.end_time);
+    return Date.parse(`${String(data!.end_date)}T${t.length === 5 ? `${t}:00` : t}Z`);
+}
