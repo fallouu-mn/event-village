@@ -23,8 +23,9 @@ const OpenShiftSchema = z.object({
 /**
  * POST /api/controller/shifts/open — ouverture d'une session de caisse (lot 4.5), par la RPC shift_open :
  * contrôleur affecté avec la permission espèces, partenaire propriétaire ou admin ; événement ouvert au
- * contrôle ; une seule caisse ouverte par compte et par événement. PIN régisseur facultatif : fourni, il
- * est vérifié (quota par compte et événement) et la caisse est marquée ouverte sous PIN.
+ * contrôle ; une seule caisse ouverte par compte et par événement. Lot 9 bis (R42, B51) : PIN régisseur
+ * obligatoire (400 PIN_REQUIRED sans PIN, 409 PIN_NOT_SET s'il n'a pas été généré), vérifié avec un quota par
+ * compte et événement ; la caisse est marquée ouverte sous PIN.
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);

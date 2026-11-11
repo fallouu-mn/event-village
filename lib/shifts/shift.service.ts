@@ -4,8 +4,10 @@
  *  - La base est la seule source de vérité : aucun registre en mémoire, toute erreur de lecture ou
  *    d'écriture remonte (exception), aucune erreur avalée.
  *  - Ouverture par la RPC shift_open (contrôleur affecté avec la permission espèces, partenaire
- *    propriétaire ou admin ; une seule caisse OUVERT par scanneur et événement). Le PIN régisseur y est
- *    facultatif : fourni, il est vérifié et la caisse est marquée « ouverte sous PIN ».
+ *    propriétaire ou admin ; une seule caisse OUVERT par scanneur et événement). Lot 9 bis (R42, B51) : le
+ *    PIN régisseur est obligatoire (400 PIN_REQUIRED sans PIN, 409 PIN_NOT_SET s'il n'a jamais été généré).
+ *  - Clôture : contrôleur de la caisse, partenaire propriétaire, ou admin muni de events.write (lot 9 bis,
+ *    R17 ; sans la permission, 403 PERMISSION_MISSING).
  *  - Vente au guichet : RPC counter_sale (route dédiée).
  *  - PIN : HMAC-SHA256(REGISSEUR_PIN_KEY, `regisseur-pin:v2:<eventId>:<sel>:<pin>`), sel aléatoire par
  *    événement ; régénération confirmée, refusée (409 OPEN_SHIFTS) tant qu'une caisse est ouverte sauf
@@ -15,6 +17,7 @@
  *    SQLSTATE EV409) ; les routes traduisent l'erreur en 409 avec isControllerRemovalBlocked.
  */
 import crypto from 'crypto';
+import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 import { getServerEnv, type ServerEnv } from '@/lib/env';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { reserveQuota } from '@/lib/security/quota';
@@ -174,12 +177,17 @@ async function writeAudit(row: { userId: string; userRole?: string | null; actio
     if (error) throw new Error(`Journalisation (${row.action}) impossible : ${error.message}`);
 }
 
+/** Lot 9 bis (R42, contrat 4.3) : PIN régisseur jamais généré pour l'événement. */
+const PIN_NOT_SET_MESSAGE = 'Aucun code PIN régisseur pour cet événement : l’organisateur le génère dans l’onglet Caisse du pilotage.';
+
 const SHIFT_OPEN_REFUSALS: Record<string, [number, string]> = {
     EVENT_NOT_FOUND: [404, 'Événement introuvable.'],
     EVENT_NOT_OPEN: [409, 'Cet événement n’est pas ouvert : aucune caisse ne peut être ouverte.'],
     CASH_FORBIDDEN: [403, 'Ouverture de caisse réservée au contrôleur affecté avec la permission espèces, au partenaire propriétaire ou à un admin.'],
     INVALID_FLOAT: [400, 'Le fond de caisse doit être positif ou nul.'],
     SHIFT_ALREADY_OPEN: [409, 'Une session de caisse est déjà ouverte pour cet événement. Clôturez-la avant d’en ouvrir une nouvelle.'],
+    // Lot 9 bis (R42, B51) : PIN régisseur obligatoire à toute ouverture de caisse.
+    PIN_REQUIRED: [400, 'Saisissez le code PIN du régisseur.'],
 };
 
 const SHIFT_CLOSE_REFUSALS: Record<string, [number, string]> = {
@@ -190,8 +198,10 @@ const SHIFT_CLOSE_REFUSALS: Record<string, [number, string]> = {
     JUSTIFICATION_REQUIRED: [400, 'Un écart de caisse doit être justifié (10 caractères au moins).'],
     INVALID_JUSTIFICATION: [400, 'La justification est limitée à 1 000 caractères.'],
     PIN_REQUIRED: [400, 'Le code PIN régisseur est obligatoire pour co-signer une clôture avec écart.'],
-    PIN_NOT_SET: [409, 'Aucun code PIN régisseur n’a été généré par l’organisateur pour cet événement.'],
+    PIN_NOT_SET: [409, PIN_NOT_SET_MESSAGE],
     PIN_INVALID: [401, 'Code PIN régisseur incorrect.'],
+    // Lot 9 bis (R17, B49) : un admin ferme une caisse avec la permission events.write seulement.
+    PERMISSION_MISSING: [403, permissionMissingMessage('events.write')],
 };
 
 /**
@@ -294,7 +304,7 @@ export class ShiftService {
         const { data, error } = await getServiceRoleClient().from('event_regisseur_pins').select('pin_hash, pin_salt').eq('event_id', eventId).maybeSingle();
         if (error) throw new Error(`Lecture du PIN régisseur impossible : ${error.message}`);
         if (!data) {
-            return { valid: false, status: 409, code: 'PIN_NOT_SET', message: 'Aucun code PIN régisseur n’a été généré par l’organisateur pour cet événement.' };
+            return { valid: false, status: 409, code: 'PIN_NOT_SET', message: PIN_NOT_SET_MESSAGE };
         }
         const expected = Buffer.from(String(data.pin_hash), 'hex');
         const candidate = Buffer.from(hashRegisseurPin(eventId, String(data.pin_salt), pin), 'hex');
@@ -320,15 +330,14 @@ export class ShiftService {
         if (allowErr) throw new Error(`Contrôle du droit d'encaisser impossible : ${allowErr.message}`);
         if (allowed !== true) throw new ShiftError(403, 'CASH_FORBIDDEN', SHIFT_OPEN_REFUSALS.CASH_FORBIDDEN[1]);
 
-        let pinVerified = false;
-        if (input.regisseurPin && input.regisseurPin.trim()) {
-            const check = await this.verifyRegisseurPin(input.eventId, input.regisseurPin, `open:${input.eventId}:${userId}`);
-            if (!check.valid) throw new ShiftError(check.status ?? 401, check.code ?? 'PIN_INVALID', check.message ?? 'Code PIN régisseur incorrect.');
-            pinVerified = true;
-        }
+        // Lot 9 bis (R42, B51) : PIN régisseur obligatoire, vérifié ici (haché hors base), redemandé par shift_open.
+        const pin = (input.regisseurPin ?? '').trim();
+        if (!pin) throw new ShiftError(400, 'PIN_REQUIRED', SHIFT_OPEN_REFUSALS.PIN_REQUIRED[1]);
+        const check = await this.verifyRegisseurPin(input.eventId, pin, `open:${input.eventId}:${userId}`);
+        if (!check.valid) throw new ShiftError(check.status ?? 401, check.code ?? 'PIN_INVALID', check.message ?? 'Code PIN régisseur incorrect.');
 
         const { data, error } = await rpcWithRetry<{ ok?: boolean; code?: string; shift_id?: string; message?: string }>('shift_open', {
-            p: { user_id: userId, event_id: input.eventId, opening_float: float, pin_verified: pinVerified },
+            p: { user_id: userId, event_id: input.eventId, opening_float: float, pin_verified: true },
         });
         if (error || !data) throw new Error(`shift_open : ${error?.message ?? 'réponse vide'}`);
         if (data.ok !== true) {
@@ -422,6 +431,7 @@ export class ShiftService {
             if (!refusal) throw new Error(`shift_close : refus inattendu ${JSON.stringify(data)}`);
             const details: Record<string, unknown> = {};
             for (const k of ['expected', 'declared', 'discrepancy'] as const) if (data[k] !== undefined) details[k] = Number(data[k]);
+            if (code === 'PERMISSION_MISSING') details.permission = 'events.write';
             throw new ShiftError(refusal[0], code, refusal[1], details);
         }
 

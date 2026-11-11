@@ -34,6 +34,14 @@
 --     doit être permis par scan_scanner_authorized, sinon SCAN_FORBIDDEN sans aucune donnée.
 --  8. DO de fin de fichier : RAISE NOTICE du nombre de catégories dont la fin de vente dépasse la nouvelle fin (A12),
 --     sans reprise.
+--
+-- Tâche 22 (R42, R17 ; B49, B51, D7, D8 ; R43 : SHIFT_OPEN_AT_END par M09, fix(9b.22-SD)) :
+--  9. shift_open(jsonb) : base 20261102000003_lot5_cycle.sql:963-999, recopie intégrale, signature identique
+--     (VOLATILE écrit, défaut de la base). Changement : pin_verified vrai exigé, sinon PIN_REQUIRED, rien
+--     d'écrit (le haché est contrôlé par ShiftService avant l'appel).
+-- 10. shift_close(jsonb) : base 20261103000006_lot6_pros_admin.sql:165-308, recopie intégrale, signature et VOLATILE
+--     identiques. Changement : rôle ADMIN par admin_can(events.write) ; un compte ADMIN ou SUPERADMIN sans la
+--     permission (ni contrôleur de la caisse ni propriétaire) reçoit PERMISSION_MISSING, rien d'écrit. Verrous inchangés.
 -- ============================================================================
 
 
@@ -536,6 +544,208 @@ $$;
 
 
 -- ============================================================================
+-- Tâche 22 — 9. shift_open (recopie, 20261102000003_lot5_cycle.sql:963-999)
+-- ============================================================================
+-- Ouverture de caisse : PUBLIE, ou TERMINE tant que la fenêtre de scan est ouverte (D7) ; lot 9 bis (R42) : PIN
+-- régisseur vérifié exigé (pin_verified posé par ShiftService après contrôle du haché), sinon PIN_REQUIRED.
+CREATE OR REPLACE FUNCTION public.shift_open(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := (p->>'user_id')::uuid;
+    v_event uuid := (p->>'event_id')::uuid;
+    v_float numeric := COALESCE((p->>'opening_float')::numeric, 0);
+    v_partner uuid;
+    v_status text;
+    v_id uuid;
+BEGIN
+    SELECT partner_id, status::text INTO v_partner, v_status FROM public.events WHERE id = v_event;
+    IF v_partner IS NULL THEN RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND'); END IF;
+    IF v_status NOT IN ('PUBLIE', 'TERMINE') THEN RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_OPEN', 'status', v_status); END IF;
+    IF v_status = 'TERMINE' AND public.scan_event_problem(v_event) IS NOT NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_OPEN', 'status', v_status);
+    END IF;
+    IF NOT public.shift_can_handle_cash(v_user, v_event) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'CASH_FORBIDDEN', 'message', 'Encaissement réservé au contrôleur affecté avec la permission espèces, au partenaire propriétaire ou à un admin.');
+    END IF;
+    IF v_float < 0 THEN RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FLOAT'); END IF;
+    IF COALESCE((p->>'pin_verified')::boolean, FALSE) IS NOT TRUE THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PIN_REQUIRED', 'message', 'Saisissez le code PIN du régisseur.');
+    END IF;
+    INSERT INTO public.controller_shifts (controller_id, event_id, partner_id, opening_float_amount, status, opening_confirmed_by_pin)
+    VALUES (v_user, v_event, v_partner, v_float, 'OUVERT', COALESCE((p->>'pin_verified')::boolean, FALSE))
+    ON CONFLICT (controller_id, event_id) WHERE status = 'OUVERT' DO NOTHING
+    RETURNING id INTO v_id;
+    IF v_id IS NULL THEN
+        SELECT id INTO v_id FROM public.controller_shifts WHERE controller_id = v_user AND event_id = v_event AND status = 'OUVERT';
+        RETURN jsonb_build_object('ok', false, 'code', 'SHIFT_ALREADY_OPEN', 'shift_id', v_id);
+    END IF;
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+    VALUES (v_user, 'CAISSE', 'SHIFT_OPENED', 'controller_shifts', v_id, jsonb_build_object('event_id', v_event, 'opening_float', v_float));
+    RETURN jsonb_build_object('ok', true, 'shift_id', v_id);
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 22 — 10. shift_close (recopie, 20261103000006_lot6_pros_admin.sql:165-308)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.shift_close(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_shift uuid := public.try_uuid(p->>'shift_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_just text := NULLIF(btrim(COALESCE(p->>'justification', '')), '');
+    v_pin_salt text := NULLIF(p->>'pin_salt', '');
+    v_pin_hash text := NULLIF(p->>'pin_hash', '');
+    sh record;
+    pin record;
+    v_role text;
+    v_declared numeric;
+    v_disc numeric;
+    v_cosigned boolean := FALSE;
+    v_partner_user uuid;
+    v_event_title text;
+    v_ctrl_name text;
+    v_event_data jsonb;
+    v_alert_queued boolean := FALSE;
+    v_created integer := 0;
+BEGIN
+    IF v_shift IS NULL OR v_actor IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Demande de clôture incomplète.');
+    END IF;
+    SELECT * INTO sh FROM public.controller_shifts WHERE id = v_shift FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SHIFT_NOT_FOUND', 'message', 'Session de caisse introuvable.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status = 'ACTIF') THEN
+        v_role := CASE
+            WHEN sh.controller_id = v_actor THEN 'CAISSE'
+            WHEN EXISTS (SELECT 1 FROM public.partners pa WHERE pa.id = sh.partner_id AND pa.user_id = v_actor) THEN 'PARTENAIRE'
+            -- Lot 9 bis (R17, B49) : un admin ferme la caisse d'un autre avec events.write (SUPERADMIN toujours)
+            WHEN public.admin_can(v_actor, 'events.write') THEN 'ADMIN'
+        END;
+        IF v_role IS NULL AND EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role IN ('ADMIN', 'SUPERADMIN')) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PERMISSION_MISSING', 'permission', 'events.write',
+                                      'message', 'Action non autorisée : votre compte n’a pas la permission « Gérer les événements ».');
+        END IF;
+    END IF;
+    IF v_role IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SHIFT_NOT_FOUND', 'message', 'Session de caisse introuvable.');
+    END IF;
+    IF sh.status <> 'OUVERT' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SHIFT_NOT_OPEN', 'status', sh.status,
+                                  'message', 'Cette session de caisse est déjà clôturée.');
+    END IF;
+    IF jsonb_typeof(p->'declared_cash_total') IS DISTINCT FROM 'number' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_DECLARED', 'message', 'Le montant déclaré doit être un nombre entier de francs, positif ou nul.');
+    END IF;
+    v_declared := (p->>'declared_cash_total')::numeric;
+    IF v_declared < 0 OR v_declared <> trunc(v_declared) OR v_declared > 9999999999 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_DECLARED', 'message', 'Le montant déclaré doit être un nombre entier de francs, positif ou nul.');
+    END IF;
+
+    v_disc := v_declared - sh.expected_cash_total;   -- total attendu relu sous verrou
+    IF v_disc <> 0 THEN
+        IF v_just IS NULL OR char_length(v_just) < 10 THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'JUSTIFICATION_REQUIRED', 'expected', sh.expected_cash_total,
+                                      'declared', v_declared, 'discrepancy', v_disc,
+                                      'message', 'Un écart de caisse doit être justifié (10 caractères au moins).');
+        END IF;
+        IF char_length(v_just) > 1000 THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'INVALID_JUSTIFICATION', 'message', 'La justification est limitée à 1 000 caractères.');
+        END IF;
+        IF v_pin_salt IS NULL OR v_pin_hash IS NULL THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PIN_REQUIRED', 'expected', sh.expected_cash_total,
+                                      'declared', v_declared, 'discrepancy', v_disc,
+                                      'message', 'Le code PIN régisseur est obligatoire pour co-signer une clôture avec écart.');
+        END IF;
+        SELECT pin_hash, pin_salt INTO pin FROM public.event_regisseur_pins WHERE event_id = sh.event_id FOR SHARE;
+        IF NOT FOUND THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PIN_NOT_SET', 'message', 'Aucun code PIN régisseur n''a été généré pour cet événement.');
+        END IF;
+        IF pin.pin_salt IS DISTINCT FROM v_pin_salt OR pin.pin_hash IS DISTINCT FROM v_pin_hash THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PIN_INVALID', 'message', 'Code PIN régisseur incorrect.');
+        END IF;
+        v_cosigned := TRUE;
+    END IF;
+
+    UPDATE public.controller_shifts
+       SET status = 'CLOTURE',
+           declared_cash_total = v_declared,
+           discrepancy_amount = v_disc,
+           discrepancy_justification = CASE WHEN v_disc <> 0 THEN v_just END,
+           closed_at = now(),
+           closed_by = v_actor,
+           closing_confirmed_by_pin = v_cosigned,
+           updated_at = now()
+     WHERE id = sh.id;
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+    VALUES (v_actor, v_role, 'SHIFT_CLOSED', 'controller_shifts', sh.id,
+            jsonb_build_object('event_id', sh.event_id, 'expected', sh.expected_cash_total, 'declared', v_declared,
+                               'discrepancy', v_disc, 'pin_cosigned', v_cosigned, 'closed_by_role', v_role));
+
+    SELECT title INTO v_event_title FROM public.events WHERE id = sh.event_id;
+    SELECT NULLIF(btrim(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') INTO v_ctrl_name
+      FROM public.users WHERE id = sh.controller_id;
+    v_event_data := public.notif_pros_event_data(sh.event_id);
+
+    -- Lot 6 (J2.1) : alerte d'écart au partenaire propriétaire, mise en file dans cette transaction.
+    IF v_disc <> 0 THEN
+        SELECT user_id INTO v_partner_user FROM public.partners WHERE id = sh.partner_id;
+        IF v_partner_user IS NOT NULL THEN
+            v_created := public.notif_enqueue(jsonb_build_object(
+                'type', 'SHIFT_DISCREPANCY',
+                'key', 'SHIFT_DISCREPANCY:' || sh.id::text,
+                'user_id', v_partner_user,
+                'event_id', sh.event_id,
+                'shift_id', sh.id,
+                'data', v_event_data || jsonb_build_object(
+                    'shift_id', sh.id,
+                    'controller_name', COALESCE(v_ctrl_name, 'votre contrôleur'),
+                    'difference', v_disc,
+                    'declared', v_declared,
+                    'expected', sh.expected_cash_total,
+                    'justification', v_just)
+            ));
+            v_alert_queued := v_created > 0;
+        END IF;
+    END IF;
+
+    -- Lot 6 (J2.1) : caisse fermée par le partenaire ou un admin → avis au contrôleur de la caisse.
+    IF v_role IN ('PARTENAIRE', 'ADMIN') THEN
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'SHIFT_CLOSED_BY_OTHER',
+            'key', 'SHIFT_CLOSED_BY_OTHER:' || sh.id::text,
+            'user_id', sh.controller_id,
+            'event_id', sh.event_id,
+            'shift_id', sh.id,
+            'data', v_event_data || jsonb_build_object(
+                'shift_id', sh.id,
+                'closed_by', CASE WHEN v_role = 'PARTENAIRE' THEN 'PARTNER' ELSE 'ADMIN' END,
+                'declared', v_declared)
+        ));
+    END IF;
+
+    RETURN jsonb_build_object('ok', true, 'shift_id', sh.id, 'event_id', sh.event_id, 'partner_id', sh.partner_id,
+                              'expected', sh.expected_cash_total, 'declared', v_declared, 'discrepancy', v_disc,
+                              'pin_cosigned', v_cosigned, 'closed_by', v_actor, 'closed_by_role', v_role,
+                              'alert_queued', v_alert_queued, 'event_title', v_event_title, 'controller_name', v_ctrl_name,
+                              'justification', CASE WHEN v_disc <> 0 THEN v_just END);
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -548,7 +758,9 @@ BEGIN
         'public.event_end_from_v2(date, time, date, time)',
         'public.event_end_at(uuid)',
         'public.event_create(jsonb)',
-        'public.scan_states(jsonb)'
+        'public.scan_states(jsonb)',
+        'public.shift_open(jsonb)',
+        'public.shift_close(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

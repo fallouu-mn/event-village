@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { requireAdminPermission } from '@/lib/auth/event-access';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { asShiftRefusal, ShiftService } from '@/lib/shifts/shift.service';
 
@@ -27,7 +28,7 @@ const CloseShiftSchema = z.object({
 
 /**
  * POST /api/controller/shifts/close — clôture d'une caisse (Z de caisse), lot 5 (C2) : par le
- * contrôleur de la caisse, le partenaire propriétaire ou un admin ; montant entier ≥ 0 ; en cas
+ * contrôleur de la caisse, le partenaire propriétaire ou un admin (lot 9 bis : muni de events.write) ; montant entier ≥ 0 ; en cas
  * d'écart, justification (10 caractères au moins) et co-signature par le PIN régisseur (quota par
  * caisse) ; une seule clôture (verrou de la caisse, la seconde reçoit 409 SHIFT_NOT_OPEN) ; alerte
  * d'écart au partenaire mise en file dans la même transaction (lot 6 : `alert_queued`, aucun SMS
@@ -43,7 +44,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Données invalides.', code: 'INVALID_BODY' }, { status: 400 });
     }
 
-    const isAdmin = serverIsAdmin(session.user);
+    // Lot 9 bis (R17, B49) : un admin ferme la caisse d'un autre avec events.write seulement (SUPERADMIN toujours) ;
+    // sans elle, il n'est traité que comme contrôleur de sa propre caisse, et sinon reçoit 403 PERMISSION_MISSING.
+    let isAdmin = false;
+    let adminRefusal: NextResponse | null = null;
+    if (serverIsAdmin(session.user)) {
+        adminRefusal = await requireAdminPermission(session.user, 'events.write');
+        if (adminRefusal && adminRefusal.status !== 403) return adminRefusal;
+        isAdmin = adminRefusal === null;
+    }
     try {
         const result = await ShiftService.closeShift(session.user.id, {
             shiftId: parsed.data.shiftId,
@@ -67,6 +76,7 @@ export async function POST(req: NextRequest) {
         });
     } catch (err: unknown) {
         const refusal = asShiftRefusal(err);
+        if (refusal && adminRefusal && refusal.body.code === 'SHIFT_NOT_FOUND') return adminRefusal;
         if (refusal) return NextResponse.json(refusal.body, { status: refusal.status });
         console.error('[API controller/shifts/close POST]', err instanceof Error ? err.message : String(err));
         return NextResponse.json({ error: 'Clôture de caisse momentanément impossible.', code: 'SHIFT_CLOSE_FAILED' }, { status: 500 });

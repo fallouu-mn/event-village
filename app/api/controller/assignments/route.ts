@@ -40,12 +40,31 @@ async function readScanStates(eventIds: string[]): Promise<Map<string, ScanState
 }
 
 /**
+ * Lot 9 bis (R17, B49) : caisse OUVERT du compte par événement (identifiant), lue même sans droit d'encaisser : une
+ * caisse ouverte avant le retrait du droit reste joignable pour être fermée. En échec, erreur explicite.
+ */
+async function readOpenShifts(userId: string, eventIds: string[]): Promise<Map<string, string>> {
+    const shifts = new Map<string, string>();
+    if (eventIds.length === 0) return shifts;
+    const { data, error } = await getServiceRoleClient()
+        .from('controller_shifts')
+        .select('id, event_id')
+        .eq('controller_id', userId)
+        .eq('status', 'OUVERT')
+        .in('event_id', Array.from(new Set(eventIds)));
+    if (error) throw new Error(`caisses ouvertes : ${error.message}`);
+    for (const row of data ?? []) shifts.set(String(row.event_id), String(row.id));
+    return shifts;
+}
+
+/**
  * GET /api/controller/assignments — événements auxquels le contrôleur connecté est affecté, avec leurs
  * compteurs. Lot 7 (D42, D53, contrat 3.3) : chaque affectation porte son point d'entrée (`entry_point`) et
  * `counter_sale_enabled` (réglage access.counter_sale_enabled) ; « Arrivées » (`stats.scanned_today`, nom
  * gardé) = toutes les entrées de l'événement, plus coupées à minuit UTC (un concert de 22 h à 3 h gardait
  * son compteur jusqu'à minuit seulement). Lot 9 bis (R16, contrat 4.3) : `scan { open, problem, opens_at,
- * closes_at }` par affectation ; le scanner décide par `scan.open`.
+ * closes_at }` par affectation ; le scanner décide par `scan.open`. Lot 9 bis (R17, contrat 4.3) : `open_shift`
+ * (identifiant de la caisse ouverte du compte, ou null) par affectation.
  */
 export async function GET(req: NextRequest) {
     try {
@@ -83,7 +102,9 @@ export async function GET(req: NextRequest) {
         }
 
         const counterSaleEnabled = await readCounterSaleEnabled();
-        const scanStates = await readScanStates((assignments ?? []).map((a: any) => a.events?.id).filter((id: unknown): id is string => typeof id === 'string'));
+        const eventIds: string[] = (assignments ?? []).map((a: any) => a.events?.id).filter((id: unknown): id is string => typeof id === 'string');
+        const scanStates = await readScanStates(eventIds);
+        const openShifts = await readOpenShifts(user.id, eventIds);
 
         // Compteurs de chaque événement affecté (lus par le serveur, toute la durée de l'événement)
         const enriched = await Promise.all(
@@ -99,6 +120,7 @@ export async function GET(req: NextRequest) {
                     entry_point: typeof a.entry_point === 'string' && a.entry_point.trim() !== '' ? a.entry_point : null,
                     counter_sale_enabled: counterSaleEnabled,
                     scan: eventId ? scanStates.get(eventId) ?? null : null,
+                    open_shift: eventId ? openShifts.get(eventId) ?? null : null,
                     events: formattedEvent,
                 };
 
