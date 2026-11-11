@@ -50,6 +50,12 @@
 -- 923-950) ne prévient pas l'activation d'un compte coquille de contrôleur ; notification_daily_checks compte les SMS
 -- indispensables du jour et réémet ADMIN_SMS_DAILY_THRESHOLD au seuil notif.sms_essential_daily_alert (M01), une
 -- fois par jour (TRIAL_STARTED sans SMS : registre M03 ; smsVar R27 : S2).
+-- Tâche 39 (R28) : libellé de supervision livré en S2 (outbox-labels.ts), rien en base.
+--
+-- Délégations (8.3), S-D propriétaire des recopies :
+--   - tâche 2 (S-A, R5, A7, B17) : une transition de la cascade de suspension d'une partenaire (marqueur
+--     transactionnel ev.partner_cascade = '1' posé par partner_status_set, M06) ne met ni EVENT_SUSPENDED ni
+--     EVENT_REACTIVATED en file à la partenaire ; porteurs (in-app, push) et contrôleurs (in-app) restent prévenus.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -69,6 +75,8 @@
 -- Tâche 34 : ANNULE → destinataires des transferts en attente révoqués (numéro seul, NONE).
 -- Tâche 36 : BROUILLON → EN_ATTENTE → accusé EVENT_SUBMITTED_ACK à la propriétaire.
 -- Tâche 37 : PUBLIE → TERMINE sans caisse ouverte → EVENT_FINISHED à la propriétaire.
+-- Tâche 2 (délégation 8.3, pour S-A) : transitions d'une cascade (marqueur ev.partner_cascade) sans
+-- EVENT_SUSPENDED ni EVENT_REACTIVATED à la partenaire ; porteurs et contrôleurs prévenus.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -87,6 +95,7 @@ DECLARE
     v_recipients uuid[];
     v_user uuid;
     v_open integer;
+    v_cascade boolean := COALESCE(current_setting('ev.partner_cascade', true), '') = '1';
     h record;
     n record;
 BEGIN
@@ -135,7 +144,9 @@ BEGIN
         END IF;
 
     ELSIF v_old = 'PUBLIE' AND v_new = 'SUSPENDU' THEN
-        IF v_owner IS NOT NULL THEN
+        -- Lot 9 bis (A7, B17) : transition d'une cascade de suspension de la partenaire (marqueur posé par
+        -- partner_status_set, M06) : aucun avis par événement à la partenaire, qui a déjà celui de son compte.
+        IF v_owner IS NOT NULL AND NOT v_cascade THEN
             PERFORM public.notif_enqueue(jsonb_build_object(
                 'type', 'EVENT_SUSPENDED', 'key', 'EVENT_SUSPENDED:' || NEW.id::text,
                 'user_id', v_owner, 'event_id', NEW.event_id,
@@ -160,7 +171,8 @@ BEGIN
         END LOOP;
 
     ELSIF v_old = 'SUSPENDU' AND v_new = 'PUBLIE' THEN
-        IF v_owner IS NOT NULL THEN
+        -- Lot 9 bis (A7, B17) : réactivation en cascade, aucun avis par événement à la partenaire
+        IF v_owner IS NOT NULL AND NOT v_cascade THEN
             PERFORM public.notif_enqueue(jsonb_build_object(
                 'type', 'EVENT_REACTIVATED', 'key', 'EVENT_REACTIVATED:' || NEW.id::text,
                 'user_id', v_owner, 'event_id', NEW.event_id, 'data', v_data));
