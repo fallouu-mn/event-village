@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
                 checked_in_at,
                 transfer_locked,
                 created_at,
+                payment_id,
                 event_id,
                 events(id, title, location, city, start_date, start_time, end_date, end_time, image_url, partners(company_name, commercial_name)),
                 category_id,
@@ -155,6 +156,29 @@ export async function GET(req: NextRequest) {
             for (const row of cardsBody.tickets as CardState[]) cardMap.set(String(row.ticket_id), row);
         }
 
+        // Lot 9 bis (R1, B9, délégation de S-V) : un remboursement du billet (ou de son paiement) est retardé quand son
+        // versement n'est pas parti et qu'il est bloqué hors simulation, refusé, incertain ou signalé en retard
+        // (delay_flagged_at, 30 min) : même règle que l'avis REFUND_DELAYED et que /api/payments/[id]/status.
+        const delayedTickets = new Set<string>();
+        const delayedPayments = new Set<string>();
+        const paymentIds = Array.from(new Set((tickets || []).map((t: any) => t.payment_id).filter((id: unknown): id is string => typeof id === 'string')));
+        if (paymentIds.length > 0) {
+            const { data: refunds, error: refundsErr } = await supabase
+                .from('cashouts')
+                .select('payment_id, ticket_id, status, blocked_reason, delay_flagged_at')
+                .in('payment_id', paymentIds)
+                .in('kind', ['REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND'])
+                .in('status', ['A_ENVOYER', 'ENVOYE', 'INCERTAIN', 'ECHOUE']);
+            if (refundsErr) throw new Error(`remboursements des billets : ${refundsErr.message}`);
+            for (const c of refunds ?? []) {
+                const delayed = c.status === 'INCERTAIN' || c.status === 'ECHOUE' || c.delay_flagged_at !== null
+                    || (c.blocked_reason !== null && c.blocked_reason !== 'SIMULATED');
+                if (!delayed) continue;
+                if (c.ticket_id) delayedTickets.add(String(c.ticket_id));
+                else delayedPayments.add(String(c.payment_id));
+            }
+        }
+
         const formatted = (tickets || []).map((t: any) => {
             const cardState = cardMap.get(t.id);
             if (!cardState) throw new Error(`ticket_card_states : billet ${t.id} absent de la réponse`);
@@ -196,6 +220,7 @@ export async function GET(req: NextRequest) {
                 codeVisible: cardState.code_visible === true,
                 transferAllowed: cardState.transfer_allowed === true,
                 eventNotice: cardState.notice ?? null,
+                refundDelayed: delayedTickets.has(t.id) || (typeof t.payment_id === 'string' && delayedPayments.has(t.payment_id)),
             };
         });
 
