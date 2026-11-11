@@ -142,6 +142,8 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
                     autoComplete="off"
                     maxLength={8}
                     required
+                    // R42 : obligatoire annoncé aussi par aria-required (TextInput ne pose que l'attribut HTML required)
+                    aria-required="true"
                     value={regisseurPin}
                     onChange={(e) => { setRegisseurPin(e.target.value); setPinError(''); }}
                     error={pinError || undefined}
