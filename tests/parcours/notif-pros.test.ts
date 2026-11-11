@@ -648,12 +648,12 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.ok(reg.second !== null && res.status < 300, `inscription partenaire (appel 2, avec le code) : ${show(res)}`);
         assert.equal(getFakes().sms.messagesTo(phone).length, 1, 'un SMS synchrone : le code d’inscription');
         assert.match(getFakes().sms.messagesTo(phone)[0].message, /\b\d{6}\b/, 'le SMS est le code');
-        const { data: user, error } = await service.from('users').select('id, status').eq('email', email).single();
+        const { data: user, error } = await service.from('users').select('id, status').in('phone', [phone, phone.replace(/^\+/, '')]).single(); // lot 9 bis (contrat 4.6) : users.email est technique, l'adresse saisie attend sa vérification
         assert.equal(error, null, `compte : ${error?.message}`);
         const pr = await service.from('partners').select('id').eq('user_id', user.id).single();
         assert.equal(pr.error, null, `partenaire : ${pr.error?.message}`);
         const rows = await groupRows('PARTNER_REGISTERED_ACK', `PARTNER_REGISTERED_ACK:${pr.data!.id}`, ['EMAIL', 'IN_APP'], String(user.id));
-        assert.ok(rows.every((r) => r.status === 'PENDING'), `compte EN_ATTENTE : avis non bloqué (${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))})`);
+        assert.ok(rows.every((r) => (r.channel === 'EMAIL' ? r.status === 'SKIPPED' && r.reason === 'NO_REAL_EMAIL' : r.status === 'PENDING')), `compte EN_ATTENTE : avis non bloqué ; EMAIL SKIPPED NO_REAL_EMAIL, adresse technique (contrat 4.6, B100) (${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))})`);
         const outboxSms = [...await outboxRows({ userId: String(user.id), channel: 'SMS' }), ...await outboxRows({ phone, channel: 'SMS' })]
             .filter((r) => r.origin === 'OUTBOX');
         assert.deepEqual(outboxSms.map((r) => r.idempotency_key), [], 'aucun SMS « inscription reçue » (doublon de l’OTP, décision 14)');
