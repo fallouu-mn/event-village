@@ -109,6 +109,13 @@
 -- 21. event_cancellation_impact : + in_progress (début passé, event_start_at) et used_online { tickets, amount }
 --     (billets UTILISE payés en ligne, paiement TICKET SUCCESS ou PARTIAL ; part = prix + frais de service, déjà
 --     comprise dans online_refund_total).
+--
+-- Tâche 34, partie S-A (R22 ; B73, N18) :
+-- 22. ticket_refund_request : hors contexte d'annulation, un billet gratuit (kind FREE), une invitation (kind
+--     INVITATION) ou un billet payé hors plateforme (kind CASH) annulé met TICKET_CANCELLED en file (clé
+--     TICKET_CANCELLED:<billet>) : au compte porteur (canaux du registre : in-app, SMS, email), ou par SMS au numéro
+--     d'une invitation encore à réclamer (transfert sans expéditeur, annulé par le bloc R61). Un billet payé en ligne
+--     garde ses avis de remboursement (REFUND_REQUESTED, trigger des versements).
 -- ============================================================================
 
 
@@ -967,6 +974,7 @@ DECLARE
     v_tr record;
     v_data jsonb;
     v_target uuid;
+    v_inv_phone text;
 BEGIN
     SELECT payment_id, category_id INTO v_payment_id, v_category FROM public.tickets WHERE id = p_ticket_id;
     IF NOT FOUND THEN
@@ -1099,9 +1107,33 @@ BEGIN
                     'data', v_data, 'channels', jsonb_build_array('IN_APP', 'PUSH', 'EMAIL')));
             END IF;
         END IF;
+        -- Invitation encore à réclamer (aucun expéditeur) : son numéro reçoit TICKET_CANCELLED ci-dessous (R22)
+        IF v_tr.from_user_id IS NULL AND v_tr.to_phone_or_email ~ '^\+221[0-9]{9}$' THEN
+            v_inv_phone := v_tr.to_phone_or_email;
+        END IF;
     END LOOP;
     IF t.transfer_locked THEN
         UPDATE public.tickets SET transfer_locked = FALSE, updated_at = now() WHERE id = t.id;
+    END IF;
+
+    -- Lot 9 bis (R22, B73, N18) : billet gratuit, invitation ou payé en espèces annulé hors annulation de
+    -- l'événement → TICKET_CANCELLED au porteur (in-app, SMS, email du registre) ou au numéro de l'invitation
+    -- non réclamée (SMS) ; en contexte d'annulation, les porteurs ont EVENT_CANCELLED (trigger, M09).
+    IF v_ctx <> 'CANCELLATION' AND v_mode IN ('AUCUN', 'ORGANISATEUR') AND (t.user_id IS NOT NULL OR v_inv_phone IS NOT NULL) THEN
+        v_data := COALESCE(public.notif_event_data(t.event_id), '{}'::jsonb)
+                  || jsonb_build_object('ticket_id', t.id,
+                                        'kind', CASE WHEN v_mode = 'ORGANISATEUR' THEN 'CASH'
+                                                     WHEN t.sale_channel = 'INVITATION' THEN 'INVITATION'
+                                                     ELSE 'FREE' END);
+        IF t.user_id IS NOT NULL THEN
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'TICKET_CANCELLED', 'key', 'TICKET_CANCELLED:' || t.id::text,
+                'user_id', t.user_id, 'actor_id', p_actor, 'event_id', t.event_id, 'data', v_data));
+        ELSE
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'TICKET_CANCELLED', 'key', 'TICKET_CANCELLED:' || t.id::text,
+                'phone', v_inv_phone, 'event_id', t.event_id, 'data', v_data, 'channels', jsonb_build_array('SMS')));
+        END IF;
     END IF;
 
     IF v_mode = 'AUCUN' THEN
