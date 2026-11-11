@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Banknote, Check, Copy, KeyRound, Scale, Store, Unlock } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { Banknote, Check, Copy, KeyRound, Lock, Scale, Store, Unlock } from 'lucide-react';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
@@ -13,7 +15,12 @@ import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
 import { DefinitionRow, KpiAmount, PilotageSection } from './PilotageBlocks';
+import type { ShiftSummary } from '@/lib/shifts/shift.service';
 import { shiftStatusLabel, type CashShift, type PilotageCash } from './types';
+
+// Fenêtres de clôture et de Z (lot 9 bis, R17) chargées à l'ouverture seulement : même route que le scanner
+const CloseShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CloseShiftModal), { ssr: false });
+const ZSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.ZSummaryModal), { ssr: false });
 
 function differenceText(value: number | null): string {
     if (value === null) return 'Caisse ouverte';
@@ -46,14 +53,38 @@ const SHIFT_COLUMNS: DataColumn<CashShift>[] = [
     },
 ];
 
+/** Colonne d'action (R17) : « Fermer cette caisse » sur chaque caisse encore ouverte, pour qui peut la clôturer. */
+function closeColumn(onCloseShift: (s: CashShift) => void): DataColumn<CashShift> {
+    return {
+        key: 'action',
+        header: 'Action',
+        align: 'right',
+        render: (s) => (s.status === 'OUVERT' ? (
+            <Button variant="secondary" leftIcon={<Lock size={18} />} onClick={() => onCloseShift(s)}
+                aria-label={`Fermer cette caisse (${s.controller_name || 'compte sans nom'})`}>
+                Fermer cette caisse
+            </Button>
+        ) : null),
+    };
+}
+
 /**
  * Onglet Caisse (contrat I) : caisses ouvertes et clôturées, espèces par contrôleur, écarts (pilotage_cash),
  * et PIN régisseur (présence et date seulement ; régénération par la route du lot 4, toujours confirmée,
  * seconde confirmation si des caisses sont ouvertes).
+ * Lot 9 bis : R17 (B49) « Fermer cette caisse » sur chaque caisse ouverte, par CloseShiftModal et la route de clôture
+ * du scanner (POST /api/controller/shifts/close) ; bouton montré à la partenaire et à l'admin `events.write` (ou
+ * SUPERADMIN), la route décide ; R97 textes de l'onglet justes ; R42 le PIN sert aussi à ouvrir une caisse.
  */
 export function CashTab({ eventId, signal }: { eventId: string; signal: number }) {
     const toast = useToast();
+    const { hasAnyRole, hasRole, hasPermission } = useAuth();
     const { data, error, loading, refreshing, reload } = useServerData<PilotageCash>(`/api/partner/events/${eventId}/pilotage/cash`, signal);
+    const [closing, setClosing] = useState<CashShift | null>(null);
+    const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
+    // Partenaire propriétaire (sinon la route de pilotage n'aurait rien servi), ou admin muni de events.write
+    const canCloseShifts = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
+    const columns = canCloseShifts ? [...SHIFT_COLUMNS, closeColumn(setClosing)] : SHIFT_COLUMNS;
     const [pinStep, setPinStep] = useState<{ step: 'confirm' } | { step: 'open_shifts'; count: number } | null>(null);
     const [generating, setGenerating] = useState(false);
     const [pin, setPin] = useState<string | null>(null);
@@ -115,9 +146,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
     return (
         <div className="flex flex-col gap-6">
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                <KpiCard label="Espèces encaissées" value={<KpiAmount value={formatFcfa(totals.cash_collected)} />} hint="Au scan et au guichet, toutes caisses" tone="warning" icon={<Banknote size={18} />} />
+                <KpiCard label="Espèces encaissées" value={<KpiAmount value={formatFcfa(totals.cash_collected)} />} hint="Ventes au guichet, toutes caisses" tone="warning" icon={<Banknote size={18} />} />
                 <KpiCard label="Caisses ouvertes" value={formatInteger(totals.open)} hint="Contrôleurs en service" tone="info" icon={<Unlock size={18} />} />
-                <KpiCard label="Caisses clôturées" value={formatInteger(totals.closed)} hint="Clôtures co-signées ou en litige" tone="neutral" icon={<Store size={18} />} />
+                <KpiCard label="Caisses clôturées" value={formatInteger(totals.closed)} hint="Caisses fermées" tone="neutral" icon={<Store size={18} />} />
                 <KpiCard
                     label="Écart cumulé"
                     value={<KpiAmount value={differenceText(totals.closed > 0 ? totals.difference : 0)} />}
@@ -129,7 +160,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
 
             <PilotageSection
                 title="Code PIN régisseur"
-                description="Le PIN co-signe la clôture des caisses de vos contrôleurs. Il n’est affiché qu’une fois, à sa génération."
+                description="Le PIN est exigé à l’ouverture de chaque caisse et co-signe une clôture avec écart. Il n’est affiché qu’une fois, à sa génération."
             >
                 <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                     <p className="flex items-start gap-3 text-sm text-fg">
@@ -146,7 +177,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                                 .
                             </span>
                         ) : (
-                            <span>Aucun code PIN : vos contrôleurs ne peuvent pas encore clôturer leur caisse.</span>
+                            <span>Aucun code PIN : vos contrôleurs ne peuvent ni ouvrir ni clôturer de caisse.</span>
                         )}
                     </p>
                     <Button variant={data.pin.hasPin ? 'secondary' : 'primary'} leftIcon={<KeyRound size={18} />} onClick={() => setPinStep({ step: 'confirm' })}>
@@ -174,7 +205,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
             <PilotageSection title="Sessions de caisse" description="Le Z détaillé de chaque caisse figure dans l’onglet Clôture.">
                 <DataList
                     items={data.shifts}
-                    columns={SHIFT_COLUMNS}
+                    columns={columns}
                     getKey={(s) => s.id}
                     caption="Sessions de caisse de l’événement"
                     cardTitle={(s) => SHIFT_COLUMNS[0].render(s)}
@@ -222,6 +253,22 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                     </Button>
                 </div>
             </Modal>
+
+            {closing && (
+                <CloseShiftModal
+                    isOpen={closing !== null}
+                    onClose={() => setClosing(null)}
+                    shift={{ id: closing.id, opening_float_amount: closing.opening_float, expected_cash_total: closing.expected ?? closing.cash_collected }}
+                    byOrganizer={{ controllerName: closing.controller_name || 'compte sans nom' }}
+                    onShiftClosed={(summary) => {
+                        setClosing(null);
+                        setZSummary(summary);
+                        toast.success('Caisse fermée.');
+                        void reload();
+                    }}
+                />
+            )}
+            {zSummary && <ZSummaryModal isOpen={zSummary !== null} onClose={() => setZSummary(null)} summary={zSummary} />}
         </div>
     );
 }

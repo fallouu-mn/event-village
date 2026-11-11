@@ -3,8 +3,11 @@
 /**
  * Caisse du contrôleur : ouverture, clôture (Z de caisse) et récapitulatif imprimable (lot 4.5, migrés au
  * lot 7, tâche 7.2 ; décision D46). Alignés sur le serveur :
- *  - PIN du régisseur facultatif à l'ouverture (saisi, il est vérifié par le serveur) ; à la clôture, il
- *    n'est demandé que si le serveur constate un écart (refus JUSTIFICATION_REQUIRED ou PIN_REQUIRED) ;
+ *  - lot 9 bis (R42, B51, A11) : PIN du régisseur obligatoire à l'ouverture, vérifié par le serveur (PIN_REQUIRED,
+ *    PIN_NOT_SET, PIN_INVALID dits sous le champ) ; à la clôture, il n'est demandé que si le serveur constate un
+ *    écart (refus JUSTIFICATION_REQUIRED ou PIN_REQUIRED) ;
+ *  - lot 9 bis (R17, B49) : la clôture sert aussi au pilotage (partenaire, admin events.write), par la même route
+ *    POST /api/controller/shifts/close ; titre et texte selon `byOrganizer` ;
  *  - fonds de caisse, espèces encaissées, total attendu en caisse et écart viennent du serveur : aucun
  *    calcul dans le navigateur ;
  *  - montants entiers de francs, sans pas imposé (2 750 F est accepté), formatés par lib/format.
@@ -58,6 +61,7 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [floatError, setFloatError] = useState('');
+    const [pinError, setPinError] = useState('');
 
     useEffect(() => {
         if (!isOpen) return;
@@ -65,28 +69,34 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
         setRegisseurPin('');
         setError('');
         setFloatError('');
+        setPinError('');
     }, [isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         const amount = openingFloat.trim() === '' ? 0 : parseAmount(openingFloat);
-        if (amount === null) {
-            setFloatError('Saisissez un montant entier en francs, sans virgule (par exemple 2 750).');
-            return;
-        }
-        setFloatError('');
+        const pin = regisseurPin.trim();
+        // R42 : PIN obligatoire, 4 à 8 chiffres (même règle que le serveur), dit sous le champ avant tout envoi
+        const pinProblem = pin === '' ? 'Saisissez le code PIN du régisseur.'
+            : !/^\d{4,8}$/.test(pin) ? 'Le code PIN du régisseur compte de 4 à 8 chiffres.' : '';
+        setFloatError(amount === null ? 'Saisissez un montant entier en francs, sans virgule (par exemple 2 750).' : '');
+        setPinError(pinProblem);
+        if (amount === null || pinProblem) return;
         setLoading(true);
         try {
-            const pin = regisseurPin.trim();
             const res = await fetch('/api/controller/shifts/open', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ eventId, openingFloat: amount, ...(pin ? { regisseurPin: pin } : {}) }),
+                body: JSON.stringify({ eventId, openingFloat: amount, regisseurPin: pin }),
             });
             const data = await readJson(res, 'ouverture');
             if (!res.ok || data.success !== true || !data.shift) {
-                setError(errorText(data, 'La caisse n’a pas pu être ouverte.'));
+                const code = typeof data.code === 'string' ? data.code : '';
+                const message = errorText(data, 'La caisse n’a pas pu être ouverte.');
+                // Refus portant sur le PIN : rattaché au champ ; PIN jamais généré : dit en tête (l'organisateur agit)
+                if (code === 'PIN_REQUIRED' || code === 'PIN_INVALID' || code === 'PIN_FORMAT' || code === 'PIN_RATE_LIMITED') setPinError(message);
+                else setError(message);
                 return;
             }
             onShiftOpened(data.shift as Shift);
@@ -125,14 +135,17 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
                 />
                 <TextInput
                     id={pinId}
-                    label="Code PIN du régisseur (facultatif)"
-                    hint="Facultatif à l’ouverture. Saisi, il est vérifié et l’ouverture est marquée confirmée par le régisseur."
+                    label="Code PIN du régisseur"
+                    hint="PIN obligatoire : le régisseur le saisit lui-même pour confirmer l’ouverture de la caisse."
                     type="password"
                     inputMode="numeric"
                     autoComplete="off"
                     maxLength={8}
+                    required
                     value={regisseurPin}
-                    onChange={(e) => setRegisseurPin(e.target.value)}
+                    onChange={(e) => { setRegisseurPin(e.target.value); setPinError(''); }}
+                    error={pinError || undefined}
+                    className="tabular-nums tracking-widest"
                 />
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                     <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Annuler</Button>
@@ -145,14 +158,19 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
 
 // ── Clôture (Z de caisse) ─────────────────────────────────────────────────
 
+/** Caisse à clôturer : servie par /api/controller/shifts/active (scanner) ou par pilotage_cash (onglet Caisse). */
+export type ClosableShift = Pick<ServedShift, 'id' | 'opening_float_amount' | 'expected_cash_total' | 'expected_cash_in_drawer'>;
+
 interface CloseShiftModalProps {
     isOpen: boolean;
     onClose: () => void;
-    shift: ServedShift;
+    shift: ClosableShift;
     onShiftClosed: (summary: ShiftSummary) => void;
+    /** Clôture depuis le pilotage (partenaire, admin events.write) : nom du contrôleur de la caisse (R17). */
+    byOrganizer?: { controllerName: string };
 }
 
-export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: CloseShiftModalProps) {
+export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrganizer }: CloseShiftModalProps) {
     const formId = useId();
     const countId = useId();
     const justificationId = useId();
@@ -223,8 +241,8 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
             isOpen={isOpen}
             onClose={onClose}
             busy={loading}
-            title="Clôturer ma caisse"
-            subtitle="Décompte des espèces avec le régisseur"
+            title={byOrganizer ? 'Fermer cette caisse' : 'Clôturer ma caisse'}
+            subtitle={byOrganizer ? `Caisse de ${byOrganizer.controllerName} : décompte des espèces remises` : 'Décompte des espèces avec le régisseur'}
             icon={<Receipt size={20} />}
             maxWidth="md"
             footer={(
@@ -246,10 +264,12 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed }: Close
                         <dt className="text-fg-muted">Espèces encaissées (enregistrées)</dt>
                         <dd className="font-semibold text-fg tabular-nums">{formatFcfa(Number(shift.expected_cash_total))}</dd>
                     </div>
-                    <div className="flex justify-between gap-3 border-t border-border pt-1.5">
-                        <dt className="font-semibold text-fg">Total attendu en caisse</dt>
-                        <dd className="font-bold text-fg tabular-nums">{formatFcfa(shift.expected_cash_in_drawer ?? null)}</dd>
-                    </div>
+                    {shift.expected_cash_in_drawer !== undefined && shift.expected_cash_in_drawer !== null && (
+                        <div className="flex justify-between gap-3 border-t border-border pt-1.5">
+                            <dt className="font-semibold text-fg">Total attendu en caisse</dt>
+                            <dd className="font-bold text-fg tabular-nums">{formatFcfa(shift.expected_cash_in_drawer)}</dd>
+                        </div>
+                    )}
                 </dl>
 
                 {error && <StatusBanner tone="danger" title="Clôture refusée" announce="alert">{error}</StatusBanner>}
