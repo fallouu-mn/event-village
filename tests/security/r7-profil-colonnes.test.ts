@@ -50,4 +50,24 @@ describe('R7 — colonnes protégées de public.users', () => {
         assertDenied(error, 'modification du prénom, du nom et de la photo par REST');
         const { data: after, error: readErr } = await client.client.from('users').select('first_name').eq('id', client.userId).single(); assert.ok(!readErr && after && after.first_name !== patch.first_name, `prénom modifié ou illisible : ${readErr?.message ?? after?.first_name}`);
     });
+
+    // Lot 9 bis (I1, T64) : la marque de compte de démonstration n'est écrite que par le serveur. La colonne doit
+    // d'abord exister (lue en base locale), sinon le refus PGRST204 d'une colonne inconnue passerait pour un refus.
+    // Aide chargée ici : un import de tête décalerait la ligne 46, citée par docs/recette-billetterie.md.
+    test('CLIENT qui pose ou retire demo_account par REST → refusé, valeur inchangée', async () => {
+        const { inspect } = await import('../helpers/db');
+        const client = await signUpAttacker('r7-demo');
+        const readMark = (): Promise<boolean | null> => inspect(async (db) => {
+            const col = await db.query(`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'demo_account'`);
+            assert.equal(col.rowCount, 1, 'colonne public.users.demo_account absente — migration 20261109000012_lot9bis_mode_reel (I1)');
+            const { rows } = await db.query<{ demo_account: boolean }>('SELECT demo_account FROM public.users WHERE id = $1', [client.userId]);
+            return rows[0]?.demo_account ?? null;
+        });
+        assert.equal(await readMark(), false, 'un compte inscrit n\'est pas un compte de démonstration');
+        for (const value of [true, false]) {
+            const { error } = await client.client.from('users').update({ demo_account: value }).eq('id', client.userId).select('id');
+            assertDenied(error, `modification de users.demo_account (${String(value)})`);
+        }
+        assert.equal(await readMark(), false, 'demo_account inchangé');
+    });
 });

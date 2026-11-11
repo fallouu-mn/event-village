@@ -211,6 +211,11 @@ describe('runSeedDev : premier passage, subscription_plans vide', () => {
             assert.equal(error, null, `compte ${String(u.email)} : ${error?.message}`);
             assert.equal(data.user?.user_metadata?.is_essai_fixture, true, `${String(u.email)} : marque is_essai_fixture absente`);
         }
+        // Lot 9 bis (I1, T63) : chaque compte du seed porte aussi la marque lue par la garde des envois (users.demo_account).
+        const { data: marks, error: markErr } = await service.from('users').select('id, email, demo_account').in('id', s.users.map((u) => String(u.id)));
+        assert.equal(markErr, null, `users.demo_account : ${markErr?.message} (code ${markErr?.code}) — colonne de la migration 20261109000012_lot9bis_mode_reel (I1)`);
+        assert.equal((marks ?? []).length, s.users.length, 'relecture des comptes du seed');
+        for (const u of marks ?? []) assert.equal(u.demo_account, true, `${String(u.email)} : demo_account attendu à true, posé par le seed (fix(9b.I1-SE))`);
     });
 
     test('partenaire VALIDE et vérifié, activité ORGANISATEUR, contrôleur affecté', async () => {
