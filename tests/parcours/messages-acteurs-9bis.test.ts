@@ -8,6 +8,10 @@
  *     contrôleur invité qui n'a pas accepté (POST /api/partner/team/invite, R37) : rien ;
  *  4. contrôleur affecté : CONTROLLER_EVENT_STATUS en in-app seulement à la suspension et à la reprise ;
  *  5. contrôleur affecté : changement de lieu → CONTROLLER_EVENT_CHANGED in-app tout de suite, SMS dû dans 10 min.
+ * Lot 9 bis, tâche 35 (R24, décision ; contrat 5.35, B75) — témoin vert dès l'écriture : à la suspension et à la
+ * reprise, aucune ligne SMS EVENT_SUSPENDED_HOLDER ni EVENT_REACTIVATED_HOLDER pour le porteur (in-app et push seuls) ;
+ * la suite définitive (annulation) part en SMS (EVENT_CANCELLED). Statut au rapport : « non corrigé, décision ».
+ * Garde-fou : la même suite prouve en rouge les avis qui manquent (tâche 33).
  *
  * Rouge avant correctif : aucun de ces types n'existe ; le trigger d'annulation ne vise que les porteurs
  * (M/20261103000005:1293-1318), rien à la suspension ni à la reprise pour les contrôleurs (:1260-1291), rien au
@@ -196,5 +200,27 @@ describe('9b.33 R33 : contrôleurs affectés prévenus (annulation et changement
         assert.equal(sms[0].status, 'PENDING', `SMS en attente : ${describeRows(sms)}`);
         const due = Date.parse(sms[0].due_at);
         assert.ok(due >= before + 9 * 60_000 && due <= afterPut + 11 * 60_000, `SMS dû dans 10 minutes (regroupé comme EVENT_CHANGED) : ${sms[0].due_at}`);
+    });
+});
+
+// ── R24 : suspension et reprise sans SMS pour les porteurs (décision) ──────
+
+describe('9b.35 R24 : suspension et reprise en in-app et push pour les porteurs, sans SMS ; la suite définitive part en SMS', () => {
+    test('témoin (décision) : aucune ligne SMS à la suspension ni à la reprise ; l\'annulation qui suit part en SMS', async () => {
+        const ev = await publishedEvent('Porteur susp');
+        const holder = await newBuyer('act-porteur');
+        await buyConfirmed(holder, ev, [[STANDARD, 1]]);
+        const admin = await superadminId();
+        assertRpcOk(await rpcTransition(ev.eventId, admin, 'SUSPENDU', 'Signalement en cours'), 'suspension');
+        assertRpcOk(await rpcTransition(ev.eventId, admin, 'PUBLIE'), 'reprise');
+
+        const statusRows = await outboxRows({ type: ['EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER'], eventId: ev.eventId, userId: holder.userId });
+        assert.deepEqual(Array.from(new Set(statusRows.map((r) => r.type))).sort(), ['EVENT_REACTIVATED_HOLDER', 'EVENT_SUSPENDED_HOLDER'],
+            `le porteur est prévenu de la suspension et de la reprise : ${describeRows(statusRows)}`);
+        assert.deepEqual(statusRows.filter((r) => r.channel === 'SMS'), [], 'aucun SMS à la suspension ni à la reprise (décision R24)');
+
+        assertRpcOk(await rpcCancel(ev.eventId, admin, cancelInput(ev)), 'annulation');
+        const cancelled = await outboxRows({ type: 'EVENT_CANCELLED', eventId: ev.eventId, userId: holder.userId, channel: 'SMS' });
+        assert.equal(cancelled.length, 1, `la suite définitive (annulation) part en SMS : ${describeRows(cancelled)}`);
     });
 });
