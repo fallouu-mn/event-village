@@ -1,23 +1,23 @@
 /**
- * Lot 8, tâche 8.3 d, anomalie A3 (contrat 3.10, 13.4, L88 ; CDC §41, §131) — relance d'un remboursement bloqué sans
- * écran : POST /api/admin/refunds/[id]/retry n'a aucun appelant et la notification ADMIN_REFUND_TO_RETRY mène à
- * /admin/finance, où aucun bouton n'existe.
- *  1. droits de GET /api/admin/refunds?state=to_retry : 401 sans session, 403 sans refunds.manage (client, partenaire,
- *     ADMIN sans la permission, ADMIN SUSPENDU), 200 avec la permission et pour le SUPERADMIN ;
- *  2. périmètre exact (oracle SQL écrit à part) : remboursements ECHOUE, INCERTAIN, A_ENVOYER avec blocked_reason ; ni
- *     retrait, ni CONFIRME, ni ENVOYE, ni A_ENVOYER sans blocage ;
- *  3. ligne par ligne : montant, état, titre de l'événement, numéro masqué, can_retry (ECHOUE ou SOLDE_INSUFFISANT),
- *     motif en français ; ni numéro complet, ni erreur brute de SamirPay, ni code de blocage dans la réponse ;
- *  4. la clé renvoyée est celle qu'attend la relance : refund_id relancé, deuxième envoi compté sur le numéro du
- *     payeur, la ligne quitte la liste ;
- *  5. 100 lignes au plus, `truncated` ;
- *  6. statique : /admin/finance monte RefundsToRetry, qui relit la liste, n'appelle la relance que depuis un
- *     ConfirmDialog, lit le résultat dans le corps (la route répond 200 avec success: false), n'offre le bouton
- *     « Relancer » que sous can_retry et écrit « à vérifier auprès de SamirPay ».
+ * Lot 8, tâche 8.3 d, anomalie A3, puis lot 9 bis, tâche 1 (T16, règle changée par la consigne : B1 à B4, contrat 4.1)
+ * — « Versements à reprendre » : GET /api/admin/refunds?state=to_retry et les décisions POST /api/admin/cashouts/[id]/resend
+ * et …/mark-paid (la route refunds/[id]/retry est supprimée, B4).
+ *  1. droits de la liste : 401 sans session, 403 sans refunds.manage (client, partenaire, ADMIN sans la permission,
+ *     ADMIN SUSPENDU), 200 avec la permission et pour le SUPERADMIN ;
+ *  2. périmètre exact (oracle SQL écrit à part, B1) : remboursements ECHOUE, tout INCERTAIN, tout A_ENVOYER bloqué, à
+ *     envoyer ou envoyé depuis plus de 30 min, tous types, retraits compris ; ni retrait ECHOUE, ni CONFIRME, ni récent ;
+ *  3. ligne par ligne (champs du contrat 4.1) : montant, état, titre de l'événement, bénéficiaire masqué, can_resend et
+ *     can_mark_paid, motif en français ; ni numéro complet, ni erreur brute de SamirPay, ni code de blocage ;
+ *  4. l'identifiant renvoyé est celui de « Renvoyer » (justification) : deuxième envoi compté sur le numéro du payeur,
+ *     la ligne quitte la liste ;
+ *  5. 100 lignes au plus, `total` ;
+ *  6. statique : /admin/finance monte RefundsToRetry, qui relit la liste, n'appelle « Renvoyer » et « Marquer versé »
+ *     que depuis un ConfirmDialog, envoie la justification et affiche le refus du serveur, n'offre chaque bouton que
+ *     sous can_resend ou can_mark_paid et renvoie le cas incertain au support SamirPay.
  *
- * Rouge avant correctif : 1 à 5 par fix(8.3-A3s) (S5, route absente), 6 par fix(8.3-A3e) (E3). Les envois sont comptés
- * par numéro de payeur neuf, jamais globalement. L'administrateur de la suite est suspendu en fin de suite (il ne
- * reçoit plus d'alertes, comme securite-admin-lot7).
+ * Rouge jusqu'à fix(9b.1) (S-V) et fix(9b.1e) (E-V) : forme de la liste (contrat 4.1), périmètre, routes de décision
+ * absentes (import dynamique). Titres et lignes des 5 tests cités par la matrice gardés (D-out 7.1, règle 5). Les
+ * envois sont comptés par numéro de payeur neuf. L'administrateur de la suite est suspendu en fin de suite.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -27,7 +27,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import ts from 'typescript';
-import { POST as retryRoute } from '../../app/api/admin/refunds/[id]/retry/route';
 import { CashoutService } from '../../lib/payments/cashout.service';
 import { maskPhone } from '../../lib/payments/payer-phone';
 import { inspect } from '../helpers/db';
@@ -47,8 +46,9 @@ const ROUTE = '../../app/api/admin/refunds/route';
 const FULL_BALANCE = 10_000_000;
 const PANEL = 'components/admin/RefundsToRetry.tsx';
 const FINANCE_PAGE = 'app/admin/finance/page.tsx';
+const DECISION_ROUTE = (action: 'resend' | 'mark-paid'): string => `../../app/api/admin/cashouts/[id]/${action}/route`;
 const ITEM_KEYS = [
-    'amount', 'can_retry', 'cashout_id', 'created_at', 'event_title', 'kind', 'phone_masked', 'reason_label', 'refund_id', 'state',
+    'advice', 'amount', 'beneficiary', 'block_label', 'can_mark_paid', 'can_resend', 'event_title', 'id', 'kind', 'kind_label', 'since', 'state', 'state_label',
 ];
 /** Code technique en capitales, jamais affiché (Conventions, Textes). */
 const RAW_CODE = /\b[A-Z]{2,}(?:_[A-Z]+)+\b/;
@@ -109,11 +109,11 @@ function show(r: RouteResult): string {
     return `HTTP ${r.status} ${JSON.stringify(r.body).slice(0, 500)}`;
 }
 
-async function listed(): Promise<{ items: Row[]; truncated: unknown; raw: string }> {
+async function listed(): Promise<{ items: Row[]; total: unknown; raw: string }> {
     const r = await list(admin.accessToken);
     assert.equal(r.status, 200, show(r));
     assert.ok(Array.isArray(r.body.items), `items : ${show(r)}`);
-    return { items: r.body.items as Row[], truncated: r.body.truncated, raw: JSON.stringify(r.body) };
+    return { items: r.body.items as Row[], total: r.body.total, raw: JSON.stringify(r.body) };
 }
 
 // ── Remboursements fabriqués par le vrai module ────────────────────────────
@@ -164,9 +164,9 @@ async function blockedWithoutOperator(): Promise<{ cashoutId: string; refundId: 
 }
 
 const REFUND_SCOPE_SQL = `
-    SELECT count(*)::int AS n FROM public.cashouts
-     WHERE kind IN ('REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND')
-       AND (status IN ('ECHOUE', 'INCERTAIN') OR (status = 'A_ENVOYER' AND blocked_reason IS NOT NULL))`;
+    SELECT count(*)::int AS n FROM public.cashouts WHERE simulated = false AND ((status = 'ECHOUE' AND kind <> 'WITHDRAWAL') OR status = 'INCERTAIN'
+        OR (status = 'A_ENVOYER' AND (blocked_reason IS NOT NULL OR COALESCE(send_started_at, created_at) < now() - interval '30 minutes'))
+        OR (status = 'ENVOYE' AND COALESCE(sent_at, created_at) < now() - interval '30 minutes'))`;
 
 async function scopeCount(): Promise<number> {
     return inspect(async (db) => Number((await db.query<{ n: number }>(REFUND_SCOPE_SQL)).rows[0].n));
@@ -203,7 +203,7 @@ describe('A3 — GET /api/admin/refunds : droits (permission refunds.manage)', (
 
         const r5 = await list(admin.accessToken);
         assert.equal(r5.status, 200, `ADMIN avec refunds.manage : ${show(r5)}`);
-        assert.equal(typeof r5.body.truncated, 'boolean', `truncated : ${show(r5)}`);
+        assert.equal(typeof r5.body.total, 'number', `total (contrat 4.1) : ${show(r5)}`);
 
         const superadmin = await signInAs('SUPERADMIN');
         const r6 = await list(superadmin.accessToken);
@@ -213,21 +213,34 @@ describe('A3 — GET /api/admin/refunds : droits (permission refunds.manage)', (
 
 // ── 2 à 4. Contenu ─────────────────────────────────────────────────────────
 
+/** Décision de l'administration (contrat 4.1, B4), route importée dynamiquement : absente avant fix(9b.1). */
+async function decide(action: 'resend' | 'mark-paid', cashoutId: string, body: Row): Promise<RouteResult> {
+    let mod: { POST?: Handler };
+    try {
+        mod = await importModule(DECISION_ROUTE(action));
+    } catch (err) {
+        assert.fail(`POST /api/admin/cashouts/[id]/${action} absente (contrat 4.1, B4, fix(9b.1)) — ${String((err as Error).message).split('\n')[0]}`);
+    }
+    assert.equal(typeof mod.POST, 'function', `app/api/admin/cashouts/[id]/${action}/route.ts : POST non exporté`);
+    const res = await mod.POST!(authed(`/api/admin/cashouts/${cashoutId}/${action}`, 'POST', admin, body), { params: Object.assign(Promise.resolve({ id: cashoutId }), { id: cashoutId }) });
+    return { status: res.status, body: await res.json() as Row };
+}
+
 describe('A3 — liste des remboursements à reprendre (contrat 3.10)', () => {
     let failed: Refundable;
     let uncertain: Refundable;
     let noBalance: Refundable;
     let noOperator: { cashoutId: string; refundId: string };
+    let late: Refundable;
+    let withdrawalId: string;
     const excluded: Array<{ what: string; cashoutId: string }> = [];
 
     before(async () => {
         await setup();
         failed = await refundable('echec');
         assert.equal(await sentIn('rejected', failed), 'ECHOUE', 'précondition : refus de SamirPay');
-
         uncertain = await refundable('incertain');
         assert.equal(await sentIn('timeout', uncertain), 'INCERTAIN', 'précondition : issue incertaine');
-
         noBalance = await refundable('solde');
         fakePay().balance = 0;
         try {
@@ -235,51 +248,53 @@ describe('A3 — liste des remboursements à reprendre (contrat 3.10)', () => {
         } finally {
             fakePay().balance = FULL_BALANCE;
         }
-
         noOperator = await blockedWithoutOperator();
+        late = await refundable('en-attente');
+        const aged = await service.from('cashouts').update({ created_at: new Date(Date.now() - 31 * 60_000).toISOString() }).eq('id', late.cashoutId);
+        assert.equal(aged.error, null, `à envoyer depuis 31 minutes : ${aged.error?.message}`);
 
         const confirmed = await refundable('confirme');
         assert.equal(await sentIn('success', confirmed), 'CONFIRME', 'précondition : versement confirmé');
         excluded.push({ what: 'CONFIRME', cashoutId: confirmed.cashoutId });
-
         const pending = await refundable('envoye');
         assert.equal(await sentIn('pending', pending), 'ENVOYE', 'précondition : versement en attente');
-        excluded.push({ what: 'ENVOYE', cashoutId: pending.cashoutId });
-
+        excluded.push({ what: 'ENVOYE depuis moins de 30 min', cashoutId: pending.cashoutId });
         const notSent = await refundable('a-envoyer');
-        excluded.push({ what: 'A_ENVOYER sans blocage', cashoutId: notSent.cashoutId });
+        excluded.push({ what: 'A_ENVOYER sans blocage depuis moins de 30 min', cashoutId: notSent.cashoutId });
 
-        const { data: withdrawal, error } = await service.from('cashouts').insert({
-            kind: 'WITHDRAWAL', idempotency_key: `WITHDRAWAL-A3-${randomUUID()}`, amount: 1000, status: 'ECHOUE',
-        }).select('id').single();
-        assert.equal(error, null, `retrait de test : ${error?.message}`);
-        excluded.push({ what: 'retrait ECHOUE', cashoutId: withdrawal.id });
+        const { data: withdrawals, error } = await service.from('cashouts').insert([
+            { kind: 'WITHDRAWAL', idempotency_key: `WITHDRAWAL-A3-${randomUUID()}`, amount: 1000, status: 'ECHOUE' },
+            { kind: 'WITHDRAWAL', idempotency_key: `WITHDRAWAL-A3-${randomUUID()}`, amount: 1000, status: 'INCERTAIN' },
+        ]).select('id, status');
+        assert.equal(error, null, `retraits de test : ${error?.message}`);
+        excluded.push({ what: 'retrait ECHOUE (clos, solde rendu)', cashoutId: String(withdrawals!.find((w) => w.status === 'ECHOUE')!.id) });
+        withdrawalId = String(withdrawals!.find((w) => w.status === 'INCERTAIN')!.id);
     });
 
     function item(items: Row[], cashoutId: string): Row {
-        const found = items.find((i) => i.cashout_id === cashoutId);
+        const found = items.find((i) => i.id === cashoutId);
         assert.ok(found, `cashout ${cashoutId} absent de la liste`);
         return found;
     }
 
     async function assertCommon(row: Row, cashoutId: string, refundId: string): Promise<void> {
         const db = await cashoutRow(cashoutId);
-        assert.deepEqual(Object.keys(row).sort(), ITEM_KEYS, `champs de la ligne : ${JSON.stringify(row)}`);
-        assert.equal(row.refund_id, refundId);
-        assert.equal(row.kind, db.kind);
-        assert.equal(Number(row.amount), Number(db.amount));
-        assert.equal(new Date(String(row.created_at)).getTime(), new Date(String(db.created_at)).getTime(), 'created_at du cashout');
+        assert.deepEqual(Object.keys(row).sort(), ITEM_KEYS, `champs de la ligne (contrat 4.1) : ${JSON.stringify(row)}`);
+        assert.equal(db.refund_id, refundId, 'précondition : cashout du remboursement');
+        assert.deepEqual([row.kind, Number(row.amount)], [db.kind, Number(db.amount)], 'type et montant du cashout');
+        assert.ok(Date.parse(String(row.since)) >= Date.parse(String(db.created_at)) - 1000, `since ${String(row.since)} postérieur à la création ${String(db.created_at)}`);
+        for (const label of [row.kind_label, row.state_label]) assert.doesNotMatch(String(label), RAW_CODE, 'libellé en français, sans code technique');
     }
 
     test('périmètre exact : le nombre de lignes est celui de l’oracle, aucune opération hors périmètre', async () => {
         const count = await scopeCount();
-        assert.ok(count >= 4 && count <= 100, `précondition : ${count} remboursements à reprendre en base (4 à 100 attendus)`);
-        const { items, truncated } = await listed();
+        assert.ok(count >= 6 && count <= 100, `précondition : ${count} versements à reprendre en base (6 à 100 attendus)`);
+        const { items, total } = await listed();
         assert.equal(items.length, count, `lignes rendues ≠ oracle (${count})`);
-        assert.equal(truncated, false, 'liste complète : truncated faux');
-        for (const e of excluded) {
-            assert.equal(items.some((i) => i.cashout_id === e.cashoutId), false, `${e.what} ne doit pas figurer dans la liste`);
-        }
+        assert.equal(total, count, 'liste complète : total = lignes rendues');
+        for (const e of excluded) assert.equal(items.some((i) => i.id === e.cashoutId), false, `${e.what} ne doit pas figurer dans la liste`);
+        assert.equal(item(items, withdrawalId).kind, 'WITHDRAWAL', 'retrait incertain listé (retraits compris, R9)');
+        assert.equal(item(items, late.cashoutId).state, 'EN_ATTENTE', 'à envoyer depuis plus de 30 min : EN_ATTENTE (R1)');
     });
 
     test('refus de SamirPay : état ECHOUE, relance possible, titre de l’événement, numéro masqué', async () => {
@@ -287,41 +302,37 @@ describe('A3 — liste des remboursements à reprendre (contrat 3.10)', () => {
         const row = item(items, failed.cashoutId);
         await assertCommon(row, failed.cashoutId, failed.refundId);
         assert.equal(row.kind, 'TICKET_REFUND');
-        assert.equal(row.state, 'ECHOUE');
-        assert.equal(row.can_retry, true);
+        assert.deepEqual([row.state, row.can_resend, row.can_mark_paid], ['ECHOUE', 'NOW', true], 'refus 400 : rien n’est parti, renvoi immédiat (B3)');
         assert.equal(row.event_title, eventTitle);
-        assert.equal(row.phone_masked, maskPhone(failed.buyer.phone9));
+        assert.ok(String(row.beneficiary).includes(maskPhone(failed.buyer.phone9)), `bénéficiaire masqué : ${String(row.beneficiary)}`);
     });
 
     test('issue incertaine : état INCERTAIN, jamais de relance', async () => {
         const { items } = await listed();
         const row = item(items, uncertain.cashoutId);
         await assertCommon(row, uncertain.cashoutId, uncertain.refundId);
-        assert.equal(row.state, 'INCERTAIN');
-        assert.equal(row.can_retry, false, 'l’argent a pu partir : aucun renvoi');
-        assert.equal(row.phone_masked, maskPhone(uncertain.buyer.phone9));
+        assert.deepEqual([row.state, row.can_resend, row.can_mark_paid], ['INCERTAIN', false, true], 'sans identifiant SamirPay : aucun renvoi, « Marquer versé » seul (B2)');
+        assert.ok(String(row.beneficiary).includes(maskPhone(uncertain.buyer.phone9)), `bénéficiaire masqué : ${String(row.beneficiary)}`);
     });
 
     test('solde insuffisant : état BLOQUE, relance possible, motif en français', async () => {
         const { items } = await listed();
         const row = item(items, noBalance.cashoutId);
         await assertCommon(row, noBalance.cashoutId, noBalance.refundId);
-        assert.equal(row.state, 'BLOQUE');
-        assert.equal(row.can_retry, true);
-        assert.equal(typeof row.reason_label, 'string', 'motif du blocage');
-        assert.ok(String(row.reason_label).length > 0, 'motif du blocage vide');
-        assert.doesNotMatch(String(row.reason_label), RAW_CODE, 'code technique affiché');
+        assert.deepEqual([row.state, row.can_resend, row.can_mark_paid], ['BLOQUE', 'NOW', true], 'SOLDE_INSUFFISANT : rien de débité (B5)');
+        assert.equal(typeof row.block_label, 'string', 'motif du blocage');
+        assert.ok(String(row.block_label).length > 0, 'motif du blocage vide');
+        assert.doesNotMatch(String(row.block_label), RAW_CODE, 'code technique affiché');
     });
 
     test('opérateur inconnu : état BLOQUE, relance impossible, aucun numéro ni événement à montrer', async () => {
         const { items } = await listed();
         const row = item(items, noOperator.cashoutId);
         await assertCommon(row, noOperator.cashoutId, noOperator.refundId);
-        assert.equal(row.state, 'BLOQUE');
-        assert.equal(row.can_retry, false, 'seul le blocage SOLDE_INSUFFISANT se relance');
-        assert.doesNotMatch(String(row.reason_label), RAW_CODE, 'code technique affiché');
+        assert.deepEqual([row.state, row.can_resend, row.can_mark_paid], ['BLOQUE', false, true], 'aucune destination : pas de renvoi, « Marquer versé » seul');
+        assert.doesNotMatch(String(row.block_label), RAW_CODE, 'code technique affiché');
         assert.equal(row.event_title, null);
-        assert.ok(row.phone_masked === null || row.phone_masked === maskPhone(null), `numéro inconnu : ${JSON.stringify(row.phone_masked)}`);
+        assert.ok(row.beneficiary === null || !/[0-9]/.test(String(row.beneficiary)), `numéro inconnu, aucun chiffre à montrer : ${JSON.stringify(row.beneficiary)}`);
     });
 
     test('jamais de numéro complet, d’erreur brute de SamirPay ni de code de blocage dans la réponse', async () => {
@@ -330,21 +341,20 @@ describe('A3 — liste des remboursements à reprendre (contrat 3.10)', () => {
         assert.ok(failedRow.last_error, 'précondition : erreur brute enregistrée');
         assert.ok(uncertainRow.last_error, 'précondition : erreur brute enregistrée');
         const { raw } = await listed();
-        for (const r of [failed, uncertain, noBalance]) {
+        for (const r of [failed, uncertain, noBalance, late]) {
             assert.equal(raw.includes(r.buyer.phone9), false, `numéro complet ${r.buyer.phone9} dans la réponse`);
             assert.equal(raw.includes(r.buyer.phoneE164), false, `numéro complet ${r.buyer.phoneE164} dans la réponse`);
         }
         assert.equal(raw.includes(String(failedRow.last_error)), false, 'erreur brute du refus renvoyée au navigateur');
         assert.equal(raw.includes(String(uncertainRow.last_error)), false, 'erreur brute du délai renvoyée au navigateur');
-        assert.equal(raw.includes('SOLDE_INSUFFISANT'), false, 'code de blocage renvoyé au navigateur');
+        for (const c of ['SOLDE_INSUFFISANT', 'OPERATOR_UNKNOWN']) assert.equal(raw.includes(c), false, `code de blocage ${c} renvoyé au navigateur`);
     });
 
-    test('tri par created_at, dans un seul sens', async () => {
+    test('tri du plus ancien au plus récent (since)', async () => {
         const { items } = await listed();
-        const times = items.map((i) => new Date(String(i.created_at)).getTime());
-        const asc = times.every((t, i) => i === 0 || t >= times[i - 1]);
-        const desc = times.every((t, i) => i === 0 || t <= times[i - 1]);
-        assert.ok(asc || desc, `lignes non triées : ${items.map((i) => i.created_at).join(', ')}`);
+        const times = items.map((i) => new Date(String(i.since)).getTime());
+        assert.ok(times.every((t) => Number.isFinite(t)), `since illisible : ${items.map((i) => i.since).join(', ')}`);
+        assert.ok(times.every((t, i) => i === 0 || t >= times[i - 1]), `lignes non triées du plus ancien au plus récent (contrat 4.1) : ${items.map((i) => i.since).join(', ')}`);
     });
 
     test('le refund_id de la liste est celui de la relance : deuxième envoi, CONFIRME, la ligne quitte la liste', async () => {
@@ -353,18 +363,18 @@ describe('A3 — liste des remboursements à reprendre (contrat 3.10)', () => {
         const { items } = await listed();
         const row = item(items, failed.cashoutId);
 
-        const res = await retryRoute(authed(`/api/admin/refunds/${String(row.refund_id)}/retry`, 'POST', admin), { params: { id: String(row.refund_id) } });
-        const body = await res.json() as Row;
-        assert.equal(res.status, 200, JSON.stringify(body));
-        assert.equal(body.success, true, JSON.stringify(body));
+        const res = await decide('resend', String(row.id), { reason: 'Refus de l’opérateur levé, nouvel essai (test A3, lot 9 bis)' });
+        assert.equal(res.status, 200, show(res));
+        assert.equal(res.body.ok, true, show(res));
+        assert.equal(res.body.status, 'CONFIRME', `statut rendu par « Renvoyer » (contrat 4.1) : ${show(res)}`);
 
         assert.equal((await cashoutRow(failed.cashoutId)).status, 'CONFIRME');
         assert.equal(callsOf('sendCashout').filter((c) => c.args.phoneNumber === failed.buyer.phone9).length, 2, 'un seul nouvel envoi');
         const after0 = await listed();
-        assert.equal(after0.items.some((i) => i.cashout_id === failed.cashoutId), false, 'la ligne relancée quitte la liste');
+        assert.equal(after0.items.some((i) => i.id === failed.cashoutId), false, 'la ligne renvoyée quitte la liste');
     });
 
-    test('100 lignes au plus : truncated vrai au-delà, faux une fois revenu sous le plafond', async () => {
+    test('100 lignes au plus : total au-delà, liste complète une fois revenu sous le plafond', async () => {
         const key = `REFUND-A3-PLAFOND-${randomUUID()}`;
         const room = 101 - await scopeCount();
         assert.ok(room > 0, 'précondition : moins de 101 lignes en base');
@@ -375,12 +385,13 @@ describe('A3 — liste des remboursements à reprendre (contrat 3.10)', () => {
             assert.equal(await scopeCount(), 101, 'précondition : 101 lignes dans le périmètre');
             const capped = await listed();
             assert.equal(capped.items.length, 100, '100 lignes au plus');
-            assert.equal(capped.truncated, true, 'liste tronquée signalée');
+            assert.equal(capped.total, 101, 'total des lignes à reprendre, masquées comprises');
         } finally {
             const { error: delErr } = await service.from('cashouts').delete().like('idempotency_key', `${key}-%`);
             assert.equal(delErr, null, `retrait des lignes de test : ${delErr?.message}`);
         }
-        assert.equal((await listed()).truncated, false, 'sous le plafond : truncated faux');
+        const back = await listed();
+        assert.equal(back.total, back.items.length, 'sous le plafond : toutes les lignes rendues');
     });
 });
 
@@ -409,7 +420,7 @@ function nodesOf(root: ts.Node, keep: (n: ts.Node) => boolean): ts.Node[] {
 }
 
 function clean(text: string): string {
-    return text.replace(/&apos;|&#39;|&rsquo;|’/g, '\'').replace(/[\s  ]+/g, ' ').trim();
+    return text.replace(/&apos;|&#39;|&rsquo;|’/g, '\'').replace(/[\s  ]+/g, ' ').trim();
 }
 
 function tagName(n: ts.Node): string | null {
@@ -461,9 +472,9 @@ function reaches(sf: ts.SourceFile, node: ts.Node, hit: (text: string) => boolea
     });
 }
 
-const isRetryCall = (text: string): boolean => /\bfetch\(/.test(text) && /\/api\/admin\/refunds\/\$\{[^}]+\}\/retry/.test(text);
+const isDecisionCall = (text: string): boolean => /\bfetch\(/.test(text) && /\/api\/admin\/cashouts\/\$\{[^}]+\}\/(?:resend|mark-paid)/.test(text);
 
-describe('A3 — écran : /admin/finance monte le panneau de relance (statique)', () => {
+describe('A3 — écran : /admin/finance monte le panneau « Versements à reprendre » (statique)', () => {
     test('/admin/finance importe et rend RefundsToRetry', () => {
         const sf = parseFile(FINANCE_PAGE);
         assert.ok(nodesOf(sf, (n) => ts.isImportDeclaration(n) && (n.moduleSpecifier as ts.StringLiteral).text === '@/components/admin/RefundsToRetry').length === 1,
@@ -471,44 +482,45 @@ describe('A3 — écran : /admin/finance monte le panneau de relance (statique)'
         assert.ok(nodesOf(sf, (n) => tagName(n) === 'RefundsToRetry').length === 1, `${FINANCE_PAGE} ne rend pas <RefundsToRetry />`);
     });
 
-    test('le panneau lit GET /api/admin/refunds?state=to_retry', () => {
+    test('le panneau lit GET /api/admin/refunds?state=to_retry, titre « Versements à reprendre »', () => {
         const sf = parseFile(PANEL);
         assert.match(code(sf), /\/api\/admin\/refunds\?state=to_retry/, `${PANEL} ne lit pas la liste`);
+        const texts = nodesOf(sf, (n) => ts.isJsxText(n) || ts.isStringLiteralLike(n)).map((n) => clean((n as ts.LiteralLikeNode).text));
+        assert.ok(texts.includes('Versements à reprendre'), `${PANEL} : titre « Versements à reprendre » absent (5.1)`);
     });
 
     test('la relance part seulement d’un ConfirmDialog, jamais directement d’un bouton', () => {
         const sf = parseFile(PANEL);
-        assert.ok(reaches(sf, sf, isRetryCall), `${PANEL} n'appelle pas POST /api/admin/refunds/<id>/retry`);
+        for (const action of ['resend', 'mark-paid']) assert.ok(reaches(sf, sf, (t) => isDecisionCall(t) && t.includes(`/${action}`)), `${PANEL} n'appelle pas POST /api/admin/cashouts/<id>/${action}`);
         const handlers = nodesOf(sf, ts.isJsxAttribute).filter((a) => /^on[A-Z]/.test((a as ts.JsxAttribute).name.getText())) as ts.JsxAttribute[];
-        const direct = handlers.filter((a) => a.initializer !== undefined && reaches(sf, a.initializer, isRetryCall));
-        assert.ok(direct.length > 0, `${PANEL} : aucun gestionnaire ne mène à la relance`);
+        const direct = handlers.filter((a) => a.initializer !== undefined && reaches(sf, a.initializer, isDecisionCall));
+        assert.ok(direct.length > 0, `${PANEL} : aucun gestionnaire ne mène à « Renvoyer » ni à « Marquer versé »`);
         const outside = direct.filter((a) => !(a.name.getText() === 'onConfirm' && ownerTag(a) === 'ConfirmDialog'));
-        assert.deepEqual(outside.map((a) => code(sf, a)), [], 'relance hors du ConfirmDialog');
+        assert.deepEqual(outside.map((a) => code(sf, a)), [], 'décision hors du ConfirmDialog');
     });
 
-    test('le résultat est lu dans le corps : la route répond 200 avec success: false', () => {
+    test('chaque décision envoie la justification et affiche le refus du serveur (message en français)', () => {
         const sf = parseFile(PANEL);
-        const fns = localFunctions(sf);
-        const retry = Array.from(fns.values()).find((f) => isRetryCall(code(sf, f)));
-        assert.ok(retry, `${PANEL} : fonction de relance introuvable`);
-        assert.match(code(sf, retry), /\.success\b/, 'le panneau doit lire success dans la réponse : res.ok ne prouve pas l’envoi');
-        assert.match(code(sf, retry), /\.message\b/, 'le panneau doit afficher le message de la réponse');
+        const decisions = Array.from(localFunctions(sf).values()).filter((f) => isDecisionCall(code(sf, f)));
+        assert.ok(decisions.length > 0, `${PANEL} : fonction de décision introuvable`);
+        for (const f of decisions) assert.match(code(sf, f), /\breason\b/, 'la justification (reason) est envoyée au serveur');
+        for (const f of decisions) assert.match(code(sf, f), /\.error\b/, 'le panneau affiche le refus du serveur (409, 400) : res.ok seul ne dit pas pourquoi');
     });
 
     test('« Relancer » n’existe que sous can_retry, et le cas incertain renvoie à SamirPay', () => {
         const sf = parseFile(PANEL);
-        const buttons = nodesOf(sf, (n) => tagName(n) === 'Button' && ts.isJsxElement(n) && clean(n.children.map((c) => (ts.isJsxText(c) ? c.text : '')).join(' ')).includes('Relancer'));
-        assert.ok(buttons.length > 0, `${PANEL} : bouton « Relancer » absent`);
-        for (const b of buttons) {
-            assert.equal(attribute(b, 'disabled') !== undefined && /can_retry/.test(code(sf, attribute(b, 'disabled')!)), false, 'contrat : pas de bouton grisé, le bouton n’existe pas sans can_retry');
-            let guarded = false;
-            for (let p: ts.Node | undefined = b.parent; p && !guarded; p = p.parent) {
-                if (isFunctionNode(p)) guarded = /can_retry/.test(code(sf, p));
-                else if (ts.isConditionalExpression(p) || ts.isBinaryExpression(p)) guarded = /can_retry/.test(code(sf, ts.isConditionalExpression(p) ? p.condition : p.left));
+        for (const [label, flag] of [['Renvoyer', /can_resend/], ['Marquer versé', /can_mark_paid/]] as const) {
+            const buttons = nodesOf(sf, (n) => tagName(n) === 'Button' && ts.isJsxElement(n) && clean(n.children.map((c) => (ts.isJsxText(c) ? c.text : '')).join(' ')).includes(label));
+            assert.ok(buttons.length > 0, `${PANEL} : bouton « ${label} » absent`);
+            for (const b of buttons) {
+                assert.equal(attribute(b, 'disabled') !== undefined && flag.test(code(sf, attribute(b, 'disabled')!)), false, `contrat : pas de bouton grisé, « ${label} » n’existe pas sans ${flag.source}`);
+                let guarded = false;
+                for (let p: ts.Node | undefined = b.parent; p && !guarded; p = p.parent) guarded = isFunctionNode(p) ? flag.test(code(sf, p)) : (ts.isConditionalExpression(p) || ts.isBinaryExpression(p)) && flag.test(code(sf, ts.isConditionalExpression(p) ? p.condition : p.left));
+                assert.ok(guarded, `bouton « ${label} » rendu sans condition sur ${flag.source}`);
             }
-            assert.ok(guarded, 'bouton « Relancer » rendu sans condition sur can_retry');
         }
+        assert.equal(nodesOf(sf, (n) => ts.isJsxText(n) && clean(n.text).includes('Relancer')).length, 0, '« Relancer » remplacé par « Renvoyer » et « Marquer versé » (B4)');
         const texts = nodesOf(sf, (n) => ts.isJsxText(n) || ts.isStringLiteralLike(n)).map((n) => clean((n as ts.LiteralLikeNode).text));
-        assert.ok(texts.some((t) => t.toLowerCase().includes('à vérifier auprès de samirpay')), `${PANEL} : mention « à vérifier auprès de SamirPay » absente`);
+        assert.ok(texts.some((t) => t.toLowerCase().includes('vérifiez auprès du support samirpay')), `${PANEL} : « Vérifiez auprès du support SamirPay » absent (incertain sans identifiant, 5.1)`);
     });
 });

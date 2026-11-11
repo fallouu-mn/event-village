@@ -12,8 +12,8 @@
  *     verifyAdminAuth, requireActiveSession et la route admin, et côté REST (clé anon + ancien jeton) :
  *     rpc(is_admin) ne vaut plus vrai et aucune ligne de admin_signals n'est lisible ; témoin avant
  *     l'anonymisation : is_admin vrai, signal lisible, route 200 ;
- *  4. permissions dédiées (3.7) : POST /api/admin/refunds/[id]/retry exige refunds.manage (sans → 403 ;
- *     avec → le contrôle passe, 404 pour un remboursement inconnu ; SUSPENDU → 403 ; client → 403 ;
+ *  4. permissions dédiées (3.7) : POST /api/admin/cashouts/[id]/resend (lot 9 bis, B4, T19) exige refunds.manage
+ *     (sans → 403 ; avec → le contrôle passe, 404 pour un versement inconnu ; SUSPENDU → 403 ; client → 403 ;
  *     SUPERADMIN → 404) ; GET /api/admin/shifts/audit exige shifts.read (sans → 403 ; avec → 200 ;
  *     SUPERADMIN → 200) ; ADMIN_PERMISSIONS contient shifts.read.
  *
@@ -28,8 +28,8 @@
  *    (signalées) : lecture de admin_signals (la politique exige un compte ni SUSPENDU ni SUPPRIME,
  *    20261103000001_lot6_dette.sql:107-113) ; refus de l'ancien jeton par les routes (sessions supprimées
  *    par revoke_user_sessions : GoTrue refuse alors le jeton, 401 — SUPPOSÉ, voir plus bas) ;
- *  - 4 : refunds/[id]/retry n'exige que le rôle (getServerSessionUser + serverHasAnyRole, sans statut) :
- *    sans permission et SUSPENDU → 404 au lieu de 403 ; shifts/audit n'exige que le rôle : sans shifts.read
+ *  - 4 : (lot 9 bis) la route refunds/[id]/retry est supprimée (B4), mêmes assertions sur cashouts/[id]/resend,
+ *    absente jusqu'à fix(9b.1) (import dynamique) ; shifts/audit n'exige que le rôle : sans shifts.read
  *    → 200 ; shifts.read absent de ADMIN_PERMISSIONS.
  *
  * Écart au contrat (signalé) : pour l'ancien jeton d'un compte anonymisé, le contrat écrit « verifyAdminAuth
@@ -60,7 +60,7 @@ interface RouteResult { status: number; body: Row }
 
 const USERS_ROUTE = '../../app/api/admin/users/route';
 const NOTIFICATIONS_ROUTE = '../../app/api/admin/notifications/route';
-const RETRY_ROUTE = '../../app/api/admin/refunds/[id]/retry/route';
+const RETRY_ROUTE = '../../app/api/admin/cashouts/[id]/resend/route';
 const SHIFTS_AUDIT_ROUTE = '../../app/api/admin/shifts/audit/route';
 
 /** Comptes créés par la suite (suspendus en fin de suite s'ils sont encore ACTIF). */
@@ -90,10 +90,10 @@ async function handler(relPath: string, method: 'GET' | 'POST' | 'DELETE'): Prom
     return h as Handler;
 }
 
-async function call(relPath: string, method: 'GET' | 'POST' | 'DELETE', path: string, token: string | null, ctx?: unknown): Promise<RouteResult> {
+async function call(relPath: string, method: 'GET' | 'POST' | 'DELETE', path: string, token: string | null, ctx?: unknown, json?: unknown): Promise<RouteResult> {
     const h = await handler(relPath, method);
     const headers: Record<string, string> = { 'content-type': 'application/json', ...(token ? bearer(token) : {}) };
-    const res = await h(new NextRequest(`${BASE_URL}${path}`, { method, headers }), ctx);
+    const res = await h(new NextRequest(`${BASE_URL}${path}`, { method, headers, body: json === undefined ? undefined : JSON.stringify(json) }), ctx);
     const text = await res.text();
     let body: Row = {};
     if (text) {
@@ -308,32 +308,32 @@ describe('7.0 c — permissions dédiées : refunds.manage et shifts.read (3.7)'
         assert.ok(list.includes('refunds.manage'), 'refunds.manage absente de ADMIN_PERMISSIONS');
     });
 
-    test('POST /api/admin/refunds/[id]/retry : sans refunds.manage → 403 ; avec → 404 (remboursement inconnu) ; SUSPENDU → 403 ; client → 403 ; SUPERADMIN → 404', async () => {
+    test('POST /api/admin/cashouts/[id]/resend : sans refunds.manage → 403 ; avec → 404 (versement inconnu) ; SUSPENDU → 403 ; client → 403 ; SUPERADMIN → 404', async () => {
         const unknown = randomUUID();
-        const path = `/api/admin/refunds/${unknown}/retry`;
+        const path = `/api/admin/cashouts/${unknown}/resend`; const reason = { reason: 'Justification valable du test (lot 9 bis, T19)' };
 
         const without = await adminWith(['users.read', 'payments.read'], 'sans-refunds');
-        const r1 = await call(RETRY_ROUTE, 'POST', path, without.accessToken, paramsContext(unknown));
+        const r1 = await call(RETRY_ROUTE, 'POST', path, without.accessToken, paramsContext(unknown), reason);
         assert.equal(r1.status, 403, `ADMIN sans refunds.manage : ${show(r1)}`);
 
         const withPerm = await adminWith(['refunds.manage'], 'refunds');
-        const r2 = await call(RETRY_ROUTE, 'POST', path, withPerm.accessToken, paramsContext(unknown));
-        assert.equal(r2.status, 404, `ADMIN avec refunds.manage, remboursement inconnu : ${show(r2)}`);
+        const r2 = await call(RETRY_ROUTE, 'POST', path, withPerm.accessToken, paramsContext(unknown), reason);
+        assert.equal(r2.status, 404, `ADMIN avec refunds.manage, versement inconnu : ${show(r2)}`);
 
         const suspended = await adminWith(['refunds.manage'], 'refunds-suspendu');
         await setStatus(suspended.userId, 'SUSPENDU');
-        const r3 = await call(RETRY_ROUTE, 'POST', path, suspended.accessToken, paramsContext(unknown));
+        const r3 = await call(RETRY_ROUTE, 'POST', path, suspended.accessToken, paramsContext(unknown), reason);
         assertNotActive(r3, 'ADMIN SUSPENDU avec refunds.manage');
 
         const client = await newBuyer('retry-client');
         createdAccounts.push(client.userId);
-        const r4 = await call(RETRY_ROUTE, 'POST', path, client.accessToken, paramsContext(unknown));
+        const r4 = await call(RETRY_ROUTE, 'POST', path, client.accessToken, paramsContext(unknown), reason);
         assert.equal(r4.status, 403, `client : ${show(r4)}`);
 
-        const r5 = await call(RETRY_ROUTE, 'POST', path, await superadminAccess(), paramsContext(unknown));
-        assert.equal(r5.status, 404, `SUPERADMIN, remboursement inconnu : ${show(r5)}`);
+        const r5 = await call(RETRY_ROUTE, 'POST', path, await superadminAccess(), paramsContext(unknown), reason);
+        assert.equal(r5.status, 404, `SUPERADMIN, versement inconnu : ${show(r5)}`);
 
-        const anonymous = await call(RETRY_ROUTE, 'POST', path, null, paramsContext(unknown));
+        const anonymous = await call(RETRY_ROUTE, 'POST', path, null, paramsContext(unknown), reason);
         assert.equal(anonymous.status, 401, `sans session : ${show(anonymous)}`);
     });
 

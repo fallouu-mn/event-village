@@ -16,8 +16,8 @@
  *  7. témoin : Y entièrement remboursé : X émet ses billets ;
  *  8. concurrence : deux payment_confirm sur deux connexions, attente constatée par waitForLockWaiters : un seul
  *     jeu ;
- *  9. refus de l'opérateur : ADMIN_REFUND_TO_RETRY, la relance admin aboutit ;
- * 10. getSolde indisponible au premier envoi : rien n'est envoyé avant 5 minutes, puis le cron verse (L33).
+ *  9. refus de l'opérateur : ADMIN_REFUND_TO_RETRY, « Renvoyer » (cashouts/[id]/resend, lot 9 bis B4) aboutit ;
+ * 10. getSolde indisponible au premier envoi : rien avant 5 minutes, puis le cron verse (L33, cashouts_resumed).
  *
  * Rouge avant correctif (fix(8.2a)) :
  *  - 1 à 4, 8 à 10 : payment_confirm n'a aucun contrôle croisé (20261105000007_lot7_confirmation.sql:57) : le
@@ -49,7 +49,7 @@ type Items = Array<[string, number]>;
 
 const CANCEL_ROUTE = '../../app/api/payments/[transactionId]/cancel/route';
 const RECONCILE_ROUTE = '../../app/api/cron/payments-reconcile/route';
-const RETRY_ROUTE = '../../app/api/admin/refunds/[id]/retry/route';
+const RETRY_ROUTE = '../../app/api/admin/cashouts/[id]/resend/route';
 const CONFIRM_SQL = 'SELECT public.payment_confirm($1::uuid, $2::text) AS r';
 const VIP_PRICE = 1_000;
 /** 2 × 1 000 F : service 100, total 2 100, agrégateur 31,50, net 68,50 ; commission N1 à 5 % : 3,43 F. */
@@ -383,11 +383,11 @@ describe('8.2 a — remboursement du double paiement qui n’aboutit pas du prem
         assert.deepEqual(alerts.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH'], `alerte de relance : ${JSON.stringify(alerts.map((r) => r.idempotency_key))}`);
 
         const { POST } = await importModule(RETRY_ROUTE);
-        const refundId = String(refused.refund_id);
-        const res = await POST(jsonRequest(`/api/admin/refunds/${refundId}/retry`, 'POST', refundAdmin.accessToken), { params: { id: refundId } });
+        const cashoutId = String(refused.id);
+        const res = await POST(jsonRequest(`/api/admin/cashouts/${cashoutId}/resend`, 'POST', refundAdmin.accessToken, { reason: 'Refus de l’opérateur levé (test double paiement, lot 9 bis)' }), { params: Object.assign(Promise.resolve({ id: cashoutId }), { id: cashoutId }) });
         const body = (await res.json()) as Row;
-        assert.equal(res.status, 200, `relance : ${JSON.stringify(body)}`);
-        assert.deepEqual({ success: body.success, status: body.status }, { success: true, status: 'PROCESSED' }, `relance : ${JSON.stringify(body)}`);
+        assert.equal(res.status, 200, `« Renvoyer » (contrat 4.1, route absente avant fix(9b.1)) : ${JSON.stringify(body)}`);
+        assert.deepEqual({ ok: body.ok, status: body.status }, { ok: true, status: 'CONFIRME' }, `renvoi : ${JSON.stringify(body)}`);
 
         const paid = await paymentRow(first.id);
         assert.equal(paid.status, 'REFUNDED', 'paiement remboursé après la relance');
@@ -421,7 +421,7 @@ describe('8.2 a — remboursement du double paiement qui n’aboutit pas du prem
         const { error } = await service.from('cashouts').update({ created_at: new Date(Date.now() - 6 * 60_000).toISOString() }).eq('id', waiting.id);
         assert.equal(error, null, `created_at reculé : ${error?.message}`);
         const body = await runCron();
-        assert.ok(Number(body.refunds_resumed) >= 1, `compteur refunds_resumed du cron (L33) : ${JSON.stringify(body)}`);
+        assert.ok(Number(body.cashouts_resumed) >= 1, `compteur cashouts_resumed du cron (L33, lot 9 bis 5.1) : ${JSON.stringify(body)}`);
 
         const cashouts = await cashoutsOf(first.id);
         assert.deepEqual(cashouts.map((c) => [c.id, c.status]), [[waiting.id, 'CONFIRME']], 'même cashout, versé');

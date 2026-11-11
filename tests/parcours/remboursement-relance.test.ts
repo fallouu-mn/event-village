@@ -1,37 +1,44 @@
 /**
- * Lot 8, tâche 8.2 v — relance d'un remboursement par un administrateur, POST /api/admin/refunds/[id]/retry
- * (EventCancellationService.retryRefund, lib/events/event-cancellation.service.ts:186-215). Cas T5 de
- * tests/legacy/event-cancellation-and-refunds.test.ts (tableau 12.1, ligne 15), RÉÉCRIT sur `cashouts` : le legacy
- * visait l'ancien modèle `refunds` seul ; securite-admin-lot7:311 ne teste que les 403 et 404.
- *  1. ECHOUE (refus de SamirPay) : remis à envoyer, envoyé une seconde fois, CONFIRME, refund PROCESSED, billet
- *     REMBOURSE, audit REFUND_RETRY ; 2 envois comptés sur le numéro du payeur ;
- *  2. ECHOUE, nouveau refus : réponse d'échec, ECHOUE et FAILED, un audit ;
- *  3. SOLDE_INSUFFISANT : débloqué et rebloqué tant que le solde manque (aucun envoi), puis envoyé une fois le solde
- *     revenu ;
- *  4. INCERTAIN : refusé, aucun envoi, aucun audit, statut inchangé (l'argent a pu partir) ;
- *  5. déjà CONFIRME : rien à faire, aucun envoi, aucun audit.
+ * Lot 8, tâche 8.2 v, puis lot 9 bis, tâche 1 (T17, B3, B4, X18) — « Renvoyer » un versement par un administrateur :
+ * POST /api/admin/cashouts/[id]/resend avec une justification (contrat 4.1). La route refunds/[id]/retry est
+ * supprimée (B4) ; ses cas sont migrés ici, assertion par assertion. Cas T5 de tests/legacy/event-cancellation-and-
+ * refunds.test.ts (tableau 12.1, ligne 15), réécrit sur `cashouts`.
+ *  1. ECHOUE (refus 400 de SamirPay, rien n'est parti) : renvoyé, CONFIRME, refund PROCESSED, billet REMBOURSE,
+ *     audit CASHOUT_RESENT avec la justification, statut ECHOUE précédent tracé par trg_audit_cashouts (M04) ;
+ *     2 envois comptés sur le numéro du payeur ;
+ *  2. ECHOUE, nouveau refus : { ok: false, status: ECHOUE }, refund FAILED, un audit ;
+ *  3. SOLDE_INSUFFISANT : rebloqué tant que le solde manque (aucun envoi), puis envoyé une fois le solde revenu ;
+ *     un audit par décision ;
+ *  4. INCERTAIN sans identifiant SamirPay : 409 NOT_RESENDABLE (texte du contrat), aucun envoi, aucun audit (B2) ;
+ *  5. déjà CONFIRME : 409 ALREADY_FINAL, aucun envoi, aucun audit (écart tranché : code de « Marquer versé »).
  * Les envois sont comptés par numéro de payeur neuf, jamais globalement.
  *
- * Annoncée verte dès l'écriture (port, section 12.1) : tout rouge est une anomalie à instruire (8.3 d). Suite verte
- * à l'écriture : assertTerrainInvariants, pas assertRecetteInvariants (Conventions). L'administrateur de la suite
- * est suspendu en fin de suite (il ne reçoit plus d'alertes, comme securite-admin-lot7).
+ * Rouge jusqu'à fix(9b.1) (S-V) : route absente, importée dynamiquement. L'audit est désormais écrit par
+ * cashout_admin_decide dans la transaction de la décision (« un audit » exigé, comme avant). Suite existante :
+ * assertTerrainInvariants gardé. L'administrateur de la suite est suspendu en fin de suite.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { POST as retryRoute } from '../../app/api/admin/refunds/[id]/retry/route';
+import type { NextRequest } from 'next/server';
 import { CashoutService } from '../../lib/payments/cashout.service';
-import { callsOf, fakePay, newBuyer, service, setFakeMode, type Buyer, type SaleEvent } from './paiement-helpers';
+import { callsOf, fakePay, importModule, newBuyer, service, setFakeMode, type Buyer, type SaleEvent } from './paiement-helpers';
 import { buyConfirmed, createPartnerEvent, newPartner, type TestPartner } from './finance-helpers';
 import { authed, ticketRow, type RouteResult } from './acces-helpers';
 import { assertTerrainInvariants, newAdminWith } from './terrain-helpers';
 import type { TestAdmin } from './notif-helpers';
 
 type Row = Record<string, unknown>;
+type Handler = (req: NextRequest, ctx: { params: Promise<{ id: string }> & { id: string } }) => Promise<Response>;
 
 interface Refundable { buyer: Buyer; ticketId: string; cashoutId: string; refundId: string }
 
 const FULL_BALANCE = 10_000_000;
+const RESEND_ROUTE = '../../app/api/admin/cashouts/[id]/resend/route';
+/** Justification de la décision (10 à 500 caractères, contrat 4.1). */
+const REASON = 'Refus de l’opérateur levé, nouvel essai (test du lot 9 bis)';
+/** Refus d'un renvoi quand rien ne prouve que l'argent n'est pas parti (contrat 4.1, mot pour mot). */
+const NOT_RESENDABLE_TEXT = 'Ce versement ne peut pas être renvoyé : rien ne prouve qu’il n’est pas parti. Vérifiez auprès du support SamirPay, puis marquez-le versé s’il l’est.';
 
 let partner: TestPartner;
 let ev: SaleEvent;
@@ -84,14 +91,22 @@ async function refundStatus(id: string): Promise<unknown> {
 }
 
 async function retryAudits(cashoutId: string): Promise<Row[]> {
-    const { data, error } = await service.from('audit_logs').select('*').eq('action', 'REFUND_RETRY').eq('object_id', cashoutId).order('created_at');
-    assert.equal(error, null, `journal REFUND_RETRY : ${error?.message}`);
+    const { data, error } = await service.from('audit_logs').select('*').eq('action', 'CASHOUT_RESENT').eq('object_id', cashoutId).order('created_at');
+    assert.equal(error, null, `journal CASHOUT_RESENT : ${error?.message}`);
     return (data ?? []) as Row[];
 }
 
+/** Justification journalisée par cashout_admin_decide (metadata.reason, invariant w2). */
 function auditDetail(audit: Row): Row {
     const m = (audit.metadata ?? {}) as Row;
-    return { refund_id: m.refund_id, previous_status: m.previous_status, blocked_reason: m.blocked_reason };
+    return { reason: m.reason, object_type: audit.object_type, user_id: audit.user_id };
+}
+
+/** Traces de trg_audit_cashouts (M04) : ancienne et nouvelle ligne du versement à chaque changement. */
+async function statusTrail(cashoutId: string): Promise<Array<{ from: unknown; to: unknown; blockedBefore: unknown }>> {
+    const { data, error } = await service.from('audit_logs').select('old_value, new_value, created_at').eq('object_type', 'cashouts').eq('action', 'UPDATE').eq('object_id', cashoutId).order('created_at');
+    assert.equal(error, null, `traces de trg_audit_cashouts : ${error?.message}`);
+    return (data ?? []).map((a) => ({ from: (a.old_value as Row | null)?.status, to: (a.new_value as Row | null)?.status, blockedBefore: (a.old_value as Row | null)?.blocked_reason }));
 }
 
 /** Envois de versement vers le numéro de ce payeur (faux SamirPay). */
@@ -99,8 +114,16 @@ function sendsTo(buyer: Buyer): number {
     return callsOf('sendCashout').filter((c) => c.args.phoneNumber === buyer.phone9).length;
 }
 
-async function retry(refundId: string): Promise<RouteResult> {
-    const res = await retryRoute(authed(`/api/admin/refunds/${refundId}/retry`, 'POST', admin), { params: { id: refundId } });
+/** « Renvoyer » (contrat 4.1) : route importée dynamiquement, absente avant fix(9b.1). */
+async function retry(cashoutId: string): Promise<RouteResult> {
+    let mod: { POST?: Handler };
+    try {
+        mod = await importModule(RESEND_ROUTE);
+    } catch (err) {
+        assert.fail(`POST /api/admin/cashouts/[id]/resend absente : app/api/admin/cashouts/[id]/resend/route.ts (contrat 4.1, B4, fix(9b.1)) — ${String((err as Error).message).split('\n')[0]}`);
+    }
+    assert.equal(typeof mod.POST, 'function', 'app/api/admin/cashouts/[id]/resend/route.ts : POST non exporté');
+    const res = await mod.POST!(authed(`/api/admin/cashouts/${cashoutId}/resend`, 'POST', admin, { reason: REASON }), { params: Object.assign(Promise.resolve({ id: cashoutId }), { id: cashoutId }) });
     return { status: res.status, body: await res.json() as Row };
 }
 
@@ -116,14 +139,13 @@ async function failedRefund(label: string): Promise<Refundable> {
     return r;
 }
 
-describe('8.2 v — POST /api/admin/refunds/[id]/retry (cas T5 réécrit sur cashouts)', () => {
-    test('ECHOUE : remis à envoyer puis envoyé, CONFIRME, billet REMBOURSE, audit REFUND_RETRY', async () => {
+describe('8.2 v, 9 bis tâche 1 — POST /api/admin/cashouts/[id]/resend (cas T5 réécrit sur cashouts)', () => {
+    test('ECHOUE : remis à envoyer puis envoyé, CONFIRME, billet REMBOURSE, audit CASHOUT_RESENT', async () => {
         const r = await failedRefund('echoue');
         assert.equal(sendsTo(r.buyer), 1, 'un premier envoi refusé');
-        const res = await retry(r.refundId);
+        const res = await retry(r.cashoutId);
         assert.equal(res.status, 200, show(res));
-        assert.deepEqual({ success: res.body.success, refundId: res.body.refundId, status: res.body.status },
-            { success: true, refundId: r.refundId, status: 'PROCESSED' }, show(res));
+        assert.deepEqual({ ok: res.body.ok, status: res.body.status }, { ok: true, status: 'CONFIRME' }, show(res));
         assert.equal(sendsTo(r.buyer), 2, 'un second envoi, et un seul');
         const row = await cashoutRow(r.cashoutId);
         assert.equal(row.status, 'CONFIRME', 'versement confirmé');
@@ -131,10 +153,11 @@ describe('8.2 v — POST /api/admin/refunds/[id]/retry (cas T5 réécrit sur cas
         assert.equal(await refundStatus(r.refundId), 'PROCESSED', 'remboursement traité');
         assert.equal((await ticketRow(r.ticketId)).status, 'REMBOURSE', 'billet remboursé');
         const audits = await retryAudits(r.cashoutId);
-        assert.equal(audits.length, 1, 'une ligne de journal REFUND_RETRY');
+        assert.equal(audits.length, 1, 'une ligne de journal CASHOUT_RESENT (X18)');
         assert.equal(audits[0].user_id, admin.userId, 'journal au nom de l’administrateur');
         assert.equal(audits[0].object_type, 'cashouts', 'objet journalisé');
-        assert.deepEqual(auditDetail(audits[0]), { refund_id: r.refundId, previous_status: 'ECHOUE', blocked_reason: null }, 'détail du journal');
+        assert.deepEqual(auditDetail(audits[0]), { reason: REASON, object_type: 'cashouts', user_id: admin.userId }, 'détail du journal : justification');
+        assert.ok((await statusTrail(r.cashoutId)).some((t) => t.from === 'ECHOUE'), 'statut précédent ECHOUE tracé par trg_audit_cashouts');
     });
 
     test('ECHOUE puis nouveau refus de SamirPay : réponse d’échec, ECHOUE et FAILED, un audit', async () => {
@@ -142,12 +165,12 @@ describe('8.2 v — POST /api/admin/refunds/[id]/retry (cas T5 réécrit sur cas
         setFakeMode('cashoutMode', 'rejected');
         let res: RouteResult;
         try {
-            res = await retry(r.refundId);
+            res = await retry(r.cashoutId);
         } finally {
             setFakeMode('cashoutMode', 'success');
         }
         assert.equal(res.status, 200, show(res));
-        assert.deepEqual({ success: res.body.success, status: res.body.status }, { success: false, status: 'FAILED' }, show(res));
+        assert.deepEqual({ ok: res.body.ok, status: res.body.status }, { ok: false, status: 'ECHOUE' }, show(res));
         assert.equal(sendsTo(r.buyer), 2, 'deux envois, tous deux refusés');
         assert.equal((await cashoutRow(r.cashoutId)).status, 'ECHOUE', 'toujours en échec');
         assert.equal(await refundStatus(r.refundId), 'FAILED', 'remboursement de nouveau FAILED');
@@ -161,18 +184,18 @@ describe('8.2 v — POST /api/admin/refunds/[id]/retry (cas T5 réécrit sur cas
         try {
             assert.equal((await CashoutService.send(r.cashoutId)).skipped, 'SOLDE_INSUFFISANT', 'précondition : envoi bloqué par le solde');
             assert.equal((await cashoutRow(r.cashoutId)).blocked_reason, 'SOLDE_INSUFFISANT', 'précondition : motif de blocage');
-            const still = await retry(r.refundId);
+            const still = await retry(r.cashoutId);
             assert.equal(still.status, 200, show(still));
-            assert.deepEqual({ success: still.body.success, status: still.body.status }, { success: false, status: 'FAILED' }, show(still));
+            assert.deepEqual({ ok: still.body.ok, status: still.body.status }, { ok: false, status: 'A_ENVOYER' }, show(still));
             const row = await cashoutRow(r.cashoutId);
             assert.deepEqual({ status: row.status, blocked: row.blocked_reason }, { status: 'A_ENVOYER', blocked: 'SOLDE_INSUFFISANT' }, 'rebloqué par le solde');
             assert.equal(sendsTo(r.buyer), 0, 'aucun envoi tant que le solde manque');
         } finally {
             fakePay().balance = FULL_BALANCE;
         }
-        const res = await retry(r.refundId);
+        const res = await retry(r.cashoutId);
         assert.equal(res.status, 200, show(res));
-        assert.deepEqual({ success: res.body.success, status: res.body.status }, { success: true, status: 'PROCESSED' }, show(res));
+        assert.deepEqual({ ok: res.body.ok, status: res.body.status }, { ok: true, status: 'CONFIRME' }, show(res));
         const sent = await cashoutRow(r.cashoutId);
         assert.deepEqual({ status: sent.status, blocked: sent.blocked_reason }, { status: 'CONFIRME', blocked: null }, 'débloqué et confirmé');
         assert.equal(sendsTo(r.buyer), 1, 'un seul envoi');
@@ -180,8 +203,9 @@ describe('8.2 v — POST /api/admin/refunds/[id]/retry (cas T5 réécrit sur cas
         const audits = await retryAudits(r.cashoutId);
         assert.equal(audits.length, 2, 'une ligne de journal par relance');
         for (const audit of audits) {
-            assert.deepEqual(auditDetail(audit), { refund_id: r.refundId, previous_status: 'A_ENVOYER', blocked_reason: 'SOLDE_INSUFFISANT' }, 'détail du journal');
+            assert.deepEqual(auditDetail(audit), { reason: REASON, object_type: 'cashouts', user_id: admin.userId }, 'détail du journal');
         }
+        assert.ok((await statusTrail(r.cashoutId)).some((t) => t.from === 'A_ENVOYER' && t.blockedBefore === 'SOLDE_INSUFFISANT'), 'blocage SOLDE_INSUFFISANT précédent tracé par trg_audit_cashouts');
     });
 
     test('INCERTAIN : refusé, aucun envoi, aucun audit, statut inchangé', async () => {
@@ -193,10 +217,9 @@ describe('8.2 v — POST /api/admin/refunds/[id]/retry (cas T5 réécrit sur cas
             setFakeMode('cashoutMode', 'success');
         }
         assert.equal(sendsTo(r.buyer), 1, 'précondition : un envoi d’issue inconnue');
-        const res = await retry(r.refundId);
-        assert.equal(res.status, 200, show(res));
-        assert.deepEqual({ success: res.body.success, status: res.body.status }, { success: false, status: 'FAILED' }, show(res));
-        assert.match(String(res.body.message), /Issue incertaine/, show(res));
+        const res = await retry(r.cashoutId);
+        assert.equal(res.status, 409, show(res));
+        assert.deepEqual({ code: res.body.code, error: res.body.error }, { code: 'NOT_RESENDABLE', error: NOT_RESENDABLE_TEXT }, show(res));
         assert.equal(sendsTo(r.buyer), 1, 'aucun nouvel envoi : l’argent a pu partir');
         assert.equal((await cashoutRow(r.cashoutId)).status, 'INCERTAIN', 'statut inchangé');
         assert.equal(await refundStatus(r.refundId), 'PENDING', 'remboursement inchangé');
@@ -207,11 +230,12 @@ describe('8.2 v — POST /api/admin/refunds/[id]/retry (cas T5 réécrit sur cas
         const r = await refundable('confirme');
         assert.equal((await CashoutService.send(r.cashoutId)).status, 'CONFIRME', 'précondition : versement confirmé');
         const row = await cashoutRow(r.cashoutId);
-        const res = await retry(r.refundId);
-        assert.equal(res.status, 200, show(res));
-        assert.deepEqual({ success: res.body.success, status: res.body.status, transactionId: res.body.transactionId },
-            { success: true, status: 'PROCESSED', transactionId: row.samirpay_transaction_id }, show(res));
-        assert.equal(res.body.message, 'Remboursement déjà envoyé.', show(res));
+        const res = await retry(r.cashoutId);
+        assert.equal(res.status, 409, show(res));
+        assert.equal(res.body.code, 'ALREADY_FINAL', show(res));
+        assert.equal(typeof res.body.error, 'string', `refus en français : ${show(res)}`);
+        const still = await cashoutRow(r.cashoutId);
+        assert.deepEqual({ status: still.status, tx: still.samirpay_transaction_id }, { status: 'CONFIRME', tx: row.samirpay_transaction_id }, 'versement inchangé');
         assert.equal(sendsTo(r.buyer), 1, 'aucun nouvel envoi');
         assert.deepEqual(await retryAudits(r.cashoutId), [], 'aucune relance journalisée');
     });
