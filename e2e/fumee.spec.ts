@@ -67,7 +67,7 @@
  *
  * Lot 9 bis (contrat 7.2, T8 ; commit fix(9b.e2e)), signalé :
  *  - 8 : l'email du J-1 est écarté EMAIL_NOT_VERIFIED (règle changée, B96 : aucun email à une adresse non vérifiée,
- *    contrôle fait avant celui de la configuration du canal ; run 119) au lieu de EMAIL_NOT_CONFIGURED ;
+ *    contrôle fait avant celui de la configuration du canal ; run 119) au lieu de EMAIL_NOT_CONFIGURED ; idem pour l'email du H-3 (G.49 : EMAIL du H-3, run 120), qui reste SKIPPED à l'étape 9 ;
  *  - 15 : transfert avec mot de passe récent (R57) : saisies du client effacées (e2e/support/service.ts), refus 403
  *    PASSWORD_CONFIRMATION_REQUIRED, boîte « Confirmez votre mot de passe », POST /api/account/password-confirm 200,
  *    puis le même transfert repart (200). Aucune assertion retirée.
@@ -381,7 +381,7 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             expect(h3Scheduled.created.REMINDER_H3 ?? 0, `planification H-3 : ${JSON.stringify(h3Scheduled)}`).toBeGreaterThan(0);
             const h3 = (await outboxOfEvent(e2Id, ['REMINDER_H3'])).filter((r) => r.recipient_user_id === clientUserId);
             expect(h3.length, `lignes REMINDER_H3 du client : ${brief(h3)}`).toBeGreaterThan(0);
-            expect(h3.filter((r) => r.status !== 'PENDING'), `REMINDER_H3 en attente, rien d’envoyé : ${brief(h3)}`).toEqual([]);
+            expect(h3.filter((r) => (r.channel === 'EMAIL' ? `${r.status} ${r.reason}` !== 'SKIPPED EMAIL_NOT_VERIFIED' : r.status !== 'PENDING')), `REMINDER_H3 en attente (email écarté EMAIL_NOT_VERIFIED, G.49 et B96), rien d’envoyé : ${brief(h3)}`).toEqual([]);
             const h3Sms = h3.find((r) => r.channel === 'SMS');
             expect(h3Sms, `ligne SMS du H-3 : ${brief(h3)}`).toBeTruthy();
             expectedH3 = await c.renderSms('REMINDER_H3', renderData(h3Sms as OutboxLine, e2Event));
@@ -409,8 +409,8 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
 
             const h3 = await outboxOfEvent(e2Id, ['REMINDER_H3']);
             expect(h3.length, 'lignes REMINDER_H3 de E2').toBeGreaterThan(0);
-            expect(h3.map((r) => `${r.status} ${r.reason ?? ''}`), `REMINDER_H3 annulés dans la transaction de l’annulation : ${brief(h3)}`)
-                .toEqual(h3.map(() => 'CANCELLED EVENT_ANNULE'));
+            expect(h3.map((r) => `${r.status} ${r.reason ?? ''}`), `REMINDER_H3 annulés dans la transaction de l’annulation (email déjà écarté à l’insertion : inchangé) : ${brief(h3)}`)
+                .toEqual(h3.map((r) => (r.channel === 'EMAIL' && r.status === 'SKIPPED' && r.reason === 'EMAIL_NOT_VERIFIED' ? 'SKIPPED EMAIL_NOT_VERIFIED' : 'CANCELLED EVENT_ANNULE')));
 
             const secret = process.env.CRON_SECRET;
             if (!secret) throw new Error(`CRON_SECRET absente de ${e2eConfig().envFile} : la vraie route de l’envoyeur est protégée`);
