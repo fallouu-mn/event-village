@@ -27,7 +27,7 @@ import path from 'node:path';
 import { NOTIFICATION_CATALOG } from '../../lib/notifications/catalog';
 import { OUTBOX_REASON_LABELS, OUTBOX_TYPE_LABELS } from '../../lib/notifications/outbox-labels';
 import { getFakes } from '../fakes';
-import { inRolledBackTransaction } from '../helpers/db';
+import { inRolledBackTransaction, openConcurrentClient } from '../helpers/db';
 import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
 import { authed, createTimedEvent, newController } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, type DraftEvent } from './cycle-helpers';
@@ -268,7 +268,7 @@ function screenSource(rel: string, why: string): string {
     assert.ok(fs.existsSync(abs), `${rel} absent (${why})`);
     const src = fs.readFileSync(abs, 'utf8');
     const parts = [src];
-    for (const m of src.matchAll(/from\s+['"]@\/((?:components|lib)\/[^'"]+)['"]/g)) {
+    for (const m of Array.from(src.matchAll(/from\s+['"]@\/((?:components|lib)\/[^'"]+)['"]/g))) {
         const file = [`${m[1]}.tsx`, `${m[1]}.ts`, `${m[1]}/index.tsx`, `${m[1]}/index.ts`].find((f) => fs.existsSync(path.resolve(process.cwd(), f)));
         if (file) parts.push(fs.readFileSync(path.resolve(process.cwd(), file), 'utf8'));
     }
@@ -345,7 +345,7 @@ function emailFaults(type: string): string[] {
     if (!mail.text.includes(content)) faults.push(`${type} : le corps ne reprend pas le contenu in-app « ${content} »`);
     if (!mail.text.includes(`${RENDER_APP}${link}`)) faults.push(`${type} : aucun bouton vers ${link}`);
     if (/<img|data:image/i.test(mail.html)) faults.push(`${type} : image ou QR dans l’email`);
-    for (const m of mail.html.matchAll(/href="([^"]+)"/g)) {
+    for (const m of Array.from(mail.html.matchAll(/href="([^"]+)"/g))) {
         const href = m[1].replace(/&amp;/g, '&');
         if (!href.startsWith(`${RENDER_APP}/`) && !href.startsWith('mailto:')) faults.push(`${type} : lien externe ${href}`);
         if (FORBIDDEN_LINK.test(href)) faults.push(`${type} : lien de connexion ou de réclamation ${href}`);
@@ -476,5 +476,63 @@ describe('9b.52 G.52 — un email lent ou refusé ne retarde ni ne bloque le SMS
         assert.equal(masked.toLowerCase().includes(a.email.toLowerCase()), false, `adresse en clair dans la supervision : ${masked}`);
         assert.match(masked, /^.{1,2}\*\*\*@test\.eventvillage\.local$/, `adresse masquée (règle de la supervision) : ${masked}`);
         assert.deepEqual([item.type, item.status], ['EMAIL_VERIFICATION', 'SENT']);
+    });
+});
+
+// ── Tâche 53 : aucun envoi vers une adresse non vérifiée (G53-5) ; invariants w12 et w13 ligne à ligne (G53-13) ──
+
+/** notif_enqueue validé (COMMIT), comme une RPC appelée par l'application ; lignes du groupe. */
+async function enqueueCommitted(type: string, userId: string): Promise<OutboxRow[]> {
+    const key = `${type}:${randomUUID()}`;
+    const db = await openConcurrentClient({ applicationName: 'ev-test-email-regle' });
+    try {
+        await db.query('SELECT public.notif_enqueue($1::jsonb)', [JSON.stringify({ type, key, user_id: userId, data: catalogSample(type) })]);
+        await db.commit();
+    } finally {
+        await db.close();
+    }
+    return outboxRows({ keyPrefix: `${key}:` });
+}
+
+function emailRowOf(rows: OutboxRow[], what: string): OutboxRow {
+    const email = rows.filter((r) => r.channel === 'EMAIL');
+    assert.equal(email.length, 1, `${what} : une ligne EMAIL (canal du registre) : ${describeRows(rows)}`);
+    return email[0];
+}
+
+describe('9b.53 G53-5, G53-13 — aucun email vers une adresse non vérifiée, à la mise en file comme à la réservation', () => {
+    test('G53-5 adresse réelle non vérifiée : PURCHASE_CONFIRMED → EMAIL SKIPPED EMAIL_NOT_VERIFIED dès la mise en file, aucun email', async () => {
+        const a = await newBuyer('g53-5-nv'); // adresse réelle d'avant le lot, jamais vérifiée (B98)
+        const since = getFakes().email.messagesTo(a.email).length;
+        const email = emailRowOf(await enqueueCommitted('PURCHASE_CONFIRMED', a.userId), 'mise en file');
+        assert.deepEqual(state(email), ['SKIPPED', 'EMAIL_NOT_VERIFIED'], 'adresse non vérifiée : rien à envoyer (aujourd’hui PENDING, M/20261103000002:563-565)');
+        await flushNotifications({ ids: [email.id] });
+        assert.equal(getFakes().email.messagesTo(a.email).length, since, 'aucun email vers une adresse non vérifiée');
+    });
+
+    test('G53-5 adresse dévérifiée entre la mise en file et la réservation : EMAIL SKIPPED EMAIL_NOT_VERIFIED à la réservation, decision.email.verified faux, aucun email', async () => {
+        const a = await verifiedAccount('g53-5-dev');
+        const email = emailRowOf(await enqueueCommitted('PURCHASE_CONFIRMED', a.userId), 'mise en file');
+        assert.deepEqual(state(email), ['PENDING', null], 'adresse vérifiée à la mise en file : la ligne attend');
+        const { error } = await service.from('users').update({ email_verified_at: null }).eq('id', a.userId);
+        assert.equal(error, null, `adresse dévérifiée : ${error?.message}`);
+        const since = getFakes().email.messagesTo(a.email).length;
+        await flushNotifications({ ids: [email.id] });
+        const [row] = await outboxRows({ ids: [email.id] });
+        assert.deepEqual(state(row), ['SKIPPED', 'EMAIL_NOT_VERIFIED'], 'l’état à la réservation compte (M/20261105000002:334-337)');
+        assert.equal((row.decision?.email as Row | undefined)?.verified, false, `decision.email.verified : ${JSON.stringify(row.decision)}`);
+        assert.equal(getFakes().email.messagesTo(a.email).length, since, 'aucun email');
+    });
+
+    test('G53-13 témoin positif (w12, w13) : adresse vérifiée → EMAIL SENT, decision.email.verified vrai, un email à l’adresse vérifiée', async () => {
+        const a = await verifiedAccount('g53-13');
+        const since = getFakes().email.messagesTo(a.email).length;
+        const email = emailRowOf(await enqueueCommitted('PURCHASE_CONFIRMED', a.userId), 'mise en file');
+        await flushNotifications({ ids: [email.id] });
+        const [row] = await outboxRows({ ids: [email.id] });
+        assert.deepEqual(state(row), ['SENT', null], 'email envoyé à l’adresse vérifiée');
+        assert.equal((row.decision?.email as Row | undefined)?.verified, true, `w12 : decision.email.verified vrai sur une ligne EMAIL SENT : ${JSON.stringify(row.decision)}`);
+        assert.ok(!/@([a-z0-9-]+\.)*eventvillage\.sn$/i.test(row.recipient_email ?? a.email), 'w13 : jamais une adresse technique');
+        assert.equal(getFakes().email.messagesTo(a.email).length - since, 1, 'un email');
     });
 });

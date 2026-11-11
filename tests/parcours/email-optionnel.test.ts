@@ -1,29 +1,29 @@
 /**
- * Lot 1C.8 — l'email (Resend) est optionnel, le SMS (MTarget) obligatoire.
- * Ce processus de test retire RESEND_API_KEY (chaque suite a son propre processus).
- * Lot 7 (T18, D1) : l'inscription client suit le contrat « numéro d'abord » (POST /api/auth/register/start,
- * code lu dans le faux SMS, POST /api/auth/register) par registerClientFlow ; mêmes assertions (rouge jusqu'à
- * fix(7.3s)).
- *  - Inscription client, inscription partenaire (avis aux admins) et achat de billet : aucune
- *    erreur, SMS envoyés (faux adaptateur), AUCUN email tenté.
- *  - Un seul avertissement « email désactivé » pour tout le processus.
+ * Lot 1C.8 — l'email (Resend) est optionnel, le SMS (MTarget) obligatoire ; ce processus retire RESEND_API_KEY.
+ * Lot 7 (T18, D1) : inscription client « numéro d'abord » par registerClientFlow, mêmes assertions.
+ * Lot 9 bis (T38, R53, G53-10) : inscription partenaire en deux appels (registerPartnerTwoStep, rouge jusqu'à fix(9b.17)) ;
+ * acheteur neuf vérifié (G.49 : sinon EMAIL_NOT_VERIFIED masquerait EMAIL_NOT_CONFIGURED, M10) ; G53-10 en fin de fichier
+ * (lien de vérification jamais tenté, journal SKIPPED, SMS inchangés, renvoi 503 sans quota, rouge jusqu'à fix(9b.48)).
+ *  - Inscription client, inscription partenaire (avis aux admins) et achat de billet : aucune erreur, SMS envoyés
+ *    (faux adaptateur), AUCUN email tenté ; un seul avertissement « email désactivé » pour tout le processus.
  *  - Sans identifiants MTarget, la configuration serveur est refusée.
  */
 import '../helpers/env';
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createClient } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { getServerEnv, resetServerEnvCache } from '../../lib/env';
-import { bearer, loadFixtures, signInAs } from '../helpers/fixtures';
-import { POST as registerPartner } from '../../app/api/partner/register/route';
+import { bearer, loadFixtures } from '../helpers/fixtures';
 import { POST as checkout } from '../../app/api/checkout/route';
 import { POST as samirpayWebhook } from '../../app/api/webhooks/samirpay/route';
 import { getFakes, resetFakes } from '../fakes';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
-import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
 import { advanceEventTo, posterUrl } from './cycle-helpers';
-import { flushNotifications, outboxRows } from './notif-helpers';
+import { flushNotifications, loadLotModule, markEmailVerified, outboxRows } from './notif-helpers';
+import { newBuyer } from './paiement-helpers';
 import { registerClientFlow } from './terrain-helpers';
 
 const warnings: string[] = [];
@@ -72,16 +72,21 @@ describe('Email optionnel, SMS obligatoire', () => {
         assert.ok(getFakes().sms.messagesTo(clientPhone).length >= 1, 'SMS OTP envoyé au client');
 
         const partnerPhone = randomSenegalPhone('78');
-        const regPartner = await registerPartner(jsonRequest('/api/partner/register', {
+        // Lot 9 bis (T38, R53) : deux appels de la même route, code lu dans le faux SMS du numéro.
+        const regPartner = await registerPartnerTwoStep({
             companyName: 'Sans Email SARL', description: 'Partenaire fictif, canal email désactivé.', address: '1 rue Sans Email',
             city: 'Dakar', activities: ['ORGANISATEUR'], firstName: 'Pape', lastName: 'Sansemail', phone: partnerPhone,
             email: randomEmail('partenaire-sans-email'), password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD,
             ...(await uploadRegistrationDocuments()),
-        }));
-        assert.ok(regPartner.status < 300, `inscription partenaire : HTTP ${regPartner.status} ${JSON.stringify(await regPartner.json())}`);
+        });
+        assert.equal(regPartner.first.status, 200, `inscription partenaire, appel 1 : HTTP ${regPartner.first.status} ${JSON.stringify(regPartner.first.body)}`);
+        assert.equal(regPartner.second?.status, 201, `inscription partenaire, appel 2 : HTTP ${regPartner.second?.status} ${JSON.stringify(regPartner.second?.body)}`);
         assert.ok(getFakes().sms.messagesTo(partnerPhone).length >= 1, 'SMS envoyé au partenaire');
 
-        const client = await signInAs('CLIENT');
+        // Lot 9 bis (G.49, B96) : acheteur neuf à l'adresse vérifiée, sinon la ligne EMAIL serait SKIPPED EMAIL_NOT_VERIFIED
+        // dès la mise en file et le motif EMAIL_NOT_CONFIGURED testé ci-dessous ne serait plus atteint.
+        const client = await newBuyer('sans-email-acheteur');
+        await markEmailVerified(client.userId);
         const buyerPhone = randomSenegalPhone('76');
         const res = await checkout(jsonRequest('/api/checkout', {
             eventId, items: [{ categoryId, quantity: 1 }], operator: 'WAVE', payerPhone: buyerPhone.slice(4),
@@ -120,5 +125,42 @@ describe('Email optionnel, SMS obligatoire', () => {
             resetServerEnvCache();
         }
         assert.doesNotThrow(() => getServerEnv(), 'sans RESEND_API_KEY, la configuration reste valide');
+    });
+});
+
+describe('Lot 9 bis (G53-10, contrat 4.6) — sans RESEND_API_KEY : le lien de vérification n’est jamais tenté, les SMS ne changent pas', () => {
+    const NOT_CONFIGURED = 'L’envoi des emails n’est pas encore disponible. Votre adresse est enregistrée : vous pourrez la vérifier plus tard.';
+    const plain = (s: string): string => s.replace(/[  ]/g, ' ').replace(/[’‘]/g, '\'');
+    const ip = (n: number): Record<string, string> => ({ 'x-forwarded-for': `198.19.${(process.pid % 200) + 1}.${n}` });
+
+    test('inscription avec email → 200 NOT_CONFIGURED, aucun email tenté, journal EMAIL_VERIFICATION SKIPPED EMAIL_NOT_CONFIGURED, SMS identiques sans email ; renvoi → 503 sans quota consommé', async () => {
+        const attempted = getFakes().email.sent.length;
+        const address = randomEmail('g53-10');
+        const withEmail = await registerClientFlow({ email: address, headers: ip(201) });
+        assert.deepEqual([withEmail.register?.body.email_pending, withEmail.register?.body.email_verification], [address, 'NOT_CONFIGURED'],
+            `réponse de l’inscription (contrat 4.6) : ${JSON.stringify(withEmail.register?.body)}`);
+        const withoutEmail = await registerClientFlow({ headers: ip(202) });
+        const shape = (phone: string): string[] => getFakes().sms.messagesTo(phone).map((m) => m.message.replace(/\b\d{6}\b/g, '{code}'));
+        assert.equal(shape(withEmail.phone).length, 1, `un seul SMS à l’inscription avec email (le code) : ${JSON.stringify(shape(withEmail.phone))}`);
+        assert.deepEqual(shape(withEmail.phone), shape(withoutEmail.phone), 'SMS d’inscription identiques, en nombre et en texte, avec ou sans email');
+        const journal = await outboxRows({ type: 'EMAIL_VERIFICATION', userId: withEmail.userId! });
+        assert.deepEqual(journal.map((r) => [r.origin, r.channel, r.status, r.reason]), [['SYNC_LOG', 'EMAIL', 'SKIPPED', 'EMAIL_NOT_CONFIGURED']],
+            'journal du lien : non tenté, motif explicite');
+
+        const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+        const { data: s, error } = await anon.auth.signInWithPassword({ email: String(withEmail.register?.body.email), password: STRONG_PASSWORD });
+        assert.equal(error, null, `connexion du compte inscrit : ${error?.message}`);
+        const mod = await loadLotModule('../../app/api/account/email/resend/route', 'route POST /api/account/email/resend (contrat 4.6, fix(9b.48))');
+        assert.equal(typeof mod.POST, 'function', 'POST /api/account/email/resend non exporté');
+        const resend = mod.POST as (req: NextRequest) => Promise<Response>;
+        // Quatre renvois : le quota (trois par heure) n'est jamais consommé quand l'envoi n'est pas configuré, donc jamais de 429.
+        for (let i = 1; i <= 4; i++) {
+            const res = await resend(jsonRequest('/api/account/email/resend', {}, { authorization: `Bearer ${s.session!.access_token}` }));
+            const body = await res.json() as Record<string, unknown>;
+            assert.equal(res.status, 503, `renvoi ${i} : HTTP ${res.status} ${JSON.stringify(body)}`);
+            assert.equal(body.code, 'EMAIL_NOT_CONFIGURED', `renvoi ${i} : ${JSON.stringify(body)}`);
+            assert.equal(plain(String(body.error ?? '')), plain(NOT_CONFIGURED), `renvoi ${i} : message du contrat`);
+        }
+        assert.equal(getFakes().email.sent.length, attempted, 'aucun email tenté sans RESEND_API_KEY');
     });
 });
