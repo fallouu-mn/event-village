@@ -344,7 +344,10 @@ export class CashoutService {
             if (res.reference) providerFields.samirpay_reference = res.reference;
             await patch(row.id, { status: confirmed ? 'CONFIRME' : 'ENVOYE', sent_at: now, confirmed_at: confirmed ? now : null, samirpay_transaction_id: res.transactionId, provider_status: res.status, ...providerFields });
             if (confirmed) await finalize(row, 'CONFIRME', res.transactionId);
-            return { status: confirmed ? 'CONFIRME' : 'ENVOYE', fees: res.fees ?? null };
+            // Reste S3 : `fees` seulement s'ils sont connus ; sans frais, l'issue garde sa forme du lot 8
+            // (essai-simule:514, `{ status: 'CONFIRME' }` exact).
+            const status: CashoutStatus = confirmed ? 'CONFIRME' : 'ENVOYE';
+            return res.fees !== undefined && res.fees !== null ? { status, fees: res.fees } : { status };
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             // Lot 9 bis (B5, contrat 5.1) : refus 400 « solde insuffisant » ou « hors des limites du compte » : rien n'est
