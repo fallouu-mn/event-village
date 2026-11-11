@@ -1004,7 +1004,10 @@ BEGIN
     END IF;
 
     SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
-    IF NOT (a.is_owner OR a.is_staff) THEN
+    -- Reste S3 (R2, B30) : event_actor_profile n'appelle plus « staff » qu'un admin muni d'events.write ; un admin
+    -- sans cette permission garde le refus 403 FORBIDDEN du lot 9 (invitations-annulation:261), jamais un 404.
+    IF NOT (a.is_owner OR a.is_staff)
+       AND NOT EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
         RETURN public.pilotage_refusal('EVENT_NOT_FOUND');
     END IF;
     IF NOT a.is_active THEN
@@ -1439,7 +1442,10 @@ BEGIN
 
     -- Étape 3 : droits
     SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
-    IF NOT (a.is_owner OR a.is_staff) THEN
+    -- Reste S3 (R2, B30) : event_actor_profile n'appelle plus « staff » qu'un admin muni d'events.write ; un admin
+    -- sans cette permission garde le refus 403 FORBIDDEN du lot 9 (invitations:190), jamais un 404.
+    IF NOT (a.is_owner OR a.is_staff)
+       AND NOT EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text IN ('ADMIN', 'SUPERADMIN')) THEN
         RETURN public.pilotage_refusal('EVENT_NOT_FOUND');
     END IF;
     IF NOT a.is_active THEN
