@@ -55,7 +55,7 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     event_suspended: 'Événement suspendu',
     event_not_open: 'Contrôle pas encore ouvert',
     payment_required: 'Paiement requis',
-    qr_expired: 'QR expiré : demandez au client de rafraîchir son billet',
+    qr_expired: 'QR expiré : demandez au client d’ouvrir son billet dans l’application',
     dynamic_qr_required: 'QR dynamique requis (billet ouvert dans l’application)',
     manual_entry_refused: 'Saisie manuelle refusée',
     transfer_pending: 'Transfert en cours',
