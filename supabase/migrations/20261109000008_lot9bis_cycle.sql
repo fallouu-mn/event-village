@@ -24,6 +24,12 @@
 --     suspendu : son événement ne peut pas être remis en ligne avant sa réactivation. » quand la partenaire est
 --     SUSPENDU, admin compris (statut lu sans verrou, ordre 3.3).
 --
+-- Délégation fix(9b.16-SC) (R7 ; B39, pour S-B) :
+--  2 quater. event_transition (même définition, point 2) : soumission (→ EN_ATTENTE) et publication (→ PUBLIE)
+--     refusées PARTNER_NOT_VALIDATED « Votre profil d’organisateur doit être validé avant de soumettre ou de publier
+--     un événement. » quand le dossier de la partenaire n'est pas VALIDE (SUSPENDU reste PARTNER_SUSPENDED à la
+--     publication).
+--
 -- Délégation fix(9b.12-SC) (R51 ; B31, B34, pour S-B) :
 --  3 bis. event_actions (même définition, point 3) : lecture par la propriétaire ou un admin events.read (ou
 --     events.write) ; actions ADMIN seulement avec events.write (admin_can) ; can_cancel lu dans la table (canal
@@ -269,6 +275,11 @@ BEGIN
     IF v_to = 'PUBLIE' AND v_partner_status = 'SUSPENDU' THEN
         RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED',
                                   'message', 'Le partenaire est suspendu : son événement ne peut pas être remis en ligne avant sa réactivation.');
+    END IF;
+    -- Lot 9 bis (R7, B39) : soumission et publication réservées à une partenaire au dossier VALIDE
+    IF v_to IN ('EN_ATTENTE', 'PUBLIE') AND v_partner_status IS DISTINCT FROM 'VALIDE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_NOT_VALIDATED',
+                                  'message', 'Votre profil d’organisateur doit être validé avant de soumettre ou de publier un événement.');
     END IF;
 
     IF e.status = 'BROUILLON' AND v_to = 'EN_ATTENTE' THEN
