@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { MessageSquareText, Phone, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/Field';
@@ -10,6 +11,12 @@ import { OtpInput } from '@/components/auth/OtpInput';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
 
+/** Boîte « mot de passe » chargée à la demande (lot 9 bis, R57 ; contrat 5.13 : hors du premier chargement). */
+const PasswordConfirmDialog = dynamic(
+  () => import('@/components/auth/PasswordConfirmDialog').then((m) => m.PasswordConfirmDialog),
+  { ssr: false },
+);
+
 /**
  * Changement du numéro du compte (lot 9, tâche 9.2, contrat 4.3 et 5.3). Deux étapes :
  *  1. POST /api/account/phone/start { phone } : le code part par SMS au NOUVEAU numéro ;
@@ -17,6 +24,9 @@ import { toSenegaleseE164 } from '@/lib/validations/auth';
  *     l'ancien numéro est prévenu par SMS.
  * Tant que le code n'est pas confirmé, le numéro actuel reste celui du compte. Le code n'est conservé que le temps
  * de la saisie. Un refus affiche le message français de la route ; il n'y a aucune relance automatique.
+ * Lot 9 bis (R57, contrat 4.2 et 5.13) : les deux routes exigent un mot de passe saisi sur la session depuis moins de
+ * 10 minutes (403 PASSWORD_CONFIRMATION_REQUIRED, avant tout SMS). Ce refus ouvre PasswordConfirmDialog ; une fois le
+ * mot de passe accepté, la même étape est relancée une fois, à la demande de la personne (elle a cliqué « Confirmer »).
  */
 
 interface PhoneChangeDialogProps {
@@ -51,7 +61,18 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
   const [info, setInfo] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  /** Étape refusée faute de mot de passe récent, relancée après la confirmation (R57). */
+  const [pendingStep, setPendingStep] = useState<(() => void) | null>(null);
   const busy = isSending || isConfirming;
+
+  /** Refus « mot de passe récent exigé » : la boîte s'ouvre, l'étape sera relancée après. */
+  const askPassword = (err: unknown, retry: () => void): boolean => {
+    if (err instanceof ApiError && err.code === 'PASSWORD_CONFIRMATION_REQUIRED') {
+      setPendingStep(() => retry);
+      return true;
+    }
+    return false;
+  };
 
   const reset = () => {
     setStep('phone');
@@ -61,6 +82,7 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
     setPhoneError(null);
     setError(null);
     setInfo(null);
+    setPendingStep(null);
   };
 
   const handleClose = () => {
@@ -83,6 +105,7 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
       setInfo('Code envoyé par SMS. Il reste valable 10 minutes.');
     } catch (err) {
       console.error('[PhoneChangeDialog] envoi du code refusé :', err instanceof Error ? err.message : String(err));
+      if (askPassword(err, () => void sendCode(target))) return;
       const message = refusalMessage(err);
       if (step === 'phone' && err instanceof ApiError && err.code !== null && PHONE_FIELD_CODES.has(err.code)) setPhoneError(message);
       else setError(message);
@@ -101,22 +124,28 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
     void sendCode(target);
   };
 
-  const submitCode = async (e: React.FormEvent) => {
+  const submitCode = (e: React.FormEvent) => {
     e.preventDefault();
     if (code.length !== 6) {
       setError('Saisissez les 6 chiffres du code reçu par SMS.');
       return;
     }
+    void confirmCode(code);
+  };
+
+  const confirmCode = async (value: string) => {
     setIsConfirming(true);
     setError(null);
     setInfo(null);
     try {
-      await sendJson<{ ok: true }>('/api/account/phone/confirm', 'POST', { phone: sentTo, code });
+      await sendJson<{ ok: true }>('/api/account/phone/confirm', 'POST', { phone: sentTo, code: value });
       reset();
       onChanged();
       onClose();
     } catch (err) {
       console.error('[PhoneChangeDialog] confirmation refusée :', err instanceof Error ? err.message : String(err));
+      // Saisie du mot de passe expirée entre les deux étapes : le code reste valable, il est renvoyé tel quel après.
+      if (askPassword(err, () => void confirmCode(value))) return;
       setCode('');
       setError(refusalMessage(err));
     } finally {
@@ -157,6 +186,22 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
   );
 
   return (
+    <>
+    {pendingStep !== null && (
+      <PasswordConfirmDialog
+        isOpen
+        onClose={() => {
+          setPendingStep(null);
+          setError('Changement de numéro interrompu : votre mot de passe est demandé pour continuer.');
+        }}
+        onConfirmed={() => {
+          const retry = pendingStep;
+          setPendingStep(null);
+          retry();
+        }}
+        actionHint={step === 'phone' ? 'Le code sera envoyé à votre nouveau numéro juste après.' : 'Votre code sera vérifié juste après.'}
+      />
+    )}
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
@@ -217,5 +262,6 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
         )}
       </div>
     </Modal>
+    </>
   );
 }
