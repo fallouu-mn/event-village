@@ -13,6 +13,27 @@ import type { PilotageSales } from './types';
 
 type CategoryRow = PilotageSales['by_category'][number];
 
+/** Lot 9 bis (R50, B66) : ventes par canal calculées par le serveur (pilotage_sales), libellés servis. */
+interface ChannelRow { channel: string; label: string; tickets: number; amount: number }
+
+const CHANNEL_COLUMNS: DataColumn<ChannelRow>[] = [
+    { key: 'label', header: 'Canal', hideOnCard: true, render: (r) => <span className="font-semibold">{r.label}</span> },
+    { key: 'tickets', header: 'Billets', align: 'right', render: (r) => formatInteger(r.tickets) },
+    { key: 'amount', header: 'Montant', align: 'right', render: (r) => formatFcfa(r.amount) },
+];
+
+/** by_channel du serveur, lu tel quel ; absent ou illisible : null (l'écran le dit, rien n'est recalculé ici). */
+function channelRows(data: PilotageSales): ChannelRow[] | null {
+    const raw = (data as PilotageSales & { by_channel?: unknown }).by_channel;
+    if (!Array.isArray(raw)) return null;
+    return raw.map((r: Record<string, unknown>) => ({
+        channel: String(r.channel ?? ''),
+        label: typeof r.label === 'string' && r.label !== '' ? r.label : String(r.channel ?? ''),
+        tickets: Number(r.tickets ?? 0),
+        amount: Number(r.amount ?? 0),
+    }));
+}
+
 const COLUMNS: DataColumn<CategoryRow>[] = [
     {
         key: 'name',
@@ -36,7 +57,7 @@ const COLUMNS: DataColumn<CategoryRow>[] = [
     { key: 'revenue', header: 'Recettes en ligne', align: 'right', render: (c) => formatFcfa(c.revenue_online) },
 ];
 
-/** Chiffres des ventes : par catégorie (vendus, en cours de paiement, restants) et jour par jour. */
+/** Chiffres des ventes : par catégorie (vendus, en cours de paiement, restants), par canal (R50) et jour par jour. */
 function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
     const { data, error, loading, refreshing, reload } = sales;
 
@@ -53,6 +74,8 @@ function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
     }
 
     const maxDay = Math.max(0, ...data.by_day.map((d) => d.sold));
+    const byChannel = channelRows(data);
+    if (byChannel === null) console.warn('[pilotage] ventes : by_channel absent de la réponse du serveur');
 
     return (
         <>
@@ -65,6 +88,21 @@ function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
                     cardTitle={(c) => COLUMNS[0].render(c)}
                     empty={<EmptyState title="Aucune catégorie" description="Ajoutez une catégorie de billets depuis la fiche de l’événement." className="my-0" />}
                 />
+            </PilotageSection>
+
+            <PilotageSection title="Par canal" description="Billets valables ou déjà utilisés, comptés par le serveur : vendus en ligne, gratuits pris en ligne, vendus au guichet et invitations.">
+                {byChannel === null ? (
+                    <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Répartition par canal indisponible pour le moment.</p>
+                ) : (
+                    <DataList
+                        items={byChannel}
+                        columns={CHANNEL_COLUMNS}
+                        getKey={(r) => r.channel}
+                        caption="Ventes par canal"
+                        cardTitle={(r) => CHANNEL_COLUMNS[0].render(r)}
+                        empty={<EmptyState title="Aucune vente" description="Les ventes s’affichent ici par canal." className="my-0" />}
+                    />
+                )}
             </PilotageSection>
 
             <PilotageSection title="Évolution jour par jour" description="Billets vendus chaque jour, à l’heure de Dakar.">
