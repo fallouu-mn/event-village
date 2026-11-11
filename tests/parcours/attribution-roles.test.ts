@@ -84,7 +84,7 @@ describe('Attribution des rôles par les routes serveur', () => {
         const body = await res.json();
         assert.equal(res.status, 200, `création par admin : HTTP ${res.status} ${JSON.stringify(body)}`);
         assert.ok((await rolesOf(body.userId)).includes('CONTROLEUR'), 'user_roles doit contenir CONTROLEUR');
-        await assertSessionRole(email, STRONG_PASSWORD, 'CONTROLEUR');
+        const { data: authUser, error: authErr } = await service.auth.admin.getUserById(body.userId); assert.equal(authErr, null, authErr?.message); await assertSessionRole(String(authUser.user?.email ?? email), STRONG_PASSWORD, 'CONTROLEUR'); // lot 9 bis (R87-c, contrat 4.6) : GoTrue porte l'adresse technique
     });
 
     test('invitation d\'un contrôleur par le partenaire A → CONTROLEUR dans user_roles + affectation', async () => {
