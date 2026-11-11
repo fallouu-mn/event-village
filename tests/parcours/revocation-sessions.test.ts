@@ -81,7 +81,7 @@ describe('Révocation des sessions', () => {
     test('suspension par un admin → sessions révoquées', async () => {
         const superadmin = await signInAs('SUPERADMIN');
         const s = await newSession('admin-suspend');
-        const res = await adminPatchUser(jsonRequest('/api/admin/users', { userId: s.userId, status: 'SUSPENDU' }, bearer(superadmin.accessToken), 'PATCH'));
+        const res = await adminPatchUser(jsonRequest('/api/admin/users', { userId: s.userId, status: 'SUSPENDU', reason: 'Suspension de test : révocation des sessions' }, bearer(superadmin.accessToken), 'PATCH')); // lot 9 bis : motif exigé (contrat 4.2, REASON_REQUIRED)
         assert.equal(res.status, 200, `PATCH : HTTP ${res.status} ${JSON.stringify(await res.json())}`);
         assert.ok(!(await refreshWorks(s.refreshToken)).ok, 'session encore rafraîchissable après suspension');
     });
