@@ -84,6 +84,11 @@
 --     audit_logs ACCOUNT_PHONE_CHANGED du compte + 24 h fixes, à l'heure lue, clock_timestamp sous le verrou du
 --     retrait) pour les deux comptes ; aucune colonne, aucune recopie d'account_phone_finalize. Ordre final :
 --     statut, minimum, solde, gel, verrou de numéro, frais.
+--
+-- Tâche 10 (R62 ; B27, B15) :
+-- 17. withdrawal_quote(p) (nouvelle, STABLE) : devis par fin_withdrawal_check, sans verrou ; la route du code le
+--     passe avant toute réservation de SMS (tout refus : ni réservation, ni code).
+-- 18. finance_account_balance : + withdrawal_min_amount et withdrawal_fee_rate (réglages lus par fin_setting_num).
 -- ============================================================================
 
 
@@ -280,6 +285,36 @@ BEGIN
 
     RETURN jsonb_build_object('ok', true, 'minimum', v_min, 'fee_rate', v_rate, 'fee_amount', v_fee, 'net_amount', v_net,
                               'available', v_available, 'frozen', v_frozen, 'withdrawable', v_withdrawable);
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 2.7 withdrawal_quote (tâche 10, R62, B27) : devis d'un retrait, même règle que withdrawal_request, sans verrou
+--     ni écriture. p : { user_id, account_kind, gross_amount } → { ok, minimum, fee_rate, fee_amount, net_amount,
+--     available, frozen, withdrawable } ou { ok:false, code, message, minimum, fee_rate, unlock_at? … }.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.withdrawal_quote(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user  uuid := public.try_uuid(p->>'user_id');
+    v_kind  text := p->>'account_kind';
+    v_gross numeric;
+BEGIN
+    IF v_user IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Compte inconnu.');
+    END IF;
+    IF (p->>'gross_amount') IS NULL OR (p->>'gross_amount') !~ '^[0-9]+(\.0+)?$' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_AMOUNT', 'message', 'Montant entier en FCFA attendu.');
+    END IF;
+    v_gross := (p->>'gross_amount')::numeric;
+    RETURN jsonb_build_object('minimum', public.fin_setting_num('finance.withdrawal_min_amount'),
+                              'fee_rate', public.fin_setting_num('finance.withdrawal_fee_rate'))
+           || public.fin_withdrawal_check(v_user, v_kind, v_gross, now());
 END;
 $$;
 
@@ -529,7 +564,7 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- 3.1 finance_account_balance (recopie de 20261101000004_lot3_grand_livre.sql:304-339) : + frozen, withdrawable
---     réduit du gel (tâche 2).
+--     réduit du gel (tâche 2) ; + withdrawal_min_amount, withdrawal_fee_rate (tâche 10).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.finance_account_balance(p_owner uuid, p_kind text)
 RETURNS jsonb
@@ -568,7 +603,10 @@ BEGIN
         'in_progress', v_in_progress,
         'debt', v_debt,
         'frozen', v_frozen,
-        'withdrawable', public.fin_round_down(GREATEST(v_available - v_frozen, 0)));
+        'withdrawable', public.fin_round_down(GREATEST(v_available - v_frozen, 0)),
+        -- Lot 9 bis (R62, B27) : règles servies à l'écran avant la demande du code
+        'withdrawal_min_amount', public.fin_setting_num('finance.withdrawal_min_amount'),
+        'withdrawal_fee_rate', public.fin_setting_num('finance.withdrawal_fee_rate'));
 END;
 $$;
 
@@ -1129,7 +1167,8 @@ BEGIN
         'public.event_cash_refund_mark(jsonb)',
         'public.event_cancellation_impact(jsonb)',
         'public.ticket_postponement_refund_open(uuid)',
-        'public.tickets_postponement_offers(jsonb)'
+        'public.tickets_postponement_offers(jsonb)',
+        'public.withdrawal_quote(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

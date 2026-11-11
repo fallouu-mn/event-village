@@ -19,6 +19,9 @@ export interface AccountBalance {
     frozen: number;
     /** Disponible moins le gel, arrondi au FCFA inférieur. */
     withdrawable: number;
+    /** Lot 9 bis (R62, B27) : réglages finance.withdrawal_min_amount et finance.withdrawal_fee_rate (en %). */
+    withdrawal_min_amount: number;
+    withdrawal_fee_rate: number;
 }
 
 export interface LedgerEntry {
@@ -65,6 +68,8 @@ export async function accountBalance(ownerId: string, kind: AccountKind): Promis
         debt: Number(data.debt),
         frozen: Number(data.frozen),
         withdrawable: Number(data.withdrawable),
+        withdrawal_min_amount: Number(data.withdrawal_min_amount),
+        withdrawal_fee_rate: Number(data.withdrawal_fee_rate),
     };
 }
 
