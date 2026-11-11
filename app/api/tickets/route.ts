@@ -15,6 +15,19 @@ interface OfflineInfo {
     reason: null | 'NOT_YET' | 'CLOSED' | 'TICKET_NOT_VALID' | 'EVENT_NOT_PUBLISHED' | 'TRANSFER_PENDING';
 }
 
+/** Lot 9 bis (R25, R66, contrat 4.1 et 5.24) : état de la carte d'un billet, servi par ticket_card_states. */
+interface CardState {
+    ticket_id: string;
+    event_status: string;
+    event_status_label: string;
+    price: number | string | null;
+    service_fee: number | string | null;
+    sale_channel: string | null;
+    code_visible: boolean;
+    transfer_allowed: boolean;
+    notice: string | null;
+}
+
 /**
  * GET /api/tickets
  * Récupère tous les billets réels de l'utilisateur connecté avec QR code et informations d'événement.
@@ -131,7 +144,20 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        // Lot 9 bis (R25, R66, B58) : ce que la carte peut montrer, décidé par le serveur (ticket_card_states) :
+        // état de l'événement, prix, frais, canal, QR (scan accepté) et « Transférer » (transfert accepté).
+        const cardMap = new Map<string, CardState>();
+        if (ticketIds.length > 0) {
+            const { data: cards, error: cardsErr } = await supabase.rpc('ticket_card_states', { p: { user_id: effectiveUserId } });
+            const cardsBody = (cards ?? null) as { ok?: unknown; tickets?: unknown } | null;
+            if (cardsErr) throw new Error(`ticket_card_states : ${cardsErr.code ?? ''} ${cardsErr.message}`);
+            if (cardsBody?.ok !== true || !Array.isArray(cardsBody.tickets)) throw new Error(`ticket_card_states : réponse inattendue ${JSON.stringify(cards).slice(0, 200)}`);
+            for (const row of cardsBody.tickets as CardState[]) cardMap.set(String(row.ticket_id), row);
+        }
+
         const formatted = (tickets || []).map((t: any) => {
+            const cardState = cardMap.get(t.id);
+            if (!cardState) throw new Error(`ticket_card_states : billet ${t.id} absent de la réponse`);
             const startDate = t.events?.start_date ? new Date(t.events.start_date) : new Date();
             const months = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];
             const monthShort = months[startDate.getMonth()] || 'SEP';
@@ -162,6 +188,14 @@ export async function GET(req: NextRequest) {
                 isTransferLocked,
                 activeTransfer,
                 offline: offlineMap.get(t.id) ?? null,
+                price: Number(cardState.price ?? 0),
+                serviceFee: Number(cardState.service_fee ?? 0),
+                saleChannel: cardState.sale_channel ?? null,
+                eventStatus: cardState.event_status,
+                eventStatusLabel: cardState.event_status_label,
+                codeVisible: cardState.code_visible === true,
+                transferAllowed: cardState.transfer_allowed === true,
+                eventNotice: cardState.notice ?? null,
             };
         });
 

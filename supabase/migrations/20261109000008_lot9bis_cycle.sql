@@ -74,6 +74,12 @@
 --     et STABLE identiques. Changement : invitation refusée par son destinataire → « Refusée ».
 -- 20. pilotage_scan_result_label(text) : base 20261102000005_lot5_pilotage.sql:78-102, recopie, signature et IMMUTABLE
 --     identiques. Changement : transfer_pending « Transfert en cours ».
+--
+-- Tâche 24 (R25, R66 ; B58, D5) :
+-- 21. ticket_card_states(p jsonb) (nouvelle, STABLE) : p { user_id } → par billet du compte : statut et libellé de
+--     l'événement, prix, frais de service, canal de vente, code_visible (billet VALIDE, libre, et scan non refusé
+--     par l'événement : ni suspendu, ni annulé, ni fenêtre fermée), transfer_allowed (billet VALIDE, libre, non
+--     composté, événement PUBLIE ou VALIDE avant sa fin, même règle que ticket_transfer_initiate) et notice.
 -- ============================================================================
 
 
@@ -1629,6 +1635,54 @@ $$;
 
 
 -- ============================================================================
+-- Tâche 24 — 21. ticket_card_states (nouvelle)
+-- ============================================================================
+-- p : { user_id } → { ok, tickets[{ ticket_id, event_status, event_status_label, price, service_fee, sale_channel,
+-- code_visible, transfer_allowed, notice }] }. La carte du billet n'affiche que ce que le serveur accepterait.
+CREATE OR REPLACE FUNCTION public.ticket_card_states(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_items jsonb;
+BEGIN
+    IF v_user IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT');
+    END IF;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'ticket_id', x.id,
+               'event_status', x.event_status,
+               'event_status_label', public.event_status_label(x.event_status),
+               'price', x.price,
+               'service_fee', x.service_fee,
+               'sale_channel', x.sale_channel,
+               'code_visible', x.code_visible,
+               'transfer_allowed', x.transfer_allowed,
+               'notice', CASE
+                   WHEN x.event_status = 'SUSPENDU' THEN 'Événement suspendu : l’entrée n’est pas possible pour le moment.'
+                   WHEN NOT x.code_visible AND (x.event_status = 'TERMINE' OR x.problem = 'event_ended') THEN 'Événement terminé.'
+               END) ORDER BY x.id), '[]'::jsonb)
+      INTO v_items
+      FROM (SELECT t.id, e.status::text AS event_status, t.price, t.service_fee, t.sale_channel, s.problem,
+                   (t.status::text = 'VALIDE' AND NOT t.transfer_locked
+                    AND COALESCE(s.problem, '') NOT IN ('event_suspended', 'event_cancelled', 'event_ended')) AS code_visible,
+                   (t.status::text = 'VALIDE' AND NOT t.transfer_locked AND t.checked_in_at IS NULL
+                    AND e.status::text IN ('PUBLIE', 'VALIDE')
+                    AND COALESCE(public.event_end_at(e.id) > now(), FALSE)) AS transfer_allowed
+              FROM public.tickets t
+              JOIN public.events e ON e.id = t.event_id
+              CROSS JOIN LATERAL (SELECT public.scan_event_problem(e.id) AS problem) s
+             WHERE t.user_id = v_user) x;
+    RETURN jsonb_build_object('ok', true, 'tickets', v_items);
+END;
+$$;
+
+
+-- ============================================================================
 -- Privilèges (toutes les fonctions du fichier) : service_role uniquement
 -- ============================================================================
 DO $$
@@ -1652,7 +1706,8 @@ BEGIN
         'public.ticket_transfers_expire(jsonb)',
         'public.ticket_transfer_accept(jsonb)',
         'public.ticket_invitations_list(jsonb)',
-        'public.pilotage_scan_result_label(text)'
+        'public.pilotage_scan_result_label(text)',
+        'public.ticket_card_states(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

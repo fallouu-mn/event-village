@@ -16,6 +16,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * le temps restant du pas courant pour que l'interface rafraîchisse au bon moment.
  * Lot 7 (7.1) : `server_time` (heure du serveur à l'envoi) permet au téléphone de recalculer son écart
  * d'horloge, appliqué au lot de codes hors ligne.
+ * Lot 9 bis (R19, R25, contrat 4.3) : aucun code pour un événement suspendu ou annulé (409 EVENT_SUSPENDED,
+ * EVENT_CANCELLED) ni pour un billet en cours de transfert (409 TRANSFER_PENDING).
  */
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
     const session = await requireActiveSession(req);
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 
     const { data: ticket, error } = await getServiceRoleClient()
         .from('tickets')
-        .select('id, user_id, status, totp_secret, transfer_locked')
+        .select('id, user_id, status, totp_secret, transfer_locked, events(status)')
         .eq('id', id)
         .maybeSingle();
     if (error) {
@@ -41,6 +43,15 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
     if (!ticket || ticket.user_id !== session.user.id) return NextResponse.json({ error: 'Billet introuvable.' }, { status: 404 });
     if (ticket.status !== 'VALIDE') {
         return NextResponse.json({ error: 'Ce billet n’est plus valable à l’entrée.', status: ticket.status }, { status: 409 });
+    }
+    // Lot 9 bis (R25, B58) : aucun code pour un événement que le scan refuserait (suspendu, annulé).
+    const rel = (ticket as { events?: { status?: string } | Array<{ status?: string }> | null }).events;
+    const eventStatus = Array.isArray(rel) ? rel[0]?.status : rel?.status;
+    if (eventStatus === 'SUSPENDU') {
+        return NextResponse.json({ error: 'Événement suspendu : l’entrée n’est pas possible pour le moment.', code: 'EVENT_SUSPENDED' }, { status: 409 });
+    }
+    if (eventStatus === 'ANNULE') {
+        return NextResponse.json({ error: 'Événement annulé : ce billet n’est plus valable à l’entrée.', code: 'EVENT_CANCELLED' }, { status: 409 });
     }
     // Lot 9 bis (R19, B52) : un billet engagé dans un transfert en attente n'entre pas ; aucun code n'est servi.
     if (ticket.transfer_locked === true) {
