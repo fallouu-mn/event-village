@@ -9,7 +9,7 @@
  *  - Autres cibles (commande, salle, table, abonnement) : transition conditionnelle vers SUCCESS
  *    puis effets métier, une seule fois.
  *  - FAILED / CANCELLED chez SamirPay : payment_release (réservations rendues) ; PENDING trop
- *    ancien : expiration.
+ *    ancien, ou identifiant inconnu de SamirPay (NOT_FOUND) au-delà de la même durée : expiration.
  */
 import { getServerEnv } from '@/lib/env';
 import { samirPayClient } from '@/lib/samirpay/client';
@@ -155,12 +155,27 @@ export async function reconcilePayment(payment: PaymentRecord, source: ConfirmSo
     try {
         providerStatus = (await samirPayClient.checkTransactionStatus(payment.external_transaction_id)).status;
     } catch (err) {
-        if (isSamirPayError(err) && err.kind === 'NOT_FOUND') return 'PROVIDER_NOT_FOUND';
-        console.error(`[réconciliation] statut SamirPay du paiement ${payment.id} indisponible :`, err instanceof Error ? err.message : String(err));
-        return 'PROVIDER_UNAVAILABLE';
+        if (isSamirPayError(err) && err.kind === 'NOT_FOUND') {
+            providerStatus = 'NOT_FOUND';
+        } else {
+            console.error(`[réconciliation] statut SamirPay du paiement ${payment.id} indisponible :`, err instanceof Error ? err.message : String(err));
+            return 'PROVIDER_UNAVAILABLE';
+        }
     }
     const { error: stampErr } = await supabase.from('payments').update({ last_reconciled_at: new Date().toISOString() }).eq('id', payment.id);
     if (stampErr) console.error(`[réconciliation] horodatage du paiement ${payment.id} impossible :`, stampErr.message);
+
+    // Lot 9 bis (H5, R103) : un identifiant que SamirPay ne connaît pas (404 NOT_FOUND, format C) n'attend plus sans
+    // fin. Au-delà de la durée maximale d'attente, le paiement PENDING expire (réservations rendues, provider_final
+    // faux) : il reste surveillé par le cron des succès tardifs.
+    if (providerStatus === 'NOT_FOUND') {
+        const ageMinutes = (Date.now() - new Date(payment.created_at).getTime()) / 60_000;
+        if (payment.status === 'PENDING' && ageMinutes > getServerEnv().PAYMENT_PENDING_MAX_AGE_MINUTES) {
+            await releasePayment(payment, 'EXPIRED', 'PROVIDER_NOT_FOUND');
+            return 'EXPIRED';
+        }
+        return 'PROVIDER_NOT_FOUND';
+    }
 
     if (providerStatus === 'SUCCESS') {
         if (payment.payment_target === 'TICKET') {

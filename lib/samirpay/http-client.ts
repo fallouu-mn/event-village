@@ -1,19 +1,26 @@
 /**
- * Client HTTP SamirPay (côté serveur exclusivement), aligné sur le contrat officiel API
- * Partenaires v1.0 (lot 2) :
- *  - cashin direct POST /api/tiers/direct/initPayment (montant en chaîne, orderId, callBackUrl,
- *    operatorName, telephone à 9 chiffres) ;
- *  - statut GET /api/tiers/payments/{transactionId}/status → { transactionId, status } ;
- *  - solde GET /api/tiers/payments/solde → data.solde ;
- *  - cashout POST /api/tiers/payments/send (phoneNumber 9 chiffres, montant en chaîne, prénom, nom).
+ * Client HTTP SamirPay (côté serveur exclusivement), aligné sur le contrat officiel API Partenaires v1.2
+ * (lot 9 bis, H5). Chaque endpoint est lu dans son format documenté :
+ *  - format A (`status` « success »/« error », `message`, `body`) : solde, transfert, erreurs d'authentification ;
+ *  - format B (`success`, `data`, ou `errorCode` et `errorMessage`) : cashin direct ;
+ *  - format C (objet nu `{ transactionId, status }`) : statut d'une transaction ;
+ *  - format D (`status` numérique, `errorCode`, `message`, `path`, `timestamp`) : doublon d'orderId, erreurs 500
+ *    et erreurs communes.
+ * Endpoints : cashin direct POST /api/tiers/direct/initPayment (201 B : transactionId, url, urls.OM / urls.MAXIT,
+ * qrCode en base64 brut) ; statut GET /api/tiers/payments/{transactionId}/status (C : PENDING, SUCCESS, FAILED,
+ * CANCELLED ; 404 NOT_FOUND ; 400 INVALID_ID) ; solde GET /api/tiers/payments/solde (A : body.solde) ; transfert POST
+ * /api/tiers/payments/send (A : body = Transaction, statut interne traduit par mapInternalStatus).
  * En-têtes X-API-KEY et X-SECRET-KEY. Chemins fixés par le contrat sous SAMIRPAY_API_URL.
- * Chaque échec est levé en SamirPayError, avec une nature qui distingue le refus explicite de
- * l'issue incertaine (délai, coupure, 5xx, réponse illisible). Aucun numéro dans les journaux.
+ * Chaque échec est levé en SamirPayError, avec une nature qui distingue le refus explicite de l'issue incertaine.
+ * Une réponse hors format est journalisée et levée (INVALID_RESPONSE, ou UNCERTAIN pour un transfert) : jamais un
+ * succès supposé. Aucun numéro dans les journaux.
  */
 import type { PaymentGateway } from '@/lib/integrations/types';
 import { getServerEnv } from '@/lib/env';
 import {
+    SAMIRPAY_STATUSES,
     SamirPayError,
+    mapInternalStatus,
     type SamirPayCashoutRequest,
     type SamirPayCashoutResult,
     type SamirPayDirectInitRequest,
@@ -24,10 +31,9 @@ import {
     type SamirPayTransactionStatus,
 } from './types';
 
-const STATUSES: readonly SamirPayTransactionStatus[] = ['PENDING', 'SUCCESS', 'FAILED', 'CANCELLED'];
-
 interface RawResponse {
     status: number;
+    /** Corps JSON analysé ; null si vide ; undefined si non JSON. */
     body: unknown;
 }
 
@@ -42,6 +48,75 @@ export interface SamirPayClientOptions {
 
 function asObject(v: unknown): Json | null {
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : null;
+}
+
+function text(v: unknown): string | null {
+    return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+/** Montant reçu en décimal (nombre JSON, ou chaîne décimale). */
+function decimal(v: unknown): number | null {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v.trim());
+    return null;
+}
+
+/** Format A : `status` « success » ou « error », `message`, `body` (absent en erreur). */
+interface FormatA {
+    status: 'success' | 'error';
+    message: string | null;
+    body: Json | null;
+}
+
+function readA(raw: unknown): FormatA | null {
+    const o = asObject(raw);
+    if (!o || (o.status !== 'success' && o.status !== 'error')) return null;
+    return { status: o.status, message: text(o.message), body: asObject(o.body) };
+}
+
+/** Format B : `success` vrai et `data`, ou `success` faux et `errorCode`, `errorMessage`. */
+type FormatB = { success: true; data: Json } | { success: false; errorCode: string | null; errorMessage: string | null };
+
+function readB(raw: unknown): FormatB | null {
+    const o = asObject(raw);
+    if (!o || typeof o.success !== 'boolean') return null;
+    if (o.success) {
+        const data = asObject(o.data);
+        return data ? { success: true, data } : null;
+    }
+    return { success: false, errorCode: text(o.errorCode), errorMessage: text(o.errorMessage) };
+}
+
+/** Format C : objet nu `{ transactionId, status }` de l'endpoint de statut. */
+function readC(raw: unknown): { transactionId: unknown; status: string | null } | null {
+    const o = asObject(raw);
+    return o ? { transactionId: o.transactionId, status: typeof o.status === 'string' ? o.status : null } : null;
+}
+
+/** Format D : `status` numérique, `errorCode`, `message`, `path`, `timestamp`. */
+function readD(raw: unknown): { status: number; errorCode: string | null; message: string | null } | null {
+    const o = asObject(raw);
+    if (!o || typeof o.status !== 'number') return null;
+    return { status: o.status, errorCode: text(o.errorCode), message: text(o.message) };
+}
+
+/** Motif et code d'une réponse d'erreur, quel que soit son format documenté (D, B, puis A). */
+function errorDetail(raw: unknown): { message: string | null; code?: string; format: 'A' | 'B' | 'D' | null } {
+    const d = readD(raw);
+    if (d) return { message: d.message, code: d.errorCode ?? undefined, format: 'D' };
+    const b = readB(raw);
+    if (b && !b.success) return { message: b.errorMessage, code: b.errorCode ?? undefined, format: 'B' };
+    const a = readA(raw);
+    if (a && a.status === 'error') return { message: a.message, format: 'A' };
+    return { message: null, format: null };
+}
+
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/** Classement d'un échec : nature d'un 409, et nature d'une réponse hors contrat (404 d'une route, 2xx inattendu). */
+interface FailureRules {
+    conflict: SamirPayErrorKind;
+    unexpected: 'INVALID_RESPONSE' | 'UNCERTAIN';
 }
 
 export class SamirPayHttpClient implements PaymentGateway {
@@ -77,13 +152,13 @@ export class SamirPayHttpClient implements PaymentGateway {
                 body: body ? JSON.stringify(body) : undefined,
                 signal: controller.signal,
             });
-            const text = await res.text();
+            const raw = await res.text();
             let parsed: unknown = null;
-            if (text) {
+            if (raw) {
                 try {
-                    parsed = JSON.parse(text);
+                    parsed = JSON.parse(raw);
                 } catch {
-                    parsed = undefined; // corps non JSON : traité par l'appelant selon le statut HTTP
+                    parsed = undefined; // corps non JSON : classé par failure() ou par le lecteur du format attendu
                 }
             }
             return { status: res.status, body: parsed };
@@ -95,13 +170,35 @@ export class SamirPayHttpClient implements PaymentGateway {
         }
     }
 
-    private failure(res: RawResponse, context: string, conflictKind: SamirPayErrorKind): SamirPayError {
-        const message = String(asObject(res.body)?.message ?? `HTTP ${res.status}`);
-        if (res.status >= 500 || res.body === undefined) return new SamirPayError('UNCERTAIN', `${context} : ${message}`, res.status);
-        if (res.status === 401 || res.status === 403) return new SamirPayError('UNAUTHORIZED', `${context} : clés refusées (${res.status})`, res.status);
-        if (res.status === 404) return new SamirPayError('NOT_FOUND', `${context} : introuvable`, res.status);
-        if (res.status === 409) return new SamirPayError(conflictKind, `${context} : ${message}`, res.status);
-        return new SamirPayError('REJECTED', `${context} : ${message}`, res.status);
+    /** Réponse hors du format documenté : journalisée, puis levée par l'appelant. */
+    private offFormat(kind: SamirPayErrorKind, message: string, httpStatus: number, code?: string): SamirPayError {
+        console.error(`[samirpay] ${message} (HTTP ${httpStatus})`);
+        return new SamirPayError(kind, message, httpStatus, { code });
+    }
+
+    private failure(res: RawResponse, context: string, rules: FailureRules): SamirPayError {
+        const detail = errorDetail(res.body);
+        if (detail.format === null) console.error(`[samirpay] ${context} : erreur HTTP ${res.status} hors des formats A, B et D`);
+        const message = `${context} : ${detail.message ?? `HTTP ${res.status}`}`;
+        const options = { code: detail.code };
+        if (res.status >= 500 || res.body === undefined) return new SamirPayError('UNCERTAIN', message, res.status, options);
+        if (res.status === 401 || res.status === 403) return new SamirPayError('UNAUTHORIZED', `${context} : clés refusées (${res.status})`, res.status, options);
+        if (res.status === 409) return new SamirPayError(rules.conflict, message, res.status, options);
+        if (res.status === 404) return this.offFormat(rules.unexpected, `${context} : route introuvable (404)`, res.status, detail.code);
+        if (res.status >= 400) return new SamirPayError('REJECTED', message, res.status, options);
+        return this.offFormat(rules.unexpected, `${context} : réponse HTTP ${res.status} inattendue`, res.status);
+    }
+
+    /** QR de la v1.2 en base64 brut, rendu en data URL ; une valeur illisible est journalisée et ignorée. */
+    private qrDataUrl(value: unknown, context: string): string | null {
+        if (value === undefined || value === null) return null;
+        if (typeof value === 'string') {
+            if (value.startsWith('data:image/')) return value;
+            const compact = value.replace(/\s/g, '');
+            if (compact && BASE64.test(compact)) return `data:image/png;base64,${compact}`;
+        }
+        console.error(`[samirpay] ${context} : qrCode hors format (base64 attendu), ignoré`);
+        return null;
     }
 
     async initDirectPayment(payload: SamirPayDirectInitRequest): Promise<SamirPayDirectInitResult> {
@@ -113,47 +210,59 @@ export class SamirPayHttpClient implements PaymentGateway {
             telephone: payload.telephone,
         };
         if (payload.description) body.description = payload.description;
+        const context = `Cashin ${payload.orderId}`;
         const res = await this.call('POST', '/api/tiers/direct/initPayment', body);
-        if (res.status !== 200 && res.status !== 201) throw this.failure(res, `Cashin ${payload.orderId}`, 'DUPLICATE');
-        const root = asObject(res.body);
-        const data = asObject(root?.data);
-        if (!root || root.success === false || !data || typeof data.transactionId !== 'string' || !data.transactionId) {
-            throw new SamirPayError('INVALID_RESPONSE', `Cashin ${payload.orderId} : réponse sans transactionId`, res.status);
+        if (res.status !== 200 && res.status !== 201) throw this.failure(res, context, { conflict: 'DUPLICATE', unexpected: 'INVALID_RESPONSE' });
+        const b = readB(res.body);
+        const transactionId = b?.success ? text(b.data.transactionId) : null;
+        if (!b || !b.success || !transactionId) {
+            throw this.offFormat('INVALID_RESPONSE', `${context} : réponse hors format B ou sans data.transactionId`, res.status);
         }
-        const urls = asObject(data.urls);
+        const urls = asObject(b.data.urls);
         return {
-            transactionId: data.transactionId,
-            paymentUrl: typeof data.url === 'string' ? data.url : null,
-            qrCode: typeof data.qrCode === 'string' ? data.qrCode : null,
-            deepLinks: {
-                wave: typeof urls?.wave === 'string' ? urls.wave : null,
-                orange: typeof urls?.orange === 'string' ? urls.orange : null,
-            },
+            transactionId,
+            paymentUrl: text(b.data.url),
+            qrCode: this.qrDataUrl(b.data.qrCode, context),
+            // v1.2 : Orange Money donne ses liens sous urls.OM et urls.MAXIT ; Wave n'a que url.
+            deepLinks: { wave: null, orange: text(urls?.OM) ?? text(urls?.MAXIT) },
         };
     }
 
     async checkTransactionStatus(transactionId: string): Promise<SamirPayStatusResult> {
+        const context = `Statut ${transactionId}`;
         const res = await this.call('GET', `/api/tiers/payments/${encodeURIComponent(transactionId)}/status`);
-        if (res.status !== 200) {
-            const err = this.failure(res, `Statut ${transactionId}`, 'REJECTED');
-            // Un statut illisible n'a pas d'effet financier : réponse invalide, à redemander.
-            throw err.kind === 'UNCERTAIN' && res.status < 500 ? new SamirPayError('INVALID_RESPONSE', err.message, res.status) : err;
+        const c = readC(res.body);
+        if (res.status === 200) {
+            const status = (c?.status ?? '').toUpperCase() as SamirPayTransactionStatus;
+            if (!c || c.transactionId !== transactionId || !SAMIRPAY_STATUSES.includes(status)) {
+                throw this.offFormat('INVALID_RESPONSE', `${context} : réponse non corrélée ou statut inconnu (format C)`, res.status);
+            }
+            return { transactionId, status };
         }
-        const root = asObject(res.body);
-        const status = String(root?.status ?? '').toUpperCase() as SamirPayTransactionStatus;
-        if (!root || root.transactionId !== transactionId || !STATUSES.includes(status)) {
-            throw new SamirPayError('INVALID_RESPONSE', `Statut ${transactionId} : réponse non corrélée ou statut inconnu`, res.status);
+        if (res.status === 404) {
+            if (c?.status === 'NOT_FOUND') throw new SamirPayError('NOT_FOUND', `${context} : introuvable`, res.status);
+            throw this.offFormat('INVALID_RESPONSE', `${context} : 404 sans statut NOT_FOUND (format C), jamais tenu pour une transaction inexistante`, res.status);
         }
-        return { transactionId, status };
+        if (res.status === 400 && c?.status === 'INVALID_ID') {
+            throw this.offFormat('INVALID_RESPONSE', `${context} : identifiant refusé par SamirPay (INVALID_ID)`, res.status, 'INVALID_ID');
+        }
+        const err = this.failure(res, context, { conflict: 'INVALID_RESPONSE', unexpected: 'INVALID_RESPONSE' });
+        // Un statut n'a pas d'effet financier : seul un 5xx reste incertain, un 4xx non documenté est une réponse invalide.
+        if ((err.kind === 'UNCERTAIN' && res.status < 500) || err.kind === 'REJECTED') {
+            throw this.offFormat('INVALID_RESPONSE', err.message, res.status, err.code);
+        }
+        throw err;
     }
 
     async getSolde(): Promise<SamirPaySoldeResult> {
         const res = await this.call('GET', '/api/tiers/payments/solde');
-        if (res.status !== 200) throw this.failure(res, 'Solde', 'REJECTED');
-        const data = asObject(asObject(res.body)?.data);
-        const solde = Number(data?.solde);
-        if (!data || !Number.isFinite(solde)) throw new SamirPayError('INVALID_RESPONSE', 'Solde : data.solde absent', res.status);
-        return { solde, entityName: typeof data.samirEntityName === 'string' ? data.samirEntityName : null };
+        if (res.status !== 200) throw this.failure(res, 'Solde', { conflict: 'INVALID_RESPONSE', unexpected: 'INVALID_RESPONSE' });
+        const a = readA(res.body);
+        const solde = decimal(a?.body?.solde);
+        if (!a || a.status !== 'success' || !a.body || solde === null) {
+            throw this.offFormat('INVALID_RESPONSE', 'Solde : réponse hors format A ou body.solde absent', res.status);
+        }
+        return { solde, entityName: text(a.body.samirEntityName) };
     }
 
     async sendCashout(payload: SamirPayCashoutRequest): Promise<SamirPayCashoutResult> {
@@ -164,14 +273,25 @@ export class SamirPayHttpClient implements PaymentGateway {
             firstName: payload.firstName,
             lastName: payload.lastName,
         });
-        if (res.status !== 200 && res.status !== 201) throw this.failure(res, 'Cashout', 'REJECTED');
-        const root = asObject(res.body);
-        if (root?.status === 'error') throw new SamirPayError('REJECTED', `Cashout : ${String(root.message ?? 'refusé')}`, res.status);
-        const data = asObject(root?.data);
-        if (!root || root.status !== 'success' || !data || typeof data.transactionId !== 'string') {
-            // Envoi peut-être effectué : jamais traité comme un échec
-            throw new SamirPayError('UNCERTAIN', 'Cashout : réponse illisible, envoi possiblement effectué', res.status);
+        if (res.status !== 200 && res.status !== 201) throw this.failure(res, 'Cashout', { conflict: 'REJECTED', unexpected: 'UNCERTAIN' });
+        // Envoi peut-être effectué : toute forme inattendue est INCERTAINE, jamais un échec ni un succès supposés.
+        const a = readA(res.body);
+        const tx = a?.status === 'success' ? a.body : null;
+        const id = text(tx?.id);
+        if (!tx || !id) throw this.offFormat('UNCERTAIN', 'Cashout : réponse hors format A ou sans body.id, envoi possiblement effectué', res.status);
+        const reference = text(tx.reference);
+        const status = mapInternalStatus(tx.status);
+        if (!status) {
+            throw this.offFormat('UNCERTAIN', `Cashout : statut interne inconnu « ${String(tx.status).slice(0, 30)} » (transaction ${id}, référence ${reference ?? 'absente'}), envoi possiblement effectué`, res.status);
         }
-        return { transactionId: data.transactionId, status: String(data.status ?? 'SUCCESS').toUpperCase() };
+        const netAmount = decimal(tx.netAmount);
+        return {
+            transactionId: id,
+            status,
+            reference,
+            fees: decimal(tx.fees),
+            netAmount: netAmount === null ? null : Math.abs(netAmount),
+            refOperator: text(tx.refOperator),
+        };
     }
 }
