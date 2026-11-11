@@ -29,6 +29,11 @@
 -- CONTROLLER_EVENT_STATUS (in-app) à la suspension et à la reprise, CONTROLLER_EVENT_CHANGED (in-app immédiat, SMS
 -- et email à 10 minutes, fusionnés) au changement de date ou de lieu ; notif_cancel_on_status recopiée (base
 -- 20261103000004_lot6_rappels.sql:215-237) annule aussi le changement en attente d'un contrôleur.
+-- Tâche 34 (R22, R23, B73) : ticket_invitation_cancel recopiée (base 20261108000002_lot9_invitations.sql:504-574)
+-- met TICKET_CANCELLED (kind INVITATION) en file au porteur, ou par SMS au numéro de l'invitation non réclamée (lu
+-- avant la révocation) ; à l'annulation, le destinataire d'un transfert en attente révoqué reçoit EVENT_CANCELLED par
+-- SMS (numéro seul, NONE). Les branches gratuit et espèces de ticket_refund_request sont à S-A (fix(9b.34-SA), M06) ;
+-- admin_user_status_set (R59) à S-B (M04).
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -45,6 +50,7 @@
 -- Tâche 31 : branche ANNULE, acheteurs d'origine prévenus (AUTO), porteurs d'un billet reçu en mode TRANSFERRED.
 -- Tâche 33 : ANNULE → propriétaire (annulation admin) ou admins events.read (annulation partenaire), contrôleurs ;
 -- PUBLIE ↔ SUSPENDU → contrôleurs (in-app).
+-- Tâche 34 : ANNULE → destinataires des transferts en attente révoqués (numéro seul, NONE).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.notif_event_status_changed()
 RETURNS trigger
@@ -196,7 +202,8 @@ BEGIN
         END LOOP;
 
         -- Lot 9 bis (R12, B69 ; R81) : numéros sans compte, une ligne SMS par numéro, sans lien. Invitation non
-        -- réclamée → NONE ; acheteur au guichet (numéro saisi, vente payée en espèces) → ORGANIZER, prioritaire.
+        -- réclamée et (R23) destinataire d'un transfert révoqué → NONE ; acheteur au guichet (numéro saisi, vente
+        -- payée en espèces) → ORGANIZER, prioritaire.
         -- Les numéros des comptes déjà prévenus ci-dessus sont retirés. Aucun numéro dans les données.
         FOR n IN
             SELECT x.phone,
@@ -213,7 +220,14 @@ BEGIN
                       JOIN public.payments py ON py.id = t.payment_id
                      WHERE t.event_id = NEW.event_id AND t.sale_channel::text = 'COUNTER' AND NOT py.is_platform_payment
                        AND py.payer_phone ~ '^7[05678][0-9]{7}$'
-                       AND t.status::text IN ('VALIDE', 'UTILISE') AND COALESCE(t.price, 0) > 0) x
+                       AND t.status::text IN ('VALIDE', 'UTILISE') AND COALESCE(t.price, 0) > 0
+                    UNION ALL
+                    -- Lot 9 bis (R23, B73) : destinataire d'un transfert en attente, révoqué par event_cancel
+                    SELECT tr.to_phone_or_email, 'TRANSFER', t.id
+                      FROM public.ticket_transfers tr
+                      JOIN public.tickets t ON t.id = tr.ticket_id
+                     WHERE t.event_id = NEW.event_id AND tr.status::text = 'PENDING' AND tr.from_user_id IS NOT NULL
+                       AND t.status::text = 'VALIDE') x
              WHERE x.phone ~ '^\+221[0-9]{9}$'
                AND NOT EXISTS (SELECT 1 FROM public.users u
                                 WHERE u.id = ANY (v_recipients) AND u.phone IN (x.phone, substr(x.phone, 2)))
@@ -786,3 +800,114 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.notif_cancel_on_status() FROM PUBLIC, anon, authenticated;
+
+
+-- ============================================================================
+-- 4. ticket_invitation_cancel (recopie de 20261108000002_lot9_invitations.sql:504-574)
+-- p = { actor_id, event_id, ticket_id }. Mêmes droits que la création, statut de l'événement non contrôlé.
+-- Billet ANNULE, transferts PENDING annulés, stock rendu, audit.
+-- La catégorie est prise en NO KEY UPDATE : un scan tient son billet et prend KEY SHARE sur la catégorie (3.3).
+-- Tâche 34 (R22, B73 ; renverse L11 du lot 9) : TICKET_CANCELLED (kind INVITATION, clé TICKET_CANCELLED:<billet>)
+-- au porteur (canaux du registre : in-app, SMS, email), sinon par SMS au numéro de l'invitation non réclamée, lu sous
+-- le verrou avant la révocation ; aucun numéro dans les données ni dans l'audit (u5). Verrous inchangés.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.ticket_invitation_cancel(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_event uuid := public.try_uuid(p->>'event_id');
+    v_ticket uuid := public.try_uuid(p->>'ticket_id');
+    a record;
+    v_role text;
+    v_ticket_event uuid;
+    v_channel text;
+    v_category uuid;
+    v_status text;
+    v_holder uuid;
+    v_phone text;
+BEGIN
+    IF v_actor IS NULL OR v_event IS NULL OR v_ticket IS NULL THEN
+        RETURN public.pilotage_refusal('INVALID_INPUT');
+    END IF;
+
+    PERFORM 1 FROM public.events e WHERE e.id = v_event FOR SHARE;
+    IF NOT FOUND THEN
+        RETURN public.pilotage_refusal('EVENT_NOT_FOUND');
+    END IF;
+
+    SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
+    IF NOT (a.is_owner OR a.is_staff) THEN
+        RETURN public.pilotage_refusal('EVENT_NOT_FOUND');
+    END IF;
+    IF NOT a.is_active THEN
+        RETURN public.pilotage_refusal('ACCOUNT_NOT_ACTIVE');
+    END IF;
+    IF NOT a.is_owner
+       AND NOT EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = v_actor AND r.role::text = 'SUPERADMIN')
+       AND NOT EXISTS (SELECT 1 FROM public.admin_permissions ap WHERE ap.user_id = v_actor AND ap.permission = 'events.write') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Vous n’avez pas le droit d’annuler les invitations de cet événement.');
+    END IF;
+    v_role := CASE WHEN a.is_owner THEN 'PARTENAIRE' ELSE 'ADMIN' END;
+
+    -- Catégorie et événement d'un billet ne changent jamais : la lecture sans verrou suffit
+    SELECT t.event_id, t.sale_channel, t.category_id INTO v_ticket_event, v_channel, v_category
+      FROM public.tickets t WHERE t.id = v_ticket;
+    IF NOT FOUND OR v_ticket_event <> v_event OR v_channel <> 'INVITATION' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TICKET_NOT_FOUND', 'message', 'Invitation introuvable.');
+    END IF;
+
+    PERFORM 1 FROM public.ticket_categories c WHERE c.id = v_category FOR NO KEY UPDATE;
+    PERFORM 1 FROM public.ticket_transfers x WHERE x.ticket_id = v_ticket AND x.status = 'PENDING' FOR UPDATE;
+    SELECT t.status::text, t.user_id INTO v_status, v_holder FROM public.tickets t WHERE t.id = v_ticket FOR UPDATE;
+
+    IF v_status = 'UTILISE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TICKET_ALREADY_USED', 'message', 'Ce billet a déjà été scanné : l’invitation ne peut plus être annulée.');
+    END IF;
+    IF v_status <> 'VALIDE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TICKET_NOT_CANCELLABLE', 'message', 'Cette invitation ne peut plus être annulée.');
+    END IF;
+
+    -- Lot 9 bis (R22) : invitation non réclamée, son numéro est lu avant la révocation du transfert
+    IF v_holder IS NULL THEN
+        SELECT x.to_phone_or_email INTO v_phone
+          FROM public.ticket_transfers x
+         WHERE x.ticket_id = v_ticket AND x.status = 'PENDING' AND x.to_phone_or_email ~ '^\+221[0-9]{9}$'
+         ORDER BY x.created_at DESC, x.id
+         LIMIT 1;
+    END IF;
+
+    UPDATE public.ticket_transfers SET status = 'CANCELLED', cancelled_at = now()
+     WHERE ticket_id = v_ticket AND status = 'PENDING';
+    UPDATE public.tickets SET status = 'ANNULE', transfer_locked = FALSE, updated_at = now() WHERE id = v_ticket;
+    UPDATE public.ticket_categories SET sold_quantity = sold_quantity - 1 WHERE id = v_category;
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+    VALUES (v_actor, v_role, 'TICKET_INVITATION_CANCELLED', 'tickets', v_ticket,
+            jsonb_build_object('event_id', v_event, 'category_id', v_category));
+
+    -- Lot 9 bis (R22, B73) : avis au porteur, sinon au numéro de l'invitation (SMS seul, aucun compte)
+    IF v_holder IS NOT NULL THEN
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'TICKET_CANCELLED', 'key', 'TICKET_CANCELLED:' || v_ticket::text,
+            'user_id', v_holder, 'event_id', v_event,
+            'data', COALESCE(public.notif_event_data(v_event), '{}'::jsonb)
+                    || jsonb_build_object('kind', 'INVITATION', 'ticket_id', v_ticket)));
+    ELSIF v_phone IS NOT NULL THEN
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'TICKET_CANCELLED', 'key', 'TICKET_CANCELLED:' || v_ticket::text,
+            'phone', v_phone, 'event_id', v_event, 'channels', jsonb_build_array('SMS'),
+            'data', COALESCE(public.notif_event_data(v_event), '{}'::jsonb)
+                    || jsonb_build_object('kind', 'INVITATION', 'ticket_id', v_ticket)));
+    END IF;
+
+    RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.ticket_invitation_cancel(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.ticket_invitation_cancel(jsonb) TO service_role;
