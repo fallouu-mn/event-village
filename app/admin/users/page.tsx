@@ -701,57 +701,62 @@ export default function AdminUsersManagementPage() {
                 </div>
               </button>
 
-              {/* ADMIN */}
-              <button
-                type="button"
-                onClick={() => setNewRole('ADMIN')}
-                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                  newRole === 'ADMIN'
-                    ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-purple-500'
-                    : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
-                }`}
-              >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                  newRole === 'ADMIN' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                }`}>
-                  <Key size={14} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-xs text-slate-900 dark:text-white">ADMINISTRATEUR</span>
-                    {newRole === 'ADMIN' && <CheckCircle2 size={13} className="text-purple-600" />}
+              {/* Lot 9 bis (R71, B33) : créer un administrateur ou un superadmin est réservé au SUPERADMIN */}
+              {isSuperadmin && (
+                <>
+                {/* ADMIN */}
+                <button
+                  type="button"
+                  onClick={() => setNewRole('ADMIN')}
+                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                    newRole === 'ADMIN'
+                      ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-purple-500'
+                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                    newRole === 'ADMIN' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                  }`}>
+                    <Key size={14} />
                   </div>
-                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                    Supervision avec permissions
-                  </p>
-                </div>
-              </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs text-slate-900 dark:text-white">ADMINISTRATEUR</span>
+                      {newRole === 'ADMIN' && <CheckCircle2 size={13} className="text-purple-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                      Supervision avec permissions
+                    </p>
+                  </div>
+                </button>
 
-              {/* SUPERADMIN */}
-              <button
-                type="button"
-                onClick={() => setNewRole('SUPERADMIN')}
-                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                  newRole === 'SUPERADMIN'
-                    ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-amber-500'
-                    : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
-                }`}
-              >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                  newRole === 'SUPERADMIN' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                }`}>
-                  <ShieldCheck size={14} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-xs text-slate-900 dark:text-white">SUPERADMIN</span>
-                    {newRole === 'SUPERADMIN' && <CheckCircle2 size={13} className="text-amber-500" />}
+                {/* SUPERADMIN */}
+                <button
+                  type="button"
+                  onClick={() => setNewRole('SUPERADMIN')}
+                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                    newRole === 'SUPERADMIN'
+                      ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-amber-500'
+                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                  }`}
+                >
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                    newRole === 'SUPERADMIN' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                  }`}>
+                    <ShieldCheck size={14} />
                   </div>
-                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                    Accès maître absolu HQ
-                  </p>
-                </div>
-              </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs text-slate-900 dark:text-white">SUPERADMIN</span>
+                      {newRole === 'SUPERADMIN' && <CheckCircle2 size={13} className="text-amber-500" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                      Accès maître absolu HQ
+                    </p>
+                  </div>
+                </button>
+                </>
+              )}
 
               {/* CLIENT */}
               <button
