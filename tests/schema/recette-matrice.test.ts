@@ -8,7 +8,9 @@
  *  - « fait » a au moins un test, « partiel » et « non fait » disent ce qui manque ;
  *  - la colonne CI dit la même chose que la colonne Test ;
  *  - A1 à A41, PO3, PO4 et PO10 une fois chacune, avec gravité, état et référence ;
- *  - les essais 1 à 69 ont leurs étapes, leur résultat attendu, leur case et aucun nom de route ni de table.
+ *  - les essais 1 à 76 ont leurs étapes, leur résultat attendu, leur case et aucun nom de route ni de table ; l'essai 1 ne
+ *    promet aucune bannière à l'écran (lot 9 bis, R109) ;
+ *  - chaque écart par décision est une ligne « écarté » de la section 4, WhatsApp compris (lot 9 bis, ex-10.0 f, Q1).
  * Un test cité qui bouge rend cette suite rouge : reprendre le numéro de ligne dans le document.
  */
 import '../helpers/env';
@@ -34,8 +36,9 @@ const SUITES_INTERDITES = [
 const CORRIGEES = ['A1', 'A2', 'A3', 'A4', 'A6', 'A7', 'A13', 'A16', 'A17', 'A20', 'A21', 'A23', 'A24', 'A25', 'A26', 'A27', 'A28', 'A29', 'A32', 'A33', 'A34', 'A35', 'A36', 'A38', 'A39', 'A40', 'A41', 'PO3', 'PO4', 'PO10'];
 const POINTS_OUVERTS = ['PO3', 'PO4', 'PO10'];
 const PREUVES = ['A11', 'A14', 'A15'];
-const ECARTS = ['Voix Wolof', 'Audio du scanner', 'Wallet', 'panier multi-événements', 'billets à régler sur place'];
-const NOMBRE_ESSAIS = 69;
+const ECARTS = ['Voix Wolof', 'Audio du scanner', 'Wallet', 'panier multi-événements', 'billets à régler sur place', 'WhatsApp'];
+/** Lot 9 bis (R109) : 69 + essais 70 à 76 du domaine textes (D-txt E.44) ; valeur finale posée par D2 en vague Doc. */
+const NOMBRE_ESSAIS = 76;
 const CI_RE = /^(?:vert au run \d+|à prouver au run après|vert au run \d+, le reste à prouver au run après|sans objet)$/;
 const PATH_RE = /^(?:M\/|tests\/|e2e\/|app\/|lib\/|components\/|docs\/|supabase\/|scripts\/|public\/|middleware\.ts|playwright\.config\.ts)/;
 const TEST_LINE_RE = /^\s*(?:await\s+)?(?:test|it)(?:\.\w+)?\(/;
@@ -136,8 +139,8 @@ function auditMatrix(text: string): string[] {
     }
     if (summary.get('total') !== rows.length) faults.push(`résumé : total ${String(summary.get('total'))}, ${rows.length} lignes`);
 
-    const ecarts = section(text, /^## 4\./);
-    for (const e of ECARTS) if (!ecarts.includes(e)) faults.push(`écart absent : ${e}`);
+    const ecarts = tableRows(section(text, /^## 4\./));
+    for (const e of ECARTS) if (!ecarts.some((c) => c[2] === 'écarté' && c[1].includes(e))) faults.push(`écart absent : ${e}`);
     return faults;
 }
 
@@ -188,6 +191,7 @@ function auditCahier(text: string): string[] {
             if (!b.includes(part)) faults.push(`essai ${n} : « ${part.trim()} » absent`);
         }
         const prose = b.replace(/```[\s\S]*?```/g, '');
+        if (n === '1' && /bannière[^.]*s.affiche/.test(prose)) faults.push('essai 1 : promet une bannière à l’écran (aucune ne s’affiche, R109)');
         const technical = /\/api\/|\/admin\b|\/partner\b|\/controller\b|\b[a-z]+_[a-z_]+\b/.exec(prose);
         if (technical) faults.push(`essai ${n} : vocabulaire technique « ${technical[0]} »`);
     }
@@ -218,7 +222,7 @@ describe('8.3 — docs/recette-billetterie.md', () => {
         assert.deepEqual(auditAnomalies(doc), []);
     });
 
-    test('8.3 c : essais 1 à 69, écrits pour un non-développeur', () => {
+    test('8.3 c : essais 1 à 76, écrits pour un non-développeur, sans bannière promise à l’essai 1 (R109)', () => {
         assert.deepEqual(auditCahier(doc), []);
     });
 });
@@ -238,6 +242,8 @@ describe('8.3 — le contrôle se vérifie lui-même', () => {
         ['A1 redevenue listée', (t) => t.replace(/^(\| A1 \|.*?)\| corrigée \|/m, '$1| listée |'), /A1 : attendue corrigée/],
         ['essai 69 retiré', (t) => t.replace(/^#### Essai 69\.[\s\S]*$/m, ''), /essais : /],
         ['PO3 retiré', (t) => t.replace(/^\| PO3 \|.*\n/m, ''), /PO3 présente 0 fois/],
+        ['bannière promise à l’essai 1', (t) => t.replace(/(#### Essai 1\.[\s\S]*?\*\*Résultat attendu :\*\* )/, '$1La bannière « Essai » s’affiche à l’écran. '), /essai 1 : promet une bannière/],
+        ['écart Wallet retiré', (t) => t.replace(/^\| Consigne 8\.3 \| Pas de Wallet[^\n]*\n/m, ''), /écart absent : Wallet/],
         ['case retirée', (t) => t.replace(/(#### Essai 3\.[\s\S]*?)- \[ \] Anomalie/, '$1'), /essai 3 : « - \[ \] Anomalie » absent/],
         ['nom de route dans un essai', (t) => t.replace(/(#### Essai 3\.[\s\S]*?)Ouvrez l’accueil\./, '$1Ouvrez /api/events.'), /essai 3 : vocabulaire technique/],
     ];
