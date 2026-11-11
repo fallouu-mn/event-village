@@ -26,6 +26,9 @@
 --       rétablie, rien en attente ni vérifié, liens fermés (CLEARED) ; adresse actuelle ou déjà en attente → inchangée
 --       (UNCHANGED) ; autre adresse → mise en attente, vérification retirée, liens ouverts fermés, users.email
 --       inchangé (PENDING) ; réponse + email_state, email_pending (48).
+-- Tâche 49 (G.49, B97, G53-8) :
+--   Recopie : notif_event_controllers_notify() : base 20261103000006_lot6_pros_admin.sql:545-613 (seule définition) ;
+--   canaux de la mise en file au compte + EMAIL (CONTROLLER_ASSIGNED, CONTROLLER_UNASSIGNED).
 -- Ordre des verrous (3.3, X28) : users (FOR UPDATE, ORDER BY id quand plusieurs comptes) → email_verifications →
 -- quota_counters (quota_reserve dans email_verification_issue) ; aucune fonction ne prend un lien puis un compte.
 -- Une clé étrangère email_verifications.user_id → users prend FOR KEY SHARE sur un compte déjà tenu FOR UPDATE.
@@ -1068,3 +1071,83 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 9. Affectation et retrait d'un contrôleur (tâche 49, G.49, B97) : recopie de 20261103000006_lot6_pros_admin.sql:545-613
+--    (seule définition). Changement : canaux de la mise en file au compte 'IN_APP', 'PUSH' → 'IN_APP', 'PUSH', 'EMAIL'
+--    (un email par affectation, avec l'in-app ; il ne part qu'à une adresse vérifiée, notif_enqueue ci-dessus).
+--    Le SMS regroupé (notif_upsert_aggregated_sms) et le trigger trg_event_controllers_notify ne changent pas.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notif_event_controllers_notify()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_ev   jsonb;
+    v_item jsonb;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        v_ev := public.notif_pros_event_data(NEW.event_id);
+        v_item := jsonb_strip_nulls(jsonb_build_object('event_id', NEW.event_id, 'title', v_ev->>'title', 'start_at', v_ev->>'start_at'));
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'CONTROLLER_ASSIGNED',
+            'key', 'CONTROLLER_ASSIGNED:' || NEW.id::text,
+            'user_id', NEW.user_id,
+            'event_id', NEW.event_id,
+            'actor_id', NEW.created_by,
+            'channels', jsonb_build_array('IN_APP', 'PUSH', 'EMAIL'),
+            'data', v_ev || jsonb_build_object('assignment_id', NEW.id, 'entry_point', NEW.entry_point, 'can_accept_cash', NEW.can_accept_cash)
+        ));
+        PERFORM public.notif_upsert_aggregated_sms(jsonb_build_object(
+            'type', 'CONTROLLER_ASSIGNED',
+            'key', 'CONTROLLER_ASSIGNED_SMS:' || NEW.user_id::text || ':tx' || txid_current()::text,
+            'user_id', NEW.user_id,
+            'event_id', NEW.event_id,
+            'actor_id', NEW.created_by,
+            'event', v_item,
+            'data', v_ev || jsonb_build_object('assignment_id', NEW.id, 'entry_point', NEW.entry_point,
+                                               'can_accept_cash', NEW.can_accept_cash, 'events', jsonb_build_array(v_item))
+        ));
+        RETURN NEW;
+    END IF;
+
+    -- DELETE : une suppression en cascade (événement ou compte supprimé) ne prévient personne.
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = OLD.user_id)
+       OR NOT EXISTS (SELECT 1 FROM public.events e WHERE e.id = OLD.event_id) THEN
+        RETURN OLD;
+    END IF;
+    v_ev := public.notif_pros_event_data(OLD.event_id);
+    v_item := jsonb_strip_nulls(jsonb_build_object('event_id', OLD.event_id, 'title', v_ev->>'title', 'start_at', v_ev->>'start_at'));
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'CONTROLLER_UNASSIGNED',
+        'key', 'CONTROLLER_UNASSIGNED:' || OLD.id::text,
+        'user_id', OLD.user_id,
+        'event_id', OLD.event_id,
+        'actor_id', OLD.created_by,
+        'channels', jsonb_build_array('IN_APP', 'PUSH', 'EMAIL'),
+        'data', v_ev || jsonb_build_object('assignment_id', OLD.id)
+    ));
+    PERFORM public.notif_upsert_aggregated_sms(jsonb_build_object(
+        'type', 'CONTROLLER_UNASSIGNED',
+        'key', 'CONTROLLER_UNASSIGNED_SMS:' || OLD.user_id::text || ':tx' || txid_current()::text,
+        'user_id', OLD.user_id,
+        'event_id', OLD.event_id,
+        'actor_id', OLD.created_by,
+        'event', v_item,
+        'data', v_ev || jsonb_build_object('assignment_id', OLD.id, 'events', jsonb_build_array(v_item))
+    ));
+    -- Rappels de la veille encore en attente pour cette affectation : annulés dans la même transaction.
+    UPDATE public.notification_outbox
+       SET status = 'CANCELLED', reason = 'NO_LONGER_ASSIGNED', finished_at = now()
+     WHERE type = 'CONTROLLER_REMINDER' AND status = 'PENDING'
+       AND event_id = OLD.event_id AND recipient_user_id = OLD.user_id;
+    RETURN OLD;
+END;
+$$;
+
+-- Fonction de trigger : rien à accorder (fonctions-privileges, groupes b et c).
+REVOKE ALL ON FUNCTION public.notif_event_controllers_notify() FROM PUBLIC, anon, authenticated;
