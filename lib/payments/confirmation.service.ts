@@ -41,6 +41,12 @@ export interface PaymentRecord {
     metadata: Record<string, unknown> | null;
 }
 
+/**
+ * Lot 9 bis (H1, B102, consigne : constante, pas un réglage) : un FAILED lu chez SamirPay n'est pas définitif pendant
+ * 2 h après la création du paiement (l'expiration d'un paiement peut redevenir un succès, v1.2).
+ */
+export const PROVIDER_FAILED_GRACE_MS = 2 * 3_600_000;
+
 export type ReconcileOutcome =
     | 'CONFIRMED' | 'ALREADY_CONFIRMED' | 'REFUND_REQUIRED' | 'REFUND_IN_PROGRESS' | 'FAILED' | 'CANCELLED' | 'EXPIRED'
     | 'STILL_PENDING' | 'NO_PROVIDER_ID' | 'PROVIDER_NOT_FOUND' | 'PROVIDER_UNAVAILABLE' | 'NOT_CONFIRMABLE';
@@ -189,11 +195,14 @@ export async function reconcilePayment(payment: PaymentRecord, source: ConfirmSo
         return confirmOtherPayment(payment, source);
     }
     if (providerStatus === 'FAILED' || providerStatus === 'CANCELLED') {
-        if (payment.status === 'PENDING') {
-            await releasePayment(payment, providerStatus, `PROVIDER_${providerStatus}`);
-        } else {
-            const { error } = await supabase.from('payments').update({ provider_final: true, provider_status: `PROVIDER_${providerStatus}` }).eq('id', payment.id);
-            if (error) console.error(`[réconciliation] statut final du paiement ${payment.id} non enregistré :`, error.message);
+        // Lot 9 bis (H1, B102) : un FAILED peut être l'expiration d'un paiement qui redevient un succès (v1.2) ; il
+        // n'est définitif qu'à partir de 2 h après la création. CANCELLED reste définitif tout de suite.
+        const final = providerStatus === 'CANCELLED' || Date.now() - new Date(payment.created_at).getTime() >= PROVIDER_FAILED_GRACE_MS;
+        if (payment.status === 'PENDING') await releasePayment(payment, providerStatus, `PROVIDER_${providerStatus}`);
+        if (final && (providerStatus === 'FAILED' || payment.status !== 'PENDING')) {
+            const { error } = await supabase.from('payments').update({ provider_final: true, provider_status: `PROVIDER_${providerStatus}` })
+                .eq('id', payment.id).in('status', ['FAILED', 'CANCELLED', 'EXPIRED']);
+            if (error) throw new Error(`Statut final du paiement ${payment.id} non enregistré : ${error.message}`);
         }
         return providerStatus;
     }

@@ -30,7 +30,11 @@
 --         (versement → remboursement → paiement → billets → grand livre, contrat 3.3) ; les clés étrangères de
 --         l'écriture (paiement, remboursement, événement) sont celles de l'écriture REMBOURSEMENT déjà posée par
 --         fin_refund_apply : aucune arête nouvelle.
---  3. Privilèges (service_role seul).
+--  3. payment_release (H1, B102, B105) : recopie de 20261031000013_lot2_reservations.sql:192-226 ; un FAILED n'est
+--     définitif que pour un refus explicite à l'initialisation (INIT_REJECTED, INIT_UNAUTHORIZED) ; CANCELLED lu
+--     chez SamirPay (PROVIDER_*) le reste ; tout autre FAILED (PROVIDER_FAILED lu au statut, INIT_UNCERTAIN, …) et
+--     l'adoption d'un identifiant (CANCELLED INIT_CONFLICT_ADOPTED) restent surveillés.
+--  4. Privilèges (service_role seul).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -174,14 +178,63 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 3. Privilèges : service_role uniquement
+-- 3. payment_release : un FAILED n'est plus définitif d'office (H1, B102, B105)
+--    Base : 20261031000013_lot2_reservations.sql:192-226 (dernière définition, grep de toutes les migrations),
+--    recopie intégrale, signature (uuid, text, text) et retour jsonb identiques ; VOLATILE rendu explicite (défaut
+--    de la base, sans changement). Seul changement, la finalité posée sur le paiement : définitif seulement pour un
+--    refus explicite à l'initialisation (INIT_REJECTED, clés refusées INIT_UNAUTHORIZED) ou une annulation lue chez
+--    SamirPay (CANCELLED, PROVIDER_*). Un FAILED lu au statut (PROVIDER_FAILED : l'expiration d'un paiement peut
+--    redevenir un succès, v1.2) ou une initialisation incertaine (INIT_UNCERTAIN, INIT_INTERNAL, …) reste surveillé
+--    par le cron des succès tardifs ; au-delà de 2 h, confirmation.service.ts pose provider_final.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.payment_release(p_payment_id uuid, p_status text, p_reason text)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_status text;
+    v_released integer;
+BEGIN
+    IF p_status NOT IN ('FAILED', 'CANCELLED', 'EXPIRED') THEN
+        RAISE EXCEPTION 'payment_release : statut cible invalide %', p_status;
+    END IF;
+    SELECT status::text INTO v_status FROM public.payments WHERE id = p_payment_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('changed', false, 'status', NULL);
+    END IF;
+    IF v_status <> 'PENDING' THEN
+        RETURN jsonb_build_object('changed', false, 'status', v_status);
+    END IF;
+    PERFORM 1 FROM public.ticket_categories
+     WHERE id IN (SELECT category_id FROM public.stock_reservations WHERE payment_id = p_payment_id)
+     ORDER BY id FOR UPDATE;
+    UPDATE public.payments
+       SET status = p_status::public.payment_status_enum,
+           provider_status = p_reason,
+           provider_final = ((p_status = 'FAILED' AND p_reason IN ('INIT_REJECTED', 'INIT_UNAUTHORIZED'))
+                             OR (p_status = 'CANCELLED' AND p_reason LIKE 'PROVIDER_%'))
+     WHERE id = p_payment_id;
+    UPDATE public.stock_reservations
+       SET status = CASE WHEN p_status = 'EXPIRED' THEN 'EXPIRED' ELSE 'RELEASED' END, closed_at = now(), close_reason = p_reason
+     WHERE payment_id = p_payment_id AND status = 'ACTIVE';
+    GET DIAGNOSTICS v_released = ROW_COUNT;
+    RETURN jsonb_build_object('changed', true, 'status', p_status, 'released', v_released);
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 4. Privilèges : service_role uniquement
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE
     f text;
 BEGIN
     FOREACH f IN ARRAY ARRAY[
-        'public.cashout_fee_apply(uuid)'
+        'public.cashout_fee_apply(uuid)',
+        'public.payment_release(uuid, text, text)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

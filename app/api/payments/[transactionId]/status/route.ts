@@ -9,7 +9,8 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const RECONCILABLE = new Set(['PENDING', 'EXPIRED', 'CANCELLED']);
+/** Lot 9 bis (H1, B102) : un FAILED non définitif (moins de 2 h, provider_final faux) se relit aussi chez SamirPay. */
+const RECONCILABLE = new Set(['PENDING', 'EXPIRED', 'CANCELLED', 'FAILED']);
 const NOTIFICATION_CHANNELS = ['IN_APP', 'PUSH', 'EMAIL', 'SMS'] as const;
 
 interface StatusItem { category_id: string; category_name: string | null; quantity: number }
