@@ -4,7 +4,7 @@ Ce guide vous permet de tester toute la billetterie à la main, sur votre PC Win
 
 Aucune valeur réelle n'est écrite ici. Partout où vous voyez `<quelque chose>`, remplacez tout le bloc, chevrons compris, par votre valeur. Ne collez jamais une clé, un secret ou un mot de passe dans un message, une capture d'écran ou un fichier du dépôt.
 
-**Le risque à connaître avant tout :** sans la ligne `EV_INTEGRATIONS=fake` dans `.env.local`, `npm run dev` et `npm run cron:local` envoient de **vrais SMS**, payés par vous, et parlent au **vrai SamirPay**. Avant chaque séance, vérifiez la bannière décrite en section 6.
+**Le risque à connaître avant tout :** sans la ligne `EV_INTEGRATIONS=fake` dans `.env.local`, `npm run dev` et `npm run cron:local` envoient de **vrais SMS**, payés par vous, et parlent au **vrai SamirPay**. Avant chaque séance, vérifiez la bannière décrite en section 6. Pour une séance en réel voulue, suivez la section 13, et elle seule.
 
 ---
 
@@ -57,7 +57,7 @@ cd $HOME\Documents\event-village
 
 ## 3. Appliquer les migrations sur event-village-dev
 
-Une migration modifie la structure de la base. Celles du lot 8 sont déjà appliquées sur event-village-dev. Il reste les **cinq du lot 9**. Ne les appliquez qu'une fois la vérification automatique du lot annoncée verte dans `docs/lot9-rapport.md` : ce projet ne doit pas prendre d'avance sur le code livré.
+Une migration modifie la structure de la base. Celles du lot 9 sont déjà appliquées sur event-village-dev. Il reste les **douze du lot 9 bis**. Ne les appliquez qu'une fois la vérification automatique du lot annoncée verte dans `docs/lot9bis-rapport.md` : ce projet ne doit pas prendre d'avance sur le code livré.
 
 Votre **référence de projet** est la suite de lettres au début de l'adresse Supabase, juste avant `.supabase.co`. Elle figure aussi dans **Project Settings > General**.
 
@@ -73,7 +73,7 @@ Votre **référence de projet** est la suite de lettres au début de l'adresse S
    npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
    ```
 
-3. Comparez l'historique. Les colonnes Local et Remote doivent être identiques jusqu'à `20261106000006`. Seules les cinq lignes `20261108…` n'ont rien dans la colonne Remote.
+3. Comparez l'historique. Les colonnes Local et Remote doivent être identiques jusqu'à `20261108000005`. Seules les douze lignes `20261109…` n'ont rien dans la colonne Remote.
 
    ```powershell
    npx supabase@2.122.0 migration list --linked
@@ -85,38 +85,57 @@ Votre **référence de projet** est la suite de lettres au début de l'adresse S
    npx supabase@2.122.0 db push --linked --dry-run
    ```
 
-   La liste doit contenir **exactement** ces cinq fichiers, dans cet ordre :
+   La liste doit contenir **exactement** ces douze fichiers, dans cet ordre :
 
    ```text
-   20261108000001_lot9_securite.sql
-   20261108000002_lot9_invitations.sql
-   20261108000003_lot9_decouverte.sql
-   20261108000004_lot9_compte.sql
-   20261108000005_lot9_nettoyage.sql
+   20261109000001_lot9bis_reglages.sql
+   20261109000002_lot9bis_transfert_statut.sql
+   20261109000003_lot9bis_registre.sql
+   20261109000004_lot9bis_droits.sql
+   20261109000005_lot9bis_samirpay.sql
+   20261109000006_lot9bis_argent.sql
+   20261109000007_lot9bis_versements.sql
+   20261109000008_lot9bis_cycle.sql
+   20261109000009_lot9bis_messages.sql
+   20261109000010_lot9bis_email.sql
+   20261109000011_lot9bis_textes.sql
+   20261109000012_lot9bis_mode_reel.sql
    ```
 
    **Si la liste contient autre chose ou s'il manque un fichier : arrêtez-vous.** N'ajoutez pas `--include-all` et ne lancez pas `supabase migration repair`. Demandez d'abord une vérification : l'historique du projet ne correspond plus au dépôt.
 
-5. Dans le tableau de bord Supabase, ouvrez **SQL Editor** et lancez ce contrôle. Il ne modifie rien : il cherche une boucle de parrainage déjà présente (A est parrain de B, B de C, C de A).
+5. **Avant d'appliquer**, ouvrez **SQL Editor** dans le tableau de bord Supabase et lancez ces trois contrôles, un à la fois. Ils ne modifient rien. Gardez leurs résultats : ils vont au rapport du lot.
 
    ```sql
-   -- attendu : aucune ligne
-   with recursive chaine as (
-     select r.referred_id as depart, r.sponsor_id as ancetre,
-            array[r.referred_id, r.sponsor_id] as chemin, false as boucle
-       from public.referral_relationships r
-     union all
-     select c.depart, r.sponsor_id, c.chemin || r.sponsor_id, r.sponsor_id = any(c.chemin)
-       from chaine c
-       join public.referral_relationships r on r.referred_id = c.ancetre
-      where not c.boucle
-   )
-   select depart, chemin from chaine where boucle;
+   -- 1. Les administrateurs et leurs permissions. Une liste vide : ce compte perdra l'accès au pilotage,
+   --    aux remboursements et aux équipes, car la migration ne donne aucune permission d'office.
+   select u.id, u.email, array_remove(array_agg(p.permission order by p.permission), null) as permissions
+     from public.users u
+     join public.user_roles r on r.user_id = u.id and r.role = 'ADMIN'
+     left join public.admin_permissions p on p.user_id = u.id
+    group by u.id, u.email
+    order by u.email;
+
+   -- 2. Comptes qui ont une vraie adresse email. Après le lot, une adresse ne reçoit plus rien tant que
+   --    son titulaire n'a pas cliqué le lien de vérification (« Renvoyer le lien », dans le profil).
+   select count(*) as adresses_a_verifier from public.users
+    where email is not null
+      and email !~* '@([a-z0-9-]+\.)*eventvillage\.sn$'
+      and email not ilike '%@essai.eventvillage.invalid';
+
+   -- 3. Catégories dont la vente finit après la nouvelle fin par défaut. Un événement sans date de fin
+   --    se termine désormais 6 heures après son début. Rien n'est réécrit : on compte seulement.
+   select e.title, c.name, c.sale_end
+     from public.ticket_categories c
+     join public.events e on e.id = c.event_id
+    where e.end_date is null and c.sale_end is not null
+      and e.status::text not in ('ANNULE', 'TERMINE')
+      and c.sale_end > ((e.start_date + coalesce(e.start_time, time '00:00')) at time zone 'Africa/Dakar') + interval '6 hours';
    ```
 
-   Une ligne ou plus : arrêtez-vous, ne corrigez rien à la main et demandez une vérification. La première migration n'échouerait pas, mais les parrainages de ces comptes resteraient bloqués ensuite.
+   Le compte `admin` de `seed:dev` (Moussa) recevra ses permissions à l'étape 9. Pour tout autre administrateur dont la liste est vide, notez son adresse : après les migrations, le compte `superadmin` lui donne ses permissions dans `/admin/users`, bouton **Permissions**.
 
-6. Appliquez. Confirmez par `y` si l'outil le demande.
+6. Appliquez. Confirmez par `y` si l'outil le demande. L'outil peut afficher des lignes `NOTICE` qui commencent par `lot 9 bis` : ce sont des comptes, pas des erreurs. Recopiez-les pour le rapport.
 
    ```powershell
    npx supabase@2.122.0 db push --linked
@@ -125,20 +144,30 @@ Votre **référence de projet** est la suite de lettres au début de l'adresse S
 7. Contrôlez dans **SQL Editor**, une requête à la fois :
 
    ```sql
-   -- attendu : 5 lignes, de 20261108000001 à 20261108000005
-   select version from supabase_migrations.schema_migrations where version like '20261108%' order by version;
+   -- attendu : 12 lignes, de 20261109000001 à 20261109000012
+   select version from supabase_migrations.schema_migrations where version like '20261109%' order by version;
 
-   -- attendu : 1 ligne, avatars, public = true, 2097152, {image/webp}. La migration crée ce bucket : ne le créez pas à la main
-   select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = 'avatars';
+   -- attendu : 3 lignes, valeurs 100, 10 et 2000
+   select key, value from public.platform_settings
+    where key in ('finance.payment_hold_minutes', 'finance.min_paid_price', 'notif.sms_essential_daily_alert') order by key;
+
+   -- attendu : 1 ligne, DECLINED
+   select enumlabel from pg_enum
+    where enumtypid = 'public.ticket_transfer_status'::regtype and enumlabel = 'DECLINED';
 
    -- attendu : 3 lignes, toutes ESSENTIAL
    select type, family from public.notification_types
-    where type in ('INVITATION_RECEIVED', 'PHONE_CHANGED', 'OTP_PHONE_CHANGE') order by type;
+    where type in ('EVENT_CHANGED', 'REFUND_DELAYED', 'EMAIL_VERIFICATION') order by type;
+
+   -- attendu : au moins 6, les comptes créés par seed:dev
+   select count(*) as comptes_de_demonstration from public.users where demo_account;
    ```
 
 8. Ouvrez `supabase/hotfix/2026-10-31-lot1a/03-verification.sql`, collez tout son contenu dans **SQL Editor** et lancez-le. Les 20 lignes doivent afficher `OK`. Une ligne `ÉCHEC` : arrêtez-vous.
 
-9. Redémarrez ce qui tournait (section 6). Le code du lot 9 ne fonctionne pas sans ces migrations, et event-village-dev ne doit plus tourner qu'avec lui ou plus récent.
+9. Toujours en simulé, relancez `npm run seed:dev` (section 7). Il ne recrée rien, mais donne à Moussa les permissions qui lui manquent. Lancez ensuite `npm run essai:check-reel` : un code de sortie 0 ou 1 est normal ici, la section 13 explique ses lignes. Le message `contrôle impossible : fonction essai_check_reel absente` veut dire que les migrations ne sont pas appliquées.
+
+10. Redémarrez ce qui tournait (section 6). Le code du lot 9 bis ne fonctionne pas sans ces migrations, et event-village-dev ne doit plus tourner qu'avec lui ou plus récent.
 
 ---
 
@@ -165,7 +194,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | `NEXT_PUBLIC_SUPABASE_URL` | Adresse du projet | Supabase, **Project Settings > API** | Oui |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé publique | Même page | Oui |
 | `SUPABASE_SERVICE_ROLE_KEY` | Clé serveur, secrète | Même page | Oui |
-| `NEXT_PUBLIC_APP_URL` | Adresse de l'application | `http://localhost:3000`, ou l'adresse du tunnel (section 9) | Oui |
+| `NEXT_PUBLIC_APP_URL` | Adresse de l'application | `http://localhost:3000`, ou l'adresse du tunnel (section 9), seule admise en réel (section 13) | Oui |
 | `SAMIRPAY_API_URL`, `SAMIRPAY_API_KEY`, `SAMIRPAY_SECRET_KEY` | Paiement réel | Votre compte SamirPay | Oui, même en simulé : le serveur refuse de démarrer sans elles, mais ne s'en sert pas |
 | `MTARGET_USERNAME`, `MTARGET_PASSWORD` | SMS réels | Votre compte MTarget | Oui, même en simulé, pour la même raison |
 | `OTP_HASH_SECRET`, `TICKET_TOTP_MASTER_KEY`, `REGISSEUR_PIN_KEY` | Secrets de l'application | À fabriquer : trois valeurs différentes | Oui |
@@ -198,7 +227,7 @@ SMS_OTP_PER_IP_DAY=300
 VERIFY_OTP_PER_PHONE_15MIN=50
 ```
 
-**Avant tout essai en réel, retirez ces lignes** et gardez un plafond bas, car chaque SMS vous est facturé. Par exemple, `SMS_GLOBAL_DAILY_CAP=30` limite la journée à 30 codes, et à 21 pour les rappels et les invitations. Ce plafond ne s'applique pas aux messages indispensables, comme la confirmation d'achat : il limite la dépense sans la supprimer.
+**Avant tout essai en réel, retirez ces lignes** et posez `SMS_GLOBAL_DAILY_CAP=50`, car chaque SMS vous est facturé (section 13). Ce plafond arrête les codes à 50 par jour, et les rappels et invitations de contrôleurs à 35, sur un même compteur. **Il ne limite pas les SMS indispensables**, comme la confirmation d'achat, l'annulation ou le remboursement : ceux-là ne sont bornés qu'à 30 par numéro et à 30 par compte qui les déclenche, chaque jour.
 
 ---
 
@@ -209,28 +238,15 @@ VERIFY_OTP_PER_PHONE_15MIN=50
 | SMS | Écrits dans une fenêtre, aucun envoi, gratuit | Vrais SMS, payés par vous |
 | Paiement | Faux SamirPay local, aucun argent | Vrai SamirPay, avec les clés de `.env.local` |
 | Remboursement, retrait | Faux versement | Vrai versement |
-| Comment l'obtenir | Mode A avec `EV_INTEGRATIONS=fake`, ou mode B | Retirer `EV_INTEGRATIONS=fake`, puis `npm run dev` |
+| Comment l'obtenir | Mode A avec `EV_INTEGRATIONS=fake`, ou mode B | Section 13 : contrôle, tunnel obligatoire, puis `npm run dev` sans `EV_INTEGRATIONS=fake` |
 
 **Ce que le marquage protège.** Chaque paiement, remboursement et retrait créé en simulé est marqué en base, et cette marque ne peut plus être retirée. Un serveur réel refuse de verser une opération marquée, et un serveur d'essai refuse de traiter une opération réelle. Un retrait fait sur un solde issu de ventes simulées est marqué lui aussi.
 
 **Ce qui reste bloqué après le retour en réel.** Les billets simulés restent affichés, mais leur remboursement et les retraits liés n'aboutiront jamais. Ils apparaissent avec le motif « opération créée en mode simulé : aucun versement ». C'est voulu. N'essayez pas de les débloquer.
 
-**Pour passer de simulé à réel :**
+**Pour passer de simulé à réel**, suivez la section 13, dans l'ordre. Elle commence par un contrôle automatique, `npm run essai:check-reel`, qui remplace les requêtes à copier des versions précédentes de ce guide. Ne retirez jamais `EV_INTEGRATIONS=fake` sans qu'il ait répondu « Rien ne partirait en réel ».
 
-1. Terminez ou refusez les paiements en attente.
-2. Laissez `npm run cron:local` tourner encore quelques minutes, pour vider la file de notifications. Sinon, de vrais SMS partiraient vers les numéros fictifs de `seed:dev`, qui appartiennent peut-être à quelqu'un.
-3. Vérifiez dans **SQL Editor**. Chaque requête doit répondre 0 :
-
-   ```sql
-   select count(*) as notifications_en_file from public.notification_outbox where status in ('PENDING', 'SENDING');
-   select count(*) as paiements_en_attente from public.payments where simulated and status = 'PENDING';
-   select count(*) as versements_en_cours from public.cashouts where simulated and status in ('A_ENVOYER', 'ENVOYE');
-   ```
-
-4. Arrêtez tout (section 12), retirez `EV_INTEGRATIONS=fake` et les quotas relevés, posez `SMS_GLOBAL_DAILY_CAP`, puis relancez.
-5. La bannière de la section 6 ne doit **plus** s'afficher.
-
-Pour revenir en simulé, remettez `EV_INTEGRATIONS=fake` et relancez. Vérifiez alors que la bannière est revenue.
+Pour revenir en simulé, suivez la fin de séance de la section 13 : le tunnel se coupe en premier.
 
 ---
 
@@ -259,6 +275,8 @@ Attendu : `Ready`, puis, au démarrage ou à l'ouverture de la première page, l
 ```
 
 **Pas de bannière : arrêtez tout de suite par Ctrl+C** et vérifiez `EV_INTEGRATIONS=fake` dans `.env.local`. Tant qu'elle est absente, l'application peut envoyer de vrais SMS.
+
+Une ligne qui commence par `[réel]` à la place de la bannière veut dire que l'application tourne en réel : arrêtez-la par Ctrl+C, sauf si vous suivez la section 13.
 
 **Fenêtre 3, les tâches planifiées :**
 
@@ -316,7 +334,7 @@ Mot de passe : la valeur de `EV_DEV_SEED_PASSWORD`. Connectez-vous avec l'adress
 | `client1@essai.eventvillage.invalid` | Client | Fatou Essai | Accueil |
 | `client2@essai.eventvillage.invalid` | Client | Lamine Essai | Accueil |
 
-Ces adresses ne reçoivent aucun email, et leurs numéros sont fictifs : ces comptes ne servent qu'en simulé.
+Ces adresses ne reçoivent aucun email, et leurs numéros sont fictifs : ces comptes ne servent qu'en simulé. Ce sont des **comptes de démonstration** : en réel, rien ne leur est envoyé, et la supervision des notifications marque leurs messages « Non envoyé : compte de démonstration ».
 
 ### Événements créés
 
@@ -440,7 +458,9 @@ L'export (onglet **Clôture**, **Exporter les participants**) porte la colonne �
 
 ### 8.9 Guichet
 
-Toujours en contrôleur, onglet **Guichet** : **Ouvrir ma caisse**, puis vendez un billet « Sur place ». Il porte la mention « Sur place uniquement ». Terminez par **Clôturer ma caisse**, sans écart.
+D'abord, compte `partenaire` : page de « Essai du jour », onglet **Caisse**, **Générer le code PIN**. Notez ce code : il n'est affiché qu'une fois, et il est exigé à l'ouverture de chaque caisse.
+
+Toujours en contrôleur, onglet **Guichet** : **Ouvrir ma caisse**, saisissez le code PIN, puis vendez un billet « Sur place ». Il porte la mention « Sur place uniquement ». Terminez par **Clôturer ma caisse**, sans écart.
 
 Résultat attendu : le serveur donne le total, et la clôture s'enregistre.
 
@@ -448,7 +468,7 @@ Résultat attendu : le serveur donne le total, et la clôture s'enregistre.
 
 Compte `partenaire`, page de « Essai du jour », bouton **Annuler l'événement**. Retapez le titre pour confirmer.
 
-Résultat attendu : l'annulation s'affiche sur la page publique, les ventes s'arrêtent, et les SMS d'annulation s'écrivent dans la fenêtre 2.
+Résultat attendu : l'annulation s'affiche sur la page publique, les ventes s'arrêtent, et les SMS d'annulation s'écrivent dans la fenêtre 2. Avant de confirmer, la fenêtre d'annulation donne le nombre et le montant des ventes au guichet de 8.9 : Event Village ne les rembourse jamais, c'est l'organisateur qui rend les espèces.
 
 ### 8.11 Remboursement
 
@@ -492,7 +512,7 @@ Page `/explore` : tapez « portes » dans la recherche, seul « Journée portes 
 
 À faire en dernier : le compte n'aura plus son numéro de `seed:dev`.
 
-Compte `client2`, page `/profile`, **Changer de numéro**. Saisissez un numéro inventé de 9 chiffres qui commence par `70`, touchez **Recevoir le code**. Le code s'écrit dans la fenêtre 2, pour ce nouveau numéro. Saisissez-le, puis **Confirmer**.
+Compte `client2`, page `/profile`, **Changer de numéro**. Si vous vous êtes connecté il y a plus de 10 minutes, l'écran demande d'abord votre mot de passe, celui de `EV_DEV_SEED_PASSWORD`. Saisissez un numéro inventé de 9 chiffres qui commence par `70`, touchez **Recevoir le code**. Le code s'écrit dans la fenêtre 2, pour ce nouveau numéro. Saisissez-le, puis **Confirmer**.
 
 Résultat attendu : le nouveau numéro s'affiche et les billets restent au compte. Au passage suivant de `cron:local`, le SMS « le numéro de votre compte a été modifié » s'écrit dans la fenêtre 2, adressé à l'**ancien** numéro. Une session ouverte sur un autre navigateur est révoquée : elle se ferme au plus tard quand son jeton expire, soit 1 h au plus. La connexion par adresse email continue de fonctionner.
 
@@ -531,11 +551,11 @@ Le navigateur du téléphone n'ouvre la caméra et n'installe l'application que 
 | Paiement au téléphone | A | La page `/dev/paiements` s'ouvre par le tunnel |
 | Installation | B | Suivez `docs/installer-application.md` |
 | Billet hors ligne | B | Section 11 |
-| Avis de paiement SamirPay (webhook) | Réel seulement | En simulé, le faux service l'envoie directement au PC. En réel, SamirPay appelle l'adresse du tunnel. Sans tunnel, `cron:local` rattrape le paiement en quelques minutes |
+| Avis de paiement SamirPay (webhook) | Réel seulement | En simulé, le faux service l'envoie directement au PC. En réel, SamirPay appelle l'adresse du tunnel : sans adresse en https, le serveur réel refuse de démarrer (section 13). Si l'avis n'arrive pas, `cron:local` rattrape le paiement en 5 minutes au plus |
 
 Limites d'un tunnel rapide : 200 requêtes en cours au plus, une adresse différente à chaque lancement, aucune garantie de disponibilité. En réel, un SMS qui contient cette adresse plus longue peut coûter deux SMS.
 
-Remettez `NEXT_PUBLIC_APP_URL=http://localhost:3000` et retirez `EV_DEV_TUNNEL_URL` quand vous avez fini.
+En simulé, remettez `NEXT_PUBLIC_APP_URL=http://localhost:3000` et retirez `EV_DEV_TUNNEL_URL` quand vous avez fini. En réel, le tunnel reste ouvert toute la séance : l'adresse `http://localhost:3000` y est refusée (section 13).
 
 ---
 
@@ -600,6 +620,8 @@ Résultat attendu : le QR s'affiche et change toutes les 20 secondes.
 2. Arrêtez `cron:local`, l'application et le faux SamirPay par Ctrl+C.
 3. Remettez `NEXT_PUBLIC_APP_URL=http://localhost:3000` si vous aviez changé l'adresse.
 
+Après une séance en réel, suivez plutôt la fin de séance de la section 13 : elle vérifie qu'aucune opération réelle n'est restée en cours.
+
 Les comptes, événements et billets restent dans event-village-dev. Le faux SamirPay garde ses paiements dans `.logs/fake-samirpay.json`, et `.logs/cron-local.log` garde le journal des tâches. Git ignore ce dossier. Vous pouvez relancer `npm run seed:dev` à tout moment : il ne recrée que ce qui manque.
 
 ### Problèmes fréquents
@@ -620,3 +642,133 @@ Les comptes, événements et billets restent dans event-village-dev. Le faux Sam
 | `NEXT_PUBLIC_APP_URL diffère du tunnel` | Une des deux variables n'est pas à jour | Mettez la même adresse dans les deux |
 | Erreur 502 sur l'adresse du tunnel | Application arrêtée | Relancez-la. Sinon, relancez le tunnel avec `http://127.0.0.1:3000` |
 | Avertissement `Cross origin` dans la fenêtre 2 | Accès par le tunnel en mode A | À ignorer |
+| `[réel] Refus de démarrer : en réel, NEXT_PUBLIC_APP_URL doit commencer par https://…` | Mode réel sans adresse de tunnel | Ouvrez le tunnel (section 9), mettez son adresse dans `NEXT_PUBLIC_APP_URL` et `EV_DEV_TUNNEL_URL`, relancez. Si vous ne vouliez pas le réel, remettez `EV_INTEGRATIONS=fake` |
+| `[check-reel] … point(s) à traiter avant le réel` | Il reste des messages, des paiements, des versements ou des billets d'essai | Traitez chaque ligne affichée, en simulé, puis relancez le contrôle (section 13) |
+| `[check-reel] contrôle impossible : …` | Migrations du lot 9 bis absentes, variable manquante ou projet injoignable | Le message dit la cause. Fonction absente : section 3 |
+| « Non envoyé : compte de démonstration » dans la supervision | Message adressé à un compte de `seed:dev`, en réel | Normal : en réel, utilisez vos propres comptes (section 13) |
+
+---
+
+## 13. Tout en réel depuis votre PC
+
+Cette section fait tourner l'application comme en production, depuis votre PC, sur event-village-dev : vrais SMS (MTarget), vrais paiements (SamirPay), vrais emails (Resend) et vraies notifications push. **De l'argent réel est débité, et chaque SMS vous est facturé.** Suivez les étapes dans l'ordre, sans en sauter.
+
+### 13.1 Ce qu'il faut
+
+- **Un compte marchand SamirPay que vous contrôlez** : son adresse d'API et ses deux clés, à mettre dans `SAMIRPAY_API_URL`, `SAMIRPAY_API_KEY` et `SAMIRPAY_SECRET_KEY`. L'adresse ne doit être ni `127.0.0.1` ni `localhost`. Le solde de ce compte doit couvrir les remboursements de vos essais.
+- **Les identifiants MTarget** : `MTARGET_USERNAME`, `MTARGET_PASSWORD`, et `MTARGET_SENDER` si votre compte a un nom d'expéditeur.
+- **Une clé Resend** : `RESEND_API_KEY`. Tant que vous n'avez pas de domaine vérifié chez Resend, Resend n'envoie qu'à l'adresse email de votre compte Resend, et seulement depuis son adresse d'essai : mettez `NOTIFICATION_FROM_EMAIL=onboarding@resend.dev`. C'est une règle de Resend, à confirmer dans votre tableau de bord Resend. Cette adresse ne recevra des emails que lorsqu'elle sera **vérifiée** dans le profil d'un de vos comptes (13.4).
+- **Les clés VAPID** pour le push : lancez `npx web-push generate-vapid-keys --json`, puis mettez la clé publique dans `VAPID_PUBLIC_KEY`, la clé privée dans `VAPID_PRIVATE_KEY`, et `VAPID_SUBJECT=mailto:<votre adresse>`. Les trois, ou aucune.
+- **Le tunnel** (section 9) : **obligatoire en réel**. SamirPay prévient l'application d'un paiement réussi par l'adresse du tunnel. Sans adresse en https, le serveur réel refuse de démarrer.
+- **Trois numéros de téléphone réels**, de personnes d'accord pour recevoir des SMS : un pour votre compte administrateur, un pour le compte partenaire, un pour le compte client. Plus un compte Wave et un compte Orange Money pour payer de petits montants.
+- **La signature des avis SamirPay**, seulement si vous l'avez activée sur votre compte SamirPay : mettez le secret qu'il vous donne (il commence par `whsec_`) dans `SAMIRPAY_WEBHOOK_SECRET`. Il faut ce secret **des deux côtés, ou d'aucun**. S'il est dans `.env.local` alors que SamirPay ne signe pas, chaque avis est refusé, et vos paiements ne sont confirmés que par `cron:local`, en 5 minutes au plus. Activez donc la signature chez SamirPay d'abord, puis copiez le secret, puis relancez l'application.
+
+### 13.2 Préparer, encore en simulé
+
+Gardez `EV_INTEGRATIONS=fake` et les trois fenêtres de la section 6 ouvertes.
+
+1. **Les événements d'essai à venir qui ont des billets** : annulez-les depuis leur page, compte `partenaire`, ou attendez leur fin. Laissez les remboursements simulés aboutir.
+2. **Les paiements en attente** : validez-les ou refusez-les sur `/dev/paiements`.
+3. **La file des messages** : laissez `cron:local` tourner quelques minutes pour la vider.
+4. **Votre compte administrateur.** Compte `superadmin` (connexion par mot de passe, aucun SMS), page `/admin/users`, **Créer un Compte / Admin** : rôle Administrateur, votre nom, votre vrai numéro, un mot de passe à vous, sans email pour l'instant. Puis, sur sa ligne, **Permissions** : cochez tout et enregistrez.
+5. **Les réglages.** Toujours avec `superadmin`, page **Réglages de la plateforme** (`/admin/finance-settings`) : mettez « Seuil d'alerte des SMS indispensables du jour » à une valeur basse, par exemple 20. Les administrateurs sont alors alertés dès 20 SMS indispensables dans la journée. Laissez « Prix minimum d'un billet payant (F CFA) » à 100. Notez chaque ancienne valeur : vous la remettrez en fin de séance.
+6. **Le contrôle.** Dans une fenêtre :
+
+   ```powershell
+   npm run essai:check-reel
+   echo $LASTEXITCODE
+   ```
+
+   Il ne fait que lire la base. Il liste ce qui ferait partir de vrais messages ou de l'argent vers des comptes de démonstration : notifications en file, paiements simulés en attente, versements simulés en cours, billets de démonstration sur des événements à venir. Chaque ligne dit quoi faire.
+
+   | Code | Dernière ligne | Que faire |
+   |---|---|---|
+   | 0 | `[check-reel] Rien ne partirait en réel : vous pouvez passer en réel …` | Passez à 13.3 |
+   | 1 | `[check-reel] <n> point(s) à traiter avant le réel : ne retirez pas EV_INTEGRATIONS=fake.` | Traitez chaque ligne en simulé, puis relancez le contrôle |
+   | 2 | `[check-reel] contrôle impossible : …` | Le message dit la cause. Fonction absente : section 3 |
+
+   Une ligne « Pour information : … événement(s) de démonstration encore en vente » ne bloque rien : en réel, les messages de ces événements restent retenus.
+
+   **Ne passez en réel qu'avec le code 0.** Relancez ce contrôle avant chaque passage en réel.
+
+Ces deux étapes avec `superadmin` sont le seul usage d'un compte de `seed:dev`, et elles se font en simulé. Pendant la séance réelle, n'utilisez aucun compte de `seed:dev`.
+
+### 13.3 Passer en réel
+
+1. Arrêtez les trois fenêtres par Ctrl+C. La fenêtre 1, le faux SamirPay, ne sert plus.
+2. Ouvrez le tunnel (section 9, « Pour ouvrir le tunnel », étapes 1 et 2) et copiez son adresse `https://<nom>.trycloudflare.com`.
+3. Ouvrez `.env.local` avec `notepad .env.local` :
+   - supprimez la ligne `EV_INTEGRATIONS=fake` ;
+   - supprimez les quotas relevés de la section 4 ;
+   - ajoutez `SMS_GLOBAL_DAILY_CAP=50` ;
+   - mettez les vraies clés de 13.1 ;
+   - mettez l'adresse du tunnel dans `NEXT_PUBLIC_APP_URL` **et** dans `EV_DEV_TUNNEL_URL`.
+4. Fenêtre 2 : `npm run dev`. Attendu, au démarrage ou à l'ouverture de la première page :
+
+   ```text
+   [réel] SMS, paiements et emails RÉELS : de l’argent réel sera débité.
+   ```
+
+   et **aucune** bannière `[essai]`.
+
+   - `[réel] Refus de démarrer : en réel, NEXT_PUBLIC_APP_URL doit commencer par https://, sinon l’avis de paiement de SamirPay ne peut pas arriver. …` : le serveur s'est arrêté, car l'adresse n'est pas en https. Reprenez l'étape 3.
+   - Ni la ligne `[réel]`, ni la bannière `[essai]` : arrêtez tout de suite par Ctrl+C. Le réglage est mélangé, par exemple SamirPay encore sur `127.0.0.1` alors que les SMS partiraient pour de vrai.
+5. Fenêtre 3 : `npm run cron:local`. Il est **indispensable en réel** : il envoie les messages, confirme les paiements dont l'avis n'arrive pas et suit les remboursements.
+6. Ouvrez l'adresse du tunnel, sur le PC ou sur le téléphone.
+
+**Ce que fait `SMS_GLOBAL_DAILY_CAP=50`** :
+
+| Messages | Limite par jour |
+|---|---|
+| Codes reçus par SMS : inscription, connexion, retrait… | 50 au plus, sur un compteur partagé avec la ligne suivante |
+| Rappels et invitations de contrôleurs | arrêtés quand ce même compteur atteint 35 |
+| SMS indispensables : confirmation d'achat, annulation, remboursement… | **aucune limite du jour**. Seulement 30 par numéro, et 30 par compte qui les déclenche. C'est pourquoi le seuil d'alerte est réglé bas en 13.2 |
+
+### 13.4 Vos comptes
+
+N'utilisez jamais les comptes de `seed:dev` en réel. Rien ne leur est envoyé : leurs messages apparaissent dans la supervision, `/admin/notifications`, avec « Non envoyé : compte de démonstration ».
+
+- **Administrateur** : celui créé en 13.2. Connectez-vous avec son numéro et son mot de passe.
+- **Partenaire** : inscrivez-vous sur `/partner/register` avec le deuxième numéro. Un vrai code arrive par SMS. Déposez les pièces demandées. Avec votre compte administrateur, ouvrez le dossier depuis le tableau de bord de l'administration et validez-le.
+- **Client** : inscrivez-vous sur `/register` avec le troisième numéro. Un vrai code arrive par SMS. Dans le champ email, mettez l'adresse de votre compte Resend, puis ouvrez le lien reçu, valable 24 heures. Le profil passe de « Email non vérifié » à « Email vérifié ». Une adresse ne peut être vérifiée que par un seul compte.
+- **Push** : sur le téléphone du client, page `/profile/notifications`, **Activer les notifications**, puis **Envoyer une notification d'essai**. Elle arrive dans la minute.
+
+### 13.5 Les essais d'argent
+
+Compte partenaire : créez un événement pour le lendemain, comme en 8.1, avec une catégorie « Entrée » à petit prix, par exemple 200 F CFA, vendue en ligne. Le prix doit rester au-dessus du « Prix minimum d'un billet payant » (100 F CFA). Faites-le valider par votre compte administrateur, puis publiez-le. Si un paiement ne se lance pas, avec « Le paiement n’a pas pu être lancé », le montant est peut-être sous le minimum du compte SamirPay : passez la catégorie à 500 F CFA et réessayez.
+
+Faites les essais dans cet ordre, avec le compte client :
+
+1. **Achat Wave.** 1 billet, Wave, le numéro du compte Wave. Validez le paiement dans l'application Wave. Attendu : le billet dans **Mes billets**, le SMS de confirmation, et l'email de confirmation si l'adresse est vérifiée.
+2. **Achat Orange Money.** Même chose avec Orange Money.
+3. **Paiement abandonné.** Lancez un achat et ne validez rien sur le téléphone. Après la durée de garde des places (10 minutes par défaut, réglage « Durée de garde des places pendant un paiement »), la page d'attente affiche « Places plus garanties » et propose **Annuler ce paiement**. Annulez. Attendu : rien n'est débité, la place revient en vente, et un nouvel achat redevient possible.
+4. **Annulation avec remboursement réel.** Compte partenaire, page de l'événement, **Annuler l'événement**, retapez le titre. Attendu : les deux achats sont remboursés seuls, le client reçoit le SMS d'annulation puis celui du remboursement versé, et l'argent revient sur ses comptes Wave et Orange Money. L'avancement se lit dans l'onglet **Clôture** du pilotage. Les frais SamirPay de ces remboursements sont retenus sur le solde du partenaire, parce que c'est lui qui annule. Si le solde SamirPay ne suffit pas, le remboursement est bloqué : le client voit « Remboursement retardé, l’équipe Event Village s’en occupe. », et la ligne apparaît dans « Versements à reprendre », sur `/admin/finance`.
+5. **Retrait, facultatif.** Il demande des recettes disponibles : un autre événement, non annulé, terminé depuis le « Délai après la fin de l’événement » (48 heures par défaut), avec au moins le « Montant minimum de retrait » (5 000 F CFA par défaut). À faire lors d'une séance suivante. Avant d'envoyer le code de retrait par SMS, l'écran montre le minimum, les frais et le montant que vous recevrez.
+
+### 13.6 Ce qu'il faut relever
+
+Pour chaque essai, notez :
+
+| Relevé | Où le lire |
+|---|---|
+| L'avis de paiement de SamirPay est-il arrivé ? | Dans **SQL Editor** : `select first_received_at, result from public.payment_webhook_events order by first_received_at desc limit 5;`. `CONFIRMED` : reçu et accepté. `REJECTED_SIGNATURE` : signature refusée, voir 13.1. Aucune ligne pour ce paiement : l'avis n'est pas arrivé, et `cron:local` a confirmé le paiement |
+| Le délai | L'heure de validation sur le téléphone, puis l'heure d'arrivée du billet dans **Mes billets** et celle du SMS |
+| Les frais réellement prélevés par SamirPay | Le tableau de bord SamirPay, pour chaque paiement et chaque remboursement. Comparez avec « Frais agrégateur Wave » et « Frais agrégateur Orange Money » des Réglages de la plateforme |
+| Ce que montre Event Village | `/admin/finance`, section « Frais SamirPay » : frais réels des versements, frais estimés, écart. Pour les achats, l'écran dit « Frais réels non fournis par SamirPay pour ce mode d’encaissement » : seul le tableau de bord SamirPay les donne. Chaque montant doit correspondre au tableau de bord SamirPay |
+| Les messages | La supervision, `/admin/notifications` : chaque SMS, email et push « Envoyée ». Le nombre de SMS facturés, dans votre compte MTarget |
+
+### 13.7 Fin de séance
+
+1. **Coupez le tunnel en premier** : Ctrl+C dans sa fenêtre. Plus aucun visiteur ni aucun avis de SamirPay n'arrive.
+2. Laissez l'application et `cron:local` tourner, et vérifiez dans **SQL Editor** qu'aucune opération réelle n'est en cours. Attendu : 0 et 0.
+
+   ```sql
+   select count(*) as paiements_reels_en_attente from public.payments where not simulated and status = 'PENDING';
+   select count(*) as versements_reels_en_cours from public.cashouts where not simulated and status in ('A_ENVOYER', 'ENVOYE', 'INCERTAIN');
+   ```
+
+   Sinon, attendez quelques passages de `cron:local`, puis relancez les requêtes : une fois revenu en simulé, le serveur refuse de traiter une opération réelle. Un versement à l'issue incertaine ne repart jamais seul : traitez-le dans « Versements à reprendre », sur `/admin/finance`, ou notez-le pour la prochaine séance réelle.
+3. Arrêtez `cron:local`, puis l'application, par Ctrl+C.
+4. **Retour en simulé**, dans `.env.local` : remettez `EV_INTEGRATIONS=fake` et `NEXT_PUBLIC_APP_URL=http://localhost:3000`, supprimez `EV_DEV_TUNNEL_URL`. Les vraies clés peuvent rester : en simulé, elles ne servent pas.
+5. Relancez les trois fenêtres de la section 6. La bannière `[essai]` doit revenir, sans ligne `[réel]`.
+6. Avec `superadmin`, remettez les réglages notés en 13.2.
