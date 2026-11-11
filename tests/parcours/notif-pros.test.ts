@@ -48,7 +48,7 @@ import {
 import { authed, newController, openShift, scan, ticketPayload, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, eventHistory, rpcTransition, type DraftEvent, type EventStatus } from './cycle-helpers';
 import {
-    assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, noonDakarTomorrow, outboxRows, smsMark, smsTo,
+    assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, markEmailVerified, noonDakarTomorrow, outboxRows, smsMark, smsTo,
     type OutboxChannel, type OutboxRow,
 } from './notif-helpers';
 
@@ -217,7 +217,7 @@ interface ProPartner extends TestPartner { company: string }
 async function newProPartner(label: string, status: 'EN_ATTENTE' | 'VALIDE' = 'VALIDE'): Promise<ProPartner> {
     const user = await newBuyer(`pro-${label}`, { firstName: 'Moussa', lastName: 'Organisateur' });
     const { error: roleErr } = await service.from('user_roles').upsert([{ user_id: user.userId, role: 'PARTENAIRE' }], { onConflict: 'user_id,role' });
-    assert.equal(roleErr, null, `rôle PARTENAIRE : ${roleErr?.message}`);
+    assert.equal(roleErr, null, `rôle PARTENAIRE : ${roleErr?.message}`); await markEmailVerified(user.userId); // lot 9 bis (R87, B96) : email seulement à une adresse vérifiée
     const company = `Societe ${randomBytes(3).toString('hex')}`;
     const { data: partner, error } = await service.from('partners').insert({
         user_id: user.userId, company_name: company, commercial_name: company,
@@ -300,7 +300,7 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         const p = await newProPartner('publie');
         const byAdmin = await proEvent(p, 'Pub admin', 'PUBLIE', undefined, { publishedBy: 'ADMIN' });
         const h = await historyId(byAdmin.eventId, 'VALIDE', 'PUBLIE');
-        const rows = await groupRows('EVENT_PUBLISHED_BY_ADMIN', `EVENT_PUBLISHED_BY_ADMIN:${h}`, ['IN_APP', 'PUSH'], p.userId);
+        const rows = await groupRows('EVENT_PUBLISHED_BY_ADMIN', `EVENT_PUBLISHED_BY_ADMIN:${h}`, ['IN_APP', 'PUSH', 'EMAIL'], p.userId);
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: p.userId, title: 'Événement publié', contains: [byAdmin.title], actionUrl: `/partner/events/${byAdmin.eventId}` });
 
@@ -330,10 +330,10 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         const hSus = await historyId(ev.eventId, 'PUBLIE', 'SUSPENDU');
         const sus = await groupRows('EVENT_SUSPENDED', `EVENT_SUSPENDED:${hSus}`, ALL4, p.userId);
         for (const who of [holder, used]) {
-            await groupRows('EVENT_SUSPENDED_HOLDER', `EVENT_SUSPENDED_HOLDER:${hSus}:${who.userId}`, ['IN_APP', 'PUSH'], who.userId);
+            await groupRows('EVENT_SUSPENDED_HOLDER', `EVENT_SUSPENDED_HOLDER:${hSus}:${who.userId}`, ['IN_APP', 'PUSH', 'EMAIL'], who.userId);
         }
         const holderRows = await outboxRows({ type: 'EVENT_SUSPENDED_HOLDER', eventId: ev.eventId });
-        assert.equal(holderRows.length, 4, `deux porteurs distincts × (IN_APP, PUSH) : ${holderRows.length} ligne(s)`);
+        assert.equal(holderRows.length, 6, `deux porteurs distincts × (IN_APP, PUSH, EMAIL : G.49) : ${holderRows.length} ligne(s)`);
         let mark = smsMark(p.phoneE164);
         let sent = await deliver(sus, new Date());
         assertSms(sent, p.phoneE164, mark, `Event Village : événement ${ev.title} suspendu. Motif : ${reason}. ${APP_URL}/partner/events`);
@@ -344,7 +344,7 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: p.userId });
         const hRea = await historyId(ev.eventId, 'SUSPENDU', 'PUBLIE');
         const rea = await groupRows('EVENT_REACTIVATED', `EVENT_REACTIVATED:${hRea}`, ALL4, p.userId);
-        await groupRows('EVENT_REACTIVATED_HOLDER', `EVENT_REACTIVATED_HOLDER:${hRea}:${holder.userId}`, ['IN_APP', 'PUSH'], holder.userId);
+        await groupRows('EVENT_REACTIVATED_HOLDER', `EVENT_REACTIVATED_HOLDER:${hRea}:${holder.userId}`, ['IN_APP', 'PUSH', 'EMAIL'], holder.userId);
         mark = smsMark(p.phoneE164);
         sent = await deliver(rea, new Date());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre événement ${ev.title} est de nouveau en ligne. ${APP_URL}/partner/events`);
@@ -467,7 +467,7 @@ describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
         assert.equal(res.status, 200, `clôture avec écart : ${show(res)}`);
         assert.equal(findKey(res.body, 'alert_queued'), true, `réponse : alert_queued = true (J2.1) : ${show(res)}`);
         assert.equal(findKey(res.body, 'smsSent'), undefined, `réponse : plus de résultat de SMS synchrone : ${show(res)}`);
-        const rows = await groupRows('SHIFT_DISCREPANCY', `SHIFT_DISCREPANCY:${withGap.shiftId}`, ['IN_APP', 'PUSH', 'SMS'], p.userId);
+        const rows = await groupRows('SHIFT_DISCREPANCY', `SHIFT_DISCREPANCY:${withGap.shiftId}`, ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], p.userId);
         assert.equal(smsTo(p.phoneE164).length, 0, 'aucun SMS envoyé par la route (boîte d’envoi seulement)');
         const fmt = await smsFormat();
         const mark = smsMark(p.phoneE164);
@@ -581,7 +581,7 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
             setFakeMode('cashoutMode', 'success');
         }
         assert.equal(c.status, 'INCERTAIN', `cashout incertain (${c.status})`);
-        const rows = await groupRows('WITHDRAWAL_UNCERTAIN', `WITHDRAWAL_UNCERTAIN:${c.id}:${Number(c.attempt_count)}`, ['IN_APP', 'PUSH', 'SMS'], partner.userId);
+        const rows = await groupRows('WITHDRAWAL_UNCERTAIN', `WITHDRAWAL_UNCERTAIN:${c.id}:${Number(c.attempt_count)}`, ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], partner.userId);
         const fmt = await smsFormat();
         const mark = smsMark(partner.phoneE164);
         const sent = await deliver(rows, new Date());
@@ -787,10 +787,10 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const { error: upErr } = await service.from('partners').update({ subscription_plan_id: plan.id, trial_ends_at: trialEnds }).eq('id', p.partnerId);
         assert.equal(upErr, null, `abonnement : ${upErr?.message}`);
         const group = await singleGroup('SUBSCRIPTION_ACTIVATED', `SUBSCRIPTION_ACTIVATED:${p.partnerId}:${plan.id}:`);
-        const rows = await groupRows('SUBSCRIPTION_ACTIVATED', group, ['IN_APP'], p.userId);
+        const rows = await groupRows('SUBSCRIPTION_ACTIVATED', group, ['IN_APP', 'EMAIL'], p.userId);
         const { error: sameErr } = await service.from('partners').update({ subscription_plan_id: plan.id }).eq('id', p.partnerId);
         assert.equal(sameErr, null, `rejeu : ${sameErr?.message}`);
-        assert.equal((await outboxRows({ type: 'SUBSCRIPTION_ACTIVATED', userId: p.userId })).length, 1, 'même formule : aucune nouvelle ligne');
+        assert.equal((await outboxRows({ type: 'SUBSCRIPTION_ACTIVATED', userId: p.userId })).length, 2, 'même formule : aucune nouvelle ligne (IN_APP et EMAIL, G.49)');
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: p.userId, title: 'Abonnement activé', contains: [String(plan.name)], actionUrl: '/partner/subscription' });
     });

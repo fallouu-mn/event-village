@@ -190,7 +190,7 @@ describe('6.6 Contrôleur — affectation (trg_event_controllers_notify, J2.4)',
             .select('id').single();
         assert.equal(error, null, `affectation : ${error?.message}`);
         const assignmentId = String(data.id);
-        const perAssignment = await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${assignmentId}`, ['IN_APP', 'PUSH'], ctrl.userId);
+        const perAssignment = await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${assignmentId}`, ['IN_APP', 'PUSH', 'EMAIL'], ctrl.userId);
         const sms = await aggregatedSms('CONTROLLER_ASSIGNED', 'CONTROLLER_ASSIGNED_SMS', ctrl.userId);
         assert.equal(sms.actor_id, partner.userId, 'SMS : compte déclencheur = created_by (quota par compte)');
         assert.equal(eventsOf(sms).length, 1, `SMS : un événement dans template_data.events (${JSON.stringify(sms.template_data)})`);
@@ -218,7 +218,7 @@ describe('6.6 Contrôleur — affectation (trg_event_controllers_notify, J2.4)',
         assert.equal(error, null, `affectations : ${error?.message}`);
         assert.equal((data ?? []).length, 3, 'trois affectations');
         const rows: OutboxRow[] = [];
-        for (const a of data ?? []) rows.push(...await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${a.id}`, ['IN_APP', 'PUSH'], ctrl.userId));
+        for (const a of data ?? []) rows.push(...await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${a.id}`, ['IN_APP', 'PUSH', 'EMAIL'], ctrl.userId));
         const sms = await aggregatedSms('CONTROLLER_ASSIGNED', 'CONTROLLER_ASSIGNED_SMS', ctrl.userId);
         assert.deepEqual(eventsOf(sms).map((e) => String(e.event_id)).sort(), evs.map((e) => e.eventId).sort(), 'SMS agrégé : les trois événements');
         await deliver([...rows, sms]);
@@ -259,7 +259,7 @@ describe('6.6 Contrôleur — retrait d’affectation (J2.4, I4)', () => {
             assert.equal(res.body.notification, 'QUEUED', `réponse : notification QUEUED : ${show(res)}`);
             assert.deepEqual(smsMessages(ctrl.phoneE164, mark), [], 'aucun SMS envoyé par la route');
             const rows: OutboxRow[] = [];
-            for (const a of mine) rows.push(...await groupRows('CONTROLLER_UNASSIGNED', `CONTROLLER_UNASSIGNED:${a.id}`, ['IN_APP', 'PUSH'], ctrl.userId));
+            for (const a of mine) rows.push(...await groupRows('CONTROLLER_UNASSIGNED', `CONTROLLER_UNASSIGNED:${a.id}`, ['IN_APP', 'PUSH', 'EMAIL'], ctrl.userId));
             const sms = await aggregatedSms('CONTROLLER_UNASSIGNED', 'CONTROLLER_UNASSIGNED_SMS', ctrl.userId);
             assert.equal(eventsOf(sms).length, 3, 'SMS agrégé : trois événements retirés');
             const [r] = await outboxRows({ ids: [reminder.id] });
@@ -286,7 +286,7 @@ describe('6.6 Contrôleur — retrait d’affectation (J2.4, I4)', () => {
         const { data: a, error } = await service.from('event_controllers')
             .insert({ event_id: draft.eventId, user_id: ctrlA.userId, can_accept_cash: false, created_by: partner.userId }).select('id').single();
         assert.equal(error, null, `affectation au brouillon : ${error?.message}`);
-        await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${a.id}`, ['IN_APP', 'PUSH'], ctrlA.userId);
+        await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${a.id}`, ['IN_APP', 'PUSH', 'EMAIL'], ctrlA.userId);
         const { error: delErr } = await service.from('events').delete().eq('id', draft.eventId);
         assert.equal(delErr, null, `suppression du brouillon (cascade sur event_controllers) : ${delErr?.message} (code ${delErr?.code})`);
         assert.deepEqual(await outboxRows({ type: 'CONTROLLER_UNASSIGNED', keyPrefix: `CONTROLLER_UNASSIGNED:${a.id}:` }), [], 'cascade d’un événement : aucun avis de retrait');
@@ -296,7 +296,7 @@ describe('6.6 Contrôleur — retrait d’affectation (J2.4, I4)', () => {
         const { data: b, error: bErr } = await service.from('event_controllers')
             .insert({ event_id: ev.eventId, user_id: ctrlB.userId, can_accept_cash: false, created_by: partner.userId }).select('id').single();
         assert.equal(bErr, null, `affectation : ${bErr?.message}`);
-        await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${b.id}`, ['IN_APP', 'PUSH'], ctrlB.userId);
+        await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${b.id}`, ['IN_APP', 'PUSH', 'EMAIL'], ctrlB.userId);
         const out = await inRolledBackTransaction(async (db) => {
             await db.query('DELETE FROM auth.users WHERE id = $1', [ctrlB.userId]);
             const left = await db.query<{ n: number }>('SELECT count(*)::int AS n FROM public.event_controllers WHERE id = $1', [b.id]);
@@ -333,8 +333,8 @@ describe('6.6 Contrôleur — caisse fermée par un tiers (shift_close, J2.1)', 
         const r3 = await close(cashiers[2].ctrl, cashiers[2]);
         assert.equal(r3.status, 200, `fermeture par le contrôleur : ${show(r3)}`);
 
-        const byPartner = await groupRows('SHIFT_CLOSED_BY_OTHER', `SHIFT_CLOSED_BY_OTHER:${cashiers[0].shiftId}`, ['IN_APP', 'PUSH'], cashiers[0].ctrl.userId);
-        const byAdmin = await groupRows('SHIFT_CLOSED_BY_OTHER', `SHIFT_CLOSED_BY_OTHER:${cashiers[1].shiftId}`, ['IN_APP', 'PUSH'], cashiers[1].ctrl.userId);
+        const byPartner = await groupRows('SHIFT_CLOSED_BY_OTHER', `SHIFT_CLOSED_BY_OTHER:${cashiers[0].shiftId}`, ['IN_APP', 'PUSH', 'EMAIL'], cashiers[0].ctrl.userId);
+        const byAdmin = await groupRows('SHIFT_CLOSED_BY_OTHER', `SHIFT_CLOSED_BY_OTHER:${cashiers[1].shiftId}`, ['IN_APP', 'PUSH', 'EMAIL'], cashiers[1].ctrl.userId);
         assert.deepEqual(await outboxRows({ type: 'SHIFT_CLOSED_BY_OTHER', keyPrefix: `SHIFT_CLOSED_BY_OTHER:${cashiers[2].shiftId}:` }), [], 'fermée par le contrôleur lui-même : aucun avis');
         const sent = await deliver([...byPartner, ...byAdmin]);
         await assertInApp(sent.filter((r) => r.recipient_user_id === cashiers[0].ctrl.userId), { userId: cashiers[0].ctrl.userId, title: 'Caisse fermée', contains: [ev.title, 'organisateur'] });
@@ -351,10 +351,10 @@ describe('6.6 Contrôleur — activation et invitation d’un nouveau compte (J2
         const first = await call();
         assert.equal(first.error, null, `notification_controller_activated : ${first.error?.message} (code ${first.error?.code})`);
         assert.equal((first.data as Row | null)?.ok, true, `réponse : ${JSON.stringify(first.data)}`);
-        const rows = await groupRows('CONTROLLER_ACTIVATED', `CONTROLLER_ACTIVATED:${ctrl.userId}`, ['IN_APP', 'SMS'], ctrl.userId);
+        const rows = await groupRows('CONTROLLER_ACTIVATED', `CONTROLLER_ACTIVATED:${ctrl.userId}`, ['IN_APP', 'SMS', 'EMAIL'], ctrl.userId);
         const again = await call();
         assert.equal(again.error, null, `second appel : ${again.error?.message}`);
-        assert.equal((await outboxRows({ type: 'CONTROLLER_ACTIVATED', userId: ctrl.userId })).length, 2, 'second appel : aucune ligne de plus');
+        assert.equal((await outboxRows({ type: 'CONTROLLER_ACTIVATED', userId: ctrl.userId })).length, 3, 'second appel : aucune ligne de plus (IN_APP, SMS, EMAIL : G.49)');
         const mark = smsMark(ctrl.phoneE164);
         const sent = await deliver(rows);
         assert.deepEqual(smsMessages(ctrl.phoneE164, mark), ['Event Village : votre compte est activé. Vous pouvez vous connecter et scanner les billets.'], 'SMS exact (G3)');
@@ -396,7 +396,7 @@ describe('6.6 Contrôleur — activation et invitation d’un nouveau compte (J2
         const userId = String(user.id);
         const { data: asg, error: aErr } = await service.from('event_controllers').select('id').eq('user_id', userId).eq('event_id', ev.eventId).single();
         assert.equal(aErr, null, `affectation : ${aErr?.message}`);
-        const perAssignment = await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${asg.id}`, ['IN_APP', 'PUSH'], userId);
+        const perAssignment = await groupRows('CONTROLLER_ASSIGNED', `CONTROLLER_ASSIGNED:${asg.id}`, ['IN_APP', 'PUSH', 'EMAIL'], userId);
         const sms = await aggregatedSms('CONTROLLER_ASSIGNED', 'CONTROLLER_ASSIGNED_SMS', userId);
         const sent = await deliver([...perAssignment, sms]);
         const smsRow = byChannel(sent, 'SMS');
@@ -414,7 +414,7 @@ describe('6.6 Contrôleur — activation et invitation d’un nouveau compte (J2
         const { data: after1, error: vErr } = await service.from('users').select('phone_verified_at').eq('id', userId).single();
         assert.equal(vErr, null, `phone_verified_at : ${vErr?.message} (colonne du contrat B1)`);
         assert.ok(after1.phone_verified_at, 'setup : users.phone_verified_at posé (contrat B1)');
-        const activated = await groupRows('CONTROLLER_ACTIVATED', `CONTROLLER_ACTIVATED:${userId}`, ['IN_APP', 'SMS'], userId);
+        const activated = await groupRows('CONTROLLER_ACTIVATED', `CONTROLLER_ACTIVATED:${userId}`, ['IN_APP', 'SMS', 'EMAIL'], userId);
         const mark = smsMark(phone);
         await deliver(activated, noonDakarTomorrow());
         assert.deepEqual(smsMessages(phone, mark), ['Event Village : votre compte est activé. Vous pouvez vous connecter et scanner les billets.'], 'SMS d’activation exact, par la boîte d’envoi');
