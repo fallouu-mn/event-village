@@ -32,8 +32,8 @@ export function OverviewTab({ data, saleStopped = false, saleState }: { data: Pi
     return (
         <div className="flex flex-col gap-6">
             {tickets.capacity_exceeded && (
-                <StatusBanner tone="warning" title="Les quotas dépassent la jauge déclarée" className="tabular-nums">
-                    La somme des quotas des catégories actives ({formatInteger(tickets.capacity)} places) dépasse la jauge
+                <StatusBanner tone="warning" title="Les quantités mises en vente dépassent la jauge déclarée" className="tabular-nums">
+                    La somme des quantités mises en vente des catégories actives ({formatInteger(tickets.capacity)} places) dépasse la jauge
                     déclarée de l’événement ({formatInteger(tickets.declared_capacity)} places). Vérifiez vos catégories.
                 </StatusBanner>
             )}
@@ -60,7 +60,7 @@ export function OverviewTab({ data, saleStopped = false, saleState }: { data: Pi
                             <KpiCard
                                 label="Places en vente"
                                 value={formatInteger(tickets.capacity)}
-                                hint="Quotas des catégories actives"
+                                hint="Quantités mises en vente des catégories actives"
                                 tone="neutral"
                                 icon={<Tags size={18} />}
                             />

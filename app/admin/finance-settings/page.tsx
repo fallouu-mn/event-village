@@ -62,7 +62,7 @@ const FREE_REMINDER_SMS_LABELS: Record<string, string> = {
 
 /** Libellés et aides d'affichage ; les bornes sont contrôlées par le serveur (finance_setting_set). */
 const META: Record<string, SettingMeta> = {
-  'finance.service_fee_rate': { label: 'Frais de service', help: 'Payés par l’acheteur, arrondis au FCFA supérieur par billet. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'finance.service_fee_rate': { label: 'Frais de service', help: 'Payés par l’acheteur, arrondis au franc CFA supérieur par billet. De 0 à 50 %.', kind: 'percent', unit: '%' },
   'finance.payment_hold_minutes': { label: 'Durée de garde des places pendant un paiement (minutes)', help: 'Temps pendant lequel les places d’un paiement en attente restent réservées. Le paiement reste valable 1 heure chez SamirPay : validé après l’échéance, il donne les billets s’il reste des places, sinon il est remboursé automatiquement. Entier de 5 à 60.', kind: 'integer', unit: 'min' },
   'finance.min_paid_price': { label: 'Prix minimum d’un billet payant (F CFA)', help: 'Appliqué à toute catégorie payante créée ou dont le prix change ; un billet gratuit reste à 0. À ajuster quand SamirPay donnera son minimum d’encaissement. Entier de 1 à 100 000.', kind: 'integer', unit: 'F CFA' },
   'finance.aggregator_fee_rate.WAVE': { label: 'Frais agrégateur Wave', help: 'Coût SamirPay d’un paiement Wave. De 0 à 10 %.', kind: 'percent', unit: '%' },
@@ -70,8 +70,8 @@ const META: Record<string, SettingMeta> = {
   'finance.cancellation_aggregator_fee_bearer': { label: 'Frais agrégateur d’une annulation', help: 'Qui supporte les frais agrégateur quand un billet est remboursé.', kind: 'choice', options: BEARER_LABELS },
   'finance.payout_hold_enabled': { label: 'Délai de garde des ventes', help: 'Désactivé : les ventes sont disponibles dès la confirmation du paiement.', kind: 'boolean' },
   'finance.payout_delay_hours': { label: 'Délai après la fin de l’événement', help: 'Nombre d’heures avant que les ventes deviennent disponibles. De 0 à 720.', kind: 'integer', unit: 'h' },
-  'finance.withdrawal_fee_rate': { label: 'Frais de retrait', help: 'Arrondis au FCFA supérieur, déduits du montant versé. De 0 à 10 %.', kind: 'percent', unit: '%' },
-  'finance.withdrawal_min_amount': { label: 'Montant minimum de retrait', help: 'Montant entier en FCFA.', kind: 'integer', unit: 'FCFA' },
+  'finance.withdrawal_fee_rate': { label: 'Frais de retrait', help: 'Arrondis au franc CFA supérieur, déduits du montant versé. De 0 à 10 %.', kind: 'percent', unit: '%' },
+  'finance.withdrawal_min_amount': { label: 'Montant minimum de retrait', help: 'Montant entier en francs CFA.', kind: 'integer', unit: 'F CFA' },
   'finance.withdrawal_bank_enabled': { label: 'Retraits par virement bancaire', help: 'Tant qu’il est désactivé, seuls Wave et Orange Money sont proposés.', kind: 'boolean' },
   'finance.referral_availability_days': { label: 'Délai de validation des commissions', help: 'Jours avant qu’une commission de parrainage devienne disponible. De 7 à 14.', kind: 'integer', unit: 'jours' },
   'access.scan_window_before_hours': { label: 'Ouverture du contrôle avant le début', help: 'Heures avant le début de l’événement à partir desquelles les billets peuvent être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },

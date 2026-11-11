@@ -88,13 +88,8 @@ Numéro de téléphone mal saisi, partout le même texte : **« Numéro de mobil
 
 ## 6. Écarts encore présents dans l'application
 
-Relevé dans le code le 11/11/2026 (branche `lot9bis/cycle-evenement`, commit `78b32ac`). Ces textes n'ont pas encore été alignés sur ce glossaire.
+Relevé dans le code le 11/11/2026 (branche `lot9bis/cycle-evenement`, commit `78b32ac`). Ces textes n'ont pas encore été alignés sur ce glossaire. Les écarts « quota » (règles de saisie des catégories, onglets Aperçu et Ventes du pilotage) et « FCFA » (Réglages de la plateforme) relevés ce jour-là sont corrigés.
 
 | Où | Texte actuel | Mot retenu |
 |---|---|---|
-| `lib/validations/event.ts:289-290` | « Le quota est un nombre entier de billets. », « Le quota compte au moins 1 billet. », « Le quota compte au plus 100 000 billets. » | quantité mise en vente |
-| `lib/validations/event.ts:425` | « La somme des quotas des catégories actives (…) dépasse la jauge (…). » | quantités mises en vente |
-| `components/partner/pilotage/OverviewTab.tsx:35-36`, `:63` | « Les quotas dépassent la jauge déclarée », « Quotas des catégories actives » | quantités mises en vente |
-| `components/partner/pilotage/SalesTab.tsx:82` | « Restants = quota de la catégorie moins les ventes… » | quantité mise en vente |
-| `app/admin/finance-settings/page.tsx:65`, `:73-74` | « au FCFA supérieur », « Montant entier en FCFA. », unité « FCFA » | F CFA |
 | Salles, tables et commandes (`app/api/halls/**`, `app/api/orders/create/route.ts`) | « FCFA » | F CFA (services fermés pour l'instant) |

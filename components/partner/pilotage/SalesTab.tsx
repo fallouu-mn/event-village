@@ -79,7 +79,7 @@ function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
 
     return (
         <>
-            <PilotageSection title="Par catégorie" description="Restants = quota de la catégorie moins les ventes, les invitations et les paiements en cours. Une catégorie inactive n’a plus de place en vente.">
+            <PilotageSection title="Par catégorie" description="Restants = quantité mise en vente de la catégorie moins les ventes, les invitations et les paiements en cours. Une catégorie inactive n’a plus de place en vente.">
                 <DataList
                     items={data.by_category}
                     columns={COLUMNS}

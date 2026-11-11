@@ -286,8 +286,8 @@ const categoryDescriptionField = z.preprocess(blankToNull, z.string().trim()
     .max(EVENT_LIMITS.categoryDescriptionMax, `La description d’une catégorie compte au plus ${EVENT_LIMITS.categoryDescriptionMax} caractères.`).nullable());
 const priceField = z.number().int('Le prix est un montant entier en francs CFA.')
     .min(0, 'Le prix ne peut pas être négatif.').max(EVENT_LIMITS.priceMax, 'Le prix ne dépasse pas 10 000 000 F CFA.');
-const quotaField = z.number().int('Le quota est un nombre entier de billets.')
-    .min(1, 'Le quota compte au moins 1 billet.').max(EVENT_LIMITS.quotaMax, 'Le quota compte au plus 100 000 billets.');
+const quotaField = z.number().int('La quantité mise en vente est un nombre entier de billets.')
+    .min(1, 'La quantité mise en vente compte au moins 1 billet.').max(EVENT_LIMITS.quotaMax, 'La quantité mise en vente compte au plus 100 000 billets.');
 const maxPerOrderField = z.number().int('Le maximum par commande est un nombre entier.')
     .min(1, 'Le maximum par commande est d’au moins 1 billet.').max(EVENT_LIMITS.maxPerOrderMax, 'Le maximum par commande est de 50 billets au plus.');
 const saleDateField = z.preprocess(blankToNull, z.string().transform((v, c) => {
@@ -422,7 +422,7 @@ export function createEventSchema(ctx: EventSchemaContext) {
             if (cat.is_active !== false && Number.isFinite(cat.total_quantity)) activeSum += cat.total_quantity;
         });
         if (typeof v.capacity === 'number' && activeSum > v.capacity) {
-            c.addIssue({ code: custom, path: ['capacity'], message: `La somme des quotas des catégories actives (${activeSum}) dépasse la jauge (${v.capacity}).`, params: { code: EVENT_RULE_CODES.QUOTA_ABOVE_CAPACITY } });
+            c.addIssue({ code: custom, path: ['capacity'], message: `La somme des quantités mises en vente des catégories actives (${activeSum}) dépasse la jauge (${v.capacity}).`, params: { code: EVENT_RULE_CODES.QUOTA_ABOVE_CAPACITY } });
         }
     }).transform((v) => ({ ...v, program: sortProgram(v.program, v.start_date) }));
 }
