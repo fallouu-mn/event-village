@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { partnerTrial, trialPercentUsed } from '@/lib/partner/partner-dashboard.service';
+import { supportEmail } from '@/lib/support';
 
 export const dynamic = 'force-dynamic';
 
@@ -140,6 +141,9 @@ export async function GET(request: NextRequest) {
             },
             trial_percent_used: percent,
             plans: ((allPlans ?? []) as PlanRow[]).map(toPlan),
+            // Lot 9 bis (R70, B88, fix(9b.41-SB)) : adresse de support lue côté serveur (SUPPORT_EMAIL), jamais écrite
+            // dans l'écran.
+            support_email: supportEmail(),
         }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error: unknown) {
         console.error(`[GET /api/partner/subscription] compte ${user.id} :`, error instanceof Error ? error.message : String(error));

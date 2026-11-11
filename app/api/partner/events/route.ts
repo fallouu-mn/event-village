@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
                 actions: Array.isArray(body.actions) ? body.actions : [],
                 can_edit: body.can_edit === true,
                 can_cancel: body.can_cancel === true,
+                // Lot 9 bis (R92, fix(9b.41-SB)) : suppression permise ou non, décidée par event_actions (M08)
+                can_delete: body.can_delete === true,
                 last_reason: body.last_reason ?? null,
             };
         }));

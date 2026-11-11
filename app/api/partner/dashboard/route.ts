@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { PartnerDashboardService } from '@/lib/partner/partner-dashboard.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { supportEmail } from '@/lib/support';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +42,9 @@ export async function GET(req: NextRequest) {
         const partner = partnerRecord
             ? { id: partnerRecord.id, status: partnerRecord.status, resubmitted_at: partnerRecord.resubmitted_at, rejection_reason: partnerRecord.rejection_reason }
             : null;
-        return NextResponse.json({ success: true, dashboard: data, data, partner }, { headers: { 'Cache-Control': 'no-store' } });
+        // Lot 9 bis (R70, B88, fix(9b.41-SB)) : adresse de support lue côté serveur (SUPPORT_EMAIL), jamais écrite dans
+        // l'écran.
+        return NextResponse.json({ success: true, dashboard: data, data, partner, support_email: supportEmail() }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         if (message === 'PROFIL_PARTENAIRE_INTROUVABLE') {
