@@ -232,7 +232,7 @@ export function CounterSalePanel({ eventId, onOpenShift, onSold, onSessionExpire
             <TextInput
                 id={phoneId}
                 label="Numéro de l’acheteur (facultatif)"
-                hint="Pour lui envoyer un reçu par SMS. Le billet n’est rattaché à aucun compte."
+                hint="Pour être prévenu en cas de changement ou d’annulation. Le billet n’est rattaché à aucun compte."
                 type="tel"
                 inputMode="tel"
                 autoComplete="off"

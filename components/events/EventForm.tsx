@@ -86,6 +86,26 @@ const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
+
+/**
+ * Lot 9 bis (R12, R26, B71, contrat 5.30) : résultat d'une modification. Les comptes sont prévenus tout de suite
+ * dans l'application ; les SMS (comptes et numéros sans compte : invitations non réclamées, acheteurs au guichet)
+ * partent après 10 minutes, les corrections faites d'ici là sont regroupées dans le même SMS.
+ */
+function saveSummary({ notifiedHolders, smsQueued }: { notifiedHolders: number; smsQueued: number }): string {
+    if (notifiedHolders <= 0 && smsQueued <= 0) return 'Aucun détenteur de billets n’était à prévenir.';
+    const parts: string[] = [];
+    if (notifiedHolders > 0) {
+        parts.push(`${formatInteger(notifiedHolders)} ${notifiedHolders > 1 ? 'détenteurs de billets prévenus' : 'détenteur de billets prévenu'} dans l’application`);
+    }
+    if (smsQueued > 0) {
+        parts.push(smsQueued > 1
+            ? `${formatInteger(smsQueued)} SMS partiront dans 10 minutes (vos corrections d’ici là y seront regroupées).`
+            : '1 SMS partira dans 10 minutes (vos corrections d’ici là y seront regroupées).');
+        return parts.join(' ; ');
+    }
+    return `${parts[0]}.`;
+}
 const NETWORK_MESSAGE = 'Connexion impossible : rien n’a été enregistré. Vérifiez votre réseau, puis réessayez.';
 
 // ── Valeurs du formulaire ──────────────────────────────────────────────────
@@ -741,9 +761,7 @@ export function EventForm(props: EventFormProps) {
                     className="mb-4 tabular-nums"
                     action={<LinkButton href="/partner/events" variant="secondary" size="sm">Voir mes événements</LinkButton>}
                 >
-                    {saveResult.notifiedHolders > 0
-                        ? `${formatInteger(saveResult.notifiedHolders)} ${saveResult.notifiedHolders > 1 ? 'détenteurs de billets prévenus' : 'détenteur de billets prévenu'} dans l’application${saveResult.smsQueued > 0 ? ` ; ${formatInteger(saveResult.smsQueued)} SMS en file d’envoi` : ''}.`
-                        : 'Aucun détenteur de billets n’était à prévenir.'}
+                    {saveSummary(saveResult)}
                 </StatusBanner>
             )}
 
