@@ -70,7 +70,8 @@
 --     opens_at, closes_at }] } ; problem = scan_event_problem, bornes = scan_window ; avec actor_id, chaque événement
 --     doit être permis par scan_scanner_authorized, sinon SCAN_FORBIDDEN sans aucune donnée.
 --  8. DO de fin de fichier : RAISE NOTICE du nombre de catégories dont la fin de vente dépasse la nouvelle fin (A12),
---     sans reprise.
+--     sans reprise. Juste avant (tâche 7, R106, w18) : seconde passe de referral_commissions_realign (M07), car
+--     la reprise de M07 a lu l'ancienne fin par défaut (début à 23:59).
 --
 -- Tâche 22 (R42, R17 ; B49, B51, D7, D8 ; R43 : SHIFT_OPEN_AT_END par M09, fix(9b.22-SD)) :
 --  9. shift_open(jsonb) : base 20261102000003_lot5_cycle.sql:963-999, recopie intégrale, signature identique
@@ -2607,6 +2608,23 @@ BEGIN
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
     END LOOP;
+END;
+$$;
+
+
+-- ============================================================================
+-- Tâche 7 (R106, B12, w18), reste de la vague S3 : commissions réalignées sur la nouvelle fin par défaut.
+-- M07 a déjà repoussé les commissions à « fin + délai » avec l'ancienne fin (début à 23:59) ; event_end_at
+-- (point 5) donne désormais début + 6 h, plus tard que 23:59 pour un événement sans date de fin commencé
+-- après 17:59. Une seconde passe de referral_commissions_realign (M07) les aligne ; elle ne fait que reculer
+-- une date (GREATEST, jamais avancée) et ne touche une ligne que si sa date change : rejouable.
+-- ============================================================================
+DO $$
+DECLARE
+    v_moved integer;
+BEGIN
+    v_moved := public.referral_commissions_realign(NULL);
+    RAISE NOTICE 'lot 9 bis (R106) : % commission(s) repoussée(s) à la nouvelle fin par défaut (début + 6 h) + délai', v_moved;
 END;
 $$;
 
