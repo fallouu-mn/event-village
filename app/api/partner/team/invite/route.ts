@@ -164,7 +164,10 @@ export async function POST(req: NextRequest) {
                 existingProfile.role === 'ADMIN' ||
                 existingProfile.role === 'SUPERADMIN';
         }
-        if (parse.data.resend && existingProfile && !isPendingActivation) {
+        // Reste S3 (R38, lot 1C.1) : le refus vise un contrôleur déjà activé (son texte le dit). Un compte établi qui
+        // n'est pas encore contrôleur suit le chemin de l'invitation : « resend » ne contourne pas la confirmation
+        // (invitation-identite:127, requires_confirmation), aucun rôle sans son accord.
+        if (parse.data.resend && existingProfile && !isPendingActivation && alreadyController) {
             return NextResponse.json({
                 error: 'Ce contrôleur a déjà activé son compte : aucun SMS n’est renvoyé.',
                 code: 'ALREADY_ACTIVATED',
