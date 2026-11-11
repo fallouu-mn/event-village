@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Clock,
   ExternalLink,
+  Gauge,
   Image as ImageIcon,
   Mail,
   MapPin,
@@ -545,6 +546,13 @@ export default function AdminEventSheetPage() {
               <Button variant="danger" onClick={() => setIsCancelOpen(true)} disabled={isSubmitting}>
                 Annuler l’événement
               </Button>
+            )}
+            {/* Lot 9 bis (R105, D-txt E.41) : le pilotage de l'organisateur (ventes, équipe, caisses, remboursements),
+                lisible par un admin events.read (route et RPC décident). */}
+            {hasPermission('events.read') && (
+              <LinkButton href={`/partner/events/${event.id}`} variant="secondary" leftIcon={<Gauge size={16} />}>
+                Ouvrir le pilotage
+              </LinkButton>
             )}
             {isPublic && (
               <LinkButton href={`/events/${event.id}`} variant="ghost" external rightIcon={<ExternalLink size={16} />}>
