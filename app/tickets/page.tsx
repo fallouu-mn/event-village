@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { HelpCircle, RefreshCw, Sparkles, Ticket, WifiOff } from 'lucide-react';
 import { TicketCard, type TicketCardProps } from '@/components/tickets/TicketCard';
@@ -37,6 +37,9 @@ const TransferExplainerModal = dynamic(() => import('@/components/tickets/Transf
  *    chaque chargement réussi, les billets enregistrés sur le téléphone sont réconciliés avec la liste (billet
  *    disparu, transféré ou d'une autre version : lot supprimé). Lien « Afficher mes billets hors ligne » en
  *    navigation complète (<a href>, servie par le service worker sans réseau).
+ *  - Lot 9 bis : R45 (A10) au premier chargement, un billet reçu qui attend et aucun onglet demandé dans l'URL
+ *    ouvrent « Reçus » (les SMS gardent leur lien) ; R25, R66, R32, B9 : la carte reçoit ce que le serveur sert
+ *    (codeVisible, transferAllowed, eventNotice, prix, frais, refundDelayed, postponementRefund).
  */
 
 type TicketStatus = TicketCardProps['status'];
@@ -58,6 +61,15 @@ interface MyTicket {
   isTransferLocked?: boolean;
   activeTransfer?: TicketCardProps['activeTransfer'];
   offline?: OfflineAvailability | null;
+  price?: number;
+  serviceFee?: number;
+  saleChannel?: string | null;
+  eventStatus?: string;
+  codeVisible?: boolean;
+  transferAllowed?: boolean;
+  eventNotice?: string | null;
+  refundDelayed?: boolean;
+  postponementRefund?: TicketCardProps['postponementRefund'];
 }
 
 const TABS = ['a-venir', 'tous', 'historique', 'recus'] as const;
@@ -171,6 +183,9 @@ export default function TicketsPage() {
     void reconcileWithServerTickets(userId, tickets);
   }, [phase, tickets, userId]);
 
+  /** R45 : la bascule vers « Reçus » n'a lieu qu'une fois, au premier chargement. */
+  const autoTabDoneRef = useRef(false);
+
   /** Billets reçus : erreur affichée dans l'onglet « Reçus », la liste précédente reste sinon. */
   const loadIncoming = useCallback(async (mode: 'initial' | 'silent') => {
     const result = await readIncomingTransfers();
@@ -178,11 +193,16 @@ export default function TicketsPage() {
       setIncoming({ items: result.items, phoneVerificationRequired: result.phoneVerificationRequired });
       setIncomingError(null);
       setIncomingPhase('ready');
+      // R45 (A10) : un billet attend et aucun onglet n'est demandé (lien du SMS ou ouverture directe) → « Reçus »
+      if (mode === 'initial' && !autoTabDoneRef.current) {
+        autoTabDoneRef.current = true;
+        if (result.items.length > 0 && !new URLSearchParams(window.location.search).has('tab')) setTab('recus');
+      }
       return;
     }
     setIncomingError(result.message);
     if (mode === 'initial') setIncomingPhase('error');
-  }, []);
+  }, [setTab]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([load('silent'), loadIncoming('silent')]);
@@ -342,6 +362,16 @@ export default function TicketsPage() {
                   isTransferLocked={ticket.isTransferLocked}
                   activeTransfer={ticket.activeTransfer}
                   offline={ticket.offline ?? null}
+                  price={ticket.price}
+                  serviceFee={ticket.serviceFee ?? 0}
+                  saleChannel={ticket.saleChannel ?? null}
+                  eventStatus={ticket.eventStatus}
+                  codeVisible={ticket.codeVisible === true}
+                  transferAllowed={ticket.transferAllowed === true}
+                  eventNotice={ticket.eventNotice ?? null}
+                  refundDelayed={ticket.refundDelayed === true}
+                  postponementRefund={ticket.postponementRefund ?? null}
+                  onRefunded={() => void refreshTickets()}
                   onTransferClick={() =>
                     setTransferTicket({
                       id: ticket.id,

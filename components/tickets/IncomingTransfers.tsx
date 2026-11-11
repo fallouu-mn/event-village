@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CalendarClock, Gift, Hourglass, MapPin, ShieldCheck, Ticket, UserRound } from 'lucide-react';
+import { CalendarClock, Gift, Hourglass, MapPin, ShieldCheck, Ticket, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
@@ -19,10 +19,15 @@ import { formatDateTime, formatEventDateTime, formatFcfa } from '@/lib/format';
  *    le billet rejoint « Mes billets » avec un nouveau QR code. Les refus du serveur sont affichés en clair.
  *  - Numéro non vérifié : aucun détail n'est montré (le serveur n'en donne pas) ; un bandeau invite à
  *    confirmer le numéro par un code SMS (PhoneVerifyDialog), puis la liste est relue.
+ *  - Lot 9 bis : R104 textes choisis par `kind` (transfert d'un particulier ou invitation de l'organisateur) ;
+ *    R46 (B55) « Refuser » confirmé, POST /api/tickets/transfers/{id}/decline (transfert : le billet reste à
+ *    l'expéditeur, prévenu ; invitation : billet annulé, place rendue) ; refus du serveur affiché en clair.
  */
 
 export interface IncomingTransfer {
   transfer_id: string;
+  /** R104 : invitation de l'organisateur (sans expéditeur) ou transfert d'un particulier. */
+  kind: 'INVITATION' | 'TRANSFER';
   expires_at: string;
   sender_display: string;
   ticket: { category_name: string | null; price: number };
@@ -57,6 +62,7 @@ function toTransfer(raw: unknown): IncomingTransfer | null {
   if (typeof e.title !== 'string') return null;
   return {
     transfer_id: raw.transfer_id,
+    kind: raw.kind === 'INVITATION' ? 'INVITATION' : 'TRANSFER',
     expires_at: typeof raw.expires_at === 'string' ? raw.expires_at : '',
     sender_display: typeof raw.sender_display === 'string' && raw.sender_display ? raw.sender_display : 'Un utilisateur',
     ticket: {
@@ -124,6 +130,39 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [isVerifyOpen, setIsVerifyOpen] = useState(false);
+  const [declining, setDeclining] = useState<IncomingTransfer | null>(null);
+  const [isDeclining, setIsDeclining] = useState(false);
+
+  /** R46 : refus confirmé ; le serveur dit le résultat (transfert rendu, ou invitation annulée). */
+  const decline = async () => {
+    if (!declining) return;
+    const transfer = declining;
+    setIsDeclining(true);
+    setAcceptError(null);
+    try {
+      const res = await fetch(`/api/tickets/transfers/${transfer.transfer_id}/decline`, { method: 'POST' });
+      let body: { message?: unknown; error?: unknown; code?: unknown } = {};
+      try {
+        body = await res.json();
+      } catch (err) {
+        console.error(`[Billets reçus] réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
+      }
+      setDeclining(null);
+      if (!res.ok) {
+        setAcceptError(typeof body.error === 'string' && body.error ? body.error : `Le billet n’a pas pu être refusé (erreur ${res.status}).`);
+        if (body.code === 'PHONE_NOT_VERIFIED') setIsVerifyOpen(true);
+      } else {
+        toast.success(typeof body.message === 'string' && body.message ? body.message : 'Billet refusé.');
+      }
+      onChanged();
+    } catch (err) {
+      console.error('[Billets reçus] refus injoignable :', err instanceof Error ? err.message : String(err));
+      setAcceptError(NETWORK_MESSAGE);
+      setDeclining(null);
+    } finally {
+      setIsDeclining(false);
+    }
+  };
 
   const accept = async () => {
     if (!confirming) return;
@@ -175,7 +214,7 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
       )}
 
       {acceptError && (
-        <StatusBanner tone="danger" announce="alert" title="Billet non accepté">
+        <StatusBanner tone="danger" announce="alert" title="Action non effectuée">
           {acceptError}
         </StatusBanner>
       )}
@@ -202,7 +241,7 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
         <EmptyState
           icon={<Gift size={28} />}
           title="Aucun billet reçu en attente"
-          description="Quand quelqu’un vous transfère un billet, vous recevez un SMS et il apparaît ici. Vous avez 48 h pour l’accepter."
+          description="Quand quelqu’un vous transfère un billet ou vous invite, vous recevez un SMS et il apparaît ici."
         />
       ) : (
         <ul className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
@@ -219,7 +258,7 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                       <h3 id={`recu-${t.transfer_id}`} className="break-words text-base font-semibold leading-snug text-fg">{t.event.title}</h3>
                       <p className="flex items-center gap-1.5 text-sm text-fg-muted">
                         <UserRound size={16} aria-hidden="true" />
-                        Envoyé par {t.sender_display}
+                        {t.kind === 'INVITATION' ? `Invitation de ${t.sender_display}` : `Envoyé par ${t.sender_display}`}
                       </p>
                     </div>
                   </div>
@@ -246,7 +285,7 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                         <Ticket size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
                         <span className="min-w-0 tabular-nums">
                           {t.ticket.category_name ?? 'Billet'}
-                          {t.ticket.price > 0 ? ` · ${formatFcfa(t.ticket.price)}` : ' · Gratuit'}
+                          {t.kind === 'INVITATION' ? ' · Invitation' : t.ticket.price > 0 ? ` · ${formatFcfa(t.ticket.price)}` : ' · Gratuit'}
                         </span>
                       </dd>
                     </div>
@@ -260,17 +299,31 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                       </dd>
                     </div>
                   </dl>
-                  <Button
-                    variant="primary"
-                    fullWidth
-                    onClick={() => {
-                      setAcceptError(null);
-                      setConfirming(t);
-                    }}
-                    leftIcon={<Gift size={18} aria-hidden="true" />}
-                  >
-                    Accepter le billet
-                  </Button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      onClick={() => {
+                        setAcceptError(null);
+                        setConfirming(t);
+                      }}
+                      leftIcon={<Gift size={18} aria-hidden="true" />}
+                    >
+                      Accepter le billet
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      onClick={() => {
+                        setAcceptError(null);
+                        setDeclining(t);
+                      }}
+                      leftIcon={<X size={18} aria-hidden="true" />}
+                      aria-label={`Refuser ${t.kind === 'INVITATION' ? 'l’invitation' : 'le billet'} pour ${t.event.title}`}
+                    >
+                      Refuser
+                    </Button>
+                  </div>
                 </article>
               </li>
             );
@@ -283,10 +336,26 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
         onClose={() => { if (!isAccepting) setConfirming(null); }}
         onConfirm={() => void accept()}
         title="Accepter ce billet ?"
-        message={confirming ? `Le billet pour « ${confirming.event.title} » rejoint vos billets avec un nouveau QR code. L’expéditeur est prévenu et ne peut plus l’utiliser.` : undefined}
+        message={!confirming ? undefined : confirming.kind === 'INVITATION'
+          ? `L’invitation pour « ${confirming.event.title} » rejoint vos billets avec son QR code.`
+          : `Le billet pour « ${confirming.event.title} » rejoint vos billets avec un nouveau QR code. L’expéditeur est prévenu et ne peut plus l’utiliser.`}
         confirmLabel="Accepter le billet"
         variant="default"
         isLoading={isAccepting}
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(declining)}
+        onClose={() => { if (!isDeclining) setDeclining(null); }}
+        onConfirm={() => void decline()}
+        title={declining?.kind === 'INVITATION' ? 'Refuser cette invitation ?' : 'Refuser ce billet ?'}
+        message={!declining ? undefined : declining.kind === 'INVITATION'
+          ? `L’invitation pour « ${declining.event.title} » est annulée et la place rendue à l’organisateur. Vous ne pourrez plus l’accepter.`
+          : `Le billet pour « ${declining.event.title} » reste à son expéditeur, qui est prévenu. Vous ne pourrez plus l’accepter.`}
+        confirmLabel={declining?.kind === 'INVITATION' ? 'Refuser l’invitation' : 'Refuser le billet'}
+        cancelLabel="Revenir"
+        variant="danger"
+        isLoading={isDeclining}
       />
 
       <PhoneVerifyDialog
