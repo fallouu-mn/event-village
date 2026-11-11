@@ -4,7 +4,8 @@
  *  - C1 : registre public.notification_types rempli avec TOUTES les lignes de la table G2 (famille,
  *    sujet, canaux, audience, politique « compte suspendu », journal synchrone, permission admin),
  *    amendement 2 de l'orchestrateur compris (plus de canal EMAIL pour TRANSFER_OFFERED et
- *    TRANSFER_CANCELLED) ;
+ *    TRANSFER_CANCELLED) ; lot 9 bis (T52) : registre complet du contrat 11 (26 types nouveaux, EVENT_CHANGED
+ *    indispensable, EMAIL partout par G.49 et G.50, ce qui annule l'amendement 2, EMAIL_VERIFICATION synchrone) ;
  *  - C2 : colonnes et types, contraintes nommées, clé d'idempotence UNIQUE, index de regroupement des SMS
  *    de changement (un seul PENDING par porteur et par événement), contrainte « pas de secret » (code,
  *    otp, jeton, lien de réclamation, mot de passe, QR…), triggers ; chaque CHECK refuse une ligne
@@ -86,37 +87,37 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A'),
     ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A'),
-    ess('INVITATION_RECEIVED', [S], 'ANY', 'A'), // lot 9, tâche 9.0 (migration 20261108000002)
-    ess('TRANSFER_OFFERED', [S, I, P], 'CLIENT', 'B'),
-    ess('TRANSFER_CANCELLED', [S, I, P], 'CLIENT', 'B'),
-    ess('TRANSFER_EXPIRED', [I, P], 'CLIENT', 'B'),
-    ess('TRANSFER_CLAIMED_SENDER', [I, P], 'CLIENT', 'B'),
+    ess('INVITATION_RECEIVED', [S, I, P, M], 'ANY', 'A'), // lot 9, tâche 9.0 ; lot 9 bis (R79, 11.2 M3)
+    ess('TRANSFER_OFFERED', [S, I, P, M], 'CLIENT', 'B'), // G.49
+    ess('TRANSFER_CANCELLED', [S, I, P, M], 'CLIENT', 'B'), // G.49
+    ess('TRANSFER_EXPIRED', [I, P, M], 'CLIENT', 'B'), // G.49
+    ess('TRANSFER_CLAIMED_SENDER', [I, P, M], 'CLIENT', 'B'), // G.49
     ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B'), // lot 7, tâche 7.9 (D91, migration 20261105000007)
-    ess('TICKET_SCANNED', [I, P], 'CLIENT', 'B'),
+    ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B'), // 11.2 M4
     ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A'),
-    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P], 'CLIENT'),
-    opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P], 'CLIENT'),
-    opt('EVENT_CHANGED', 'EVENT_UPDATES', [I, P, S], 'CLIENT'),
+    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT'), // G.50
+    opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT'), // G.50
+    ess('EVENT_CHANGED', [I, P, S, M], 'CLIENT', 'B'), // lot 9 bis (R14, 11.2 M1) : indispensable, sujet NULL
     opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT'),
-    opt('REMINDER_H3', 'REMINDERS', [I, P, S], 'CLIENT'),
-    ess('REFUND_REQUESTED', [I], 'CLIENT', 'A'),
+    opt('REMINDER_H3', 'REMINDERS', [I, P, S, M], 'CLIENT'), // G.50
+    ess('REFUND_REQUESTED', [I, M], 'CLIENT', 'A'), // G.49
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A'),
     ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B'),
-    ess('PHONE_CHANGED', [S], 'ANY', 'A'), // lot 9, tâche 9.2 (migration 20261108000004)
+    ess('PHONE_CHANGED', [S, M], 'ANY', 'A'), // lot 9, tâche 9.2 ; lot 9 bis (11.2 M22) : + EMAIL au compte
     ess('PUSH_TEST', [P], 'ANY', 'B'),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_SUSPENDED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_REACTIVATED', [I, S, M, P], 'PARTNER', 'B'),
-    ess('EVENT_PUBLISHED_BY_ADMIN', [I, P], 'PARTNER', 'B'),
+    ess('EVENT_PUBLISHED_BY_ADMIN', [I, P, M], 'PARTNER', 'B'), // G.49
     opt('FIRST_TICKET_SOLD', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
     opt('NEW_ORDER', 'PRO_ACTIVITY', [I], 'PARTNER'),
     opt('CATEGORY_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
     opt('EVENT_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
-    ess('SHIFT_DISCREPANCY', [I, S, P], 'PARTNER', 'A'),
+    ess('SHIFT_DISCREPANCY', [I, S, P, M], 'PARTNER', 'A'), // G.49
     ess('WITHDRAWAL_PAID', [I, S, M, P], 'ANY', 'A'),
     ess('WITHDRAWAL_REJECTED', [I, S, M, P], 'ANY', 'A'),
-    ess('WITHDRAWAL_UNCERTAIN', [I, S, P], 'ANY', 'A'),
+    ess('WITHDRAWAL_UNCERTAIN', [I, S, P, M], 'ANY', 'A'), // G.49
     ess('CANCEL_REFUNDS_DONE', [I, M, P], 'PARTNER', 'A'),
     ess('CANCEL_REFUNDS_BLOCKED', [I, M, P], 'PARTNER', 'A'),
     ess('PARTNER_REGISTERED_ACK', [I, M], 'PARTNER', 'B'),
@@ -124,18 +125,18 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('PARTNER_REJECTED', [I, S, M], 'PARTNER', 'B'),
     ess('PARTNER_SUSPENDED', [I, S, M], 'PARTNER', 'A'),
     ess('PARTNER_REACTIVATED', [I, S, M], 'PARTNER', 'B'),
-    ess('TRIAL_STARTED', [I, S], 'PARTNER', 'B'),
-    ess('SUBSCRIPTION_ACTIVATED', [I], 'PARTNER', 'A'),
-    ess('PAYMENT_SUCCESS', [I], 'CLIENT', 'A'),
-    ess('HALL_RESERVATION_REQUESTED', [I], 'PARTNER', 'B'),
-    ess('HALL_RESERVATION_CONFIRMED', [I], 'CLIENT', 'B'),
-    ess('HALL_RESERVATION_CANCELLED', [I], 'ANY', 'B'),
-    ess('PROMOTION_DECIDED', [I], 'PARTNER', 'B'),
-    ess('CONTROLLER_ASSIGNED', [I, P, S], 'CONTROLLER', 'B'),
-    ess('CONTROLLER_UNASSIGNED', [I, P, S], 'CONTROLLER', 'B'),
-    opt('CONTROLLER_REMINDER', 'REMINDERS', [I, P, S], 'CONTROLLER'),
-    ess('SHIFT_CLOSED_BY_OTHER', [I, P], 'CONTROLLER', 'A'),
-    ess('CONTROLLER_ACTIVATED', [I, S], 'CONTROLLER', 'B'),
+    ess('TRIAL_STARTED', [I, M], 'PARTNER', 'B'), // lot 9 bis (R31, 11.2 M5) : SMS retiré, + EMAIL
+    ess('SUBSCRIPTION_ACTIVATED', [I, M], 'PARTNER', 'A'), // G.49
+    ess('PAYMENT_SUCCESS', [I, M], 'CLIENT', 'A'), // G.49
+    ess('HALL_RESERVATION_REQUESTED', [I, M], 'PARTNER', 'B'), // G.49
+    ess('HALL_RESERVATION_CONFIRMED', [I, M], 'CLIENT', 'B'), // G.49
+    ess('HALL_RESERVATION_CANCELLED', [I, M], 'ANY', 'B'), // G.49
+    ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B'), // G.49
+    ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
+    ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
+    opt('CONTROLLER_REMINDER', 'REMINDERS', [I, P, S, M], 'CONTROLLER'), // G.50
+    ess('SHIFT_CLOSED_BY_OTHER', [I, P, M], 'CONTROLLER', 'A'), // G.49
+    ess('CONTROLLER_ACTIVATED', [I, S, M], 'CONTROLLER', 'B'), // G.49
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'events.read'),
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'partners.read'),
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
@@ -143,10 +144,10 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'payments.read'),
-    ess('ADMIN_NOTIFICATION_FAILED', [I], 'ADMIN', 'B', 'notifications.read'),
+    ess('ADMIN_NOTIFICATION_FAILED', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M], 'ADMIN', 'B', 'notifications.read'),
-    ess('ADMIN_SMS_CAP_GLOBAL', [I], 'ADMIN', 'B', 'notifications.read'),
-    ess('ADMIN_SMS_CAP_NON_OTP', [I], 'ADMIN', 'B', 'notifications.read'),
+    ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
+    ess('ADMIN_SMS_CAP_NON_OTP', [I, M], 'ADMIN', 'B', 'notifications.read'), // G.49
     // Lot 7, tâche 7.0 a (contrat M2.1, D15) : alerte à 80 % du plafond optionnel, prévision de la veille.
     ess('ADMIN_SMS_OPTIONAL_80', [I, M], 'ADMIN', 'B', 'notifications.read'),
     ess('ADMIN_SMS_FORECAST', [I, M], 'ADMIN', 'B', 'notifications.read'),
@@ -157,6 +158,33 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     sync('OTP_PHONE_CHANGE'), // lot 9, tâche 9.2 (migration 20261108000004)
     sync('OTP_AUTH_HOOK'),
     sync('CONTROLLER_INVITE'),
+    // Lot 9 bis (T52, contrat 11.1 N1 à N26) : types nouveaux.
+    ess('REFUND_DELAYED', [I, S, M, P], 'CLIENT', 'A'),
+    ess('WITHDRAWAL_DELAYED', [I, S, M, P], 'ANY', 'A'),
+    ess('ADMIN_CASHOUT_TO_RESUME', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
+    ess('PAYMENT_REFUND_STARTED', [I, S, M, P], 'CLIENT', 'A'),
+    ess('ADMIN_PARTNER_RESUBMITTED', [I, P, M], 'ADMIN', 'B', 'partners.read'),
+    ess('EVENT_CLOSED_HOLDER', [I, S, M, P], 'CLIENT', 'A'),
+    ess('EVENT_CLOSED_BY_ADMIN', [I, S, M, P], 'PARTNER', 'B'),
+    ess('SHIFT_OPEN_AT_END', [I, P, S, M], 'PARTNER', 'A'),
+    ess('TRANSFER_REVOKED', [S, I, P, M], 'CLIENT', 'B'),
+    ess('TRANSFER_DECLINED_SENDER', [I, P, M], 'CLIENT', 'B'),
+    ess('TRANSFER_RECIPIENT_CHANGED', [I, P, M], 'CLIENT', 'B'),
+    ess('CONTROLLER_INVITATION', [S, I, P, M], 'CLIENT', 'B'),
+    ess('EVENT_CANCELLED_BY_ADMIN', [I, S, M], 'PARTNER', 'A'),
+    ess('ADMIN_EVENT_CANCELLED', [I, M], 'ADMIN', 'B', 'events.read'),
+    ess('CONTROLLER_EVENT_CANCELLED', [I, S, M], 'CONTROLLER', 'B'),
+    ess('CONTROLLER_EVENT_CHANGED', [I, S, M], 'CONTROLLER', 'B'),
+    ess('CONTROLLER_EVENT_STATUS', [I, M], 'CONTROLLER', 'B'),
+    ess('TICKET_CANCELLED', [I, S, M], 'ANY', 'A'),
+    ess('ACCOUNT_SUSPENDED', [I, S, M], 'ANY', 'A'),
+    ess('ACCOUNT_REACTIVATED', [I, S, M], 'ANY', 'A'),
+    ess('ADMIN_EVENT_CHANGED', [I, M], 'ADMIN', 'B', 'events.read'),
+    ess('EVENT_SUBMITTED_ACK', [I, M], 'PARTNER', 'B'),
+    ess('EVENT_FINISHED', [I, M], 'PARTNER', 'A'),
+    ess('CLOSING_REPORT_READY', [I, M], 'PARTNER', 'A'),
+    ess('FUNDS_AVAILABLE', [I, M], 'PARTNER', 'B'),
+    { type: 'EMAIL_VERIFICATION', family: 'ESSENTIAL', topic: null, channels: [M], audience: 'ANY', suspended_policy: 'ALLOW', sync_only: true, admin_permission: null },
 ];
 
 const LOT6_TABLES = ['notification_outbox', 'notification_types', 'notification_preferences', 'push_subscriptions'] as const;
@@ -862,7 +890,9 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
         const key = `PURCHASE_CONFIRMED:${randomUUID()}`;
         const data = purchaseData();
         const r = await inRolledBackTransaction(async (db) => {
-            await prepare(db, 'notif_enqueue');
+            await prepare(db, 'notif_enqueue', ['users']);
+            // Lot 9 bis (G.49, B96, T52) : l'email ne part qu'à une adresse vérifiée ; l'acheteur l'est dans cette transaction.
+            await db.query('UPDATE public.users SET email_verified_at = now() WHERE id = $1', [buyer.userId]);
             const created = await enqueue(db, { type: 'PURCHASE_CONFIRMED', key, user_id: buyer.userId, data, now: now.toISOString() });
             const rows = await groupRows(db, key);
             const replay = await enqueue(db, { type: 'PURCHASE_CONFIRMED', key, user_id: buyer.userId, data: { ...data, total: 1 }, now: now.toISOString() });
@@ -897,6 +927,20 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
         assert.deepEqual(r.rowsAfter.map((x) => [x.id, x.template_data]), r.rows.map((x) => [x.id, x.template_data]), 'rejeu : lignes et données inchangées');
     });
 
+    test('lot 9 bis (G.49, B96, T52) : cas jumeau, adresse du compte non vérifiée → EMAIL SKIPPED EMAIL_NOT_VERIFIED dès l’écriture, autres canaux PENDING', async () => {
+        const now = new Date(Date.now() + FUTURE_MS);
+        const key = `PURCHASE_CONFIRMED:${randomUUID()}`;
+        const r = await inRolledBackTransaction(async (db) => {
+            await prepare(db, 'notif_enqueue adresse non vérifiée', ['users']);
+            await db.query('UPDATE public.users SET email_verified_at = NULL WHERE id = $1', [buyer.userId]);
+            await enqueue(db, { type: 'PURCHASE_CONFIRMED', key, user_id: buyer.userId, data: purchaseData(), now: now.toISOString() });
+            return byChannel(await groupRows(db, key));
+        });
+        assert.deepEqual([r.EMAIL?.status, r.EMAIL?.reason], ['SKIPPED', 'EMAIL_NOT_VERIFIED'], `EMAIL d'un compte à l'adresse non vérifiée : ${show(Object.values(r).filter((x): x is PgOutbox => Boolean(x)))}`);
+        assert.equal(r.IN_APP?.status, 'PENDING', 'in-app inchangé');
+        assert.equal(r.SMS?.status, 'PENDING', 'SMS inchangé');
+    });
+
     test('due_at fourni ; filtre des canaux ; IN_APP et PUSH seulement avec un compte', async () => {
         const now = new Date(Date.now() + FUTURE_MS);
         const due = new Date(now.getTime() + 3600_000);
@@ -906,7 +950,8 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             await prepare(db, 'notif_enqueue canaux');
             const nDue = await enqueue(db, { type: 'PURCHASE_CONFIRMED', key: k.due, user_id: buyer.userId, data: purchaseData(), due_at: due.toISOString(), now: now.toISOString() });
             const nSms = await enqueue(db, { type: 'PURCHASE_CONFIRMED', key: k.sms, user_id: buyer.userId, data: purchaseData(), channels: ['SMS'], now: now.toISOString() });
-            const nPhone = await enqueue(db, { type: 'TRANSFER_OFFERED', key: k.phoneOnly, phone, data: { transfer_id: randomUUID() }, now: now.toISOString() });
+            // Lot 9 bis (T52) : TRANSFER_OFFERED déclare EMAIL (G.49) ; un envoi au numéro seul passe les canaux non email, comme ses appelants.
+            const nPhone = await enqueue(db, { type: 'TRANSFER_OFFERED', key: k.phoneOnly, phone, data: { transfer_id: randomUUID() }, channels: ['SMS', 'IN_APP', 'PUSH'], now: now.toISOString() });
             return { nDue, due: await groupRows(db, k.due), nSms, sms: await groupRows(db, k.sms), nPhone, phone: await groupRows(db, k.phoneOnly) };
         });
         assert.equal(r.nDue, 3);
@@ -992,11 +1037,12 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
         }
     });
 
-    test('sans téléphone : SMS SKIPPED NO_PHONE (numéro fourni : PENDING) ; email factice : EMAIL SKIPPED NO_REAL_EMAIL (adresse fournie : PENDING)', async () => {
+    test('sans téléphone : SMS SKIPPED NO_PHONE (numéro fourni : PENDING) ; email factice : EMAIL SKIPPED NO_REAL_EMAIL ; adresse fournie non vérifiée : SKIPPED EMAIL_NOT_VERIFIED, égale à l’adresse vérifiée du compte : PENDING (lot 9 bis, T52)', async () => {
         const now = new Date(Date.now() + FUTURE_MS);
         const phone = randomSenegalPhone('76');
         const email = randomEmail('outbox-email');
-        const k = { noPhone: `PURCHASE_CONFIRMED:${randomUUID()}`, withPhone: `PURCHASE_CONFIRMED:${randomUUID()}`, fakeEmail: `PURCHASE_CONFIRMED:${randomUUID()}`, withEmail: `PURCHASE_CONFIRMED:${randomUUID()}` };
+        const verifiedEmail = randomEmail('outbox-verifiee');
+        const k = { noPhone: `PURCHASE_CONFIRMED:${randomUUID()}`, withPhone: `PURCHASE_CONFIRMED:${randomUUID()}`, fakeEmail: `PURCHASE_CONFIRMED:${randomUUID()}`, withEmail: `PURCHASE_CONFIRMED:${randomUUID()}`, verified: `PURCHASE_CONFIRMED:${randomUUID()}` };
         const r = await inRolledBackTransaction(async (db) => {
             await prepare(db, 'notif_enqueue destinataires', ['users']);
             await db.query('UPDATE public.users SET phone = NULL WHERE id = $1', [buyer.userId]);
@@ -1005,9 +1051,13 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             await db.query('UPDATE public.users SET email = $2 WHERE id = $1', [buyer.userId, `${Date.now()}${Math.floor(Math.random() * 1000)}@eventvillage.sn`]);
             await enqueue(db, { type: 'PURCHASE_CONFIRMED', key: k.fakeEmail, user_id: buyer.userId, data: purchaseData(), now: now.toISOString() });
             await enqueue(db, { type: 'PURCHASE_CONFIRMED', key: k.withEmail, user_id: buyer.userId, email, data: purchaseData(), now: now.toISOString() });
+            // Lot 9 bis (T52) : adresse fournie égale à l'adresse vérifiée du compte.
+            await db.query('UPDATE public.users SET email = $2, email_verified_at = now() WHERE id = $1', [buyer.userId, verifiedEmail]);
+            await enqueue(db, { type: 'PURCHASE_CONFIRMED', key: k.verified, user_id: buyer.userId, email: verifiedEmail, data: purchaseData(), now: now.toISOString() });
             return {
                 noPhone: byChannel(await groupRows(db, k.noPhone)), withPhone: byChannel(await groupRows(db, k.withPhone)),
                 fakeEmail: byChannel(await groupRows(db, k.fakeEmail)), withEmail: byChannel(await groupRows(db, k.withEmail)),
+                verified: byChannel(await groupRows(db, k.verified)),
             };
         });
         assert.equal(r.noPhone.SMS?.status, 'SKIPPED', 'compte sans numéro');
@@ -1017,8 +1067,10 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
         assert.equal(r.withPhone.SMS?.recipient_phone, phone);
         assert.equal(r.fakeEmail.EMAIL?.status, 'SKIPPED', 'adresse factice <chiffres>@eventvillage.sn');
         assert.equal(r.fakeEmail.EMAIL?.reason, 'NO_REAL_EMAIL');
-        assert.equal(r.withEmail.EMAIL?.status, 'PENDING', 'adresse réelle fournie');
-        assert.equal(r.withEmail.EMAIL?.recipient_email, email);
+        // Lot 9 bis (G.49, B96, T52, plus strict) : une adresse fournie non vérifiée ne reçoit rien.
+        assert.deepEqual([r.withEmail.EMAIL?.status, r.withEmail.EMAIL?.reason], ['SKIPPED', 'EMAIL_NOT_VERIFIED'], 'adresse réelle fournie, non vérifiée');
+        assert.equal(r.verified.EMAIL?.status, 'PENDING', 'adresse fournie égale à l’adresse vérifiée du compte');
+        assert.equal(r.verified.EMAIL?.recipient_email, verifiedEmail);
     });
 
     test('erreurs : type inconnu NT001, type synchrone NT002, horloge dans le passé NT003', async () => {
