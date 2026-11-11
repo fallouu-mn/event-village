@@ -38,9 +38,8 @@ import { getFakes } from '../fakes';
 import { randomSenegalPhone } from './helpers';
 import { newBuyer, service, type CategorySpec, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { assignController, authed, createTimedEvent, newController, type RouteResult } from './acces-helpers';
+import { assignController, authed, createTimedEvent, freshSession, newController, respondControllerInvitations, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createEventInStatus, type EventStatus } from './cycle-helpers';
-import { respondControllerInvitations } from './acces-helpers';
 import { assertTerrainInvariants } from './terrain-helpers';
 
 type Row = Record<string, unknown>;
