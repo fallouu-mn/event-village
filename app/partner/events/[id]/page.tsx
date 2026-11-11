@@ -15,6 +15,7 @@ import { ErrorState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { ReasonDialog } from '@/components/ui/ReasonDialog';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { formatDateTime, formatEventDateTime } from '@/lib/format';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
@@ -42,6 +43,8 @@ import type { EventAction, PilotageOverview } from '@/components/partner/pilotag
  *  - Annulation (tâche 5.8) : « Annuler l'événement » selon can_cancel, puis avancement des remboursements.
  *  - Lot 9 bis (R20, B22) : un événement annulé montre aussi « Espèces à rembourser par l’organisateur »
  *    (CashRefundsList : ventes au guichet, case « Remboursé » pour la propriétaire, lecture seule pour l'admin).
+ *  - Lot 9 bis (R105) : RefundProgress reçoit le vrai rôle du lecteur (ADMIN ou SUPERADMIN), et non plus false en dur ;
+ *    la route ne sert « à reprendre » qu'aux admins, le rôle ne fait que choisir l'affichage.
  */
 
 const TAB_IDS = ['apercu', 'ventes', 'invitations', 'entrees', 'equipe', 'caisse', 'cloture'] as const;
@@ -70,6 +73,9 @@ export default function PartnerEventPilotagePage() {
     const params = useParams<{ id: string }>();
     const eventId = typeof params?.id === 'string' ? params.id : '';
     const toast = useToast();
+    const { hasAnyRole } = useAuth();
+    // R105 : un admin ouvre aussi ce pilotage (lien de la fiche admin) ; « À reprendre » n'est servi qu'à lui par la route.
+    const viewerIsAdmin = hasAnyRole(['ADMIN', 'SUPERADMIN']);
     const [activeTab, setActiveTab] = useTabParam<PilotageTabId>(TAB_IDS, 'apercu');
     const [signal, setSignal] = useState(0);
 
@@ -240,7 +246,7 @@ export default function PartnerEventPilotagePage() {
                 </StatusBanner>
             )}
 
-            {ov.status === 'ANNULE' && <RefundProgress eventId={eventId} isAdmin={false} />}
+            {ov.status === 'ANNULE' && <RefundProgress eventId={eventId} isAdmin={viewerIsAdmin} />}
             {ov.status === 'ANNULE' && <CashRefundsList eventId={eventId} signal={signal} />}
 
             <div className="flex flex-col gap-5">
