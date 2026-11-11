@@ -27,7 +27,11 @@ export function pdfText(value: string | number | null | undefined): string {
     if (value === null || value === undefined) return '';
     let s = String(value);
     for (const [re, to] of REPLACEMENTS) s = s.replace(re, to);
-    s = s.replace(/[\u0080-\u009F]/g, '?').replace(/[^\u0000-ÿ]/gu, '?');
+    // Un caractère par point de code (un emoji donne un seul « ? »).
+    s = Array.from(s, (ch) => {
+        const cp = ch.codePointAt(0) ?? 0;
+        return cp > 0xff || (cp >= 0x80 && cp <= 0x9f) ? '?' : ch;
+    }).join('');
     return s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
