@@ -322,10 +322,10 @@ describe('Commissions de parrainage (lot 3.5)', () => {
         assert.equal((await cron(cronRequest('/api/cron/referral-commissions', 'faux-secret'))).status, 401, 'mauvais secret');
 
         const chain = await sponsorChain('cron');
-        const p = await buyConfirmed(chain.filleul, ev, [['Standard', 1]]);
+        const evCron = await createPartnerEvent(partner.partnerId, 'parrainage-cron', [{ name: 'Standard', price: 1000, total: 5 }]); const p = await buyConfirmed(chain.filleul, evCron, [['Standard', 1]]);
         const { n1, n2 } = await initialCommissions(p, chain);
         assert.deepEqual([n1.status, n2.status], ['PENDING', 'PENDING']);
-        // N1 échue depuis une minute ; N2 garde son échéance à 7 jours.
+        { const day = new Date(Date.now() - 16 * 86_400_000).toISOString().slice(0, 10); const { error: dErr } = await service.from('events').update({ start_date: day, start_time: '20:00:00', end_date: day, end_time: '23:00:00' }).eq('id', evCron.eventId); assert.equal(dErr, null, `événement fini depuis 16 jours : ${dErr?.message}`); } // lot 9 bis (R106, w18) : événement propre, fini depuis plus que le délai (14 j au plus) ; N1 échue depuis une minute ; N2 garde son échéance (jamais avancée).
         await ageCommission(n1);
 
         for (const pass of [1, 2]) {

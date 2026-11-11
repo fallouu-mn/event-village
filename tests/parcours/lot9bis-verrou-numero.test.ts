@@ -75,7 +75,13 @@ async function fundedPartner(label: string): Promise<Funded> {
     assert.equal(error, null, `commission : ${error?.message}`);
     assert.equal((comms ?? []).length, 1, `une commission N1 de la partenaire marraine : ${JSON.stringify(comms)}`);
     const commission = comms![0];
-    // Délai de disponibilité écoulé (§102), puis libération par la RPC du cron.
+    // Délai de disponibilité écoulé (§102), puis libération par la RPC du cron. R106 (w18) : la commission d'un billet
+    // n'est disponible qu'après la fin de l'événement + le délai réglé (14 j au plus) ; l'événement propre à cette
+    // préparation est donc fini depuis 16 jours, après l'achat (la reprise des échéances ne les avance jamais).
+    const endedDay = new Date(Date.now() - 16 * 86_400_000).toISOString().slice(0, 10);
+    const { error: dErr } = await service.from('events')
+        .update({ start_date: endedDay, start_time: '20:00:00', end_date: endedDay, end_time: '23:00:00' }).eq('id', ev.eventId);
+    assert.equal(dErr, null, `événement fini depuis 16 jours : ${dErr?.message}`);
     const past = new Date(Date.now() - 60_000).toISOString();
     const { error: cErr } = await service.from('referral_commissions').update({ available_at: past }).eq('id', commission.id);
     assert.equal(cErr, null, `échéance de la commission : ${cErr?.message}`);
