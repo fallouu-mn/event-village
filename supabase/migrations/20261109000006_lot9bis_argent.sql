@@ -62,6 +62,22 @@
 -- 11. event_cancellation_impact : base 20261102000003_lot5_cycle.sql:687-758, recopie intégrale, signature
 --     (jsonb → jsonb) et STABLE identiques. Changement : `counter { sales, tickets, total }` (ventes au guichet de
 --     l'événement, billets de ces ventes, montant), champs existants inchangés.
+--
+-- Tâche 5 (R32 ; B23, B24) :
+-- 12. Table event_start_changes : journal des changements de début d'un événement (ancien et nouveau début, acteur),
+--     écrit par event_update (M09, S-D, fix(9b.5-SD)) ; service_role seul. actor_id sans clé étrangère : event_update
+--     tient l'événement, une clé vers users prendrait FOR KEY SHARE sur le compte de l'acteur après ce verrou.
+-- 13. ticket_postponement_refund_open(p_ticket) (nouvelle, STABLE) : droit au remboursement d'un report. Billet
+--     VALIDE payant, payé en ligne (paiement TICKET SUCCESS ou PARTIAL), événement PUBLIE ou SUSPENDU, pas encore
+--     commencé, et début actuel postérieur de plus de 24 h au début en vigueur à l'achat (old_start_at du premier
+--     changement enregistré après la création du paiement ; reports cumulés). Un billet acheté après le report n'a
+--     aucun droit ; une avance n'ouvre rien (le début actuel n'est pas postérieur).
+-- 14. tickets_postponement_offers(p) (nouvelle, STABLE) : { user_id } → { ok, items: [{ ticket_id, amount, until,
+--     to_original_buyer }] } pour GET /api/tickets (S-C, fix(9b.5-SC)) ; montant = part que rendrait
+--     ticket_refund_request (prix + frais de service, borné au reste du paiement), until = début actuel.
+-- 15. ticket_refund_request : le porteur (tickets.user_id) est admis quand son droit de report est ouvert (as
+--     HOLDER, context POSTPONEMENT), sinon POSTPONEMENT_REFUND_CLOSED ; l'argent va au payeur d'origine (branche
+--     CASHOUT inchangée, p.client_id et p.payer_phone).
 -- ============================================================================
 
 
@@ -114,6 +130,26 @@ COMMENT ON TABLE public.event_cash_refund_marks IS
 ALTER TABLE public.event_cash_refund_marks ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.event_cash_refund_marks FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.event_cash_refund_marks TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- 1.3 event_start_changes (tâche 5, B23) : un changement de début par ligne, écrit par event_update (M09).
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.event_start_changes (
+    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id     uuid NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    old_start_at timestamptz NOT NULL,
+    new_start_at timestamptz NOT NULL,
+    actor_id     uuid,
+    changed_at   timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS idx_event_start_changes_event ON public.event_start_changes (event_id, changed_at);
+COMMENT ON TABLE public.event_start_changes IS
+    'Lot 9 bis (R32, B23) : changements de début d''un événement ; le droit au remboursement d''un report se mesure depuis le début en vigueur à l''achat. Service_role uniquement.';
+COMMENT ON COLUMN public.event_start_changes.actor_id IS
+    'Compte qui a changé le début (sans clé étrangère : event_update tient l''événement, aucune arête vers users).';
+ALTER TABLE public.event_start_changes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.event_start_changes FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.event_start_changes TO service_role;
 
 
 -- ============================================================================
@@ -383,6 +419,87 @@ BEGIN
                                    'refunded_by', (SELECT NULLIF(btrim(concat_ws(' ', u.first_name, u.last_name)), '')
                                                      FROM public.users u WHERE u.id = m.marked_by),
                                    'note', m.note));
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- 2.5 ticket_postponement_refund_open (tâche 5, R32, B23) : droit de remboursement d'un billet après un report.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ticket_postponement_refund_open(p_ticket uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    r       record;
+    v_start timestamptz;
+    v_base  timestamptz;
+BEGIN
+    SELECT t.id, t.status::text AS status, t.price, t.event_id, e.status::text AS event_status,
+           pay.created_at AS bought_at, pay.is_platform_payment, pay.status::text AS pay_status,
+           pay.payment_target::text AS target
+      INTO r
+      FROM public.tickets t
+      JOIN public.events e ON e.id = t.event_id
+      JOIN public.payments pay ON pay.id = t.payment_id
+     WHERE t.id = p_ticket;
+    IF NOT FOUND THEN
+        RETURN FALSE;
+    END IF;
+    IF r.status <> 'VALIDE' OR COALESCE(r.price, 0) <= 0 OR NOT COALESCE(r.is_platform_payment, FALSE)
+       OR r.pay_status NOT IN ('SUCCESS', 'PARTIAL') OR r.target <> 'TICKET'
+       OR r.event_status NOT IN ('PUBLIE', 'SUSPENDU') THEN
+        RETURN FALSE;
+    END IF;
+    v_start := public.event_start_at(r.event_id);
+    IF v_start IS NULL OR now() >= v_start THEN
+        RETURN FALSE;
+    END IF;
+    -- Début en vigueur à l'achat : ancien début du premier changement enregistré après l'achat
+    SELECT c.old_start_at INTO v_base
+      FROM public.event_start_changes c
+     WHERE c.event_id = r.event_id AND c.changed_at > r.bought_at
+     ORDER BY c.changed_at, c.id
+     LIMIT 1;
+    RETURN v_base IS NOT NULL AND v_start - v_base > interval '24 hours';
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 2.6 tickets_postponement_offers (tâche 5, R32, B23) : offres de remboursement des billets d'un porteur.
+--     p : { user_id } → { ok, items: [{ ticket_id, amount, until, to_original_buyer }] }.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.tickets_postponement_offers(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user  uuid := public.try_uuid(p->>'user_id');
+    v_items jsonb;
+BEGIN
+    IF v_user IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Compte inconnu.');
+    END IF;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'ticket_id', t.id,
+               'amount', LEAST(t.price + COALESCE(t.service_fee, 0),
+                               pay.amount - COALESCE((SELECT sum(rf.amount) FROM public.refunds rf
+                                                       WHERE rf.payment_id = pay.id AND rf.settlement = 'PLATEFORME'), 0)),
+               'until', public.event_start_at(t.event_id),
+               'to_original_buyer', pay.client_id IS DISTINCT FROM t.user_id)
+             ORDER BY t.id), '[]'::jsonb)
+      INTO v_items
+      FROM public.tickets t
+      JOIN public.payments pay ON pay.id = t.payment_id
+     WHERE t.user_id = v_user AND t.status::text = 'VALIDE'
+       AND public.ticket_postponement_refund_open(t.id);
+    RETURN jsonb_build_object('ok', true, 'items', v_items);
 END;
 $$;
 
@@ -707,7 +824,7 @@ COMMENT ON FUNCTION public.partner_status_set(jsonb) IS
 
 -- ----------------------------------------------------------------------------
 -- 3.4 ticket_refund_request (recopie de 20261108000001_lot9_securite.sql:21-129) : règle d'acteur R11, audit
---     (tâches 3 et 19).
+--     (tâches 3 et 19), porteur après un report (tâche 5).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.ticket_refund_request(p_ticket_id uuid, p_actor uuid, p_reason text)
 RETURNS jsonb
@@ -787,6 +904,14 @@ BEGIN
         END IF;
         v_ctx := 'DIRECT';
         v_as := 'OWNER';
+    ELSIF v_is_holder THEN
+        -- Lot 9 bis (R32, B23) : le porteur, seulement quand un report de plus de 24 h lui ouvre le droit
+        IF NOT public.ticket_postponement_refund_open(t.id) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'POSTPONEMENT_REFUND_CLOSED',
+                'message', 'Ce billet n’ouvre pas de remboursement : l’événement n’a pas été reporté de plus de 24 h, ou il a commencé.');
+        END IF;
+        v_ctx := 'POSTPONEMENT';
+        v_as := 'HOLDER';
     END IF;
     IF v_as IS NULL THEN
         RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN',
@@ -983,7 +1108,9 @@ BEGIN
         'public.ticket_refund_request(uuid, uuid, text)',
         'public.event_cash_refunds(jsonb)',
         'public.event_cash_refund_mark(jsonb)',
-        'public.event_cancellation_impact(jsonb)'
+        'public.event_cancellation_impact(jsonb)',
+        'public.ticket_postponement_refund_open(uuid)',
+        'public.tickets_postponement_offers(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
