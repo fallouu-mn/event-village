@@ -17,8 +17,12 @@ import { PartnerActivityTypes, RegisterPartnerSchema, normalizePhoneNumber } fro
 import { partnerActivityLabel } from '@/lib/partner/activity-labels';
 
 /**
- * Inscription d'un partenaire avec ses pièces (POST /api/partner/documents/upload, POST /api/partner/register, puis
- * vérification du numéro par /api/auth/verify-otp). Lot 7 (7.0 f) :
+ * Inscription d'un partenaire avec ses pièces (POST /api/partner/documents/upload, puis POST /api/partner/register en
+ * deux appels). Lot 9 bis (R53, B40, contrat 4.2 et 5.17) : l'appel 1 (sans code) vérifie le formulaire et les pièces
+ * puis envoie le code SMS, sans rien créer ; l'appel 2 (même corps, `otpCode`) vérifie le code puis crée le compte, la
+ * fiche (numéro vérifié, NINEA, RCCM) et ouvre la session côté serveur. Tant que le code n'est pas saisi, aucun dossier
+ * n'existe. Lot 9 bis (G.47, R87) : l'email professionnel reçoit un lien de vérification ; l'écran final dit s'il est
+ * parti. Lot 7 (7.0 f) :
  *  - D63 : ouverte par un compte déjà connecté, la page explique qu'elle crée un compte professionnel distinct (avec
  *    un autre numéro) et propose la déconnexion ; aucune conversion du compte connecté ;
  *  - D64 : tout le formulaire est validé par le schéma partagé (RegisterPartnerSchema sans les jetons) AVANT le
@@ -125,6 +129,11 @@ export default function PartnerRegisterPage() {
   const [isResending, setIsResending] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [isSuccess, setIsSuccess] = useState(false);
+  /** Corps de l'appel 1 (formulaire et jetons des pièces), renvoyé tel quel avec le code à l'appel 2 (R53). */
+  const pendingBody = useRef<Record<string, unknown> | null>(null);
+  /** Résultat de l'appel 2 : session ouverte côté serveur, lien de vérification de l'email. */
+  const [signedIn, setSignedIn] = useState(false);
+  const [emailLink, setEmailLink] = useState<{ sent: boolean; to: string | null } | null>(null);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -213,15 +222,16 @@ export default function PartnerRegisterPage() {
       setProgress('Envoi du document d’entreprise…');
       const businessDocUploadToken = await uploadDocument(businessDocFile as File, 'business_doc');
 
-      // 3. Dossier.
-      setProgress('Enregistrement du dossier…');
+      // 3. Appel 1 (R53) : contrôle du dossier et envoi du code ; rien n'est encore créé.
+      setProgress('Envoi du code de vérification…');
       const normalizedPhone = normalizePhoneNumber(values.phone);
+      const request = { ...values, phone: normalizedPhone, idCardUploadToken, businessDocUploadToken };
       const res = await fetch('/api/partner/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...values, phone: normalizedPhone, idCardUploadToken, businessDocUploadToken }),
+        body: JSON.stringify(request),
       });
-      const body = await readJson(res, 'inscription');
+      const body = await readJson(res, 'inscription, envoi du code');
       if (!res.ok) {
         if (body.code === 'INVALID_DOCUMENT_UPLOAD') {
           uploaded.current = {};
@@ -231,6 +241,8 @@ export default function PartnerRegisterPage() {
         showErrors({}, errorText(body, `Dossier non enregistré (erreur ${res.status}). Réessayez.`));
         return;
       }
+      pendingBody.current = request;
+      setOtpCode('');
       setOtpPhone(typeof body.phone === 'string' ? body.phone : normalizedPhone);
       setCountdown(RESEND_DELAY_SECONDS);
     } catch (err) {
@@ -253,18 +265,38 @@ export default function PartnerRegisterPage() {
       setOtpError('Saisissez les 6 chiffres du code reçu par SMS.');
       return;
     }
+    const request = pendingBody.current;
+    if (!request) {
+      setOtpPhone(null);
+      showErrors({}, 'Le dossier est à envoyer de nouveau : un nouveau code vous sera adressé.');
+      return;
+    }
     setIsVerifying(true);
     try {
-      const res = await fetch('/api/auth/verify-otp', {
+      // Appel 2 (R53) : le code est vérifié, puis le compte et la fiche sont créés ensemble.
+      const res = await fetch('/api/partner/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: otpPhone, otpCode }),
+        body: JSON.stringify({ ...request, otpCode }),
       });
-      const body = await readJson(res, 'vérification du code');
+      const body = await readJson(res, 'vérification du code et création du dossier');
       if (!res.ok) {
+        // Pièces expirées ou déjà utilisées, compte créé entre-temps : le dossier est à reprendre depuis le formulaire.
+        if (body.code === 'INVALID_DOCUMENT_UPLOAD' || res.status === 409) {
+          uploaded.current = {};
+          pendingBody.current = null;
+          setOtpPhone(null);
+          setOtpCode('');
+          showErrors({}, errorText(body, 'Dossier non enregistré : envoyez-le de nouveau.'));
+          return;
+        }
         setOtpError(errorText(body, 'Code incorrect. Vérifiez-le ou demandez un nouveau code.'));
         return;
       }
+      pendingBody.current = null;
+      setSignedIn(body.signed_in === true);
+      const pending = typeof body.email_pending === 'string' ? body.email_pending : null;
+      setEmailLink({ sent: body.email_verification === 'SENT' && pending !== null, to: pending });
       setIsSuccess(true);
     } catch (err) {
       console.error('[inscription partenaire] vérification injoignable :', err instanceof Error ? err.message : String(err));
@@ -349,6 +381,12 @@ export default function PartnerRegisterPage() {
         description="Publiez vos événements et vendez vos billets en ligne, avec des reversements par SamirPay. Votre dossier est vérifié par notre équipe avant l’ouverture de votre espace."
       />
 
+      {!isSuccess && !(isAuthenticated && !otpPhone) && (
+        <p className="text-sm font-semibold text-fg-muted" aria-live="polite">
+          {otpPhone ? 'Étape 2 sur 2 : le code reçu par SMS' : 'Étape 1 sur 2 : votre dossier'}
+        </p>
+      )}
+
       {isAuthenticated && !otpPhone && !isSuccess ? (
         <section aria-labelledby="partenaire-connecte" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
           <h2 id="partenaire-connecte" className="text-lg font-semibold text-fg">Vous êtes déjà connecté</h2>
@@ -377,10 +415,16 @@ export default function PartnerRegisterPage() {
           </p>
           <ol className="mx-auto max-w-md space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-left text-sm text-fg">
             <li>1. Vérification des pièces, en général sous 24 à 48 heures.</li>
-            <li>2. Un SMS ou un email vous prévient dès la validation de votre compte.</li>
-            <li>3. Vous vous connectez à votre espace et publiez votre premier événement.</li>
+            <li>2. Un SMS vous prévient dès la validation de votre compte.</li>
+            <li>3. Vous créez et publiez votre premier événement depuis votre espace.</li>
           </ol>
-          <LinkButton href="/login" variant="primary">Aller à la connexion</LinkButton>
+          {signedIn ? (
+            <Button variant="primary" onClick={() => window.location.assign('/partner/dashboard')}>
+              Ouvrir mon espace partenaire
+            </Button>
+          ) : (
+            <LinkButton href="/login" variant="primary">Aller à la connexion</LinkButton>
+          )}
         </section>
       ) : otpPhone ? (
         <section aria-labelledby="partenaire-code" className="space-y-5 rounded-2xl border border-border bg-surface p-4 sm:p-6">
@@ -390,8 +434,9 @@ export default function PartnerRegisterPage() {
             </span>
             <h2 id="partenaire-code" className="text-xl font-bold text-fg">Vérifiez votre numéro</h2>
             <p className="text-base text-fg-muted">
-              Un code à 6 chiffres a été envoyé par SMS au <strong className="font-semibold tabular-nums text-fg">{otpPhone}</strong>. Il est valable 10 minutes.
+              Code envoyé au <strong className="font-semibold tabular-nums text-fg">{otpPhone}</strong>. Saisissez-le pour envoyer votre dossier.
             </p>
+            <p className="text-sm text-fg-muted">Le code à 6 chiffres reste valable 10 minutes. Votre dossier n’est enregistré qu’après sa vérification.</p>
           </div>
           <form onSubmit={handleVerify} noValidate className="mx-auto max-w-sm space-y-4">
             {otpError && (
@@ -543,6 +588,7 @@ export default function PartnerRegisterPage() {
             </p>
           )}
 
+          <p className="text-sm text-fg-muted">Un code vous est d’abord envoyé par SMS au téléphone professionnel ; le dossier n’est enregistré qu’une fois ce code saisi.</p>
           <Button type="submit" variant="primary" size="lg" fullWidth isLoading={isSubmitting} leftIcon={<Upload size={18} aria-hidden="true" />}>
             Envoyer mon dossier
           </Button>
