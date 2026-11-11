@@ -125,7 +125,14 @@ export async function GET(req: NextRequest) {
         topics.push({ topic, label: TOPIC_TEXT[topic].label, description: TOPIC_TEXT[topic].description, channels });
     }
 
-    return NextResponse.json({ topics, essentials: ESSENTIALS }, { headers: NO_STORE });
+    // Lot 9 bis (tâche 50, B96, fix(9b.50-SD)) : l'écran grise l'interrupteur Email d'un compte sans adresse vérifiée.
+    // Même règle que l'envoi (notif_verified_email, M10) : une adresse technique n'est jamais vérifiée. L'adresse n'est
+    // pas servie ici, seulement l'état.
+    const { data: verified, error: verifiedErr } = await getServiceRoleClient().rpc('notif_verified_email', { p_user: session.user.id });
+    if (verifiedErr) return unavailable('notif_verified_email', `${verifiedErr.code ?? ''} ${verifiedErr.message}`);
+    const emailVerified = typeof verified === 'string' && verified.length > 0;
+
+    return NextResponse.json({ topics, essentials: ESSENTIALS, email_verified: emailVerified }, { headers: NO_STORE });
 }
 
 export async function PUT(req: NextRequest) {
