@@ -51,6 +51,24 @@ function refundModeOf(price: number, payment: PaymentRow | null): RefundMode {
 }
 
 /**
+ * Lot 9 bis (R11, B21, contrat 4.1) : même règle que ticket_refund_request (M06), lue sans verrou pour l'écran. Après la
+ * fin de l'événement, la propriétaire ne rembourse plus (EVENT_ENDED) ; un admin muni de refunds.manage (ou le
+ * SUPERADMIN) le peut toujours ; un événement ANNULE suit l'annulation, sans règle de date.
+ */
+async function refundClosedReason(
+    supabase: ReturnType<typeof getServiceRoleClient>, eventId: string, status: string, actorId: string, actorIsAdmin: boolean,
+): Promise<'EVENT_ENDED' | null> {
+    if (actorIsAdmin || status === 'ANNULE') return null;
+    const { data: canRefund, error: canErr } = await supabase.rpc('admin_can', { p_actor: actorId, p_permission: 'refunds.manage' });
+    if (canErr) throw new Error(`admin_can : ${canErr.message}`);
+    if (canRefund === true) return null;
+    const { data: endAt, error: endErr } = await supabase.rpc('event_end_at', { p_event_id: eventId });
+    if (endErr) throw new Error(`event_end_at de ${eventId} : ${endErr.message}`);
+    if (typeof endAt !== 'string') throw new Error(`event_end_at de ${eventId} : fin illisible`);
+    return Date.now() > Date.parse(endAt) ? 'EVENT_ENDED' : null;
+}
+
+/**
  * Lecture sans verrou, pour l'affichage : ticket_refund_request recontrôle sous verrou au POST. Un billet gratuit
  * VALIDE est remboursable au sens de la RPC : elle l'annule sans argent, `refund_mode` AUCUN le dit à l'écran.
  */
@@ -88,7 +106,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         const supabase = getServiceRoleClient();
         const { data: event, error: eErr } = await supabase
             .from('events')
-            .select('id, partners!inner(user_id)')
+            .select('id, status, partners!inner(user_id)')
             .eq('id', eventId)
             .maybeSingle();
         if (eErr) throw new Error(`événement ${eventId} : ${eErr.message}`);
@@ -97,6 +115,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         if (!isAdmin && owner.user_id !== user.id) {
             throw new PublicError('Cet événement ne vous appartient pas.', 'FORBIDDEN', 403);
         }
+        const closedReason = await refundClosedReason(supabase, eventId, String(event.status), user.id, isAdmin);
 
         const { data, error: tErr } = await supabase
             .from('tickets')
@@ -142,8 +161,9 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
                 status: ticket.status,
                 sale_channel: ticket.sale_channel,
                 holder_short: holder,
-                refundable: isRefundable(ticket.status, refundMode, payment),
+                refundable: closedReason === null && isRefundable(ticket.status, refundMode, payment),
                 refund_mode: refundMode,
+                refund_closed_reason: closedReason,
             },
         });
     } catch (err) {
