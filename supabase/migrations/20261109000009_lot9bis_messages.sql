@@ -72,6 +72,10 @@
 --   - tâche 25 (S-C, R94, B61) : une modification de dates qui place la fin de l'événement au plus tard au début de
 --     vente d'une catégorie est refusée SALE_START_AFTER_EVENT « Le début de vente doit précéder la fin de
 --     l’événement. » (catégories en cause dans details), comme ticket_category_update (M08).
+--   - tâche 41, R80 (S-E) : adresse vidée → address_cleared dans les données EVENT_CHANGED (variante « adresse retirée,
+--     lieu … » du catalogue S2) ; à la fusion d'une ligne en attente (porteur, numéro seul, contrôleur), une adresse
+--     changée de nouveau retire new_address et address_cleared hérités : l'adresse posée puis retirée dans la fenêtre
+--     ne fuit plus.
 --
 -- Verrous (3.3) : rien de nouveau. Le trigger d'historique s'exécute dans event_status_apply, sous le verrou de
 -- l'événement, avant la révocation des transferts (event_cancel) : il lit les transferts PENDING sans verrou.
@@ -379,6 +383,7 @@ REVOKE ALL ON FUNCTION public.notif_event_status_changed() FROM PUBLIC, anon, au
 -- Tâche 5 (délégation, S-A) : event_start_changes écrit à chaque changement de début ; refund_open par porteur.
 -- Tâche 21 (délégation, S-C) : ancienne et nouvelle fin par event_end_from_v2 (sans fin : début + 6 h).
 -- Tâche 25 (délégation, S-C) : SALE_START_AFTER_EVENT quand un début de vente atteint la nouvelle fin.
+-- Tâche 41 (R80, délégation, S-E) : address_cleared ; à la fusion, l'ancienne adresse (posée ou retirée) est remplacée.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.event_update(p jsonb)
 RETURNS jsonb
@@ -439,6 +444,7 @@ DECLARE
     v_nkey text;
     v_data jsonb;
     v_hdata jsonb;
+    v_drop text[] := ARRAY['migrated_from'];
     v_pending_id uuid;
     v_pending_data jsonb;
     v_urgent boolean := false;
@@ -711,7 +717,13 @@ BEGIN
             'new_location', CASE WHEN 'location' = ANY (v_changed) THEN n_location END,
             'new_address', CASE WHEN 'address' = ANY (v_changed) THEN NULLIF(btrim(COALESCE(n_practical->>'address', '')), '') END,
             'new_city', CASE WHEN 'city' = ANY (v_changed) THEN n_city END,
-            'old_title', CASE WHEN 'title' = ANY (v_changed) THEN e.title END));
+            'old_title', CASE WHEN 'title' = ANY (v_changed) THEN e.title END,
+            -- Lot 9 bis (R80) : adresse retirée (variante « adresse retirée, lieu … » du SMS)
+            'address_cleared', CASE WHEN 'address' = ANY (v_changed)
+                                         AND NULLIF(btrim(COALESCE(n_practical->>'address', '')), '') IS NULL THEN true END));
+        -- Lot 9 bis (R80) : à la fusion, une adresse changée de nouveau remplace l'ancienne (posée ou retirée)
+        v_drop := ARRAY['migrated_from']
+                  || CASE WHEN 'address' = ANY (v_changed) THEN ARRAY['new_address', 'address_cleared'] ELSE ARRAY[]::text[] END;
         -- Lot 9 bis (B71) : SMS dû dans 10 minutes, tout de suite si l'ancien ou le nouveau début est à moins d'une heure
         v_urgent := v_old_start < now() + interval '1 hour' OR v_new_start < now() + interval '1 hour';
         v_due := CASE WHEN v_urgent THEN now() ELSE now() + interval '10 minutes' END;
@@ -742,7 +754,7 @@ BEGIN
                FOR UPDATE;
             IF v_pending_id IS NOT NULL THEN
                 UPDATE public.notification_outbox
-                   SET template_data = (v_pending_data - 'migrated_from' - 'refund_open') || v_hdata || jsonb_build_object('changed_fields', (
+                   SET template_data = (v_pending_data - v_drop - 'refund_open') || v_hdata || jsonb_build_object('changed_fields', (
                            SELECT COALESCE(jsonb_agg(f ORDER BY f), '[]'::jsonb)
                              FROM (SELECT jsonb_array_elements_text(COALESCE(v_pending_data->'changed_fields', '[]'::jsonb)) AS f
                                    UNION
@@ -807,7 +819,7 @@ BEGIN
                FOR UPDATE;
             IF v_pending_id IS NOT NULL THEN
                 UPDATE public.notification_outbox
-                   SET template_data = (v_pending_data - 'migrated_from') || v_data || jsonb_build_object(
+                   SET template_data = (v_pending_data - v_drop) || v_data || jsonb_build_object(
                            'recipient_kind', 'PHONE', 'ticket_id', n.ticket_id, 'changed_fields', (
                            SELECT COALESCE(jsonb_agg(f ORDER BY f), '[]'::jsonb)
                              FROM (SELECT jsonb_array_elements_text(COALESCE(v_pending_data->'changed_fields', '[]'::jsonb)) AS f
@@ -857,7 +869,7 @@ BEGIN
                    FOR UPDATE;
                 IF v_pending_id IS NOT NULL THEN
                     UPDATE public.notification_outbox
-                       SET template_data = v_pending_data || v_data || jsonb_build_object('changed_fields', (
+                       SET template_data = (v_pending_data - v_drop) || v_data || jsonb_build_object('changed_fields', (
                                SELECT COALESCE(jsonb_agg(f ORDER BY f), '[]'::jsonb)
                                  FROM (SELECT jsonb_array_elements_text(COALESCE(v_pending_data->'changed_fields', '[]'::jsonb)) AS f
                                        UNION
