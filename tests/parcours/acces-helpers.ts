@@ -5,6 +5,9 @@
  * routes nouvelles) sont importés dynamiquement : le typecheck de la CI passe avant les tests.
  * Lot 7 (T0b, D39) : scan() envoie l'en-tête Idempotency-Key, une clé aléatoire neuve par appel (chaque
  * appel reste une lecture distincte, comme avant), sauf clé fournie (rejeu) ou `null` (en-tête absent).
+ * Lot 9 bis (R42, A11, T47) : openShift passe un PIN régisseur, posé par l'aide le temps de l'ouverture (PIN de la suite
+ * remis ensuite) ; `pin: null` ouvre sans PIN (refus PIN_REQUIRED). respondControllerInvitations (R37, T49) : réponse du
+ * titulaire à ses invitations de contrôleur par les routes /api/account/controller-invitations.
  */
 import '../helpers/env';
 import assert from 'node:assert/strict';
@@ -194,9 +197,52 @@ export async function scan(user: Buyer, body: Record<string, unknown>, opts: Sca
     return call(POST, authed('/api/controller/scan', 'POST', user, body, headers));
 }
 
-export async function openShift(user: Buyer, eventId: string, openingFloat = 0): Promise<RouteResult> {
+/** PIN régisseur connu de l'aide pour l'événement (A11) : posé par elle, jamais lu en base (seul le haché y est). */
+const HELPER_PIN = '246813';
+
+/**
+ * Lot 9 bis (R42, A11, T47) : PIN régisseur de l'événement le temps d'une ouverture de caisse. Sans PIN en base,
+ * l'aide pose le sien (haché du contrat, `hashRegisseurPin`) puis le retire après l'ouverture ; avec un PIN posé
+ * par la suite (route regisseur-pin, valeur inconnue de l'aide), elle pose le sien le temps de l'ouverture puis
+ * remet la ligne d'origine telle quelle (haché, sel, dates) : la suite garde son PIN pour clôturer.
+ */
+async function withHelperPin<T>(eventId: string, fn: (pin: string) => Promise<T>): Promise<T> {
+    const shifts = await importModule('../../lib/shifts/shift.service');
+    assert.equal(typeof shifts.hashRegisseurPin, 'function', 'lib/shifts/shift.service : hashRegisseurPin exporté');
+    const { data: original, error } = await service.from('event_regisseur_pins').select('*').eq('event_id', eventId).maybeSingle();
+    assert.equal(error, null, `PIN régisseur de l'événement ${eventId} : ${error?.message}`);
+    const salt = randomUUID().replace(/-/g, '');
+    const { error: setErr } = await service.from('event_regisseur_pins').upsert(
+        { event_id: eventId, pin_hash: shifts.hashRegisseurPin(eventId, salt, HELPER_PIN), pin_salt: salt, updated_at: new Date().toISOString() },
+        { onConflict: 'event_id' });
+    assert.equal(setErr, null, `PIN régisseur de l'aide : ${setErr?.message}`);
+    try {
+        return await fn(HELPER_PIN);
+    } finally {
+        const restore = original
+            ? await service.from('event_regisseur_pins').upsert(original, { onConflict: 'event_id' })
+            : await service.from('event_regisseur_pins').delete().eq('event_id', eventId);
+        assert.equal(restore.error, null, `PIN régisseur d'origine remis : ${restore.error?.message}`);
+    }
+}
+
+/**
+ * Ouverture de caisse par la route du contrat. Lot 9 bis (R42, A11, T47) : PIN régisseur obligatoire. Sans `pin`,
+ * l'aide pose un PIN connu pour l'événement et le passe (comme le régisseur le donne au caissier) ; `pin: null`
+ * ouvre sans PIN (cas du refus PIN_REQUIRED) ; une chaîne est passée telle quelle.
+ */
+export async function openShift(user: Buyer, eventId: string, openingFloat = 0, pin?: string | null): Promise<RouteResult> {
     const { POST } = await importModule('../../app/api/controller/shifts/open/route');
-    return call(POST, authed('/api/controller/shifts/open', 'POST', user, { eventId, event_id: eventId, openingFloat, opening_float_amount: openingFloat }));
+    const send = (p: string | null): Promise<RouteResult> => {
+        const body: Record<string, unknown> = { eventId, event_id: eventId, openingFloat, opening_float_amount: openingFloat };
+        if (p !== null) {
+            body.regisseurPin = p;
+            body.regisseur_pin = p;
+        }
+        return call(POST, authed('/api/controller/shifts/open', 'POST', user, body));
+    };
+    if (pin === undefined) return withHelperPin(eventId, (p) => send(p));
+    return send(pin);
 }
 
 export async function liveCode(user: Buyer, ticketId: string): Promise<RouteResult> {
@@ -214,4 +260,52 @@ export async function shiftRow(id: string): Promise<Record<string, unknown>> {
     const { data, error } = await service.from('controller_shifts').select('*').eq('id', id).single();
     assert.equal(error, null, `caisse ${id} : ${error?.message}`);
     return data as Record<string, unknown>;
+}
+
+// ── Invitations de contrôleur (lot 9 bis, R37, contrat 4.3) ───────────────
+
+// Import dynamique : les routes n'existent pas avant le correctif fix(9b.26).
+const INVITATIONS_LIST_ROUTE = '../../app/api/account/controller-invitations/route';
+const INVITATION_RESPOND_ROUTE = '../../app/api/account/controller-invitations/[id]/route';
+
+async function routeOf(modPath: string, method: string, what: string): Promise<(req: NextRequest, ctx?: unknown) => Promise<Response>> {
+    let mod: Record<string, unknown>;
+    try {
+        mod = (await importModule(modPath)) as Record<string, unknown>;
+    } catch (err) {
+        throw new Error(`${what} absente (R37, fix(9b.26)) : ${err instanceof Error ? err.message : String(err)}`);
+    }
+    assert.equal(typeof mod[method], 'function', `${what} : ${method} exporté par ${modPath}`);
+    return mod[method] as (req: NextRequest, ctx?: unknown) => Promise<Response>;
+}
+
+/** GET /api/account/controller-invitations du compte connecté : `{ items: [{ id, company, events, expires_at }] }`. */
+export async function myControllerInvitations(user: Pick<Buyer, 'accessToken'>): Promise<RouteResult> {
+    const GET = await routeOf(INVITATIONS_LIST_ROUTE, 'GET', 'GET /api/account/controller-invitations');
+    return call(GET, authed('/api/account/controller-invitations', 'GET', user as Buyer));
+}
+
+/** POST /api/account/controller-invitations/[id] `{ accept }` par le compte connecté. */
+export async function respondControllerInvitation(user: Pick<Buyer, 'accessToken'>, invitationId: string, accept: boolean): Promise<RouteResult> {
+    const POST = await routeOf(INVITATION_RESPOND_ROUTE, 'POST', 'POST /api/account/controller-invitations/[id]');
+    return call(POST, authed(`/api/account/controller-invitations/${invitationId}`, 'POST', user as Buyer, { accept }), routeContext({ id: invitationId }));
+}
+
+/**
+ * Le titulaire répond à toutes ses invitations de contrôleur en attente (liste puis réponse, 200 exigés) ; rend les
+ * identifiants traités. Échec explicite si aucune invitation n'attend.
+ */
+export async function respondControllerInvitations(user: Pick<Buyer, 'accessToken'>, accept: boolean): Promise<string[]> {
+    const list = await myControllerInvitations(user);
+    assert.equal(list.status, 200, `invitations de contrôleur du titulaire : HTTP ${list.status} ${JSON.stringify(list.body)}`);
+    const items = Array.isArray(list.body.items) ? (list.body.items as Array<Record<string, unknown>>) : [];
+    assert.ok(items.length > 0, `au moins une invitation de contrôleur en attente : ${JSON.stringify(list.body)}`);
+    const ids: string[] = [];
+    for (const item of items) {
+        const id = String(item.id);
+        const res = await respondControllerInvitation(user, id, accept);
+        assert.equal(res.status, 200, `réponse ${accept ? 'acceptée' : 'refusée'} à l'invitation ${id} : HTTP ${res.status} ${JSON.stringify(res.body)}`);
+        ids.push(id);
+    }
+    return ids;
 }

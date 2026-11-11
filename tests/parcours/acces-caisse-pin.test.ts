@@ -94,6 +94,8 @@ async function openShiftsOf(userId: string, eventId: string): Promise<Array<Reco
 /**
  * Caisse OUVERT du contrôleur pour l'événement : route d'ouverture du contrat ; avant le correctif
  * seulement, ancienne route (PIN régisseur obligatoire) puis caisse posée en base.
+ * Lot 9 bis (R42, A11, T47) : openShift passe le PIN régisseur (posé par l'aide le temps de l'ouverture, PIN de la
+ * suite remis ensuite) ; l'ouverture sans PIN est le refus PIN_REQUIRED, prouvé à la fin du fichier.
  */
 async function openShiftForTest(user: Buyer, eventId: string, partnerId: string, legacyPin?: string): Promise<{ shiftId: string; responses: RouteResult[] }> {
     const responses: RouteResult[] = [];
@@ -465,5 +467,23 @@ describe('Retrait d’un contrôleur qui a une caisse OUVERT', () => {
             if (p.removes === 'assignment') assert.equal(await assignmentId(), null, `${p.label} : affectation retirée`);
             else assert.equal(await hasControllerRole(), false, `${p.label} : rôle CONTROLEUR retiré`);
         }
+    });
+});
+
+// ── Lot 9 bis (R42, A11, T47) : PIN obligatoire à l'ouverture ──────────────
+
+describe('Ouverture de caisse : PIN régisseur obligatoire (lot 9 bis, R42)', () => {
+    test('sans PIN : 400 PIN_REQUIRED « Saisissez le code PIN du régisseur. », aucune caisse ; avec le PIN généré : ouverte', async () => {
+        const ev = await newEvent(partner, 'pin-obligatoire');
+        const { pin } = await generatePin(partner, ev.eventId);
+        const ctrl = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'pin-obligatoire' });
+        const refused = await openShift(ctrl, ev.eventId, 0, null);
+        assert.equal(refused.status, 400, `ouverture sans PIN : 400 attendu (aujourd’hui le PIN est facultatif), reçu HTTP ${refused.status} ${JSON.stringify(refused.body)}`);
+        assert.equal(refused.body.code, 'PIN_REQUIRED', `code PIN_REQUIRED : ${JSON.stringify(refused.body)}`);
+        assert.equal(refused.body.error, 'Saisissez le code PIN du régisseur.', `texte du contrat 4.3 : ${JSON.stringify(refused.body)}`);
+        assert.deepEqual(await openShiftsOf(ctrl.userId, ev.eventId), [], 'sans PIN : aucune caisse ouverte');
+        const opened = await openShift(ctrl, ev.eventId, 0, pin);
+        assert.equal(opened.status, 200, `ouverture avec le PIN généré : HTTP ${opened.status} ${JSON.stringify(opened.body)}`);
+        assert.equal((await openShiftsOf(ctrl.userId, ev.eventId)).length, 1, 'avec le PIN : une caisse OUVERT');
     });
 });
