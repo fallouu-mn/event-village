@@ -35,6 +35,13 @@ const LIMITS = { INVITE_PER_PHONE_DAY: '3', INVITE_PER_PARTNER_HOUR: '1000' };
 
 let partner: TestPartner;
 let events: SaleEvent[];
+/**
+ * Numéros dont le SMS d'activation est refusé exprès (rejectNext) : l'envoi synchrone écrit une ligne
+ * notification_outbox origin SYNC_LOG, statut FAILED (lib/sms/mtarget.service.ts, syncLogOutcome ; RPC
+ * notification_sync_log). can_retry y vaut faux (M/20261103000008:189) : laissée en base, elle tombe dans la liste
+ * globale ?status=FAILED de notif-admin (:240, run 118). Retirée en after(), avant les invariants.
+ */
+const refusedPhones: string[] = [];
 
 before(async () => {
     partner = await newPartner('quota-invit');
@@ -43,6 +50,11 @@ before(async () => {
 });
 
 after(async () => {
+    if (refusedPhones.length > 0) {
+        const { error } = await service.from('notification_outbox').delete()
+            .eq('origin', 'SYNC_LOG').eq('status', 'FAILED').in('recipient_phone', refusedPhones);
+        assert.equal(error, null, `journal SYNC_LOG FAILED des SMS refusés exprès : ${error?.message}`);
+    }
     await assertLot9bisInvariants('invitations-controleur-quota');
 });
 
@@ -97,6 +109,7 @@ describe('R98 — invite_phone ne compte que les SMS envoyés', () => {
 
     test('numéro neuf, SMS d’activation refusé par le fournisseur : l’unité est rendue, compteur à 0', async () => {
         const phone = randomSenegalPhone('76');
+        refusedPhones.push(phone);
         await withEnv(LIMITS, async () => {
             const win = await alignQuotaWindow(86_400, 60_000);
             getFakes().sms.rejectNext();
