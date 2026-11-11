@@ -23,6 +23,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
 import { initCashinOnce, recordAdoptedInit } from './cashin-init';
 import { isSamirPayError, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+import { readFinanceSetting } from '@/lib/finance/engine';
 import { reserveQuota } from '@/lib/security/quota';
 import { normalizePayerPhone } from './payer-phone';
 import { rpcWithRetry } from './rpc';
@@ -89,6 +90,40 @@ export function paymentView(p: Record<string, unknown>, extra: Record<string, un
         status_page_url: statusPageUrl(String(p.id)),
         ...extra,
     };
+}
+
+/**
+ * Lot 9 bis (H2) : validité d'un paiement chez SamirPay (v1.2 : une heure après sa création, puis FAILED). La page
+ * d'attente suit le paiement jusqu'à cette échéance, au-delà de la garde des places.
+ */
+export const PAYMENT_VALIDITY_MINUTES = 60;
+
+/** Lot 9 bis (H2, B103) : durée de garde des places, réglage SUPERADMIN finance.payment_hold_minutes (5 à 60). */
+export async function readHoldMinutes(): Promise<number> {
+    const value = Number(await readFinanceSetting<number>('finance.payment_hold_minutes'));
+    if (!Number.isInteger(value) || value < 5 || value > PAYMENT_VALIDITY_MINUTES) {
+        throw new Error(`Réglage finance.payment_hold_minutes hors bornes : ${String(value)}`);
+    }
+    return value;
+}
+
+/**
+ * Lot 9 bis (H2) : minutes de garde d'un paiement de billets, telles qu'appliquées à sa création (metadata.hold_minutes
+ * depuis le lot 9 bis, sinon écart entre la fin de garde et la création) ; null si inconnues.
+ */
+export function holdMinutesOf(p: { created_at?: unknown; held_expires_at?: unknown; metadata?: unknown }): number | null {
+    const recorded = Number((p.metadata as { hold_minutes?: unknown } | null)?.hold_minutes);
+    if (Number.isInteger(recorded) && recorded > 0) return recorded;
+    const created = Date.parse(String(p.created_at ?? ''));
+    const held = Date.parse(String(p.held_expires_at ?? ''));
+    if (!Number.isFinite(created) || !Number.isFinite(held) || held <= created) return null;
+    return Math.round((held - created) / 60_000);
+}
+
+/** Lot 9 bis (H2) : échéance de validité du paiement chez SamirPay (création + 60 minutes), ou null. */
+export function paymentDeadlineOf(p: { created_at?: unknown }): string | null {
+    const created = Date.parse(String(p.created_at ?? ''));
+    return Number.isFinite(created) ? new Date(created + PAYMENT_VALIDITY_MINUTES * 60_000).toISOString() : null;
 }
 
 export const PAYMENT_PENDING_MESSAGE = 'Un paiement est déjà en attente pour cet événement.';
@@ -211,7 +246,15 @@ export async function startTicketCheckout(params: {
         return { status: 400, body: { error: 'Numéro du payeur invalide (mobile sénégalais, 9 chiffres).', code: 'INVALID_PAYER_PHONE' } };
     }
 
-    // 5. Paiement + réservations, tout ou rien
+    // 5. Paiement + réservations, tout ou rien. Lot 9 bis (H2, B103) : durée de garde des places lue au réglage
+    //    SUPERADMIN finance.payment_hold_minutes (entier de 5 à 60), en échec fermé : sans réglage lisible, aucun achat.
+    let holdMinutes: number;
+    try {
+        holdMinutes = await readHoldMinutes();
+    } catch (err) {
+        console.error('[checkout] durée de garde des places illisible :', err instanceof Error ? err.message : String(err));
+        return { status: 503, body: { error: 'Achat momentanément indisponible.', code: 'CHECKOUT_GUARD_UNAVAILABLE' } };
+    }
     const ids = newIdentifiers();
     const token = randomBytes(32).toString('base64url');
     const { data: created, error: createErr } = await rpcWithRetry<{ ok: boolean; duplicate?: boolean; code?: string; payment_id?: string; problems?: SaleProblem[]; expires_at?: string; amount?: number }>('checkout_create_payment', {
@@ -226,8 +269,8 @@ export async function startTicketCheckout(params: {
             client_idempotency_key: key,
             transaction_id: ids.transactionId,
             external_order_id: ids.externalOrderId,
-            hold_minutes: env.PAYMENT_HOLD_MINUTES,
-            metadata: { target_type: 'TICKET', event_id: input.eventId, checkout_items: priced },
+            hold_minutes: holdMinutes,
+            metadata: { target_type: 'TICKET', event_id: input.eventId, checkout_items: priced, hold_minutes: holdMinutes },
         },
     });
     if (createErr) {

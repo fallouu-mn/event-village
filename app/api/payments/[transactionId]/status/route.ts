@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
+import { holdMinutesOf, paymentDeadlineOf } from '@/lib/payments/checkout.service';
 import { loadPayment, reconcilePayment, type PaymentRecord } from '@/lib/payments/confirmation.service';
 import { maskPhone } from '@/lib/payments/payer-phone';
 import { isDeliverableEmail, isEmailEnabled } from '@/lib/notifications/channels';
@@ -98,6 +99,8 @@ async function receiptChannels(payment: PaymentRecord, accountEmail: string | un
  * Lot 7 (7.3, contrat 3.5, D58) : la page d'attente dit ce que le client va recevoir et comment reprendre :
  * target_type, event, ticket_count, items, payer_phone_masked (jamais le numéro en clair), receipt_channels,
  * success_url, retry_url.
+ * Lot 9 bis (H2, B103) : holdMinutes (durée de garde appliquée au paiement) et paymentDeadline (création + 60 minutes,
+ * validité SamirPay : la page suit le paiement jusque-là).
  */
 export async function GET(req: NextRequest, context: { params: Promise<{ transactionId: string }> | { transactionId: string } }) {
     const { transactionId: id } = await Promise.resolve(context?.params);
@@ -138,6 +141,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ transac
             currency: payment.currency ?? 'XOF',
             operator: view.operator ?? null,
             expires_at: view.held_expires_at ?? null,
+            holdMinutes: payment.payment_target === 'TICKET' ? holdMinutesOf(view) : null,
+            paymentDeadline: paymentDeadlineOf(view),
             ticket_ids: ticketIds,
             target_type: payment.payment_target,
             event,
