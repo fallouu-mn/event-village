@@ -92,7 +92,7 @@ function resolveAlias(spec: string): string | null {
 function sourceWithImports(rel: string, why: string): string {
     const src = readSource(rel, why);
     const parts = [src];
-    for (const m of src.matchAll(/from\s+['"](@\/(?:components|lib)\/[^'"]+)['"]/g)) {
+    for (const m of Array.from(src.matchAll(/from\s+['"](@\/(?:components|lib)\/[^'"]+)['"]/g))) {
         const file = resolveAlias(m[1]);
         if (file) parts.push(fs.readFileSync(path.resolve(ROOT, file), 'utf8'));
     }
@@ -315,7 +315,7 @@ function assertVerificationMail(mail: RecordedEmail, address: string): string {
     }
     assert.ok(text.includes(`${APP_URL}/verify-email?t=`), `lien vers ${APP_URL}/verify-email?t=… attendu`);
     assert.equal(/<img/i.test(mail.html), false, 'aucune image ni QR dans l’email (G.51)');
-    for (const m of mail.html.matchAll(/href="([^"]+)"/g)) {
+    for (const m of Array.from(mail.html.matchAll(/href="([^"]+)"/g))) {
         const href = m[1].replace(/&amp;/g, '&');
         assert.ok(href.startsWith(`${APP_URL}/`) || href.startsWith('mailto:'), 'lien hors de l’application dans l’email de vérification');
     }
