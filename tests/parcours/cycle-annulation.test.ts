@@ -230,7 +230,7 @@ function countOf(v: unknown): number {
 // ── Annulation par statut ──────────────────────────────────────────────────
 
 describe('5.2 / 5.8 Annulation transactionnelle (event_cancel) par statut', () => {
-    test('SUSPENDU → ANNULE accepté avec remboursements (route partenaire)', async () => {
+    test('SUSPENDU → ANNULE refusé à la partenaire (R105), accepté avec remboursements par un admin (route admin)', async () => {
         const ev = await eventIn('suspannul', 'PUBLIE');
         const b1 = await newBuyer('cyc-sa-1');
         const b2 = await newBuyer('cyc-sa-2');
@@ -239,20 +239,20 @@ describe('5.2 / 5.8 Annulation transactionnelle (event_cancel) par statut', () =
         await advanceEventTo(ev.eventId, 'SUSPENDU', { suspendReason: 'Contrôle de sécurité de la salle' });
 
         const body = cancelBody(ev);
-        const r = await partnerCancel(ev.eventId, owner, body);
-        assert.equal(r.status, 200, `annulation d’un événement SUSPENDU : ${show(r)}`);
+        const refused = await partnerCancel(ev.eventId, owner, body); // lot 9 bis (R105, B68) : seul un admin annule un SUSPENDU
+        assert.equal(refused.status, 409, `partenaire, événement SUSPENDU : ${show(refused)}`); assert.equal(refused.body.code, 'TRANSITION_NOT_ALLOWED', show(refused)); assert.equal(await eventStatus(ev.eventId), 'SUSPENDU', 'refus : rien d’écrit');
+        const r = await adminCancel(ev.eventId, admin, body); assert.equal(r.status, 200, `annulation d’un événement SUSPENDU par l’admin : ${show(r)}`);
         assert.equal(await eventStatus(ev.eventId), 'ANNULE');
-
         const rows = await cancellationsOf(ev.eventId);
         assert.equal(rows.length, 1, `une ligne event_cancellations : ${JSON.stringify(rows)}`);
-        assert.equal(rows[0].cancelled_by, owner.userId, 'auteur de l’annulation');
+        assert.equal(rows[0].cancelled_by, admin.userId, 'auteur de l’annulation');
         assert.equal(rows[0].internal_reason, body.internalReason, 'motif interne enregistré');
         assert.equal(rows[0].public_notice, body.publicNotice, 'avis public enregistré');
 
         assert.deepEqual(
             historyView(lastRow(await eventHistory(ev.eventId))),
-            { old: 'SUSPENDU', next: 'ANNULE', actor: owner.userId, role: 'PARTENAIRE', channel: 'CANCELLATION' },
-            'historique : SUSPENDU → ANNULE par le partenaire, canal CANCELLATION',
+            { old: 'SUSPENDU', next: 'ANNULE', actor: admin.userId, role: 'ADMIN', channel: 'CANCELLATION' },
+            'historique : SUSPENDU → ANNULE par l’admin, canal CANCELLATION',
         );
 
         const payments = [p1.payment, p2.payment];
