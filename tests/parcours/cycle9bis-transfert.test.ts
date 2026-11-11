@@ -353,7 +353,7 @@ describe('R44 — transfert échu traité dès sa lecture', () => {
         assert.ok(notices.length > 0, 'avis TRANSFER_EXPIRED à l’expéditeur');
         const perChannel = new Map<string, number>();
         for (const n of notices) perChannel.set(n.channel, (perChannel.get(n.channel) ?? 0) + 1);
-        assert.ok([...perChannel.values()].every((n) => n === 1), `un seul avis par canal après deux lectures et le cron : ${JSON.stringify([...perChannel])}`);
+        assert.ok(Array.from(perChannel.values()).every((n) => n === 1), `un seul avis par canal après deux lectures et le cron : ${JSON.stringify(Array.from(perChannel.entries()))}`);
     });
 
     test('scan d’un billet dont le transfert est échu : entrée acceptée (témoin) et transfert expiré par le scan', async () => {
