@@ -66,6 +66,7 @@ import {
   toSafeExternalUrl,
   type PaymentHandoff,
 } from '@/lib/payments/payment-client';
+import { REFUND_DELAYED_LABEL } from '@/lib/payments/payment-labels';
 import { OPERATOR_LABELS } from '@/lib/samirpay/types';
 
 /* ──────────────────────────────── Réglages ──────────────────────────────── */
@@ -95,6 +96,8 @@ interface PaymentStatusView {
   operator: string | null;
   /** Échéance de la réservation (expires_at), en millisecondes ; null si le paiement n'en a pas. */
   expiresAt: number | null;
+  /** Lot 9 bis (B9) : un remboursement de ce paiement est retardé (refundDelayed). */
+  refundDelayed: boolean;
   ticketIds: string[];
   /** Cible du paiement (target_type) : TICKET, SUBSCRIPTION, ORDER… */
   targetType: string | null;
@@ -187,6 +190,7 @@ function parseStatusBody(body: unknown): PaymentStatusView | null {
     serviceFee: readAmount(b.service_fee),
     operator: typeof b.operator === 'string' ? b.operator : null,
     expiresAt,
+    refundDelayed: b.refundDelayed === true,
     ticketIds: b.ticket_ids as string[],
     targetType,
     event,
@@ -282,7 +286,7 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
     case 'REFUND_PENDING':
       return {
         badge: 'Échoué',
-        chip: 'Remboursement en cours',
+        chip: p.refundDelayed ? 'Remboursement retardé' : 'Remboursement en cours',
         tone: 'refund',
         title: 'Paiement en cours de remboursement',
         description: `Ce paiement n’a pas pu être honoré : ${amount} vous est reversé sur le compte ${label ?? 'Mobile Money'} qui a payé.`,
@@ -785,6 +789,14 @@ export default function PaymentStatusPage({ params }: { params: { id: string } }
             <p role="status" className="flex items-center gap-2 rounded-2xl border border-warning-border bg-warning-bg p-3 text-sm text-warning-fg">
               <WifiOff size={16} className="shrink-0" aria-hidden="true" />
               <span>Connexion instable : nouvelle vérification automatique dans quelques secondes.</span>
+            </p>
+          )}
+
+          {/* Lot 9 bis (B9) : un remboursement de ce paiement attend une reprise par l'équipe (état honnête). */}
+          {payment.refundDelayed && (
+            <p role="status" className="flex items-start gap-2 rounded-2xl border border-warning-border bg-warning-bg p-3 text-sm text-warning-fg">
+              <Hourglass size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>{REFUND_DELAYED_LABEL}</span>
             </p>
           )}
 
