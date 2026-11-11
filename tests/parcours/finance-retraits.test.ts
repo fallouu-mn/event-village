@@ -3,8 +3,8 @@
  * §105, §153). Contrat : sections A, C et F de la conception du lot 3.
  *  - solde organisateur = Σ des prix faciaux des billets payés EN LIGNE (grand livre, écritures VENTE) ;
  *    une vente espèces ou une invitation n'y ajoute rien ;
- *  - fonds en attente jusqu'à la fin de l'événement + payout_delay_hours (date de début à 23:59,
- *    Africa/Dakar, si la fin manque) ; disponibles dès la confirmation si payout_hold_enabled = false ;
+ *  - fonds en attente jusqu'à la fin de l'événement + payout_delay_hours (début + 6 h si la fin manque,
+ *    lot 9 bis R16 ; avant : début à 23:59) ; disponibles dès la confirmation si payout_hold_enabled = false ;
  *  - withdrawal_request : solde réservé atomiquement (deux demandes simultanées → une seule acceptée),
  *    seuil, montant entier, banque désactivée, frais = ceil(brut × taux / 100), cashout WITHDRAWAL-<id>
  *    au montant net, Idempotency-Key ; parrainage : solde distinct, retirable au FCFA inférieur ;
@@ -146,11 +146,11 @@ function smsCodes(phoneE164: string): string[] {
         .filter((c): c is string => Boolean(c));
 }
 
-/** POST /api/withdrawals/otp : code WITHDRAWAL envoyé au téléphone du compte, lu dans le faux MTarget. */
-async function withdrawalOtp(user: Buyer, account: AccountKind): Promise<string> {
+/** POST /api/withdrawals/otp `{ account, amount }` (lot 9 bis R62 : devis avant le code) : code lu dans le faux MTarget. */
+async function withdrawalOtp(user: Buyer, account: AccountKind, amount: number): Promise<string> {
     const { POST } = await importModule('../../app/api/withdrawals/otp/route');
     const before = smsCodes(user.phoneE164).length;
-    const res: Response = await POST(jsonRequest('/api/withdrawals/otp', 'POST', user.accessToken, { account }));
+    const res: Response = await POST(jsonRequest('/api/withdrawals/otp', 'POST', user.accessToken, { account, amount }));
     const body = await res.json();
     assert.equal(res.status, 200, `envoi du code de retrait : HTTP ${res.status} ${JSON.stringify(body)}`);
     const codes = smsCodes(user.phoneE164);
@@ -175,7 +175,7 @@ async function postWithdrawal(user: Buyer, body: WithdrawalBody, key: string = r
 
 /** Parcours complet : code WITHDRAWAL, puis demande de retrait par la route. */
 async function withdrawByRoute(user: Buyer, o: { account: AccountKind; amount: number; operator?: 'WAVE' | 'ORANGE_MONEY'; phoneNumber?: string }, key?: string): Promise<{ status: number; body: Record<string, unknown> }> {
-    const otpCode = await withdrawalOtp(user, o.account);
+    const otpCode = await withdrawalOtp(user, o.account, o.amount);
     return postWithdrawal(user, { account: o.account, amount: o.amount, operator: o.operator ?? 'WAVE', phoneNumber: o.phoneNumber ?? user.phone9, otpCode }, key);
 }
 
@@ -266,20 +266,20 @@ describe('Lot 3.6 — soldes et retraits', () => {
         assert.equal(b.pending, 20_000, `la première vente reste en attente (réglage non rétroactif) : ${JSON.stringify(b)}`);
     });
 
-    test('date de fin absente : date de début à 23:59 (Africa/Dakar) + 48 h', async () => {
+    test('date de fin absente : début + 6 h (lot 9 bis R16, règle changée) + 48 h', async () => {
         const partner = await newPartner('sansfin');
         const ev = await createPartnerEvent(partner.partnerId, 'sansfin', [{ name: 'Standard', price: 8_000, total: 10 }]);
         const { error: upErr } = await service.from('events').update({ end_date: null, end_time: null }).eq('id', ev.eventId);
         assert.equal(upErr, null, `suppression de la date de fin : ${upErr?.message}`);
-        const { data: evRow } = await service.from('events').select('start_date').eq('id', ev.eventId).single();
-        const expected = Date.parse(`${evRow!.start_date}T23:59:00Z`) + 48 * HOUR;
+        const { data: evRow } = await service.from('events').select('start_date, start_time').eq('id', ev.eventId).single();
+        const expected = Date.parse(`${evRow!.start_date}T${evRow!.start_time}Z`) + 6 * HOUR + 48 * HOUR;
         const buyer = await newBuyer('sansfin-ach');
         await withSettings({ 'finance.payout_hold_enabled': true, 'finance.payout_delay_hours': 48 }, () => buyConfirmed(buyer, ev, [['Standard', 1]]));
         const b = await balanceOf(partner.userId, 'ORGANISATEUR');
         assert.equal(b.available, 0, JSON.stringify(b));
         assert.equal(b.pending, 8_000, JSON.stringify(b));
         assert.ok(b.next_available_at && Math.abs(Date.parse(b.next_available_at) - expected) <= 60_000,
-            `disponible le ${new Date(expected).toISOString()} (début 23:59 + 48 h), obtenu ${b.next_available_at}`);
+            `disponible le ${new Date(expected).toISOString()} (début + 6 h + 48 h), obtenu ${b.next_available_at}`);
     });
 
     test('deux retraits simultanés qui dépassent ensemble le solde : un seul accepté', async () => {

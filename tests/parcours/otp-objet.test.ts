@@ -53,7 +53,7 @@ async function fundedPartner(label: string): Promise<TestPartner> {
 async function withdrawalOtp(user: TestPartner): Promise<string> {
     const { POST } = await importModule('../../app/api/withdrawals/otp/route');
     const before = smsCodes(user.phoneE164).length;
-    const res: Response = await POST(jsonRequest('/api/withdrawals/otp', 'POST', user.accessToken, { account: 'ORGANISATEUR' }));
+    const res: Response = await POST(jsonRequest('/api/withdrawals/otp', 'POST', user.accessToken, { account: 'ORGANISATEUR', amount: 5_000 }));
     const body = await res.json();
     assert.equal(res.status, 200, `envoi du code de retrait : HTTP ${res.status} ${JSON.stringify(body)}`);
     return lastCode(user.phoneE164, before);
