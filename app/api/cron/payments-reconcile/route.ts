@@ -21,7 +21,8 @@ export const dynamic = 'force-dynamic';
  *     PAYMENT_LATE_SUCCESS_WINDOW_HOURS (au plus un contrôle toutes les 15 minutes) ;
  *  4. PENDING sans identifiant SamirPay (initialisation interrompue) trop anciens → EXPIRED ;
  *  5. envois d'argent : confirmation des ENVOYE ; envoi réservé puis interrompu → INCERTAIN ;
- *     lot 8 (L33) : remboursements restés à envoyer, repris après 5 minutes.
+ *     lot 9 bis (R1, B8) : tout versement resté à envoyer (tous types, blocage SOLDE_INSUFFISANT compris) repris
+ *     après 5 minutes (clé cashouts_resumed) ; puis retard de plus de 30 minutes signalé (cashouts_flag_delayed).
  */
 async function run(req: NextRequest) {
     const refused = refuseUnlessCron(req);
@@ -76,9 +77,13 @@ async function run(req: NextRequest) {
             if (!logged) console.error(`[cron payments-reconcile] alerte de l'envoi ${c.idempotency_key} non journalisée`);
         }
         summary.cashouts_interrupted = stale?.length ?? 0;
-        const resumed = await CashoutService.resumeUnsentRefunds(env.PAYMENT_RECONCILE_BATCH);
-        summary.refunds_resumed = resumed.resumed;
-        summary.refunds_resume_failed = resumed.failed;
+        const resumed = await CashoutService.resumeUnsent(env.PAYMENT_RECONCILE_BATCH);
+        summary.cashouts_resumed = resumed.resumed;
+        summary.cashouts_resume_failed = resumed.failed;
+        // Lot 9 bis (B1, B11) : retard de plus de 30 minutes signalé une fois ; les avis partent par trg_cashouts_notify.
+        const { data: flagged, error: fErr } = await rpcWithRetry<number>('cashouts_flag_delayed', {});
+        if (fErr) throw new Error(`versements en retard : ${fErr.message}`);
+        summary.cashouts_delayed_flagged = Number(flagged ?? 0);
         return NextResponse.json({ ok: true, ...summary });
     } catch (err) {
         console.error('[cron payments-reconcile] erreur :', err instanceof Error ? err.message : String(err));

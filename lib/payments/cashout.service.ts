@@ -21,9 +21,19 @@
  * d'audit des alertes (lib/admin/alerts.ts).
  * Lot 8 (L28, L33) : une opération simulée ne part jamais en réel, une opération réelle ne part jamais vers le
  * faux service (cashoutSendRefusal, avant tout appel SamirPay ; garde en base trg_cashouts_simulation_guard).
- * Un remboursement resté à envoyer, faute de solde lisible, est repris par payments-reconcile.
+ * Lot 9 bis (tâche 1, B5 à B8, B19, R105) :
+ *  - tout versement resté à envoyer (tous types) est repris par payments-reconcile (resumeUnsent), le blocage
+ *    SOLDE_INSUFFISANT compris quand le solde revient ;
+ *  - un lot (annulation, reprise) part ligne par ligne tant que le solde estimé couvre la ligne ; au premier manque,
+ *    cette ligne et les suivantes sont bloquées SOLDE_INSUFFISANT, un seul audit CASHOUT_BATCH_PARTIAL ;
+ *  - attempt_count est incrémenté à chaque envoi réel (une seconde alerte après un second refus) ;
+ *  - un refus SamirPay sans débit (INSUFFICIENT_BALANCE, ACCOUNT_LIMIT) bloque la ligne (SOLDE_INSUFFISANT,
+ *    LIMITE_COMPTE) et lève sa réservation, au lieu de la passer ECHOUE ;
+ *  - le retrait d'un bénéficiaire non ACTIF ne part pas (skipped ACCOUNT_SUSPENDED), il repart à la réactivation :
+ *    un seul contrôle, ici, pour l'envoi, la reprise et « Renvoyer ».
  */
 import { logAdminAlert } from '@/lib/admin/alerts';
+import { PublicError } from '@/lib/api/public-error';
 import { isSimulationRun } from '@/lib/integrations/simulation';
 import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError, type SamirPayOperatorName } from '@/lib/samirpay/types';
@@ -53,6 +63,7 @@ export interface CashoutRow {
     send_started_at: string | null;
     samirpay_transaction_id: string | null;
     alerted_at: string | null;
+    attempt_count: number;
     simulated: boolean;
 }
 
@@ -60,19 +71,59 @@ export type SendRefusal = 'SIMULATED' | 'REAL_IN_SIMULATION';
 
 export interface SendOutcome {
     status: CashoutStatus;
-    skipped?: 'NOT_A_ENVOYER' | 'BLOCKED' | 'ALREADY_CLAIMED' | 'SOLDE_INSUFFISANT' | 'SOLDE_UNAVAILABLE' | SendRefusal;
+    skipped?: 'NOT_A_ENVOYER' | 'BLOCKED' | 'ALREADY_CLAIMED' | 'SOLDE_INSUFFISANT' | 'SOLDE_UNAVAILABLE' | 'ACCOUNT_SUSPENDED' | SendRefusal;
+    /** Lot 9 bis (B6) : frais réels renvoyés par SamirPay pour un transfert parti, s'ils sont connus. */
+    fees?: number | null;
 }
 
-const BLOCK_LABELS: Record<string, string> = {
+const BLOCK_LABELS: Readonly<Record<string, string>> = {
     OPERATOR_UNKNOWN: 'opérateur du payeur inconnu',
     PHONE_UNKNOWN: 'numéro du payeur inconnu',
     NAME_UNKNOWN: 'prénom ou nom du bénéficiaire manquant',
     SOLDE_INSUFFISANT: 'solde du compte partenaire SamirPay insuffisant',
     SIMULATED: 'opération créée en mode simulé : aucun versement',
+    // Lot 9 bis (B5, B19, contrat 5.1)
+    LIMITE_COMPTE: 'montant hors des limites du compte SamirPay',
+    ACCOUNT_SUSPENDED: 'compte du bénéficiaire suspendu',
 };
 
-/** Âge minimal d'un remboursement à reprendre (L33) : laisse à l'envoi d'origine le temps d'aboutir. */
-const UNSENT_REFUND_MIN_AGE_MS = 5 * 60_000;
+/** Lot 9 bis (contrat 5.1) : motif de blocage en français, jamais le code ; null pour un code inconnu. */
+export function cashoutBlockLabel(code: string | null | undefined): string | null {
+    return code ? BLOCK_LABELS[code] ?? null : null;
+}
+
+/** Âge minimal d'un versement à reprendre (L33, B8) : laisse à l'envoi d'origine le temps d'aboutir. */
+const UNSENT_MIN_AGE_MS = 5 * 60_000;
+
+/** Lot 9 bis (B4) : décision d'un administrateur sur un versement à reprendre. */
+export type CashoutDecision = 'RESEND' | 'MARK_PAID';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Référence SamirPay d'une transaction (contrat 4.1). */
+const REFERENCE_RE = /^TX[A-Za-z0-9]{8}$/;
+
+/** Refus de cashout_admin_decide → statut HTTP (contrat 4.1) ; tout autre code est une panne. */
+const DECISION_REFUSALS: Readonly<Record<string, number>> = {
+    REASON_REQUIRED: 400,
+    REFERENCE_REQUIRED: 400,
+    INVALID_FIELD: 400,
+    FORBIDDEN: 403,
+    CASHOUT_NOT_FOUND: 404,
+    ALREADY_FINAL: 409,
+    NOT_RESENDABLE: 409,
+    PROVIDER_PENDING: 409,
+    PROVIDER_SAYS_FAILED: 409,
+    NAME_STILL_UNKNOWN: 409,
+};
+
+/** Lot 9 bis (B5, H7) : refus SamirPay sans débit, classés par http-client (SamirPayError.code) → motif de blocage. */
+const PROVIDER_BLOCKS: Readonly<Record<string, 'SOLDE_INSUFFISANT' | 'LIMITE_COMPTE'>> = {
+    INSUFFICIENT_BALANCE: 'SOLDE_INSUFFISANT',
+    ACCOUNT_LIMIT: 'LIMITE_COMPTE',
+};
+
+/** Motif du refus d'un transfert par l'opérateur, recopié sur le retrait refusé (R75) : jamais de code technique. */
+const OPERATOR_REFUSAL_DETAIL = 'Refusé par l’opérateur Mobile Money';
 
 const SKIPPED_LABELS: Record<NonNullable<SendOutcome['skipped']>, string> = {
     NOT_A_ENVOYER: "il n'est plus à envoyer",
@@ -80,6 +131,7 @@ const SKIPPED_LABELS: Record<NonNullable<SendOutcome['skipped']>, string> = {
     ALREADY_CLAIMED: 'un envoi est déjà en cours',
     SOLDE_INSUFFISANT: BLOCK_LABELS.SOLDE_INSUFFISANT,
     SOLDE_UNAVAILABLE: 'solde SamirPay indisponible, nouvel essai automatique',
+    ACCOUNT_SUSPENDED: BLOCK_LABELS.ACCOUNT_SUSPENDED,
     SIMULATED: BLOCK_LABELS.SIMULATED,
     REAL_IN_SIMULATION: "opération réelle refusée par un serveur d'essai",
 };
@@ -93,6 +145,11 @@ const UNSENT_STATUS_LABELS: Partial<Record<CashoutStatus, string>> = {
 export function sendOutcomeLabel(outcome: SendOutcome): string {
     if (outcome.skipped) return SKIPPED_LABELS[outcome.skipped];
     return UNSENT_STATUS_LABELS[outcome.status] ?? 'envoi non abouti';
+}
+
+/** Envoi parti chez SamirPay (ou peut-être parti) : il consomme le solde estimé d'un lot. */
+function mayHaveLeft(outcome: SendOutcome): boolean {
+    return !outcome.skipped && (outcome.status === 'CONFIRME' || outcome.status === 'ENVOYE' || outcome.status === 'INCERTAIN');
 }
 
 /**
@@ -144,6 +201,34 @@ async function alert(row: CashoutRow, reason: string, detail: string): Promise<v
 async function finalize(row: CashoutRow, outcome: 'CONFIRME' | 'ECHOUE', detail: string): Promise<void> {
     const { data, error } = await rpcWithRetry<Record<string, unknown>>('cashout_finalize', { p_cashout_id: row.id, p_outcome: outcome, p_detail: detail });
     if (error || !data) throw new Error(`Finalisation de l'envoi ${row.idempotency_key} impossible : ${error?.message ?? 'réponse vide'}`);
+}
+
+/** Lot 9 bis (B19) : un retrait ne part que vers un compte ACTIF. Lecture en échec : l'erreur remonte. */
+async function beneficiaryInactive(row: CashoutRow): Promise<boolean> {
+    if (row.kind !== 'WITHDRAWAL' || !row.beneficiary_user_id) return false;
+    const { data, error } = await getServiceRoleClient().from('users').select('status').eq('id', row.beneficiary_user_id).maybeSingle();
+    if (error) throw new Error(`Statut du bénéficiaire de l'envoi ${row.idempotency_key} illisible : ${error.message}`);
+    return !data || data.status !== 'ACTIF';
+}
+
+/** Blocage SOLDE_INSUFFISANT posé par un lot, seulement sur une ligne libre (ni bloquée, ni réservée). */
+async function blockForBalance(id: string): Promise<boolean> {
+    const { data, error } = await getServiceRoleClient().from('cashouts')
+        .update({ blocked_reason: 'SOLDE_INSUFFISANT', updated_at: new Date().toISOString() })
+        .eq('id', id).eq('status', 'A_ENVOYER').is('blocked_reason', null).is('send_started_at', null)
+        .select('id');
+    if (error) throw new Error(`Blocage de l'envoi ${id} faute de solde impossible : ${error.message}`);
+    return (data?.length ?? 0) > 0;
+}
+
+/** Levée conditionnelle du blocage SOLDE_INSUFFISANT avant un nouvel essai (B5, B8). */
+async function unblockBalance(id: string): Promise<boolean> {
+    const { data, error } = await getServiceRoleClient().from('cashouts')
+        .update({ blocked_reason: null, updated_at: new Date().toISOString() })
+        .eq('id', id).eq('status', 'A_ENVOYER').eq('blocked_reason', 'SOLDE_INSUFFISANT').is('send_started_at', null)
+        .select('id');
+    if (error) throw new Error(`Levée du blocage de l'envoi ${id} impossible : ${error.message}`);
+    return (data?.length ?? 0) > 0;
 }
 
 export class CashoutService {
@@ -204,6 +289,11 @@ export class CashoutService {
             return { status: row.status, skipped: 'BLOCKED' };
         }
         if (row.send_started_at) return { status: row.status, skipped: 'ALREADY_CLAIMED' };
+        // Lot 9 bis (B19) : retrait d'un compte suspendu : rien ne part, rien n'est écrit ; repris à la réactivation
+        if (await beneficiaryInactive(row)) {
+            console.warn(`[cashout] retrait ${row.idempotency_key} non envoyé : ${BLOCK_LABELS.ACCOUNT_SUSPENDED}`);
+            return { status: row.status, skipped: 'ACCOUNT_SUSPENDED' };
+        }
 
         if (!opts.skipBalanceCheck) {
             let solde: number;
@@ -221,10 +311,10 @@ export class CashoutService {
             }
         }
 
-        // Réservation de l'envoi : une seule exécution gagne
+        // Réservation de l'envoi : une seule exécution gagne. Lot 9 bis (R105) : une tentative de plus à chaque envoi.
         const { data: claimed, error: claimErr } = await getServiceRoleClient()
             .from('cashouts')
-            .update({ send_started_at: new Date().toISOString(), attempt_count: 1, updated_at: new Date().toISOString() })
+            .update({ send_started_at: new Date().toISOString(), attempt_count: Number(row.attempt_count ?? 0) + 1, updated_at: new Date().toISOString() })
             .eq('id', row.id)
             .eq('status', 'A_ENVOYER')
             .is('send_started_at', null)
@@ -246,13 +336,22 @@ export class CashoutService {
             const now = new Date().toISOString();
             await patch(row.id, { status: confirmed ? 'CONFIRME' : 'ENVOYE', sent_at: now, confirmed_at: confirmed ? now : null, samirpay_transaction_id: res.transactionId, provider_status: res.status });
             if (confirmed) await finalize(row, 'CONFIRME', res.transactionId);
-            return { status: confirmed ? 'CONFIRME' : 'ENVOYE' };
+            return { status: confirmed ? 'CONFIRME' : 'ENVOYE', fees: res.fees ?? null };
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
+            // Lot 9 bis (B5, contrat 5.1) : refus 400 « solde insuffisant » ou « hors des limites du compte » : rien n'est
+            // débité (v1.2 §5.1). Blocage lisible au lieu d'ECHOUE, réservation levée : le solde manquant est repris par
+            // le cron quand il revient, la limite attend « Renvoyer ».
+            if (isSamirPayError(err) && err.kind === 'REJECTED' && err.code && PROVIDER_BLOCKS[err.code]) {
+                const blockedBy = PROVIDER_BLOCKS[err.code];
+                await patch(row.id, { blocked_reason: blockedBy, send_started_at: null, last_error: message, provider_status: err.code });
+                await alert({ ...row, blocked_reason: blockedBy }, 'BLOCKED', `${BLOCK_LABELS[blockedBy]} (${message})`);
+                return { status: 'A_ENVOYER', skipped: blockedBy === 'SOLDE_INSUFFISANT' ? 'SOLDE_INSUFFISANT' : 'BLOCKED' };
+            }
             if (isSamirPayError(err) && (err.kind === 'REJECTED' || err.kind === 'UNAUTHORIZED')) {
                 await patch(row.id, { status: 'ECHOUE', last_error: message, provider_status: err.kind });
-                await finalize(row, 'ECHOUE', `refusé par SamirPay (${err.kind})`);
-                await alert({ ...row, status: 'ECHOUE' }, 'REJECTED', `refusé par SamirPay (${message})`);
+                await finalize(row, 'ECHOUE', OPERATOR_REFUSAL_DETAIL);
+                await alert({ ...row, status: 'ECHOUE' }, 'REJECTED', `refusé par SamirPay : ${message}`);
                 return { status: 'ECHOUE' };
             }
             await patch(row.id, { status: 'INCERTAIN', last_error: message, provider_status: isSamirPayError(err) ? err.kind : 'INTERNAL' });
@@ -261,68 +360,186 @@ export class CashoutService {
         }
     }
 
-    /** Lot de remboursements : solde vérifié une fois pour le total, puis envois un par un. */
+    /**
+     * Lot de versements (annulation d'un événement, reprise du cron). Lot 9 bis (R52, B6) : solde lu une fois, puis
+     * envoi ligne par ligne tant que le solde estimé (solde − montants et frais connus des envois partis) couvre la
+     * ligne ; au premier manque, ou au premier refus « solde insuffisant », cette ligne et les suivantes sont bloquées
+     * SOLDE_INSUFFISANT (reprises par le cron quand le solde revient), et un seul audit CASHOUT_BATCH_PARTIAL (ou
+     * CASHOUT_BATCH_BLOCKED si rien n'est parti) nomme le lot. Une ligne déjà bloquée SOLDE_INSUFFISANT est débloquée
+     * seulement si le solde la couvre. Une erreur sur une ligne est journalisée, la ligne reste sans issue dans la
+     * réponse (comptée par l'appelant) et les suivantes partent.
+     */
     static async sendBatch(cashoutIds: string[]): Promise<Record<string, SendOutcome>> {
         const out: Record<string, SendOutcome> = {};
         if (!cashoutIds.length) return out;
         const rows = await Promise.all(cashoutIds.map(load));
-        // Lot 8 (L28) : une ligne refusée sort du total ; send la traite sans aucun appel SamirPay
         const simulationActive = isSimulationRun();
-        const isRefused = (r: CashoutRow) => r.status === 'A_ENVOYER' && cashoutSendRefusal(r, simulationActive) !== null;
-        for (const r of rows.filter(isRefused)) out[r.id] = await CashoutService.send(r.id);
-        const sendable = rows.filter((r) => !isRefused(r));
-        const eligible = sendable.filter((r) => r.status === 'A_ENVOYER' && !r.blocked_reason && !r.send_started_at);
-        const total = eligible.reduce((s, r) => s + Number(r.amount), 0);
-        if (eligible.length) {
-            let solde: number;
+        const isEligible = (r: CashoutRow) => r.status === 'A_ENVOYER' && !r.send_started_at && cashoutSendRefusal(r, simulationActive) === null
+            && (r.blocked_reason === null || r.blocked_reason === 'SOLDE_INSUFFISANT');
+        const trySend = async (id: string, opts: { skipBalanceCheck?: boolean } = {}): Promise<SendOutcome | null> => {
             try {
-                solde = (await samirPayClient.getSolde()).solde;
+                return await CashoutService.send(id, opts);
             } catch (err) {
-                console.error('[cashout] solde SamirPay indisponible, lot différé :', err instanceof Error ? err.message : String(err));
-                for (const r of sendable) out[r.id] = { status: r.status, skipped: 'SOLDE_UNAVAILABLE' };
-                return out;
+                console.error(`[cashout] envoi ${id} du lot en échec :`, err instanceof Error ? err.message : String(err));
+                return null;
             }
-            if (solde < total) {
-                for (const r of eligible) {
-                    await patch(r.id, { blocked_reason: 'SOLDE_INSUFFISANT' });
-                    out[r.id] = { status: r.status, skipped: 'SOLDE_INSUFFISANT' };
-                }
-                // Avis aux administrateurs et au partenaire : trigger trg_cashouts_notify (blocked_reason)
-                const logged = await logAdminAlert({
-                    action: 'CASHOUT_BATCH_BLOCKED',
-                    objectType: 'cashouts', metadata: { cashout_ids: eligible.map((r) => r.id), total, solde },
-                });
-                if (!logged) console.error(`[cashout] blocage du lot de ${eligible.length} remboursement(s) non journalisé`);
-                return out;
-            }
+        };
+
+        // Lignes refusées par le mode, bloquées pour un autre motif, réservées ou déjà traitées : send les traite
+        // sans appel SamirPay (alerte d'un blocage non encore journalisé comprise).
+        for (const r of rows.filter((x) => !isEligible(x))) {
+            const o = await trySend(r.id);
+            if (o) out[r.id] = o;
         }
-        for (const r of sendable) out[r.id] = await CashoutService.send(r.id, { skipBalanceCheck: true });
+        const eligible = rows.filter(isEligible);
+        if (!eligible.length) return out;
+
+        let solde: number;
+        try {
+            solde = (await samirPayClient.getSolde()).solde;
+        } catch (err) {
+            console.error('[cashout] solde SamirPay indisponible, lot différé :', err instanceof Error ? err.message : String(err));
+            for (const r of eligible) out[r.id] = { status: r.status, skipped: 'SOLDE_UNAVAILABLE' };
+            return out;
+        }
+        const initialSolde = solde;
+        let short = false;
+        const sent: string[] = [];
+        const blocked: string[] = [];
+        for (const r of eligible) {
+            const amount = Number(r.amount);
+            if (!short && solde >= amount) {
+                if (r.blocked_reason === 'SOLDE_INSUFFISANT' && !(await unblockBalance(r.id))) {
+                    out[r.id] = { status: r.status, skipped: 'ALREADY_CLAIMED' };
+                    continue;
+                }
+                const o = await trySend(r.id, { skipBalanceCheck: true });
+                if (!o) continue;
+                out[r.id] = o;
+                if (mayHaveLeft(o)) {
+                    solde -= amount + Number(o.fees ?? 0);
+                    sent.push(r.id);
+                } else if (o.skipped === 'SOLDE_INSUFFISANT') {
+                    short = true;
+                    blocked.push(r.id);
+                }
+                continue;
+            }
+            short = true;
+            if (r.blocked_reason !== 'SOLDE_INSUFFISANT' && (await blockForBalance(r.id))) blocked.push(r.id);
+            out[r.id] = { status: 'A_ENVOYER', skipped: 'SOLDE_INSUFFISANT' };
+        }
+        if (blocked.length) {
+            // Avis aux administrateurs, au bénéficiaire et au partenaire : trigger trg_cashouts_notify (blocked_reason)
+            const logged = await logAdminAlert({
+                action: sent.length ? 'CASHOUT_BATCH_PARTIAL' : 'CASHOUT_BATCH_BLOCKED',
+                objectType: 'cashouts',
+                metadata: { cashout_ids: blocked, sent_ids: sent, solde: initialSolde, solde_estime_restant: solde },
+            });
+            if (!logged) console.error(`[cashout] blocage de ${blocked.length} versement(s) du lot non journalisé`);
+        }
         return out;
     }
 
     /**
-     * Lot 8 (L33) — reprise des remboursements REFUND restés à envoyer, faute de solde lisible au premier envoi :
-     * ni bloqués ni réservés, créés depuis plus de 5 minutes. Appelée par payments-reconcile. Un échec sur une
-     * ligne est journalisé et compté, il n'arrête pas les suivantes.
+     * Lot 9 bis (R1, B8) — reprise de tous les versements restés à envoyer, tous types : ni réservés, sans motif ou
+     * bloqués SOLDE_INSUFFISANT, créés depuis plus de 5 minutes, du même mode de simulation, du plus ancien au plus
+     * récent, par sendBatch (solde lu une fois). Appelée par payments-reconcile. Une ligne sans issue (erreur
+     * journalisée) est comptée dans `failed`.
+     */
+    static async resumeUnsent(limit = 50): Promise<{ checked: number; resumed: number; failed: number }> {
+        const before = new Date(Date.now() - UNSENT_MIN_AGE_MS).toISOString();
+        const { data, error } = await getServiceRoleClient().from('cashouts').select('id')
+            .eq('status', 'A_ENVOYER').is('send_started_at', null)
+            .or('blocked_reason.is.null,blocked_reason.eq.SOLDE_INSUFFISANT')
+            .lt('created_at', before).eq('simulated', isSimulationRun())
+            .order('created_at', { ascending: true }).order('id', { ascending: true }).limit(limit);
+        if (error) throw new Error(`Lecture des versements à reprendre impossible : ${error.message}`);
+        const ids = (data ?? []).map((r) => String(r.id));
+        const outcomes = await CashoutService.sendBatch(ids);
+        const resumed = ids.filter((id) => outcomes[id] && mayHaveLeft(outcomes[id])).length;
+        const failed = ids.filter((id) => !outcomes[id]).length;
+        return { checked: ids.length, resumed, failed };
+    }
+
+    /**
+     * Ancien nom (lot 8, L33), gardé parce que tests/parcours/essai-simule.test.ts:461 l'appelle (suite hors de la
+     * section 9 du contrat) : même reprise que resumeUnsent, tous types. Aucun appelant dans l'application.
      */
     static async resumeUnsentRefunds(limit = 50): Promise<{ checked: number; resumed: number; failed: number }> {
-        const before = new Date(Date.now() - UNSENT_REFUND_MIN_AGE_MS).toISOString();
-        const { data, error } = await getServiceRoleClient().from('cashouts').select('id, idempotency_key')
-            .eq('kind', 'REFUND').eq('status', 'A_ENVOYER').is('blocked_reason', null).is('send_started_at', null)
-            .lt('created_at', before).eq('simulated', isSimulationRun())
-            .order('created_at', { ascending: true }).limit(limit);
-        if (error) throw new Error(`Lecture des remboursements à reprendre impossible : ${error.message}`);
-        let resumed = 0;
-        let failed = 0;
-        for (const row of data ?? []) {
-            try {
-                if (!(await CashoutService.send(row.id)).skipped) resumed++;
-            } catch (err) {
-                failed++;
-                console.error(`[cashout] reprise de l'envoi ${row.idempotency_key} en échec :`, err instanceof Error ? err.message : String(err));
+        return CashoutService.resumeUnsent(limit);
+    }
+
+    /**
+     * Lot 9 bis (B2 à B4, contrat 4.1) — décision d'un administrateur sur un versement à reprendre : « Renvoyer »
+     * (RESEND) ou « Marquer versé » (MARK_PAID). La route a vérifié la session et la permission refunds.manage ; la
+     * RPC cashout_admin_decide revérifie le droit, verrouille le versement et écrit l'audit dans sa transaction.
+     *  - justification de 10 à 500 caractères ; référence `^TX[A-Za-z0-9]{8}$` ou UUID pour « Marquer versé » ;
+     *  - versement INCERTAIN ou ENVOYE avec identifiant : statut SamirPay lu juste avant (illisible → 503, rien ne
+     *    change) ; la RPC en décide (SUCCESS confirmé d'office, PENDING refusé, FAILED ou CANCELLED renvoyé) ;
+     *  - après un RESEND remis à envoyer : un seul envoi par send (réservation conditionnelle), réponse
+     *    `{ ok, status }` avec le statut obtenu ; un envoi en échec laisse la ligne à envoyer, reprise par le cron.
+     * Refus : PublicError au code et au texte de la RPC (aucun texte Postgres ne sort).
+     */
+    static async adminDecide(input: {
+        cashoutId: string; actorId: string; action: CashoutDecision; reason: unknown; reference?: unknown; fees?: unknown;
+    }): Promise<{ ok: boolean; status: CashoutStatus }> {
+        if (!UUID_RE.test(input.cashoutId)) throw new PublicError('Versement introuvable.', 'CASHOUT_NOT_FOUND', 404);
+        const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+        if (reason.length < 10) throw new PublicError('Indiquez la raison (10 caractères au moins).', 'REASON_REQUIRED', 400);
+        if (reason.length > 500) throw new PublicError('La raison ne doit pas dépasser 500 caractères.', 'REASON_REQUIRED', 400);
+        let reference: string | null = null;
+        let fees: number | null = null;
+        if (input.action === 'MARK_PAID') {
+            reference = typeof input.reference === 'string' ? input.reference.trim() : '';
+            if (!REFERENCE_RE.test(reference) && !UUID_RE.test(reference)) {
+                throw new PublicError('Indiquez la référence SamirPay du versement.', 'REFERENCE_REQUIRED', 400);
+            }
+            if (input.fees !== undefined && input.fees !== null && input.fees !== '') {
+                fees = Number(input.fees);
+                if (!Number.isFinite(fees) || fees < 0) throw new PublicError('Frais invalides : indiquez un montant positif ou nul.', 'INVALID_FIELD', 400);
             }
         }
-        return { checked: data?.length ?? 0, resumed, failed };
+
+        const { data: row, error } = await getServiceRoleClient().from('cashouts')
+            .select('id, status, samirpay_transaction_id').eq('id', input.cashoutId).maybeSingle();
+        if (error) throw new Error(`Lecture du versement ${input.cashoutId} impossible : ${error.message}`);
+        if (!row) throw new PublicError('Versement introuvable.', 'CASHOUT_NOT_FOUND', 404);
+
+        let providerStatus: string | null = null;
+        if ((row.status === 'INCERTAIN' || row.status === 'ENVOYE') && row.samirpay_transaction_id) {
+            try {
+                providerStatus = (await samirPayClient.checkTransactionStatus(String(row.samirpay_transaction_id))).status;
+            } catch (err) {
+                if (isSamirPayError(err) && err.kind === 'NOT_FOUND') {
+                    providerStatus = 'NOT_FOUND';
+                } else {
+                    console.error(`[cashout] statut SamirPay du versement ${row.id} illisible avant décision :`, err instanceof Error ? err.message : String(err));
+                    throw new PublicError('Statut SamirPay momentanément illisible : réessayez dans un instant.', 'PROVIDER_STATUS_UNAVAILABLE', 503);
+                }
+            }
+        }
+
+        const { data, error: rpcErr } = await getServiceRoleClient().rpc('cashout_admin_decide', {
+            p: { cashout_id: row.id, actor_id: input.actorId, action: input.action, reason, reference, fees, provider_status: providerStatus },
+        });
+        if (rpcErr || !data) throw new Error(`Décision ${input.action} sur le versement ${row.id} impossible : ${rpcErr?.message ?? 'réponse vide'}`);
+        const decided = data as { ok?: boolean; code?: string; message?: string; status?: CashoutStatus };
+        if (decided.ok !== true) {
+            const code = String(decided.code ?? '');
+            if (!(code in DECISION_REFUSALS) || !decided.message) throw new Error(`Refus inattendu de cashout_admin_decide : ${JSON.stringify(decided).slice(0, 300)}`);
+            throw new PublicError(decided.message, code, DECISION_REFUSALS[code]);
+        }
+        if (input.action === 'MARK_PAID' || decided.status !== 'A_ENVOYER') return { ok: true, status: decided.status ?? 'CONFIRME' };
+
+        let outcome: SendOutcome;
+        try {
+            outcome = await CashoutService.send(row.id);
+        } catch (err) {
+            console.error(`[cashout] renvoi du versement ${row.id} décidé, envoi en échec :`, err instanceof Error ? err.message : String(err));
+            throw new PublicError('Versement remis à envoyer, mais l’envoi n’a pas abouti : il repartira automatiquement.', 'CASHOUT_SEND_FAILED', 502);
+        }
+        return { ok: !outcome.skipped && (outcome.status === 'CONFIRME' || outcome.status === 'ENVOYE'), status: outcome.status };
     }
 
     /** Confirmation des envois ENVOYE par l'endpoint de statut (réconciliation). */

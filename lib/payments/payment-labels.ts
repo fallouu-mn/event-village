@@ -22,7 +22,15 @@ const TARGET_LABELS: Readonly<Record<string, string>> = {
     OTHER: 'Autre paiement',
 };
 
-export function paymentStatusLabel(status: string): string {
+/** Lot 9 bis (B9, contrat 5.1) : état honnête d'un remboursement présent dans « Versements à reprendre ». */
+export const REFUND_DELAYED_LABEL = 'Remboursement retardé, l’équipe Event Village s’en occupe.';
+
+/**
+ * Libellé du statut d'un paiement. Lot 9 bis (B9) : `refundDelayed` (versement du remboursement dans
+ * cashouts_to_resume) remplace « Remboursement en cours » par REFUND_DELAYED_LABEL.
+ */
+export function paymentStatusLabel(status: string, opts: { refundDelayed?: boolean } = {}): string {
+    if (opts.refundDelayed && status === 'REFUND_PENDING') return REFUND_DELAYED_LABEL;
     return STATUS_LABELS[status] ?? 'Statut inconnu';
 }
 
