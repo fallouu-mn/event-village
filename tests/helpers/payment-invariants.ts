@@ -43,6 +43,11 @@ SELECT 'b', t.id::text, format('billet %s à %s F sans paiement SUCCESS ni PARTI
    -- Lot 4 : billet « à régler sur place » (commande impayée, encaissement au contrôle) : état légitime
    AND NOT (t.payment_id IS NULL AND t.status = 'VALIDE' AND EXISTS (
            SELECT 1 FROM public.orders o WHERE o.id = t.order_id AND o.payment_status <> 'SUCCESS'))
+   -- Lot 9 bis (R48, contrat 5.27 ; R1) : l'annulation d'un événement commencé rembourse aussi les billets déjà
+   -- utilisés à l'entrée ; une fois le versement confirmé (reprise automatique), le billet reste UTILISE (l'entrée a eu
+   -- lieu) et son paiement est REFUNDED : état légitime, seulement sur un événement ANNULE.
+   AND NOT (t.status = 'UTILISE' AND p.status = 'REFUNDED' AND EXISTS (
+           SELECT 1 FROM public.events e WHERE e.id = t.event_id AND e.status = 'ANNULE'))
 UNION ALL
 SELECT 'c', c.id::text, format('sold %s + held %s > total %s', c.sold_quantity, c.held_quantity, c.total_quantity)
   FROM public.ticket_categories c
