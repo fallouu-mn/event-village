@@ -47,7 +47,7 @@ import { resetServerEnvCache } from '../../lib/env';
 import { inspect } from '../helpers/db';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { getFakes } from '../fakes';
-import { randomSenegalPhone, routeContext } from './helpers';
+import { confirmPassword, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
 import { cronRequest, importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, scan, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
@@ -55,7 +55,7 @@ import { dispatchAt, loadLotModule, outboxRows } from './notif-helpers';
 
 const ROOT = process.cwd();
 const SERVICE_FILE = 'lib/tickets/ticket-transfer.service.ts';
-const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
+const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route'; const confirmedSessions = new Map<string, Promise<void>>(); // lot 9 bis (R57, T34) : une confirmation par session (quota par compte)
 const CRON_ROUTE = '../../app/api/cron/ticket-transfers/route';
 const CANCEL_ROUTE = '../../app/api/tickets/transfers/[id]/cancel/route';
 const RPCS = ['ticket_transfer_initiate', 'ticket_transfer_cancel', 'ticket_transfers_expire'];
@@ -110,7 +110,7 @@ function source(rel: string): string {
 }
 
 async function initiateByRoute(user: Buyer, ticketId: string, recipient: string): Promise<RouteResult> {
-    const { POST } = await importModule(TRANSFER_ROUTE);
+    if (!confirmedSessions.has(user.accessToken)) confirmedSessions.set(user.accessToken, confirmPassword(user, STRONG_PASSWORD)); await confirmedSessions.get(user.accessToken); const { POST } = await importModule(TRANSFER_ROUTE);
     return invoke(POST as Handler, authed(`/api/tickets/${ticketId}/transfer`, 'POST', user, { recipient }), routeContext({ id: ticketId }));
 }
 

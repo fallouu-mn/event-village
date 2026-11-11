@@ -51,6 +51,7 @@ import { markPhoneVerified } from './notif-helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, ticketRow, type RouteResult } from './acces-helpers';
+import { confirmPassword, STRONG_PASSWORD } from './helpers';
 import { assertTerrainInvariants, openConcurrentClient, waitForLockWaiters, type ConcurrentClient } from './terrain-helpers';
 
 const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
@@ -114,6 +115,7 @@ async function pendingTransfer(label: string): Promise<PendingSetup> {
     assert.equal(purchase.tickets.length, 1, 'précondition : un billet émis');
     const ticketId = String(purchase.tickets[0].id);
     const { POST } = await importModule(TRANSFER_ROUTE);
+    await confirmPassword(sender, STRONG_PASSWORD); // lot 9 bis (R57, T34) : mot de passe confirmé avant le transfert
     const res = await invoke(POST as Handler, authed(`/api/tickets/${ticketId}/transfer`, 'POST', sender, { recipient: recipient.phoneE164 }), paramsContext(ticketId));
     assert.equal(res.status, 200, `initiation du transfert : HTTP ${res.status} ${JSON.stringify(res.body)}`);
     const { data: transfers, error: tErr } = await service.from('ticket_transfers').select('id, status').eq('ticket_id', ticketId).eq('status', 'PENDING');

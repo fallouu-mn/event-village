@@ -35,7 +35,7 @@ import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { getFakes } from '../fakes';
 import { authed } from './acces-helpers';
 import { createPartnerEvent, newPartner, type TestPartner } from './finance-helpers';
-import { BASE_URL, jsonRequest, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { BASE_URL, confirmPassword, jsonRequest, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
 import { flushNotifications, markPhoneVerified, outboxRows, smsMark, smsTo, withEnv } from './notif-helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { issueFreeTicket, registerClientFlow } from './terrain-helpers';
@@ -93,11 +93,11 @@ async function confirmRoute(): Promise<Handler> {
 }
 
 async function postStart(user: Buyer, body: unknown): Promise<Reply> {
-    return reply(await (await startRoute())(authed(START_PATH, 'POST', user, body)));
+    await ensureRecentPassword(user); return reply(await (await startRoute())(authed(START_PATH, 'POST', user, body)));
 }
-
+const recentPasswordBySession = new Map<string, Promise<void>>(); /** Lot 9 bis (R57, T35) : mot de passe confirmé une fois par session (quota par compte), sauf jeton sans session_id valide (cas forgés SESSION_REQUIRED, refusés avant la confirmation). */ async function ensureRecentPassword(user: Buyer): Promise<void> { const sid = (JSON.parse(Buffer.from(user.accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { session_id?: unknown }).session_id; if (typeof sid !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid)) return; if (!recentPasswordBySession.has(user.accessToken)) recentPasswordBySession.set(user.accessToken, confirmPassword(user, STRONG_PASSWORD)); await recentPasswordBySession.get(user.accessToken); }
 async function postConfirm(user: Buyer, body: unknown): Promise<Reply> {
-    return reply(await (await confirmRoute())(authed(CONFIRM_PATH, 'POST', user, body)));
+    await ensureRecentPassword(user); return reply(await (await confirmRoute())(authed(CONFIRM_PATH, 'POST', user, body)));
 }
 
 function codesTo(phone: string, since = 0): string[] {
@@ -632,7 +632,7 @@ describe('Révocation des autres sessions (AR2)', () => {
         const s2 = await openSession(a.email);
         const next = randomSenegalPhone('78');
         const code = await askCode(a, next);
-        const cookies = await sessionCookies(s1.client);
+        const cookies = await sessionCookies(s1.client); await confirmPassword({ accessToken: s1.accessToken }, STRONG_PASSWORD); // lot 9 bis (R57, T35) : session des cookies confirmée
         const req = new NextRequest(`${BASE_URL}${CONFIRM_PATH}`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },

@@ -43,6 +43,7 @@ import { assertNotificationInvariants, loadLotModule, markPhoneVerified } from '
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, ticketRow, type RouteResult } from './acces-helpers';
+import { confirmPassword, STRONG_PASSWORD } from './helpers';
 import { advanceEventTo, eventStatus } from './cycle-helpers';
 
 const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
@@ -118,6 +119,7 @@ async function pendingTransfer(label: string, count: number): Promise<PendingSet
     const ticketIds = purchase.tickets.map((t) => String(t.id));
     assert.equal(ticketIds.length, count, `${count} billet(s) émis`);
     const { POST } = await importModule(TRANSFER_ROUTE);
+    await confirmPassword(holder, STRONG_PASSWORD); // lot 9 bis (R57, T34) : mot de passe confirmé avant le transfert
     const res = await invoke(POST as Handler, authed(`/api/tickets/${ticketIds[0]}/transfer`, 'POST', holder, { recipient: recipient.phoneE164 }), paramsContext(ticketIds[0]));
     assert.equal(res.status, 200, `initiation du transfert par la route : ${show(res)}`);
     const pending = (await transfersOf(ticketIds[0])).filter((t) => t.status === 'PENDING');

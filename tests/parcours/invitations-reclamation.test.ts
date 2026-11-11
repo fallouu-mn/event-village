@@ -20,7 +20,7 @@ import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { inspect } from '../helpers/db';
 import { assertLot9Invariants } from '../helpers/lot9-invariants';
-import { randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
+import { confirmPassword, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
 import { categoryState, eventTickets, newBuyer, service, type Buyer, type CategorySpec, type SaleEvent } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, ticketRow, type RouteResult } from './acces-helpers';
@@ -265,7 +265,7 @@ describe('9.0 Réclamation : échéance', () => {
         const [paid] = (await buyConfirmed(holder, ev, [[STANDARD, 1]])).tickets;
         const paidId = String(paid.id);
         const transferHandler = await routeHandler(TRANSFER_ROUTE, 'POST', 'route de transfert');
-        const initiated = await invoke(transferHandler, authed(`/api/tickets/${paidId}/transfer`, 'POST', holder, { recipient: randomSenegalPhone('77') }), routeContext({ id: paidId }));
+        await confirmPassword(holder, STRONG_PASSWORD); const initiated = await invoke(transferHandler, authed(`/api/tickets/${paidId}/transfer`, 'POST', holder, { recipient: randomSenegalPhone('77') }), routeContext({ id: paidId }));
         assert.equal(initiated.status, 200, show(initiated));
         const { data: ordinary, error: ordErr } = await service.from('ticket_transfers').select('id, expires_at').eq('ticket_id', paidId).eq('status', 'PENDING').single();
         assert.equal(ordErr, null, `transfert ordinaire : ${ordErr?.message}`);

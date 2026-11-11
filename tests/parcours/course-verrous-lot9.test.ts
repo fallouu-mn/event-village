@@ -41,7 +41,7 @@ import { assertLot9Invariants } from '../helpers/lot9-invariants';
 import { authed, createTimedEvent, newController, ticketRow } from './acces-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { markPhoneVerified } from './notif-helpers';
-import { reply, routeCtx } from './panne-helpers';
+import { reply, routeCtx } from './panne-helpers'; import { confirmPassword, STRONG_PASSWORD } from './helpers';
 import { categoryState, newBuyer, paymentById, service, sleep, type Buyer, type CategorySpec, type PaymentRow, type SaleEvent } from './paiement-helpers';
 import { openConcurrentClient, waitForLockWaiters, type ConcurrentClient } from './terrain-helpers';
 
@@ -390,7 +390,7 @@ describe('PO4 — event_update et ticket_category_guard : events en FOR NO KEY U
         await markPhoneVerified(recipient.userId);
         const purchase = await buyConfirmed(s.buyer, s.ev, [['Standard', 1]]);
         const ticketId = String(purchase.tickets[0].id);
-        const started = await reply(await transferRoute(authed(`/api/tickets/${ticketId}/transfer`, 'POST', s.buyer, { recipient: recipient.phoneE164 }), routeCtx({ id: ticketId })));
+        await confirmPassword(s.buyer, STRONG_PASSWORD); const started = await reply(await transferRoute(authed(`/api/tickets/${ticketId}/transfer`, 'POST', s.buyer, { recipient: recipient.phoneE164 }), routeCtx({ id: ticketId })));
         assert.equal(started.status, 200, `initiation du transfert : HTTP ${started.status} ${started.text.slice(0, 300)}`);
         const { data: transfers, error: tErr } = await service.from('ticket_transfers').select('id').eq('ticket_id', ticketId).eq('status', 'PENDING');
         assert.equal(tErr, null, `transfert : ${tErr?.message}`);

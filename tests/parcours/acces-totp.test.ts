@@ -30,7 +30,7 @@ import { assertAccessInvariants } from '../helpers/access-invariants';
 import { inspect } from '../helpers/db';
 import { signInAs } from '../helpers/fixtures';
 import { getServerEnv, resetServerEnvCache } from '../../lib/env';
-import { routeContext } from './helpers';
+import { confirmPassword, routeContext, STRONG_PASSWORD } from './helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { importModule, newBuyer, type Buyer, type SaleEvent } from './paiement-helpers';
 import { markPhoneVerified } from './notif-helpers';
@@ -90,7 +90,7 @@ function naiveCode(key: string | Buffer, step: number): string {
 async function transferTicket(owner: Buyer, recipient: Buyer, ticketId: string): Promise<void> {
     await markPhoneVerified(recipient.userId);
     const { POST: initiate } = await importModule('../../app/api/tickets/[id]/transfer/route');
-    const initRes: Response = await initiate(authed(`/api/tickets/${ticketId}/transfer`, 'POST', owner, { recipient: recipient.phoneE164 }), routeContext({ id: ticketId }));
+    await confirmPassword(owner, STRONG_PASSWORD); const initRes: Response = await initiate(authed(`/api/tickets/${ticketId}/transfer`, 'POST', owner, { recipient: recipient.phoneE164 }), routeContext({ id: ticketId }));
     const initBody = (await initRes.json()) as Row;
     assert.equal(initRes.status, 200, `initiation du transfert : HTTP ${initRes.status} ${JSON.stringify(initBody)}`);
     const transferId = String(((initBody.transfer ?? {}) as Row).transfer_id ?? '');

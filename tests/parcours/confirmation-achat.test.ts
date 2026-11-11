@@ -56,7 +56,7 @@ import { randomBytes } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { formatDateTime, formatFcfa } from '../../lib/format';
 import { inspect } from '../helpers/db';
-import { routeContext } from './helpers';
+import { confirmPassword, routeContext, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, scan, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
@@ -650,7 +650,7 @@ describe('7.9 — billet reçu par transfert (TRANSFER_RECEIVED, D88, D91)', () 
         const before0 = await ticketRow(ticketId);
 
         const transferRoute = await importModule('../../app/api/tickets/[id]/transfer/route') as { POST: Handler };
-        const init = await invoke(transferRoute.POST, authed(`/api/tickets/${ticketId}/transfer`, 'POST', owner, { recipient: to.phoneE164 }), routeContext({ id: ticketId }));
+        await confirmPassword(owner, STRONG_PASSWORD); const init = await invoke(transferRoute.POST, authed(`/api/tickets/${ticketId}/transfer`, 'POST', owner, { recipient: to.phoneE164 }), routeContext({ id: ticketId }));
         assert.equal(init.status, 200, `initiation du transfert : ${show(init)}`);
         const transferId = String((init.body.transfer as Row | undefined)?.transfer_id ?? '');
         assert.ok(transferId, `identifiant du transfert : ${show(init)}`);
