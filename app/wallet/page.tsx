@@ -7,6 +7,9 @@
  *  - lien de parrainage, taux et filleuls : GET /api/referrals/my-stats (aucun solde lu là) ;
  *  - retrait : Wave ou Orange Money, numéro, montant, code SMS (POST /api/withdrawals/otp), puis
  *    POST /api/withdrawals/request (Idempotency-Key). Frais et seuil viennent de la réponse serveur.
+ * Lot 9 bis (R62, B27, contrat 5.10) : minimum, taux et net dits AVANT le bouton du code (minimum et taux servis par
+ * GET /api/finance/balance) ; sous le minimum, bouton désactivé ; le corps du code porte `amount`, et le devis de la
+ * réponse (`quote`) remplace l'estimation à l'étape du code.
  * Lot 7 (7.3, E4) : système de design (tokens, 14 px au moins, aucune couleur écrite en dur, plus de dégradé
  * sous du texte) ; montants par formatFcfa de lib/format (D60) ; statuts et opérations par leurs libellés
  * français, jamais le code brut ; statut effectif du retrait (effective_status) lu s'il est servi.
@@ -39,7 +42,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { OPERATOR_VISUALS } from '@/components/payment/PaymentModal';
-import { formatDateTime as formatDakarDateTime, formatFcfa, toDate } from '@/lib/format';
+import { formatDateTime as formatDakarDateTime, formatFcfa, formatPercent, toDate } from '@/lib/format';
 import {
   formatLocalPhone,
   isUncertainOutcome,
@@ -63,6 +66,16 @@ interface Balance {
   inProgress: number;
   debt: number;
   withdrawable: number;
+  /** Réglage finance.withdrawal_min_amount, servi par le serveur (F CFA). */
+  minimum: number;
+  /** Réglage finance.withdrawal_fee_rate, servi par le serveur (en %). */
+  feeRate: number;
+}
+
+/** Devis d'un retrait : estimation avant le code, puis devis du serveur (réponse de POST /api/withdrawals/otp). */
+interface Quote {
+  fee: number;
+  net: number;
 }
 
 interface HistoryEntry {
@@ -132,7 +145,9 @@ function parseAccount(body: unknown): AccountView | null {
   const available = readAmount(body.available);
   const pending = readAmount(body.pending);
   const withdrawable = readAmount(body.withdrawable);
-  if (available === null || pending === null || withdrawable === null) return null;
+  const minimum = readAmount(body.withdrawal_min_amount);
+  const feeRate = readAmount(body.withdrawal_fee_rate);
+  if (available === null || pending === null || withdrawable === null || minimum === null || feeRate === null) return null;
   const history: HistoryEntry[] = Array.isArray(body.history)
     ? body.history.flatMap((e: unknown, i: number) => {
         if (!isRecord(e)) return [];
@@ -181,10 +196,43 @@ function parseAccount(body: unknown): AccountView | null {
       inProgress: readAmount(body.in_progress) ?? 0,
       debt: readAmount(body.debt) ?? 0,
       withdrawable,
+      minimum,
+      feeRate,
     },
     history,
     withdrawals,
   };
+}
+
+/** Devis de la réponse de POST /api/withdrawals/otp (`quote.fee_amount`, `quote.net_amount`), ou null. */
+function parseQuote(body: unknown): Quote | null {
+  if (!isRecord(body) || !isRecord(body.quote)) return null;
+  const fee = readAmount(body.quote.fee_amount);
+  const net = readAmount(body.quote.net_amount);
+  return fee === null || net === null ? null : { fee, net };
+}
+
+/**
+ * Estimation affichée avant le code (R62) : même règle que fin_withdrawal_check (M06), frais = montant × taux / 100
+ * arrondi au franc supérieur, net = montant − frais. Calcul exact en entiers (le taux décimal est lu chiffre à
+ * chiffre, jamais en flottant) ; null si le taux ne se lit pas. Le serveur refait le devis au code et le sien fait foi.
+ */
+function estimateQuote(amount: number, feeRatePercent: number): Quote | null {
+  const rate = /^(\d+)(?:\.(\d{1,6}))?$/.exec(String(feeRatePercent));
+  if (!rate || !Number.isSafeInteger(amount) || amount <= 0) return null;
+  const decimals = rate[2] ?? '';
+  const scale = 10 ** decimals.length;
+  const product = amount * (Number(rate[1]) * scale + Number(decimals || '0'));
+  if (!Number.isSafeInteger(product)) return null;
+  const divisor = 100 * scale;
+  const rest = product % divisor;
+  const fee = (product - rest) / divisor + (rest > 0 ? 1 : 0);
+  return fee < amount ? { fee, net: amount - fee } : null;
+}
+
+/** Taux de frais servi en % (1 → « 1 % », 1,5 → « 1,5 % »). */
+function feeRateLabel(feeRatePercent: number): string {
+  return formatPercent(feeRatePercent / 100, 2);
 }
 
 function parseResult(body: unknown): WithdrawalResult | null {
@@ -275,7 +323,7 @@ function isFuture(iso: string | null): boolean {
 function fieldForCode(code: string | null): keyof FieldErrors | null {
   if (!code) return null;
   if (code.includes('OTP')) return 'otp';
-  if (['BELOW_MINIMUM', 'INVALID_AMOUNT', 'INSUFFICIENT_BALANCE'].includes(code)) return 'amount';
+  if (['BELOW_MINIMUM', 'INVALID_AMOUNT', 'INSUFFICIENT_BALANCE', 'FUNDS_FROZEN'].includes(code)) return 'amount';
   if (code === 'INVALID_DESTINATION' || code === 'INVALID_PHONE') return 'phone';
   if (code === 'INVALID_OPERATOR') return 'operator';
   return null;
@@ -296,6 +344,7 @@ export default function WalletPage() {
     otp: `${fieldId}-otp`,
     otpHelp: `${fieldId}-otp-help`,
     operatorError: `${fieldId}-operator-error`,
+    quote: `${fieldId}-devis`,
   };
 
   const [copied, setCopied] = useState(false);
@@ -316,6 +365,7 @@ export default function WalletPage() {
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<WithdrawalResult | null>(null);
+  const [serverQuote, setServerQuote] = useState<Quote | null>(null);
 
   const prefillDone = useRef(false);
   const otpRef = useRef<HTMLInputElement | null>(null);
@@ -325,6 +375,8 @@ export default function WalletPage() {
   const accountPhone = normalizePayerPhone(profile?.phone);
   const amountValue = /^\d+$/.test(amountInput.trim()) ? Number(amountInput.trim()) : null;
   const balance = account?.balance ?? null;
+  const belowMinimum = balance !== null && amountValue !== null && amountValue > 0 && amountValue < balance.minimum;
+  const estimate = balance && amountValue !== null && !belowMinimum ? estimateQuote(amountValue, balance.feeRate) : null;
 
   const loadAccount = useCallback(async () => {
     setIsLoading(true);
@@ -403,6 +455,7 @@ export default function WalletPage() {
     if (!operator) next.operator = 'Choisissez Wave ou Orange Money.';
     if (!payoutPhone) next.phone = 'Numéro invalide : mobile sénégalais de 9 chiffres commençant par 70, 75, 76, 77 ou 78.';
     if (amountValue === null || amountValue <= 0) next.amount = 'Indiquez un montant entier en francs CFA.';
+    else if (balance && amountValue < balance.minimum) next.amount = `Le minimum de retrait est de ${formatFcfa(balance.minimum)}.`;
     else if (balance && amountValue > balance.withdrawable) {
       next.amount = `Le montant dépasse votre solde disponible au retrait (${formatFcfa(balance.withdrawable)}).`;
     }
@@ -413,19 +466,29 @@ export default function WalletPage() {
   const requestCode = async () => {
     if (isSendingCode) return;
     setFlowError(null);
-    if (!validate()) return;
+    if (!validate() || amountValue === null) return;
     setIsSendingCode(true);
     try {
       const res = await fetch('/api/withdrawals/otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account: ACCOUNT }),
+        body: JSON.stringify({ account: ACCOUNT, amount: amountValue }),
       });
       const body = await readJsonBody(res, 'portefeuille/code');
       if (!res.ok) {
-        setFlowError(serverErrorMessage(body) ?? `Le code de confirmation n’a pas pu être envoyé (erreur ${res.status}).`);
+        // Refus du devis (minimum, solde, verrou de 24 h…) : aucun code n'est parti.
+        const message = serverErrorMessage(body) ?? `Le code de confirmation n’a pas pu être envoyé (erreur ${res.status}).`;
+        if (fieldForCode(isRecord(body) ? text(body.code) : null) === 'amount') {
+          setErrors({ amount: message });
+          setStep('form');
+        } else {
+          setFlowError(message);
+        }
         return;
       }
+      const quote = parseQuote(body);
+      if (!quote) console.error('[portefeuille] devis absent de la réponse du code :', body);
+      setServerQuote(quote);
       setOtpCode('');
       setErrors({});
       setStep('otp');
@@ -493,6 +556,7 @@ export default function WalletPage() {
   const restart = () => {
     setStep('form');
     setResult(null);
+    setServerQuote(null);
     setOtpCode('');
     setAmountInput('');
     setErrors({});
@@ -590,7 +654,7 @@ export default function WalletPage() {
             Retirer mes commissions
           </h2>
           <p className="mt-0.5 text-sm text-fg-muted">
-            Wave ou Orange Money. Event Village applique le montant minimum et les frais de retrait au moment de la demande ; ils sont ensuite affichés ici.
+            Wave ou Orange Money. Le minimum, les frais et le montant que vous recevrez sont affichés avant l’envoi du code.
           </p>
         </div>
 
@@ -728,10 +792,27 @@ export default function WalletPage() {
               <p id={ids.amountHelp} className={cn(helpClass(Boolean(errors.amount)), 'tabular-nums')}>
                 {errors.amount ??
                   (balance
-                    ? `Disponible : ${formatFcfa(balance.withdrawable)}. Frais calculés à la demande et déduits du montant versé.`
-                    : 'Frais calculés à la demande et déduits du montant versé.')}
+                    ? `Disponible : ${formatFcfa(balance.withdrawable)}. Les frais sont déduits du montant versé.`
+                    : 'Les frais sont déduits du montant versé.')}
               </p>
             </div>
+
+            {balance && (
+              <p
+                id={ids.quote}
+                aria-live="polite"
+                className={cn(
+                  'rounded-2xl border p-4 text-sm leading-relaxed tabular-nums',
+                  belowMinimum ? 'border-warning-border bg-warning-bg font-semibold text-warning-fg' : 'border-border bg-surface-sunken text-fg',
+                )}
+              >
+                {belowMinimum
+                  ? `Le minimum de retrait est de ${formatFcfa(balance.minimum)}.`
+                  : estimate
+                  ? `Minimum de retrait : ${formatFcfa(balance.minimum)}. Frais : ${feeRateLabel(balance.feeRate)} (${formatFcfa(estimate.fee)}). Vous recevrez ${formatFcfa(estimate.net)}.`
+                  : `Minimum de retrait : ${formatFcfa(balance.minimum)}. Frais : ${feeRateLabel(balance.feeRate)} du montant.`}
+              </p>
+            )}
 
             <Button
               type="submit"
@@ -739,7 +820,8 @@ export default function WalletPage() {
               fullWidth
               size="lg"
               isLoading={isSendingCode}
-              disabled={!balance || balance.withdrawable <= 0}
+              disabled={!balance || balance.withdrawable <= 0 || belowMinimum}
+              aria-describedby={balance ? ids.quote : undefined}
               leftIcon={<KeyRound size={16} aria-hidden="true" />}
             >
               {balance && balance.withdrawable <= 0 ? 'Aucun montant disponible au retrait' : 'Recevoir le code de confirmation'}
@@ -768,9 +850,17 @@ export default function WalletPage() {
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-fg-muted">Frais de retrait</dt>
-                <dd className="font-semibold text-fg-muted">Calculés à la confirmation</dd>
+                <dt className="text-fg-muted">Frais de retrait{balance ? ` (${feeRateLabel(balance.feeRate)})` : ''}</dt>
+                <dd className={cn('font-semibold tabular-nums', serverQuote ? 'text-fg' : 'text-fg-muted')}>
+                  {serverQuote ? formatFcfa(serverQuote.fee) : 'Calculés à la confirmation'}
+                </dd>
               </div>
+              {serverQuote && (
+                <div className="flex justify-between gap-3 border-t border-border pt-2">
+                  <dt className="font-semibold text-fg">Vous recevrez</dt>
+                  <dd className="font-bold tabular-nums text-brand-fg">{formatFcfa(serverQuote.net)}</dd>
+                </div>
+              )}
             </dl>
 
             <div>
