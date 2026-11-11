@@ -670,12 +670,14 @@ BEGIN
     IF NOT FOUND THEN
         RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_NOT_FOUND', 'message', 'Profil partenaire introuvable.');
     END IF;
-    IF pa.status <> 'REJETE' THEN
-        RETURN jsonb_build_object('ok', false, 'code', 'DOSSIER_NOT_REJECTED', 'message', 'Seul un dossier refusé peut être complété.');
-    END IF;
+    -- Reste S3 (R54) : le complément déjà fait passe avant le statut. Après un premier complément le dossier est
+    -- EN_ATTENTE : un second essai dit RESUBMIT_ALREADY_USED, pas DOSSIER_NOT_REJECTED (dossier-partenaire-9bis:186).
     IF pa.resubmitted_at IS NOT NULL THEN
         RETURN jsonb_build_object('ok', false, 'code', 'RESUBMIT_ALREADY_USED',
                                   'message', 'Votre dossier a déjà été complété une fois. Contactez le support.');
+    END IF;
+    IF pa.status <> 'REJETE' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'DOSSIER_NOT_REJECTED', 'message', 'Seul un dossier refusé peut être complété.');
     END IF;
 
     BEGIN
