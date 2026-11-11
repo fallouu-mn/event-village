@@ -29,6 +29,9 @@ type StatusReply = {
     rejection_reason?: string | null;
     suspended_reason?: string | null;
     sessions_revoked?: number | null;
+    events_suspended?: unknown;
+    events_restored?: unknown;
+    events_left_suspended?: unknown;
 };
 
 /**
@@ -100,6 +103,10 @@ export async function PATCH(
             message: 'Statut du partenaire mis à jour.',
             notification: 'QUEUED',
             audit_logged: true,
+            // Lot 9 bis (R5, B16) : événements suspendus par la cascade, rétablis à la réactivation, laissés suspendus
+            events_suspended: reply.events_suspended ?? [],
+            events_restored: reply.events_restored ?? [],
+            events_left_suspended: reply.events_left_suspended ?? [],
             partner: {
                 id: partnerId,
                 status: reply.status ?? newStatus,
