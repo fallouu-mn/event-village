@@ -22,7 +22,7 @@ import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { detachPushSubscription } from '@/lib/push/client';
-import { normalizePhoneNumber } from '@/lib/validations/auth';
+import { INVALID_SN_PHONE_MESSAGE, normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { resolvePostLoginRoute } from '@/lib/auth/resolve-post-login-route';
 
@@ -98,6 +98,12 @@ function isForwardableRedirect(redirectUrl: string): boolean {
 function storageWarning(action: string, err: unknown): void {
     console.warn(`[LoginForm] stockage local indisponible (${action}) : le verrou du navigateur est ignoré, le serveur reste l'autorité.`, err instanceof Error ? err.message : String(err));
 }
+
+/**
+ * Lot 9 bis (R88, contrat 5.41) : le code est accepté par le serveur mais la session du navigateur ne s'ouvre pas
+ * (jeton refusé, réseau) : la personne le sait, rien ne navigue.
+ */
+const OTP_SESSION_FAILED = 'Code accepté, mais la connexion n’a pas pu s’ouvrir. Demandez un nouveau code et réessayez.';
 
 /** Lien texte de 44 px de haut (cible tactile), couleur de marque lisible. */
 const TEXT_LINK = 'inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -374,7 +380,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
 
         const normalizedPhone = normalizePhoneNumber(identifier.trim());
         if (!/^\+221[7][05678]\d{7}$/.test(normalizedPhone)) {
-            setErrorMessage('Veuillez saisir un numéro de téléphone sénégalais valide (ex: 77 123 45 67).');
+            setErrorMessage(INVALID_SN_PHONE_MESSAGE);
             return;
         }
 
@@ -453,23 +459,29 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     setIsLockedOut(true);
                     setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
                 } else {
-                    recordFailedAttempt('Code OTP incorrect ou expiré.');
+                    recordFailedAttempt('Code incorrect ou expiré.');
                 }
-                setErrorMessage(verifyData.error || 'Code OTP incorrect.');
+                setErrorMessage(verifyData.error || 'Code incorrect ou expiré.');
                 setIsLoading(false);
                 return;
             }
 
             const supabase = getBrowserClient();
 
-            if (verifyData.token_hash) {
-                const { error: otpAuthError } = await supabase.auth.verifyOtp({
-                    token_hash: verifyData.token_hash,
-                    type: 'email',
-                });
-                if (otpAuthError) {
-                    console.warn('[LoginForm] verifyOtp auth token notice:', otpAuthError);
-                }
+            // Lot 9 bis (R88) : sans jeton de session, ou jeton refusé, la connexion n'est pas ouverte : on le dit et
+            // on reste sur la page (plus de navigation vers une page qui demanderait de se reconnecter).
+            if (typeof verifyData.token_hash !== 'string' || !verifyData.token_hash) {
+                console.error('[LoginForm] code accepté sans jeton de session');
+                setErrorMessage(OTP_SESSION_FAILED);
+                setIsLoading(false);
+                return;
+            }
+            const { error: otpAuthError } = await supabase.auth.verifyOtp({ token_hash: verifyData.token_hash, type: 'email' });
+            if (otpAuthError) {
+                console.error('[LoginForm] session non ouverte après le code :', otpAuthError.code ?? otpAuthError.status, otpAuthError.message);
+                setErrorMessage(OTP_SESSION_FAILED);
+                setIsLoading(false);
+                return;
             }
 
             const userId = verifyData.user?.id;
