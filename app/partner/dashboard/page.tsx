@@ -7,7 +7,9 @@
  *    sont servis par le serveur ; la page ne fait que les formater (lib/format).
  *  - Chargement : KpiCard en squelette ; échec : ErrorState avec « Réessayer » (jamais de « 0 F CFA » sans
  *    donnée) ; états vides explicites.
- *  - Bandeaux du compte : en attente, refusé (avec le motif servi), suspendu (avec le motif servi).
+ *  - Bandeaux du compte : en attente, refusé (avec le motif servi), suspendu (avec le motif servi). Lot 9 bis (R5, B16,
+ *    contrat 5.2) : le bandeau de la suspension dit ce qui se passe vraiment (événements en ligne suspendus par la
+ *    cascade, fonds gelés jusqu'à la réactivation), au lieu de « ne sont plus visibles du public ».
  *  - Bloc « Commandes en direct » affiché seulement si features.orders_enabled est ouvert (useFeatureFlags) ;
  *    usePartnerOrders reste importé (SCENARIO 15) mais ne s'abonne que si le service est ouvert.
  *  - Le rapport de clôture est une modale chargée à la demande (next/dynamic).
@@ -295,7 +297,7 @@ export default function PartnerDashboardPage() {
                     {partner?.status === 'SUSPENDU' && (
                         <StatusBanner tone="suspended" title="Compte partenaire suspendu">
                             {partner.suspendedReason ? <>Motif : {partner.suspendedReason}. </> : null}
-                            Vos événements ne sont plus visibles du public. Contactez le support Event Village.
+                            Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu’à la réactivation du compte. Contactez le support Event Village.
                         </StatusBanner>
                     )}
 
