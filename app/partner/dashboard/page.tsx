@@ -282,9 +282,14 @@ export default function PartnerDashboardPage() {
 
                     {/* Bandeaux du compte (statut servi par le serveur) */}
                     {partner?.status === 'EN_ATTENTE' && (
-                        <StatusBanner tone="warning" title="Compte en cours de vérification" icon={<Clock size={20} />}>
+                        <StatusBanner
+                            tone="warning"
+                            title="Compte en cours de vérification"
+                            icon={<Clock size={20} />}
+                            action={<LinkButton href="/partner/profile" variant="secondary" size="sm">Voir mon profil</LinkButton>}
+                        >
                             Vos pièces sont vérifiées par l’équipe Event Village. Vous recevrez un SMS dès la validation de votre compte ;
-                            vous pourrez alors créer et publier vos événements.
+                            vous pourrez alors créer et publier vos événements. En attendant, votre profil reste modifiable.
                         </StatusBanner>
                     )}
                     {partner?.status === 'REJETE' && (
