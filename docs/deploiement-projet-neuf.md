@@ -1,6 +1,6 @@
 # Déploiement — montage du futur projet de production depuis zéro
 
-**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 9, invitations, découverte, compte client, migrations `20261108…`, retrait de `CASH_COLLECT_PER_SCANNER_MIN`). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet monté le 02/11 est devenu event-village-dev, le projet d'essai manuel : il suit `docs/essai-local.md`, et la production se fera sur un projet neuf.
+**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 9 bis, cycle de l'événement, email vérifié, SamirPay v1.2 et mode réel, migrations `20261109…`, section 3 quinquies ; avant lui, lot 9, migrations `20261108…`). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet monté le 02/11 est devenu event-village-dev, le projet d'essai manuel : il suit `docs/essai-local.md`, et la production se fera sur un projet neuf.
 
 **Principe :** la production se fait sur un projet Supabase **neuf**. On n'y copie rien du projet de test : ni données, ni comptes, ni clés. Le schéma vient uniquement des migrations du dépôt.
 
@@ -37,7 +37,7 @@ supabase db push
 
 Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` dans l'éditeur SQL : **toutes** les lignes doivent être `OK`. Sur un projet neuf, cette vérification doit passer sans appliquer `02-hotfix.sql` (la migration du lot 1A est déjà incluse). Depuis le lot 7, le script attend **7** aides RLS (la 7e est `ticket_category_private_read`, migration `20261105000003`) : exécuté avant les migrations du lot 7, il signale à tort la ligne « 1A.3 aides RLS exécutables par anon et authenticated, STABLE, search_path fixé ».
 
-Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7). Les lots 7, 8 et 9 n'ajoutent ni ne changent aucune tâche planifiée.
+Les migrations ne créent ni pg_cron ni pg_net et ne planifient aucune tâche (décision 55 du lot 6, contrôlée par `tests/schema/planification-crons.test.ts`) : la planification est une étape à part (section 7). Les lots 7, 8, 9 et 9 bis n'ajoutent ni ne changent aucune tâche planifiée.
 
 ## 3 bis. Projet déjà en service : appliquer seulement les migrations du lot 7
 
@@ -207,14 +207,112 @@ Puis exécuter `03-verification.sql` : tout `OK`. La liste blanche des aides RLS
 
 **Déployer l'application du lot 9 juste après, dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Elle lit la colonne `users.city` et appelle des fonctions qui n'existent qu'après ces migrations (`events_popular`, `ticket_invitation_*`, `account_*`, `client_payments_list`). Inversement, la route `PUT /api/controller/scan` du lot 8 appelle `ticket_cash_checkin`, que la migration 5 retire : sans effet tant qu'aucun billet n'est à régler sur place, mais l'ancienne application ne doit pas rester en service. Retirer `CASH_COLLECT_PER_SCANNER_MIN` de l'hébergeur (5.4) et vérifier que `sharp` est bien installé (5.6).
 
+## 3 quinquies. Projet déjà en service : appliquer seulement les migrations du lot 9 bis
+
+Cas d'un projet où les migrations jusqu'au lot 9 compris (`20261108000001` à `20261108000005`) sont déjà appliquées. Sur un projet neuf, la section 3 suffit : `db push` applique tout. Le projet d'essai event-village-dev suit `docs/essai-local.md`, section 3. Les migrations `20261103…` à `20261108…` sont **gelées**. Le lot 9 bis apporte douze migrations nouvelles, à appliquer dans cet ordre, celui des noms, que suit `db push`.
+
+| Ordre | Migration | Ce qu'elle fait |
+|---|---|---|
+| 1 | `20261109000001_lot9bis_reglages.sql` | Crée les 3 réglages du lot (4 quater) : `finance.payment_hold_minutes` (10), `finance.min_paid_price` (100), `notif.sms_essential_daily_alert` (2 000). Recrée `fin_setting_valid` et `finance_setting_set` avec ces clés : seul un SUPERADMIN actif les change. |
+| 2 | `20261109000002_lot9bis_transfert_statut.sql` | Ajoute seule la valeur `DECLINED` au type `ticket_transfer_status` : un billet reçu peut être refusé par son destinataire. |
+| 3 | `20261109000003_lot9bis_registre.sql` | Registre des notifications : 26 types nouveaux (dont `EMAIL_VERIFICATION`, `REFUND_DELAYED`, `ACCOUNT_SUSPENDED`, `SHIFT_OPEN_AT_END`), canal email ajouté aux messages indispensables adressés à un compte, `EVENT_CHANGED` devenu indispensable (les lignes encore en attente sont reclassées). Index de regroupement de la boîte d'envoi. Aucune fonction. |
+| 4 | `20261109000004_lot9bis_droits.sql` | Permissions des administrateurs lues dans `admin_permissions` (`admin_can`) : un ADMIN sans `events.write` ne valide, ne suspend ni n'annule plus un événement ; `events.read` pour le pilotage, `refunds.manage` pour rembourser, `partners.read` pour l'export avec contacts. **Aucune permission n'est donnée d'office** (requête « avant » ci-dessous). Seul le SUPERADMIN ajoute ou retire le rôle ADMIN. Table `password_confirmations` (mot de passe saisi depuis moins de 10 minutes pour un transfert ou un changement de numéro), colonnes `partners.ninea`, `partners.rccm`, `partners.resubmitted_at`, journal d'audit des versements par trigger, suspension d'un compte client avec motif (`admin_user_status_set`), complément d'un dossier partenaire refusé. |
+| 5 | `20261109000005_lot9bis_samirpay.sql` | Colonnes des frais réels SamirPay sur `payments` et `cashouts` (`samirpay_fees`, `samirpay_net_amount`, `samirpay_ref_operator`, et `cashouts.samirpay_reference`). Frais d'un remboursement d'annulation décidée par le partenaire imputés à son solde (`cashout_fee_apply`). Prix minimum d'une catégorie payante appliqué par trigger. |
+| 6 | `20261109000006_lot9bis_argent.sql` | Fonds d'un événement suspendu gelés à la lecture ; suspension d'un partenaire en cascade sur ses événements publiés (table `partner_suspension_cascades`), et retour des seuls événements de la cascade à sa réactivation ; règle unique du retrait et devis avant le code ; droit au remboursement après un report de plus de 24 h (table `event_start_changes`) ; liste des espèces du guichet à rendre par l'organisateur (table `event_cash_refund_marks`) ; remboursement d'un billet par le partenaire jusqu'à la fin de l'événement. |
+| 7 | `20261109000007_lot9bis_versements.sql` | « Versements à reprendre » (`cashouts_to_resume`), retard de 30 minutes signalé (`cashouts.delay_flagged_at`), décisions « Renvoyer » et « Marquer versé » (`cashout_admin_decide`, audit dans la même transaction), avis de remboursement retardé. Commissions de parrainage sur un billet disponibles 7 jours après la **fin** de l'événement : reprise des lignes existantes en fin de fichier, annoncée par une ligne `NOTICE`. |
+| 8 | `20261109000008_lot9bis_cycle.sql` | Clôture par un admin d'un événement suspendu, **fin par défaut à début + 6 h** pour un événement sans date de fin (`event_end_from_v2`, `event_end_at` ; aucune donnée réécrite), état du contrôle servi au scanner, PIN régisseur exigé à l'ouverture de caisse, transferts (résultat de scan `transfer_pending`, refus par le destinataire, expiration à la lecture), invitations de contrôleurs à accepter (table `controller_invitations`). Deux lignes `NOTICE` en fin de fichier : commissions recalées, et catégories dont la fin de vente dépasse la nouvelle fin. |
+| 9 | `20261109000009_lot9bis_messages.sql` | Messages : numéros sans compte prévenus d'une annulation ou d'un changement, changement de date ou de lieu regroupé sur 10 minutes, avis au partenaire, aux admins et aux contrôleurs, scans d'une même commande regroupés, alerte des SMS indispensables du jour. |
+| 10 | `20261109000010_lot9bis_email.sql` | L'email devient un vrai canal : colonnes `users.email_verified_at` et `users.email_pending`, table `email_verifications` (lien de 24 h, jeton haché). Un email ne part que vers une adresse **vérifiée** ; l'adresse technique `…@eventvillage.sn` ne reçoit jamais rien. Aucune adresse existante n'est marquée vérifiée. |
+| 11 | `20261109000011_lot9bis_textes.sql` | Changement de mot de passe une fois connecté (`account_password_finalize`), quota rendu quand un SMS d'invitation n'est pas parti (`quota_release`). |
+| 12 | `20261109000012_lot9bis_mode_reel.sql` | Colonne `users.demo_account` (comptes créés par `seed:dev`, reprise des comptes déjà semés) : rien ne leur est jamais envoyé hors simulation. Fonction en lecture seule `essai_check_reel`, lue par `npm run essai:check-reel`. Sur un projet de production, aucun compte n'est marqué. |
+
+Toutes sont rejouables, sans `BEGIN` ni `COMMIT` de transaction. Chaque fonction créée ou recréée est `SECURITY DEFINER`, réservée au service_role. Les six tables nouvelles ont la sécurité par ligne activée, sans politique : seul le serveur les lit. Aucune aide RLS ni aucune tâche planifiée n'est ajoutée.
+
+**Contrôles avant d'appliquer :**
+
+1. Depuis le poste de l'opérateur, comme en 3 quater :
+
+   ```powershell
+   npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
+   npx supabase@2.122.0 migration list --linked
+   npx supabase@2.122.0 db push --linked --dry-run
+   ```
+
+   `migration list` : `20261108000005` présent des deux côtés, les douze `20261109…` en local seulement. `--dry-run` : exactement les 12 fichiers `20261109000001` à `…12`, dans cet ordre.
+
+2. **Si la liste contient autre chose** : même règle qu'en 3 bis. S'arrêter, sans `--include-all` et sans `supabase migration repair`.
+
+3. Dans l'éditeur SQL, **avant** `db push`, la liste des administrateurs et de leurs permissions. Après la migration 4, un ADMIN n'agit plus que selon ses lignes de `admin_permissions` : un compte dont la liste est vide perd le pilotage, les remboursements, les équipes et la validation des événements. Garder ce résultat ; un SUPERADMIN donne ensuite les permissions manquantes (`/admin/users`, bouton **Permissions**). Le SUPERADMIN n'est pas concerné.
+
+   ```sql
+   select u.id, u.email, array_remove(array_agg(p.permission order by p.permission), null) as permissions
+     from public.users u
+     join public.user_roles r on r.user_id = u.id and r.role = 'ADMIN'
+     left join public.admin_permissions p on p.user_id = u.id
+    group by u.id, u.email
+    order by u.email;
+   ```
+
+4. Les comptes qui ont une vraie adresse email. Après la migration 10, ils ne reçoivent plus d'email tant que leur titulaire n'a pas ouvert le lien de vérification (« Renvoyer le lien », dans le profil). Ils gardent la connexion par email.
+
+   ```sql
+   select count(*) as adresses_a_verifier from public.users
+    where email is not null and email !~* '@([a-z0-9-]+\.)*eventvillage\.sn$';
+   ```
+
+5. Les catégories dont la vente finit après la nouvelle fin par défaut (événement sans date de fin : début + 6 h, heure de Dakar). Rien n'est réécrit ; ces ventes s'arrêteront plus tôt. À montrer au client avant d'appliquer.
+
+   ```sql
+   select e.title, c.name, c.sale_end
+     from public.ticket_categories c
+     join public.events e on e.id = c.event_id
+    where e.end_date is null and c.sale_end is not null
+      and e.status::text not in ('ANNULE', 'TERMINE')
+      and c.sale_end > ((e.start_date + coalesce(e.start_time, time '00:00')) at time zone 'Africa/Dakar') + interval '6 hours';
+   ```
+
+**Appliquer :**
+
+```powershell
+npx supabase@2.122.0 db push --linked
+```
+
+Recopier les lignes `NOTICE` qui commencent par `lot 9 bis` : nombre de commissions repoussées à la fin de l'événement, lignes déjà retirées laissées telles quelles, catégories dont la vente dépasse la nouvelle fin.
+
+**Contrôles après, dans l'éditeur SQL, une requête à la fois :**
+
+```sql
+-- attendu : 12 lignes, de 20261109000001 à 20261109000012
+select version from supabase_migrations.schema_migrations where version like '20261109%' order by version;
+
+-- attendu : 3 lignes, valeurs 100, 10 et 2000
+select key, value from public.platform_settings
+ where key in ('finance.payment_hold_minutes', 'finance.min_paid_price', 'notif.sms_essential_daily_alert') order by key;
+
+-- attendu : 1 ligne, DECLINED
+select enumlabel from pg_enum
+ where enumtypid = 'public.ticket_transfer_status'::regtype and enumlabel = 'DECLINED';
+
+-- attendu : 3 lignes, toutes ESSENTIAL
+select type, family from public.notification_types
+ where type in ('EVENT_CHANGED', 'REFUND_DELAYED', 'EMAIL_VERIFICATION') order by type;
+
+-- attendu : 0 sur un projet de production (aucun compte de démonstration)
+select count(*) as comptes_de_demonstration from public.users where demo_account;
+```
+
+Puis exécuter `03-verification.sql` : tout `OK`. La liste blanche des aides RLS reste à 7.
+
+**Déployer l'application du lot 9 bis juste après, dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Elle appelle des fonctions et lit des colonnes qui n'existent qu'après ces migrations : sans la migration 12, chaque SMS, email et push resterait « à réessayer », car le contrôle des comptes de démonstration échoue fermé. Dans le même déploiement : retirer `PAYMENT_HOLD_MINUTES` de l'hébergeur, et ne poser `SAMIRPAY_WEBHOOK_SECRET` qu'en suivant 6.1. Ensuite, donner leurs permissions aux administrateurs relevés au contrôle 3.
+
 ## 4. Données de référence (sans données de test)
 
 - `supabase/seed.sql` n'est **pas** joué par `db push`. Les données de référence nécessaires au fonctionnement sont créées par les migrations :
-  - `platform_settings` : **37 clés** depuis le lot 7, les lots 8 et 9 n'en ajoutent aucune (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
+  - `platform_settings` : **40 clés** depuis le lot 9 bis : 37 depuis le lot 7, les lots 8 et 9 n'en ajoutent aucune, le lot 9 bis en ajoute 3 (4 quater) (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
   - `referral_config` (4 barèmes) ;
-  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs), `20261105000007` (email de `TRANSFER_RECEIVED`), `20261106000003` (alerte `ADMIN_DUPLICATE_PAYMENT`), `20261108000002` (`INVITATION_RECEIVED`) et `20261108000004` (`PHONE_CHANGED`, `OTP_PHONE_CHANGE`).
+  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs), `20261105000007` (email de `TRANSFER_RECEIVED`), `20261106000003` (alerte `ADMIN_DUPLICATE_PAYMENT`), `20261108000002` (`INVITATION_RECEIVED`), `20261108000004` (`PHONE_CHANGED`, `OTP_PHONE_CHANGE`) et `20261109000003` (26 types du lot 9 bis, canal email des messages indispensables).
 
-  Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33 ; après celles du lot 7, 37 (33 + 5 clés nouvelles − `notif.sms_daily_alert`).
+  Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33 ; après celles du lot 7, 37 (33 + 5 clés nouvelles − `notif.sms_daily_alert`) ; après celles du lot 9 bis, 40.
 - `subscription_plans` n'est **pas** rempli par les migrations : ses lignes ne figurent que dans `supabase/seed.sql`, qui ne doit pas être joué en production. La table reste vide tant que le client n'a pas validé les formules et leurs tarifs (point de l'audit) ; elles seront alors créées par une migration dédiée.
 - **Ne jamais exécuter** `npm run seed:test` ni `tests/seed/seed-test.ts` contre ce projet : ce seed crée des comptes de test avec un mot de passe connu. Le garde-fou `tests/helpers/env.ts` refuse de toute façon une URL non locale. Même interdiction pour `npm run seed:dev`, réservé au projet d'essai.
 - Avant l'ouverture, vérifier et corriger les valeurs métier contradictoires relevées par l'audit (taux de parrainage `referral_config` de la migration `0011` contre CDC §95-§97, tarifs des packs) : traité dans un lot ultérieur, à valider avec le client.
@@ -251,6 +349,18 @@ Créés par la migration `20261105000001`, **tous à `false`** : la plateforme o
 | `features.orders_enabled` | `false` | menus, produits et commandes de repas |
 
 Fermé, un service n'est ni visible ni utilisable : ses pages et ses routes répondent « page introuvable » (404) et ses entrées disparaissent de la navigation ; `/orders` répond 404 seulement quand les trois sont fermés. Aucun code ni aucune donnée n'est supprimé, et l'achat de billets n'est pas concerné. La page `/admin/services` de l'administration reste lisible. Une valeur absente ou illisible vaut `false` (avertissement dans les journaux du serveur).
+
+### 4 quater. Réglages du lot 9 bis
+
+Créés par la migration `20261109000001`. Modifiables par un SUPERADMIN actif seulement, page **Réglages de la plateforme** (`/admin/finance-settings`), même mécanisme que 4 bis : valeur validée en base, motif, historique.
+
+| Clé | Défaut | Valeurs admises | Libellé de la page, rôle |
+|---|---|---|---|
+| `finance.payment_hold_minutes` | `10` | entier de 5 à 60 | « Durée de garde des places pendant un paiement (minutes) ». Remplace la variable `PAYMENT_HOLD_MINUTES`, retirée. Un paiement reste valable 1 heure chez SamirPay : validé après la garde, il donne les billets s'il reste des places, sinon il est remboursé automatiquement |
+| `finance.min_paid_price` | `100` | entier de 1 à 100 000 | « Prix minimum d'un billet payant (F CFA) ». Appliqué à toute catégorie payante créée ou dont le prix change ; un billet gratuit reste à 0. À ajuster quand SamirPay donnera son minimum d'encaissement |
+| `notif.sms_essential_daily_alert` | `2000` | entier de 1 à 1 000 000 | « Seuil d'alerte des SMS indispensables du jour ». Les administrateurs sont alertés une fois par jour au-delà ; ces SMS ne sont jamais plafonnés (5.5) |
+
+Réglages existants dont l'effet change au lot 9 bis : `finance.referral_availability_days` se compte désormais depuis la **fin** de l'événement pour une commission sur un billet ; `finance.withdrawal_fee_rate` est comparé au coût réel constaté des versements, et la page affiche « Frais de retrait sous le coût réel » s'il est plus bas (l'enregistrement n'est pas bloqué).
 
 ## 5. Variables d'environnement de l'application
 
@@ -313,6 +423,21 @@ Quatre quotas en base, de même nature que ceux du lot 4 (chaque appel compte, f
 | `PHONE_CHANGE_PER_ACCOUNT_DAY` | 5 | codes de changement de numéro demandés par compte et par jour |
 | `AVATAR_UPLOADS_PER_ACCOUNT_HOUR` | 20 | envois de photo de profil par compte et par heure |
 
+### 5.3 quinquies Facultatives, nouvelles ou réactivées au lot 9 bis
+
+Aucune variable obligatoire n'est ajoutée. Les quotas sont de même nature que ceux du lot 4 (chaque appel compte ; au-delà, HTTP 429). Bloc « Lot 9 bis » de `.env.example`.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `SAMIRPAY_WEBHOOK_SECRET` | aucune | secret de signature des avis de paiement SamirPay (commence par `whsec_`, 16 caractères au moins). **Des deux côtés ou d'aucun** : voir 6.1. Secret : jamais la valeur d'une autre clé |
+| `PASSWORD_CONFIRM_PER_ACCOUNT_15MIN` | 5 | saisies du mot de passe avant une action sensible, et changements de mot de passe, par compte et par 15 minutes |
+| `PASSWORD_LOGIN_PER_IP_HOUR` | 30 | connexions par mot de passe, par IP et par heure |
+| `EMAIL_VERIFY_PER_ACCOUNT_HOUR` | 3 | liens de vérification d'adresse email envoyés par compte et par heure |
+| `EMAIL_VERIFY_PER_ADDRESS_DAY` | 5 | liens envoyés à une même adresse, par jour |
+| `SUPPORT_EMAIL` | `support@eventvillage.sn` | adresse de support montrée aux personnes. Existait, désormais lue, côté serveur seulement |
+
+**Retirée** : `PAYMENT_HOLD_MINUTES`, remplacée par le réglage `finance.payment_hold_minutes` (4 quater). La retirer de l'hébergeur.
+
 ### 5.4 Facultatives existantes
 
 | Variable | Défaut | Rôle |
@@ -325,7 +450,7 @@ Quatre quotas en base, de même nature que ceux du lot 4 (chaque appel compte, f
 | `SUPERADMIN_PHONE` | aucune | déclarée dans `lib/env.ts` mais lue nulle part : inutile à renseigner ; elle n'attribue aucun rôle (bootstrap : section 8) |
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_TILE_ATTRIBUTION` | OpenStreetMap | fournisseur de tuiles des cartes ; vérifier ses conditions d'usage avant l'ouverture |
 | `CLIENT_IP_SOURCE` | `x-forwarded-for` | garder `x-forwarded-for` uniquement derrière un hébergeur qui réécrit l'en-tête ; sinon `x-real-ip` ou `none` (pas de limite par IP) |
-| `PAYMENT_HOLD_MINUTES`, `CHECKOUT_PER_USER_15MIN`, `CHECKOUT_PER_USER_DAY`, `CLAIM_FREE_PER_USER_HOUR`, `PAYMENT_RECONCILE_MIN_AGE_MINUTES`, `PAYMENT_PENDING_MAX_AGE_MINUTES`, `PAYMENT_LATE_SUCCESS_WINDOW_HOURS`, `PAYMENT_RECONCILE_BATCH`, `STATUS_POLL_RECONCILE_SECONDS` | 15, 10, 50, 20, 2, 60, 48, 50, 5 | durée de réservation du stock, quotas d'achat par compte, fenêtres et taille de lot de la réconciliation, intervalle minimal des réconciliations demandées par la page de statut (lot 2) |
+| `CHECKOUT_PER_USER_15MIN`, `CHECKOUT_PER_USER_DAY`, `CLAIM_FREE_PER_USER_HOUR`, `PAYMENT_RECONCILE_MIN_AGE_MINUTES`, `PAYMENT_PENDING_MAX_AGE_MINUTES`, `PAYMENT_LATE_SUCCESS_WINDOW_HOURS`, `PAYMENT_RECONCILE_BATCH`, `STATUS_POLL_RECONCILE_SECONDS` | 10, 50, 20, 2, 60, 48, 50, 5 | quotas d'achat par compte, fenêtres et taille de lot de la réconciliation, intervalle minimal des réconciliations demandées par la page de statut (lot 2). La durée de réservation du stock n'est plus une variable depuis le lot 9 bis : réglage `finance.payment_hold_minutes` (4 quater) |
 | `SMS_OTP_PER_PHONE_15MIN`, `SMS_OTP_PER_PHONE_DAY`, `SMS_OTP_PER_IP_HOUR`, `SMS_OTP_PER_IP_DAY`, `SMS_PER_PHONE_DAY`, `SMS_GLOBAL_DAILY_CAP` | 3, 10, 10, 30, 30, 1000 | à ajuster au budget SMS du client (5.5) ; `SMS_PER_PHONE_DAY` ne compte que les notifications (l'OTP a ses propres compteurs par numéro) ; `SMS_GLOBAL_DAILY_CAP` est la protection anti-abus de dernier recours : depuis le lot 7, il ne s'applique plus aux SMS indispensables (5.5) ; atteint, il alerte les administrateurs |
 | `SMS_GLOBAL_OTP_RESERVED_PERCENT`, `SMS_PER_ACCOUNT_DAY` | 30, 30 | part du plafond global réservée à l'OTP (les autres SMS soumis au plafond s'arrêtent quand le compteur du jour atteint 100 − part %) ; SMS non OTP qu'un même compte connecté peut déclencher par jour |
 | `SCAN_PER_SCANNER_10S`, `LIVE_CODE_PER_USER_MIN`, `RESOLVE_PHONE_PER_IP_HOUR`, `VERIFY_OTP_PER_PHONE_15MIN`, `CONTROLLER_SETUP_PER_PHONE_HOUR`, `PARTNER_REGISTER_PER_IP_HOUR`, `INVITE_PER_PARTNER_HOUR`, `INVITE_PER_PHONE_DAY`, `REGISSEUR_PIN_PER_SHIFT_15MIN` | 30, 60, 30, 10, 10, 10, 20, 3, 5 | quotas en base (lot 4) : chaque tentative compte ; au-delà, HTTP 429 ; garde injoignable, HTTP 503 |
@@ -333,7 +458,7 @@ Quatre quotas en base, de même nature que ceux du lot 4 (chaque appel compte, f
 | `DOCUMENT_UPLOADS_PER_IP_HOUR` | 20 | dépôts publics de pièces d'inscription partenaire, par IP et par heure |
 | `EV_INTEGRATIONS` | `real` | **ne pas définir**. `fake` n'est accepté qu'en développement (`npm run dev`, mode d'essai) et en test ; ailleurs le serveur le refuse, y compris si `NODE_ENV` est absent. Le refus survient au premier appel d'une route ou d'un adaptateur, pas au démarrage, et `/dev/paiements` n'existe pas dans le build |
 
-Variables qui ne sont plus lues (à retirer si elles existent dans l'hébergeur) : `SAMIRPAY_CASHIN_URL`, `SAMIRPAY_CASHOUT_URL`, `SAMIRPAY_SOLDE_URL`, `SAMIRPAY_STATUS_URL`, `SAMIRPAY_WEBHOOK_SECRET` (lot 2), `CASH_COLLECT_PER_SCANNER_MIN` (lot 9, parcours « à régler sur place » retiré).
+Variables qui ne sont plus lues (à retirer si elles existent dans l'hébergeur) : `SAMIRPAY_CASHIN_URL`, `SAMIRPAY_CASHOUT_URL`, `SAMIRPAY_SOLDE_URL`, `SAMIRPAY_STATUS_URL` (lot 2), `CASH_COLLECT_PER_SCANNER_MIN` (lot 9, parcours « à régler sur place » retiré), `PAYMENT_HOLD_MINUTES` (lot 9 bis). `SAMIRPAY_WEBHOOK_SECRET`, retirée au lot 2, est **de nouveau lue** depuis le lot 9 bis (5.3 quinquies et 6.1) : ne la laisser que si SamirPay signe ses avis avec ce même secret.
 
 Règles :
 
@@ -373,6 +498,8 @@ Exemple : budget 700, 50 invitations et 300 codes un jour de grand événement, 
 
 Avant l'ouverture des ventes, fixer avec le client, d'après son budget MTarget : le budget optionnel quotidien, puis `SMS_GLOBAL_DAILY_CAP` selon la règle ci-dessus.
 
+**SMS indispensables, lot 9 bis.** Ils restent sans plafond journalier, mais le lot en ajoute plusieurs (remboursement retardé, compte suspendu ou réactivé, changement de date ou de lieu devenu indispensable et prévenu aussi aux numéros sans compte, annulation aux invitations non réclamées et aux acheteurs au guichet, contrôleurs). Le réglage `notif.sms_essential_daily_alert` (4 quater, 2 000 par défaut) alerte les administrateurs une fois par jour quand leur nombre du jour le dépasse. Le fixer avec le client, au-dessus du volume d'une journée normale.
+
 ### 5.6 Exigences de l'hébergeur ajoutées par le lot 7
 
 - **HTTPS obligatoire** (déjà exigé par `NEXT_PUBLIC_APP_URL`) : les navigateurs n'enregistrent un service worker et n'ouvrent la caméra que sur une origine sécurisée. Sans HTTPS, ni billet hors ligne, ni scanner.
@@ -383,9 +510,32 @@ Avant l'ouverture des ventes, fixer avec le client, d'après son budget MTarget 
 
 ## 6. Paiements SamirPay (lot 2)
 
-- Contrat appliqué : cashin direct (`/api/tiers/direct/initPayment`), statut (`/api/tiers/payments/{id}/status`), cashout (`/api/tiers/payments/send`), solde, sous `SAMIRPAY_API_URL`. Les anciennes variables `SAMIRPAY_CASHIN_URL`, `_CASHOUT_URL`, `_SOLDE_URL`, `_STATUS_URL` et `SAMIRPAY_WEBHOOK_SECRET` ne sont plus lues : les retirer.
-- Le webhook est adressé par SamirPay au `callBackUrl` transmis à chaque paiement (`https://<domaine>/api/webhooks/samirpay?t=<jeton du paiement>`) : aucune configuration côté SamirPay, mais `NEXT_PUBLIC_APP_URL` doit être l'URL publique HTTPS définitive.
-- Le solde du compte partenaire SamirPay doit couvrir les remboursements : il est vérifié avant chaque envoi (refus et alerte aux SUPERADMIN sinon).
+- Contrat appliqué : cashin direct (`/api/tiers/direct/initPayment`), statut (`/api/tiers/payments/{id}/status`), cashout (`/api/tiers/payments/send`), solde, sous `SAMIRPAY_API_URL`. Les anciennes variables `SAMIRPAY_CASHIN_URL`, `_CASHOUT_URL`, `_SOLDE_URL` et `_STATUS_URL` ne sont plus lues : les retirer. `SAMIRPAY_WEBHOOK_SECRET` est de nouveau lue depuis le lot 9 bis (6.1).
+- Le webhook est adressé par SamirPay au `callBackUrl` transmis à chaque paiement (`https://<domaine>/api/webhooks/samirpay?t=<jeton du paiement>`). `NEXT_PUBLIC_APP_URL` doit être l'URL publique HTTPS définitive.
+- Le solde du compte partenaire SamirPay doit couvrir les remboursements : il est vérifié avant chaque envoi. Depuis le lot 9 bis, un versement bloqué (solde insuffisant, limites du compte) ou en retard de plus de 30 minutes apparaît dans « Versements à reprendre », sur `/admin/finance`, et une alerte part aux administrateurs. Seul un administrateur qui a la permission `refunds.manage` peut alors « Renvoyer » ou « Marquer versé », avec une justification.
+
+### 6.1 Signature des avis de paiement (lot 9 bis)
+
+La version 1.2 de l'API SamirPay peut signer chaque avis de paiement (en-tête `X-SamirPay-Signature`). L'application la vérifie seulement si `SAMIRPAY_WEBHOOK_SECRET` est défini : HMAC-SHA256 de l'horodatage et du corps reçu, 5 minutes d'écart au plus, plusieurs signatures admises pendant un changement de secret (`lib/samirpay/webhook-signature.ts`). Avec ou sans signature, aucun billet n'est émis sans la confirmation par l'endpoint de statut.
+
+**Le secret doit être posé des deux côtés, ou d'aucun.**
+
+| SamirPay signe | `SAMIRPAY_WEBHOOK_SECRET` dans l'hébergeur | Résultat |
+|---|---|---|
+| non | absent | Comportement des lots précédents : jeton propre à chaque paiement dans l'adresse de l'avis, puis confirmation par le statut |
+| oui | le même secret | Signature vérifiée en plus |
+| non, ou avec un autre secret | présent | **Chaque avis est refusé (401)**, journalisé `REJECTED_SIGNATURE`. Les paiements ne sont confirmés que par la réconciliation, toutes les 5 minutes : les clients attendent leurs billets |
+| oui | absent | Signature ignorée, comportement des lots précédents |
+
+**Ordre d'activation :** activer la signature dans le compte SamirPay, copier le secret qu'il donne (`whsec_…`), le saisir dans l'hébergeur, redéployer. Pour l'arrêter : retirer d'abord la variable de l'hébergeur et redéployer, puis désactiver la signature chez SamirPay. La clé exacte du calcul (secret entier, préfixe `whsec_` compris) est **à confirmer en bac à sable** avant de poser le secret en production.
+
+**Contrôle**, dans l'éditeur SQL, après quelques paiements. Attendu : aucune ligne `REJECTED_SIGNATURE`.
+
+```sql
+select result, count(*) from public.payment_webhook_events
+ where first_received_at > now() - interval '1 day'
+ group by result order by result;
+```
 
 ## 6 ter. Finance (lot 3)
 
@@ -399,9 +549,10 @@ Avant l'ouverture des ventes, fixer avec le client, d'après son budget MTarget 
   | `finance.payout_hold_enabled` / `finance.payout_delay_hours` | true / 48 | fonds organisateur disponibles à la fin de l'événement + délai |
   | `finance.withdrawal_fee_rate` / `finance.withdrawal_min_amount` | 1 / 5 000 | frais (FCFA supérieur) et seuil de retrait |
   | `finance.withdrawal_bank_enabled` | false | retraits par virement bancaire |
-  | `finance.referral_availability_days` | 7 (7 à 14) | délai avant qu'une commission de parrainage soit disponible |
+  | `finance.referral_availability_days` | 7 (7 à 14) | délai avant qu'une commission de parrainage soit disponible ; pour une commission sur un billet, compté depuis la fin de l'événement (lot 9 bis) |
+  | `finance.payment_hold_minutes`, `finance.min_paid_price` | 10, 100 | lot 9 bis : durée de garde des places pendant un paiement, prix minimum d'un billet payant (4 quater) |
 
-- **Retraits** : par Wave ou Orange Money uniquement (le virement reste fermé tant que le réglage est faux), confirmés par un code SMS envoyé au téléphone du compte, versés par le module de cashout. Le solde SamirPay doit couvrir aussi les retraits. Un envoi à l'issue incertaine n'est jamais relancé : il reste réservé jusqu'à vérification manuelle par un SUPERADMIN (alerte reçue).
+- **Retraits** : par Wave ou Orange Money uniquement (le virement reste fermé tant que le réglage est faux), confirmés par un code SMS envoyé au téléphone du compte, versés par le module de cashout. Le solde SamirPay doit couvrir aussi les retraits. Un envoi à l'issue incertaine n'est jamais relancé automatiquement : il reste réservé et apparaît dans « Versements à reprendre » (6), où un administrateur `refunds.manage` le « Renvoie » seulement si SamirPay confirme que rien n'est parti, ou le « Marque versé » avec la référence SamirPay. Depuis le lot 9 bis, le retrait est aussi bloqué 24 heures après un changement de numéro du compte, et l'écran montre le minimum, les frais et le montant net avant d'envoyer le code.
 - **Grand livre** : les soldes organisateur et parrainage sont calculés depuis `finance_ledger` ; un projet neuf démarre vide (aucune reprise d'historique n'est prévue).
 
 ## 6 bis. Hook SMS de Supabase Auth
@@ -529,6 +680,7 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - Lot 7 : `select count(*) from platform_settings;` donne 37, et les trois `features.*` valent `false` (`select key, value from platform_settings where key like 'features.%';`) ; `/halls` répond « page introuvable ». Sur un téléphone Android et un iPhone, installer l'application (`docs/installer-application.md`), ouvrir le billet de l'essai la veille avec du réseau, passer en mode avion, l'afficher par « Afficher mes billets hors ligne » : le QR change toutes les 20 secondes et le contrôleur, en ligne, le valide. Au scanner : un résultat plein écran par cas, une vibration sur Android, aucun son ; mode avion sur le téléphone du contrôleur : bandeau « Hors ligne : aucune entrée ne peut être validée » (`docs/guide-organisateur-entrees.md`).
 - Lot 8 : aucune variable `EV_` dans l'hébergeur (5.3 ter) ; `/dev/paiements` répond « page introuvable » ; `select count(*) from payments where simulated;` et la même requête sur `cashouts` donnent 0.
 - Lot 9 : contrôles après migration de 3 quater ; une invitation envoyée depuis l'onglet **Invitations** du pilotage, le SMS reçu et le billet scanné ; une photo envoyée puis supprimée sur la page profil (5.6) ; **un changement de numéro de bout en bout** : c'est le seul contrôle, sur un projet hébergé, des écritures sur `auth.sessions` et `auth.refresh_tokens` de `account_phone_finalize` (la CI les exerce sur une instance locale) ; une ligne d'audit `ACCOUNT_AUTH_DESYNC` signale une désynchronisation à réparer (`docs/lot9-rapport.md`).
+- Lot 9 bis : contrôles après migration de 3 quinquies ; `select count(*) from platform_settings;` donne 40 ; chaque administrateur a ses permissions (contrôle 3 de 3 quinquies, refait après) ; un compte avec adresse email reçoit le lien de vérification, l'ouvre, et le profil affiche « Email vérifié » ; un achat réel de faible montant par Wave puis par Orange Money, avec l'email de confirmation ; si la signature des avis est activée, aucune ligne `REJECTED_SIGNATURE` (6.1) ; `/admin/finance`, section « Frais SamirPay », comparée au tableau de bord SamirPay.
 - Surveillance : journaux de l'hébergeur, **Logs > API** de Supabase et page **Notifications** de l'administration (SMS à l'issue incertaine, échecs) pendant les premiers jours.
 
 ## 10. Points ouverts d'exploitation
@@ -536,7 +688,8 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - Hébergeur de l'application à choisir ; la planification par la base (section 7) ne dépend pas de ce choix.
 - Budget des SMS optionnels et `SMS_GLOBAL_DAILY_CAP` à fixer avec le client avant l'ouverture des ventes (5.5).
 - SMS à l'issue incertaine (délai MTarget dépassé) : jamais renvoyés automatiquement ; leur vérification se fait auprès de MTarget, par l'opérateur (procédure à convenir avec le fournisseur).
-- Email : compte Resend du client et domaine d'envoi vérifié à configurer ; d'ici là, le canal email reste désactivé.
+- Email : compte Resend du client et domaine d'envoi vérifié à configurer ; d'ici là, le canal email reste désactivé. Depuis le lot 9 bis, tout message indispensable adressé à un compte part aussi par email quand l'adresse est vérifiée : suivre le volume face à la limite de l'offre Resend.
+- SamirPay v1.2 : clé exacte de la signature des avis (6.1), vrai minimum d'encaissement (réglage `finance.min_paid_price`) et limites de transfert du compte à confirmer en bac à sable avant l'ouverture.
 - Interrupteurs `features.*` : à ouvrir seulement quand le client aura validé les frais des salles, des tables et des commandes (4 ter).
 - Lot de codes hors ligne : compressé par sa route depuis le lot 8 ; vérifier qu'aucun proxy de l'hébergeur ne retire `Content-Encoding` (5.6).
 - Billet hors ligne sur iPhone : stockage de l'application installée séparé de celui de Safari, aucune vibration au scanner ; aucun test automatisé ne couvre l'iPhone (`docs/installer-application.md`).
