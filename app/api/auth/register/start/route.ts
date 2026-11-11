@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomInt } from 'crypto';
-import { RegisterStartSchema, toSenegaleseE164 } from '@/lib/validations/auth';
+import { INVALID_SN_PHONE_MESSAGE, RegisterStartSchema, toSenegaleseE164 } from '@/lib/validations/auth';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { storeOtp } from '@/lib/auth/otp-store';
 import { reserveSms } from '@/lib/sms/sms-guard';
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const phone = parsed.success ? toSenegaleseE164(parsed.data.phone) : null;
     if (!phone) {
         return NextResponse.json(
-            { error: 'Numéro de téléphone sénégalais invalide (ex : 77 123 45 67).', code: 'INVALID_PHONE' },
+            { error: INVALID_SN_PHONE_MESSAGE, code: 'INVALID_PHONE' },
             { status: 400 },
         );
     }
