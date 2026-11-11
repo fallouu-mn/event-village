@@ -97,6 +97,13 @@
 --     partenaire validé, utilisez la suspension. ») ; REJETE → EN_ATTENTE par le seul complément du dossier
 --     (M04). Journal PARTNER_STATUS_SET (object_type partners, ancien et nouveau statut, motif, compte, sessions
 --     révoquées, événements de la cascade) écrit dans la transaction, avant la réponse.
+--
+-- Tâche 23, partie S-A (R61 ; B24, B53, X22) :
+-- 20. ticket_refund_request : transferts PENDING du billet verrouillés FOR UPDATE entre la catégorie et le billet
+--     (ordre 3.3 : paiement, catégorie, transferts, billet ; même sens que ticket_transfer_accept) ; une fois la
+--     demande admise, ils passent CANCELLED et le billet est déverrouillé dans la même transaction ; le destinataire
+--     d'un transfert avec expéditeur reçoit TRANSFER_REVOKED (N9 : SMS au numéro, in-app, push et email au compte
+--     MATCH de ce numéro, clé TRANSFER_REVOKED:<transfert>) ; aucun avis en contexte d'annulation.
 -- ============================================================================
 
 
@@ -952,6 +959,9 @@ DECLARE
     v_ctx text;
     v_mode text;
     v_amount numeric;
+    v_tr record;
+    v_data jsonb;
+    v_target uuid;
 BEGIN
     SELECT payment_id, category_id INTO v_payment_id, v_category FROM public.tickets WHERE id = p_ticket_id;
     IF NOT FOUND THEN
@@ -961,6 +971,11 @@ BEGIN
         SELECT * INTO p FROM public.payments WHERE id = v_payment_id FOR UPDATE;
     END IF;
     PERFORM 1 FROM public.ticket_categories WHERE id = v_category FOR NO KEY UPDATE;
+    -- Lot 9 bis (R61, 3.3) : transferts en attente du billet avant le billet (ordre de ticket_transfer_accept)
+    PERFORM 1 FROM public.ticket_transfers x
+     WHERE x.ticket_id = p_ticket_id AND x.status::text = 'PENDING'
+     ORDER BY x.id
+       FOR UPDATE OF x;
     SELECT * INTO t FROM public.tickets WHERE id = p_ticket_id FOR UPDATE;
 
     -- Lot 9 bis (R11, B21) : qui agit, sur quel événement (lecture sans verrou, comme event_transition)
@@ -1049,6 +1064,40 @@ BEGIN
             'TICKET_REFUND_REQUESTED', 'tickets', t.id,
             jsonb_build_object('as', v_as, 'context', v_ctx, 'reason', COALESCE(p_reason, 'Remboursement'),
                                'mode', v_mode, 'amount', v_amount, 'event_id', t.event_id, 'payment_id', v_payment_id));
+
+    -- Lot 9 bis (R61, B24, B53) : le transfert en attente est annulé dans la même transaction, le billet déverrouillé ;
+    -- le destinataire d'un vrai transfert (avec expéditeur) est prévenu (TRANSFER_REVOKED : SMS au numéro, in-app,
+    -- push et email au compte vérifié de ce numéro). event_cancel a déjà révoqué les siens (contexte d'annulation).
+    FOR v_tr IN
+        UPDATE public.ticket_transfers x
+           SET status = 'CANCELLED', cancelled_at = now()
+         WHERE x.ticket_id = t.id AND x.status::text = 'PENDING'
+        RETURNING x.id, x.from_user_id, x.to_phone_or_email
+    LOOP
+        IF v_ctx <> 'CANCELLATION' AND v_tr.from_user_id IS NOT NULL AND v_tr.to_phone_or_email ~ '^\+221[0-9]{9}$' THEN
+            v_data := COALESCE(public.notif_event_data(t.event_id), '{}'::jsonb)
+                      || jsonb_build_object('transfer_id', v_tr.id, 'ticket_id', t.id);
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'TRANSFER_REVOKED', 'key', 'TRANSFER_REVOKED:' || v_tr.id::text,
+                'phone', v_tr.to_phone_or_email, 'actor_id', p_actor, 'event_id', t.event_id,
+                'data', v_data, 'channels', jsonb_build_array('SMS')));
+            SELECT u.id INTO v_target
+              FROM public.users u
+             WHERE u.phone = v_tr.to_phone_or_email AND u.id IS DISTINCT FROM v_tr.from_user_id
+               AND public.ticket_transfer_identity(v_tr.to_phone_or_email, u.id) = 'MATCH'
+             ORDER BY u.id
+             LIMIT 1;
+            IF v_target IS NOT NULL THEN
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'TRANSFER_REVOKED', 'key', 'TRANSFER_REVOKED:' || v_tr.id::text,
+                    'user_id', v_target, 'actor_id', p_actor, 'event_id', t.event_id,
+                    'data', v_data, 'channels', jsonb_build_array('IN_APP', 'PUSH', 'EMAIL')));
+            END IF;
+        END IF;
+    END LOOP;
+    IF t.transfer_locked THEN
+        UPDATE public.tickets SET transfer_locked = FALSE, updated_at = now() WHERE id = t.id;
+    END IF;
 
     IF v_mode = 'AUCUN' THEN
         UPDATE public.tickets SET status = 'ANNULE' WHERE id = t.id;
