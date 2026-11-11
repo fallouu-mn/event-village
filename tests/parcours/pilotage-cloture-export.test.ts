@@ -374,7 +374,9 @@ async function endAfterOwnerRefund(): Promise<{ startsInHours: number; durationH
         .eq('metadata->>event_id', ds.eventId).order('created_at', { ascending: false }).limit(1);
     assert.equal(error, null, `journal TICKET_REFUND_REQUESTED : ${error?.message}`);
     assert.equal((data ?? []).length, 1, 'remboursement du billet de P4 journalisé (pilotage-helpers)');
-    const endAt = new Date(String((data as Row[])[0].created_at)).getTime() + 500;
+    // shiftEventDates (cycle-helpers) tronque l'heure à la seconde : la fin est prise sur une seconde ronde, au moins 1 s
+    // après le remboursement, pour que la troncature ne la ramène jamais avant lui (w20 au run 123).
+    const endAt = Math.ceil((new Date(String((data as Row[])[0].created_at)).getTime() + 1_000) / 1_000) * 1_000;
     // Le remboursement vient d'être fait (buildKnownDataset) : on attend que la fin choisie soit passée d'au moins 1 s
     while (Date.now() < endAt + 1_000) await new Promise((resolve) => { setTimeout(resolve, 100); });
     assert.ok(endAt < Date.now(), `fin placée entre le remboursement et maintenant (${new Date(endAt).toISOString()})`);
