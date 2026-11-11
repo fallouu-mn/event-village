@@ -367,6 +367,16 @@ const EMPTY_RECONCILIATION = {
         totalPartnerPayouts: 0, totalReferralCommissions: 0, totalWithdrawalsPaid: 0, totalRefunds: 0, platformNetBalance: 0, discrepanciesCount: 0,
     },
     items: [],
+    // Lot 9 bis (H6, contrat 4.1), relecture des captures du run 121 : sans ces champs, readCashoutFees (app/admin/finance/page.tsx)
+    // affichait « Frais SamirPay non disponibles » sur la capture. Forme de cashoutFeeReconciliation (lib/admin/finance-reconciliation.ts) ;
+    // cashinNote recopie CASHIN_FEES_NOTE. Aucun versement à la page : 12 versements aux frais connus, 280 000 F CFA au taux de 1,5 %.
+    cashoutFeesReal: 4290,
+    cashoutFeesEstimated: 4200,
+    gap: 90,
+    cashoutFeeRate: 1.5,
+    cashoutCount: 12,
+    cashinFeesReal: null,
+    cashinNote: 'Frais réels non fournis par SamirPay pour ce mode d’encaissement : comparez avec votre tableau de bord SamirPay.',
 };
 /** Lot 9 bis : réponses imposées des deux écrans « Versements à reprendre » (fumee-superadmin, B114). */
 const CASHOUTS_STUBS: StubResponse[] = [
