@@ -104,6 +104,11 @@
 --     demande admise, ils passent CANCELLED et le billet est déverrouillé dans la même transaction ; le destinataire
 --     d'un transfert avec expéditeur reçoit TRANSFER_REVOKED (N9 : SMS au numéro, in-app, push et email au compte
 --     MATCH de ce numéro, clé TRANSFER_REVOKED:<transfert>) ; aucun avis en contexte d'annulation.
+--
+-- Tâche 27, partie S-A (R48 ; B65) :
+-- 21. event_cancellation_impact : + in_progress (début passé, event_start_at) et used_online { tickets, amount }
+--     (billets UTILISE payés en ligne, paiement TICKET SUCCESS ou PARTIAL ; part = prix + frais de service, déjà
+--     comprise dans online_refund_total).
 -- ============================================================================
 
 
@@ -1146,7 +1151,8 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 3.5 event_cancellation_impact (recopie de 20261102000003_lot5_cycle.sql:687-758) : + counter (tâche 4).
+-- 3.5 event_cancellation_impact (recopie de 20261102000003_lot5_cycle.sql:687-758) : + counter (tâche 4),
+--     in_progress et used_online (tâche 27).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.event_cancellation_impact(p jsonb)
 RETURNS jsonb
@@ -1163,6 +1169,7 @@ DECLARE
     v_online_total numeric;
     v_pending integer;
     v_counter jsonb;
+    v_used jsonb;
 BEGIN
     BEGIN
         v_event := (p->>'event_id')::uuid;
@@ -1221,6 +1228,15 @@ BEGIN
      WHERE pay.event_id = v_event AND NOT pay.is_platform_payment AND pay.payment_target::text = 'TICKET'
        AND pay.status::text = 'SUCCESS' AND pay.amount > 0;
 
+    -- Lot 9 bis (R48, B65) : événement commencé ; billets payés en ligne déjà utilisés à l'entrée, aussi remboursés
+    -- par l'annulation (part de chacun : prix et frais de service), compris dans online_refund_total
+    SELECT jsonb_build_object('tickets', count(*), 'amount', COALESCE(sum(tk.price + COALESCE(tk.service_fee, 0)), 0))
+      INTO v_used
+      FROM public.tickets tk
+      JOIN public.payments pay ON pay.id = tk.payment_id
+     WHERE tk.event_id = v_event AND tk.status::text = 'UTILISE'
+       AND pay.is_platform_payment AND pay.payment_target::text = 'TICKET' AND pay.status::text IN ('SUCCESS', 'PARTIAL');
+
     RETURN jsonb_build_object(
         'ok', true,
         'tickets', jsonb_build_object('online', k.online, 'cash', k.cash, 'free', k.free, 'invitations', k.invitations),
@@ -1228,7 +1244,9 @@ BEGIN
         'online_refund_total', GREATEST(v_online_total, 0),
         'cash_refund_total', k.cash_total,
         'pending_payments', v_pending,
-        'counter', v_counter);
+        'counter', v_counter,
+        'in_progress', COALESCE(now() >= public.event_start_at(v_event), FALSE),
+        'used_online', v_used);
 END;
 $$;
 
