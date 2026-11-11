@@ -220,10 +220,10 @@ describe('5.3 Catalogue GET /api/events', () => {
         const past = await eventIn('cat-passe', 'PUBLIE');
         await shiftEventDates(past.eventId, { startsInHours: -6, durationHours: 3 });
         const pastNoEnd = await eventIn('cat-veille', 'PUBLIE');
-        await shiftEventDates(pastNoEnd.eventId, { startsInHours: -(hoursSinceDakarMidnight() + 4), durationHours: null });
+        await shiftEventDates(pastNoEnd.eventId, { startsInHours: -(hoursSinceDakarMidnight() + 7), durationHours: null }); // lot 9 bis (R16, T44) : veille 17:00, fin 23:00
         const excluded: Array<[string, DraftEvent]> = [
             ['PUBLIE fini il y a 3 h', past],
-            ['PUBLIE sans fin, commencé la veille (fin la veille à 23:59)', pastNoEnd],
+            ['PUBLIE sans fin, commencé la veille à 17:00 (fin à début + 6 h, la veille à 23:00)', pastNoEnd],
             ['SUSPENDU', await eventIn('cat-suspendu', 'SUSPENDU')],
             ['ANNULE', await eventIn('cat-annule', 'ANNULE')],
             ['TERMINE', await eventIn('cat-termine', 'TERMINE', { finishShift: { startsInHours: -3 } })],

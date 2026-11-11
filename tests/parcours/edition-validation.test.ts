@@ -417,7 +417,7 @@ describe('F1 — schéma partagé lib/validations/event.ts', () => {
         }
         const noEnd: Row = { ...base(), end_date: null, end_time: null };
         noEnd.ticket_categories = [{ name: 'Standard', price: 5000, total_quantity: 100, max_per_order: 10 }];
-        expectValid(await parseCreate(noEnd), 'événement sans fin (fin = début à 23:59)');
+        expectValid(await parseCreate(noEnd), 'événement sans fin (fin = début + 6 h, lot 9 bis R16)');
         expectValid(await parseCreate({ ...base(), end_date: d11, end_time: '02:00' }), 'soirée qui passe minuit (fin J+1 02:00)');
     });
 
@@ -451,8 +451,8 @@ describe('F1 — schéma partagé lib/validations/event.ts', () => {
         const equal = variant(variant(base(), 'ticket_categories.0.sale_start', `${d10}T10:00`), 'ticket_categories.0.sale_end', `${d10}T10:00`);
         expectIssue(await parseCreate(equal), 'début de vente égal à la fin de vente', { path: ['ticket_categories.0.sale_end', 'ticket_categories.0.sale_start'] });
         const noEnd: Row = { ...base(), end_date: null, end_time: null };
-        expectValid(await parseCreate(variant(noEnd, 'ticket_categories.0.sale_end', `${d10}T23:59`)), 'sans fin : vente jusqu’à 23:59 le jour du début');
-        expectIssue(await parseCreate(variant(noEnd, 'ticket_categories.0.sale_end', `${d11}T00:30`)), 'sans fin : vente le lendemain', { path: 'ticket_categories.0.sale_end' });
+        expectValid(await parseCreate(variant(noEnd, 'ticket_categories.0.sale_end', `${d11}T02:00`)), 'sans fin : vente jusqu’à début + 6 h (20:00 → lendemain 02:00, R16)');
+        expectIssue(await parseCreate(variant(noEnd, 'ticket_categories.0.sale_end', `${d11}T02:01`)), 'sans fin : vente au-delà de début + 6 h', { path: 'ticket_categories.0.sale_end' });
     });
 
     test('programme typé : heure HH:mm, type ARTISTE, INTERVENANT ou ACTIVITE, identifiant uuid, au plus 50 lignes', async () => {

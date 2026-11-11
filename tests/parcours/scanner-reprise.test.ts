@@ -363,7 +363,9 @@ describe('A10 — même événement et même mode repris ; caméra relancée par
         assert.match(src, /saveScanSession\s*\(\s*SURFACE\s*,\s*accountId\s*,\s*\{\s*eventId:\s*selectedEventId,\s*assignmentId:\s*selectedAssignmentId,\s*mode:\s*inputMode,\s*area\s*\}\s*\)/,
             'mémoire écrite : identifiants et choix d’écran seulement');
         const restore = src.slice(src.indexOf('readScanSession('), src.indexOf('readScanSession(') + 2600);
-        assert.match(restore, /isEventEligibleForController\s*\(/, 'événement encore ouvert au contrôle');
+        // Lot 9 bis (R16, T46, règle changée) : la reprise suit l'état du contrôle servi par le serveur (scan.open), plus le statut.
+        assert.match(restore, /\bscan\??\.open\b/, 'contrôle encore ouvert (scan.open servi par /api/controller/assignments)');
+        assert.doesNotMatch(restore, /isEventEligibleForController\s*\(/, 'reprise : plus de décision d’après le statut de l’événement');
         assert.match(restore, /setRestoreNotice\s*\(/, 'message quand la session n’est pas reprise');
         assert.match(restore, /clearScanSession\s*\(/, 'session non reprise effacée');
         assert.match(restore, /setInputMode\s*\(\s*memory\.mode\s*\)/, 'même mode');
@@ -372,8 +374,12 @@ describe('A10 — même événement et même mode repris ; caméra relancée par
         assert.match(functionBody(src, 'backToStart'), /clearScanSession\s*\(/, 'changement d’événement voulu : session oubliée');
     });
 
-    test('scan partenaire : session relue, événement encore publié exigé, choix explicite sinon', () => {
+    test('scan partenaire : session relue, contrôle ouvert exigé, choix explicite sinon', () => {
         const src = code(PARTNER_PAGE);
+        // Lot 9 bis (R16, T46, règle changée) : liste des événements dont le contrôle est ouvert (PUBLIE et TERMINE dans la fenêtre)
+        assert.match(src, /\/api\/controller\/scan\/state/, 'état du contrôle lu au serveur (GET /api/controller/scan/state)');
+        assert.match(src, /\.open\b/, 'liste filtrée sur le contrôle ouvert (open)');
+        assert.doesNotMatch(src, /filter\(\s*\(?\s*e\s*\)?\s*=>\s*e\.status\s*===\s*'PUBLIE'\s*\)/, 'plus de filtre « PUBLIE seul » : un TERMINE dans la fenêtre reste contrôlable');
         assert.match(src, /readScanSession\s*\(\s*SURFACE/, 'session retenue relue');
         assert.match(src, /saveScanSession\s*\(\s*SURFACE\s*,\s*accountId\s*,\s*\{\s*eventId,\s*assignmentId:\s*null,\s*mode:\s*scanMode,\s*area:\s*'controle'\s*\}\s*\)/,
             'mémoire écrite : identifiants et mode seulement');

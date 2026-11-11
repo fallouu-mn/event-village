@@ -5,13 +5,13 @@
  *  - events_finish_overdue({ limit }) passe en TERMINE, par la transition interne (acteur SYSTEM, canal
  *    CRON), chaque PUBLIE dont event_end_at < now(), et renvoie { ok, finished, ids } ; un second passage
  *    ne fait rien ; un PUBLIE à venir et un SUSPENDU passé ne sont pas touchés ;
- *  - fonction unique event_end_at(event_id) : end_date + end_time à Dakar, sinon start_date à 23:59 ;
+ *  - fonction unique event_end_at(event_id) : end_date + end_time à Dakar, sinon début + 6 h (lot 9 bis, R16) ;
  *    fin_event_end, scan_window et ticket_sale_problems l'utilisent (un événement sans fin reste en vente
- *    jusqu'à 23:59 si la fin de vente de la catégorie le permet) ;
+ *    jusqu'à début + 6 h si la fin de vente de la catégorie le permet) ;
  *  - après TERMINE, le scan et l'ouverture de caisse restent possibles jusqu'à event_end_at +
  *    access.scan_window_after_hours, et sont refusés ensuite.
- * Fuseau : Africa/Dakar = UTC+0 toute l'année. Les cas « avant 23:59 » attendent minuit passé si la suite
- * tourne entre 23:55 et 00:00 (attente journalisée), pour rester déterministes.
+ * Fuseau : Africa/Dakar = UTC+0 toute l'année. Lot 9 bis (T43, règles changées R16 et R42) : fin absente = début + 6 h,
+ * plus de dépendance à minuit ; l'ouverture de caisse passe le PIN régisseur (aide openShift, A11).
  * Rouge avant correctif :
  *  - app/api/cron/events-finish/route.ts n'existe pas (app/api/cron : payments-reconcile,
  *    stock-reservations, referral-commissions, moratoriums, ticket-transfers) ; events_finish_overdue et
@@ -30,7 +30,7 @@ import { randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { inspect } from '../helpers/db';
 import { assertLifecycleInvariants, finishOverdueEvents } from '../helpers/lifecycle-invariants';
-import { cronRequest, importModule, newBuyer, service, sleep, type Buyer, type CategorySpec } from './paiement-helpers';
+import { cronRequest, importModule, newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import {
     assignController, newController, openShift, scan, scansOf, ticketPayload, ticketRow, withAccessSettings, type RouteResult,
@@ -102,18 +102,18 @@ async function runCron(): Promise<Reply> {
     return r;
 }
 
-function hoursSinceDakarMidnight(): number {
-    const now = new Date();
-    return (now.getTime() - Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) / 3600_000;
-}
+/**
+ * Lot 9 bis (R16, T43, règle changée) : la fin d'un événement sans date de fin est début + 6 h (constante, B47), et non
+ * plus start_date à 23:59. Les cas de la règle de fin ne dépendent donc plus de l'heure de la journée : l'attente du
+ * passage de minuit (awayFromMidnight) et l'heure écoulée depuis minuit (hoursSinceDakarMidnight) sont retirées, sans
+ * qu'aucune assertion ne disparaisse ; chaque fin attendue est recalculée depuis les colonnes écrites.
+ * Nombre de lignes avant le test cité par docs/recette-billetterie.md (:176) gardé.
+ */
+const DEFAULT_END_HOURS = 6;
 
-/** Entre 23:55 et minuit (Dakar), attend minuit passé de 5 s : les cas « avant 23:59 » restent déterministes. */
-async function awayFromMidnight(): Promise<void> {
-    const h = hoursSinceDakarMidnight();
-    if (h < 23 + 55 / 60) return;
-    const wait = Math.ceil((24 - h) * 3600_000) + 5000;
-    console.log(`[cycle-cron] ${Math.round(wait / 1000)} s d’attente : passage de minuit à Dakar`);
-    await sleep(wait);
+/** Début (Dakar) relu dans les colonnes écrites, plus `hours` heures : fin par défaut du lot 9 bis (R16). */
+function startPlus(cols: { start_date: string; start_time: string }, hours: number = DEFAULT_END_HOURS): string {
+    return new Date(Date.parse(`${cols.start_date}T${cols.start_time}Z`) + hours * 3600_000).toISOString();
 }
 
 /** Événement PUBLIE gratuit (catégorie « Entrée libre »), contrôleur affecté. */
@@ -195,26 +195,24 @@ describe('5.4 Route /api/cron/events-finish', () => {
 
 // ── Règle de fin ───────────────────────────────────────────────────────────
 
-describe('5.4 Fin absente : début à 23:59 Africa/Dakar', () => {
-    test('sans fin, commencé la veille → TERMINE ; sans fin, commencé aujourd’hui → reste PUBLIE jusqu’à 23:59', async () => {
-        await awayFromMidnight();
-        const h = hoursSinceDakarMidnight();
-        const yesterday = await eventIn('sansfin-veille', 'PUBLIE');
-        const yCols = await shiftEventDates(yesterday.eventId, { startsInHours: -(h + 2), durationHours: null });
-        const today = await eventIn('sansfin-jour', 'PUBLIE');
-        const tCols = await shiftEventDates(today.eventId, { startsInHours: h >= 2 ? -2 : -h + 1 / 60, durationHours: null });
-        const yHistory = (await eventHistory(yesterday.eventId)).length;
-        const tHistory = (await eventHistory(today.eventId)).length;
+describe('5.4 Fin absente : début + 6 h Africa/Dakar (lot 9 bis, R16)', () => {
+    test('sans fin, commencé il y a 8 h → TERMINE ; sans fin, commencé il y a 2 h → reste PUBLIE jusqu’à début + 6 h', async () => {
+        const old = await eventIn('sansfin-8h', 'PUBLIE');
+        const oCols = await shiftEventDates(old.eventId, { startsInHours: -8, durationHours: null });
+        const recent = await eventIn('sansfin-2h', 'PUBLIE');
+        const rCols = await shiftEventDates(recent.eventId, { startsInHours: -2, durationHours: null });
+        const oHistory = (await eventHistory(old.eventId)).length;
+        const rHistory = (await eventHistory(recent.eventId)).length;
 
-        const ends = await inspect(async (db) => (await db.query<{ y: Date; t: Date }>(
-            'SELECT public.event_end_at($1) AS y, public.event_end_at($2) AS t', [yesterday.eventId, today.eventId])).rows[0]);
-        assert.equal(ends.y.toISOString(), `${yCols.start_date}T23:59:00.000Z`, 'fin de la veille = début à 23:59');
-        assert.equal(ends.t.toISOString(), `${tCols.start_date}T23:59:00.000Z`, 'fin du jour = début à 23:59');
+        const ends = await inspect(async (db) => (await db.query<{ o: Date; r: Date }>(
+            'SELECT public.event_end_at($1) AS o, public.event_end_at($2) AS r', [old.eventId, recent.eventId])).rows[0]);
+        assert.equal(ends.o.toISOString(), startPlus(oCols), 'commencé il y a 8 h : fin = début + 6 h (passée depuis 2 h)');
+        assert.equal(ends.r.toISOString(), startPlus(rCols), 'commencé il y a 2 h : fin = début + 6 h (dans 4 h)');
 
         await runCron();
-        await assertFinishedByCron(yesterday.eventId, yHistory, 'sans fin, commencé la veille');
-        assert.equal(await eventStatus(today.eventId), 'PUBLIE', 'sans fin, commencé aujourd’hui : encore PUBLIE avant 23:59');
-        assert.equal((await eventHistory(today.eventId)).length, tHistory, 'aucune ligne d’historique pour l’événement du jour');
+        await assertFinishedByCron(old.eventId, oHistory, 'sans fin, commencé il y a 8 h');
+        assert.equal(await eventStatus(recent.eventId), 'PUBLIE', 'sans fin, commencé il y a 2 h : encore PUBLIE avant début + 6 h');
+        assert.equal((await eventHistory(recent.eventId)).length, rHistory, 'aucune ligne d’historique pour l’événement en cours');
     });
 
     test('le cron ne touche ni un PUBLIE à venir, ni un SUSPENDU passé', async () => {
@@ -230,7 +228,7 @@ describe('5.4 Fin absente : début à 23:59 Africa/Dakar', () => {
         assert.equal((await eventHistory(suspended.eventId)).length, sHistory);
     });
 
-    test('event_end_at unique : fin renseignée à Dakar, sinon début à 23:59 ; fin_event_end et scan_window la reprennent', async () => {
+    test('event_end_at unique : fin renseignée à Dakar, sinon début + 6 h ; fin_event_end et scan_window la reprennent', async () => {
         const withEnd = await eventIn('fin-renseignee', 'PUBLIE');
         const cols = await shiftEventDates(withEnd.eventId, { startsInHours: 48, durationHours: 3 });
         const noEnd = await eventIn('fin-absente', 'PUBLIE');
@@ -244,34 +242,38 @@ describe('5.4 Fin absente : début à 23:59 Africa/Dakar', () => {
         const b = rows.find((r) => r.id === noEnd.eventId);
         assert.ok(a && b, `deux événements lus : ${JSON.stringify(rows)}`);
         assert.equal(a.end_at.toISOString(), `${cols.end_date}T${cols.end_time}.000Z`, 'fin renseignée : end_date + end_time à Dakar');
-        assert.equal(b.end_at.toISOString(), `${cols2.start_date}T23:59:00.000Z`, 'fin absente : start_date à 23:59 à Dakar');
+        assert.equal(b.end_at.toISOString(), startPlus(cols2), 'fin absente : début + 6 h à Dakar (R16)');
         for (const r of [a, b]) {
             assert.equal(r.fin.getTime(), r.end_at.getTime(), 'fin_event_end = event_end_at');
             assert.equal(r.closes.getTime(), r.end_at.getTime() + Number(r.after_h) * 3600_000, 'scan_window : fermeture = event_end_at + access.scan_window_after_hours');
         }
     });
 
-    test('même règle que ticket_sale_problems : un événement sans fin reste en vente jusqu’à 23:59 si la fin de vente le permet', async () => {
-        await awayFromMidnight();
-        const h = hoursSinceDakarMidnight();
+    test('même règle que ticket_sale_problems : un événement sans fin reste en vente jusqu’à début + 6 h si la fin de vente le permet, plus après', async () => {
         const closed = new Date(Date.now() - 3600_000).toISOString();
-        const ev = await eventIn('vente-2359', 'PUBLIE', {}, [
+        const ev = await eventIn('vente-6h', 'PUBLIE', {}, [
             { name: 'Standard', price: 5000, total: 20 },
             { name: 'Close', price: 5000, total: 20, saleEnd: closed },
         ]);
-        await shiftEventDates(ev.eventId, { startsInHours: h >= 1 ? -1 : -h + 1 / 120, durationHours: null });
-        const items = (category: string) => JSON.stringify([{ category_id: ev.categories[category].id, quantity: 1 }]);
+        await shiftEventDates(ev.eventId, { startsInHours: -1, durationHours: null });
+        const late = await eventIn('vente-7h', 'PUBLIE');
+        await shiftEventDates(late.eventId, { startsInHours: -7, durationHours: null });
+        const items = (e: DraftEvent, category: string) => JSON.stringify([{ category_id: e.categories[category].id, quantity: 1 }]);
         const problems = await inspect(async (db) => {
-            const std = (await db.query<{ p: Array<{ code: string }> }>('SELECT public.ticket_sale_problems($1, $2::jsonb) AS p', [ev.eventId, items('Standard')])).rows[0].p;
-            const close = (await db.query<{ p: Array<{ code: string }> }>('SELECT public.ticket_sale_problems($1, $2::jsonb) AS p', [ev.eventId, items('Close')])).rows[0].p;
-            return { std, close };
+            const q = 'SELECT public.ticket_sale_problems($1, $2::jsonb) AS p';
+            const std = (await db.query<{ p: Array<{ code: string }> }>(q, [ev.eventId, items(ev, 'Standard')])).rows[0].p;
+            const close = (await db.query<{ p: Array<{ code: string }> }>(q, [ev.eventId, items(ev, 'Close')])).rows[0].p;
+            const after6 = (await db.query<{ p: Array<{ code: string }> }>(q, [late.eventId, items(late, 'Standard')])).rows[0].p;
+            return { std, close, after6 };
         });
-        assert.deepEqual(problems.std, [], `commencé il y a moins d’une heure, sans fin : vente ouverte jusqu’à 23:59, reçu ${JSON.stringify(problems.std)}`);
+        assert.deepEqual(problems.std, [], `commencé il y a une heure, sans fin : vente ouverte jusqu’à début + 6 h, reçu ${JSON.stringify(problems.std)}`);
         // Garde-fou (vert avant correctif) : la fin de vente de la catégorie s'applique toujours.
         assert.ok(problems.close.some((x) => x.code === 'SALE_CLOSED'), `catégorie dont la vente est close : SALE_CLOSED, reçu ${JSON.stringify(problems.close)}`);
-        assert.ok(!problems.close.some((x) => x.code === 'EVENT_PAST'), `pas d’EVENT_PAST avant 23:59 : ${JSON.stringify(problems.close)}`);
+        assert.ok(!problems.close.some((x) => x.code === 'EVENT_PAST'), `pas d’EVENT_PAST avant début + 6 h : ${JSON.stringify(problems.close)}`);
+        assert.ok(problems.after6.some((x) => x.code === 'EVENT_PAST'),
+            `commencé il y a 7 h, sans fin : fin (début + 6 h) passée, EVENT_PAST attendu (avant le correctif : ouvert jusqu’à 23:59 si le début est du jour), reçu ${JSON.stringify(problems.after6)}`);
 
-        const buyer = await newBuyer('cron-2359');
+        const buyer = await newBuyer('cron-6h');
         const purchase = await buyConfirmed(buyer, ev, [['Standard', 1]]);
         assert.equal(purchase.tickets.length, 1, 'achat en ligne confirmé : un billet');
     });
