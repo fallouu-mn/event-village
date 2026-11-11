@@ -275,7 +275,7 @@ describe('passerelle de développement', () => {
     const server = http.createServer((req, res) => {
         seen.push({ url: req.url ?? '', apiKey: req.headers['x-api-key'] as string | undefined, secretKey: req.headers['x-secret-key'] as string | undefined });
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ status: 'success', message: 'ok', data: { samirEntityName: 'Faux', solde: 1234 } }));
+        res.end(JSON.stringify({ status: 'success', message: 'ok', body: { samirEntityName: 'Faux', solde: 1234 } }));
     });
     let port = 0;
 
