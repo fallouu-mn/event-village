@@ -10,8 +10,8 @@ import { eventImageSrc } from '@/lib/events/event-image';
  * Carte d'un événement du catalogue et de l'accueil (lot 5, tâche 5.3 ; contrat E et Q).
  *  - Toute la carte est un seul lien, porté par le titre (nom accessible = titre de l'événement).
  *  - Prix « à partir de » calculé par le serveur sur les catégories actives et visibles ; sans
- *    catégorie achetable : « Bientôt en vente », jamais « Gratuit » par défaut (un vrai 0 F reste
- *    « Gratuit »).
+ *    catégorie achetable : l'état de la vente du serveur (`saleLabel`, lot 9 bis R35 : « Vente sur place
+ *    uniquement », « Complet »…), « Bientôt en vente » à défaut, jamais « Gratuit » (un vrai 0 F reste « Gratuit »).
  *  - Affiche du stockage du projet seulement, sinon l'image locale neutre (lib/events/event-image.ts).
  *  - Rien n'est superposé à l'affiche : le titre et la date sont souvent imprimés dans sa partie haute
  *    (relecture des captures du run 49). Pastille de date et catégorie vivent dans le corps de la carte.
@@ -31,6 +31,8 @@ export interface EventCardProps {
   categoryLabel?: string | null;
   /** Prix minimum des catégories achetables, null sans catégorie achetable. */
   price: number | null;
+  /** Lot 9 bis (R35, B60) : état de la vente servi par le catalogue, affiché sans prix (« Vente sur place uniquement »). */
+  saleLabel?: string | null;
   /** Rang dans la grille : seules les premières affiches sont chargées en priorité. */
   priority?: boolean;
 }
@@ -58,6 +60,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   city,
   categoryLabel,
   price,
+  saleLabel,
   priority = false,
 }) => {
   const onSaleSoon = price === null || !Number.isFinite(price);
@@ -123,7 +126,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           {onSaleSoon ? (
             <div className="min-w-0">
               <p className="text-sm text-fg-muted">Billetterie</p>
-              <p className="text-base font-bold text-fg">Bientôt en vente</p>
+              <p className="text-base font-bold text-fg">{saleLabel || 'Bientôt en vente'}</p>
             </div>
           ) : (
             <div className="min-w-0">

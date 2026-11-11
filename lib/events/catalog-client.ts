@@ -19,8 +19,10 @@ export interface CatalogEvent {
     categoryLabel: string | null;
     /** Ville en capitales (« DAKAR »), telle que le serveur la renvoie pour le filtre. */
     city: string | null;
-    /** Prix « à partir de » des catégories achetables ; null : « Bientôt en vente ». */
+    /** Prix « à partir de » des catégories achetables ; null : aucune catégorie achetable en ligne. */
     price: number | null;
+    /** Lot 9 bis (R35, B60) : état de la vente dit par le serveur (« Vente sur place uniquement », « Complet »…). */
+    saleLabel: string | null;
 }
 
 export type CatalogResult = { ok: true; events: CatalogEvent[]; cities: string[] } | { ok: false; message: string };
@@ -61,6 +63,7 @@ function toCatalogEvent(raw: unknown): CatalogEvent | null {
         categoryLabel: text(r.categoryLabel),
         city: text(r.city),
         price,
+        saleLabel: text(r.saleLabel),
     };
 }
 

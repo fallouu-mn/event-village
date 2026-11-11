@@ -323,6 +323,7 @@ export default function ExplorePage() {
                   city={evt.city}
                   categoryLabel={evt.categoryLabel}
                   price={evt.price}
+                  saleLabel={evt.saleLabel}
                   priority={i < 3}
                 />
               </li>

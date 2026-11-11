@@ -52,6 +52,7 @@ function EventRail({ events, busy = false }: { events: CatalogEvent[]; busy?: bo
             city={evt.city}
             categoryLabel={evt.categoryLabel}
             price={evt.price}
+            saleLabel={evt.saleLabel}
             priority={false}
           />
         </li>
