@@ -34,7 +34,11 @@ import { resolvePostLoginRoute } from '@/lib/auth/resolve-post-login-route';
  *  - verrou du navigateur : 5 échecs → saisie bloquée 60 s (clés localStorage ev_login_lockout_until et
  *    ev_login_failed_attempts, relues au montage) ; il n'est qu'un confort, l'autorité reste le serveur
  *    (429 avec remainingSeconds de /api/auth/resolve-phone, /send-otp et /verify-otp) ;
- *  - téléphone → email par /api/auth/resolve-phone avant signInWithPassword ;
+ *  - lot 9 bis (R58, B36, contrat 4.2 et 5.14) : mot de passe envoyé à POST /api/auth/login { identifier, password }
+ *    (numéro ou email) ; la correspondance numéro → compte reste côté serveur, la session est posée en cookies et vaut
+ *    saisie récente du mot de passe (R57). Le navigateur relit cette session (refreshSession), puis la suite est la même.
+ *    Même refus pour un numéro inconnu et un mauvais mot de passe (401 INVALID_CREDENTIALS) ; 429 avec retryAfterSeconds ;
+ *  - /api/auth/resolve-phone ne sert plus qu'au code SMS : il dit seulement si le numéro a un compte ;
  *  - code SMS : /api/auth/send-otp puis /api/auth/verify-otp (isLogin), session par verifyOtp type « email » ;
  *  - après connexion : compte SUSPENDU → appareil détaché du push puis signOut, refreshSession pour les
  *    rôles non client, resolvePostLoginRoute, redirection après 400 ms.
@@ -295,7 +299,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
         }, 400);
     };
 
-    // 1. Connexion par mot de passe
+    // 1. Connexion par mot de passe, côté serveur (lot 9 bis, R58)
     const handlePasswordLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isLockedOut) return;
@@ -309,56 +313,50 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
         }
 
         setIsLoading(true);
-        const supabase = getBrowserClient();
 
         try {
-            const isEmail = identifier.includes('@');
-            let loginEmail = identifier.trim().toLowerCase();
-
-            if (!isEmail) {
-                const normalizedPhone = normalizePhoneNumber(identifier.trim());
-                const resolveRes = await fetch('/api/auth/resolve-phone', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone: normalizedPhone }),
-                });
-
-                const resolveData = await resolveRes.json();
-                if (!resolveRes.ok) {
-                    if (resolveRes.status === 429) {
-                        setIsLockedOut(true);
-                        setLockoutRemaining(resolveData.remainingSeconds || LOCKOUT_DURATION_SECONDS);
-                        recordFailedAttempt(resolveData.error || 'Trop de requêtes. Verrouillage temporaire.');
-                        setIsLoading(false);
-                        return;
-                    }
-                    recordFailedAttempt('Aucun compte associé à ce numéro de téléphone.');
-                    setIsLoading(false);
-                    return;
-                }
-                loginEmail = resolveData.email;
-            }
-
-            const authResult = await supabase.auth.signInWithPassword({
-                email: loginEmail,
-                password,
+            const raw = identifier.trim();
+            const loginIdentifier = raw.includes('@') ? raw.toLowerCase() : normalizePhoneNumber(raw);
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier: loginIdentifier, password }),
             });
+            const data = (await res.json().catch((err: unknown) => {
+                console.error('[LoginForm] réponse de connexion illisible, code HTTP', res.status, err);
+                return null;
+            })) as { ok?: boolean; error?: string; code?: string; retryAfterSeconds?: number; remainingSeconds?: number } | null;
 
-            if (authResult.error) {
-                if (authResult.error.message.includes('Invalid login credentials')) {
+            if (!res.ok || data?.ok !== true) {
+                if (res.status === 429) {
+                    const wait = data?.retryAfterSeconds ?? data?.remainingSeconds;
+                    setIsLockedOut(true);
+                    setLockoutRemaining(typeof wait === 'number' && wait > 0 ? Math.ceil(wait) : LOCKOUT_DURATION_SECONDS);
+                    recordFailedAttempt(data?.error || 'Trop de tentatives. Verrouillage temporaire.');
+                } else if (res.status === 401) {
                     recordFailedAttempt('Identifiant ou mot de passe incorrect.');
-                    setIsLoading(false);
-                    return;
+                } else if (res.status === 403) {
+                    // Refus de Supabase Auth traduits par la route (email non confirmé, compte banni)
+                    recordFailedAttempt(data?.error || signInRefusalMessage(undefined));
+                } else {
+                    console.error('[LoginForm] connexion refusée, code HTTP', res.status, data?.code ?? '');
+                    setErrorMessage(data?.error || 'Connexion impossible pour le moment. Réessayez dans un instant.');
                 }
-                console.error('[LoginForm] connexion refusée par Supabase Auth :', authResult.error.code ?? authResult.error.status, authResult.error.message);
-                recordFailedAttempt(signInRefusalMessage(authResult.error.code));
                 setIsLoading(false);
                 return;
             }
 
-            if (authResult.data.user) {
-                await handlePostLoginRedirect(authResult.data.user.id);
+            // Session posée en cookies par le serveur : le client du navigateur la relit et la renouvelle, ce qui
+            // prévient AuthProvider (événement de session) ; sans session lisible, rien n'est supposé ouvert.
+            const supabase = getBrowserClient();
+            const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+            if (refreshError || !refreshed.user) {
+                console.error('[LoginForm] session posée par le serveur illisible dans le navigateur :', refreshError?.message ?? 'aucune session');
+                setErrorMessage('Connexion acceptée, mais la session n’a pas pu s’ouvrir sur cet appareil. Rechargez la page, puis réessayez.');
+                setIsLoading(false);
+                return;
             }
+            await handlePostLoginRedirect(refreshed.user.id);
         } catch (err: unknown) {
             console.error('[LoginForm] Erreur connexion mot de passe:', err);
             recordFailedAttempt('Échec de la connexion. Vérifiez votre réseau, puis réessayez.');

@@ -22,8 +22,10 @@ import { normalizePhoneNumber } from '@/lib/validations/auth';
  *  - D67 : la règle affichée est celle du serveur (app/api/controller/setup/route.ts, PASSWORD_REGEX : 8
  *    caractères, une majuscule, une minuscule, un chiffre), pas la liste du client qui exige un caractère spécial ;
  *  - un compte déjà activé mène à /login?message=already_configured (message affiché par LoginForm) ;
- *  - connexion automatique par /api/auth/resolve-phone puis signInWithPassword (même chemin que la connexion) ;
- *    en cas d'échec, /login?message=account_activated.
+ *  - lot 9 bis (R58, B36, contrat 5.14) : connexion automatique par POST /api/auth/login (numéro et mot de passe, même
+ *    chemin que la connexion ; la correspondance numéro → compte reste côté serveur), puis la session posée en cookies
+ *    est relue par le navigateur ; en cas d'échec, /login?message=account_activated ;
+ *  - lot 9 bis (R102, B43) : un compte suspendu n'est pas activé (403 ACCOUNT_NOT_ACTIVE, message de la route affiché).
  */
 
 interface ControllerSetupPageProps {
@@ -55,19 +57,20 @@ async function readJson(res: Response, what: string): Promise<Record<string, unk
 /** Connexion après activation ; false si elle échoue (la personne se connecte alors elle-même). */
 async function signInAfterActivation(phone: string, password: string): Promise<boolean> {
     try {
-        const resolveRes = await fetch('/api/auth/resolve-phone', {
+        const res = await fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone }),
+            body: JSON.stringify({ identifier: phone, password }),
         });
-        const resolved = await readJson(resolveRes, 'résolution du numéro');
-        if (!resolveRes.ok || typeof resolved.email !== 'string') {
-            console.warn(`[activation contrôleur] connexion automatique impossible : résolution du numéro (HTTP ${resolveRes.status}).`);
+        const reply = await readJson(res, 'connexion automatique');
+        if (!res.ok || reply.ok !== true) {
+            console.warn('[activation contrôleur] connexion automatique refusée, code', typeof reply.code === 'string' ? reply.code : res.status);
             return false;
         }
-        const { error } = await getBrowserClient().auth.signInWithPassword({ email: resolved.email, password });
-        if (error) {
-            console.warn('[activation contrôleur] connexion automatique refusée :', error.message);
+        // Session posée en cookies par le serveur : le navigateur la relit (et prévient AuthProvider).
+        const { data, error } = await getBrowserClient().auth.refreshSession();
+        if (error || !data.user) {
+            console.warn('[activation contrôleur] session posée par le serveur illisible :', error?.message ?? 'aucune session');
             return false;
         }
         return true;
