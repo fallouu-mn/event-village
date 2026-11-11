@@ -19,6 +19,11 @@
 --     fin passée (EVENT_ENDED), TERMINE depuis SUSPENDU retiré tant que la fin n'est pas passée (EVENT_NOT_ENDED).
 --  Avis EVENT_CLOSED_HOLDER et EVENT_CLOSED_BY_ADMIN : trigger notif_event_status_changed (M09, S-D, fix(9b.20-SD)).
 --
+-- Délégation fix(9b.2-SC) (R5 ; B18, pour S-A) :
+--  2 ter. event_transition (même définition, point 2) : passage à PUBLIE refusé PARTNER_SUSPENDED « Le partenaire est
+--     suspendu : son événement ne peut pas être remis en ligne avant sa réactivation. » quand la partenaire est
+--     SUSPENDU, admin compris (statut lu sans verrou, ordre 3.3).
+--
 -- Tâche 21 (R16 ; B47, B48, X7, A12) :
 --  4. event_end_from_v2(p_start_date, p_start_time, p_end_date, p_end_time) (nouvelle, LANGUAGE sql, IMMUTABLE) : fin
 --     d'un événement à partir de ses colonnes ; date et heure de fin ; date de fin sans heure → 23:59 ; aucune date de
@@ -191,6 +196,7 @@ DECLARE
     v_missing jsonb := '[]'::jsonb;
     v_history uuid;
     v_owner uuid;
+    v_partner_status text;
 BEGIN
     IF v_to_text IS NULL OR NOT EXISTS (
         SELECT 1 FROM pg_enum WHERE enumtypid = 'public.event_status'::regtype AND enumlabel = v_to_text) THEN
@@ -250,6 +256,14 @@ BEGIN
 
     IF v_reason_required AND (v_reason IS NULL OR char_length(v_reason) < 3) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Un motif d''au moins 3 caractères est obligatoire.');
+    END IF;
+
+    -- Lot 9 bis (R5, B18) : l'événement d'une partenaire suspendue n'est remis en ligne par personne, admin compris,
+    -- avant sa réactivation (statut de la partenaire lu sans verrou : aucune fonction ne prend events puis partners).
+    SELECT pa.status::text INTO v_partner_status FROM public.partners pa WHERE pa.id = e.partner_id;
+    IF v_to = 'PUBLIE' AND v_partner_status = 'SUSPENDU' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED',
+                                  'message', 'Le partenaire est suspendu : son événement ne peut pas être remis en ligne avant sa réactivation.');
     END IF;
 
     IF e.status = 'BROUILLON' AND v_to = 'EN_ATTENTE' THEN
