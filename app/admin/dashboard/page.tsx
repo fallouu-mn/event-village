@@ -147,7 +147,9 @@ function PartnersSkeleton() {
 
 export default function AdminDashboardPage() {
   const toast = useToast();
-  const { hasRole } = useAuth();
+  const { hasRole, hasPermission } = useAuth();
+  // Lot 9 bis (R51, B34) : « Valider » et « Refuser » seulement avec partners.validate (la route décide toujours).
+  const canValidate = hasPermission('partners.validate');
 
   const [kpis, setKpis] = useState<AdminKPIs | null>(null);
   const [metricsPhase, setMetricsPhase] = useState<Phase>('loading');
@@ -358,12 +360,12 @@ export default function AdminDashboardPage() {
       <Button variant="secondary" size="sm" leftIcon={<Eye size={16} />} onClick={() => openDetails(partner)}>
         Dossier
       </Button>
-      {partner.status !== 'VALIDE' && (
+      {canValidate && partner.status !== 'VALIDE' && (
         <Button variant="primary" size="sm" leftIcon={<CheckCircle2 size={16} />} onClick={() => askValidate(partner)} disabled={isActionLoading}>
           Valider
         </Button>
       )}
-      {partner.status !== 'REJETE' && (
+      {canValidate && partner.status !== 'REJETE' && (
         <Button variant="ghost" size="sm" leftIcon={<XCircle size={16} />} onClick={() => askReject(partner)} disabled={isActionLoading} className="text-danger-fg">
           Refuser
         </Button>
@@ -612,12 +614,12 @@ export default function AdminDashboardPage() {
               <Button variant="secondary" onClick={() => setIsDetailsModalOpen(false)} className="flex-1 sm:flex-none">
                 Fermer
               </Button>
-              {selectedPartner.status !== 'REJETE' && (
+              {canValidate && selectedPartner.status !== 'REJETE' && (
                 <Button variant="ghost" leftIcon={<XCircle size={16} />} onClick={() => askReject(selectedPartner)} className="flex-1 text-danger-fg sm:flex-none">
                   Refuser
                 </Button>
               )}
-              {selectedPartner.status !== 'VALIDE' && (
+              {canValidate && selectedPartner.status !== 'VALIDE' && (
                 <Button variant="primary" leftIcon={<CheckCircle2 size={16} />} onClick={() => askValidate(selectedPartner)} className="flex-1 sm:flex-none">
                   Valider la candidature
                 </Button>

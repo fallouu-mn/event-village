@@ -25,6 +25,7 @@ import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
 import { RefundProgress } from '@/components/events/RefundProgress';
 import { categoryChannelLabel } from '@/lib/events/category-channels';
@@ -316,6 +317,10 @@ export default function AdminEventSheetPage() {
   const params = useParams<{ id: string }>();
   const eventId = typeof params?.id === 'string' ? params.id : '';
   const toast = useToast();
+  // Lot 9 bis (R51, B31, B34) : valider, suspendre, annuler… demandent events.write. event_actions ne sert déjà ces
+  // actions qu'à un admin qui l'a (M08) ; l'écran ne montre pas de bouton qui mènerait à un refus.
+  const { hasPermission } = useAuth();
+  const canWriteEvents = hasPermission('events.write');
 
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [phase, setPhase] = useState<Phase>('loading');
@@ -526,7 +531,7 @@ export default function AdminEventSheetPage() {
         description={`${organizer?.company_name ?? 'Organisateur inconnu'} · ${startLabel}`}
         actions={(
           <>
-            {actions.actions.filter((a) => a.to !== 'ANNULE').map((a) => (
+            {canWriteEvents && actions.actions.filter((a) => a.to !== 'ANNULE').map((a) => (
               <Button
                 key={a.to}
                 variant={actionCopy(a, currentStatus).variant}
@@ -536,7 +541,7 @@ export default function AdminEventSheetPage() {
                 {a.label}
               </Button>
             ))}
-            {actions.can_cancel && (
+            {canWriteEvents && actions.can_cancel && (
               <Button variant="danger" onClick={() => setIsCancelOpen(true)} disabled={isSubmitting}>
                 Annuler l’événement
               </Button>

@@ -101,6 +101,11 @@ interface AuthContextType {
     refreshProfile: () => Promise<void>;
     hasRole: (role: string) => boolean;
     hasAnyRole: (roles: string[]) => boolean;
+    /**
+     * Lot 9 bis (R51, B34) : permission d'administration servie par /api/auth/me (`admin_permissions` : lignes
+     * d'un ADMIN, toutes pour un SUPERADMIN, aucune sinon). Sert seulement à masquer un bouton : la route décide.
+     */
+    hasPermission: (permission: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -109,6 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [partner, setPartner] = useState<PartnerProfile | null>(null);
+    const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
@@ -139,14 +145,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 console.error(`[AuthProvider] /api/auth/me : HTTP ${res.status}`, data?.error ?? '');
                 setProfile(null);
                 setPartner(null);
+                setAdminPermissions([]);
                 return;
             }
             setProfile(data.profile as UserProfile);
             setPartner((data.partner as PartnerProfile | null) || null);
+            // Lot 9 bis (R51) : aucune permission supposée si le champ manque ou n'est pas une liste de textes.
+            const perms: unknown = data.admin_permissions;
+            setAdminPermissions(Array.isArray(perms) ? perms.filter((p): p is string => typeof p === 'string') : []);
         } catch (err) {
             console.error('[AuthProvider] chargement du profil impossible :', err);
             setProfile(null);
             setPartner(null);
+            setAdminPermissions([]);
         }
     }, []);
 
@@ -182,6 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 } else {
                     setProfile(null);
                     setPartner(null);
+                    setAdminPermissions([]);
                 }
                 setIsLoading(false);
             }
@@ -216,6 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(null);
             setProfile(null);
             setPartner(null);
+            setAdminPermissions([]);
             setSession(null);
             router.push('/login');
             router.refresh();
@@ -230,6 +243,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!profile?.roles) return false;
         return roles.some(r => profile.roles.includes(r));
     }, [profile]);
+
+    const hasPermission = useCallback((permission: string): boolean => {
+        return adminPermissions.includes(permission);
+    }, [adminPermissions]);
 
     // Lot 7 (7.5) : billets hors ligne synchronisés seulement pour un compte client (module chargé à la demande).
     const syncOfflineTickets = !isLoading && !!user && hasRole('CLIENT');
@@ -247,6 +264,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 refreshProfile,
                 hasRole,
                 hasAnyRole,
+                hasPermission,
             }}
         >
             {syncOfflineTickets && <LazyOfflineTicketsSync />}
@@ -269,6 +287,7 @@ export const useAuth = (): AuthContextType => {
             refreshProfile: async () => {},
             hasRole: () => false,
             hasAnyRole: () => false,
+            hasPermission: () => false,
         };
     }
     return context;

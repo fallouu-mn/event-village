@@ -33,7 +33,9 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/admin-auth';
+import { permissionLabel } from '@/lib/admin/permission-labels';
 
 interface UserItem {
   id: string;
@@ -47,12 +49,29 @@ interface UserItem {
   created_at: string;
 }
 
+/** Message français d'une réponse en échec (`{ error }` de la route), sinon le repli donné. */
+function refusalOf(data: unknown, fallback: string): string {
+  if (data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' && (data as { error: string }).error.trim()) {
+    return (data as { error: string }).error;
+  }
+  return fallback;
+}
+
+/**
+ * Lot 9 bis (R51, B34 ; contrat 5.12) : les boutons qui écrivent ne s'affichent qu'avec la permission users.write
+ * (création, suspension, réactivation, anonymisation) ; « Permissions » et toute action sur un compte ADMIN restent
+ * au SUPERADMIN (R71, B33), comme côté serveur. Un refus éventuel de la route est affiché tel quel (texte français).
+ */
 export default function AdminUsersManagementPage() {
   const toast = useToast();
+  const { hasPermission, hasRole } = useAuth();
+  const canWrite = hasPermission('users.write');
+  const isSuperadmin = hasRole('SUPERADMIN');
   const [users, setUsers] = useState<UserItem[]>([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [isLoading, setIsLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
 
   // Modal Création Utilisateur / Admin
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -77,14 +96,22 @@ export default function AdminUsersManagementPage() {
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
+    setListError(null);
     try {
       const res = await fetch(`/api/admin/users?role=${roleFilter}&search=${encodeURIComponent(search)}`);
-      const data = await res.json();
-      if (res.ok && data.users) {
-        setUsers(data.users);
+      const data: unknown = await res.json().catch(() => null);
+      const list = data && typeof data === 'object' ? (data as { users?: unknown }).users : undefined;
+      if (!res.ok || !Array.isArray(list)) {
+        // Lot 9 bis (R51) : refus de la route (permission users.read absente…) dit en français, jamais une liste vide muette.
+        setUsers([]);
+        setListError(refusalOf(data, 'Impossible de charger les comptes pour le moment. Réessayez.'));
+        return;
       }
+      setUsers(list as UserItem[]);
     } catch (err) {
       console.error('[AdminUsers] Erreur chargement:', err);
+      setUsers([]);
+      setListError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
     } finally {
       setIsLoading(false);
     }
@@ -113,8 +140,8 @@ export default function AdminUsersManagementPage() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de la création.');
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
 
       toast.success(`Le compte ${newRole} de ${newFirstName} ${newLastName} a été créé avec succès.`);
       setIsCreateModalOpen(false);
@@ -145,7 +172,8 @@ export default function AdminUsersManagementPage() {
         }),
       });
 
-      if (!res.ok) throw new Error('Erreur lors du changement de statut.');
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors du changement de statut.'));
 
       toast.success(
         newStatus === 'ACTIF'
@@ -190,8 +218,8 @@ export default function AdminUsersManagementPage() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour des permissions.');
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
 
       toast.success(`Les permissions de l'administrateur ${selectedAdmin.first_name} ${selectedAdmin.last_name} ont été enregistrées.`);
       setIsPermModalOpen(false);
@@ -223,8 +251,8 @@ export default function AdminUsersManagementPage() {
       const res = await fetch(`/api/admin/users/${userToDelete.id}/anonymize`, {
         method: 'POST',
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'anonymisation.');
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de l\'anonymisation.'));
 
       toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement anonymisé (RGPD).`);
       setUserToDelete(null);
@@ -270,15 +298,17 @@ export default function AdminUsersManagementPage() {
             <span>Actualiser</span>
           </Button>
 
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-1.5 bg-[#FF5722] text-white"
-          >
-            <UserPlus size={15} />
-            <span>Créer un Compte / Admin</span>
-          </Button>
+          {canWrite && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex items-center gap-1.5 bg-[#FF5722] text-white"
+            >
+              <UserPlus size={15} />
+              <span>Créer un Compte / Admin</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -319,6 +349,11 @@ export default function AdminUsersManagementPage() {
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
             <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
             <p className="text-xs">Chargement des utilisateurs...</p>
+          </div>
+        ) : listError ? (
+          <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
+            <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <p>{listError}</p>
           </div>
         ) : users.length === 0 ? (
           <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
@@ -395,7 +430,7 @@ export default function AdminUsersManagementPage() {
 
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {/* Bouton Permissions Granulaires pour Admin */}
-                    {isAdmin && !isDeleted && (
+                    {isAdmin && !isDeleted && isSuperadmin && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -408,7 +443,7 @@ export default function AdminUsersManagementPage() {
                     )}
 
                     {/* Suspension / Réactivation / Suppression */}
-                    {!isSuper && !isDeleted && (
+                    {!isSuper && !isDeleted && canWrite && (!isAdmin || isSuperadmin) && (
                       <>
                         <Button
                           variant="secondary"
@@ -749,7 +784,7 @@ export default function AdminUsersManagementPage() {
                         : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
                     }`}
                   >
-                    <span className="text-[11px] font-bold">{perm}</span>
+                    <span className="text-[11px] font-bold">{permissionLabel(perm)}</span>
                     <span
                       className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black transition-all ${
                         isChecked ? 'bg-[#FF5722] text-white shadow-xs' : 'border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
