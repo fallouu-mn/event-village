@@ -1,4 +1,5 @@
 import { getCategoryLabel } from '@/lib/constants/event-categories';
+import { foldText } from '@/lib/text/fold';
 
 /**
  * Lot 9 (9.1, contrat 5.2) — sélection et format de carte du catalogue public, extraits de GET /api/events pour que
@@ -61,6 +62,24 @@ export interface CatalogEventDto {
     priceFormatted: string;
     onSaleSoon: boolean;
     status: string;
+}
+
+/**
+ * Lot 9 bis (ex-10.0 e, B94) — villes proposées par le catalogue, une par forme pliée (« Thiès » et « THIES » ne
+ * font qu'une). Forme affichée : la plus fréquente parmi les événements donnés ; à égalité, la première dans l'ordre
+ * `localeCompare('fr')` (déterministe). Liste triée par `localeCompare('fr')`. Aucune donnée réécrite.
+ */
+export function catalogCities(events: ReadonlyArray<Pick<CatalogEventDto, 'city'>>): string[] {
+    const byKey = new Map<string, Map<string, number>>();
+    for (const { city } of events) {
+        const key = foldText(city);
+        const forms = byKey.get(key) ?? new Map<string, number>();
+        forms.set(city, (forms.get(city) ?? 0) + 1);
+        byKey.set(key, forms);
+    }
+    const shown = Array.from(byKey.values(), (forms) => Array.from(forms.entries())
+        .sort(([a, na], [b, nb]) => nb - na || a.localeCompare(b, 'fr'))[0][0]);
+    return shown.sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
 const MONTHS = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
-import { CATALOG_SELECT, formatCatalogEvent, type CatalogRow } from '@/lib/events/catalog.server';
+import { CATALOG_SELECT, catalogCities, formatCatalogEvent, type CatalogRow } from '@/lib/events/catalog.server';
 import { eventEndAt } from '@/lib/events/event-end';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { foldText } from '@/lib/text/fold';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,14 +26,17 @@ function failure(err: unknown): NextResponse {
  * Lot 9 (9.1, A28, L18, L19) : les écrans filtrent par ces paramètres. `q` (120 caractères au plus) cherche aussi la
  * ville ; `city` est normalisée, `ALL` = pas de filtre ; `cities` liste les villes à venir AVANT les filtres, pour que
  * le choix de ville reste complet quand une ville est sélectionnée.
+ * Lot 9 bis (ex-10.0 e, B94) : `q` et `city` comparés par foldText (« thies » trouve « Thiès ») ; `cities` dédoublonnée
+ * par forme pliée (catalogCities).
  */
 export async function GET(req: NextRequest) {
     try {
         const supabase = getServiceRoleClient();
         const { searchParams } = new URL(req.url);
-        const search = searchParams.get('q')?.trim().slice(0, 120).toLowerCase();
+        // Lot 9 bis (ex-10.0 e, B94) : recherche et ville comparées sur leur forme pliée (accents, casse, espaces).
+        const search = foldText((searchParams.get('q') ?? '').trim().slice(0, 120));
         const category = searchParams.get('category');
-        const city = searchParams.get('city')?.trim().toUpperCase();
+        const city = foldText(searchParams.get('city') ?? '');
 
         const { data: events, error } = await supabase
             .from('events')
@@ -46,23 +50,18 @@ export async function GET(req: NextRequest) {
         const formatted = ((events ?? []) as unknown as CatalogRow[])
             .filter((evt) => eventEndAt(evt).getTime() > now)
             .map(formatCatalogEvent);
-        const cities = Array.from(new Set(formatted.map((e) => e.city))).sort((a, b) => a.localeCompare(b, 'fr'));
+        const cities = catalogCities(formatted);
 
         // Filtrage en mémoire pour recherche et ville si demandés
         let results = formatted;
         if (search) {
-            results = results.filter(e =>
-                e.title.toLowerCase().includes(search) ||
-                e.venue.toLowerCase().includes(search) ||
-                e.subtitle.toLowerCase().includes(search) ||
-                e.city.toLowerCase().includes(search)
-            );
+            results = results.filter((e) => [e.title, e.venue, e.subtitle, e.city].some((field) => foldText(field).includes(search)));
         }
         if (category && category !== 'ALL') {
             results = results.filter(e => e.category === category);
         }
-        if (city && city !== 'ALL') {
-            results = results.filter(e => e.city === city);
+        if (city && city !== 'all') {
+            results = results.filter((e) => foldText(e.city) === city);
         }
 
         return NextResponse.json({ events: results, cities }, { headers: { 'Cache-Control': 'no-store' } });
