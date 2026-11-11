@@ -26,6 +26,8 @@ function failure(err: unknown): NextResponse {
  * Lot 9 (9.1, A28, L18, L19) : les écrans filtrent par ces paramètres. `q` (120 caractères au plus) cherche aussi la
  * ville ; `city` est normalisée, `ALL` = pas de filtre ; `cities` liste les villes à venir AVANT les filtres, pour que
  * le choix de ville reste complet quand une ville est sélectionnée.
+ * Lot 9 bis (R35, R36, B59, B60) : prix « à partir de » sur les seules catégories achetables (en ligne, restantes, vente
+ * ouverte) ; `saleLabel` et `endFormatted` servis par formatCatalogEvent.
  * Lot 9 bis (ex-10.0 e, B94) : `q` et `city` comparés par foldText (« thies » trouve « Thiès ») ; `cities` dédoublonnée
  * par forme pliée (catalogCities).
  */

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getCategoryLabel } from '@/lib/constants/event-categories';
+import { formatEventEnd } from '@/lib/events/catalog.server';
 import { eventEndAt } from '@/lib/events/event-end';
 import { isEventId, PUBLIC_EVENT_STATUSES, type PublicEventStatus } from '@/lib/events/public-status';
 
@@ -106,6 +107,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             timeZone: 'Africa/Dakar',
         });
         const timeFormatted = event.start_time ? event.start_time.substring(0, 5) : '20:00';
+        const endFormatted = formatEventEnd(event);
         const partnerData = Array.isArray(event.partners) ? event.partners[0] : event.partners;
 
         type CategoryRow = {
@@ -202,6 +204,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
                 galleryUrls: event.gallery_urls || [],
                 dateFormatted,
                 time: timeFormatted,
+                // Lot 9 bis (R36, B59) : fin montrée seulement si une date de fin est saisie.
+                ...(endFormatted ? { endFormatted } : {}),
                 venue: event.location || 'Dakar, Sénégal',
                 city: event.city || null,
                 latitude: event.latitude || null,
