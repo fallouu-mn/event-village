@@ -21,7 +21,7 @@ import { KpiAmount } from '@/components/partner/pilotage/PilotageBlocks';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
 import { PartnerEventCard, type EventAction, type PartnerEventItem } from '@/components/partner/events-list/PartnerEventCard';
-import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
+import { ApiError, errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
 
 /**
  * Lot 5, tâche 5.11 (contrat H) — liste des événements de l'organisateur.
@@ -30,6 +30,8 @@ import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-js
  *  - Onglets par statut (Annulé compris), libellés de EVENT_STATUS_META ; onglet courant dans `?statut=`.
  *  - Actions de chaque carte : event_actions (servies par GET /api/partner/events) ; transitions par
  *    POST …/transition, annulation par EventCancelDialog (tâche 5.8).
+ *  - Lot 9 bis (R34, R94) : une soumission refusée SUBMIT_INCOMPLETE ouvre la liste des manques servie par le serveur
+ *    (`missing` : affiche, catégorie, date de début passée, vente au-delà de la fin…), avec le lien de modification.
  *  - Temps réel : event_status_history (statuts de ses événements, RLS propriétaire), puis rechargement.
  */
 
@@ -134,6 +136,9 @@ export default function PartnerEventsPage() {
         ...EVENT_STATUSES.map((s) => ({ id: s, label: EVENT_STATUS_META[s].label, count: overview ? overview.counts[s] ?? 0 : undefined })),
     ], [overview]);
 
+    /** R34, R94 : manques servis par le serveur à une soumission refusée (SUBMIT_INCOMPLETE). */
+    const [incomplete, setIncomplete] = useState<{ event: PartnerEventItem; items: string[] } | null>(null);
+
     const runTransition = async (event: PartnerEventItem, action: EventAction, reason?: string): Promise<boolean> => {
         setPending({ eventId: event.id, to: action.to });
         try {
@@ -143,6 +148,13 @@ export default function PartnerEventsPage() {
             return true;
         } catch (err) {
             const message = errorMessage(err, 'Changement de statut impossible pour le moment.');
+            const missing = err instanceof ApiError && err.code === 'SUBMIT_INCOMPLETE' && Array.isArray(err.body?.missing)
+                ? (err.body.missing as Array<{ message?: unknown }>).map((m) => (typeof m.message === 'string' ? m.message : '')).filter((m) => m !== '')
+                : [];
+            if (missing.length > 0) {
+                setIncomplete({ event, items: missing });
+                return false;
+            }
             toast.error(message);
             if (reason !== undefined) setReasonError(message);
             return false;
@@ -337,6 +349,31 @@ export default function PartnerEventsPage() {
                 isLoading={pending !== null}
                 error={reasonError}
             />
+
+            <Modal
+                isOpen={incomplete !== null}
+                onClose={() => setIncomplete(null)}
+                title="Soumission impossible : il manque des informations"
+                subtitle={incomplete?.event.title}
+                maxWidth="md"
+                footer={
+                    <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:justify-end">
+                        <Button variant="ghost" onClick={() => setIncomplete(null)}>Fermer</Button>
+                        {incomplete && (
+                            <LinkButton href={`/partner/events/${incomplete.event.id}/edit`} variant="primary">
+                                Compléter l’événement
+                            </LinkButton>
+                        )}
+                    </div>
+                }
+            >
+                <div role="alert">
+                    <p className="text-sm text-fg">Corrigez ces points, puis soumettez de nouveau l’événement :</p>
+                    <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-fg">
+                        {incomplete?.items.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                </div>
+            </Modal>
 
             <ConfirmDialog
                 isOpen={deleteTarget !== null}
