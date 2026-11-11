@@ -13,6 +13,7 @@ import { cn } from '@/components/ui/cn';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
 import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
+import { foldText } from '@/lib/text/fold';
 
 /**
  * Catalogue public (lot 5, tâches 5.3 et 5.13 ; contrats E, O3, O5).
@@ -153,12 +154,15 @@ export default function ExplorePage() {
     }
   };
 
+  // Lot 9 bis (ex-10.0 e ; contrat 5.45, B94) : la ville choisie prend la forme du catalogue quand une ville a la même
+  // forme pliée (« Thiès » et « THIES » ne font qu'une option) ; elle n'est ajoutée à la liste que sinon.
+  const selectedCity = city === ALL ? ALL : cities.find((value) => foldText(value) === foldText(city)) ?? city;
   const cityOptions = useMemo(() => {
-    const values = city !== ALL && !cities.includes(city) ? [...cities, city] : cities;
+    const values = selectedCity !== ALL && !cities.includes(selectedCity) ? [...cities, selectedCity] : cities;
     return values
       .map((value) => ({ value, label: cityLabel(value) ?? value }))
       .sort((a, b) => a.label.localeCompare(b.label, 'fr-FR'));
-  }, [cities, city]);
+  }, [cities, selectedCity]);
 
   const visible = useMemo(() => {
     if (sortBy === 'price-asc') return [...events].sort(byPrice(1));
@@ -224,7 +228,7 @@ export default function ExplorePage() {
           <div id={filtersPanelId} className={cn('grid-cols-1 gap-4 md:contents', filtersOpen ? 'grid' : 'hidden')}>
             <Select
               label="Ville"
-              value={city}
+              value={selectedCity}
               onChange={(e) => setCity(e.target.value)}
               options={[{ value: ALL, label: 'Toutes les villes' }, ...cityOptions]}
             />

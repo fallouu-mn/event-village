@@ -22,6 +22,13 @@ const NEARBY_LIMIT = 8;
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
 const SAVE_FAILED_MESSAGE = 'La ville n’a pas pu être enregistrée. Réessayez dans un instant.';
 
+/**
+ * Lot 9 bis (ex-10.0 e ; contrat 5.45, B94) : clé de ville sans accent ni casse, pour que la ville du profil
+ * (« Thiès ») et celle du catalogue (« THIES ») ne fassent qu'une option. Pliage en ligne, sans importer
+ * lib/text/fold (budget JS de /) : seules les villes passent ici, déjà dédoublonnées par la route.
+ */
+const cityKey = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+
 const TITLE = 'text-2xl font-bold tracking-tight text-fg';
 // Sur mobile, la liste défile jusqu'aux bords de l'écran (-mx-4 annule la gouttière de la page).
 const RAIL = '-mx-4 flex snap-x scroll-px-4 gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:snap-none sm:scroll-px-0 sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-4';
@@ -193,14 +200,17 @@ function NearbySection({ cities }: { cities: string[] | null }) {
     }
   };
 
+  // Ville choisie sous la forme du catalogue quand il la connaît (même clé pliée), sinon telle quelle.
+  const selected = city ? (cities ?? []).find((v) => cityKey(v) === cityKey(city)) ?? city : null;
+
   const options = useMemo<SelectOption[]>(() => {
     const values = new Set(cities ?? []);
-    if (city) values.add(city);
+    if (selected) values.add(selected);
     const list = Array.from(values)
       .map((value) => ({ value, label: cityLabel(value) ?? value }))
       .sort((a, b) => a.label.localeCompare(b.label, 'fr-FR'));
-    return city ? list : [{ value: '', label: 'Choisir une ville', disabled: true }, ...list];
-  }, [cities, city]);
+    return selected ? list : [{ value: '', label: 'Choisir une ville', disabled: true }, ...list];
+  }, [cities, selected]);
 
   const choose = async (value: string) => {
     setSaveError(null);
@@ -231,7 +241,7 @@ function NearbySection({ cities }: { cities: string[] | null }) {
           <Select
             label="Votre ville"
             fieldClassName="w-full sm:w-64"
-            value={savingCity ?? city ?? ''}
+            value={savingCity ?? selected ?? ''}
             disabled={savingCity !== null}
             onChange={(e) => void choose(e.target.value)}
             options={options}
