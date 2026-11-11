@@ -152,6 +152,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         const hasAvailableTickets = categories.some((c) => c.isAvailable);
         const purchasable = status === 'PUBLIE' && !ended && hasAvailableTickets;
         const isFullySoldOut = categories.length > 0 && categories.every((c) => c.isSoldOut);
+        // Lot 9 bis (R104, D-txt 2) : la fiche dit pourquoi rien n'est en vente. Places retenues par des paiements en
+        // cours (elles peuvent se libérer) ; ventes en ligne closes pour toutes les catégories (« Revenez bientôt » faux).
+        const hasHeldSeats = rows.some((c) => Number(c.held_quantity ?? 0) > 0);
+        const salesEnded = categories.length > 0 && categories.every((c) => c.saleEnded);
         const banner = status === 'PUBLIE' ? null : { kind: status, ...BANNERS[status] };
 
         let cancellation: { publicNotice: string; cancelledAt: string; refundInfo: string } | undefined;
@@ -208,6 +212,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
                 banner,
                 ...(cancellation ? { cancellation } : {}),
                 isFullySoldOut,
+                hasHeldSeats,
+                salesEnded,
                 hasAvailableTickets,
                 program: (event.program as unknown[]) || [],
                 practicalInfo: {
