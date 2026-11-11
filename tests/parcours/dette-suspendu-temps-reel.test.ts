@@ -227,7 +227,7 @@ async function setPartnerStatus(status: 'SUSPENDU' | 'VALIDE', reason?: string):
 
 async function setUserStatus(userId: string, status: 'SUSPENDU' | 'ACTIF'): Promise<RouteResult> {
     const { PATCH } = await importModule(USERS_ROUTE);
-    return invoke(PATCH as Handler, jsonRequest('/api/admin/users', { userId, status }, bearer(await superadminToken()), 'PATCH'));
+    return invoke(PATCH as Handler, jsonRequest('/api/admin/users', { userId, status, ...(status === 'SUSPENDU' ? { reason: 'Suspension de test du lot 6 (temps réel)' } : {}) }, bearer(await superadminToken()), 'PATCH')); // lot 9 bis (contrat 4.2, B74) : motif exigé à la suspension
 }
 
 // ── Abonnements : un canal par abonné, une table de contrôle dans le canal ──
