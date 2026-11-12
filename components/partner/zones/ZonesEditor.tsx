@@ -146,7 +146,10 @@ export function ZonesEditor({ eventId, config, loading, error, refreshing, reloa
     const editable = config.can_edit;
     const dirty = signature(zones) !== signature(baseline);
     const categories = config.categories;
-    const withoutGate = config.configured ? config.controllers.filter((c) => !c.gate_id).length : 0;
+    // Contrôleurs servis sans porte (controllers[].gate_id nul, F30) : liste lue telle quelle, sa taille ne sert qu'à
+    // accorder le bandeau (singulier, pluriel) ; aucun total du pilotage n'est compté ici
+    const unassigned = config.configured ? config.controllers.filter((c) => !c.gate_id) : [];
+    const withoutGate = unassigned.length;
 
     const updateZone = (key: string, patch: Partial<DraftZone>): void => {
         setZones((list) => list.map((z) => (z.key === key ? { ...z, ...patch } : z)));
