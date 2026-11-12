@@ -26,6 +26,13 @@
  *    (SUSPENDU | PUBLIE) ; TICKET_CANCELLED : kind (INVITATION | FREE | CASH) ; ADMIN_EVENT_CHANGED : changes
  *    (TITLE | POSTER | PLACE | DATE | CATEGORY), old_title, category ; motifs : reason (motif interne ou de l'admin),
  *    public_notice (avis public d'une annulation).
+ * Lot 9 ter (contrat 11.1, 11.2 N1 à N4, M1 ; noms fixés ici pour les émetteurs des vagues S2 et S4) :
+ *  - TICKET_REFUNDED_HOLDER : ticket_id, category (nom de la catégorie du billet) ;
+ *  - ADMIN_EVENT_PUBLISHED, ADMIN_EVENT_WITHDRAWN : company ;
+ *  - SCAN_REFUSALS_ALERT : gate_name (toujours présent), zone_name (null sans zone), refused_count, window_minutes,
+ *    threshold ;
+ *  - ADMIN_EVENT_CHANGED : changes += PRICE | CHANNELS, avec old_price, new_price (PRICE) et sale_online, sale_counter
+ *    (CHANNELS, valeurs d'après la modification).
  *
  * Jamais de code, de jeton, de QR ni de secret dans ces données (contrainte notification_outbox_no_secret_chk).
  */
@@ -202,13 +209,20 @@ export interface TemplateData {
     ACCOUNT_SUSPENDED: { reason: string };
     ACCOUNT_REACTIVATED: Record<string, never>;
     ADMIN_EVENT_CHANGED: EventData & {
-        company?: string | null; changes: Array<'TITLE' | 'POSTER' | 'PLACE' | 'DATE' | 'CATEGORY' | string>; old_title?: string | null; category?: string | null;
+        company?: string | null; changes: Array<'TITLE' | 'POSTER' | 'PLACE' | 'DATE' | 'CATEGORY' | 'PRICE' | 'CHANNELS' | string>; old_title?: string | null; category?: string | null;
+        old_price?: number | null; new_price?: number | null; sale_online?: boolean | null; sale_counter?: boolean | null;
     };
     EVENT_SUBMITTED_ACK: EventData;
     EVENT_FINISHED: EventData;
     CLOSING_REPORT_READY: EventData;
     FUNDS_AVAILABLE: EventData;
     EMAIL_VERIFICATION: { purpose?: string };
+
+    // ── Lot 9 ter (contrat 11.1, 11.2 N1 à N4) ──
+    TICKET_REFUNDED_HOLDER: EventData & { ticket_id?: string; category: string };
+    ADMIN_EVENT_PUBLISHED: EventData & { company?: string | null };
+    ADMIN_EVENT_WITHDRAWN: EventData & { company?: string | null };
+    SCAN_REFUSALS_ALERT: EventData & { gate_name: string; zone_name?: string | null; refused_count: number; window_minutes: number; threshold: number };
 }
 
 export type NotificationType = keyof TemplateData;

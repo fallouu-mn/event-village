@@ -28,6 +28,10 @@
  * (G.49, sauf PUSH_TEST et COUNTER_RECEIPT) et pour les optionnels qui ont le push (G.50) ; EVENT_CHANGED
  * indispensable (R14) ; préfixe unique « Event Village : » des envois synchrones (R73), code de retrait dédié (R107) ;
  * aucune valeur tronquée suivie de « .... » (R74) ; textes du contrat 11.1 et 11.2 mot pour mot.
+ *
+ * Lot 9 ter (contrat 11.1, 11.2 N1 à N4 et M1 ; registre : migration 20261110000004) : 4 types nouveaux de tout le lot
+ * (TICKET_REFUNDED_HOLDER, seul SMS nouveau, texte de la consigne 0.2 ; ADMIN_EVENT_PUBLISHED, ADMIN_EVENT_WITHDRAWN ;
+ * SCAN_REFUSALS_ALERT, sans SMS) et parties PRICE et CHANNELS d'ADMIN_EVENT_CHANGED (registre inchangé).
  */
 import { formatDate, formatDateTime, formatFcfa, formatInteger, formatTime } from '@/lib/format';
 import { internalActionUrl } from './action-url';
@@ -529,7 +533,17 @@ function controllerChangedInApp(d: object): { title: string; content: string } {
     return { title: 'Contrôle modifié', content: `${q(text(d, 'title'))} : ${parts.join(', ')}. Votre affectation est maintenue.` };
 }
 
-/** N21 : liste des changements après validation, jamais un code. */
+/** Lot 9 ter (11.2 M1, 9t.10) : canaux de vente d'une catégorie, d'après la modification. */
+function saleChannelsLabel(d: object): string {
+    const online = bool(d, 'sale_online');
+    const counter = bool(d, 'sale_counter');
+    if (online && counter) return 'en ligne et au guichet';
+    if (online) return 'en ligne seulement';
+    if (counter) return 'au guichet seulement';
+    return 'aucun canal';
+}
+
+/** N21 : liste des changements après validation, jamais un code ; lot 9 ter (M1) : parties PRICE et CHANNELS. */
 function adminChangeList(d: object): string {
     const changes = strings(d, 'changes');
     const parts: string[] = [];
@@ -543,6 +557,10 @@ function adminChangeList(d: object): string {
         else if (change === 'CATEGORY') {
             const category = optText(d, 'category');
             parts.push(category ? `catégorie ${q(category)} ajoutée` : 'catégorie ajoutée');
+        } else if (change === 'PRICE') {
+            parts.push(`nouveau prix pour ${q(text(d, 'category'))} (${money(d, 'new_price')} au lieu de ${money(d, 'old_price')})`);
+        } else if (change === 'CHANNELS') {
+            parts.push(`canaux de vente de ${q(text(d, 'category'))} changés (${saleChannelsLabel(d)})`);
         } else throw new TemplateDataError('changes', `contient un changement inconnu (${JSON.stringify(change)})`);
     }
     if (parts.length === 0) throw new TemplateDataError('changes', 'vide');
@@ -1575,6 +1593,7 @@ const CATALOG = {
         sample: {},
     }),
     // N21 (R18) : titre, affiche, lieu, date changés ou catégorie ajoutée après validation ; events.read.
+    // Lot 9 ter (M1, 9t.10) : prix ou canaux de vente d'une catégorie changés (parties PRICE et CHANNELS).
     ADMIN_EVENT_CHANGED: define('ADMIN_EVENT_CHANGED', {
         label: 'Événement modifié après validation', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
         link: (d) => `/admin/events/${ident(d, 'event_id')}`,
@@ -1617,6 +1636,54 @@ const CATALOG = {
         link: () => '/partner/finance',
         inApp: (d) => ({ title: 'Recettes disponibles', content: `Les recettes de ${q(text(d, 'title'))} sont disponibles sur votre solde : vous pouvez demander un retrait.` }),
         sample: { ...SAMPLE_EVENT },
+    }),
+    // ── Lot 9 ter (contrat 11.1, 11.2 N1 à N4) ──
+    // N1 (9t.2, consigne 0.2) : détenteur actuel d'un billet transféré, remboursé hors annulation à l'acheteur d'origine.
+    TICKET_REFUNDED_HOLDER: define('TICKET_REFUNDED_HOLDER', {
+        label: 'Billet transféré annulé (détenteur)', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
+        link: () => '/tickets',
+        inApp: (d) => ({
+            title: 'Billet annulé',
+            content: `Votre billet ${text(d, 'category')} pour ${q(text(d, 'title'))} du ${formatDateTime(iso(d, 'start_at'))} a été annulé. Le remboursement est versé à l'acheteur d'origine.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}votre billet ${smsVar(text(d, 'category'), 25)} pour ${smsVar(text(d, 'title'), 30)} a été annulé. Le remboursement est versé à l'acheteur d'origine.`,
+        sample: { ...SAMPLE_EVENT, ticket_id: SAMPLE_ID.ticket, category: 'VIP' },
+    }),
+    // N2 (9t.10, R95) : publication par l'organisatrice d'un événement validé ; events.read.
+    ADMIN_EVENT_PUBLISHED: define('ADMIN_EVENT_PUBLISHED', {
+        label: 'Événement publié par l’organisateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
+        link: (d) => `/admin/events/${ident(d, 'event_id')}`,
+        inApp: (d) => {
+            const company = optText(d, 'company');
+            return {
+                title: 'Événement publié par l\'organisateur',
+                content: `${q(text(d, 'title'))}${company ? ` de ${company}` : ''} est publié par l'organisateur : sa page publique est en ligne.`,
+            };
+        },
+        sample: { ...SAMPLE_EVENT, company: 'Sabar Events' },
+    }),
+    // N3 (9t.10, R95) : soumission retirée de la validation par l'organisatrice ; events.read.
+    ADMIN_EVENT_WITHDRAWN: define('ADMIN_EVENT_WITHDRAWN', {
+        label: 'Soumission retirée par l’organisateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
+        link: (d) => `/admin/events/${ident(d, 'event_id')}`,
+        inApp: (d) => {
+            const company = optText(d, 'company');
+            return {
+                title: 'Soumission retirée par l\'organisateur',
+                content: `${q(text(d, 'title'))}${company ? ` de ${company}` : ''} est retiré de la validation par l'organisateur : il n'attend plus votre examen.`,
+            };
+        },
+        sample: { ...SAMPLE_EVENT, company: 'Sabar Events' },
+    }),
+    // N4 (9t.18, D-pil 4) : refus en série à une porte, à la partenaire ; aucun SMS (D-P3).
+    SCAN_REFUSALS_ALERT: define('SCAN_REFUSALS_ALERT', {
+        label: 'Refus en série à une porte', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ALERT',
+        link: (d) => partnerEventPath(d, 'entrees'),
+        inApp: (d) => ({
+            title: 'Refus en série à une porte',
+            content: `${text(d, 'gate_name')} : ${count(d, 'refused_count')} refus en ${plural(count(d, 'window_minutes'), 'minute', 'minutes')} pour ${q(text(d, 'title'))}. Vérifiez la porte avec vos contrôleurs.`,
+        }),
+        sample: { ...SAMPLE_EVENT, gate_name: 'Porte B', zone_name: 'Entrée générale', refused_count: 12, window_minutes: 5, threshold: 10 },
     }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),

@@ -201,6 +201,11 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     CLOSING_REPORT_READY: 'Rapport de clôture prêt',
     FUNDS_AVAILABLE: 'Recettes disponibles',
     EMAIL_VERIFICATION: "Lien de vérification de l'adresse email",
+    // Lot 9 ter (contrat 11.2 N1 à N4)
+    TICKET_REFUNDED_HOLDER: 'Billet transféré annulé (détenteur)',
+    ADMIN_EVENT_PUBLISHED: 'Événement publié par l’organisateur',
+    ADMIN_EVENT_WITHDRAWN: 'Soumission retirée par l’organisateur',
+    SCAN_REFUSALS_ALERT: 'Refus en série à une porte',
 };
 
 export function outboxStatusLabel(status: string): string {
