@@ -1,0 +1,122 @@
+TAP version 13
+# Subtest: Client SamirPay réel — conformité au contrat v1.2
+    # Subtest: cashin direct : chemin, en-têtes et corps exacts ; réponse 201 lue (transactionId, url, qrCode, urls)
+    ok 1 - cashin direct : chemin, en-têtes et corps exacts ; réponse 201 lue (transactionId, url, qrCode, urls)
+      ---
+      duration_ms: 40.205382
+      type: 'test'
+      ...
+    # Subtest: cashin direct Orange Money : url null, lien profond lu dans urls.OM (puis urls.MAXIT), qrCode rendu en data URL
+    ok 2 - cashin direct Orange Money : url null, lien profond lu dans urls.OM (puis urls.MAXIT), qrCode rendu en data URL
+      ---
+      duration_ms: 7.705979
+      type: 'test'
+      ...
+    # Subtest: cashin direct : 400 au format B → REJECTED, errorMessage repris dans le message (jamais « HTTP 400 »)
+    ok 3 - cashin direct : 400 au format B → REJECTED, errorMessage repris dans le message (jamais « HTTP 400 »)
+      ---
+      duration_ms: 14.054938
+      type: 'test'
+      ...
+    # Subtest: cashin direct : orderId en double → erreur DUPLICATE (409)
+    ok 4 - cashin direct : orderId en double → erreur DUPLICATE (409)
+      ---
+      duration_ms: 7.729864
+      type: 'test'
+      ...
+[samirpay] Statut 00000000-0000-4000-8000-0000000004ff : 404 sans statut NOT_FOUND (format C), jamais tenu pour une transaction inexistante (HTTP 404)
+[samirpay] Statut pas-un-identifiant : identifiant refusé par SamirPay (INVALID_ID) (HTTP 400)
+[samirpay] Statut 00000000-0000-4000-8000-0000000000ee : réponse non corrélée ou statut inconnu (format C) (HTTP 200)
+    # Subtest: statut : GET /api/tiers/payments/{transactionId}/status, réponse corrélée ; 404 NOT_FOUND strict ; 400 INVALID_ID
+    ok 5 - statut : GET /api/tiers/payments/{transactionId}/status, réponse corrélée ; 404 NOT_FOUND strict ; 400 INVALID_ID
+      ---
+      duration_ms: 30.137293
+      type: 'test'
+      ...
+    # Subtest: solde : lu dans body.solde (format A)
+    ok 6 - solde : lu dans body.solde (format A)
+      ---
+      duration_ms: 2.74173
+      type: 'test'
+      ...
+    # Subtest: cashout : corps exact (9 chiffres, montant en chaîne, prénom et nom) ; body lu : id, statut « V », fees, netAmount, refOperator, reference
+    ok 7 - cashout : corps exact (9 chiffres, montant en chaîne, prénom et nom) ; body lu : id, statut « V », fees, netAmount, refOperator, reference
+      ---
+      duration_ms: 4.819812
+      type: 'test'
+      ...
+    # Subtest: cashout : statut interne inconnu dans body → UNCERTAIN, jamais un succès supposé
+    ok 8 - cashout : statut interne inconnu dans body → UNCERTAIN, jamais un succès supposé
+      ---
+      duration_ms: 2.4029
+      type: 'test'
+      ...
+[samirpay] Cashout : statut interne inconnu « Z » (transaction c9a50528-dbf4-4cd5-a339-0ad2271ccac6, référence TXAB12CD34), envoi possiblement effectué (HTTP 200)
+[samirpay] Cashout : erreur HTTP 502 hors des formats A, B et D
+    # Subtest: cashout : refus explicite → REJECTED ; délai dépassé ou 502 → UNCERTAIN
+    ok 9 - cashout : refus explicite → REJECTED ; délai dépassé ou 502 → UNCERTAIN
+      ---
+      duration_ms: 409.148345
+      type: 'test'
+      ...
+    1..9
+ok 1 - Client SamirPay réel — conformité au contrat v1.2
+  ---
+  duration_ms: 524.416023
+  type: 'suite'
+  ...
+# Subtest: Client SamirPay réel — transferts sortants v1.2 (H7, contrat 4.5)
+    # Subtest: cashout : 409 au format A = transfert interrompu → UNCERTAIN, jamais REJECTED (aucun solde rendu, aucun renvoi)
+    ok 1 - cashout : 409 au format A = transfert interrompu → UNCERTAIN, jamais REJECTED (aucun solde rendu, aucun renvoi)
+      ---
+      duration_ms: 1.928568
+      type: 'test'
+      ...
+    # Subtest: cashout : 400 « Solde insuffisant » → REJECTED INSUFFICIENT_BALANCE ; « minimum » ou « maximum autorisé » → REJECTED ACCOUNT_LIMIT ; autre 400 → OPERATOR_REFUSED
+    ok 2 - cashout : 400 « Solde insuffisant » → REJECTED INSUFFICIENT_BALANCE ; « minimum » ou « maximum autorisé » → REJECTED ACCOUNT_LIMIT ; autre 400 → OPERATOR_REFUSED
+      ---
+      duration_ms: 6.105754
+      type: 'test'
+      ...
+    1..2
+ok 2 - Client SamirPay réel — transferts sortants v1.2 (H7, contrat 4.5)
+  ---
+  duration_ms: 8.196725
+  type: 'suite'
+  ...
+[samirpay] Cashin ORD-EV-1794506427412-C0C0C0 : orderId en double sans identifiant de transaction lisible dans le 409
+# Subtest: Client SamirPay réel — orderId en double, identifiant repris (H4, contrat 4.5)
+    # Subtest: cashin direct : 409 D CONFLICT avec transactionId=<uuid> dans message → DUPLICATE et existingTransactionId ; sans identifiant → DUPLICATE seul
+    ok 1 - cashin direct : 409 D CONFLICT avec transactionId=<uuid> dans message → DUPLICATE et existingTransactionId ; sans identifiant → DUPLICATE seul
+      ---
+      duration_ms: 3.159006
+      type: 'test'
+      ...
+    1..1
+ok 3 - Client SamirPay réel — orderId en double, identifiant repris (H4, contrat 4.5)
+  ---
+  duration_ms: 3.264816
+  type: 'suite'
+  ...
+# Subtest: Client SamirPay réel — adresses de retour du cashin (lot 9 ter, 0.4)
+    # Subtest: cashin direct : successUrl et errorUrl envoyés tels quels quand ils sont fournis
+    ok 1 - cashin direct : successUrl et errorUrl envoyés tels quels quand ils sont fournis
+      ---
+      duration_ms: 1.453044
+      type: 'test'
+      ...
+    1..1
+ok 4 - Client SamirPay réel — adresses de retour du cashin (lot 9 ter, 0.4)
+  ---
+  duration_ms: 1.534375
+  type: 'suite'
+  ...
+1..4
+# tests 13
+# suites 4
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1625.222463
