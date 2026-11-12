@@ -44,7 +44,7 @@ const ROOT = process.cwd();
 const CONTRACT_RESULTS = [
     'valid', 'already_used', 'invalid', 'cancelled', 'refunded', 'wrong_event', 'event_cancelled', 'event_ended',
     'event_suspended', 'event_not_open', 'payment_required', 'qr_expired', 'dynamic_qr_required',
-    'manual_entry_refused', 'transfer_pending', 'rate_limited', 'network_error', 'server_error', 'not_processed',
+    'manual_entry_refused', 'transfer_pending', 'wrong_zone', 'not_entered', 'zone_ok', 'rate_limited', 'network_error', 'server_error', 'not_processed',
 ];
 
 let partner: TestPartner;

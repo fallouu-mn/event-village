@@ -37,7 +37,7 @@
  * jusqu'à fix(8.2e-s).
  * Interprétations (contrat muet, à reprendre au rapport) :
  *  - les jetons de texte se nomment --scan-<x>-fg, en face de --scan-<x>-bg (convention -fg / -bg des jetons
- *    du lot 5, app/globals.css:52-67) ; les cinq fonds attendus : accept, used, refuse, window, tech (cash retiré par A16, lot 9) ;
+ *    du lot 5, app/globals.css:52-67) ; les fonds attendus : accept, used, refuse, window, tech (cash retiré par A16, lot 9), orient (lot 9 ter, 9t.16) ;
  *  - vibrationPattern reçoit le nom de catégorie du tableau du contrat (§6.2) ;
  *  - aucune vibration ailleurs que dans lib/hardware/feedback.ts (D50 : la vibration de lecture est supprimée).
  */
@@ -216,10 +216,10 @@ function scanTokens(): Map<string, string[]> {
     return out;
 }
 
-const SCAN_TONES = ['accept', 'used', 'refuse', 'window', 'tech'] as const;
+const SCAN_TONES = ['accept', 'used', 'refuse', 'window', 'tech', 'orient'] as const;
 
 describe('7.2 — jetons --scan-* : texte ≥ 7:1, identiques en clair et en sombre (D51)', () => {
-    test('les cinq paires --scan-<x>-fg / --scan-<x>-bg existent et chacune atteint 7:1', () => {
+    test('les six paires --scan-<x>-fg / --scan-<x>-bg existent et chacune atteint 7:1', () => {
         const tokens = scanTokens();
         const ratios: string[] = [];
         for (const tone of SCAN_TONES) {
@@ -268,7 +268,7 @@ describe('7.2 — jetons --scan-* : texte ≥ 7:1, identiques en clair et en som
 // ── 3. Vibrations ──────────────────────────────────────────────────────────
 
 describe('7.2 — vibrations distinctes, aucune pour un incident technique (D47, D50)', () => {
-    test('vibrationPattern : accepte [60] ; deja_utilise, refuse, evenement_annule [120,60,120,60,120] ; hors_fenetre [250,100,250] ; technique null', async () => {
+    test('vibrationPattern : accepte [60] ; deja_utilise, refuse, evenement_annule [120,60,120,60,120] ; hors_fenetre et oriente [250,100,250] ; technique null', async () => {
         const mod = await importModule('../../lib/hardware/feedback');
         assert.equal(typeof mod.vibrationPattern, 'function', `${FEEDBACK} : vibrationPattern(catégorie) exportée (contrat 6.1, test 3)`);
         const expected: Record<string, number[] | null> = {
@@ -277,12 +277,14 @@ describe('7.2 — vibrations distinctes, aucune pour un incident technique (D47,
             refuse: [120, 60, 120, 60, 120],
             evenement_annule: [120, 60, 120, 60, 120],
             hors_fenetre: [250, 100, 250],
+            oriente: [250, 100, 250], // lot 9 ter (9t.16, arbitrage 19) : orange, famille « attention »
             technique: null,
         };
         for (const [category, pattern] of Object.entries(expected)) {
             assert.deepEqual(mod.vibrationPattern(category), pattern, `vibrationPattern('${category}')`);
         }
         assert.notDeepEqual(mod.vibrationPattern('accepte'), mod.vibrationPattern('refuse'), 'accepté et refusé : motifs différents');
+        assert.notDeepEqual(mod.vibrationPattern('accepte'), mod.vibrationPattern('oriente'), 'accepté et orienté : motifs différents (lot 9 ter)');
     });
 
     test('plus de vibration à la lecture dans CameraQrScanner ; navigator.vibrate seulement dans lib/hardware/feedback.ts', () => {
