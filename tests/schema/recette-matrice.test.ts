@@ -8,7 +8,7 @@
  *  - « fait » a au moins un test, « partiel » et « non fait » disent ce qui manque ;
  *  - la colonne CI dit la même chose que la colonne Test ;
  *  - A1 à A41, PO3, PO4 et PO10 une fois chacune, avec gravité, état et référence ;
- *  - les essais 1 à 76 ont leurs étapes, leur résultat attendu, leur case et aucun nom de route ni de table ; l'essai 1 ne
+ *  - les essais 1 à 93 ont leurs étapes, leur résultat attendu, leur case et aucun nom de route ni de table ; l'essai 1 ne
  *    promet aucune bannière à l'écran (lot 9 bis, R109) ;
  *  - chaque écart par décision est une ligne « écarté » de la section 4, WhatsApp compris (lot 9 bis, ex-10.0 f, Q1).
  * Un test cité qui bouge rend cette suite rouge : reprendre le numéro de ligne dans le document.
@@ -37,8 +37,8 @@ const CORRIGEES = ['A1', 'A2', 'A3', 'A4', 'A6', 'A7', 'A13', 'A16', 'A17', 'A20
 const POINTS_OUVERTS = ['PO3', 'PO4', 'PO10'];
 const PREUVES = ['A11', 'A14', 'A15'];
 const ECARTS = ['Voix Wolof', 'Audio du scanner', 'Wallet', 'panier multi-événements', 'billets à régler sur place', 'WhatsApp'];
-/** Lot 9 bis (R109) : 69 + essais 70 à 76 du domaine textes (D-txt E.44) ; valeur finale posée par D2 en vague Doc. */
-const NOMBRE_ESSAIS = 76;
+/** Lot 9 bis (R109) : essais 70 à 76. Lot 9 ter : essais 77 à 93 (consigne 6, dont un essai par point 0.2 à 0.9 visible à l’écran). */
+const NOMBRE_ESSAIS = 93;
 const CI_RE = /^(?:vert au run \d+|à prouver au run après|vert au run \d+, le reste à prouver au run après|sans objet)$/;
 const PATH_RE = /^(?:M\/|tests\/|e2e\/|app\/|lib\/|components\/|docs\/|supabase\/|scripts\/|public\/|middleware\.ts|playwright\.config\.ts)/;
 const TEST_LINE_RE = /^\s*(?:await\s+)?(?:test|it)(?:\.\w+)?\(/;
@@ -201,7 +201,7 @@ function auditCahier(text: string): string[] {
 const audit = (text: string): string[] => [...auditCitations(text), ...auditMatrix(text), ...auditAnomalies(text), ...auditCahier(text)];
 
 const docPath = path.join(ROOT, ...DOC.split('/'));
-const doc = fs.existsSync(docPath) ? fs.readFileSync(docPath, 'utf8') : '';
+const doc = fs.existsSync(docPath) ? fs.readFileSync(docPath, 'utf8').replace(/\r\n/g, '\n') : ''; // lot 9 ter : \n comme sur la CI ; sous Windows (CRLF), trois mutations écrites en \n ne changeaient rien
 
 describe('8.3 — docs/recette-billetterie.md', () => {
     test('le document existe et sa légende reprend les cinq statuts', () => {
@@ -222,7 +222,7 @@ describe('8.3 — docs/recette-billetterie.md', () => {
         assert.deepEqual(auditAnomalies(doc), []);
     });
 
-    test('8.3 c : essais 1 à 76, écrits pour un non-développeur, sans bannière promise à l’essai 1 (R109)', () => {
+    test('8.3 c : essais 1 à 93, écrits pour un non-développeur, sans bannière promise à l’essai 1 (R109)', () => {
         assert.deepEqual(auditCahier(doc), []);
     });
 });
