@@ -5,20 +5,26 @@ import { Banknote, Phone, Send, Trash2, UserCheck, UserPlus } from 'lucide-react
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
-import { TextInput } from '@/components/ui/Field';
+import { Select, TextInput } from '@/components/ui/Field';
 import { KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
+import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { formatDateTime, formatInteger } from '@/lib/format';
 import { isEventEligibleForController } from '@/lib/events/event-status';
 import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
+import { ZonesEditor, type ZonesConfig } from '@/components/partner/zones/ZonesEditor';
 import { PilotageSection } from './PilotageBlocks';
 import type { PilotageTeam } from './types';
 
 type Controller = PilotageTeam['controllers'][number];
+
+/** Lot 9 ter (9t.15) : portes d'un événement à zones, et porte de chaque contrôleur (servies par GET …/zones). */
+interface GateChoice { id: string; label: string; name: string }
+interface GateSetup { gates: GateChoice[]; gateId: string | null; changeAllowed: boolean }
 
 interface InviteResponse {
     success?: boolean;
@@ -61,16 +67,91 @@ function CashSwitch({ checked, disabled, busy, onToggle }: { checked: boolean; d
     );
 }
 
+/**
+ * Lot 9 ter (9t.15, contrat C.1.4) : sur un événement à zones, la porte du contrôleur remplace le point d'entrée libre :
+ * liste « Porte » (« Aucune porte » puis « {porte} — {zone} »), interrupteur « Peut changer de porte », enregistrés par
+ * PATCH /api/partner/team/gate (le serveur vérifie la porte et les droits).
+ */
+function GateFields({ eventId, controller, setup, canManage, onChanged }: {
+    eventId: string;
+    controller: Controller;
+    setup: GateSetup;
+    canManage: boolean;
+    onChanged: () => Promise<void>;
+}) {
+    const toast = useToast();
+    const [gateId, setGateId] = useState(setup.gateId ?? '');
+    const [changeAllowed, setChangeAllowed] = useState(setup.changeAllowed);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        setGateId(setup.gateId ?? '');
+        setChangeAllowed(setup.changeAllowed);
+    }, [setup.gateId, setup.changeAllowed]);
+
+    const changed = gateId !== (setup.gateId ?? '') || changeAllowed !== setup.changeAllowed;
+
+    const save = async (): Promise<void> => {
+        setSaving(true);
+        try {
+            await sendJson('/api/partner/team/gate', 'PATCH', {
+                eventId,
+                controllerId: controller.controller_id,
+                gateId: gateId || null,
+                gateChangeAllowed: changeAllowed,
+            });
+            const gate = setup.gates.find((g) => g.id === gateId);
+            toast.success(gate ? `Porte de ${controller.name} : ${gate.name}.` : `Porte de ${controller.name} retirée.`);
+            await onChanged();
+        } catch (err) {
+            toast.error(errorMessage(err, 'Modification de la porte impossible.'));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <Select
+                    id={`porte-${controller.assignment_id}`}
+                    label="Porte"
+                    value={gateId}
+                    disabled={!canManage || saving}
+                    onChange={(e) => setGateId(e.target.value)}
+                    options={[{ value: '', label: 'Aucune porte' }, ...setup.gates.map((g) => ({ value: g.id, label: g.label }))]}
+                    fieldClassName="flex-1"
+                />
+                {canManage && (
+                    <Button variant="secondary" onClick={() => void save()} disabled={!changed} isLoading={saving}>
+                        Enregistrer
+                    </Button>
+                )}
+            </div>
+            <Switch
+                label="Peut changer de porte"
+                description="Le contrôleur choisit lui-même sa porte dans le scanner."
+                checked={changeAllowed}
+                disabled={!canManage || saving}
+                onChange={setChangeAllowed}
+            />
+        </div>
+    );
+}
+
 function ControllerCard({
     eventId,
     controller,
     canManage,
+    gateSetup,
     onChanged,
     onRemove,
 }: {
     eventId: string;
     controller: Controller;
     canManage: boolean;
+    /** Événement à zones : porte du contrôleur ; null sans zone (point d'entrée libre, inchangé). */
+    gateSetup: GateSetup | null;
     onChanged: () => Promise<void>;
     onRemove: (c: Controller) => void;
 }) {
@@ -172,23 +253,27 @@ function ControllerCard({
             </div>
 
             <div className="flex flex-col gap-3 md:flex-row md:items-end">
-                <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-end">
-                    <TextInput
-                        id={fieldId}
-                        label="Point d’entrée"
-                        placeholder="Porte Nord, Entrée VIP…"
-                        value={entryPoint}
-                        maxLength={80}
-                        disabled={!canManage || savingPoint}
-                        onChange={(e) => setEntryPoint(e.target.value)}
-                        fieldClassName="flex-1"
-                    />
-                    {canManage && (
-                        <Button variant="secondary" onClick={() => void savePoint()} disabled={!pointChanged} isLoading={savingPoint}>
-                            Enregistrer
-                        </Button>
-                    )}
-                </div>
+                {gateSetup ? (
+                    <GateFields eventId={eventId} controller={controller} setup={gateSetup} canManage={canManage} onChanged={onChanged} />
+                ) : (
+                    <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-end">
+                        <TextInput
+                            id={fieldId}
+                            label="Point d’entrée"
+                            placeholder="Porte Nord, Entrée VIP…"
+                            value={entryPoint}
+                            maxLength={80}
+                            disabled={!canManage || savingPoint}
+                            onChange={(e) => setEntryPoint(e.target.value)}
+                            fieldClassName="flex-1"
+                        />
+                        {canManage && (
+                            <Button variant="secondary" onClick={() => void savePoint()} disabled={!pointChanged} isLoading={savingPoint}>
+                                Enregistrer
+                            </Button>
+                        )}
+                    </div>
+                )}
                 <CashSwitch checked={controller.can_accept_cash} disabled={!canManage} busy={savingCash} onToggle={() => void toggleCash()} />
             </div>
 
@@ -212,10 +297,13 @@ function ControllerCard({
  * du SMS et retrait. Lecture seule pour un admin (propriétaire seul).
  * Lot 9 bis : R97 plus de champ Email (ignoré par la route) ; R37 un compte existant reçoit une invitation qu'il accepte
  * lui-même, il n'est affecté qu'après.
+ * Lot 9 ter (9t.15) : éditeur « Zones et portes » au-dessus des contrôleurs ; sur un événement à zones, chaque contrôleur
+ * reçoit une porte (et le droit d'en changer) au lieu du point d'entrée libre.
  */
 export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eventStatus: string; signal: number }) {
     const toast = useToast();
     const { data, error, loading, refreshing, reload } = useServerData<PilotageTeam>(`/api/partner/events/${eventId}/pilotage/team`, signal);
+    const zones = useServerData<ZonesConfig>(`/api/partner/events/${eventId}/zones`, signal);
 
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
@@ -318,6 +406,19 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
         return <ErrorState title="Équipe indisponible" description={error ?? undefined} onRetry={() => void reload()} isRetrying={refreshing} />;
     }
 
+    const zonesConfig = zones.data;
+    const gates: GateChoice[] = zonesConfig?.configured
+        ? zonesConfig.zones.flatMap((z) => z.gates.map((g) => ({ id: g.id, name: g.name, label: `${g.name} — ${z.name}` })))
+        : [];
+    const gateSetupOf = (c: Controller): GateSetup | null => {
+        if (!zonesConfig?.configured) return null;
+        const row = zonesConfig.controllers.find((x) => x.user_id === c.controller_id);
+        return { gates, gateId: row?.gate_id ?? null, changeAllowed: row?.gate_change_allowed === true };
+    };
+    const reloadTeam = async (): Promise<void> => {
+        await Promise.all([reload(), zones.reload()]);
+    };
+
     return (
         <div className="flex flex-col gap-6">
             {canManage && !eligible && (
@@ -365,6 +466,16 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
                 </PilotageSection>
             )}
 
+            <ZonesEditor
+                eventId={eventId}
+                config={zones.data}
+                loading={zones.loading}
+                error={zones.error}
+                refreshing={zones.refreshing}
+                reload={zones.reload}
+                onSaved={() => void reloadTeam()}
+            />
+
             <PilotageSection
                 title="Contrôleurs affectés"
                 description="Chaque scan garde le point d’entrée du contrôleur ; la permission espèces vaut pour cette affectation seulement."
@@ -379,7 +490,7 @@ export function TeamTab({ eventId, eventStatus, signal }: { eventId: string; eve
                 ) : (
                     <ul className="flex flex-col gap-3" aria-label="Contrôleurs affectés">
                         {data.controllers.map((c) => (
-                            <ControllerCard key={c.assignment_id} eventId={eventId} controller={c} canManage={canManage} onChanged={reload} onRemove={setRemoveTarget} />
+                            <ControllerCard key={c.assignment_id} eventId={eventId} controller={c} canManage={canManage} gateSetup={gateSetupOf(c)} onChanged={reloadTeam} onRemove={setRemoveTarget} />
                         ))}
                     </ul>
                 )}

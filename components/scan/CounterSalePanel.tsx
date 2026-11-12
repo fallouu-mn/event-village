@@ -9,6 +9,9 @@
  *  - POST /api/controller/counter-sale : vente, avec une clé d'idempotence par vente (une relance après une
  *    coupure rend la même vente, jamais une seconde).
  * Chargé à la demande (next/dynamic) depuis l'écran du scanner.
+ * Lot 9 ter (9t.15, contrat C.1.4, arbitrage 18) : sur un événement à zones, une catégorie que le serveur dit non admise à
+ * la porte du vendeur (`admitted_at_gate` faux) est inactive avec « N’entre pas par votre porte » ; les refus GATE_REQUIRED
+ * et CATEGORY_NOT_ADMITTED_AT_GATE de la vente sont affichés avec le texte du serveur.
  */
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Banknote, Minus, Plus, Receipt, RefreshCw } from 'lucide-react';
@@ -16,10 +19,11 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { TextInput } from '@/components/ui/Field';
 import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
 import { formatFcfa, formatInteger } from '@/lib/format';
 import { newIdempotencyKey } from './scan-client';
 
-interface SaleCategory { id: string; name: string; price: number; available: number; on_site_only?: boolean }
+interface SaleCategory { id: string; name: string; price: number; available: number; on_site_only?: boolean; admitted_at_gate?: boolean }
 interface CounterState {
     enabled: boolean;
     can_accept_cash: boolean;
@@ -205,10 +209,12 @@ export function CounterSalePanel({ eventId, onOpenShift, onSold, onSessionExpire
                 <ul className="flex flex-col gap-2" aria-label="Catégories en vente">
                     {state.categories.map((c) => {
                         const q = quantities[c.id] ?? 0;
+                        const notHere = c.admitted_at_gate === false;
                         return (
-                            <li key={c.id} className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3">
+                            <li key={c.id} className={cn('flex items-center gap-3 rounded-2xl border border-border p-3', notHere ? 'bg-surface-sunken' : 'bg-surface')}>
                                 <span className="flex min-w-0 flex-1 flex-col">
                                     <span className="break-words text-base font-semibold text-fg">{c.name}</span>
+                                    {notHere && <span className="text-sm font-semibold text-warning-fg">N’entre pas par votre porte</span>}
                                     {c.on_site_only && <span className="text-sm font-medium text-brand-fg">Sur place uniquement</span>}
                                     <span className="text-sm text-fg-muted tabular-nums">
                                         <span className="block whitespace-nowrap sm:inline">{formatFcfa(c.price)}</span>
@@ -220,7 +226,7 @@ export function CounterSalePanel({ eventId, onOpenShift, onSold, onSessionExpire
                                     <Minus size={18} />
                                 </IconButton>
                                 <span aria-live="polite" className="min-w-8 text-center text-lg font-bold tabular-nums text-fg">{formatInteger(q)}</span>
-                                <IconButton aria-label={`Ajouter un billet ${c.name}`} variant="secondary" disabled={q >= c.available || q >= MAX_PER_CATEGORY || selling} onClick={() => setQuantity(c.id, q + 1)}>
+                                <IconButton aria-label={`Ajouter un billet ${c.name}`} variant="secondary" disabled={notHere || q >= c.available || q >= MAX_PER_CATEGORY || selling} onClick={() => setQuantity(c.id, q + 1)}>
                                     <Plus size={18} />
                                 </IconButton>
                             </li>

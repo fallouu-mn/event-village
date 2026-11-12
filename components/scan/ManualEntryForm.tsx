@@ -20,6 +20,8 @@ import { lookupManualTicket, newIdempotencyKey, type ManualLookup } from './scan
 
 export interface ManualEntryFormProps {
     eventId: string;
+    /** Lot 9 ter (9t.15) : porte de l'affectation sur un événement à zones (absente sans zone). */
+    gateId?: string | null;
     /** Second temps : validation de l'entrée (numéro vérifié, clé de la vérification). */
     onValidate: (ticketNumber: string, idempotencyKey: string) => Promise<void>;
     isSubmitting: boolean;
@@ -33,7 +35,7 @@ export interface ManualEntryFormProps {
 /** Résultats prévus qui permettent de valider l'entrée. */
 const ADMISSIBLE = new Set(['valid']);
 
-export function ManualEntryForm({ eventId, onValidate, isSubmitting, disabled = false, disabledReason, onSessionExpired }: ManualEntryFormProps) {
+export function ManualEntryForm({ eventId, gateId, onValidate, isSubmitting, disabled = false, disabledReason, onSessionExpired }: ManualEntryFormProps) {
     const numberId = useId();
     const identityId = useId();
     const identityHelpId = useId();
@@ -55,7 +57,7 @@ export function ManualEntryForm({ eventId, onValidate, isSubmitting, disabled = 
         setChecking(true);
         reset();
         try {
-            const reply = await lookupManualTicket(eventId, normalized);
+            const reply = await lookupManualTicket(eventId, normalized, gateId);
             if (reply.kind === 'refused' && reply.httpStatus === 401) onSessionExpired?.();
             setLookup({ number: normalized, key: newIdempotencyKey(), reply });
         } finally {

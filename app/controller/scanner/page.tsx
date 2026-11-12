@@ -49,6 +49,9 @@
  *  - R107 : un 403 du scan (« Vous ne contrôlez plus cet événement ») fait relire les affectations ; une affectation
  *    retirée ramène à l'écran de choix.
  *
+ * Lot 9 ter (9t.15, contrat C.1.4) : sur un événement à zones, porte et zone de l'affectation sur l'écran de départ,
+ * « Changer de porte » si l'organisateur l'autorise, `gateId` envoyé avec chaque scan et chaque vérification, compteur
+ * des contrôles à une porte de contrôle de zone. Le serveur décide de tout (GATE_REQUIRED, GATE_CHANGED).
  * Lot 9 ter (9t.16, contrat C.2.3, C.2.4) : plein écran avec couleur de la catégorie, consigne, zone, porte, badge
  * d'origine, zones où se présenter et porte de la première entrée ; un incident de porte (409 GATE_*) est un écran
  * technique, et GATE_CHANGED fait relire les affectations.
@@ -134,12 +137,18 @@ interface Assignment {
     scan: ScanState | null;
     /** Caisse ouverte du contrôleur sur cet événement (R17), null sans caisse. */
     open_shift: string | null;
+    /** Lot 9 ter : porte de l'affectation, zones configurées, droit de changer de porte (servis par le serveur). */
+    gate: { id: string; name: string; zone: { name: string; kind: 'ENTREE' | 'CONTROLE' } } | null;
+    zones_configured: boolean;
+    gate_change_allowed: boolean;
     events: EventInfo;
 }
 
 interface ScanStats {
     doorLabel: string;
     doorEntries: number;
+    /** Porte de contrôle de zone : billets contrôlés (sinon null). */
+    doorChecks: number | null;
     myEntries: number;
     myRefusals: number;
     refusalsByResult: ServedRefusal[];
@@ -313,6 +322,10 @@ export default function ControllerScannerPage() {
 
     const selected = assignments.find((a) => a.id === selectedId) ?? null;
     const eventId = selected?.events?.id ?? null;
+    // Lot 9 ter : porte envoyée avec chaque scan d'un événement à zones (absente sans zone)
+    const gateId = selected?.zones_configured ? selected.gate?.id ?? null : undefined;
+    const gateIdRef = useRef(gateId);
+    gateIdRef.current = gateId;
 
     const eventIdRef = useRef<string | null>(null);
     eventIdRef.current = started ? eventId : null;
@@ -391,6 +404,9 @@ export default function ControllerScannerPage() {
                 counter_sale_enabled: a.counter_sale_enabled === true,
                 scan: readScanState(a.scan),
                 open_shift: typeof a.open_shift === 'string' && a.open_shift !== '' ? a.open_shift : null,
+                gate: a.gate && typeof a.gate === 'object' ? a.gate as Assignment['gate'] : null,
+                zones_configured: a.zones_configured === true,
+                gate_change_allowed: a.gate_change_allowed === true,
                 events: (a.events ?? {}) as EventInfo,
             }));
             if (list.some((a) => a.scan === null)) console.warn('[scanner] état du contrôle absent d’une affectation : contrôle tenu pour fermé');
@@ -444,6 +460,7 @@ export default function ControllerScannerPage() {
             setStats({
                 doorLabel: String(data.door_label ?? 'Vos entrées'),
                 doorEntries: toNumber(data.door_entries),
+                doorChecks: data.gate_kind === 'CONTROLE' ? toNumber(data.door_checks) : null,
                 myEntries: toNumber(data.my_entries),
                 myRefusals: toNumber(data.my_refusals),
                 refusalsByResult: Array.isArray(data.refusals_by_result) ? data.refusals_by_result : [],
@@ -769,7 +786,7 @@ export default function ControllerScannerPage() {
             return 'ignored';
         }
         mark('ev-scan:read');
-        void runScanRef.current({ eventId: id, payload }, payload);
+        void runScanRef.current({ eventId: id, payload, gateId: gateIdRef.current }, payload);
         return 'accepted';
     }, [traceIgnored]);
 
@@ -780,7 +797,7 @@ export default function ControllerScannerPage() {
             return;
         }
         mark('ev-scan:read');
-        await runScanRef.current({ eventId: id, manualTicketNumber, identityVerified: true }, null, key);
+        await runScanRef.current({ eventId: id, manualTicketNumber, identityVerified: true, gateId: gateIdRef.current }, null, key);
     }, []);
 
     const handleLogout = async () => {
@@ -896,6 +913,12 @@ export default function ControllerScannerPage() {
             location: a.events?.location ?? null,
             closedLabel: closedLabel(a),
             entryPoint: a.entry_point,
+            eventId: a.events?.id,
+            zonesConfigured: a.zones_configured,
+            gateLabel: a.gate?.name ?? null,
+            zoneLabel: a.gate?.zone.name ?? null,
+            zoneKind: a.gate?.zone.kind ?? null,
+            gateChangeAllowed: a.gate_change_allowed,
         }));
         return (
             <>
@@ -912,6 +935,7 @@ export default function ControllerScannerPage() {
                     onSelect={setSelectedId}
                     onStart={() => { lastValidRef.current = null; setResumeGate(false); setRestoreNotice(null); setStarted(true); }}
                     controllerName={controllerName || undefined}
+                    onGateChanged={() => { void fetchAssignments(); }}
                 />
                 {logoutButton}
                 {logoutDialog}
@@ -986,6 +1010,7 @@ export default function ControllerScannerPage() {
                             {pendingLayer && <div className="relative min-h-40 overflow-hidden rounded-2xl">{pendingLayer}</div>}
                             <ManualEntryForm
                                 eventId={selected.events.id}
+                                gateId={gateId}
                                 onValidate={handleManualValidate}
                                 isSubmitting={stage === 'pending' || stage === 'slow'}
                                 disabled={!online}
@@ -1113,6 +1138,7 @@ export default function ControllerScannerPage() {
                 eventTitle={selected.events?.title || 'Événement sans titre'}
                 doorLabel={stats?.doorLabel ?? null}
                 doorEntries={stats?.doorEntries ?? null}
+                doorChecks={stats?.doorChecks ?? null}
                 online={online}
                 statsStale={statsError !== null && stats !== null}
                 onChangeEvent={backToStart}

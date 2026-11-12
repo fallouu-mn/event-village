@@ -25,6 +25,10 @@
  * Lot 9 bis (R16, B48, contrat 4.3) : la liste ne retient que les événements dont le serveur dit le contrôle ouvert
  * (GET /api/controller/scan/state, même règle que ticket_scan) : un PUBLIE dans sa fenêtre, mais aussi un TERMINE
  * tant que la fenêtre après la fin reste ouverte ; plus aucune décision d'après le seul statut.
+ *
+ * Lot 9 ter (9t.15, contrat C.1.4) : événement à zones (GET /api/partner/events/[id]/zones) → liste requise « Porte de
+ * contrôle » (portes groupées par zone) ; `gateId` envoyé avec chaque scan et chaque vérification. La règle des zones est
+ * appliquée par le serveur (sans porte choisie : « Aucune porte… », rien n'est validé).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -46,6 +50,9 @@ import {
 } from '@/lib/scan/scan-session';
 
 interface PartnerEvent { id: string; title: string; start_date?: string; status?: string }
+
+/** Lot 9 ter : zones et portes de l'événement contrôlé (null : sans zone ou pas encore lues). */
+interface ZoneGates { zones: Array<{ id: string; name: string; gates: Array<{ id: string; name: string }> }> }
 
 /** Au plus 50 événements par lecture de l'état du contrôle (route scan/state). */
 const MAX_STATE_EVENTS = 50;
@@ -118,6 +125,10 @@ export default function PartnerScanPage() {
     /** Renvoi du scan en attente (défini plus bas, appelé par runScan). */
     const resumePendingRef = useRef<(reason: string) => void>(() => undefined);
     const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** Lot 9 ter : zones de l'événement contrôlé et porte choisie (envoyée avec chaque scan). */
+    const [zoneGates, setZoneGates] = useState<ZoneGates | null>(null);
+    const [zonesError, setZonesError] = useState<string | null>(null);
+    const [gateId, setGateId] = useState('');
 
     const goToLogin = useCallback(() => {
         router.replace(`/login?redirect=${encodeURIComponent(PAGE_PATH)}`);
@@ -327,6 +338,28 @@ export default function PartnerScanPage() {
         void fetchStats();
     }, [eventId, fetchStats]);
 
+    // Lot 9 ter : zones et portes de l'événement contrôlé (porte remise à zéro au changement d'événement)
+    useEffect(() => {
+        setZoneGates(null);
+        setZonesError(null);
+        setGateId('');
+        if (!eventId) return;
+        let live = true;
+        fetch(`/api/partner/events/${encodeURIComponent(eventId)}/zones`, { cache: 'no-store' })
+            .then(async (res) => {
+                const body = await res.json() as { configured?: boolean; zones?: ZoneGates['zones']; error?: string };
+                if (!res.ok) throw new Error(body.error || 'Portes de l’événement non lues.');
+                if (live) setZoneGates(body.configured && Array.isArray(body.zones) ? { zones: body.zones } : null);
+            })
+            .catch((err: unknown) => {
+                console.warn('[partner/scan] zones non lues :', errText(err));
+                if (live) setZonesError(errText(err));
+            });
+        return () => { live = false; };
+    }, [eventId]);
+    // Porte envoyée avec chaque scan d'un événement à zones (absente sans zone)
+    const scanGate = zoneGates ? gateId || null : undefined;
+
     // Scan en attente renvoyé au montage (compte et événement connus)
     useEffect(() => {
         if (eventId && accountId) resumePendingScan('montage');
@@ -370,14 +403,14 @@ export default function PartnerScanPage() {
             console.info('[partner/scan] lecture ignorée : même QR que l’entrée validée il y a moins de 20 s');
             return 'ignored';
         }
-        void runScan({ eventId, payload }, payload);
+        void runScan({ eventId, payload, gateId: scanGate }, payload);
         return 'accepted';
-    }, [eventId, runScan]);
+    }, [eventId, runScan, scanGate]);
 
     const handleManualValidate = useCallback(async (manualTicketNumber: string, key: string) => {
         if (!eventId) return;
-        await runScan({ eventId, manualTicketNumber, identityVerified: true }, null, key);
-    }, [eventId, runScan]);
+        await runScan({ eventId, manualTicketNumber, identityVerified: true, gateId: scanGate }, null, key);
+    }, [eventId, runScan, scanGate]);
 
     const chooseMode = (mode: ScanInputMode) => {
         setResumeGate(false);
@@ -446,6 +479,28 @@ export default function PartnerScanPage() {
                 />
             )}
 
+            {selectedEvent && zonesError && (
+                <StatusBanner tone="warning" title="Portes de l’événement non lues">{zonesError}</StatusBanner>
+            )}
+
+            {selectedEvent && zoneGates && (
+                <Select
+                    id="partner-scan-gate"
+                    label="Porte de contrôle"
+                    required
+                    hint="Choisissez la porte où vous contrôlez : la règle des zones s’applique à vos scans."
+                    placeholder="Choisissez une porte"
+                    value={gateId}
+                    onChange={(e) => { setGateId(e.target.value); setShown(null); }}
+                >
+                    {zoneGates.zones.map((z) => (
+                        <optgroup key={z.id} label={z.name}>
+                            {z.gates.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </optgroup>
+                    ))}
+                </Select>
+            )}
+
             {selectedEvent && (
                 <>
                     <p role="status" aria-atomic="true" className="flex items-center gap-2 text-sm font-semibold tabular-nums text-fg">
@@ -496,7 +551,7 @@ export default function PartnerScanPage() {
                                 onResume={() => setResumeGate(false)}
                             />
                         ) : (
-                            <ManualEntryForm eventId={eventId} onValidate={handleManualValidate} isSubmitting={isVerifying} onSessionExpired={goToLogin} />
+                            <ManualEntryForm eventId={eventId} gateId={scanGate} onValidate={handleManualValidate} isSubmitting={isVerifying} onSessionExpired={goToLogin} />
                         )}
                     </div>
 

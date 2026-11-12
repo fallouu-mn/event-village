@@ -5,6 +5,8 @@
  * compteur servi par le serveur (« Porte A : 312 entrées », sans porte : « Vos entrées : 12 »), état du
  * réseau, changement d'événement et déconnexion (seul bouton de déconnexion de l'écran de scan).
  * Le compteur est annoncé par une seule région role="status" (phrase complète, aria-atomic).
+ * Lot 9 ter (9t.15, contrat C.1.4) : à une porte de contrôle de zone, le compteur dit les contrôles de la porte
+ * (« Accès carré : 12 contrôles », `door_checks` servi par le serveur) au lieu des entrées.
  */
 import React from 'react';
 import { ArrowLeftRight, LogOut, Wifi, WifiOff } from 'lucide-react';
@@ -19,6 +21,8 @@ export interface ScanStatusBarProps {
     /** Entrées acceptées de la porte (ou du contrôleur sans porte) ; null tant que le serveur n'a pas répondu. */
     doorEntries: number | null;
     online: boolean;
+    /** Lot 9 ter : porte de contrôle de zone et billets contrôlés à cette porte (servis par le serveur). */
+    doorChecks?: number | null;
     /** Les chiffres n'ont pas pu être relus (affichés tels quels, marqués comme anciens). */
     statsStale?: boolean;
     onChangeEvent?: () => void;
@@ -29,8 +33,10 @@ function entriesLabel(n: number): string {
     return `${formatInteger(n)} entrée${n > 1 ? 's' : ''}`;
 }
 
-export function ScanStatusBar({ eventTitle, doorLabel, doorEntries, online, statsStale = false, onChangeEvent, onLogout }: ScanStatusBarProps) {
-    const counter = doorLabel && doorEntries !== null ? `${doorLabel} : ${entriesLabel(doorEntries)}` : 'Compteur en cours de lecture…';
+export function ScanStatusBar({ eventTitle, doorLabel, doorEntries, doorChecks = null, online, statsStale = false, onChangeEvent, onLogout }: ScanStatusBarProps) {
+    const counter = !doorLabel || doorEntries === null ? 'Compteur en cours de lecture…'
+        : doorChecks !== null ? `${doorLabel} : ${formatInteger(doorChecks)} contrôle${doorChecks > 1 ? 's' : ''}`
+        : `${doorLabel} : ${entriesLabel(doorEntries)}`;
     return (
         <header className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3 py-2">
             <div className="flex min-w-0 flex-1 flex-col">
