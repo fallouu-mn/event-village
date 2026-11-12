@@ -57,7 +57,9 @@ cd $HOME\Documents\event-village
 
 ## 3. Appliquer les migrations sur event-village-dev
 
-Une migration modifie la structure de la base. Celles du lot 9 sont déjà appliquées sur event-village-dev. Il reste les **douze du lot 9 bis**. Ne les appliquez qu'une fois la vérification automatique du lot annoncée verte dans `docs/lot9bis-rapport.md` : ce projet ne doit pas prendre d'avance sur le code livré.
+Une migration modifie la structure de la base. Celles du lot 9 bis (`20261109…`) sont déjà appliquées sur event-village-dev. Il reste les **onze du lot 9 ter** (`20261110…`). Ne les appliquez qu'une fois la vérification automatique du lot annoncée verte dans `docs/lot9ter-rapport.md` : ce projet ne doit pas prendre d'avance sur le code livré. Seule exception, sur décision du chef de projet : la migration 1, de sécurité, peut passer seule et en premier (encadré plus bas).
+
+Si l'étape 3 montre encore des lignes `20261109…` sans rien dans la colonne Remote, le lot 9 bis n'est pas appliqué sur ce projet : arrêtez-vous et demandez la procédure du lot 9 bis (`docs/deploiement-projet-neuf.md`, section 3 quinquies).
 
 Votre **référence de projet** est la suite de lettres au début de l'adresse Supabase, juste avant `.supabase.co`. Elle figure aussi dans **Project Settings > General**.
 
@@ -73,7 +75,7 @@ Votre **référence de projet** est la suite de lettres au début de l'adresse S
    npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
    ```
 
-3. Comparez l'historique. Les colonnes Local et Remote doivent être identiques jusqu'à `20261108000005`. Seules les douze lignes `20261109…` n'ont rien dans la colonne Remote.
+3. Comparez l'historique. Les colonnes Local et Remote doivent être identiques jusqu'à `20261109000012`. Seules les onze lignes `20261110…` n'ont rien dans la colonne Remote (dix si la migration 1 est déjà passée).
 
    ```powershell
    npx supabase@2.122.0 migration list --linked
@@ -85,89 +87,93 @@ Votre **référence de projet** est la suite de lettres au début de l'adresse S
    npx supabase@2.122.0 db push --linked --dry-run
    ```
 
-   La liste doit contenir **exactement** ces douze fichiers, dans cet ordre :
+   La liste doit contenir **exactement** ces onze fichiers, dans cet ordre (sans le premier si la migration 1 est déjà passée) :
 
    ```text
-   20261109000001_lot9bis_reglages.sql
-   20261109000002_lot9bis_transfert_statut.sql
-   20261109000003_lot9bis_registre.sql
-   20261109000004_lot9bis_droits.sql
-   20261109000005_lot9bis_samirpay.sql
-   20261109000006_lot9bis_argent.sql
-   20261109000007_lot9bis_versements.sql
-   20261109000008_lot9bis_cycle.sql
-   20261109000009_lot9bis_messages.sql
-   20261109000010_lot9bis_email.sql
-   20261109000011_lot9bis_textes.sql
-   20261109000012_lot9bis_mode_reel.sql
+   20261110000001_lot9ter_rls.sql
+   20261110000002_lot9ter_reglages.sql
+   20261110000003_lot9ter_transfert_statut.sql
+   20261110000004_lot9ter_registre.sql
+   20261110000005_lot9ter_argent.sql
+   20261110000006_lot9ter_equipe_messages.sql
+   20261110000007_lot9ter_evenements.sql
+   20261110000008_lot9ter_invites.sql
+   20261110000009_lot9ter_zones.sql
+   20261110000010_lot9ter_pilotage.sql
+   20261110000011_lot9ter_stock.sql
    ```
 
    **Si la liste contient autre chose ou s'il manque un fichier : arrêtez-vous.** N'ajoutez pas `--include-all` et ne lancez pas `supabase migration repair`. Demandez d'abord une vérification : l'historique du projet ne correspond plus au dépôt.
 
-5. **Avant d'appliquer**, ouvrez **SQL Editor** dans le tableau de bord Supabase et lancez ces trois contrôles, un à la fois. Ils ne modifient rien. Gardez leurs résultats : ils vont au rapport du lot.
+5. **Avant d'appliquer**, ouvrez **SQL Editor** dans le tableau de bord Supabase et lancez les contrôles « avant » de `docs/deploiement-projet-neuf.md`, section 3 sexies (« Contrôles avant d'appliquer », point 3), un à la fois. Ils ne modifient rien. Gardez leurs résultats : ils vont au rapport du lot. Le contrôle 9 demande l'identifiant d'un événement publié et celui de son propriétaire : prenez « Concert d'essai à Dakar » et le compte `partenaire`, lus dans le tableau de bord Supabase (**Table Editor**, tables `events` et `partners`).
 
-   ```sql
-   -- 1. Les administrateurs et leurs permissions. Une liste vide : ce compte perdra l'accès au pilotage,
-   --    aux remboursements et aux équipes, car la migration ne donne aucune permission d'office.
-   select u.id, u.email, array_remove(array_agg(p.permission order by p.permission), null) as permissions
-     from public.users u
-     join public.user_roles r on r.user_id = u.id and r.role = 'ADMIN'
-     left join public.admin_permissions p on p.user_id = u.id
-    group by u.id, u.email
-    order by u.email;
-
-   -- 2. Comptes qui ont une vraie adresse email. Après le lot, une adresse ne reçoit plus rien tant que
-   --    son titulaire n'a pas cliqué le lien de vérification (« Renvoyer le lien », dans le profil).
-   select count(*) as adresses_a_verifier from public.users
-    where email is not null
-      and email !~* '@([a-z0-9-]+\.)*eventvillage\.sn$'
-      and email not ilike '%@essai.eventvillage.invalid';
-
-   -- 3. Catégories dont la vente finit après la nouvelle fin par défaut. Un événement sans date de fin
-   --    se termine désormais 6 heures après son début. Rien n'est réécrit : on compte seulement.
-   select e.title, c.name, c.sale_end
-     from public.ticket_categories c
-     join public.events e on e.id = c.event_id
-    where e.end_date is null and c.sale_end is not null
-      and e.status::text not in ('ANNULE', 'TERMINE')
-      and c.sale_end > ((e.start_date + coalesce(e.start_time, time '00:00')) at time zone 'Africa/Dakar') + interval '6 hours';
-   ```
-
-   Le compte `admin` de `seed:dev` (Moussa) recevra ses permissions à l'étape 9. Pour tout autre administrateur dont la liste est vide, notez son adresse : après les migrations, le compte `superadmin` lui donne ses permissions dans `/admin/users`, bouton **Permissions**.
-
-6. Appliquez. Confirmez par `y` si l'outil le demande. L'outil peut afficher des lignes `NOTICE` qui commencent par `lot 9 bis` : ce sont des comptes, pas des erreurs. Recopiez-les pour le rapport.
+6. Appliquez. Confirmez par `y` si l'outil le demande. Des avis « … does not exist, skipping » peuvent s'afficher : ils sont normaux. Aucune ligne `NOTICE` n'est à recopier pour ce lot.
 
    ```powershell
    npx supabase@2.122.0 db push --linked
    ```
 
-7. Contrôlez dans **SQL Editor**, une requête à la fois :
+7. Contrôlez dans **SQL Editor** : les contrôles « après » de `docs/deploiement-projet-neuf.md`, section 3 sexies, une requête à la fois. Au minimum :
 
    ```sql
-   -- attendu : 12 lignes, de 20261109000001 à 20261109000012
-   select version from supabase_migrations.schema_migrations where version like '20261109%' order by version;
+   -- attendu : 11 lignes, de 20261110000001 à 20261110000011
+   select version from supabase_migrations.schema_migrations where version like '20261110%' order by version;
 
-   -- attendu : 3 lignes, valeurs 100, 10 et 2000
-   select key, value from public.platform_settings
-    where key in ('finance.payment_hold_minutes', 'finance.min_paid_price', 'notif.sms_essential_daily_alert') order by key;
+   -- attendu : 0 ligne (plus aucune écriture possible par l'API REST)
+   select 'politique' as genre, tablename as objet, policyname || ' (' || cmd || ')' as detail
+     from pg_policies where schemaname = 'public' and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+   union all
+   select 'droit', c.relname, r.rol || ' : ' || k.priv
+     from pg_class c cross join (values ('anon'), ('authenticated')) r(rol)
+     cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) k(priv)
+    where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm', 'f')
+      and case when k.priv in ('INSERT', 'UPDATE') then has_any_column_privilege(r.rol, c.oid, k.priv)
+               else has_table_privilege(r.rol, c.oid, k.priv) end
+   order by 1, 2, 3;
 
-   -- attendu : 1 ligne, DECLINED
-   select enumlabel from pg_enum
-    where enumtypid = 'public.ticket_transfer_status'::regtype and enumlabel = 'DECLINED';
+   -- attendu : 2 lignes, {"value": 10} et {"value": 5}
+   select key, value from public.platform_settings where key like 'access.refusal_alert_%' order by key;
 
-   -- attendu : 3 lignes, toutes ESSENTIAL
-   select type, family from public.notification_types
-    where type in ('EVENT_CHANGED', 'REFUND_DELAYED', 'EMAIL_VERIFICATION') order by type;
+   -- attendu : vrai
+   select 'ADMITTED' = any (enum_range(null::public.ticket_transfer_status)::text[]);
+
+   -- attendu : 17
+   select count(*) from public.event_status_transitions;
 
    -- attendu : au moins 6, les comptes créés par seed:dev
    select count(*) as comptes_de_demonstration from public.users where demo_account;
    ```
 
-8. Ouvrez `supabase/hotfix/2026-10-31-lot1a/03-verification.sql`, collez tout son contenu dans **SQL Editor** et lancez-le. Les 20 lignes doivent afficher `OK`. Une ligne `ÉCHEC` : arrêtez-vous.
+8. Ouvrez `supabase/hotfix/2026-10-31-lot1a/03-verification.sql`, collez tout son contenu dans **SQL Editor** et lancez-le. Chaque ligne doit afficher `OK`. Une ligne `ÉCHEC` : arrêtez-vous.
 
-9. Toujours en simulé, relancez `npm run seed:dev` (section 7). Il ne recrée rien, mais donne à Moussa les permissions qui lui manquent. Lancez ensuite `npm run essai:check-reel` : un code de sortie 0 ou 1 est normal ici, la section 13 explique ses lignes. Le message `contrôle impossible : fonction essai_check_reel absente` veut dire que les migrations ne sont pas appliquées.
+9. Toujours en simulé, prouvez que la fiche partenaire est protégée (essai 80 du cahier de recette) :
 
-10. Redémarrez ce qui tournait (section 6). Le code du lot 9 bis ne fonctionne pas sans ces migrations, et event-village-dev ne doit plus tourner qu'avec lui ou plus récent.
+   ```powershell
+   npm run essai:fiche-partenaire
+   ```
+
+   L'outil lit `.env.local` (clé publique seulement, jamais la clé serveur), se connecte au compte `partenaire` de `seed:dev`, tente de modifier lui-même le statut de sa fiche, à sa valeur actuelle, puis relit la fiche. Il n'affiche aucune clé, aucun mot de passe, aucun jeton. Première ligne : `[fiche-partenaire] projet <référence> : connexion du compte partenaire@essai.eventvillage.invalid avec la clé publique seulement.`
+
+   | Ligne affichée | Code de sortie | Sens |
+   |---|---|---|
+   | `[fiche-partenaire] Protégé : la fiche partenaire refuse toute modification directe de son statut (statut VALIDE inchangé).` | 0 | Attendu : la fiche ne se modifie que par l'écran |
+   | `[fiche-partenaire] NON PROTÉGÉ : la fiche partenaire a accepté une modification directe de son statut. Arrêtez l'essai et prévenez l'équipe technique : la migration 20261110000001_lot9ter_rls n'est pas appliquée sur ce projet.` | 1 | Arrêtez-vous : la migration 1 manque |
+   | `[fiche-partenaire] contrôle impossible : …` | 2 | Une variable manque dans `.env.local`, l'adresse est refusée, ou le compte n'existe pas (« lancez d'abord npm run seed:dev sur ce projet. ») |
+
+   Le compte de l'essai est une partenaire validée : la protection ne dépend pas de l'état de la fiche, et la vérification automatique la prouve aussi pour une fiche en attente, refusée ou suspendue. Un mot de passe `EV_DEV_SEED_PASSWORD` qui contient `#` doit être entre guillemets dans `.env.local`.
+
+10. Redémarrez ce qui tournait (section 6). Le code du lot 9 ter ne fonctionne pas sans ces migrations, et event-village-dev ne doit plus tourner qu'avec lui ou plus récent.
+
+**La migration 1 seule, en premier (seulement si le chef de projet le décide).** Elle ferme les écritures directes dans la base et ne dépend d'aucune autre ; le code du lot 9 bis continue de fonctionner. Pour l'appliquer seule, il faut un second dossier du projet placé sur le commit où elle est la seule migration du lot :
+
+```powershell
+git worktree add ..\event-village-m01 bcb1d3da
+cd ..\event-village-m01
+npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
+npx supabase@2.122.0 db push --linked --dry-run
+```
+
+Le `--dry-run` doit lister **un seul** fichier, `20261110000001_lot9ter_rls.sql`. Sinon, arrêtez-vous. Lancez alors le contrôle « 1 » d'avant (`docs/deploiement-projet-neuf.md`, section 3 sexies), puis `npx supabase@2.122.0 db push --linked`, puis le contrôle « 1 » d'après (0 ligne). Revenez dans le dossier du projet (`cd $HOME\Documents\event-village`), lancez `npm run essai:fiche-partenaire` (étape 9) et retirez le second dossier : `git worktree remove ..\event-village-m01`. Les dix autres migrations suivront par les étapes 1 à 10 ci-dessus. N'appliquez jamais la migration à la main dans **SQL Editor**.
 
 ---
 
@@ -228,6 +234,8 @@ VERIFY_OTP_PER_PHONE_15MIN=50
 ```
 
 **Avant tout essai en réel, retirez ces lignes** et posez `SMS_GLOBAL_DAILY_CAP=50`, car chaque SMS vous est facturé (section 13). Ce plafond arrête les codes à 50 par jour, et les rappels et invitations de contrôleurs à 35, sur un même compteur. **Il ne limite pas les SMS indispensables**, comme la confirmation d'achat, l'annulation ou le remboursement : ceux-là ne sont bornés qu'à 30 par numéro et à 30 par compte qui les déclenche, chaque jour.
+
+Depuis le lot 9 ter, `GUEST_LIST_SEARCH_PER_SCANNER_HOUR` (30 par défaut) limite les recherches d'un contrôleur dans la « Liste des invités », par heure. Laissez la valeur par défaut : l'essai de la section 8.17 vérifie justement le refus de la 31e recherche.
 
 ---
 
@@ -434,7 +442,7 @@ Résultat attendu : écran vert à la première entrée, « déjà utilisé » �
 Compte `partenaire`, page `/partner/events` : ouvrez « Essai du jour », onglet **Invitations**.
 
 1. **Catégorie** : « Entrée ». **Billets par numéro** : 1.
-2. **Numéros de téléphone**, un par ligne, à 9 chiffres, sans indicatif :
+2. **Numéros de téléphone** : un numéro par ligne, **Numéro 1**, **Numéro 2**, **Numéro 3** (bouton **Ajouter un numéro**), à 9 chiffres, sans indicatif. Laissez vides les champs **Nom de l’invité** (ils servent en 8.17) :
    - le numéro du compte créé en 8.6 ;
    - `70 000 90 06`, le numéro de `client2` ;
    - un numéro inventé de 9 chiffres qui commence par `70`, sans compte.
@@ -454,7 +462,7 @@ Compte `controleur`, **Saisie manuelle** : entrez le numéro d'un de ces billets
 
 Pour voir l'annulation, invitez un autre numéro inventé, sur le même onglet, puis **Annuler l'invitation** dans l'historique et confirmez. Résultat attendu : « Invitation annulée : la place revient au stock. », statut « Annulée », aucun SMS. Un numéro ne reçoit que 3 invitations par jour : au-delà, l'envoi est refusé.
 
-L'export (onglet **Clôture**, **Exporter les participants**) porte la colonne « Canal », et « Invitation en attente » à la place du nom tant que le billet n'est pas réclamé. Sur « Concert d'essai à Dakar », « Carré invités » s'affiche en premier, sous « Sans canal de vente ».
+L'export (onglet **Clôture**, **Exporter les participants**) porte, depuis le lot 9 ter, les colonnes « Nom », « Catégorie », « Origine » (« En ligne », « Guichet », « Gratuit », « Invitation »), « Statut du billet », « Heure d’entrée », « Zone » et « Porte », et « Invitation en attente » à la place du nom tant que le billet n'est pas réclamé. Sur « Concert d'essai à Dakar », « Carré invités » s'affiche en premier, sous « Sans canal de vente ».
 
 ### 8.9 Guichet
 
@@ -517,6 +525,52 @@ Compte `client2`, page `/profile`, **Changer de numéro**. Si vous vous êtes co
 Résultat attendu : le nouveau numéro s'affiche et les billets restent au compte. Au passage suivant de `cron:local`, le SMS « le numéro de votre compte a été modifié » s'écrit dans la fenêtre 2, adressé à l'**ancien** numéro. Une session ouverte sur un autre navigateur est révoquée : elle se ferme au plus tard quand son jeton expire, soit 1 h au plus. La connexion par adresse email continue de fonctionner.
 
 C'est le seul essai qui vérifie sur le projet hébergé la révocation des autres sessions : faites-le au moins une fois.
+
+### 8.16 Zones, portes, couleurs et consignes (lot 9 ter)
+
+Ces essais se font sur un second événement du jour, pour ne pas dépendre de l'annulation de 8.10. Ce que voit le contrôleur est décrit dans `docs/guide-organisateur-entrees.md`, sections 3 et 11 à 14.
+
+1. Compte `partenaire` : créez « Soirée zones » comme en 8.1 (début dans 3 h 20, **Capacité totale (jauge)** à 17), avec trois catégories vendues en ligne : « SIMPLE » 1 000 F, quantité 10 ; « VIP » 2 000 F, quantité 5 ; « VVIP » 3 000 F, quantité 2. Faites-le valider et publiez-le (8.2).
+2. **Modifier**, étape **Billets** : sur « VIP », **Couleur au contrôle** « Or » et **Consigne d’entrée** « Remettre bracelet doré — orienter vers le carré VIP », puis **Enregistrer la catégorie** (« Catégorie enregistrée. ») ; sur « VVIP », « Violet ».
+3. Page de pilotage, onglet **Équipe**, « Zones et portes » : **Configurer des zones**. Renommez la zone « Entrée générale », gardez les trois catégories cochées, nommez sa porte « Porte Nord » et **Ajouter une porte** « Porte Sud ». **Ajouter une zone** : « Carré VIP », type **Contrôle de zone**, catégories « VIP » et « VVIP », porte « Accès carré ». **Enregistrer les zones** : « Zones enregistrées. »
+4. Page `/partner/team`, **Gérer les affectations** d'Ibrahima Essai : ajoutez « Soirée zones ». Revenez à l'onglet **Équipe** du pilotage : un bandeau « Contrôleur sans porte » s'affiche. Sur la ligne d'Ibrahima, **Porte** « Porte Nord — Entrée générale », activez **Peut changer de porte**, **Enregistrer** : « Porte de Ibrahima Essai : Porte Nord. »
+5. Compte `client1` : achetez 1 « SIMPLE », validez le paiement (8.3) ; puis 1 « VIP », validez. Compte `client2` : achetez 1 « VVIP », validez.
+6. Compte `controleur`, scanner, « Soirée zones » : l'écran dit « Votre porte : Porte Nord · Entrée générale (Entrée). Le compteur affichera les entrées de cette porte. » **Commencer le contrôle**, **Saisie manuelle**, numéro du billet VIP de `client1`, pièce conforme, validez.
+
+   Résultat attendu : écran vert « Entrée validée », « VIP » en très grand sur une bande or, la consigne, « Zone : Entrée générale · Porte Nord », le nom de Fatou Essai. Validez aussi le billet SIMPLE de `client1`. Puis, de nouveau, le billet VIP : « Entrée impossible : Billet déjà utilisé », sans bouton de validation.
+7. La suite se fait **au téléphone, à la caméra** (section 9) : à une porte de contrôle de zone, la saisie manuelle ne valide rien et n'affiche qu'un aperçu « Entrée impossible : … ». **Changer de porte** (bouton de l'écran « Commencer le contrôle », qu'on retrouve par le bouton « Changer d’événement » en haut du scanner) : « Accès carré · Carré VIP (Contrôle de zone) », **Enregistrer cette porte**. Scannez :
+   - le billet SIMPLE de `client1` : orange, « Accès refusé : billet SIMPLE » ;
+   - le billet VVIP de `client2`, jamais passé à l'entrée : orange, « Pas encore entré », « Passez d’abord par : Entrée générale » ;
+   - le billet VIP de `client1` : vert « Accès autorisé », « Zone : Carré VIP », « Entré à …, Porte Nord ».
+
+   Puis passez à la porte « Porte Sud » : le billet VIP y affiche en rouge « Billet déjà utilisé » et « Déjà utilisé à …, Porte Nord ».
+
+### 8.17 Liste des invités (lot 9 ter)
+
+1. Compte `partenaire`, « Soirée zones », onglet **Invitations** : **Catégorie** « VIP », **Billets par numéro** 1, **Numéro 1** : un numéro inventé de 9 chiffres qui commence par `70`, sans compte ; **Nom de l’invité 1** : « Awa Diop ». **Envoyer les invitations** : la fenêtre « Confirmer l’envoi » montre « Awa Diop » dans la colonne « Invité ». Confirmez. Le SMS de la fenêtre 2 ne contient pas le nom.
+2. Compte `controleur`, porte « Porte Nord » (**Changer de porte**), bouton **Liste des invités** : saisissez les 4 derniers chiffres du numéro, **Rechercher**.
+
+   Résultat attendu : une carte « Awa Diop », « VIP », « 1 billet ». **Choisir**, cochez **J’ai vérifié la pièce d’identité**, **Valider l’entrée d’une personne** : écran vert, « Awa Diop », badge « Invitation ». Une nouvelle recherche du même numéro répond « Aucune invitation non utilisée pour ce numéro. »
+3. Dans une fenêtre de navigation privée, créez le compte de ce numéro sur `/register`. **Mes billets**, onglet **Reçus** : « Entrée déjà validée à la porte le … à … » et **Ajouter à mes billets** ; le billet ajouté est utilisé.
+4. Facultatif : enchaînez 30 recherches de plus dans l'heure. La 31e affiche « Trop de recherches dans l’heure : réessayez dans … min. »
+
+### 8.18 Tableau de bord des entrées et alerte de refus (lot 9 ter)
+
+1. Compte `partenaire`, « Soirée zones », onglet **Entrées** : les cartes « Liste des invités » (1), « Débit », « Contrôleurs actifs » (« 1 sur 1 » si Ibrahima a scanné dans les 10 dernières minutes, sinon « 0 sur 1 »), « Mis à jour à … », puis « Par zone », « Par porte », « Par catégorie », « Par origine », « Refus par motif » (« Mauvaise zone », « Pas encore entré »…) et « Validations par la liste des invités » avec « Awa Diop ».
+2. Compte `superadmin`, page **Réglages de la plateforme** (`/admin/finance-settings`), section « Contrôle d’accès » : « Alerte de refus à une porte : nombre de refus » à 3, avec un motif.
+3. Au téléphone (section 9), à la caméra, à la porte « Porte Sud » : présentez trois fois le billet VIP de `client1`, déjà utilisé, à 25 secondes d'intervalle au moins (une relecture plus rapprochée du même QR n'est pas envoyée).
+
+   Résultat attendu : dans l'onglet **Entrées**, sans recharger, un bandeau rouge « Beaucoup de refus à Porte Sud » ; au passage suivant de `cron:local`, la cloche du compte `partenaire` reçoit « Refus en série à une porte ». Aucun SMS dans la fenêtre 2.
+4. Remettez le réglage à 10, avec un motif.
+
+### 8.19 Catégorie épuisée puis réouverte (lot 9 ter)
+
+1. Compte `client1` : achetez le dernier « VVIP » de « Soirée zones » (2 en vente, 1 déjà vendu en 8.16). La fiche de l'événement affiche « Complet » pour « VVIP ». Sur l'accueil, la carte de « Soirée zones » porte « Dernières places » : chaque catégorie encore en vente a 10 places ou moins.
+2. Compte `partenaire`, **Modifier**, étape **Billets** : passez la quantité de « VVIP » de 2 à 4, **Enregistrer la catégorie**. Résultat attendu : refus, « Les quantités mises en vente des catégories actives totaliseraient 19 places. Augmentez d’abord la capacité totale de l’événement (actuellement 17). »
+3. Étape **Informations** : **Capacité totale (jauge)** à 19, enregistrez. Puis « VVIP » à 4, **Enregistrer la catégorie**.
+4. Sur la fiche ouverte dans un autre onglet, **sans recharger** : « VVIP » affiche « Plus que 2 places ».
+
+L'essai « une partenaire en attente tente de se valider elle-même » se fait par l'outil `npm run essai:fiche-partenaire` (section 3, étape 9).
 
 La liste complète des essais, avec leur case OK ou anomalie, est dans `docs/recette-billetterie.md`.
 
