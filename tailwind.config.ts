@@ -86,6 +86,9 @@ const config: Config = {
           'window-fg': tone('scan-window-fg'),
           'tech-bg': tone('scan-tech-bg'),
           'tech-fg': tone('scan-tech-fg'),
+          // Lot 9 ter (9t.16, X13) : orange de la mauvaise zone (bg-scan-orient-bg, text-scan-orient-fg)
+          'orient-bg': tone('scan-orient-bg'),
+          'orient-fg': tone('scan-orient-fg'),
         },
         // Lot 7 (D59) : opérateurs de paiement (bg-op-wave text-on-op-wave, bg-op-orange-money text-on-op-orange-money)
         'op-wave': tone('op-wave'),

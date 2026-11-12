@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { gateOut, readEventGates } from '../gate-info';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,7 +65,8 @@ async function readOpenShifts(userId: string, eventIds: string[]): Promise<Map<s
  * gardé) = toutes les entrées de l'événement, plus coupées à minuit UTC (un concert de 22 h à 3 h gardait
  * son compteur jusqu'à minuit seulement). Lot 9 bis (R16, contrat 4.3) : `scan { open, problem, opens_at,
  * closes_at }` par affectation ; le scanner décide par `scan.open`. Lot 9 bis (R17, contrat 4.3) : `open_shift`
- * (identifiant de la caisse ouverte du compte, ou null) par affectation.
+ * (identifiant de la caisse ouverte du compte, ou null) par affectation. Lot 9 ter (9t.15, contrat 4.3) : `gate`
+ * (`{ id, name, zone: { id, name, kind } }` ou null), `zones_configured` et `gate_change_allowed` par affectation.
  */
 export async function GET(req: NextRequest) {
     try {
@@ -83,6 +85,8 @@ export async function GET(req: NextRequest) {
                 id,
                 can_accept_cash,
                 entry_point,
+                gate_id,
+                gate_change_allowed,
                 events (
                     id,
                     title,
@@ -105,6 +109,7 @@ export async function GET(req: NextRequest) {
         const eventIds: string[] = (assignments ?? []).map((a: any) => a.events?.id).filter((id: unknown): id is string => typeof id === 'string');
         const scanStates = await readScanStates(eventIds);
         const openShifts = await readOpenShifts(user.id, eventIds);
+        const eventGates = await readEventGates(eventIds);
 
         // Compteurs de chaque événement affecté (lus par le serveur, toute la durée de l'événement)
         const enriched = await Promise.all(
@@ -121,6 +126,9 @@ export async function GET(req: NextRequest) {
                     counter_sale_enabled: counterSaleEnabled,
                     scan: eventId ? scanStates.get(eventId) ?? null : null,
                     open_shift: eventId ? openShifts.get(eventId) ?? null : null,
+                    gate: gateOut(eventGates, a.gate_id),
+                    zones_configured: eventId ? eventGates.configured.has(eventId) : false,
+                    gate_change_allowed: a.gate_change_allowed === true,
                     events: formattedEvent,
                 };
 

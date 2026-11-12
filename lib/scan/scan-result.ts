@@ -22,6 +22,11 @@ export const SCAN_RESULTS = [
     'manual_entry_refused',
     // Lot 9 bis (R19, B52) : billet engagé dans un transfert en attente, refusé à l'entrée (rien de composté)
     'transfer_pending',
+    // Lot 9 ter (9t.15, 9t.16) : verdicts de zone (ticket_scans.zone_result, jamais result) : mauvaise zone et pas encore
+    // entré (orange : la personne est orientée, rien composté), accès autorisé à un contrôle de zone (vert, rien composté)
+    'wrong_zone',
+    'not_entered',
+    'zone_ok',
     'rate_limited',
     'network_error',
     'server_error',
@@ -59,6 +64,9 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     dynamic_qr_required: 'QR dynamique requis (billet ouvert dans l’application)',
     manual_entry_refused: 'Saisie manuelle refusée',
     transfer_pending: 'Transfert en cours',
+    wrong_zone: 'Mauvaise zone',
+    not_entered: 'Pas encore entré',
+    zone_ok: 'Accès autorisé',
     rate_limited: 'Trop de scans : patientez quelques secondes',
     network_error: 'Erreur réseau : réessayez',
     server_error: 'Erreur serveur : réessayez',
@@ -81,7 +89,7 @@ export const TRANSFER_PENDING_DETAIL = 'Billet en cours de transfert : il doit �
  * Un incident technique (« technique ») n'est jamais un verdict sur le billet : écran neutre, aucune
  * vibration, jamais compté comme refus (D47).
  */
-export type ScanCategory = 'accepte' | 'deja_utilise' | 'refuse' | 'hors_fenetre' | 'evenement_annule' | 'technique';
+export type ScanCategory = 'accepte' | 'deja_utilise' | 'refuse' | 'hors_fenetre' | 'evenement_annule' | 'technique' | 'oriente';
 
 export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
     valid: 'accepte',
@@ -94,6 +102,10 @@ export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
     manual_entry_refused: 'refuse',
     transfer_pending: 'refuse',
     payment_required: 'refuse',
+    // Lot 9 ter (9t.16, arbitrage 19) : orange, la personne est orientée vers une autre zone ; contrôle de zone réussi : vert
+    wrong_zone: 'oriente',
+    not_entered: 'oriente',
+    zone_ok: 'accepte',
     qr_expired: 'refuse',
     event_not_open: 'hors_fenetre',
     event_ended: 'hors_fenetre',
@@ -152,4 +164,22 @@ export function isScanMethod(value: unknown): value is ScanMethod {
 /** Libellé d'une méthode de scan ; valeur inconnue → « Autre méthode ». */
 export function scanMethodLabel(method: unknown): string {
     return isScanMethod(method) ? SCAN_METHOD_LABELS[method] : 'Autre méthode';
+}
+
+// ── Lot 9 ter (9t.15, contrat C.2.3, 11.3) — zones et portes ──────────────
+
+/** Types de zone (event_zones.kind) et leurs libellés d'écran. */
+export const ZONE_KIND_LABELS = { ENTREE: 'Entrée', CONTROLE: 'Contrôle de zone' } as const;
+export type ZoneKind = keyof typeof ZONE_KIND_LABELS;
+
+/** Problèmes de porte (409, jamais un verdict sur le billet : rien n'est écrit) et leurs textes exacts (contrat 11.3). */
+export const GATE_PROBLEM_MESSAGES = {
+    GATE_REQUIRED: 'Aucune porte ne vous est attribuée : demandez à l’organisateur de vous en attribuer une. Rien n’a été validé.',
+    GATE_CHANGED: 'Votre porte a changé : le contrôle reprend avec votre nouvelle porte. Scannez de nouveau.',
+    GATE_INVALID: 'Porte inconnue : choisissez une porte de cet événement.',
+} as const;
+export type GateProblemCode = keyof typeof GATE_PROBLEM_MESSAGES;
+
+export function isGateProblemCode(value: unknown): value is GateProblemCode {
+    return typeof value === 'string' && Object.prototype.hasOwnProperty.call(GATE_PROBLEM_MESSAGES, value);
 }

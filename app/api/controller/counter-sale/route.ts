@@ -4,6 +4,7 @@ import { requireActiveSession } from '@/lib/auth/session';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
+import { gateOut, readEventGates } from '../gate-info';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,10 @@ const COUNTER_SALE_KEY = 'access.counter_sale_enabled';
  * (actives et vendues au guichet) avec leur prix, leur disponibilité (total − vendus − réservés) et
  * `on_site_only` (non vendue en ligne, lot 8). Contrôleur non affecté à
  * l'événement : 403 NOT_ASSIGNED (comme la vente). Aucun total n'est calculé dans le navigateur : le devis
- * passe par POST /api/controller/counter-sale/quote.
+ * passe par POST /api/controller/counter-sale/quote. Lot 9 ter (9t.15, contrat 4.3, arbitrage 18) : `gate` (porte du
+ * vendeur, ou null) et, par catégorie, `admitted_at_gate` (vrai sans zone ; sur un événement à zones, vrai seulement
+ * si la zone d'entrée de la porte admet la catégorie ; faux à une porte de contrôle ou sans porte) : l'écran grise à
+ * l'avance ce que la vente refuserait (CATEGORY_NOT_ADMITTED_AT_GATE).
  */
 export async function GET(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -32,7 +36,7 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceRoleClient();
     try {
         const [assignment, setting, shift, categories] = await Promise.all([
-            supabase.from('event_controllers').select('can_accept_cash').eq('event_id', eventId).eq('user_id', session.user.id).maybeSingle(),
+            supabase.from('event_controllers').select('can_accept_cash, gate_id').eq('event_id', eventId).eq('user_id', session.user.id).maybeSingle(),
             supabase.from('platform_settings').select('value').eq('key', COUNTER_SALE_KEY).maybeSingle(),
             supabase.from('controller_shifts').select('id, opened_at, opening_float_amount, expected_cash_total')
                 .eq('controller_id', session.user.id).eq('event_id', eventId).eq('status', 'OUVERT').maybeSingle(),
@@ -49,6 +53,15 @@ export async function GET(req: NextRequest) {
         const enabled = (setting.data?.value as { value?: unknown } | null | undefined)?.value;
         if (typeof enabled !== 'boolean') {
             throw new Error(`réglage ${COUNTER_SALE_KEY} absent ou non booléen : ${JSON.stringify(setting.data?.value ?? null)}`);
+        }
+        const eventGates = await readEventGates([eventId]);
+        const configured = eventGates.configured.has(eventId);
+        const gate = gateOut(eventGates, assignment.data.gate_id);
+        let admitted = new Set<string>();
+        if (configured && gate?.zone.kind === 'ENTREE') {
+            const { data: rows, error: admErr } = await supabase.from('zone_categories').select('category_id').eq('zone_id', gate.zone.id);
+            if (admErr) throw new Error(`catégories admises à la porte : ${admErr.message}`);
+            admitted = new Set((rows ?? []).map((r) => String(r.category_id)));
         }
         const open = shift.data;
         return NextResponse.json({
@@ -67,7 +80,9 @@ export async function GET(req: NextRequest) {
                 price: Number(c.price),
                 available: Math.max(0, Number(c.total_quantity) - Number(c.sold_quantity) - Number(c.held_quantity ?? 0)),
                 on_site_only: c.sale_online === false,
+                admitted_at_gate: !configured || admitted.has(String(c.id)),
             })),
+            gate,
         }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
         console.error('[API /api/controller/counter-sale GET] erreur :', err instanceof Error ? err.message : String(err));
@@ -93,6 +108,9 @@ const REFUSAL_STATUS: Record<string, number> = {
     SALE_CHECK_FAILED: 409,
     CATEGORY_NOT_SOLD_AT_COUNTER: 409,
     INVALID_ITEMS: 400,
+    // Lot 9 ter (9t.15, contrat 4.3) : guichet = entrée, soumis à la porte du vendeur
+    GATE_REQUIRED: 409,
+    CATEGORY_NOT_ADMITTED_AT_GATE: 409,
 };
 
 type SaleReply = Record<string, unknown> & {

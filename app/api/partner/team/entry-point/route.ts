@@ -16,6 +16,8 @@ const BodySchema = z.object({
  * PATCH /api/partner/team/entry-point — point d'entrée d'un contrôleur sur un événement (« Porte A »,
  * « Entrée VIP »), recopié sur chaque scan au moment du scan (données du pilotage, lot 4). Réservé au
  * partenaire propriétaire de l'événement (ou à un admin) ; `entryPoint` vide ou null efface le champ.
+ * Lot 9 ter (9t.15, contrat 4.3) : sur un événement à zones, le point d'entrée suit la porte du contrôleur (PATCH
+ * /api/partner/team/gate) : un texte libre est refusé, 409 GATES_CONFIGURED, rien n'est écrit.
  */
 export async function PATCH(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -47,6 +49,18 @@ export async function PATCH(req: NextRequest) {
     const ownerId = (event?.partners as unknown as { user_id: string } | undefined)?.user_id;
     if (!event || (!serverIsAdmin(user) && ownerId !== user.id)) {
         return NextResponse.json({ error: 'Événement introuvable.' }, { status: 404 });
+    }
+    const { count: zoneCount, error: zonesErr } = await supabase
+        .from('event_zones')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_id', parsed.data.eventId);
+    if (zonesErr) {
+        console.error('[entry-point] lecture des zones impossible :', zonesErr.message);
+        return NextResponse.json({ error: 'Modification momentanément indisponible.' }, { status: 500 });
+    }
+    if ((zoneCount ?? 0) > 0) {
+        return NextResponse.json({ error: 'Cet événement a des portes : choisissez la porte du contrôleur dans la liste.', code: 'GATES_CONFIGURED' },
+            { status: 409 });
     }
     const entryPoint = parsed.data.entryPoint ? parsed.data.entryPoint : null;
     const { data: rows, error } = await supabase

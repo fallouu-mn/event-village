@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
 import { rpcWithRetry } from '@/lib/payments/rpc';
-import { isScanResult, SCAN_RESULT_LABELS, type ScanResult } from '@/lib/scan/scan-result';
+import { GATE_PROBLEM_MESSAGES, isGateProblemCode, isScanResult, SCAN_RESULT_LABELS, type ScanResult } from '@/lib/scan/scan-result';
 import { reserveQuota } from '@/lib/security/quota';
 import { logServerScanIncident, type ServerIncidentKind } from '@/lib/scan/scan-incidents';
 import { parseTicketPayload, verifyTicketCode } from '@/lib/security/totp';
@@ -12,12 +12,15 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-const CameraSchema = z.object({ eventId: z.string().uuid(), payload: z.string().trim().min(1).max(500) });
+/** Lot 9 ter (9t.15, contrat C.2.3) : porte annoncée par le scanneur (événement à zones), null compris. */
+const GateId = z.string().uuid().nullable().optional();
+const CameraSchema = z.object({ eventId: z.string().uuid(), payload: z.string().trim().min(1).max(500), gateId: GateId });
 const ManualSchema = z.object({
     eventId: z.string().uuid(),
     manualTicketNumber: z.string().trim().min(4).max(60),
     // Contrat : seule la valeur true vaut « pièce vérifiée » ; toute autre valeur donne manual_entry_refused
     identityVerified: z.unknown().optional(),
+    gateId: GateId,
 });
 /** Lot 8 (contrat 3.5) : un renvoi n'exige que l'événement ; payload et numéro, s'ils sont là, ne sont jamais lus. */
 const ReplaySchema = z.object({ eventId: z.string().uuid() });
@@ -109,6 +112,10 @@ async function serverError(userId: string, eventId: string | null, message: stri
  * Lot 8 (8.2 e, contrat 3.5) : `{ eventId, replayOnly: true }` est un renvoi après une sortie de l'application.
  * Aucune lecture du billet ni du code : ticket_scan rend le verdict de la ligne de cette clé sur cet événement,
  * ou `not_processed`, et n'écrit jamais rien. Le quota reste consommé.
+ * Lot 9 ter (9t.15, contrat C.2.3) : `gateId` (porte de l'affectation sur un événement à zones) transmis à ticket_scan
+ * seulement s'il est dans le corps (null compris) ; problème de porte → 409 { error, code } (GATE_REQUIRED,
+ * GATE_CHANGED, GATE_INVALID) : rien n'est écrit, rien du billet n'est rendu ; la règle des zones est appliquée dans la
+ * RPC (wrong_zone, not_entered, zone_ok, jamais composté hors d'une zone d'entrée qui admet la catégorie).
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -168,10 +175,18 @@ export async function POST(req: NextRequest) {
             p.identity_verified = m.identityVerified === true;
             p.payload_hash = sha256(m.manualTicketNumber.toUpperCase());
         }
+        // Lot 9 ter (9t.15) : porte annoncée, posée seulement si la clé est dans le corps (null compris)
+        if (!replay && body && typeof body === 'object' && 'gateId' in body) {
+            p.gate_id = (camera?.success ? camera.data.gateId : manual?.data?.gateId) ?? null;
+        }
         const { data, error } = await rpcWithRetry<Rpc>('ticket_scan', { p });
         if (error || !data) throw new Error(`ticket_scan : ${error?.message ?? 'réponse vide'}`);
         if (data.http === 403) {
             return NextResponse.json({ error: 'Vous n’êtes pas autorisé à contrôler cet événement.', code: data.code }, { status: 403 });
+        }
+        if (data.http === 409) {
+            if (!isGateProblemCode(data.code)) throw new Error(`ticket_scan : refus 409 inconnu ${JSON.stringify(data)}`);
+            return NextResponse.json({ error: GATE_PROBLEM_MESSAGES[data.code], code: data.code }, { status: 409, headers: { 'Cache-Control': 'no-store' } });
         }
         if (data.http === 400) {
             return NextResponse.json({ error: 'Clé d’idempotence manquante ou invalide.', code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });

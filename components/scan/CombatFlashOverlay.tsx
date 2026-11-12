@@ -31,7 +31,7 @@
  */
 import React, { useEffect } from 'react';
 import {
-    Ban, CalendarX2, CheckCircle2, Clock, OctagonX, RotateCcw, ScanLine, WifiOff, type LucideIcon,
+    Ban, CalendarX2, CheckCircle2, Clock, OctagonX, RotateCcw, ScanLine, Signpost, WifiOff, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { formatTime } from '@/lib/format';
@@ -74,6 +74,8 @@ const LOOKS: Record<ScanCategory, Look> = {
     hors_fenetre: { surface: 'bg-scan-window-bg text-scan-window-fg', Icon: Clock, title: 'Contrôle fermé' },
     evenement_annule: { surface: 'bg-scan-refuse-bg text-scan-refuse-fg', Icon: CalendarX2, title: 'Événement annulé' },
     technique: { surface: 'bg-scan-tech-bg text-scan-tech-fg', Icon: WifiOff, title: 'Vérification impossible' },
+    // Lot 9 ter (9t.16, X13) : entrée de compilation seule ; textes et lignes du plein écran en vague E (E-C)
+    oriente: { surface: 'bg-scan-orient-bg text-scan-orient-fg', Icon: Signpost, title: 'Accès refusé' },
 };
 
 /** Titre précis d'un résultat (libellé du contrat), sinon celui de la catégorie. */

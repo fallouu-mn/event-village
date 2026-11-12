@@ -6,6 +6,7 @@
  *  - accepte                                   : [60]                  (une impulsion courte)
  *  - deja_utilise, refuse, evenement_annule    : [120, 60, 120, 60, 120] (trois impulsions marquées)
  *  - hors_fenetre                              : [250, 100, 250]       (deux impulsions longues)
+ *  - oriente (lot 9 ter : mauvaise zone, pas encore entré) : [250, 100, 250] (famille « attention », arbitrage 19)
  *  - technique (réseau, serveur, cadence)      : aucune (le billet n'est pas en cause, D47)
  * Plus aucune vibration à la lecture du QR : seul le verdict vibre.
  * Sans `navigator.vibrate` (iPhone, WebView bridée) : aucune exception, la fonction rend false.
@@ -19,6 +20,7 @@ const PATTERNS: Record<ScanCategory, readonly number[] | null> = {
     evenement_annule: [120, 60, 120, 60, 120],
     hors_fenetre: [250, 100, 250],
     technique: null,
+    oriente: [250, 100, 250],
 };
 
 function isCategory(value: string): value is ScanCategory {
