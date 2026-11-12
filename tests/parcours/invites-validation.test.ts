@@ -195,6 +195,10 @@ describe('9t.17 Validation par la liste des invités', () => {
         const ev = await newEvent('echue');
         const ctrl = await newController(partner, ev.eventId, { label: 'val-echue' });
         const inv = await pendingInvitation(ev);
+        // Invitation envoyée avant l'événement : trg_events_invitation_expiry (M/20261108000002:640-657) ne recale
+        // l'échéance sur la nouvelle fin que si cette fin est postérieure à created_at.
+        const backdate = await service.from('ticket_transfers').update({ created_at: new Date(Date.now() - 49 * 3600_000).toISOString() }).eq('id', inv.transferId);
+        assert.equal(backdate.error, null, `recul de created_at : ${backdate.error?.message}`);
         await shiftEventDates(ev.eventId, { startsInHours: -4, durationHours: 3 });
         const { data, error } = await service.rpc('ticket_transfers_expire', { p: {} });
         assert.equal(error, null, `ticket_transfers_expire : ${error?.message}`);
