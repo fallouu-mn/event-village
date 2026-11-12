@@ -16,7 +16,7 @@ import { TextInput } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EVENT_STATUSES, EVENT_STATUS_META, type EventStatus } from '@/lib/events/event-status';
-import { formatFcfa, formatInteger } from '@/lib/format';
+import { formatFcfa, formatInteger, formatTime } from '@/lib/format';
 import { KpiAmount } from '@/components/partner/pilotage/PilotageBlocks';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
@@ -79,6 +79,8 @@ export default function PartnerEventsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retrying, setRetrying] = useState(false);
+    /** Lot 9 ter (R49) : heure du dernier chargement réussi ; la liste ne suit pas les ventes en temps réel. */
+    const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
     const seq = useRef(0);
 
     const [pending, setPending] = useState<{ eventId: string; to: string } | null>(null);
@@ -106,6 +108,7 @@ export default function PartnerEventsPage() {
             if (mine !== seq.current) return;
             setEvents(Array.isArray(list.events) ? list.events : []);
             setOverview(ov);
+            setLastLoadedAt(new Date());
             setError(null);
         } catch (err) {
             if (mine !== seq.current) return;
@@ -199,7 +202,7 @@ export default function PartnerEventsPage() {
             <PageHeader
                 title="Mes événements"
                 description="Soumettez, publiez et pilotez vos événements. Les indicateurs portent sur tous vos événements."
-                eyebrow={<LiveIndicator status={liveStatus} />}
+                eyebrow={<LiveIndicator status={liveStatus} salesLive={false} updatedTime={lastLoadedAt ? formatTime(lastLoadedAt) : null} />}
                 actions={
                     <LinkButton href="/partner/events/new" variant="primary" leftIcon={<CalendarPlus size={18} />}>
                         Créer un événement

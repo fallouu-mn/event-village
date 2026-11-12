@@ -41,7 +41,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { PartnerStatusDialog, type PartnerStatusResult, type PartnerStatusTarget } from '@/components/admin/PartnerStatusDialog';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { toastMessages } from '@/lib/messages/toast-messages';
-import { formatDateTime, formatFcfa, formatInteger, toDakarDateTimeLocal } from '@/lib/format';
+import { formatDateTime, formatFcfa, formatInteger, formatTime, toDakarDateTimeLocal } from '@/lib/format';
 
 /**
  * Lot 5 (tâche 5.13, contrat O5 ; système de design, contrat Q) — tableau de bord de l'administration.
@@ -168,6 +168,8 @@ export default function AdminDashboardPage() {
   const [kpis, setKpis] = useState<AdminKPIs | null>(null);
   const [metricsPhase, setMetricsPhase] = useState<Phase>('loading');
   const [configWarning, setConfigWarning] = useState<string | null>(null);
+  /** Lot 9 ter (R49) : heure du dernier chargement réussi des indicateurs ; les ventes ne sont pas suivies en temps réel. */
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [pendingEvents, setPendingEvents] = useState<number | null>(null);
   const [eventsAccess, setEventsAccess] = useState<'ok' | 'forbidden' | 'error'>('ok');
 
@@ -219,6 +221,7 @@ export default function AdminDashboardPage() {
       setKpis(body.kpis as AdminKPIs);
       setConfigWarning(typeof body.configWarning === 'string' ? body.configWarning : null);
       setMetricsPhase('ready');
+      setLastLoadedAt(new Date());
     } catch (err) {
       console.error('[admin/dashboard] indicateurs en échec', err);
       if (silent) toast.error(toastMessages.admin.loadError);
@@ -495,7 +498,7 @@ export default function AdminDashboardPage() {
         description="Dossiers à traiter et vue d’ensemble de la plateforme."
         actions={(
           <>
-            <LiveIndicator status={liveStatus} />
+            <LiveIndicator status={liveStatus} salesLive={false} updatedTime={lastLoadedAt ? formatTime(lastLoadedAt) : null} />
             <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={16} />} onClick={() => void refreshAll()}>
               Actualiser
             </Button>

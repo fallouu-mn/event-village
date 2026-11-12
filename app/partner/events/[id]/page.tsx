@@ -17,7 +17,7 @@ import { ReasonDialog } from '@/components/ui/ReasonDialog';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { formatDateTime, formatEventDateTime } from '@/lib/format';
+import { formatDateTime, formatEventDateTime, formatTime } from '@/lib/format';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
 import { RefundProgress } from '@/components/events/RefundProgress';
 import { errorMessage, sendJson } from '@/components/partner/fetch-json';
@@ -38,8 +38,9 @@ import type { EventAction, PilotageOverview } from '@/components/partner/pilotag
  *  - Onglets dans `?tab=` : Aperçu, Ventes, Invitations (lot 9), Entrées, Équipe, Caisse, Clôture (les anciennes
  *    pages …/team et …/caisse redirigent ici).
  *  - Une seule source de vérité : les routes …/pilotage/* (RPC pilotage_*), jamais de calcul ici.
- *  - En direct : ticket_scans, scan_incidents, controller_shifts et l'historique des statuts de CET
- *    événement (filtre event_id) déclenchent le rechargement de l'en-tête et de l'onglet affiché.
+ *  - En direct : ticket_scans, scan_incidents, controller_shifts, l'historique des statuts et (lot 9 ter, R49)
+ *    ticket_categories de CET événement (filtre event_id) déclenchent le rechargement de l'en-tête et de l'onglet
+ *    affiché ; l'indicateur montre l'heure de la dernière lecture quand le canal est hors ligne.
  *  - Annulation (tâche 5.8) : « Annuler l'événement » selon can_cancel, puis avancement des remboursements.
  *  - Lot 9 bis (R20, B22) : un événement annulé montre aussi « Espèces à rembourser par l’organisateur »
  *    (CashRefundsList : ventes au guichet, case « Remboursé » pour la propriétaire, lecture seule pour l'admin).
@@ -93,6 +94,8 @@ export default function PartnerEventPilotagePage() {
             { table: 'scan_incidents', filter: `event_id=eq.${eventId}` },
             { table: 'controller_shifts', filter: `event_id=eq.${eventId}` },
             { table: 'event_status_history', event: 'INSERT', filter: `event_id=eq.${eventId}` },
+            // Lot 9 ter (R49) : ventes, invitations et remboursements écrivent ticket_categories.sold_quantity
+            { table: 'ticket_categories', filter: 'event_id=eq.' + eventId },
         ],
         onSignal,
         enabled: Boolean(eventId),
@@ -179,7 +182,7 @@ export default function PartnerEventPilotagePage() {
                         {/* « Annulé » suivi de « En direct » en vert se lisait comme deux statuts contradictoires
                             (relecture du run 77) : pour un événement clos, « En direct » n'est plus affiché ; le
                             pilotage reste abonné, et « Connexion… » ou « Hors ligne » restent visibles. */}
-                        {!(CLOSED_STATUSES.has(ov.status) && liveStatus === 'live') && <LiveIndicator status={liveStatus} />}
+                        {!(CLOSED_STATUSES.has(ov.status) && liveStatus === 'live') && <LiveIndicator status={liveStatus} updatedTime={overview.updatedAt ? formatTime(overview.updatedAt) : null} />}
                     </>
                 }
                 title={ev.title}
