@@ -185,7 +185,7 @@ describe('9t.18 T5 — fonctions et réglages du pilotage du lot 9 ter', () => {
                 ['access.refusal_alert_minutes', 0, false], ['access.refusal_alert_minutes', 61, false],
             ];
             for (const [key, value, ok] of cases) {
-                const { rows: [r] } = await db.query<{ v: boolean }>('SELECT public.fin_setting_valid($1, $2::jsonb) AS v', [key, JSON.stringify({ value })]);
+                const { rows: [r] } = await db.query<{ v: boolean }>('SELECT public.fin_setting_valid($1, $2::jsonb) AS v', [key, JSON.stringify(value)]);
                 assert.equal(r.v, ok, `fin_setting_valid(${key}, ${JSON.stringify(value)})`);
             }
             await requireFunctions(db, ['scan_refusal_alert_settings()']);
