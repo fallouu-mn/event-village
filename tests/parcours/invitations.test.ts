@@ -43,7 +43,7 @@ const STANDARD = 'Standard';
 const CATEGORIES: CategorySpec[] = [{ name: STANDARD, price: 5_000, total: 30, maxPerOrder: 10 }];
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '');
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-const LIST_ITEM_KEYS = ['can_cancel', 'category', 'channel', 'created_at', 'phone_masked', 'price', 'status_label', 'ticket_id'];
+const LIST_ITEM_KEYS = ['can_cancel', 'category', 'channel', 'created_at', 'guest_name', 'phone_masked', 'price', 'status_label', 'ticket_id'];
 
 let partner: TestPartner;
 
