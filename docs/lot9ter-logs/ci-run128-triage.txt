@@ -1,0 +1,644 @@
+TRIAGE DU RUN « AVANT » DU LOT 9 TER — run 128 (43209660297), sha 4383b9d, branche lot9ter/controle-acces
+Sources : docs/lot9ter-logs/ci-run128-triage-brut.txt ; journaux origin/ci-results:runs/128-43209660297/test-logs/* (61 suites
+rouges relues une à une) ; ci-run128-verify.log ; ci-run128-e2e.log ; ci-run128-run.txt ; ci-run128-js-budget.tsv ;
+S/lot9ter-design.md (sections 5, 9, 10.1) ; S/lot9ter-red-results.md. Lecture seule : aucune base, aucun fichier de code touché.
+Classes : (A) rouge pour la bonne raison (comportement, objet de schéma ou route absents, nommés) ; (B) rouge pour une MAUVAISE
+raison (montage, données, ordre, faux positif), correctif de test donné ; (C) non attendu par le contrat.
+
+================================================================================================
+BILAN CHIFFRÉ
+================================================================================================
+verify : 347 suites, 286 vertes, 61 rouges, 0 expirée (verify.log:66758). typecheck et lint verts.
+  Les 61 rouges : 39 suites nouvelles, 21 suites existantes adaptées, 1 inchangée (design-systeme, attendue : .tsx absents).
+  Par suite : A = 59 ; B = 2 (rouges en partie pour une mauvaise raison) ; C = 0.
+  Par test (cas feuilles + after()) : 402 échecs = 371 cas + 31 after().
+    A = 400 ; B = 2 ; C = 0.
+e2e : captures 492 tests, 365 verts, 72 rouges, 55 sautés (41 au run 125 + 14 : 7 captures nouvelles du scanner, vues sombres
+  seulement, comme les autres captures du scanner). Les 72 rouges = 25 captures :
+    A = 18 captures (56 vues) : 14 nouvelles + 4 modifiées ;
+    C =  7 captures (16 vues) : 6 captures EXISTANTES du scanner (contrôle de contraste) + admin-versements-marquer-verse ;
+    B = 0.
+  Autres phases e2e vertes : connexion, emails, dev-page, fumee, terrain, pwa, fake-prod, perf, recette (9 actes, 1 à 9).
+  js-budget : 5 routes OK.
+Durée : job 3833 s (63,9 min) pour une limite de 75 min (marge 11 min ; run 118 du 9 bis : 2793 s). verify 1514 s ;
+  e2e 1993 s (33,2 min) pour 65 min, dont captures 1493 s (run 125 : 16,9 min) : les 72 échecs coûtent de 15 à 24 s chacun.
+
+En une phrase : les rouges du lot sont propres. Deux cas sont rouges pour une mauvaise raison (données de test, ordre) et
+7 captures existantes rougissent hors de la liste 10.1, pour une raison réelle (écran absent), déjà signalée par R-E2E.
+
+================================================================================================
+CAS (B) — À CORRIGER AVANT S0 (correctifs de TEST, aucune assertion affaiblie)
+================================================================================================
+B1. tests/parcours/invites-validation.test.ts [0/10], cas « 7. invitation échue après la fin, contrôle encore ouvert : validée,
+    transfert EXPIRED → ADMITTED ». Groupe RC, commit 460c4763, test(9t.17). Correcteur : RC.
+      error: précondition : invitation échue à la fin de l’événement — + 'PENDING' - 'EXPIRED'
+      Lieu : invites-validation.test.ts:198-201 (shiftEventDates puis ticket_transfers_expire).
+    Mécanisme : ticket_transfers_expire ne prend que les transferts PENDING à expires_at <= now()
+    (M/20261109000008, WITH due). L'échéance d'une invitation est recalée sur la fin de l'événement par
+    trg_events_invitation_expiry, mais SEULEMENT si la nouvelle fin est postérieure à created_at
+    (M/20261108000002:640-657, « AND v_end > tr.created_at »). Le test crée l'invitation à l'instant, puis met la fin 1 h
+    dans le passé : la fin précède la création, expires_at n'est pas recalé et reste dans le futur, donc l'invitation reste
+    PENDING. Cette donnée ne passera pas, même après les correctifs.
+    Correctif : après :198, reculer created_at du transfert avant la fin, puis expires_at dans le passé, dans cet ordre (CHECK
+    chk_ticket_transfers_dates, expires_at > created_at), patron invitations-reclamation.test.ts:243 :
+      service.from('ticket_transfers').update({ created_at: <maintenant − 6 h>, expires_at: <maintenant − 60 s> }).eq('id', inv.transferId)
+    Après correctif, le cas restera rouge pour la bonne raison (POST /api/controller/scan/guests absente).
+
+B2. tests/parcours/pilotage-cloture-export.test.ts [7/4], cas « chaque export journalisé : acteur, contacts, finalité, nombre de
+    lignes, sans donnée de participant ; l’admin events.read aussi » (:318). Ce cas n'est pas modifié. Il rougit par cascade du
+    cas adapté :299. Groupe RD, commit 7b18e3ca, test(9t.18). Correcteur : RD.
+      error: 'export journalisé (propriétaire, SAFETY_AND_RECEPTION) : [...]'. Le journal contient URGENT_EVENT_INFO
+      une fois et null deux fois, jamais SAFETY_AND_RECEPTION.
+    Mécanisme : :300-304 exporte URGENT_EVENT_INFO, puis vérifie « neuf colonnes » DANS la boucle. Cette vérification est
+    rouge pour la bonne raison (7 au lieu de 9), mais elle arrête la boucle avant l'export SAFETY_AND_RECEPTION. Or :326-327
+    attend les deux exports. Le cas :318 ne prouve donc rien aujourd'hui.
+    Correctif : dans :300-304, faire les deux exports d'abord, puis les assertions de colonnes ; ou, à défaut, que :318 fasse
+    lui-même l'export SAFETY_AND_RECEPTION dont il a besoin. Les assertions restent identiques. Les 3 autres rouges de la suite
+    (:235, :299 et le describe) sont des A (5 au lieu de 7 colonnes, 7 au lieu de 9).
+
+================================================================================================
+CAS (C) — NON ATTENDUS PAR LE CONTRAT (e2e seulement ; verify : aucun)
+================================================================================================
+C1. 6 captures EXISTANTES du scanner, non modifiées par le lot, rouges dans leurs 2 vues (mobile et ordinateur, sombre) :
+    scanner-accepte, scanner-refuse, scanner-hors-fenetre, scanner-evenement-annule, scanner-non-traite,
+    scanner-transfert-en-cours.
+      error: contrôles bloquants de scanner-<id>__<vue>__sombre.png : « plein écran du scanner (<résultat>) sans nœud marqué
+             [data-scan-contrast] : contraste invérifiable »
+    Lieu : e2e/support/checks.ts:380 (D.3.1, R-E2E, commit 4383b9de). Aucun nœud de CombatFlashOverlay ne porte encore
+    data-scan-contrast : ce sera fait par E-C dans fix(9t.16e), C.2.4.
+    Ce rouge contredit 10.1 (« captures existantes non modifiées vertes »), mais il suit D.3.1 et D-out 5.4 (« échec si aucun
+    nœud, pas de faux vert »). R-E2E l'a annoncé (red-results, R-E2E, rouges hors liste 1).
+    La raison est réelle : le marquage est absent. Ce n'est ni une erreur de montage ni un faux positif.
+    Correctif de test : aucun si l'orchestrateur garde D.3.1. Porter l'écart au rapport : ces captures redeviennent vertes
+    avec fix(9t.16e). L'autre voie, rendre l'absence de nœud non bloquante pour les captures anciennes, affaiblirait le
+    contrôle : elle n'est pas recommandée.
+C2. admin-versements-marquer-verse (capture existante), rouge dans ses 4 vues.
+      error: un bouton « Constater non versé » par ligne où can_mark_not_sent est vrai (lot 9 ter, A.2.4) — attendu 1,
+      obtenu 0.
+    Lieu : e2e/support/screens.ts:414-423. cashoutsReady est partagée par admin-remboursements-a-reprendre (:1383, modifiée,
+    annoncée par A.2.6) et par admin-versements-marquer-verse (:1624, non annoncée). R-E2E l'avait signalé (rouges hors liste 2).
+    La raison est réelle : le bouton n'existe pas encore. La capture redevient verte avec fix(9t.3e) d'E-A.
+    Correctif de test : aucun nécessaire. Écart à porter au rapport, ou correction de la ligne A.2.6 du contrat.
+
+================================================================================================
+CONTRÔLES DEMANDÉS
+================================================================================================
+1. Suites annoncées vertes (10.1) : toutes VERTES.
+   migrations-gelees (PASS 311 ms), retrait-retarde-9ter (PASS), essai-simule adapté (PASS 8,6 s), ordre-suites (PASS),
+   rls-toutes-tables (PASS), fonctions-privileges (PASS). recette e2e actes 1 à 9 (9 passed, phase OK), fumee OK,
+   terrain OK (13 passed, dont terrain.spec.ts:468 vibrations). Captures existantes non modifiées : vertes, sauf les 7 de C1 et C2.
+   Aussi vertes : acces-reglages (retouche de typage R0, hors propriétaires) et dette-suspendu-temps-reel (adaptée A.1.6).
+   Sont vertes aussi les suites « vérifiées sans modification » : pilotage-entrees, pilotage-invariant, pilotage-acces,
+   pilotage-apercu-ventes, scan-controleur-stats, invitations-reclamation, invitations-course, acces-scan, acces-fenetre,
+   acces-guichet, scan-idempotence, scan-renvoi-seulement, cycle9bis-fenetre-scan, realtime-scanner, scanner-combat-ui,
+   notif-interface, cycle-visibilite, decouverte-populaires, temps-reel-stock, messages-changement-9bis, edition-validation,
+   edition-formulaire, edition-categories, cloture-vocabulaire, textes-pdf-9bis, finance-rapports, finance-hors-plateforme,
+   legacy-exports-partenaire, notif-admin, recette-matrice.
+   Les « verts annoncés » à l'intérieur des suites rouges sont verts :
+     paiement-retour 1 et 4 ; zones-ecran 7 ; zones-schema 7 ; invites-nom 2 et 7 ; pilotage-tableau-entrees 9 ;
+     pilotage-lot9ter 8 ; migration-lot9ter-rejouable, garde A3 (14 ok) ; argent9ter-statique 2 ;
+     les témoins de securite-fiche (2 témoins), equipe-consentement (cas 3, 4, 6), messages-admin (2 témoins),
+     messages-detenteur (4 témoins), evenements-fin-valide (cas 6), evenements-rapport-unique (cas 5),
+     evenements-en-direct (2 cas, dont le temps réel) ; invitations-controleur-quota, cas 2 et 3 non touchés.
+   Les deux captures nouvelles de couverture, partenaire-finances-retrait-retarde et portefeuille-retrait-retarde, sont
+   vertes dans leurs 4 vues. R-E2E l'avait prévu, et la ligne 9t.13 les donne comme couverture. 10.1 les range parmi les
+   captures nouvelles, rouges : écart sans conséquence, à noter au rapport.
+2. Invariants des lots précédents (a) à (w) : 0 violation dans les 347 suites et dans les invariants e2e.
+   Seules lignes non nulles : pilotage-invariant, « sur le jeu », comme attendu (verify.log:40032 « billet UTILISE sans scan »
+   et :40041 « paiement espèces détaché », (l)).
+   [INVARIANT-LOT9BIS] : la garde du 9 bis n'est rouge que dans lot9bis-invariant, sur ses propres coupures en transaction
+   annulée. Idem pour [INVARIANT-LOT9] dans lot9-invariant.
+   [INVARIANT-LOT9TER] : AUCUNE ligne x1 à x13 n'a été évaluée. Dans chacun des 47 appels, la garde de schéma s'arrête avant,
+   sur 35 objets manquants. Ce sont les 38 objets du lot moins 3 colonnes, qui sont nommées par leur table absente
+   (partner_controllers.first_seen_at, event_zones.kind, event_gates.zone_id).
+   Les x sont donc vides PAR CONSTRUCTION : ce n'est pas une preuve.
+3. Traces en base : aucune.
+   Aucune suite hors lot n'a rougi, et aucun after() n'a rougi pour une autre raison que la garde : les 31 after() rouges
+   tombent tous sur « schéma du lot 9 ter incomplet ».
+   Les (a) à (w) sont imprimés à 0 avant la garde dans chacune de ces 31 suites, puis dans les suites suivantes.
+   La ligne w19 fabriquée par argent9ter-frais-creance (étape 6) est en transaction annulée : (w) de cette suite = 0
+   (verify.log:2925).
+   Écritures REST acceptées aujourd'hui, sans effet sur les invariants : fiche de test passée VALIDE par REST
+   (securite-fiche-partenaire), réservations et commandes modifiées (securite-ecritures-services), invitation envoyée avec un
+   nom de 61 caractères (invites-nom 3).
+4. Points à connaître (A, mais la preuve du rouge est partielle ou anticipée) :
+   a) argent9ter-frais-creance : l'étape 6 rougit RÉELLEMENT. w19 est violé par l'écriture CASHOUT_FEE-<id>
+      (repli GREATEST(now(), max VENTE), M/20261109000005:142-147). Le correctif conditionnel S-A fix(9t.6) (A.4.3) est donc
+      déclenché.
+   b) Rouges avant la logique visée, l'objet absent étant nommé. La course ou le seuil ne sont donc pas encore prouvés rouges
+      par eux-mêmes ; à revoir au run intermédiaire :
+        - stock-public S9 (course) : colonne stock_level absente, et non « T2 laisse has_purchasable vrai » ;
+        - course-invites 3 et 4 : garde de M08 ;
+        - pilotage-volume : objets de M10 absents, seuils 1 500 ms et 50 ms SUPPOSÉS, non mesurés ;
+        - zones-scan 4 et 10 : route des zones absente.
+   c) Montage linkController (T-B7 à T-B9) : notif-controleurs (5 cas), invitations-controleur-quota (1 cas) et
+      equipe-eligibilite (1 cas) tombent sur PGRST205 partner_controllers, avant leurs assertions du lot 6. R0 l'avait
+      annoncé (écart 2). Leur non-régression ne sera prouvée qu'après M06.
+   d) Scan « liste des invités » : les validations GUEST_LIST rendent 400 « Scan invalide : eventId et payload (ou
+      manualTicketNumber) requis. ». C'est le cas dans invites-validation 1 à 6, invites-reclamation 1 à 5, course-invites
+      1, 2 et 5, et pour la précondition d'invites-recherche 2. Rouge propre (corps refusé par la route), avant toute
+      logique.
+   e) r29-ecritures-rest, cas 1 : 23503 (clé étrangère partners_subscription_plan_id_fkey) au lieu de 42501.
+      Le rouge est juste : le droit INSERT et la politique WITH CHECK ont laissé passer la ligne, et la clé étrangère n'est
+      vérifiée qu'après. Le 42501 attendu viendra du retrait du droit, qui est contrôlé avant la clé étrangère.
+   f) stock-public S5 : délai de 20 s dépassé. Seuls 2 messages ont été reçus : l'INSERT de l'événement et la vivacité d'un
+      autre événement. Aucun signal n'est parti à S1, comme le prévoit le contrat (M/20261106000001:1163-1169).
+
+================================================================================================
+UNE LIGNE PAR TEST EN ÉCHEC — verify (suite [ok/notok du brut] (nouvelle | adaptée | inchangée) ; classe | titre | raison)
+« after() » = after() de la suite ; « route absente » = Cannot find module app/api/… ; textes d'erreur tirés des journaux.
+================================================================================================
+parcours/acces-tracabilite [9/2] (adaptée) :
+    A | type ScanResult = exactement l’union du contrat | union ScanResult sans wrong_zone, not_entered, zone_ok (seul écart du diff)
+parcours/admin-remboursements [13/5] (adaptée) :
+    A | refus de SamirPay : état ECHOUE, relance possible, titre de l’événement, numéro masqué | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+    A | issue incertaine : état INCERTAIN, jamais de relance | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+    A | solde insuffisant : état BLOQUE, relance possible, motif en français | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+    A | opérateur inconnu : état BLOQUE, relance impossible, aucun numéro ni événement à montrer | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+parcours/argent9ter-frais-creance [0/3] (nouvelle) :
+    A | remboursement entièrement en créance, crédit avant la confirmation du versement : aucune écriture de frais ne  | w19 violé par l’écriture CASHOUT_FEE-6ab70078-b61b-4c4a-8a55-820aab8f4a17 (repli GREATEST(now(), max VENTE), M/20261109000005:142-147) : {"booking":{"entries":[{"id":"e74f7153-bfbc-4b3e-a8bc-5793cc3d4bb7","amount":"-150.00","av…
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/argent9ter-non-verse [0/12] (nouvelle) :
+    A | droits : ADMIN refunds.manage → 403 SUPERADMIN_ONLY ; SUPERADMIN sans saisie récente → 403 PASSWORD_CONFIRMATI | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | saisies : référence absente ou de 101 caractères → 400 SUPPORT_REFERENCE_REQUIRED ; motif de 9 caractères → 40 | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | constat d’un remboursement : 200, ECHOUE avec référence, motif, heure et auteur, remboursement FAILED, audit C | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | jamais de renvoi automatique : reprise et retard après le constat, toujours ECHOUE, aucun envoi | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | Renvoyer après constat : un seul nouvel envoi, nouvel identifiant SamirPay | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | constat d’un retrait : versement ECHOUE, retrait REJECTED, montant rendu, ligne retirée de la liste | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | refus métier : INCERTAIN avec identifiant → 409 PROVIDER_ID_KNOWN ; A_ENVOYER, ECHOUE, CONFIRME → 409 NOT_UNCE | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | concurrence : double clic → [200, 409] ; deux SUPERADMIN, le second attend le verrou puis NOT_UNCERTAIN ; vari | route POST /api/admin/cashouts/[id]/not-sent absente : app/api/admin/cashouts/[id]/not-sent/route.ts (contrat A.2.3, fix(9t.3)) — module app/api/admin/cashouts/[id]/not-sent/route absent
+    A | écran : Constater non versé sous can_mark_not_sent, dans le ConfirmDialog, référence de 100 caractères, mot de | components/admin/RefundsToRetry.tsx : bouton « Constater non versé » absent (attendu true, obtenu false)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/argent9ter-parrainage-gel [0/6] (nouvelle) :
+    A | gel à la lecture : événement suspendu → commission gelée ; reprise → dégel | événement suspendu : la commission de parrainage est gelée (aujourd’hui 0, M/20261109000006:215-217) / 0 !== 3425
+    A | routes : solde et code de retrait du parrain pendant la suspension, aucun SMS | frozen = commission de l’événement suspendu (aujourd’hui 0) : HTTP 200 {"account_kind":"PARRAINAGE","available":34.25,"pending":0,"next_available_at":null,"in_pr…
+    A | oracle des branches, transaction annulée | gel PARRAINAGE par branche (aujourd’hui 0 partout)
+    A | portefeuille : bandeau Commissions gelées sous frozen > 0 | app/wallet/page.tsx ne lit pas body.frozen (servi par GET /api/finance/balance) (attendu true, obtenu false)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/course-invites [0/7] (nouvelle) :
+    A | 1. deux contrôleurs valident le même invité en même temps : une seule entrée (consigne 6) | HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    A | 2. invitation tenue par une acceptation en cours : transfer_pending, rien composté, puis vert | HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    A | 3. validation et acceptation concurrentes : jamais deux entrées, jamais ADMITTED sur un billet VALIDE | objets absents (migration 20261110000008, contrat C.3.3) : ticket_guest_list_search(jsonb), ticket_invitation_guest_name_set(jsonb), tickets.guest_name
+    A | 4. modification du nom pendant un compostage : TICKET_ALREADY_USED | objets absents (migration 20261110000008, contrat C.3.3) : ticket_guest_list_search(jsonb), ticket_invitation_guest_name_set(jsonb), tickets.guest_name
+    A | 5. double clic sur Valider : même clé → replayed, une ligne | HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / HTTP 400 …
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/cycle-transitions [30/3] (adaptée) :
+    A | liste exacte de 5.2 : 17 couples (ancien, nouveau, rôle, canal), motif obligatoire pour le refus, la suspensio | transition VALIDE → TERMINE par SYSTEM (canal CRON) absente (seul écart du diff)
+    A | la table est lisible par un compte connecté (actions possibles des interfaces) | 16 lignes lues au lieu de 17 (VALIDE → TERMINE absente)
+parcours/decouverte-cache [0/8] (adaptée) :
+    A | à 59 s et à 59,999 s : aucune relecture, même liste | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+    A | à 60 s exactement : relecture, la nouvelle liste est rendue | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+    A | la relecture repart pour 60 s | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+    A | une lecture en échec n’est jamais gardée : l’appel suivant relit, à la même heure | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+    A | panne à l’expiration : erreur rendue, jamais l’ancienne liste, et l’appel suivant relit | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+    A | deux appels simultanés : une seule lecture, même liste pour les deux | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+    A | deux appels simultanés en panne : une lecture, deux rejets, puis relecture | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+parcours/design-systeme [345/10] (inchangée) :
+    A | garde-fou : chaque entrée de la liste existe, sans doublon, en chemin relatif à la racine | entrées invalides ou fichiers absents : components/partner/zones/ZonesEditor.tsx, components/scan/GuestListPanel.tsx, components/partner/pilotage/EntriesBreakdown.tsx, components/partner/pilotage/ClosingReportSummary.tsx
+    A | règles du contrat Q : components/partner/zones/ZonesEditor.tsx | components/partner/zones/ZonesEditor.tsx absent (attendu true, obtenu false)
+    A | accessibilité et mobile (DoD 3 et 7) : components/partner/zones/ZonesEditor.tsx | components/partner/zones/ZonesEditor.tsx absent (attendu true, obtenu false)
+    A | règles du contrat Q : components/scan/GuestListPanel.tsx | components/scan/GuestListPanel.tsx absent (attendu true, obtenu false)
+    A | accessibilité et mobile (DoD 3 et 7) : components/scan/GuestListPanel.tsx | components/scan/GuestListPanel.tsx absent (attendu true, obtenu false)
+    A | règles du contrat Q : components/partner/pilotage/EntriesBreakdown.tsx | components/partner/pilotage/EntriesBreakdown.tsx absent (attendu true, obtenu false)
+    A | accessibilité et mobile (DoD 3 et 7) : components/partner/pilotage/EntriesBreakdown.tsx | components/partner/pilotage/EntriesBreakdown.tsx absent (attendu true, obtenu false)
+    A | règles du contrat Q : components/partner/pilotage/ClosingReportSummary.tsx | components/partner/pilotage/ClosingReportSummary.tsx absent (attendu true, obtenu false)
+    A | accessibilité et mobile (DoD 3 et 7) : components/partner/pilotage/ClosingReportSummary.tsx | components/partner/pilotage/ClosingReportSummary.tsx absent (attendu true, obtenu false)
+parcours/equipe-consentement-9ter [3/7] (nouvelle) :
+    A | B invite le numéro d'un contrôleur actif chez A : confirmation demandée, puis invitation à accepter, aucune af | étape de confirmation (aujourd'hui 201 avec affectation directe) : HTTP 201 {"success":true,"assignments":[{"id":"3203619e-ab4d-4231-b1a1-cb9ba773f673","event_id":"0c…
+    A | B, PATCH des affectations d'un contrôleur actif chez A : confirmation demandée, puis invitation, aucune affect | étape de confirmation (aujourd'hui 200 added [evB]) : HTTP 200 {"success":true,"message":"Affectations synchronisées avec succès.","added":["0c07fc5d-c43…
+    A | RPC controller_assignments_sync par B sur un contrôleur de A : CONTROLLER_CONSENT_REQUIRED, rien écrit | refus de la RPC : {"ok":true,"added":["0c07fc5d-c438-4d76-bf32-63fecb26a910"],"removed":[],"updated":0}
+    A | quota R98 : l'invitation confirmée d'un contrôleur actif inconnu consomme une unité invite_phone (limite 1 : l | la première est une invitation à accepter : HTTP 201 {"success":true,"assignments":[{"id":"9ff26e51-c758-48c5-bae1-01f72ae22221","event_id":"0c…
+    A | schéma : partner_controllers en RLS sans politique, aucun privilège pour anon et authenticated, aucune clé étr | table public.partner_controllers absente (lot 9 ter 0.5, migration 20261110000006) (attendu true, obtenu ~)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/equipe-eligibilite [16/2] (adaptée) :
+    A | anti-contournement { controllerId, eventId } : brouillon 400, événement d’un autre 403, publié 200 | lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : PGRST205 Could not find the table 'public.partner_controllers' in the schema cache
+parcours/evenements-en-direct [2/6] (nouvelle) :
+    A | le pilotage suit ticket_categories filtré par l'événement (useRealtimeRefresh) | app/partner/events/[id]/page.tsx : aucun abonnement { table: 'ticket_categories' } (aujourd'hui ticket_scans, scan_incidents, controller_shifts, event_status_history seulement)
+    A | liste partenaire et tableau de bord admin : <LiveIndicator salesLive={false} updatedTime=…> | app/partner/events/page.tsx : salesLive={false} et une heure de mise à jour (B.5 point 4) : <LiveIndicator status={liveStatus} /> (attendu true, obtenu false)
+    A | rendu de LiveIndicator : l'heure, jamais « En direct », quand les ventes ne sont pas suivies | ventes non suivies, en ligne : « En direct » (attendu true, obtenu false)
+    A | useServerData pose updatedAt à chaque lecture réussie | ServerData expose updatedAt: Date | null (B.5 point 2) : data: T | null; / error: string | null; / loading: boolean; / refreshing: boolean; / reload: () => Promise<void>;
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/evenements-fin-valide [1/9] (nouvelle) :
+    A | VALIDE jamais publié fini depuis 2 h : TERMINE au cron, ended_unpublished, historique VALIDE → TERMINE (SYSTEM | le cron prend l'événement VALIDE fini (aujourd'hui PUBLIE seulement) : 0 id(s) (attendu true, obtenu false)
+    A | aucun message : le passage ne met rien en file pour cet événement | précondition : TERMINE par le cron / + 'VALIDE' - 'TERMINE' / (attendu 'TERMINE', obtenu 'VALIDE')
+    A | invisible du public : fiche 404, statut public NOT_PUBLIC, events illisible par anon, vue sans la ligne, aucun | précondition : TERMINE par le cron / + 'VALIDE' - 'TERMINE' / (attendu 'TERMINE', obtenu 'VALIDE')
+    A | non scannable : le billet d'invitation est refusé event_not_open, rien composté | précondition : TERMINE par le cron (dans la fenêtre de contrôle) (attendu 'TERMINE', obtenu 'VALIDE')
+    A | Realtime : la sentinelle PUBLIE terminée dans le même passage est diffusée, l'événement VALIDE terminé ne l'es | VALIDE terminé par le même passage (aujourd'hui ignoré) (attendu true, obtenu false)
+    A | deux crons en même temps : une seule ligne d'historique VALIDE → TERMINE | l'événement apparaît dans un seul passage / 0 !== 1
+    A | admin : pas de lien vers la page publique d'un événement terminé sans publication (isPublic lit ended_unpublis | isPublic exige ended_unpublished !== true (B.5 point 10) : isEventStatus(currentStatus) && PUBLIC_STATUSES.includes(currentStatus)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/evenements-rapport-unique [1/6] (nouvelle) :
+    A | la route du tableau de bord sert les chiffres de pilotage_closing (vendus hors invitations, capacité mise en v | report.closing servi tel quel (contrat 4.2 B.3) : clés reportId, generatedAt, event, partner, salesByCategory, paymentsSummary, ticketsSummary, financialSummary
+    A | catégories du rapport = celles de la vente (pilotage_sales.by_category) | salesByCategory[0] = pilotage_sales.by_category[0] : {"r":{"categoryId":"ab4cc86b-8c2a-4bdf-a04e-5ac9ed6c0e3b","name":"Standard","unitPrice":50…
+    A | PDF : mêmes libellés que l'onglet Clôture | PDF : libellé « Billets vendus (hors invitations) » absent (attendu true, obtenu false)
+    A | statique : un seul composant pour la fenêtre et l'onglet ; getClosingReportData lit pilotage_closing et pilota | components/partner/ClosingReportModal.tsx importe ClosingReportSummary
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/evenements-retraits-brut [0/4] (nouvelle) :
+    A | retrait en cours de 6 000 F (frais 60 F) : in_progress = 6 000, available + in_progress = solde d'avant ; même | retrait en cours au brut réservé, frais compris (aujourd'hui 5 940) : {"available":4000,"pending":0,"next_available_at":null,"in_progress":5940} / 5940 !== 60…
+    A | statique : l'aide « Retraits en cours » des deux écrans dit le brut réservé | app/partner/finance/page.tsx : aide « Montant réservé sur votre solde, frais compris, pendant l’envoi vers Wave ou Orange Money. » (B.5 point 11)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/evenements-verrous-ecran [0/9] (nouvelle) :
+    A | billet vendu puis remboursé : edit_locks dit has_sales comme le serveur, et le serveur refuse la catégorie d'é | edit_locks servi par GET /api/partner/events/[id] (contrat 4.2 B.3, F17) : clés success, event (attendu true, obtenu —)
+    A | témoin : sans billet, has_sales faux et la catégorie d'événement change | edit_locks servi par GET /api/partner/events/[id] (contrat 4.2 B.3, F17) : clés success, event (attendu true, obtenu —)
+    A | plancher de la jauge : capacity_floor = quotas actifs sans vente, max(vendus + en cours, quotas actifs) avec v | edit_locks servi par GET /api/partner/events/[id] (contrat 4.2 B.3, F17) : clés success, event (attendu true, obtenu —)
+    A | invitation seule sur un événement VALIDE : has_sales vrai | edit_locks servi par GET /api/partner/events/[id] (contrat 4.2 B.3, F17) : clés success, event (attendu true, obtenu —)
+    A | les verrous de l'écran viennent du serveur et les textes de la jauge suivent la règle | salesStarted ne lit plus sold_quantity ni held_quantity : afterValidation && eventCategories.some((c) => Number(c.sold_quantity) > 0 || Number(c.held_quantity) > 0)
+    A | avertissement avant de quitter : hooks/useUnsavedGuard.ts (sans JSX, beforeunload, liens en capture) et sa fen | hooks/useUnsavedGuard.ts absent (B.5 point 7) (attendu true, obtenu false)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/evenements-ville-telephone [0/10] (nouvelle) :
+    A | liste des villes : 26 entrées, les 14 chefs-lieux de région, aucun doublon une fois pliée, triée en français | lib/events/senegal-cities.ts (contrat B.0, 9t.11) absent (../../lib/events/senegal-cities) : module lib/events/senegal-cities absent
+    A | création : ville de la liste ramenée à sa forme, autre ville gardée | Expected values to be strictly equal: / 'THIES' !== 'Thiès'
+    A | modification : même ville une fois pliée = ville actuelle gardée ; autre ville de la liste acceptée | ville actuelle gardée telle quelle : aucun changement détecté / 'Thiès' !== 'Thies'
+    A | téléphone de contact : stocké en +221, fixes acceptés, refus au texte exact, ancienne valeur gardée telle quel | « 77 123 45 67 » stocké en E.164 / + '77 123 45 67' - '+221771234567' / (attendu '+221771234567', obtenu '77 123 45 67')
+    A | statique : formulaire (liste des villes, « Autre ville », « Précisez la ville ») et fiche publique (lien tel:  | EventForm importe SENEGAL_CITIES
+    A | « Thies » en base, PUT « Thiès » : aucun porteur prévenu, ville inchangée, aucune alerte | même ville une fois pliée : aucun porteur prévenu (aujourd'hui 1) : HTTP 200 {"success":true,"event":{"id":"984bf041-fd5a-4e21-b596-9eb2f78f38cb","city":"Thiès","slug"…
+    A | fiche publique : numéro formaté et lien E.164, ancienne valeur affichée telle quelle ; route publique ouverte  | numéro stocké en E.164 : {"address":null,"accessNotes":null,"parking":null,"contactPhone":"+221771234567","rules":n…
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/finance-retraits [14/2] (adaptée) :
+    A | délai dépassé après envoi : cashout INCERTAIN, aucun second envoi, retrait non REJECTED, solde toujours réserv | retrait en cours au montant brut réservé, frais compris (lot 9 ter, R106 c) : {"available":4000,"pending":0,"next_available_at":null,"in_progress":5940} / 5940 !== 60…
+parcours/invitations-controleur-quota [2/2] (adaptée) :
+    A | contrôleur déjà activé, 4 affectations le même jour (limite 3) : la 4ᵉ est acceptée, aucun SMS, compteur à 0 | lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : PGRST205 Could not find the table 'public.partner_controllers' in the schema cache
+parcours/invitations [34/4] (adaptée) :
+    A | GET : mêmes champs avec ou sans compte, statut « Envoyée », numéro masqué ; ni numéro de billet, ni QR, ni num | champs exacts : {"price":0,"channel":"Invitation","category":"Standard","ticket_id":"27dc9997-ad19-40db-b3…
+    A | CSV : colonne « Origine » en troisième position ; invitation en attente, invitation attribuée et vente en lign | HTTP 200 (text/csv; charset=utf-8) Nom;Catégorie;Canal;Statut du billet;Heure d’entrée / Fatou Invitee;Standard;Invitation;Valide; / Ramatoulaye Acheteuse;Standard;En ligne;Valide; / Invitation en attente;Standard;Invitation;Valide;
+parcours/invites-nom [2/9] (nouvelle) :
+    A | 1. envoi avec des noms : chaque billet du numéro porte son nom, un numéro sans nom reste sans nom | colonne tickets.guest_name absente (migration 20261110000008) : ["id","event_id","category_id","user_id","order_id","ticket_number","price","qr_code","status","checked_in_at","checked_in_by","created_at","updated_at","totp_secret","transfer
+    A | 3. 61 caractères, longueur différente des numéros : 400 INVALID_FIELD, rien écrit, aucun quota | nom de 61 caractères : HTTP 200 {"ok":true,"ticket_count":1,"phone_count":1,"message":"Invitations envoyées."} / 200 !==…
+    A | 4. modifier le nom d’une invitation non utilisée ; refus sur un billet utilisé, annulé, d’un tiers, sans event | PATCH /api/partner/events/[id]/invitations/[ticketId] : route absente (9t.17) : module app/api/partner/events/[id]/invitations/[ticketId]/route absent
+    A | 5. liste de la partenaire : guest_name servi ; audits sans nom ni numéro | clé guest_name servie par la liste (F24) : {"price":0,"channel":"Invitation","category":"VIP","ticket_id":"e0768103-ffaa-4af3-8c04-b6…
+    A | 6. nom illisible par REST et Realtime | tickets.guest_name illisible au catalogue (42703 column "guest_name" of relation "tickets" does not exist) : colonne absente (migration 20261110000008)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/invites-recherche [0/12] (nouvelle) :
+    A | 1. 4 derniers chiffres et numéro complet sous trois formes : un groupe nom, catégorie, nombre, identifiants | POST /api/controller/scan/guests : route absente (9t.17) : module app/api/controller/scan/guests/route absent
+    A | 2. exclus : invitation réclamée, utilisée, annulée, refusée, billet acheté puis transféré vers ce numéro | précondition : invitation utilisée : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} (attendu 'v…
+    A | 3. deux numéros de même suffixe : deux groupes ; onze invités : dix groupes et truncated | POST /api/controller/scan/guests : route absente (9t.17) : module app/api/controller/scan/guests/route absent
+    A | 4. recherche hors de l’événement impossible (consigne 6) | POST /api/controller/scan/guests : route absente (9t.17) : module app/api/controller/scan/guests/route absent
+    A | 5. réponse sans numéro | POST /api/controller/scan/guests : route absente (9t.17) : module app/api/controller/scan/guests/route absent
+    A | 6. 31ᵉ recherche de l’heure : 429 et Retry-After ; un autre contrôleur n’est pas touché | POST /api/controller/scan/guests : route absente (9t.17) : module app/api/controller/scan/guests/route absent
+    A | 7. saisie invalide : 400 sans quota consommé | POST /api/controller/scan/guests : route absente (9t.17) : module app/api/controller/scan/guests/route absent
+    A | 8. audit GUEST_LIST_SEARCH sans chiffres | POST /api/controller/scan/guests : route absente (9t.17) : module app/api/controller/scan/guests/route absent
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/invites-reclamation [0/7] (nouvelle) :
+    A | 1. après la liste, l’invité qui s’inscrit voit son billet déjà utilisé | validation par la liste : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} (attendu 'v…
+    A | 2. Ajouter à mes billets : 200, billet au compte, UTILISE, numéro et QR inchangés, version du secret + 1, aucu | validation par la liste : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} (attendu 'v…
+    A | 3. seconde acceptation : TRANSFER_NOT_PENDING ; refus : 409 ; autre compte : 404 identique à un transfert inco | validation par la liste : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} (attendu 'v…
+    A | 4. événement terminé : EVENT_NOT_ACTIVE, rien rattaché | validation par la liste : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} (attendu 'v…
+    A | 5. numéro non vérifié : aucun détail, phone_verification_required | validation par la liste : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} (attendu 'v…
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/invites-validation [0/10] (nouvelle) :
+    A | 1. validation par la liste : vert, billet utilisé, ligne GUEST_LIST tracée, transfert ADMITTED, billet déverro | validation par la liste : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    A | 2. liste puis scan du même billet : Déjà utilisé (consigne 6) | première validation : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    A | 3. pièce non vérifiée : manual_entry_refused, rien composté, transfert PENDING | pièce non vérifiée : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    A | 4. billet non INVITATION par la liste : invalid sans donnée ; billet d’un autre événement : wrong_event | billet vendu présenté par la liste : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    A | 5. événement suspendu : event_suspended, transfert PENDING, billet verrouillé | événement suspendu : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    A | 6. rejeu de la même clé : même verdict, aucune ligne nouvelle | validation : HTTP 400 {"error":"Scan invalide : eventId et payload (ou manualTicketNumber) requis."} / 400 !==…
+    B | 7. invitation échue après la fin, contrôle encore ouvert : validée, transfert EXPIRED → ADMITTED | B — précondition fausse (données de test) : « précondition : invitation échue à la fin de l’événement » PENDING au lieu de EXPIRED. Le trigger trg_events_invitation_expiry (M/20261108000002:640-657) ne recale expires_at que si la nouvelle fin est postérieure à created_at ; shiftEventDates(-4 h, 3 h) met la fin 1 h AVANT la création de l’invitation, expires_at reste dans le futur, ticket_transfers_expire ne la prend pas. Correctif : invites-validation.test.ts:198-199, reculer created_at puis expires_at du transfert (patron invitations-reclamation.test.ts:243) avant ticket_transfers_expire. Après correctif : rouge sur la route scan/guests absente (A).
+    A | 8. une invitation a les droits de sa catégorie : VIP par la liste à la Porte Nord → wrong_zone ; Porte VIP → v | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/lot9ter-invariant [0/64] (nouvelle) :
+    A | table partner_controllers : présent, puis retiré dans une transaction annulée, la garde le nomme | table partner_controllers : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : table public.partner_controllers absente — migration 20261110000006_lot9ter_equipe_messages (contrat 3.8.1)
+    A | table zone_categories : présent, puis retiré dans une transaction annulée, la garde le nomme | table zone_categories : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : table public.zone_categories absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    A | table event_gates : présent, puis retiré dans une transaction annulée, la garde le nomme | table event_gates : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : table public.event_gates absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    A | table event_zones : présent, puis retiré dans une transaction annulée, la garde le nomme | table event_zones : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : table public.event_zones absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    A | colonne partner_controllers.first_seen_at : présent, puis retiré dans une transaction annulée, la garde le nom | colonne partner_controllers.first_seen_at : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : table public.partner_controllers absente — migration 20261110000006_lot9ter_equipe_messages (contrat 3.8.1)
+    A | colonne event_zones.kind : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne event_zones.kind : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : table public.event_zones absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    A | colonne event_gates.zone_id : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne event_gates.zone_id : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : table public.event_gates absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    A | colonne cashouts.not_sent_reference : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne cashouts.not_sent_reference : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.cashouts.not_sent_reference absente — migration 20261110000005_lot9ter_argent (contrat 3.8.2)
+    A | colonne cashouts.not_sent_reason : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne cashouts.not_sent_reason : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.cashouts.not_sent_reason absente — migration 20261110000005_lot9ter_argent (contrat 3.8.2)
+    A | colonne cashouts.not_sent_at : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne cashouts.not_sent_at : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.cashouts.not_sent_at absente — migration 20261110000005_lot9ter_argent (contrat 3.8.2)
+    A | colonne cashouts.not_sent_by : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne cashouts.not_sent_by : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.cashouts.not_sent_by absente — migration 20261110000005_lot9ter_argent (contrat 3.8.2)
+    A | colonne events.ended_unpublished : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne events.ended_unpublished : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.events.ended_unpublished absente — migration 20261110000007_lot9ter_evenements (contrat 3.8.2)
+    A | colonne tickets.guest_name : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne tickets.guest_name : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.tickets.guest_name absente — migration 20261110000008_lot9ter_invites (contrat 3.8.2)
+    A | colonne event_controllers.gate_id : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne event_controllers.gate_id : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.event_controllers.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    A | colonne event_controllers.gate_change_allowed : présent, puis retiré dans une transaction annulée, la garde le | colonne event_controllers.gate_change_allowed : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.event_controllers.gate_change_allowed absente — migration 20261110000009_lot9ter_zones (contrat 
+    A | colonne ticket_scans.gate_id : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne ticket_scans.gate_id : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.ticket_scans.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    A | colonne ticket_scans.zone_id : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne ticket_scans.zone_id : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.ticket_scans.zone_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    A | colonne ticket_scans.zone_result : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne ticket_scans.zone_result : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.ticket_scans.zone_result absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    A | colonne ticket_categories.scan_color : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne ticket_categories.scan_color : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.ticket_categories.scan_color absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    A | colonne ticket_categories.entry_instruction : présent, puis retiré dans une transaction annulée, la garde le n | colonne ticket_categories.entry_instruction : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.ticket_categories.entry_instruction absente — migration 20261110000009_lot9ter_zones (contrat 3.8.
+    A | colonne public_event_state.stock_level : présent, puis retiré dans une transaction annulée, la garde le nomme | colonne public_event_state.stock_level : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : colonne public.public_event_state.stock_level absente — migration 20261110000011_lot9ter_stock (contrat 3.8.2)
+    A | fonction ticket_origin(text,numeric,boolean) : présent, puis retiré dans une transaction annulée, la garde le  | fonction ticket_origin(text,numeric,boolean) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.ticket_origin(text,numeric,boolean) absente — migration 20261110000002_lot9ter_reglages (contrat
+    A | fonction scan_is_refusal(boolean,text,text,timestamptz) : présent, puis retiré dans une transaction annulée, l | fonction scan_is_refusal(boolean,text,text,timestamptz) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.scan_is_refusal(boolean,text,text,timestamptz) absente — migration 20261110000002_lot
+    A | fonction cashout_admin_not_sent(jsonb) : présent, puis retiré dans une transaction annulée, la garde le nomme | fonction cashout_admin_not_sent(jsonb) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.cashout_admin_not_sent(jsonb) absente — migration 20261110000005_lot9ter_argent (contrat 3.4)
+    A | fonction partner_controller_known(uuid,uuid) : présent, puis retiré dans une transaction annulée, la garde le  | fonction partner_controller_known(uuid,uuid) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.partner_controller_known(uuid,uuid) absente — migration 20261110000006_lot9ter_equipe_messages (
+    A | fonction event_edit_locks(uuid) : présent, puis retiré dans une transaction annulée, la garde le nomme | fonction event_edit_locks(uuid) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.event_edit_locks(uuid) absente — migration 20261110000007_lot9ter_evenements (contrat 3.4)
+    A | fonction ticket_guest_list_search(jsonb) : présent, puis retiré dans une transaction annulée, la garde le nomm | fonction ticket_guest_list_search(jsonb) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.ticket_guest_list_search(jsonb) absente — migration 20261110000008_lot9ter_invites (contrat 3.4)
+    A | fonction scan_gate_context(uuid,uuid,uuid,boolean) : présent, puis retiré dans une transaction annulée, la gar | fonction scan_gate_context(uuid,uuid,uuid,boolean) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.scan_gate_context(uuid,uuid,uuid,boolean) absente — migration 20261110000009_lot9ter_zones
+    A | fonction pilotage_compute_entries(uuid,boolean) : présent, puis retiré dans une transaction annulée, la garde  | fonction pilotage_compute_entries(uuid,boolean) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : fonction public.pilotage_compute_entries(uuid,boolean) absente — migration 20261110000010_lot9ter_pilotage (c
+    A | valeur ADMITTED de ticket_transfer_status : présent, puis retiré dans une transaction annulée, la garde le nom | valeur ADMITTED de ticket_transfer_status : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : valeur ADMITTED absente du type public.ticket_transfer_status — migration 20261110000003_lot9ter_transfert_statut (
+    A | contrainte public_event_state_stock_level_check : présent, puis retiré dans une transaction annulée, la garde  | contrainte public_event_state_stock_level_check : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : contrainte public_event_state_stock_level_check absente de public.public_event_state — migration 202611100000
+    A | ligne de transition VALIDE → TERMINE (SYSTEM, CRON) : présent, puis retiré dans une transaction annulée, la ga | ligne de transition VALIDE → TERMINE (SYSTEM, CRON) : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : ligne public.event_status_transitions (VALIDE, TERMINE, SYSTEM, CRON) absente — migration 20261110000007_
+    A | type TICKET_REFUNDED_HOLDER au registre : présent, puis retiré dans une transaction annulée, la garde le nomme | type TICKET_REFUNDED_HOLDER au registre : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : type TICKET_REFUNDED_HOLDER absent de public.notification_types — migration 20261110000004_lot9ter_registre (contrat 
+    A | type ADMIN_EVENT_PUBLISHED au registre : présent, puis retiré dans une transaction annulée, la garde le nomme | type ADMIN_EVENT_PUBLISHED au registre : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : type ADMIN_EVENT_PUBLISHED absent de public.notification_types — migration 20261110000004_lot9ter_registre (contrat 3.
+    A | type ADMIN_EVENT_WITHDRAWN au registre : présent, puis retiré dans une transaction annulée, la garde le nomme | type ADMIN_EVENT_WITHDRAWN au registre : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : type ADMIN_EVENT_WITHDRAWN absent de public.notification_types — migration 20261110000004_lot9ter_registre (contrat 3.
+    A | type SCAN_REFUSALS_ALERT au registre : présent, puis retiré dans une transaction annulée, la garde le nomme | type SCAN_REFUSALS_ALERT au registre : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : type SCAN_REFUSALS_ALERT absent de public.notification_types — migration 20261110000004_lot9ter_registre (contrat 3.1)
+    A | réglage access.refusal_alert_threshold : présent, puis retiré dans une transaction annulée, la garde le nomme | réglage access.refusal_alert_threshold : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : réglage access.refusal_alert_threshold absent de public.platform_settings — migration 20261110000002_lot9ter_reglages 
+    A | réglage access.refusal_alert_minutes : présent, puis retiré dans une transaction annulée, la garde le nomme | réglage access.refusal_alert_minutes : l'objet doit exister avant la coupure (migrations 20261110000001 à …11 du lot) : réglage access.refusal_alert_minutes absent de public.platform_settings — migration 20261110000002_lot9ter_reglages (con
+    A | x1 : politique UPDATE pour authenticated et droit UPDATE (status) sur partners → partners.status nommé | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x1 témoin : même politique, droit UPDATE (description) → x1 muet sur partners.description, x2 détecte partners | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x2 : GRANT INSERT ON halls TO anon → « anon : droit INSERT » ; témoin : politique de lecture seule, muet | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x3 : INCERTAIN → ECHOUE sans constat, constat d'un ADMIN, référence de 101 caractères, autre heure ; témoin :  | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x4 : remise à envoyer d'un constaté sans CASHOUT_RESENT, ou avec un CASHOUT_RESENT à une autre heure ; témoins | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x5 : affectation sans lien partner_controllers (trigger de lien coupé) ; témoin : lien posé | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x6 : remboursement hors annulation d'un billet transféré sans avis, puis avis à l'ancien détenteur ; témoins : | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x7 : VALIDE fini depuis 2 h, ended_unpublished sur un PUBLIE, passage VALIDE → TERMINE sans drapeau ; témoins  | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x8 : entrée acceptée à une porte de contrôle, zone fausse, sans porte sur un événement à zones, porte sur un é | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x9 : zone_ok sans entrée antérieure ; témoins : zone_ok après l'entrée, wrong_zone sans entrée | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x9 : ligne de contrôle de zone acceptée (contrainte ticket_scans_zone_not_accepted retirée dans la transaction | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x10 : catégorie admise seulement par une zone de contrôle, admission retirée ; témoins : admise à l'entrée, in | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x11 : validation par la liste d'un billet en ligne, sans pièce, d'un autre événement ; témoin : invitation, pi | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x11 : transfert ADMITTED sans validation par la liste, billet resté VALIDE ; témoin : une validation GUEST_LIS | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x12 : numéro au journal d'une recherche, nom d'invité au journal et dans un message ; témoins : journal sans n | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | x13 : stock_level LOW d'un événement épuisé, tranche LOW au restant faux, tranche d'une catégorie inactive ; t | garde de schéma avant la scène : 35 objets du lot absents nommés (scène x non jouée)
+    A | schéma du lot présent ; après ROLLBACK, aucune ligne fabriquée ni sonde ne reste et les triggers sont actifs | schéma du lot 9 ter (contrat 3.8, 6) / + [ + 'table public.partner_controllers absente — migration 20261110000006_lot9ter_equipe_messages (contrat 3.8.1)', + 'table public.event_zones absente — migration 20261110000009_lot9ter_zones (contra
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/messages-admin-9ter [2/8] (nouvelle) :
+    A | publication par l'organisatrice : ADMIN_EVENT_PUBLISHED au lecteur et au SUPERADMIN (in-app, email), rien à l' | lecteur events.read : in-app et email : []
+    A | retrait de la validation par l'organisatrice : ADMIN_EVENT_WITHDRAWN ; témoin : refus par l'admin → EVENT_REJE | lecteur events.read : [] / + [] - [ - 'EMAIL', - 'IN_APP' - ]
+    A | prix changé sur un PUBLIE : une alerte ADMIN_EVENT_CHANGED partie PRICE par admin, données et contenu exacts | une alerte (clé …:catupd<catégorie>:tx<txid>) : [] / 0 !== 1
+    A | canaux changés sur un VALIDE : partie CHANNELS ; prix et vente en ligne dans la même requête : une alerte, deu | une alerte : [] / 0 !== 1
+    A | catégorie ajoutée puis son prix changé : deux alertes, clés distinctes (…:cat<id> puis …:catupd<id>:tx<txid>) | deux alertes, clés distinctes : ["ADMIN_EVENT_CHANGED:f0d404bb-a72a-4cfa-a808-e3f59aa3f6b6:catc8919ee7-54d0-418d-88a2-a628e644072f:0ec20dad-16ef-4646-806a-64f14f2a5aee"]
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/messages-detenteur-9ter [5/9] (nouvelle) :
+    A | payé en ligne, transféré, accepté, remboursé par l'organisatrice : TICKET_REFUNDED_HOLDER au porteur actuel (S | 4 lignes TICKET_REFUNDED_HOLDER au porteur actuel (SMS, IN_APP, PUSH, EMAIL) : []
+    A | adresse réelle et vérifiée du porteur : la ligne EMAIL part (PENDING) | 4 lignes TICKET_REFUNDED_HOLDER au porteur actuel (SMS, IN_APP, PUSH, EMAIL) : []
+    A | remboursé par un admin refunds.manage : même message au porteur actuel | 4 lignes TICKET_REFUNDED_HOLDER au porteur actuel (SMS, IN_APP, PUSH, EMAIL) : []
+    A | chaîne A → B → C : seul C, le porteur actuel, est prévenu ; jamais B | 4 lignes TICKET_REFUNDED_HOLDER au porteur actuel (SMS, IN_APP, PUSH, EMAIL) : []
+    A | billet payé en espèces, transféré, remboursé : le texte 0.2 remplace TICKET_CANCELLED CASH (B-D2) | 4 lignes TICKET_REFUNDED_HOLDER au porteur actuel (SMS, IN_APP, PUSH, EMAIL) : []
+    A | report de plus de 24 h, remboursement demandé par le porteur lui-même : message envoyé (B-D3) | 4 lignes TICKET_REFUNDED_HOLDER au porteur actuel (SMS, IN_APP, PUSH, EMAIL) : []
+    A | double clic : deux remboursements simultanés, une seule série de 4 lignes | 4 lignes TICKET_REFUNDED_HOLDER au porteur actuel (SMS, IN_APP, PUSH, EMAIL) : []
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/notif-controleurs [3/8] (adaptée) :
+    A | une affectation (une instruction) : in-app et push de l’affectation, un SMS agrégé au texte exact (événement,  | lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : PGRST205 Could not find the table 'public.partner_controllers' in the schema cache
+    A | trois affectations par PATCH /api/partner/team/assignments : trois in-app, trois push, un seul SMS « et 2 autr | lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : PGRST205 Could not find the table 'public.partner_controllers' in the schema cache
+    A | DELETE /api/partner/team/all : CONTROLLER_UNASSIGNED par affectation, un SMS agrégé, rappels PENDING du compte | lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : PGRST205 Could not find the table 'public.partner_controllers' in the schema cache
+    A | suppressions en cascade : brouillon supprimé, compte supprimé (transaction annulée) → aucune erreur, aucune li | lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : PGRST205 Could not find the table 'public.partner_controllers' in the schema cache
+    A | notification_controller_activated : CONTROLLER_ACTIVATED (in-app, SMS) une seule fois, SMS exact | lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : PGRST205 Could not find the table 'public.partner_controllers' in the schema cache
+parcours/notif-migration [23/4] (adaptée) :
+    A | registre notification_types : tous les types de l’inventaire (K1) et des envois TypeScript | types absents du registre : ADMIN_EVENT_PUBLISHED, ADMIN_EVENT_WITHDRAWN, SCAN_REFUSALS_ALERT, TICKET_REFUNDED_HOLDER
+    A | RPC recopiées : chacune existe et nomme ses types | 9b.23, 9b.34, 9t.2 : public.ticket_refund_request ne met pas 'TICKET_REFUNDED_HOLDER' en file
+    A | triggers : chacun existe sur sa table et sa fonction nomme ses types | 9t.10 : trigger trg_event_status_admin_alert absent de public.event_status_history / 9t.10 : trigger trg_ticket_categories_admin_update_alert absent de public.ticket_categories / 9t.18 : trigger trg_ticket_scans_refusal_alert absent de publ
+parcours/notif-modeles [16/20] (adaptée) :
+    A | NOTIFICATION_CATALOG contient exactement les types de G2, chacun avec ses attributs | catalogue sans TICKET_REFUNDED_HOLDER, ADMIN_EVENT_PUBLISHED, ADMIN_EVENT_WITHDRAWN, SCAN_REFUSALS_ALERT (seul écart du diff)
+    A | chaque type rend chaque canal qu'il déclare (sample), sans variable manquante ni valeur JS affichée | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | liens : chemin interne de G2 (« / », jamais « // » ni schéma), avec l'identifiant du sample | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | titres in-app exacts (G4) ; variables in-app non tronquées (titre complet de l'événement) | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | push : titre = titre in-app, corps = contenu in-app (tronqué à 160 caractères au plus) | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | email : sujet « {titre} — Event Village », corps = contenu in-app, bouton vers l'application, désabonnement de | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | chaque SMS tient en un SMS GSM-7 (≤ 160) avec les valeurs maximales réalistes de G3 et une URL de 27 caractère | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | texte fixe en GSM-7 de base : rendu avec des valeurs ASCII, aucun caractère interdit (« » ’ ° ç ê â ô î û ï ë  | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | variable non translittérable (autres écritures) : caractères retirés, un SMS GSM-7 d'un segment | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | textes exacts G3 pour des valeurs courtes | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | SMS de chaque type : aucun caractère hors GSM-7, même avec une saisie dans d'autres écritures (R27, renforcé) | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | TICKET_REFUNDED_HOLDER (N1, 9t.2) : in-app « Billet annulé », catégorie et titre en entier, lien /tickets ; SM | type TICKET_REFUNDED_HOLDER absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | ADMIN_EVENT_PUBLISHED et ADMIN_EVENT_WITHDRAWN (N2, N3, 9t.10) : titres, contenus exacts avec et sans société, | type ADMIN_EVENT_PUBLISHED absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | SCAN_REFUSALS_ALERT (N4, 9t.18) : « {porte} : {n} refus en {m} minutes pour « {titre} ». » ; « minute » au sin | type SCAN_REFUSALS_ALERT absent de NOTIFICATION_CATALOG (attendu true, obtenu —)
+    A | ADMIN_EVENT_CHANGED (M1, 9t.10) : parties PRICE et CHANNELS, phrase finale inchangée | Donnée du modèle « changes » contient un changement inconnu ("PRICE")
+parcours/notif-outbox [38/2] (adaptée) :
+    A | public.notification_types contient exactement les types du contrat, avec famille, sujet, canaux, audience, pol | types absents du registre : TICKET_REFUNDED_HOLDER, ADMIN_EVENT_PUBLISHED, ADMIN_EVENT_WITHDRAWN, SCAN_REFUSALS_ALERT
+parcours/paiement-retour-9ter [2/4] (nouvelle) :
+    A | https : les deux URL vers /paiement/<id du paiement>, aussi à la relance unique | billets, appel 1 : successUrl et errorUrl vers la page de suivi du paiement (aujourd’hui absents)
+    A | cashinReturnUrls : http → {} ; https avec barre finale → une seule barre ; valeur illisible → {} | cashinReturnUrls absente de lib/payments/cashin-init.ts : livrée par fix(9t.4) (attendu 'function', obtenu 'undefined')
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/pilotage-alerte-refus [0/10] (nouvelle) :
+    A | seuil 3 en 5 minutes : deux refus ne donnent rien, le troisième donne une alerte par canal à la propriétaire,  | réglage access.refusal_alert_threshold absent de platform_settings (attendu true, obtenu ~)
+    A | porte B : alerte distincte | réglage access.refusal_alert_threshold absent de platform_settings (attendu true, obtenu ~)
+    A | le tableau de bord montre la porte en alerte | réglage access.refusal_alert_threshold absent de platform_settings (attendu true, obtenu ~)
+    A | refus qui ne comptent pas : scanneur non autorisé, contrôle pas encore ouvert | réglage access.refusal_alert_threshold absent de platform_settings (attendu true, obtenu ~)
+    A | concurrence : six refus simultanés à la même porte par trois contrôleurs donnent une seule alerte | réglage access.refusal_alert_threshold absent de platform_settings (attendu true, obtenu ~)
+    A | événement sans zone : la porte de l’alerte est le point d’entrée de l’affectation | réglage access.refusal_alert_threshold absent de platform_settings (attendu true, obtenu ~)
+    A | réglages : bornes et SUPERADMIN seul | seuil 2 : {"ok":false,"code":"UNKNOWN_KEY","message":"Réglage inconnu."}
+    A | compte de la partenaire suspendu : l’alerte est gardée sans être envoyée | réglage access.refusal_alert_threshold absent de platform_settings (attendu true, obtenu ~)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/pilotage-cloture-entrees [0/7] (nouvelle) :
+    A | la clôture reprend les vues figées du tableau de bord, sans nom d’invité | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | export d’un événement à zones : colonnes Origine, Zone et Porte ; entré → zone et porte de son entrée ; jamais | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | export d’un événement sans zone : zone « Entrée », porte = point d’entrée de l’entrée | en-tête du contrat D.1.3 / [ 'Nom', 'Catégorie', + 'Canal', - 'Origine', 'Statut du billet', 'Heure d’entrée', - 'Zone', - 'Porte' ]
+    A | avec contacts : neuf colonnes, toujours sans paiement | neuf colonnes, les deux dernières « Téléphone », « E-mail »
+    A | PDF de clôture : entrées par zone, par origine et par porte | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/pilotage-cloture-export [7/4] (adaptée) :
+    A | sans contacts : CSV UTF-8 avec BOM, en-têtes français, nom / catégorie / statut (libellé) / heure d’entrée, sa | sept colonnes sans les contacts (Origine, Zone et Porte, lot 9 ter) : ["Nom","Catégorie","Canal","Statut du billet","Heure d’entrée"] / 5 !== 7
+    A | contacts avec une finalité de la liste fermée : téléphone et email ajoutés, toujours sans donnée de paiement | URGENT_EVENT_INFO : neuf colonnes avec téléphone et email (lot 9 ter) : ["Nom","Catégorie","Canal","Statut du billet","Heure d’entrée","Téléphone","E-mail"] / 7 !== 9
+    B | chaque export journalisé : acteur, contacts, finalité, nombre de lignes, sans donnée de participant ; l’admin  | B — cascade d’ordre : « export journalisé (propriétaire, SAFETY_AND_RECEPTION) » introuvable ; le journal ne contient que URGENT_EVENT_INFO et deux null. Le cas :299 (adapté, rouge A) s’arrête à l’assertion 9 colonnes sur URGENT_EVENT_INFO et ne lance jamais l’export SAFETY_AND_RECEPTION dont dépend :318 (inchangé). Correctif : pilotage-cloture-export.test.ts:300-304, faire les deux exports avant les assertions de colonnes (ou exporter SAFETY_AND_RECEPTION dans :318) ; aucune assertion affaiblie.
+parcours/pilotage-entrees-ecran [0/7] (nouvelle) :
+    A | l’onglet Entrées se recharge toutes les 60 s et nettoie son intervalle | components/partner/pilotage/EntriesTab.tsx : setInterval(…, 60_000)
+    A | un seul composant pour les vues figées | components/partner/pilotage/EntriesBreakdown.tsx absent (composant EntriesBreakdown, déclaré par R0 (8.3)) (attendu true, obtenu false)
+    A | textes exacts du tableau de bord | components/partner/pilotage/EntriesBreakdown.tsx absent (composant EntriesBreakdown) (attendu true, obtenu false)
+    A | aucun calcul d’agrégat dans EntriesBreakdown | components/partner/pilotage/EntriesBreakdown.tsx absent (composant EntriesBreakdown) (attendu true, obtenu false)
+    A | réglages de l’alerte à l’écran de l’administration | app/admin/finance-settings/page.tsx : textes exacts du contrat absents
+    A | description de l’export à jour | components/partner/pilotage/ClosingTab.tsx : textes exacts du contrat absents
+parcours/pilotage-tableau-entrees [1/10] (nouvelle) :
+    A | sans zone : toutes les clés existantes inchangées, une zone implicite « Entrée », by_gate égal à by_entry_poin | configured faux sans zone : undefined / + undefined - false / (attendu false, obtenu —)
+    A | événement à zones : attendus et entrés par zone, par catégorie et par origine ; un contrôle réussi n’est ni un | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | une seule règle d’origine : by_origin.expected égale le tableau « Par canal » des ventes | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | débit : trois entrées → 0,6 par minute, et la somme des 30 dernières minutes vaut 3 | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | contrôleurs actifs : un scan dans les 10 minutes rend actif, une affectation sans scan non, le propriétaire qu | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | liste des invités : une validation par la liste compte dans le total et à part, jamais au guichet ; le nom n’e | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | alertes servies : réglages par défaut, aucune alerte sous le seuil | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | tentatives multiples : un contrôle de zone après l’entrée n’est pas une tentative | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/scanner-interface [38/5] (adaptée) :
+    A | les six paires --scan-<x>-fg / --scan-<x>-bg existent et chacune atteint 7:1 | jetons --scan-orient-bg et --scan-orient-fg attendus dans app/globals.css (trouvés : --scan-accept-bg, --scan-accept-fg, --scan-used-bg, --scan-used-fg, --scan-refuse-bg, --scan-refuse-fg, --scan-window-bg, --scan-window-fg, --scan-tech-bg,
+    A | CombatFlashOverlay n’utilise que les jetons du scanner : ni palette brute, ni flou, ni ombre portée, ni zoom,  | components/scan/CombatFlashOverlay.tsx : jeton scan-orient utilisé (fond du résultat) (attendu true, obtenu false)
+    A | vibrationPattern : accepte [60] ; deja_utilise, refuse, evenement_annule [120,60,120,60,120] ; hors_fenetre et | vibrationPattern('oriente') / + null - [ - 250, - 100, - 250 - ]
+parcours/securite-ecritures-services-9ter [0/9] (nouvelle) :
+    A | client : PATCH des montants, du paiement, du statut ou du partenaire de sa réservation de salle → 42501, ligne | client : PATCH hall_reservations {"deposit_amount":100,"balance_amount":0} : refus 42501 attendu, obtenu aucune erreur (écr…
+    A | client : PATCH de sa réservation de table → 42501 | client : PATCH table_reservations {"deposit_amount":0} : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) …
+    A | client : ajout d’une ligne à sa commande → 42501, aucune ligne | client : POST order_items : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | partenaire en attente, partenaire suspendue : PATCH de commande (payée, montant, client) → 42501 | partenaire en attente : PATCH orders {"payment_status":"SUCCESS","paid_amount":3000,"balance_amount":0} : refus 42501 attendu, …
+    A | partenaire en attente, partenaire suspendue : création de salle, produit, zone, table, catégorie de produits,  | partenaire en attente : POST halls : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | ADMIN suspendu (nouvelle connexion) : valider une fiche, écrire paiements, retraits et remboursements par REST | ADMIN suspendu : PATCH partners.status = VALIDE : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | D3 : un ADMIN suspendu ne lit plus les comptes, les fiches en attente ni les pièces ; un SUPERADMIN suspendu n | D3 : un ADMIN suspendu ne lit plus ni le compte, ni la fiche en attente, ni la pièce
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/securite-fiche-partenaire-9ter [3/7] (nouvelle) :
+    A | EN_ATTENTE : un PATCH REST de chaque colonne sensible de sa fiche est refusé (42501), fiche identique, aucun j | EN_ATTENTE : PATCH partners.status = "VALIDE" : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | REJETE : un PATCH REST de chaque colonne sensible de sa fiche est refusé (42501), fiche identique, aucun journ | REJETE : PATCH partners.status = "VALIDE" : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | SUSPENDU : un PATCH REST de chaque colonne sensible de sa fiche est refusé (42501), fiche identique, aucun jou | SUSPENDU : PATCH partners.status = "VALIDE" : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | VALIDE : un PATCH REST de chaque colonne sensible de sa fiche est refusé (42501), fiche identique, aucun journ | VALIDE : PATCH partners.status = "EN_ATTENTE" : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | REJETE : se valider par REST puis créer un événement est impossible | REJETE : PATCH partners.status = VALIDE : refus 42501 attendu, obtenu aucune erreur (écriture REST acceptée) (attendu '42501', obtenu —)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/stock-public-9ter [0/14] (nouvelle) :
+    A | 10 SIMPLE vendues : SIMPLE complète sur la fiche, VIP en vente, la carte passe à 15 000 F sans badge | carte après S1 / { price: 15000, saleLabel: 'À partir de 15 000 F CFA', + stock: '(clé stock absente)' - stock: null }
+    A | 15 VIP de plus : carte « Dernières places », fiche « Plus que 5 places » sur VIP | carte après S2 / { price: 15000, saleLabel: 'À partir de 15 000 F CFA', + stock: '(clé stock absente)' - stock: 'LOW' }
+    A | 5 VIP de plus : carte « Complet », plus de prix | carte après S3 (aujourd’hui « Vente sur place uniquement »)
+    A | hausse de SIMPLE à 15 : la jauge bloque et dit quoi faire ; jauge à 35 puis hausse : carte et fiche disponible | le refus dit quoi faire (« Augmentez d’abord la capacité totale de l’événement (actuellement 30). ») : HTTP 409 {"success":false,"error":"La somme des quotas des catégories actives (35) dépasserait la j…
+    A | temps réel : la carte et la fiche changent sans rechargement à chaque transition, et rien ne part sans changem | délai dépassé (20000 ms) : S1 : min_price 15 000 diffusé — 2 message(s) reçu(s) sur anon public_event_state (accueil) (états du canal : SUBSCRIBED ; échec à 2026-11-12T11:52:07.663Z ; conteneur realtime : running démarré=2026-11-12T11:32:44
+    A | ordre : à date égale, un événement complet vient après les événements en vente, et reste listé jusqu’à sa fin | en vente (20:00), complet (18:00, même jour), lendemain
+    A | paiement abandonné : la place revient sur la carte et la fiche après la durée de garde | places retenues : carte « Complet » / + '(clé stock absente)' - 'SOLD_OUT' / (attendu 'SOLD_OUT', obtenu '(clé stock absente)')
+    A | Populaires : une catégorie épuisée apparaît aussitôt, le classement reste en cache | lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement) (attendu 'function', obtenu 'undefined')
+    A | course : deux ventes simultanées de deux catégories laissent un résumé juste | public_event_state.stock_level (migration 20261110000011) : column public_event_state.stock_level does not exist (attendu ~, obtenu —)
+    A | seuil changé par le SUPERADMIN : la tranche de l’événement est recalculée dans la même transaction | public_event_state.stock_level (migration 20261110000011) : column public_event_state.stock_level does not exist (attendu ~, obtenu —)
+    A | écrans : badges hors de l’affiche, aide de catégorie, relecture des sections de l’accueil | EventCard : badge « Complet » (danger) dans le corps de la carte, jamais sur l’affiche (attendu true, obtenu false)
+    A | non-régression : un événement sans épuisement ni seuil garde sa carte et son ordre | clés actuelles de la carte, plus `stock`
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/temps-reel-hook [17/2] (adaptée) :
+    A | page de pilotage (app/partner/events/[id]/page.tsx) : useRealtimeRefresh sur ticket_scans, scan_incidents, con | page de pilotage : tables non suivies par le hook — fichiers lus : app/partner/events/[id]/page.tsx, components/ui/PageHeader.tsx, components/ui/Button.tsx, components/ui/LinkButton.tsx, components/ui/StatusBadge.tsx, components/ui/StatusBa
+parcours/temps-reel-public [9/2] (adaptée) :
+    A | colonnes du contrat O1 et rien d’autre (aucune info pratique, aucun motif, aucun volume de vente) | colonnes du contrat O1 absentes : stock_level (colonnes : event_id, status, title, start_at, end_at, location, city, image_url, min_price, has_purchasable, updated_at)
+parcours/versements-reprise [7/7] (adaptée) :
+    A | R1-c : à envoyer depuis plus de 30 minutes, solde illisible : listé EN_ATTENTE, ADMIN_CASHOUT_TO_RESUME, REFUN | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+    A | R10 : retrait, solde SamirPay à 0 : bloqué SOLDE_INSUFFISANT, ADMIN_CASHOUT_TO_RESUME, WITHDRAWAL_DELAYED, lis | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+    A | R9-a : retrait à l’issue incertaine (délai dépassé après envoi) : listé INCERTAIN, sans renvoi, « Marquer vers | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+    A | R9-b : remboursement bloqué (opérateur inconnu) marqué versé avec la référence : CONFIRME, billet REMBOURSE, R | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+    A | R9-c : INCERTAIN avec identifiant : FAILED chez SamirPay → « Marquer versé » refusé, « Renvoyer » envoie une f | ligne de la liste sans la clé can_mark_not_sent (seul écart du diff : - 'can_mark_not_sent')
+parcours/zones-configuration [0/21] (nouvelle) :
+    A | 1. validations : chaque refus, rien d’écrit | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 2. droits et statuts | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 3. catégorie créée après les zones : admise par toutes les zones d’entrée, jamais par un contrôle | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 4. porte déjà scannée : ni supprimée ni déplacée ; zone scannée : type figé | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 5. porte affectée : suppression refusée tant qu’un contrôleur y est | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 6. échange de noms entre deux zones dans un même enregistrement | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 7. point d’entrée en texte libre refusé sur un événement à zones | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 8. changement de porte par le contrôleur : refusé sans autorisation, puis accepté et journalisé | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 9. retour à une seule entrée | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 10. double clic : deux enregistrements identiques simultanés | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 11. affectation de porte : droits | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/zones-ecran [1/15] (nouvelle) :
+    A | 1. jetons scan-orient et scan-cat-* : texte ≥ 7:1, mêmes valeurs en clair et en sombre | jetons --scan-orient-bg et --scan-orient-fg attendus dans app/globals.css (C.2.4) (attendu true, obtenu —)
+    A | 2. scan-used est rouge (\#991B1B) et reste ≥ 7:1 | « Déjà utilisé » rouge #991B1B (consigne 2), trouvé 124 45 18
+    A | 3. palette : 8 clés de lib/scan/scan-result.ts = 8 jetons = 8 valeurs du CHECK | lib/scan/scan-result.ts : SCAN_CATEGORY_COLORS exportée (X2, seule liste des 8 couleurs) (attendu true, obtenu false)
+    A | 4. vibrationPattern('oriente') = [250, 100, 250] ; accepte, refuse et technique inchangés | orange : famille « attention » (arbitrage 19)
+    A | 5. catégories d’affichage : wrong_zone et not_entered orientés, zone_ok accepté ; libellés courts exacts | C.2.3 : catégories et libellés courts / [ [ 'wrong_zone', + undefined, + undefined - 'oriente', - 'Mauvaise zone' ], [ 'not_entered', + undefined, + undefined - 'oriente', - 'Pas encore entré' ], [ 'zone_ok', + undefined, + undefined - 'acc
+    A | 6. CombatFlashOverlay rendu : titres et lignes exacts de C.2.4 | valid avec couleur, consigne et zone : ligne « VIP » attendue (C.2.4) ; lignes rendues : / Entrée validée / Awa Diop / VIP · TCK-20261110-0A1B2C3D4E
+    A | 8. badge : Invitation, Gratuit, rien pour ONLINE et COUNTER | origine INVITATION : badge « Invitation » : Entrée validée | Fatou Mbaye | Standard · TCK-20261104-7C2D9A4B1E (attendu true, obtenu false)
+    A | 9. gatePhrase : « Nord » → « porte Nord », noms qui commencent par Porte, Portail, Entrée, Accès, Guichet inch | lib/scan/scan-result.ts : gatePhrase exportée (C.2.3) (attendu 'function', obtenu 'undefined')
+    A | 10. aucune couleur brute dans les fichiers de C | écrans de C absents (8.3) : components/scan/GuestListPanel.tsx, components/partner/zones/ZonesEditor.tsx
+    A | 11. scan-client : 409 GATE_REQUIRED → incident technique sans vibration ni compteur, titre exact ; 409 already | GATE_REQUIRED : incident de porte (C.2.3)
+parcours/zones-guichet [0/8] (nouvelle) :
+    A | 1. vendeur sans porte sur un événement à zones : 409 GATE_REQUIRED, rien écrit | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 2. catégorie non admise à la porte du vendeur : 409, rien écrit, caisse non créditée | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 3. vendeur à une porte de contrôle : refus | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 4. vente admise : ligne COUNTER avec porte et zone | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 5. sans zone : vente inchangée | colonne ticket_scans.gate_id (migration 20261110000009) : {"id":"03dc8070-4be1-476d-802f-881a73cee2bb","ticket_id":"ffb74930-d91e-46fc-8f37-78e3c6b3…
+    A | 6. rejeu d’une vente faite avant le retrait de la porte : même réponse | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+parcours/zones-scan [0/19] (nouvelle) :
+    A | 1. sans zone : verdicts et clés d’aujourd’hui, zone implicite Entrée, aucune porte en base | zone implicite servie (C.2.2 point 3) : HTTP 200 {"result":"valid","ticket":{"id":"219fd078-fa41-4691-ac4b-746e7d34d56f","price":5000,"hold…
+    A | 2. Entrée : VIP à la Porte Nord → mauvaise zone, rien composté ; puis vert à la Porte VIP | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 3. Contrôle de zone : pas encore entré, puis accès autorisé, jamais composté par le carré | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 4. 3 contrôleurs, même porte, même billet en même temps : un seul vert | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 5. porte : sans porte, porte périmée, porte absente, porte d’un autre événement : 409 sans donnée du billet ni | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 6. rejeu de la même clé d’un wrong_zone : même verdict, billet rendu, aucune ligne nouvelle | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 7. saisie manuelle à une porte : aperçus wrong_zone, not_entered, zone_ok sans ligne ; validation manuelle à l | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 8. couleur, consigne et origine : servies au scanneur, consigne seulement sur l’entrée validée | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 9. invitation VIP refusée dans une zone qui n’admet pas le VIP (consigne 6) | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | 10. configuration enregistrée pendant un scan : aucun interblocage, porte en cours d’usage protégée | PUT /api/partner/events/[id]/zones : route absente (9t.15) : module app/api/partner/events/[id]/zones/route absent
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+samirpay-contrat [15/2] (adaptée) :
+    A | cashin direct : successUrl et errorUrl envoyés tels quels quand ils sont fournis | successUrl et errorUrl repris tels quels dans le corps (aujourd’hui absents)
+schema/argent9ter-statique [1/2] (nouvelle) :
+    A | 0.10 : retryRefund, RefundRetryResult, resumeUnsentRefunds et sendOutcomeLabel n’existent plus dans app/, lib/ | alias encore présents (6) : / lib/events/event-cancellation.service.ts:19 import { CashoutService, sendOutcomeLabel } from '@/lib/payments/cashout.service'; / lib/events/event-cancellation.service.ts:43 export interface RefundRetryResult { 
+schema/essai-faux-samirpay [15/2] (adaptée) :
+    A | contrat SamirPay : successUrl et errorUrl facultatifs, acceptés s’ils sont des URL, refusés sinon (lot 9 ter,  | successUrl et errorUrl https acceptés (aujourd’hui « champ hors contrat ») : {"success":false,"errorCode":"INVALID_REQUEST","errorMessage":"champ hors contrat : succes…
+schema/essai-fiche-partenaire [0/14] (nouvelle) :
+    A | PATCH refusé 403 42501 : sortie 0, ligne Protégé exacte, statut relu inchangé | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | PATCH accepté 204 : sortie 1, ligne NON PROTÉGÉ exacte | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | connexion refusée 400 invalid_grant : sortie 2, raison exacte, aucun PATCH reçu | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | NEXT_PUBLIC_SUPABASE_URL absente : sortie 2, variable nommée, aucune requête | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | NEXT_PUBLIC_SUPABASE_ANON_KEY absente : sortie 2, variable nommée, aucune requête | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | EV_DEV_SEED_PASSWORD absente : sortie 2, variable nommée, aucune requête | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | URL http non locale : sortie 2, raison exacte | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | le faux serveur reçoit apikey = clé anon, Authorization: Bearer <jeton du compte> (jamais la clé anon), et le  | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | aucune valeur secrète affichée : ni la clé anon, ni le mot de passe, ni le jeton, sur aucun chemin | scripts/dev/essai-fiche-partenaire.mjs absent : livré par fix(9t.1) (S-RLS, contrat A.1.4) (attendu true, obtenu false)
+    A | package.json : "essai:fiche-partenaire": "node scripts/dev/essai-fiche-partenaire.mjs" ; aucune clé serveur ;  | Expected values to be strictly equal: / + undefined - 'node scripts/dev/essai-fiche-partenaire.mjs' / (attendu 'node scripts/dev/essai-fiche-partenaire, obtenu —)
+schema/migration-lot9ter-rejouable [14/14] (nouvelle) :
+    A | les migrations 20261110… du dépôt sont exactement les onze du contrat, dans cet ordre | migrations 20261110… présentes : aucune / + [] - [ - '20261110000001_lot9ter_rls.sql', - '20261110000002_lot9ter_reglages.sql', - '20261110000003_lot9ter_transfert_statut.sql', - '20261110000004_lot9ter_registre.sql', - '20261110000005_lot9
+    A | 20261110000001_lot9ter_rls.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000001_lot9ter_rls.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000002_lot9ter_reglages.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000002_lot9ter_reglages.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000003_lot9ter_transfert_statut.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000003_lot9ter_transfert_statut.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000004_lot9ter_registre.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000004_lot9ter_registre.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000005_lot9ter_argent.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000005_lot9ter_argent.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000006_lot9ter_equipe_messages.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000006_lot9ter_equipe_messages.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000007_lot9ter_evenements.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000007_lot9ter_evenements.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000008_lot9ter_invites.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000008_lot9ter_invites.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000009_lot9ter_zones.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000009_lot9ter_zones.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000010_lot9ter_pilotage.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000010_lot9ter_pilotage.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | 20261110000011_lot9ter_stock.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur | migration du lot 9 ter absente : supabase/migrations/20261110000011_lot9ter_stock.sql (contrat, section 3.1) (attendu true, obtenu false)
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+schema/pilotage-lot9ter [1/8] (nouvelle) :
+    A | fonctions du lot : service_role seul, SECURITY DEFINER, search_path posé | fonctions du lot 9 ter absentes (migrations 20261110000002 et 20261110000010) : ticket_origin(text,numeric,boolean), scan_is_refusal(boolean,text,text,timestamp with time zone), ticket_origin_label(text), scan_alert_refusal(text,text), scan
+    A | trigger d’alerte : après insertion, par ligne, sur les seuls refus | trigger trg_ticket_scans_refusal_alert absent de public.ticket_scans (migration 20261110000010) / 0 !== 1
+    A | ticket_origin suit la règle R50 sur ses 16 cas | fonctions du lot 9 ter absentes (migrations 20261110000002 et 20261110000010) : ticket_origin(text,numeric,boolean)
+    A | scan_is_refusal égale l’expression du lot 5 pour les 17 résultats ; zone_ok n’est pas un refus | fonctions du lot 9 ter absentes (migrations 20261110000002 et 20261110000010) : scan_is_refusal(boolean,text,text,timestamp with time zone)
+    A | scan_alert_refusal : refus du billet et de la zone seulement | fonctions du lot 9 ter absentes (migrations 20261110000002 et 20261110000010) : scan_alert_refusal(text,text)
+    A | libellés : origines et motifs nouveaux, anciens inchangés | fonctions du lot 9 ter absentes (migrations 20261110000002 et 20261110000010) : ticket_origin_label(text)
+    A | réglages access.refusal_alert_* : valeurs par défaut et bornes | réglages posés par la migration 20261110000002
+schema/pilotage-volume [0/3] (nouvelle) :
+    A | 5 000 entrées et 500 refus : pilotage_entries en moins de 1 500 ms, un refus avec trigger d’alerte en moins de | objets de la migration 20261110000010 absents : fonction public.pilotage_compute_entries(uuid,boolean), fonction public.scan_refusal_alert(), trigger trg_ticket_scans_refusal_alert
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+schema/rls-ecritures [0/6] (nouvelle) :
+    A | x2 : aucune politique d’écriture ni aucun droit INSERT, UPDATE, DELETE ou TRUNCATE pour anon et authenticated  | x2 : 239 écriture(s) REST encore possible(s) dans public : / (x2) admin_permissions : anon : droit DELETE (relkind r) / (x2) admin_permissions : anon : droit INSERT (relkind r) / (x2) admin_permissions : anon : droit TRUNCATE (relkind r) / 
+    A | x1 : aucune colonne de la liste sensible écrivable par anon ou authenticated | x1 : 377 colonne(s) sensible(s) écrivable(s) par REST : / (x1) admin_permissions.created_at : anon peut écrire cette colonne par la politique admin_permissions_superadmin_all (ALL) / (x1) admin_permissions.created_at : authenticated peut éc
+    A | privilèges par défaut : une table créée par postgres dans public n’est ni insérable, ni modifiable, ni supprim | table neuve de public : droits d’écriture accordés par défaut (ALTER DEFAULT PRIVILEGES FOR ROLE postgres attendu, D2) : / anon : INSERT / anon : UPDATE / anon : DELETE / anon : TRUNCATE / authenticated : INSERT / authenticated : UPDATE / a
+    A | aides RLS is_admin() et is_superadmin() : compte ACTIF exigé, STABLE, SECURITY DEFINER, search_path = public,  | aides RLS is_admin() et is_superadmin() : / is_admin() ne lit pas public.users (statut du compte ignoré, D3) : SELECT COALESCE(has_role('ADMIN') OR has_role('SUPERADMIN'), FALSE); / is_admin() n’exige pas un compte ACTIF (D3) : SELECT COALE
+    A | garde finale de 20261110000001 : une politique d’écriture ajoutée à la main fait échouer la migration | supabase/migrations/20261110000001_lot9ter_rls.sql absent : livré par fix(9t.1) (S-RLS, contrat A.1.3) (attendu true, obtenu false)
+schema/textes-9ter [0/3] (nouvelle) :
+    A | InvitationsTab : plus de « sans SMS » ni « aucun SMS n’est envoyé », « l’invité est prévenu par SMS » deux foi | components/partner/pilotage/InvitationsTab.tsx : « sans SMS » faux (TICKET_CANCELLED part à l'invité) / 1 !== 0
+    A | fenêtre de clôture de l'admin : le champ s'intitule « Motif de la clôture » | app/admin/events/[id]/page.tsx : libellé « Motif de la clôture » pour la clôture (aujourd'hui « Motif du refus », :791)
+schema/zones-schema [1/8] (nouvelle) :
+    A | 1. tables event_zones, zone_categories, event_gates : colonnes, clés composées, RLS sans politique, aucun droi | tables absentes (migration 20261110000009_lot9ter_zones) : event_zones, zone_categories, event_gates
+    A | 2. colonnes ajoutées : event_controllers.gate_id et gate_change_allowed (défaut faux), ticket_scans.gate_id, z | colonnes absentes (migration 20261110000009_lot9ter_zones) : event_controllers.gate_id, event_controllers.gate_change_allowed, ticket_scans.gate_id, ticket_scans.zone_id, ticket_scans.zone_result, ticket_categories.scan_color, ticket_catego
+    A | 3. contraintes exactes de C.1.2 et C.3.3 | contrainte ticket_scans_outcome_one absente de public.ticket_scans (migration 20261110000009_lot9ter_zones) (attendu true, obtenu ~)
+    A | 4. une ligne de zone acceptée, une ligne à deux verdicts ou sans verdict sont refusées par la base | refus par la base (migration 20261110000009_lot9ter_zones) : [["verdict de zone accepté","42703","column \"zone_result\" of relation \"ticket_scans\" does not exist"],["deux verdicts","42703","column \"zone_result\" of relation \"ticket_sca
+    A | 5. couleur et consigne de la catégorie illisibles par anon et authenticated | ticket_categories.scan_color illisible au catalogue (42703 column "scan_color" of relation "ticket_categories" does not exist) : colonne absente (migration 20261110000009_lot9ter_zones)
+    A | 6. fonctions de C : service_role seul, SECURITY DEFINER, search_path fixé, une seule définition ; aucune surch | fonctions de la section C : / scan_gate_context : 0 définition(s), 1 attendue (migration 20261110000009_lot9ter_zones) / scan_zone_verdict : 0 définition(s), 1 attendue (migration 20261110000009_lot9ter_zones) / scan_log_at : 0 définition(s
+    A | after() | garde assertLot9terInvariants : « schéma du lot 9 ter incomplet », 35 objets des migrations 20261110… nommés ; (a) à (w) imprimés à 0 avant la garde ; x1 à x13 non évalués
+security/r24-categories-anon [5/2] (adaptée) :
+    A | politiques de ticket_categories : aucune lecture de la table users ; read_public appelle l’aide ; aucune polit | lot 9 ter (0.1) : aucune politique d’écriture sur ticket_categories, y compris pour l’admin : ticket_categories_admin_manage (ALL)
+security/r29-ecritures-rest [0/5] (nouvelle) :
+    A | client neuf : insérer une fiche partenaire VALIDE à son nom est refusé | client neuf : INSERT partners (fiche VALIDE à son nom) : refus 42501 attendu, obtenu code=23503 message=insert or update on table "partners" violates foreign key constraint "partners_subscription_plan_id_fkey" / '23503' !== '42501'
+    A | PARTNER_A : PATCH de sa fiche filtré sur un identifiant inexistant → 42501 | PARTNER_A : PATCH partners (status) : écriture REST acceptée (aucune erreur) alors qu’elle doit être refusée par les droits (42501) (attendu true, obtenu ~)
+    A | ADMIN : écritures REST refusées sur partners, subscription_plans, ticket_categories, referral_config, referral | ADMIN : PATCH partners (status) : écriture REST acceptée (aucune erreur) alors qu’elle doit être refusée par les droits (42501) (attendu true, obtenu ~)
+    A | SUPERADMIN : admin_permissions et partners (suppression) refusés | SUPERADMIN : DELETE admin_permissions : écriture REST acceptée (aucune erreur) alors qu’elle doit être refusée par les droits (42501) (attendu true, obtenu ~)
+security/r3-fonctions-rpc [463/19] (adaptée) :
+    A | anon et authenticated (compte CLIENT) : rpc(ticket_origin) existe et est refusée | anon rpc(ticket_origin) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.ticket_origin(p_channel, p_offline_paid, p_price) in the schema cache — PGRST202 : fonction absente (migrations 202
+    A | anon et authenticated (compte CLIENT) : rpc(scan_is_refusal) existe et est refusée | anon rpc(scan_is_refusal) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.scan_is_refusal(p_accepted, p_consumed_at, p_result, p_zone_result) in the schema cache — PGRST202 : fonction abs
+    A | anon et authenticated (compte CLIENT) : rpc(cashout_admin_not_sent) existe et est refusée | anon rpc(cashout_admin_not_sent) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.cashout_admin_not_sent(p) in the schema cache — PGRST202 : fonction absente (migrations 20261110000002 (ré
+    A | anon et authenticated (compte CLIENT) : rpc(partner_controller_known) existe et est refusée | anon rpc(partner_controller_known) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.partner_controller_known(p_partner, p_user) in the schema cache — PGRST202 : fonction absente (migration
+    A | anon et authenticated (compte CLIENT) : rpc(event_edit_locks) existe et est refusée | anon rpc(event_edit_locks) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.event_edit_locks(p_event) in the schema cache — PGRST202 : fonction absente (migrations 20261110000002 (réglages
+    A | anon et authenticated (compte CLIENT) : rpc(ticket_guest_list_search) existe et est refusée | anon rpc(ticket_guest_list_search) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.ticket_guest_list_search(p) in the schema cache — PGRST202 : fonction absente (migrations 20261110000002
+    A | anon et authenticated (compte CLIENT) : rpc(ticket_invitation_guest_name_set) existe et est refusée | anon rpc(ticket_invitation_guest_name_set) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.ticket_invitation_guest_name_set(p) in the schema cache — PGRST202 : fonction absente (migration
+    A | anon et authenticated (compte CLIENT) : rpc(scan_gate_context) existe et est refusée | anon rpc(scan_gate_context) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.scan_gate_context(p_claimed, p_claimed_given, p_event, p_scanner) in the schema cache — PGRST202 : fonction abs
+    A | anon et authenticated (compte CLIENT) : rpc(scan_zone_verdict) existe et est refusée | anon rpc(scan_zone_verdict) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.scan_zone_verdict(p_category, p_event, p_kind, p_status, p_zone) in the schema cache — PGRST202 : fonction abse
+    A | anon et authenticated (compte CLIENT) : rpc(scan_log_at) existe et est refusée | anon rpc(scan_log_at) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.scan_log_at(p_accepted, p_amount, p_client_key, p_event, p_gate, p_hash, p_identity, p_method, p_result, p_scanner, p
+    A | anon et authenticated (compte CLIENT) : rpc(event_zones_get) existe et est refusée | anon rpc(event_zones_get) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.event_zones_get(p) in the schema cache — PGRST202 : fonction absente (migrations 20261110000002 (réglages), …05 (
+    A | anon et authenticated (compte CLIENT) : rpc(event_zones_save) existe et est refusée | anon rpc(event_zones_save) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.event_zones_save(p) in the schema cache — PGRST202 : fonction absente (migrations 20261110000002 (réglages), …05
+    A | anon et authenticated (compte CLIENT) : rpc(event_controller_gate_set) existe et est refusée | anon rpc(event_controller_gate_set) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.event_controller_gate_set(p) in the schema cache — PGRST202 : fonction absente (migrations 202611100000
+    A | anon et authenticated (compte CLIENT) : rpc(controller_gate_select) existe et est refusée | anon rpc(controller_gate_select) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.controller_gate_select(p) in the schema cache — PGRST202 : fonction absente (migrations 20261110000002 (ré
+    A | anon et authenticated (compte CLIENT) : rpc(ticket_origin_label) existe et est refusée | anon rpc(ticket_origin_label) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.ticket_origin_label(p_origin) in the schema cache — PGRST202 : fonction absente (migrations 20261110000002 (r
+    A | anon et authenticated (compte CLIENT) : rpc(scan_alert_refusal) existe et est refusée | anon rpc(scan_alert_refusal) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.scan_alert_refusal(p_result, p_zone_result) in the schema cache — PGRST202 : fonction absente (migrations 2026
+    A | anon et authenticated (compte CLIENT) : rpc(scan_refusal_alert_settings) existe et est refusée | anon rpc(scan_refusal_alert_settings) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.scan_refusal_alert_settings without parameters in the schema cache — PGRST202 : fonction absente (mig
+    A | anon et authenticated (compte CLIENT) : rpc(pilotage_compute_entries) existe et est refusée | anon rpc(pilotage_compute_entries) : refus attendu par le privilège EXECUTE (42501), obtenu PGRST202 Could not find the function public.pilotage_compute_entries(p_event, p_with_names) in the schema cache — PGRST202 : fonction absente (migra
+
+================================================================================================
+UNE LIGNE PAR CAPTURE EN ÉCHEC — e2e (capture [vues rouges] (nouvelle | modifiée | existante) ; classe | raison tirée de
+ci-run128-e2e.log). Vues : clair et sombre × mobile et ordinateur ; captures du scanner en sombre seulement.
+================================================================================================
+accueil-dernieres-places [4] (nouvelle) : A | « [e2e] demo-ids.json : events.dernieresPlaces absent (graine v4 du lot 9 ter, fix(9t.seed)) » (screens.ts:493) ; graine v4 en vague F, puis badge « Dernières places » attendu des écrans.
+partenaire-zones [4] (nouvelle) : A | « events.zones absent (graine v4 du lot 9 ter, fix(9t.seed)) » (screens.ts:493).
+partenaire-equipe-portes [4] (nouvelle) : A | « events.zones absent (graine v4…) » (screens.ts:493).
+pilotage-entrees-zones [4] (nouvelle) : A | « events.zones absent (graine v4…) » (screens.ts:493).
+admin-versements-constater-non-verse [4] (nouvelle) : A | « un bouton « Constater non versé » par ligne où can_mark_not_sent est vrai (lot 9 ter, A.2.4) » : attendu 1, obtenu 0 (bouton absent, fix(9t.3e)).
+admin-cloture-motif [4] (nouvelle) : A | « libellé du motif à la clôture (0.9, B-D24) » : getByLabel(/^motif de la clôture/i) introuvable (aujourd'hui « Motif du refus »).
+edition-quitter-sans-enregistrer [4] (nouvelle) : A | « garde avant de quitter avec des modifications (R93) » : aucune fenêtre « Quitter sans enregistrer » (useUnsavedGuard absent).
+scanner-accepte-consigne [2] (nouvelle) : A | « texte exact du plein écran (C.2.4) : « Remettre bracelet doré — orienter vers le carré VVIP » » introuvable.
+scanner-mauvaise-zone [2] (nouvelle) : A | [data-scan-result="wrong_zone"] jamais visible (20 s) : le client lit wrong_zone comme server_error.
+scanner-pas-encore-entre [2] (nouvelle) : A | [data-scan-result="not_entered"] jamais visible (20 s) : même cause.
+scanner-zone-ok [2] (nouvelle) : A | [data-scan-result="zone_ok"] jamais visible (20 s) : même cause.
+scanner-porte-absente [2] (nouvelle) : A | « texte exact du plein écran (C.2.4) : « Aucune porte affectée » » introuvable (409 GATE_REQUIRED lu comme erreur serveur).
+scanner-liste-invites [2] (nouvelle) : A | bouton getByRole('button', { name: /^liste des invités$/i }) absent (délai de 15 s).
+scanner-liste-invites-resultat [2] (nouvelle) : A | même bouton absent.
+scanner-deja-utilise [2] (modifiée) : A | « heure et porte de la première entrée (C.2.4, X5) » : « Déjà utilisé à 19:42, Porte Nord » introuvable.
+admin-remboursements-a-reprendre [4] (modifiée, A.2.6) : A | bouton « Constater non versé » : attendu 1, obtenu 0 (cashoutsReady, screens.ts:423).
+partenaire-rapport-cloture [4] (modifiée, T-B16) : A | « un seul rapport (lot 9 ter, R106 b) » : « Entrées (dont guichet) » introuvable dans la fenêtre.
+invitations-confirmation [4] (modifiée, 9t.17) : A | locator.fill : getByLabel(/^numéro 1(?!\d)/i) introuvable en 15 s (lignes numéro et nom absentes).
+scanner-accepte [2] (existante) : C | « plein écran du scanner (valid) sans nœud marqué [data-scan-contrast] : contraste invérifiable » (checks.ts:380). Voir C1 : aucun correctif de test, vert avec fix(9t.16e).
+scanner-refuse [2] (existante) : C | idem (qr_expired). Voir C1.
+scanner-hors-fenetre [2] (existante) : C | idem (event_not_open). Voir C1.
+scanner-evenement-annule [2] (existante) : C | idem (event_cancelled). Voir C1.
+scanner-non-traite [2] (existante) : C | idem (not_processed). Voir C1.
+scanner-transfert-en-cours [2] (existante) : C | idem (transfer_pending). Voir C1.
+admin-versements-marquer-verse [4] (existante) : C | bouton « Constater non versé » : attendu 1, obtenu 0, par cashoutsReady partagée (screens.ts:414-423, :1624). Voir C2 : aucun correctif nécessaire, vert avec fix(9t.3e).
+Vertes parmi les nouvelles : partenaire-finances-retrait-retarde [0/4], portefeuille-retrait-retarde [0/4] (couverture, badge « Retardé » déjà présent).
