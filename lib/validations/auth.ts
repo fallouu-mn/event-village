@@ -38,6 +38,36 @@ export function toSenegaleseE164(phone: string): string | null {
     return SENEGAL_MOBILE_E164.test(normalized) ? normalized : null;
 }
 
+/** Lot 9 ter (R96, D-R96-2) : refus d'un téléphone de contact d'événement (mobile ou fixe sénégalais). */
+export const INVALID_SN_CONTACT_PHONE_MESSAGE = 'Numéro sénégalais invalide. Exemple : 77 123 45 67 ou 33 821 00 00.';
+
+/** Neuf chiffres d'un numéro sénégalais de contact : mobiles 70, 75, 76, 77, 78 et fixes 30, 33. */
+const SENEGAL_CONTACT_DIGITS = /^(?:7[05678]|3[03])\d{7}$/;
+
+/**
+ * Lot 9 ter (R96) — téléphone de contact d'un événement (mobile ou fixe sénégalais) au format E.164
+ * (+221XXXXXXXXX), ou null si la saisie n'en est pas un. Préfixes +221, 00221 et 221 acceptés, ainsi que les
+ * espaces, points, tirets et parenthèses.
+ */
+export function toSenegaleseContactE164(phone: string): string | null {
+    let digits = phone.trim().replace(/[\s\-().]/g, '');
+    if (digits.startsWith('+221')) digits = digits.slice(4);
+    else if (digits.startsWith('00221')) digits = digits.slice(5);
+    else if (digits.startsWith('221') && digits.length === 12) digits = digits.slice(3);
+    return SENEGAL_CONTACT_DIGITS.test(digits) ? `+221${digits}` : null;
+}
+
+/**
+ * Lot 9 ter (R96) — affichage d'un numéro sénégalais de contact : « 77 123 45 67 » ; null si la valeur n'est pas un
+ * numéro sénégalais reconnu (une ancienne saisie libre s'affiche alors telle quelle).
+ */
+export function formatSnPhone(phone: string): string | null {
+    const e164 = toSenegaleseContactE164(phone);
+    if (!e164) return null;
+    const d = e164.slice(4);
+    return `${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 7)} ${d.slice(7, 9)}`;
+}
+
 /**
  * Formes sous lesquelles un même numéro E.164 est stocké en base : « +221… » (routes serveur)
  * et « 221… » (copie de auth.users.phone par le trigger d'inscription). Égalité exacte uniquement.

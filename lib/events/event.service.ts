@@ -159,6 +159,12 @@ function invalid(error: z.ZodError): EventServiceError {
     return new EventServiceError(400, body.code, body.error, { ...(body.field ? { field: body.field } : {}), fields: body.fields });
 }
 
+/** Lot 9 ter (R96) : téléphone de contact actuel (practical_info.contactPhone), ou null. */
+function currentContactPhone(info: Record<string, unknown> | null): string | null {
+    const phone = info?.contactPhone;
+    return typeof phone === 'string' ? phone : null;
+}
+
 interface EditableEvent {
     id: string;
     partner_id: string;
@@ -168,6 +174,9 @@ interface EditableEvent {
     end_date: string | null;
     end_time: string | null;
     image_url: string | null;
+    // Lot 9 ter (R96) : ville et téléphone de contact actuels, gardés tels quels s'ils sont renvoyés sous la même forme
+    city: string | null;
+    practical_info: Record<string, unknown> | null;
 }
 
 const updateBodySchema = z.object({
@@ -222,7 +231,7 @@ export class EventService {
         if (!UUID_RE.test(eventId)) throw new EventServiceError(404, 'EVENT_NOT_FOUND', NOT_FOUND_MESSAGE);
         const { data, error } = await getServiceRoleClient()
             .from('events')
-            .select('id, partner_id, status, start_date, start_time, end_date, end_time, image_url')
+            .select('id, partner_id, status, start_date, start_time, end_date, end_time, image_url, city, practical_info')
             .eq('id', eventId)
             .maybeSingle();
         if (error) {
@@ -364,6 +373,8 @@ export class EventService {
                 end_date: event.end_date,
                 end_time: event.end_time,
                 image_url: event.image_url,
+                city: event.city,
+                contact_phone: currentContactPhone(event.practical_info),
             },
         }), patch);
         if (!parsed.success) throw invalid(parsed.error);

@@ -15,6 +15,9 @@
  */
 import { z } from 'zod';
 import { eventEndAt } from '@/lib/events/event-end';
+import { canonicalCity } from '@/lib/events/senegal-cities';
+import { foldText } from '@/lib/text/fold';
+import { INVALID_SN_CONTACT_PHONE_MESSAGE, toSenegaleseContactE164 } from '@/lib/validations/auth';
 
 // ── Valeurs et bornes ──────────────────────────────────────────────────────
 
@@ -184,9 +187,12 @@ const descriptionField = z.preprocess(blankToNull, z.string().trim()
 const locationField = z.string().trim()
     .min(EVENT_LIMITS.locationMin, `Le lieu compte au moins ${EVENT_LIMITS.locationMin} caractères.`)
     .max(EVENT_LIMITS.locationMax, `Le lieu compte au plus ${EVENT_LIMITS.locationMax} caractères.`);
+// Lot 9 ter (R96) : une ville de la liste (lib/events/senegal-cities.ts) est ramenée à sa forme de la liste ; une autre
+// ville (« Autre ville ») est gardée telle quelle, 2 à 80 caractères.
 const cityField = z.string().trim()
     .min(EVENT_LIMITS.cityMin, `La ville compte au moins ${EVENT_LIMITS.cityMin} caractères.`)
-    .max(EVENT_LIMITS.cityMax, `La ville compte au plus ${EVENT_LIMITS.cityMax} caractères.`);
+    .max(EVENT_LIMITS.cityMax, `La ville compte au plus ${EVENT_LIMITS.cityMax} caractères.`)
+    .transform(canonicalCity);
 const categoryField = z.enum(EVENT_CATEGORY_VALUES, {
     errorMap: () => ({ message: 'Choisissez une catégorie d’événement dans la liste.' }),
 });
@@ -214,13 +220,35 @@ function imageField(partnerId: string, unchanged?: string | null) {
 
 const practicalText = z.preprocess(blankToNull, z.string().trim()
     .max(EVENT_LIMITS.practicalInfoMax, 'Chaque information pratique compte au plus 300 caractères.').nullable()).optional();
-const practicalInfoField = z.object({
-    address: practicalText,
-    accessNotes: practicalText,
-    parking: practicalText,
-    contactPhone: practicalText,
-    rules: practicalText,
-}).strict().nullable();
+/**
+ * Lot 9 ter (R96, D-R96-2) : téléphone de contact = mobile ou fixe sénégalais, stocké en +221… ; vide → null. La valeur
+ * actuelle renvoyée à l'identique est gardée telle quelle (une ancienne saisie libre ne bloque pas l'enregistrement
+ * d'une autre information pratique).
+ */
+function contactPhoneField(unchanged?: string | null) {
+    return z.preprocess(blankToNull, z.string().trim()
+        .max(EVENT_LIMITS.practicalInfoMax, 'Chaque information pratique compte au plus 300 caractères.')
+        .transform((v, c) => {
+            if (typeof unchanged === 'string' && v === unchanged.trim()) return unchanged;
+            const e164 = toSenegaleseContactE164(v);
+            if (!e164) {
+                c.addIssue({ code: custom, message: INVALID_SN_CONTACT_PHONE_MESSAGE });
+                return z.NEVER;
+            }
+            return e164;
+        })
+        .nullable()).optional();
+}
+
+function practicalInfoField(unchangedPhone?: string | null) {
+    return z.object({
+        address: practicalText,
+        accessNotes: practicalText,
+        parking: practicalText,
+        contactPhone: contactPhoneField(unchangedPhone),
+        rules: practicalText,
+    }).strict().nullable();
+}
 
 // Programme typé
 const optionalText = (max: number, message: string) =>
@@ -355,8 +383,9 @@ export interface EventDates {
 }
 
 export interface UpdateEventSchemaContext extends EventSchemaContext {
-    /** Valeurs actuelles de l'événement (heures en HH:mm ou HH:mm:ss) ; image_url : affiche actuelle, acceptée telle quelle. */
-    current: EventDates & { image_url?: string | null };
+    /** Valeurs actuelles de l'événement (heures en HH:mm ou HH:mm:ss) ; image_url : affiche actuelle, acceptée telle quelle ;
+     *  city et contact_phone (practical_info.contactPhone) : lot 9 ter (R96), ville et téléphone actuels gardés tels quels. */
+    current: EventDates & { image_url?: string | null; city?: string | null; contact_phone?: string | null };
 }
 
 function checkEventDates(
@@ -401,7 +430,7 @@ export function createEventSchema(ctx: EventSchemaContext) {
         image_url: imageField(ctx.partnerId).optional(),
         capacity: capacityField.optional(),
         program: programField.default([]),
-        practical_info: practicalInfoField.optional(),
+        practical_info: practicalInfoField().optional(),
         ticket_categories: z.array(categoryCreateObject)
             .max(EVENT_LIMITS.categoriesMax, `Un événement compte au plus ${EVENT_LIMITS.categoriesMax} catégories de billets.`)
             .default([]),
@@ -449,7 +478,7 @@ export function updateEventSchema(ctx: UpdateEventSchemaContext) {
         image_url: imageField(ctx.partnerId, current.image_url ?? null).optional(),
         capacity: capacityField.optional(),
         program: programField.optional(),
-        practical_info: practicalInfoField.optional(),
+        practical_info: practicalInfoField(current.contact_phone ?? null).optional(),
     }).strict().superRefine((v, c) => {
         const touched = v.start_date !== undefined || v.start_time !== undefined || v.end_date !== undefined || v.end_time !== undefined;
         if (!touched) return;
@@ -462,9 +491,15 @@ export function updateEventSchema(ctx: UpdateEventSchemaContext) {
         // Une valeur renvoyée à l'identique (heure HH:mm contre HH:mm:ss en base) n'est pas un changement.
         const startChanged = merged.start_date !== current.start_date || toHHmm(merged.start_time) !== toHHmm(current.start_time);
         checkEventDates(c, merged, { checkStartPast: startChanged, now: (ctx.now ?? new Date()).getTime() });
-    }).transform((v) => (v.program === undefined
-        ? v
-        : { ...v, program: sortProgram(v.program, v.start_date ?? current.start_date) }));
+    }).transform((v) => {
+        // Lot 9 ter (R96) : une ville égale à la ville actuelle une fois pliée (« Thiès » pour « Thies ») garde la ville
+        // actuelle : aucun changement détecté, aucun porteur prévenu pour une simple normalisation.
+        const sameCity = v.city !== undefined && typeof current.city === 'string' && foldText(v.city) === foldText(current.city);
+        const kept = sameCity ? { ...v, city: current.city as string } : v;
+        return kept.program === undefined
+            ? kept
+            : { ...kept, program: sortProgram(kept.program, kept.start_date ?? current.start_date) };
+    });
 }
 
 export type UpdateEventInput = z.input<ReturnType<typeof updateEventSchema>>;

@@ -4,6 +4,7 @@ import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { formatEventEnd } from '@/lib/events/catalog.server';
 import { eventEndAt } from '@/lib/events/event-end';
 import { isEventId, PUBLIC_EVENT_STATUSES, type PublicEventStatus } from '@/lib/events/public-status';
+import { formatSnPhone, toSenegaleseContactE164 } from '@/lib/validations/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,9 @@ async function lowStockThreshold(): Promise<number> {
  *    achetable) et `banner` (null pour PUBLIE) ; ANNULE : `cancellation { publicNotice, cancelledAt, refundInfo }`,
  *    jamais le motif interne ;
  *  - catégories actives et vendues en ligne seulement ; stock en tranches (AVAILABLE, LOW avec le restant, SOLD_OUT),
- *    calculé sur les compteurs de la catégorie (réservations comprises), sans lecture des paiements.
+ *    calculé sur les compteurs de la catégorie (réservations comprises), sans lecture des paiements ;
+ *  - lot 9 ter (R96) : `practicalInfo.contactPhone` formaté (« 77 123 45 67 », sinon la valeur telle quelle) et
+ *    `practicalInfo.contactPhoneTel` (E.164 du numéro sénégalais, null sinon).
  */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
     try {
@@ -185,6 +188,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             contactPhone?: string;
             rules?: string;
         } | null;
+        // Lot 9 ter (R96) : numéro de contact affiché « 77 123 45 67 » et lien tel: en E.164 ; une ancienne saisie libre
+        // non reconnue est affichée telle quelle, sans lien E.164 (la page ne fait aucun formatage : pas de code client).
+        const contactPhoneRaw = practicalInfo?.contactPhone || null;
 
         return NextResponse.json({
             event: {
@@ -224,7 +230,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
                     address: practicalInfo?.address || null,
                     accessNotes: practicalInfo?.accessNotes || null,
                     parking: practicalInfo?.parking || null,
-                    contactPhone: practicalInfo?.contactPhone || null,
+                    contactPhone: contactPhoneRaw ? (formatSnPhone(contactPhoneRaw) ?? contactPhoneRaw) : null,
+                    contactPhoneTel: contactPhoneRaw ? toSenegaleseContactE164(contactPhoneRaw) : null,
                     rules: practicalInfo?.rules || null,
                 },
                 categories,
