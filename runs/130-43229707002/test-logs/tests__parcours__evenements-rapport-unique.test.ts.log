@@ -1,0 +1,471 @@
+TAP version 13
+[cashout] statut de l'envoi REFUND-TKT-b34d84f9-52af-4617-aebf-1a6be3e904b4 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-cc21723e-8f06-423c-8f54-09174679d33d indisponible : Transaction introuvable (simulation)
+# Subtest: 9t.12 b (R106) : un seul rapport de clôture
+    # Subtest: la route du tableau de bord sert les chiffres de pilotage_closing (vendus hors invitations, capacité mise en vente, entrées par le contrôle)
+    not ok 1 - la route du tableau de bord sert les chiffres de pilotage_closing (vendus hors invitations, capacité mise en vente, entrées par le contrôle)
+      ---
+      duration_ms: 88.36734
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts:2:7795'
+      failureType: 'testCodeFailure'
+      error: |-
+        ticketsSummary (aujourd'hui vendus 4 invitation comprise, capacité 50) : {"sold":3,"invitations":1,"capacity":10,"entries":1,"counterEntries":0,"refused":1,"absents":3}
+        + actual - expected
+        
+          {
+        +   absents: 3,
+        -   absents: 2,
+            capacity: 10,
+            counterEntries: 0,
+            entries: 1,
+            invitations: 1,
+            refused: 1,
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        sold: 3
+        invitations: 1
+        capacity: 10
+        entries: 1
+        counterEntries: 0
+        refused: 1
+        absents: 2
+      actual:
+        sold: 3
+        invitations: 1
+        capacity: 10
+        entries: 1
+        counterEntries: 0
+        refused: 1
+        absents: 3
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts:145:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: catégories du rapport = celles de la vente (pilotage_sales.by_category)
+    ok 2 - catégories du rapport = celles de la vente (pilotage_sales.by_category)
+      ---
+      duration_ms: 41.104845
+      type: 'test'
+      ...
+    # Subtest: PDF : mêmes libellés que l'onglet Clôture
+    ok 3 - PDF : mêmes libellés que l'onglet Clôture
+      ---
+      duration_ms: 31.251359
+      type: 'test'
+      ...
+    # Subtest: statique : un seul composant pour la fenêtre et l'onglet ; getClosingReportData lit pilotage_closing et pilotage_sales, plus les billets
+    not ok 4 - statique : un seul composant pour la fenêtre et l'onglet ; getClosingReportData lit pilotage_closing et pilotage_sales, plus les billets
+      ---
+      duration_ms: 0.76892
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts:2:10944'
+      failureType: 'testCodeFailure'
+      error: 'components/partner/ClosingReportModal.tsx importe ClosingReportSummary'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useState } from 'react';
+        import { Banknote, Calendar, Download, FileSpreadsheet, FileText, MapPin, QrCode, Users, Wallet } from 'lucide-react';
+        import { Modal } from '@/components/ui/Modal';
+        import { Button } from '@/components/ui/Button';
+        import { DataList, type DataColumn } from '@/components/ui/DataList';
+        import { ErrorState } from '@/components/ui/EmptyState';
+        import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { useToast } from '@/components/ui/Toast';
+        import { apiErrorOf } from '@/components/partner/fetch-json';
+        import { useServerData } from '@/components/partner/useServerData';
+        import { DefinitionRow, KpiAmount, KpiValue } from '@/components/partner/pilotage/PilotageBlocks';
+        import type { CategorySalesSummary, ClosingReportData } from '@/lib/partner/partner-dashboard.service';
+        import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger, formatPercent } from '@/lib/format';
+        
+        interface ClosingReportModalProps {
+          isOpen: boolean;
+          onClose: () => void;
+          eventId: string | null;
+          eventTitle?: string;
+        }
+        
+        type DownloadKind = 'pdf' | 'csv';
+        
+        const DOWNLOADS: Record<DownloadKind, { url: (eventId: string) => string; fileName: (eventId: string) => string; done: string; label: string }> = {
+          pdf: {
+            url: (id) => `/api/partner/reports/closing/pdf?eventId=${encodeURIComponent(id)}`,
+            fileName: (id) => `EventVillage-Rapport-Cloture-${id.slice(0, 8)}.pdf`,
+            done: 'Rapport de clôture téléchargé.',
+            label: 'Le PDF du rapport',
+          },
+          csv: {
+            url: (id) => `/api/partner/reports/accounting?eventId=${encodeURIComponent(id)}&format=csv`,
+            fileName: (id) => `EventVillage-Comptabilite-${id.slice(0, 8)}.csv`,
+            done: 'Fichier comptable téléchargé.',
+            label: 'Le fichier comptable',
+          },
+        };
+        
+        const SALES_COLUMNS: DataColumn<CategorySalesSummary>[] = [
+          { key: 'name', header: 'Catégorie', render: (cat) => <span className="font-semibold">{cat.name}</span>, hideOnCard: true },
+          { key: 'unitPrice', header: 'Prix unitaire', align: 'right', render: (cat) => formatFcfa(cat.unitPrice) },
+          { key: 'allocated', header: 'Quota', align: 'right', render: (cat) => formatInteger(cat.totalAllocated) },
+          { key: 'sold', header: 'Vendus', align: 'right', render: (cat) => formatInteger(cat.soldQuantity) },
+          { key: 'invitations', header: 'Invitations', align: 'right', render: (cat) => formatInteger(cat.invitations) },
+          { key: 'gross', header: 'Ventes en ligne', align: 'right', render: (cat) => <span className="font-semibold tabular-nums">{formatFcfa(cat.grossAmount)}</span> },
+        ];
+        
+        function amount(value: number, prefix = ''): React.ReactNode {
+          return <span className="whitespace-nowrap tabular-nums">{prefix}{formatFcfa(value)}</span>;
+        }
+        
+        function ReportSkeleton() {
+          return (
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement du rapport de clôture">
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+              <KpiCardSkeleton />
+            </div>
+          );
+        }
+        
+        function ReportBody({ report }: { report: ClosingReportData }) {
+          const { event, financialSummary: money, ticketsSummary: tickets } = report;
+          // Lot 9 ter (R106 b) : données lues de pilotage_closing ; taux calculés ici, en attendant le composant partagé (vague E)
+          const fillRate = tickets.capacity > 0 ? Math.min(1, tickets.sold / tickets.capacity) : 0;
+          const presenceRate = tickets.sold > 0 ? Math.min(1, tickets.entries / tickets.sold) : 0;
+          return (
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="break-all rounded-md bg-brand-bg px-2 py-0.5 font-mono text-sm font-semibold text-brand-fg">{report.reportId}</span>
+                  <p className="text-sm text-fg-muted">
+                    Généré le <time dateTime={report.generatedAt} className="tabular-nums">{formatDateTime(report.generatedAt)}</time>
+                  </p>
+                </div>
+                <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-fg-muted">
+                  <li className="flex items-center gap-1.5 tabular-nums">
+                    <Calendar size={16} aria-hidden="true" className="flex-shrink-0" />
+                    {formatEventDateTime(event.startDate, event.startTime)}
+                  </li>
+                  <li className="flex min-w-0 items-center gap-1.5">
+                    <MapPin size={16} aria-hidden="true" className="flex-shrink-0" />
+                    <span className="min-w-0 break-words">{event.venue}, {event.city}</span>
+                  </li>
+                </ul>
+              </div>
+        
+              <div className="grid grid-cols-2 gap-3 tabular-nums lg:grid-cols-4">
+                <KpiCard
+                  label="Billets vendus"
+                  value={<KpiValue>{formatInteger(tickets.sold)} / {formatInteger(tickets.capacity)}</KpiValue>}
+                  hint={`Remplissage : ${formatPercent(fillRate)}`}
+                  icon={<Users size={18} />}
+                />
+                <KpiCard
+                  label="Entrées validées"
+                  value={<KpiValue>{formatInteger(tickets.entries)}</KpiValue>}
+                  hint={`Présence : ${formatPercent(presenceRate)}`}
+                  tone="success"
+                  icon={<QrCode size={18} />}
+                />
+                <KpiCard
+                  label="Ventes en ligne"
+                  value={<KpiAmount value={formatFcfa(money.totalGross)} />}
+                  hint={`Ventes au guichet : ${formatFcfa(money.cashSales)}`}
+                  icon={<Banknote size={18} />}
+                />
+                <KpiCard
+                  label="Net à reverser"
+                  value={<KpiAmount value={formatFcfa(money.totalNet)} />}
+                  tone="brand"
+                  icon={<Wallet size={18} />}
+                />
+              </div>
+        
+              <section aria-labelledby="rapport-ventes" className="flex flex-col gap-3">
+                <h3 id="rapport-ventes" className="text-base font-bold text-fg">Ventes par catégorie</h3>
+                <DataList
+                  items={report.salesByCategory}
+                  columns={SALES_COLUMNS}
+                  getKey={(cat) => cat.categoryId}
+                  caption="Ventes par catégorie"
+                  cardTitle={(cat) => cat.name}
+                  className="tabular-nums"
+                  empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune vente sur cet événement.</p>}
+                />
+              </section>
+        
+              <section aria-labelledby="rapport-synthese" className="flex flex-col gap-3">
+                <h3 id="rapport-synthese" className="text-base font-bold text-fg">Synthèse comptable</h3>
+                <dl className="rounded-2xl bg-surface-sunken px-4 py-1 tabular-nums">
+                  <DefinitionRow label="Ventes en ligne, prix des billets" value={amount(money.totalGross)} />
+                  {money.totalRefunded > 0 && (
+                    <DefinitionRow label="Remboursements aux acheteurs" value={<span className="text-danger-fg">{amount(money.totalRefunded, '− ')}</span>} />
+                  )}
+                  <DefinitionRow
+                    label={<span className="font-semibold text-fg">Net à reverser au partenaire</span>}
+                    value={<span className="text-base font-bold text-brand-fg">{amount(money.totalNet)}</span>}
+                  />
+                  <DefinitionRow label="Dont disponible" value={amount(money.availableNet)} />
+                  <DefinitionRow label="Dont en attente" value={amount(money.pendingNet)} />
+                  <DefinitionRow label="Frais de service payés par l’acheteur, non déduits" value={amount(money.buyerServiceFees)} />
+                  <DefinitionRow
+                    label={`Espèces au guichet, ${formatInteger(money.cashTickets)} billet${money.cashTickets > 1 ? 's' : ''}, hors plateforme, pour information`}
+                    value={amount(money.cashSales)}
+                  />
+                </dl>
+              </section>
+            </div>
+          );
+        }
+        
+        /**
+         * Rapport de clôture d'un événement (tableau de bord partenaire, 8.2 r). Les chiffres viennent de la route ; une
+         * lecture ou un téléchargement en échec est signalé par un texte fixe, jamais par le message de la réponse.
+         */
+        export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({ isOpen, onClose, eventId, eventTitle }) => {
+          const toast = useToast();
+          const url = isOpen && eventId ? `/api/partner/reports/closing?eventId=${encodeURIComponent(eventId)}` : null;
+          const { data, error, loading, refreshing, reload } = useServerData<{ report: ClosingReportData }>(url);
+          const report = data?.report ?? null;
+          const [downloading, setDownloading] = useState<DownloadKind | null>(null);
+          const [failedDownload, setFailedDownload] = useState<DownloadKind | null>(null);
+        
+          const download = async (kind: DownloadKind): Promise<void> => {
+            if (!eventId) return;
+            const target = DOWNLOADS[kind];
+            setDownloading(kind);
+            setFailedDownload(null);
+            try {
+              const res = await fetch(target.url(eventId), { cache: 'no-store' });
+              if (!res.ok) throw await apiErrorOf(res);
+              const objectUrl = URL.createObjectURL(await res.blob());
+              const link = document.createElement('a');
+              link.href = objectUrl;
+              link.download = target.fileName(eventId);
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              URL.revokeObjectURL(objectUrl);
+              toast.success(target.done);
+            } catch (err) {
+              console.error(`[rapport de clôture] téléchargement ${kind}`, err);
+              setFailedDownload(kind);
+            } finally {
+              setDownloading(null);
+            }
+          };
+        
+          return (
+            <Modal
+              isOpen={isOpen}
+              onClose={onClose}
+              title="Rapport de clôture"
+              subtitle={eventTitle || report?.event.title || 'Bilan de l’événement'}
+              icon={<FileText size={18} />}
+              maxWidth="4xl"
+              scrollRegionLabel="Contenu du rapport de clôture"
+              footer={
+                <div className="flex w-full flex-col gap-3">
+                  {failedDownload && (
+                    <StatusBanner tone="danger" title="Le téléchargement n’a pas abouti" announce="alert">
+                      {DOWNLOADS[failedDownload].label} n’a pas pu être préparé. Réessayez dans un instant.
+                    </StatusBanner>
+                  )}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-fg-muted">Document généré par Event Village</p>
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void download('csv')}
+                        disabled={!report || downloading !== null}
+                        isLoading={downloading === 'csv'}
+                        leftIcon={<FileSpreadsheet size={16} />}
+                      >
+                        Export CSV / Excel
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => void download('pdf')}
+                        disabled={!report || downloading !== null}
+                        isLoading={downloading === 'pdf'}
+                        leftIcon={<Download size={16} />}
+                      >
+                        Télécharger le PDF
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              }
+            >
+              {loading ? (
+                <ReportSkeleton />
+              ) : error ? (
+                <ErrorState
+                  title="Rapport de clôture indisponible"
+                  description="Le rapport n’a pas pu être préparé. Vérifiez votre connexion, puis réessayez."
+                  onRetry={() => void reload()}
+                  isRetrying={refreshing}
+                />
+              ) : report ? (
+                <ReportBody report={report} />
+              ) : null}
+            </Modal>
+          );
+        };
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts:182:20)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: témoin : une autre partenaire est refusée (403), sans aucun chiffre
+    ok 5 - témoin : une autre partenaire est refusée (403), sans aucun chiffre
+      ---
+      duration_ms: 208.387597
+      type: 'test'
+      ...
+    1..5
+not ok 1 - 9t.12 b (R106) : un seul rapport de clôture
+  ---
+  duration_ms: 2213.205224
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts:2:7715'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] evenements-rapport-unique — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] evenements-rapport-unique — purge des réservations échues : {"expired":0}
+[INVARIANT] evenements-rapport-unique — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] evenements-rapport-unique — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] evenements-rapport-unique — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] evenements-rapport-unique — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] evenements-rapport-unique — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] evenements-rapport-unique — envoyeur : 185 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] evenements-rapport-unique — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] evenements-rapport-unique — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] evenements-rapport-unique — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] evenements-rapport-unique — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] evenements-rapport-unique — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] evenements-rapport-unique — schéma du lot 9 ter incomplet : 16 objet(s) manquant(s)
+[INVARIANT-LOT9TER]   table public.event_zones absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+[INVARIANT-LOT9TER]   table public.zone_categories absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+[INVARIANT-LOT9TER]   table public.event_gates absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+[INVARIANT-LOT9TER]   colonne public.tickets.guest_name absente — migration 20261110000008_lot9ter_invites (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.event_controllers.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.event_controllers.gate_change_allowed absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.ticket_scans.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.ticket_scans.zone_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.ticket_scans.zone_result absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.ticket_categories.scan_color absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.ticket_categories.entry_instruction absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+[INVARIANT-LOT9TER]   colonne public.public_event_state.stock_level absente — migration 20261110000011_lot9ter_stock (contrat 3.8.2)
+[INVARIANT-LOT9TER]   fonction public.ticket_guest_list_search(jsonb) absente — migration 20261110000008_lot9ter_invites (contrat 3.4)
+[INVARIANT-LOT9TER]   fonction public.scan_gate_context(uuid,uuid,uuid,boolean) absente — migration 20261110000009_lot9ter_zones (contrat 3.4)
+[INVARIANT-LOT9TER]   fonction public.pilotage_compute_entries(uuid,boolean) absente — migration 20261110000010_lot9ter_pilotage (contrat 3.4)
+[INVARIANT-LOT9TER]   contrainte public_event_state_stock_level_check absente de public.public_event_state — migration 20261110000011_lot9ter_stock (contrat 3.8.4)
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts
+  ---
+  duration_ms: 1390.471776
+  location: '/home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts:2:6465'
+  failureType: 'hookFailed'
+  error: |-
+    schéma du lot 9 ter incomplet (evenements-rapport-unique) : invariants (x) impossibles à vérifier :
+    table public.event_zones absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    table public.zone_categories absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    table public.event_gates absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)
+    colonne public.tickets.guest_name absente — migration 20261110000008_lot9ter_invites (contrat 3.8.2)
+    colonne public.event_controllers.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    colonne public.event_controllers.gate_change_allowed absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    colonne public.ticket_scans.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    colonne public.ticket_scans.zone_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    colonne public.ticket_scans.zone_result absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    colonne public.ticket_categories.scan_color absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    colonne public.ticket_categories.entry_instruction absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)
+    colonne public.public_event_state.stock_level absente — migration 20261110000011_lot9ter_stock (contrat 3.8.2)
+    fonction public.ticket_guest_list_search(jsonb) absente — migration 20261110000008_lot9ter_invites (contrat 3.4)
+    fonction public.scan_gate_context(uuid,uuid,uuid,boolean) absente — migration 20261110000009_lot9ter_zones (contrat 3.4)
+    fonction public.pilotage_compute_entries(uuid,boolean) absente — migration 20261110000010_lot9ter_pilotage (contrat 3.4)
+    contrainte public_event_state_stock_level_check absente de public.public_event_state — migration 20261110000011_lot9ter_stock (contrat 3.8.4)
+    + actual - expected
+    
+    + [
+    +   'table public.event_zones absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)',
+    +   'table public.zone_categories absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)',
+    +   'table public.event_gates absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)',
+    +   'colonne public.tickets.guest_name absente — migration 20261110000008_lot9ter_invites (contrat 3.8.2)',
+    +   'colonne public.event_controllers.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)',
+    +   'colonne public.event_controllers.gate_change_allowed absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)',
+    +   'colonne public.ticket_scans.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)',
+    +   'colonne public.ticket_scans.zone_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)',
+    +   'colonne public.ticket_scans.zone_result absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)',
+    +   'colonne public.ticket_categories.scan_color absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)',
+    +   'colonne public.ticket_categories.entry_instruction absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)',
+    +   'colonne public.public_event_state.stock_level absente — migration 20261110000011_lot9ter_stock (contrat 3.8.2)',
+    +   'fonction public.ticket_guest_list_search(jsonb) absente — migration 20261110000008_lot9ter_invites (contrat 3.4)',
+    +   'fonction public.scan_gate_context(uuid,uuid,uuid,boolean) absente — migration 20261110000009_lot9ter_zones (contrat 3.4)',
+    +   'fonction public.pilotage_compute_entries(uuid,boolean) absente — migration 20261110000010_lot9ter_pilotage (contrat 3.4)',
+    +   'contrainte public_event_state_stock_level_check absente de public.public_event_state — migration 20261110000011_lot9ter_stock (contrat 3.8.4)'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: 'table public.event_zones absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)'
+    1: 'table public.zone_categories absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)'
+    2: 'table public.event_gates absente — migration 20261110000009_lot9ter_zones (contrat 3.8.1)'
+    3: 'colonne public.tickets.guest_name absente — migration 20261110000008_lot9ter_invites (contrat 3.8.2)'
+    4: 'colonne public.event_controllers.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)'
+    5: 'colonne public.event_controllers.gate_change_allowed absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)'
+    6: 'colonne public.ticket_scans.gate_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)'
+    7: 'colonne public.ticket_scans.zone_id absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)'
+    8: 'colonne public.ticket_scans.zone_result absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)'
+    9: 'colonne public.ticket_categories.scan_color absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)'
+    10: 'colonne public.ticket_categories.entry_instruction absente — migration 20261110000009_lot9ter_zones (contrat 3.8.2)'
+    11: 'colonne public.public_event_state.stock_level absente — migration 20261110000011_lot9ter_stock (contrat 3.8.2)'
+    12: 'fonction public.ticket_guest_list_search(jsonb) absente — migration 20261110000008_lot9ter_invites (contrat 3.4)'
+    13: 'fonction public.scan_gate_context(uuid,uuid,uuid,boolean) absente — migration 20261110000009_lot9ter_zones (contrat 3.4)'
+    14: 'fonction public.pilotage_compute_entries(uuid,boolean) absente — migration 20261110000010_lot9ter_pilotage (contrat 3.4)'
+    15: 'contrainte public_event_state_stock_level_check absente de public.public_event_state — migration 20261110000011_lot9ter_stock (contrat 3.8.4)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertLot9terSchema (/home/runner/work/event-village/event-village/tests/helpers/lot9ter-invariants.ts:483:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertLot9terInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9ter-invariants.ts:504:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/evenements-rapport-unique.test.ts:108:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..1
+# tests 5
+# suites 1
+# pass 3
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3618.311435
