@@ -168,12 +168,12 @@ Votre **référence de projet** est la suite de lettres au début de l'adresse S
 
 ```powershell
 git worktree add ..\event-village-m01 bcb1d3da
-cd ..\event-village-m01
+cd ..\event-village-m01; git checkout 6796ecf0 -- supabase/migrations/20261110000001_lot9ter_rls.sql; findstr /C:"users_select_policy" supabase\migrations\20261110000001_lot9ter_rls.sql
 npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
 npx supabase@2.122.0 db push --linked --dry-run
 ```
 
-Le `--dry-run` doit lister **un seul** fichier, `20261110000001_lot9ter_rls.sql`. Sinon, arrêtez-vous. Lancez alors le contrôle « 1 » d'avant (`docs/deploiement-projet-neuf.md`, section 3 sexies), puis `npx supabase@2.122.0 db push --linked`, puis le contrôle « 1 » d'après (0 ligne). Revenez dans le dossier du projet (`cd $HOME\Documents\event-village`), lancez `npm run essai:fiche-partenaire` (étape 9) et retirez le second dossier : `git worktree remove ..\event-village-m01`. Les dix autres migrations suivront par les étapes 1 à 10 ci-dessus. N'appliquez jamais la migration à la main dans **SQL Editor**.
+La deuxième ligne remet dans ce dossier la version finale de la migration 1 : celle du commit `bcb1d3da` n'a pas encore la réécriture de `users_select_policy` (ajoutée ensuite, `cf119f51`), sans laquelle le temps réel des billets et des notifications prend plusieurs secondes de retard. `findstr` doit afficher au moins une ligne ; sinon, arrêtez-vous. Le `--dry-run` doit lister **un seul** fichier, `20261110000001_lot9ter_rls.sql`. Sinon, arrêtez-vous. Lancez alors le contrôle « 1 » d'avant (`docs/deploiement-projet-neuf.md`, section 3 sexies), puis `npx supabase@2.122.0 db push --linked`, puis le contrôle « 1 » d'après (0 ligne). Revenez dans le dossier du projet (`cd $HOME\Documents\event-village`), lancez `npm run essai:fiche-partenaire` (étape 9) et retirez le second dossier : `git worktree remove ..\event-village-m01`. Les dix autres migrations suivront par les étapes 1 à 10 ci-dessus. N'appliquez jamais la migration à la main dans **SQL Editor**.
 
 ---
 
@@ -538,7 +538,7 @@ Ces essais se font sur un second événement du jour, pour ne pas dépendre de l
 6. Compte `controleur`, scanner, « Soirée zones » : l'écran dit « Votre porte : Porte Nord · Entrée générale (Entrée). Le compteur affichera les entrées de cette porte. » **Commencer le contrôle**, **Saisie manuelle**, numéro du billet VIP de `client1`, pièce conforme, validez.
 
    Résultat attendu : écran vert « Entrée validée », « VIP » en très grand sur une bande or, la consigne, « Zone : Entrée générale · Porte Nord », le nom de Fatou Essai. Validez aussi le billet SIMPLE de `client1`. Puis, de nouveau, le billet VIP : « Entrée impossible : Billet déjà utilisé », sans bouton de validation.
-7. La suite se fait **au téléphone, à la caméra** (section 9) : à une porte de contrôle de zone, la saisie manuelle ne valide rien et n'affiche qu'un aperçu « Entrée impossible : … ». **Changer de porte** (bouton de l'écran « Commencer le contrôle », qu'on retrouve par le bouton « Changer d’événement » en haut du scanner) : « Accès carré · Carré VIP (Contrôle de zone) », **Enregistrer cette porte**. Scannez :
+7. La suite se fait **au téléphone, à la caméra** (section 9) : à une porte de contrôle de zone, la saisie manuelle ne valide rien : elle affiche « Accès autorisé » en vert pour un billet déjà entré et admis, « Mauvaise zone » ou « Pas encore entré » en orange sinon. **Changer de porte** (bouton de l'écran « Commencer le contrôle », qu'on retrouve par le bouton « Changer d’événement » en haut du scanner) : « Accès carré · Carré VIP (Contrôle de zone) », **Enregistrer cette porte**. Scannez :
    - le billet SIMPLE de `client1` : orange, « Accès refusé : billet SIMPLE » ;
    - le billet VVIP de `client2`, jamais passé à l'entrée : orange, « Pas encore entré », « Passez d’abord par : Entrée générale » ;
    - le billet VIP de `client1` : vert « Accès autorisé », « Zone : Carré VIP », « Entré à …, Porte Nord ».
