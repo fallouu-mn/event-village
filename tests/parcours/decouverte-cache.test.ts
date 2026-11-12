@@ -1,7 +1,7 @@
 /**
- * Lot 9, tâche 9.1 (contrat 5.2, L21, AR12) — cache de « Populaires » : mémoire du module, 60 s strictes, panne
- * jamais gardée, appels simultanés partagés. Suite SANS BASE : horloge et lecteur injectés.
- * Contrat : getPopularEvents(deps?: { now, read }), `now()` en millisecondes (entrée `{ at: number, value }`),
+ * Lot 9, tâche 9.1 (contrat 5.2, L21, AR12) ; lot 9 ter, 9t.19 (consigne 5, D-S4) — cache de « Populaires », qui porte le
+ * seul classement : mémoire du module, 60 s strictes, panne jamais gardée, appels simultanés partagés. Suite SANS BASE.
+ * Contrat : getPopularRanking(deps?: { now, read }) (getPopularEvents au lot 9), `now()` en millisecondes (entrée `{ at: number, value }`),
  * `read()` rend la liste. Le cache vit dans le module, partagé par tous les cas : chaque cas prend une horloge
  * une heure après le précédent, donc toujours une entrée périmée au départ.
  *
@@ -15,12 +15,12 @@ import assert from 'node:assert/strict';
 const SERVICE_PATH = '../../lib/events/popular.service';
 
 type Reader = () => Promise<unknown[]>;
-type GetPopular = (deps: { now: () => number; read: Reader }) => Promise<unknown[]>;
+type GetPopular = (deps: { now: () => number; read: Reader }) => Promise<unknown[]>; // getPopularRanking : le classement (lot 9 ter)
 
 async function loadService(): Promise<GetPopular> {
-    const mod = (await import(SERVICE_PATH)) as { getPopularEvents?: GetPopular };
-    assert.equal(typeof mod.getPopularEvents, 'function', 'lib/events/popular.service doit exporter getPopularEvents (contrat 5.2)');
-    return mod.getPopularEvents as GetPopular;
+    const mod = (await import(SERVICE_PATH)) as { getPopularRanking?: GetPopular };
+    assert.equal(typeof mod.getPopularRanking, 'function', 'lib/events/popular.service doit exporter getPopularRanking (lot 9 ter, consigne 5 : le cache porte le classement)');
+    return mod.getPopularRanking as GetPopular;
 }
 
 let lastStart = 1_800_000_000_000;

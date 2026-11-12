@@ -55,7 +55,7 @@ import { advanceEventTo, createDraftEvent, createEventInStatus, eventStatus, shi
 
 /** Colonnes de public_event_state (contrat O1), seules autorisées. */
 const PUBLIC_EVENT_STATE_COLUMNS = [
-    'event_id', 'status', 'title', 'start_at', 'end_at', 'location', 'city', 'image_url', 'min_price', 'has_purchasable', 'updated_at',
+    'event_id', 'status', 'title', 'start_at', 'end_at', 'location', 'city', 'image_url', 'min_price', 'has_purchasable', 'updated_at', 'stock_level',
 ];
 const PUBLIC_STATUSES = ['PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE'];
 /** Délai d'observation après la sentinelle (lot 4 : 1 s). */
