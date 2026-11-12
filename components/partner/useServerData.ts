@@ -11,6 +11,8 @@ export interface ServerData<T> {
     loading: boolean;
     /** Rechargement en arrière-plan (signal temps réel, bouton Actualiser) : les données restent affichées. */
     refreshing: boolean;
+    /** Heure de la dernière lecture réussie, null avant la première (et au changement d'URL). */
+    updatedAt: Date | null;
     reload: () => Promise<void>;
 }
 
@@ -24,6 +26,7 @@ export function useServerData<T>(url: string | null, signal = 0): ServerData<T> 
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(url !== null);
     const [refreshing, setRefreshing] = useState(false);
+    const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
     const seq = useRef(0);
     const hasData = useRef(false);
 
@@ -37,6 +40,7 @@ export function useServerData<T>(url: string | null, signal = 0): ServerData<T> 
             if (mine !== seq.current) return;
             hasData.current = true;
             setData(body);
+            setUpdatedAt(new Date());
             setError(null);
         } catch (err) {
             if (mine !== seq.current) return;
@@ -53,6 +57,7 @@ export function useServerData<T>(url: string | null, signal = 0): ServerData<T> 
     useEffect(() => {
         hasData.current = false;
         setData(null);
+        setUpdatedAt(null);
         setError(null);
         void load(false);
     }, [load]);
@@ -67,5 +72,5 @@ export function useServerData<T>(url: string | null, signal = 0): ServerData<T> 
 
     const reload = useCallback(() => load(true), [load]);
 
-    return { data, error, loading, refreshing, reload };
+    return { data, error, loading, refreshing, updatedAt, reload };
 }
