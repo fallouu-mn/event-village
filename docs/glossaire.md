@@ -2,7 +2,7 @@
 
 Ce glossaire fixe **un seul nom pour chaque chose**. Il sert à écrire les écrans, les SMS, les emails, les guides et les cahiers de recette. Quand deux mots désignent la même chose, on emploie le mot retenu ici, et jamais l'autre.
 
-Il a été établi au lot 9 bis (constat R76 de la revue critique de `docs/parcours-evenement-complet.md`). Les mots entre guillemets sont ceux de l'écran.
+Il a été établi au lot 9 bis (constat R76 de la revue critique de `docs/parcours-evenement-complet.md`) et complété au lot 9 ter : stock affiché au public (section 2), contrôle des entrées (section 2 bis), téléphone de contact (section 4), écarts relevés (section 6). Les mots entre guillemets sont ceux de l'écran.
 
 ---
 
@@ -44,6 +44,29 @@ Il a été établi au lot 9 bis (constat R76 de la revue critique de `docs/parco
 
 Fin d'un événement : la date et l'heure de fin saisies ; une date de fin sans heure vaut 23 h 59 ; **sans date de fin, l'événement se termine 6 heures après son début**.
 
+Stock affiché au public (lot 9 ter) : sur les cartes, **« Complet »** quand plus aucune catégorie vendue en ligne n'est achetable, **« Dernières places »** quand il en reste peu (seuil réglé par le Superadmin) ; sur la fiche, par catégorie, **« Plus que 3 places »** (« Plus qu’une place » pour une seule) et « Complet ». On ne dit pas « bientôt complet », « épuisé » ni « sold out » dans un texte lu par le public.
+
+---
+
+## 2 bis. Le contrôle des entrées (lot 9 ter)
+
+| Mot retenu | Ce que c'est | À ne pas dire |
+|---|---|---|
+| **zone** | Un espace de l'événement, par exemple « Entrée générale » ou « Carré VIP », avec son type, ses **catégories admises** et ses portes. Un événement sans zone configurée a une seule zone, « Entrée », qui admet toutes les catégories. | espace, secteur, aire |
+| **Entrée** (type de zone) | Zone où le billet est **composté** : la personne entre. | — |
+| **Contrôle de zone** (type de zone) | Zone où la catégorie est vérifiée **sans composter** ; un billet jamais composté y est signalé « Pas encore entré ». | contrôle VIP, second scan |
+| **porte** | Un point de contrôle d'une zone, par exemple « Porte Nord » ou « Accès carré ». Chaque contrôleur est affecté à une porte ; il n'en change que si l'organisateur l'y autorise (« Peut changer de porte »). | poste, guichet (le guichet est la vente sur place) |
+| **point d'entrée** | Le nom libre donné à la porte d'un contrôleur sur un événement **sans zone**, pour le compteur. | porte, quand l'événement n'a pas de zones |
+| **composter** | Valider un billet à une porte d'entrée : il devient « Utilisé », une fois pour toutes. Un billet = une seule entrée. | poinçonner, scanner (scanner, c'est lire le QR) |
+| **consigne d'entrée** | Le texte d'une catégorie, 60 caractères au plus, affiché en gros au contrôleur quand le billet est validé à l'entrée : « Remettre bracelet doré — orienter vers le carré VIP ». | instruction, message |
+| **couleur au contrôle** | La couleur d'une catégorie, choisie parmi « Blanc », « Or », « Argent », « Rose », « Turquoise », « Bleu nuit », « Violet », « Noir », montrée en bande avec le nom de la catégorie. Jamais seule. | couleur du billet |
+| **liste des invités** | Au scanner, la recherche des invitations pas encore acceptées dans l'application, par les 4 derniers chiffres ou le numéro complet ; l'entrée n'est validée qu'après la pièce d'identité, une personne à la fois. | liste VIP, guest list |
+| **nom de l'invité** | Le nom facultatif saisi par l'organisateur à l'envoi d'une invitation, montré seulement au contrôleur qui consulte la liste des invités. Jamais dans un SMS. | titulaire (le titulaire est le compte qui détient le billet) |
+| **origine** (d'un billet) | D'où vient le billet : « En ligne », « Guichet », « Gratuit » ou « Invitation ». Même règle au scanner (badge « Invitation » ou « Gratuit »), dans le tableau de bord, le rapport de clôture et l'export. | canal (ancien nom de la colonne de l'export) |
+| **alerte de refus** | L'avis envoyé à l'organisateur quand une porte enregistre beaucoup de refus en peu de temps : « Refus en série à une porte » (cloche, push, email) et le bandeau « Beaucoup de refus à … » de l'onglet Entrées. | alarme, alerte fraude |
+
+Écrans du contrôleur : **vert** « Entrée validée » ou « Accès autorisé » (contrôle de zone réussi) ; **orange** « Accès refusé : billet SIMPLE » (catégorie non admise, motif « Mauvaise zone ») ou « Pas encore entré » ; **rouge** pour les refus, dont « Billet déjà utilisé » avec « Déjà utilisé à 21:14, Porte Nord ».
+
 ---
 
 ## 3. L'argent
@@ -72,7 +95,9 @@ Fin d'un événement : la date et l'heure de fin saisies ; une date de fin sans 
 | **SMS facultatif** | Un message que le client peut couper dans ses préférences (rappels, par exemple). | SMS marketing |
 | **adresse vérifiée** | Une adresse email confirmée par le lien reçu. Seule une adresse vérifiée reçoit des emails. Sinon, le profil affiche « Email non vérifié » et « Renvoyer le lien ». | adresse validée, adresse confirmée |
 
-Numéro de téléphone mal saisi, partout le même texte : **« Numéro de mobile sénégalais invalide. Exemple : 77 123 45 67. »**
+Numéro de téléphone mal saisi, partout le même texte : **« Numéro de mobile sénégalais invalide. Exemple : 77 123 45 67. »** (une seule constante dans le code, `INVALID_SN_PHONE_MESSAGE`).
+
+Seule exception, depuis le lot 9 ter : le **téléphone de contact** d'un événement (informations pratiques), qui peut être un fixe, a son propre texte : **« Numéro sénégalais invalide. Exemple : 77 123 45 67 ou 33 821 00 00. »** (constante `INVALID_SN_CONTACT_PHONE_MESSAGE`).
 
 ---
 
@@ -93,3 +118,11 @@ Relevé dans le code le 11/11/2026 (branche `lot9bis/cycle-evenement`, commit `7
 | Où | Texte actuel | Mot retenu |
 |---|---|---|
 | Salles, tables et commandes (`app/api/halls/**`, `app/api/orders/create/route.ts`) | « FCFA » | F CFA (services fermés pour l'instant) |
+
+Relevé complémentaire du 12/11/2026 (branche `lot9ter/controle-acces`, commit `fc8013d9`), pour les textes touchés par le lot 9 ter ou relus à cette occasion :
+
+| Où | Texte actuel | Mot retenu |
+|---|---|---|
+| Billet PDF, prix et frais (`app/api/tickets/[id]/pdf/route.ts:114`, `:118`) | « 5 000 FCFA », « Frais de service : … FCFA - Total payé :… FCFA » | F CFA |
+| Onglet Invitations du pilotage, numéro mal saisi (`components/partner/pilotage/InvitationsTab.tsx:92`, texte du lot 9) | « Numéro 1 : saisissez un numéro sénégalais à 9 chiffres (par exemple 77 123 45 67). » | le texte unique de la section 4, précédé de « Numéro 1 : » |
+| Fiche de l'événement, champ de la jauge (`components/events/EventForm.tsx:1000`) ; refus de quantité (`supabase/migrations/20261110000011_lot9ter_stock.sql:322`, `:483`, texte imposé mot pour mot par la consigne du lot 9 ter) ; rapport de clôture (`components/partner/pilotage/ClosingReportSummary.tsx:39`, PDF) | « Capacité totale (jauge) » ; « Augmentez d’abord la capacité totale de l’événement (actuellement 27). » ; « Capacité mise en vente » | jauge ; pour la somme des quantités mises en vente, « quantités mises en vente » |
