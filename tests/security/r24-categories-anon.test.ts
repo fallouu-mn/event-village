@@ -1,8 +1,8 @@
 /**
  * R24 — Lot 7, tâche 7.0 c (contrat section 4.3, D21, M3.1 à M3.3) : la RLS de ticket_categories ne dépend
- * plus du privilège SELECT de anon sur public.users. Les politiques ticket_categories_read_public et
- * ticket_categories_admin_manage lisent le compte de l'appelant par l'aide SECURITY DEFINER
- * ticket_category_private_read(p_event uuid), 7e aide RLS (exécutable par anon et authenticated).
+ * plus du privilège SELECT de anon sur public.users. La politique ticket_categories_read_public lit le compte de
+ * l'appelant par l'aide SECURITY DEFINER ticket_category_private_read(p_event uuid), 7e aide RLS (exécutable par anon
+ * et authenticated) ; ticket_categories_admin_manage est supprimée au lot 9 ter (0.1, migration 20261110000001).
  *  1. client anon réel (clé anon seule) : catégories du publié A_PUBLIE visibles, aucune du brouillon
  *     A_BROUILLON (témoin : son propriétaire, PARTNER_A connecté, les lit) ;
  *  2. transaction annulée sur la base locale : REVOKE SELECT ON public.users FROM anon (précondition : anon
@@ -11,8 +11,8 @@
  *  3. catalogue : ticket_category_private_read(p_event uuid) présente, STABLE, SECURITY DEFINER,
  *     search_path = public, exécutable par anon et authenticated ;
  *  4. catalogue : aucune politique SELECT ou ALL de ticket_categories ne cite la table users ;
- *     read_public et admin_manage appellent l'aide ; admin_manage est réservée à authenticated, read_public
- *     reste sans clause TO (catalogue public lu par anon) ;
+ *     read_public appelle l'aide et reste sans clause TO (catalogue public lu par anon) ; aucune politique
+ *     d'écriture (lot 9 ter, 0.1 : toute écriture REST supprimée, y compris celle de l'admin) ;
  *  5. propriétaire suspendu (transaction annulée, rôle authenticated, claims du PARTNER_A du seed) : témoin
  *     ACTIF, les catégories du brouillon sont lues ; SUSPENDU, aucune ;
  *  6. l'aide elle-même (même transaction annulée) : vraie pour le propriétaire ACTIF, fausse pour anon et
@@ -21,7 +21,7 @@
  * État avant correctif (fix(7.0c), migration 20261105000003) :
  *  - 1 et 5 : verts (couverture ajoutée : lot 5 A3 et lot 6 P_ACTIF, 20261103000001_lot6_dette.sql:145-175) ;
  *  - 2 : ROUGE, 42501 « permission denied for table users » : read_public (sans clause TO) et
- *    admin_manage (FOR ALL sans TO, donc appliquée au SELECT de anon) contiennent une sous-requête sur
+ *    admin_manage (FOR ALL sans TO, donc appliquée au SELECT de anon ; supprimée au lot 9 ter) contiennent une sous-requête sur
  *    public.users, dont le privilège est contrôlé pour anon même quand la branche publique suffit ;
  *  - 3, 4, 6 : ROUGES, aide absente et politiques qui lisent users.
  *
@@ -119,15 +119,13 @@ describe('R24 — catégories de billets sans lecture de public.users (7.0 c, D2
         assert.equal(f.auth_exec, true, 'EXECUTE pour authenticated');
     });
 
-    test('politiques de ticket_categories : aucune lecture de la table users ; read_public et admin_manage appellent l’aide ; admin_manage TO authenticated', async () => {
+    test('politiques de ticket_categories : aucune lecture de la table users ; read_public appelle l’aide ; aucune politique d’écriture (lot 9 ter, 0.1)', async () => {
         const policies = await inspect(async (db) => (await db.query<{ policyname: string; roles: string[]; cmd: string; qual: string | null; with_check: string | null }>(
             `SELECT policyname, roles::text[] AS roles, cmd, qual, with_check
                FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ticket_categories' ORDER BY policyname`)).rows);
         const byName = new Map(policies.map((p) => [p.policyname, p]));
         const readPublic = byName.get('ticket_categories_read_public');
-        const adminManage = byName.get('ticket_categories_admin_manage');
         assert.ok(readPublic, 'politique ticket_categories_read_public absente');
-        assert.ok(adminManage, 'politique ticket_categories_admin_manage absente');
 
         const readers = policies.filter((p) => p.cmd === 'SELECT' || p.cmd === 'ALL');
         const offenders = readers
@@ -137,9 +135,8 @@ describe('R24 — catégories de billets sans lecture de public.users (7.0 c, D2
 
         assert.match(readPublic.qual ?? '', /ticket_category_private_read\(/, `read_public doit appeler ticket_category_private_read : ${readPublic.qual}`);
         assert.deepEqual(readPublic.roles, ['public'], `read_public reste sans clause TO (catalogue lu par anon) : ${readPublic.roles.join(',')}`);
-        assert.match(adminManage.qual ?? '', /ticket_category_private_read\(/, `admin_manage (USING) doit appeler ticket_category_private_read : ${adminManage.qual}`);
-        assert.match(adminManage.with_check ?? '', /ticket_category_private_read\(/, `admin_manage (WITH CHECK) doit appeler ticket_category_private_read : ${adminManage.with_check}`);
-        assert.deepEqual(adminManage.roles, ['authenticated'], `admin_manage réservée à authenticated (contrat M3.3) : ${adminManage.roles.join(',')}`);
+        assert.deepEqual(policies.filter((p) => p.cmd !== 'SELECT').map((p) => p.policyname), [],
+            `lot 9 ter (0.1) : aucune politique d’écriture sur ticket_categories, y compris pour l’admin : ${policies.filter((p) => p.cmd !== 'SELECT').map((p) => `${p.policyname} (${p.cmd})`).join(', ')}`);
     });
 
     test('propriétaire suspendu (transaction annulée, rôle authenticated) : aucune catégorie privée ; témoin ACTIF : catégories du brouillon lues', async () => {

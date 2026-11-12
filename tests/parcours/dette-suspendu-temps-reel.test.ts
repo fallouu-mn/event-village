@@ -726,7 +726,6 @@ const HARDENED: HardenedPolicy[] = [
     { table: 'admin_signals', policy: 'admin_signals_admin_read', authenticatedOnly: true },
     { table: 'tickets', policy: 'tickets_read', authenticatedOnly: true },
     { table: 'ticket_categories', policy: 'ticket_categories_read_public', authenticatedOnly: false, viaHelper: 'ticket_category_private_read' },
-    { table: 'ticket_categories', policy: 'ticket_categories_admin_manage', authenticatedOnly: false, withCheck: true, viaHelper: 'ticket_category_private_read' },
     { table: 'notifications', policy: 'notifications_read_own', authenticatedOnly: true },
     { table: 'orders', policy: 'orders_read', authenticatedOnly: true },
 ];
