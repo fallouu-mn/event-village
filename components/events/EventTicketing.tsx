@@ -290,6 +290,7 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                 error={errors.total_quantity}
                 disabled={disabled}
             />
+            <p className="text-sm text-fg-muted sm:col-span-2">Pour vendre des places supplémentaires à un autre prix, créez une nouvelle catégorie.</p>
             {priceLocked && (
                 <p className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-sm font-medium text-warning-fg sm:col-span-2">
                     <Lock size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
