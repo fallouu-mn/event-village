@@ -448,7 +448,10 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'event_id', v_event,
                               'configured', jsonb_array_length(v_zones) > 0,
                               'can_edit', v_block IS NULL, 'edit_block', v_block,
-                              'zones', v_zones, 'categories', v_categories, 'controllers', v_controllers);
+                              'zones', v_zones, 'categories', v_categories, 'controllers', v_controllers,
+                              -- Passe du run 132 : nombre de contrôleurs sans porte servi par le serveur (aucun comptage à l'écran)
+                              'controllers_without_gate', (SELECT count(*) FROM jsonb_array_elements(v_controllers) e
+                                                            WHERE jsonb_array_length(v_zones) > 0 AND e->>'gate_id' IS NULL));
 END;
 $$;
 

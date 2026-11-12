@@ -44,6 +44,8 @@ export interface ZonesConfig {
     }>;
     categories: Array<{ id: string; name: string; is_active: boolean; scan_color: string | null; entry_instruction: string | null }>;
     controllers: Array<{ user_id: string; name: string; gate_id: string | null; gate_change_allowed: boolean }>;
+    /** Nombre de contrôleurs sans porte sur un événement à zones, compté par event_zones_get. */
+    controllers_without_gate: number;
 }
 
 interface DraftGate { key: string; id?: string; name: string; inUse: boolean }
@@ -149,10 +151,8 @@ export function ZonesEditor({ eventId, config, loading, error, refreshing, reloa
     const editable = config.can_edit;
     const dirty = signature(zones) !== signature(baseline);
     const categories = config.categories;
-    // Contrôleurs servis sans porte (controllers[].gate_id nul, F30) : liste lue telle quelle, sa taille ne sert qu'à
-    // accorder le bandeau (singulier, pluriel) ; aucun total du pilotage n'est compté ici
-    const unassigned = config.configured ? config.controllers.filter((c) => !c.gate_id) : [];
-    const withoutGate = unassigned.length;
+    // Nombre de contrôleurs sans porte compté par le serveur (event_zones_get, controllers_without_gate)
+    const withoutGate = config.controllers_without_gate ?? 0;
 
     const updateZone = (key: string, patch: Partial<DraftZone>): void => {
         setZones((list) => list.map((z) => (z.key === key ? { ...z, ...patch } : z)));
