@@ -384,7 +384,20 @@ describe('GET /api/events/popular', () => {
         assert.deepEqual(body.events.map((e) => e.id), (await popular()).map((r) => r.event_id), 'ordre et contenu du top 10');
         const catalog = await (await eventsRoute(new NextRequest(`${BASE_URL}/api/events`))).json() as { events: Array<Record<string, unknown>> };
         assert.ok(catalog.events.length > 0, 'catalogue non vide');
-        assert.deepEqual(Object.keys(body.events[0]).sort(), Object.keys(catalog.events[0]).sort(), 'même format de carte');
+        // Lot 9 bis (R36, contrat 5.25), run 124 : `endFormatted` n'est servi que si l'événement a une date de fin. Comparer la
+        // première carte de chaque liste dépendait donc des événements en tête. On compare la carte d'un même événement présent
+        // dans les deux listes (clés identiques exigées) ; à défaut, les premières cartes hors de cette seule clé facultative.
+        const catalogById = new Map(catalog.events.map((e) => [e.id, e]));
+        const shared = body.events.find((e) => catalogById.has(e.id));
+        if (shared) {
+            assert.deepEqual(Object.keys(shared).sort(), Object.keys(catalogById.get(shared.id) as Record<string, unknown>).sort(), `même format de carte (événement ${String(shared.id)})`);
+        } else {
+            const cardKeys = (e: Record<string, unknown>) => Object.keys(e).filter((k) => k !== 'endFormatted').sort();
+            assert.deepEqual(cardKeys(body.events[0]), cardKeys(catalog.events[0]), 'même format de carte (hors endFormatted, facultative)');
+        }
+        for (const e of [...body.events, ...catalog.events]) {
+            if ('endFormatted' in e) assert.equal(typeof e.endFormatted, 'string', `endFormatted de ${String(e.id)} : texte attendu`);
+        }
     });
 
     test('un visiteur sans session passe le middleware (déjà vrai, garde-fou, rappel A41)', async () => {
