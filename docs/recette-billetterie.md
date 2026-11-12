@@ -13,11 +13,13 @@ Ce document a trois parties : la matrice qui relie chaque exigence du cahier des
 | hors périmètre | 14 |
 | total | 107 |
 
-Sur les 50 lignes « fait », 44 ont toutes leurs preuves lues vertes au run 113. Les 6 autres (§20, §22, §24, §41, §76, §144) ajoutent une preuve du lot 9 bis, marquée « (à prouver) » : elle sera lue au run qui suivra le lot.
+Sur les 50 lignes « fait », 45 ont toutes leurs preuves lues vertes : 40 au run 113, 5 au run 125 (§20, §22, §24, §76, §144). Les 5 autres (§31, §39, §40, §41, §160) ajoutent une preuve du lot 9 ter, ou citent un test adapté au lot 9 ter, marqué « (à prouver) » : il sera lu au run « après » du lot 9 ter.
 
 Le run 113 a tourné le 08/11/2026 sur le commit d255bf3, écrans compris : 244 suites vertes sur 244 et toutes les phases e2e vertes, dont 349 captures sur deux écrans et le parcours `e2e/recette.spec.ts`, 9 actes sur 9. Les 39 cas de capture ignorés sont des vues que leur écran ne prévoit pas. Le run 110 (sha e6c23d1, 212 suites vertes sur 250) est le run « avant » du lot 9 : ses rouges annoncés sont verts au run 113.
 
-Lot 9 bis : la matrice, les écarts, les questions de la section 6 et le cahier ont été relus sur le code de la branche du lot. Aucun run n’a encore lu vertes les preuves nouvelles du lot : elles portent la mention « (à prouver) ». Les essais 1, 7, 9, 14, 27, 42, 43, 46, 52, 53, 55, 58, 60, 66 et 67 sont réécrits ou complétés, et les essais 70 à 76 sont nouveaux.
+Lot 9 bis : la matrice, les écarts, les questions de la section 6 et le cahier ont été relus sur le code de la branche du lot. Les essais 1, 7, 9, 14, 27, 42, 43, 46, 52, 53, 55, 58, 60, 66 et 67 sont réécrits ou complétés, et les essais 70 à 76 sont nouveaux. Le run 125 (sha a8e49e3, branche du lot 9 bis) a lu vertes les preuves du lot : 307 suites vertes sur 307 et toutes les phases e2e vertes (`docs/lot9bis-logs/ci-run125-verify.log`, `docs/lot9bis-logs/ci-run125-e2e.log`). Chaque test cité par les lignes passées au run 125 y est lu `ok`, et son corps n’a pas changé depuis ce commit.
+
+Lot 9 ter : la matrice (§31, §39, §154, §40, §41, §160), les références de code déplacées (A32, A39) et le cahier ont été relus sur le code de la branche du lot. Aucun run n’a encore lu vertes les preuves nouvelles du lot ni les tests qu’il adapte (`tests/parcours/cycle-transitions.test.ts`, `tests/parcours/invitations.test.ts`, `tests/parcours/versements-reprise.test.ts`) : ils portent la mention « (à prouver) ». Les essais 11, 31, 40, 41, 42, 58 et 62 sont réécrits ou complétés, et les essais 77 à 93 sont nouveaux.
 
 Limite connue : l’annexe de l’audit (`docs/audit-evenementiel-annexe-constats.md`) n’a été lue qu’en version condensée à la découverte du lot. Le cahier des charges et chaque test cité ont été lus en entier.
 
@@ -34,7 +36,7 @@ Limite connue : l’annexe de l’audit (`docs/audit-evenementiel-annexe-constat
 La colonne CI dit ce qui a été lu dans les journaux bruts de la branche `ci-results`, et rien d’autre :
 
 - `vert au run N` : chaque test cité y est lu `ok` ;
-- `vert au run N, le reste à prouver au run après` : les tests sans mention sont lus `ok` au run N ; ceux marqués « (à prouver) » viennent du lot 9 bis et attendent le run qui suivra le lot ;
+- `vert au run N, le reste à prouver au run après` : les tests sans mention sont lus `ok` au run N ; ceux marqués « (à prouver) » viennent du lot 9 ter, preuves nouvelles ou tests adaptés au lot, et attendent le run « après » du lot 9 ter ;
 - `sans objet` : aucun test n’est cité.
 
 Une ligne « fait » exige les deux : le corps de chaque test cité est lu, et son résultat aussi.
@@ -67,16 +69,16 @@ Une ligne « fait » exige les deux : le corps de chaque test cité est lu, et s
 | §16 | Recherche par événement et par localisation | fait | `app/api/events/route.ts`, `app/explore/page.tsx`, `lib/events/catalog-client.ts` | `tests/parcours/decouverte-recherche.test.ts:88`, `tests/parcours/decouverte-recherche.test.ts:97`, `tests/parcours/decouverte-recherche.test.ts:111`, `tests/parcours/decouverte-recherche.test.ts:122`, `tests/parcours/decouverte-recherche.test.ts:129`, `tests/parcours/decouverte-recherche-lot9.test.ts:87`, `tests/parcours/decouverte-recherche-lot9.test.ts:98`, `tests/parcours/decouverte-recherche-lot9.test.ts:120`, `tests/parcours/decouverte-ecrans.test.ts:95`, `tests/parcours/decouverte-ecrans.test.ts:293`, `e2e/recette.spec.ts:540` | vert au run 113 | A28 corrigée : le catalogue passe q et city au serveur. Restaurant, salle, produit, table : hors périmètre ; prestataire : par le nom de l’organisateur seulement |
 | §17 | Événements populaires et proches | fait | `app/api/events/popular/route.ts`, `lib/events/popular.service.ts`, `components/events/HomeDiscovery.tsx`, `app/api/profile/city/route.ts`, `M/20261108000003_lot9_decouverte.sql:27` | `tests/parcours/decouverte-populaires.test.ts:157`, `tests/parcours/decouverte-populaires.test.ts:186`, `tests/parcours/decouverte-populaires.test.ts:212`, `tests/parcours/decouverte-populaires.test.ts:233`, `tests/parcours/decouverte-populaires.test.ts:362`, `tests/parcours/decouverte-populaires.test.ts:380`, `tests/parcours/decouverte-cache.test.ts:54`, `tests/parcours/decouverte-cache.test.ts:67`, `tests/parcours/decouverte-cache.test.ts:89`, `tests/parcours/decouverte-ville.test.ts:108`, `tests/parcours/decouverte-ville.test.ts:276`, `tests/parcours/decouverte-ecrans.test.ts:154`, `tests/parcours/decouverte-ecrans.test.ts:317`, `tests/parcours/decouverte-ecrans.test.ts:328`, `tests/parcours/decouverte-ecrans.test.ts:335` | vert au run 113 | A7 corrigée (Q4 tranchée) : Populaires selon les billets vendus sur 7 jours, proches selon la ville du profil ou de l’appareil, sans géolocalisation. Restaurants, offres, plats du jour, salles, prestataires : hors périmètre |
 | §18, §19 | Réservations et commandes du client | hors périmètre | — | — | sans objet | — |
-| §20, §138 | Billet consulté : événement, catégorie, prix, QR, statut | fait | `app/api/tickets/route.ts`, `components/tickets/TicketCard.tsx`, `M/20261109000008_lot9bis_cycle.sql:1789` | `tests/parcours/acces-qr.test.ts:340`, `tests/parcours/confirmation-achat.test.ts:579`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:886`, `tests/parcours/cycle9bis-carte-billet.test.ts:85` (à prouver), `tests/parcours/cycle9bis-carte-billet.test.ts:120` (à prouver), `tests/parcours/cycle9bis-carte-billet.test.ts:139` (à prouver) | vert au run 113, le reste à prouver au run après | Lot 9 bis (R25, R66) : la carte affiche le prix (« Gratuit », « Invitation »), les frais de service et l’état de l’événement ; QR masqué pendant une suspension et après la fermeture du contrôle |
+| §20, §138 | Billet consulté : événement, catégorie, prix, QR, statut | fait | `app/api/tickets/route.ts`, `components/tickets/TicketCard.tsx`, `M/20261109000008_lot9bis_cycle.sql:1789` | `tests/parcours/acces-qr.test.ts:340`, `tests/parcours/confirmation-achat.test.ts:579`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:886`, `tests/parcours/cycle9bis-carte-billet.test.ts:85`, `tests/parcours/cycle9bis-carte-billet.test.ts:120`, `tests/parcours/cycle9bis-carte-billet.test.ts:139` | vert au run 125 | Lot 9 bis (R25, R66) : la carte affiche le prix (« Gratuit », « Invitation »), les frais de service et l’état de l’événement ; QR masqué pendant une suspension et après la fermeture du contrôle |
 | §21, §8 | Historique : tickets, paiements, commissions, parrainage | partiel | `app/tickets/page.tsx`, `app/wallet/page.tsx`, `app/profile/payments/page.tsx`, `app/api/account/payments/route.ts`, `M/20261108000004_lot9_compte.sql:307` | `tests/parcours/finance-commissions.test.ts:475`, `tests/parcours/compte-paiements.test.ts:132`, `tests/parcours/compte-paiements.test.ts:233`, `tests/parcours/compte-paiements.test.ts:461`, `tests/parcours/compte-paiements.test.ts:475` | vert au run 113 | A17 corrigée : Mes paiements. A9 : historique du parrainage incomplet ; commandes et réservations : hors périmètre |
-| §22, §124 | Notifications : SMS, WhatsApp, Email, Push | fait | `lib/notifications/dispatcher.ts`, `lib/notifications/catalog.ts` | `tests/parcours/notif-canaux.test.ts:213`, `tests/parcours/notif-canaux.test.ts:313`, `tests/parcours/notif-canaux.test.ts:494`, `tests/parcours/notif-canaux.test.ts:802`, `tests/parcours/email-regle-envoi.test.ts:114` (à prouver), `tests/parcours/email-regle-envoi.test.ts:308` (à prouver), `tests/parcours/email-regle-envoi.test.ts:527` (à prouver) | vert au run 113, le reste à prouver au run après | WhatsApp hors V1 : écart de la section 4 (A8, Q1 fermée). Lot 9 bis : l’email devient un vrai canal, seulement vers une adresse vérifiée, et tout message indispensable adressé à un compte part aussi par email |
+| §22, §124 | Notifications : SMS, WhatsApp, Email, Push | fait | `lib/notifications/dispatcher.ts`, `lib/notifications/catalog.ts` | `tests/parcours/notif-canaux.test.ts:213`, `tests/parcours/notif-canaux.test.ts:313`, `tests/parcours/notif-canaux.test.ts:494`, `tests/parcours/notif-canaux.test.ts:802`, `tests/parcours/email-regle-envoi.test.ts:114`, `tests/parcours/email-regle-envoi.test.ts:308`, `tests/parcours/email-regle-envoi.test.ts:527` | vert au run 125 | WhatsApp hors V1 : écart de la section 4 (A8, Q1 fermée). Lot 9 bis : l’email devient un vrai canal, seulement vers une adresse vérifiée, et tout message indispensable adressé à un compte part aussi par email |
 
 ### Partie IV : espace partenaire
 
 | § | Exigence | Statut | Code | Test | CI | Manque ou remarque |
 |---|---|---|---|---|---|---|
 | §23, §145 | Inscription avec pièces | fait | `app/api/partner/register/route.ts`, `app/partner/register/page.tsx` | `tests/parcours/documents-inscription.test.ts:54`, `tests/parcours/documents-inscription.test.ts:71`, `tests/parcours/notif-admins.test.ts:208`, `e2e/recette.spec.ts:363` | vert au run 113 | — |
-| §24, §129 | Validation : en attente, validé, refusé, suspendu | fait | `M/20261109000006_lot9bis_argent.sql:772`, `components/admin/PartnerStatusDialog.tsx` | `tests/parcours/notif-pros.test.ts:665`, `tests/parcours/notif-pros.test.ts:679`, `tests/parcours/notif-pros.test.ts:700`, `tests/parcours/notif-pros.test.ts:748`, `tests/parcours/revocation-sessions.test.ts:81`, `e2e/recette.spec.ts:363`, `e2e/recette.spec.ts:1039`, `tests/parcours/fiche-partenaire-9bis.test.ts:125` (à prouver), `tests/parcours/fiche-partenaire-9bis.test.ts:144` (à prouver), `tests/parcours/fiche-partenaire-9bis.test.ts:185` (à prouver) | vert au run 113, le reste à prouver au run après | Lot 9 bis (R6, R55) : « Suspendre » et « Réactiver » sur la fiche du partenaire, avec un motif ; « Refuser » seulement pour un dossier en attente ; /admin/users renvoie vers la fiche |
+| §24, §129 | Validation : en attente, validé, refusé, suspendu | fait | `M/20261109000006_lot9bis_argent.sql:772`, `components/admin/PartnerStatusDialog.tsx` | `tests/parcours/notif-pros.test.ts:665`, `tests/parcours/notif-pros.test.ts:679`, `tests/parcours/notif-pros.test.ts:700`, `tests/parcours/notif-pros.test.ts:748`, `tests/parcours/revocation-sessions.test.ts:81`, `e2e/recette.spec.ts:363`, `e2e/recette.spec.ts:1039`, `tests/parcours/fiche-partenaire-9bis.test.ts:125`, `tests/parcours/fiche-partenaire-9bis.test.ts:144`, `tests/parcours/fiche-partenaire-9bis.test.ts:185` | vert au run 125 | Lot 9 bis (R6, R55) : « Suspendre » et « Réactiver » sur la fiche du partenaire, avec un motif ; « Refuser » seulement pour un dossier en attente ; /admin/users renvoie vers la fiche |
 | §25 à §27 | Essai et packs | hors périmètre | — | — | sans objet | — |
 | §28 | Page professionnelle | hors périmètre | — | — | sans objet | — |
 | §29 | Tableau de bord : ventes, tickets, revenus, paiements, statistiques | partiel | `lib/partner/partner-dashboard.service.ts`, `app/partner/dashboard/page.tsx` | `tests/parcours/finance-rapports.test.ts:106`, `tests/parcours/finance-rapports.test.ts:116`, `tests/parcours/partenaire-lot7.test.ts:750`, `tests/parcours/partenaire-lot7.test.ts:892`, `tests/parcours/pilotage-apercu-ventes.test.ts:89`, `e2e/recette.spec.ts:809` | vert au run 113 | Montants de /partner/dashboard contrôlés par leur type, pas par leur valeur. Réservations, commandes, abonnement : hors périmètre |
@@ -86,7 +88,7 @@ Une ligne « fait » exige les deux : le corps de chaque test cité est lu, et s
 | § | Exigence | Statut | Code | Test | CI | Manque ou remarque |
 |---|---|---|---|---|---|---|
 | §30, §137 | Titre, description, date, heure, lieu, image, programme | fait | `components/events/EventForm.tsx`, `lib/validations/event.ts`, `M/20261106000001_lot8_canaux.sql:637` | `tests/parcours/edition-formulaire.test.ts:378`, `tests/parcours/edition-validation.test.ts:321`, `tests/parcours/edition-validation.test.ts:424`, `tests/parcours/edition-validation.test.ts:496`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:363` | vert au run 113 | — |
-| §31 | Statuts du cycle (ANNULE ajouté pour §41) | fait | `lib/events/event-status.ts`, `M/20261103000005_lot6_billetterie.sql:942` | `tests/parcours/cycle-transitions.test.ts:242`, `tests/parcours/cycle-transitions.test.ts:272`, `tests/parcours/cycle-transitions.test.ts:328`, `tests/parcours/cycle-transitions.test.ts:375`, `tests/parcours/cycle-cron.test.ts:176`, `tests/parcours/cycle-visibilite.test.ts:141`, `tests/parcours/cycle-visibilite.test.ts:216`, `tests/parcours/evenement-404.test.ts:198` | vert au run 113 | — |
+| §31 | Statuts du cycle (ANNULE ajouté pour §41) | fait | `lib/events/event-status.ts`, `M/20261103000005_lot6_billetterie.sql:942` | `tests/parcours/cycle-transitions.test.ts:242` (à prouver), `tests/parcours/cycle-transitions.test.ts:272`, `tests/parcours/cycle-transitions.test.ts:328`, `tests/parcours/cycle-transitions.test.ts:375`, `tests/parcours/cycle-cron.test.ts:176`, `tests/parcours/cycle-visibilite.test.ts:141`, `tests/parcours/cycle-visibilite.test.ts:216`, `tests/parcours/evenement-404.test.ts:198` | vert au run 125, le reste à prouver au run après | Lot 9 ter (R106) : un événement validé jamais publié passe Terminé à sa fin, sans message ni page publique (essai 92) ; la liste des transitions passe à 17 couples |
 | §32 | Programme : artistes, horaires, activités, intervenants | fait | `components/events/EventForm.tsx`, `app/events/[id]/page.tsx` | `tests/parcours/edition-validation.test.ts:458`, `tests/parcours/edition-validation.test.ts:476`, `e2e/recette.spec.ts:363`, `e2e/recette.spec.ts:540` | vert au run 113 | — |
 | §33 | Adresse, accès, parking, contact, règles | partiel | `components/events/EventForm.tsx`, `app/api/events/[id]/route.ts`, `app/events/[id]/page.tsx` | `tests/parcours/edition-formulaire.test.ts:562`, `e2e/recette.spec.ts:540` | vert au run 113 | A15 : adresse, accès, parking et règles assertés à l’écran, contact de l’organisateur non |
 | §34 | Services associés : ticketing, tables, communication, promotion | écarté | `app/api/events/route.ts` | `tests/parcours/edition-services.test.ts:195`, `tests/parcours/edition-services.test.ts:204`, `tests/parcours/edition-services.test.ts:223`, `tests/parcours/edition-services.test.ts:250` | vert au run 113 | Billetterie seule, tâche 5.9 (`docs/lot5-rapport.md:2870`). Origine client à confirmer |
@@ -99,9 +101,9 @@ Une ligne « fait » exige les deux : le corps de chaque test cité est lu, et s
 | §36, §179 | Choisir, commander, payer, recevoir | fait | `lib/payments/checkout.service.ts`, `M/20261106000003_lot8_paiement.sql:84` | `tests/parcours/achat-serveur.test.ts:59`, `tests/parcours/confirmation-achat.test.ts:574`, `tests/parcours/finance-affichage.test.ts:80`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:540` | vert au run 113 | A41 corrigée : un visiteur commence l’achat sans compte, s’inscrit depuis l’achat et revient sur la fiche ; le paiement reste protégé |
 | §37, §79, §111, Annexes C et F | Prix + frais de service : 1 000 / 50 / 15,75 / 34,25 | fait | `M/20261101000003_lot3_moteur.sql:47` | `tests/parcours/finance-moteur.test.ts:73`, `tests/parcours/finance-moteur.test.ts:95`, `tests/parcours/finance-moteur.test.ts:153`, `tests/parcours/finance-affichage.test.ts:87`, `tests/parcours/finance-affichage.test.ts:112` | vert au run 113 | — |
 | §38 | Moyens intégrés : Wave et Orange Money | fait | `lib/validations/payment.ts` | `tests/parcours/paiement-operateur.test.ts:27`, `tests/samirpay-contrat.test.ts:143` | vert au run 113 | Carte retirée : choix du lot 2 (`docs/lot2-rapport.md:28`) |
-| §39, §154 | QR unique, sécurisé, vérifiable, historisé | fait | `lib/security/totp.ts`, `M/20261108000005_lot9_nettoyage.sql:21` | `tests/parcours/acces-qr.test.ts:119`, `tests/parcours/acces-qr.test.ts:131`, `tests/parcours/acces-totp.test.ts:223`, `tests/parcours/acces-totp.test.ts:235`, `tests/parcours/acces-totp.test.ts:257`, `tests/parcours/acces-tracabilite.test.ts:90`, `tests/parcours/acces-tracabilite.test.ts:144` | vert au run 113 | — |
-| §40 | Scan : vert, ou rouge invalide ou déjà utilisé | fait | `M/20261108000005_lot9_nettoyage.sql:21`, `lib/scan/scan-result.ts` | `tests/parcours/acces-tracabilite.test.ts:90`, `tests/parcours/acces-scan.test.ts:108`, `tests/parcours/acces-fenetre.test.ts:95`, `tests/parcours/acces-fenetre.test.ts:116`, `tests/parcours/scan-renvoi-seulement.test.ts:143`, `e2e/terrain.spec.ts:119`, `e2e/terrain.spec.ts:468`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:692` | vert au run 113 | — |
-| §41, §82, §184 | Annulation, remboursement, régularisations financière et de parrainage | fait | `M/20261106000003_lot8_paiement.sql:266`, `M/20261108000001_lot9_securite.sql:21`, `M/20261106000004_lot8_commissions.sql:123`, `components/partner/pilotage/TicketRefundPanel.tsx`, `components/admin/RefundsToRetry.tsx` | `tests/parcours/finance-annulation.test.ts:89`, `tests/parcours/finance-annulation.test.ts:140`, `tests/parcours/finance-remboursement-billet.test.ts:155`, `tests/parcours/finance-remboursement-billet.test.ts:231`, `tests/parcours/finance-commissions.test.ts:346`, `tests/parcours/finance-commissions.test.ts:375`, `tests/parcours/finance-commissions.test.ts:401`, `tests/parcours/commissions-plafond.test.ts:226`, `tests/parcours/commissions-plafond.test.ts:251`, `tests/parcours/double-paiement.test.ts:258`, `tests/parcours/admin-remboursements.test.ts:360`, `tests/parcours/admin-remboursements.test.ts:478`, `tests/parcours/admin-remboursements.test.ts:492`, `tests/parcours/pilotage-remboursement-billet.test.ts:235`, `tests/parcours/pilotage-remboursement-billet.test.ts:356`, `tests/parcours/pilotage-remboursement-billet.test.ts:369`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:809`, `e2e/recette.spec.ts:886`, `e2e/recette.spec.ts:1039`, `tests/parcours/versements-reprise.test.ts:326` (à prouver), `tests/parcours/versements-reprise.test.ts:473` (à prouver) | vert au run 113, le reste à prouver au run après | Lot 9 bis (R1, R9, R10) : tout versement resté à envoyer est repris, la liste « Versements à reprendre » remplace « Remboursements à reprendre », avec « Renvoyer » et « Marquer versé » justifiés |
+| §39, §154 | QR unique, sécurisé, vérifiable, historisé | fait | `lib/security/totp.ts`, `M/20261110000009_lot9ter_zones.sql:900` | `tests/parcours/acces-qr.test.ts:119`, `tests/parcours/acces-qr.test.ts:131`, `tests/parcours/acces-totp.test.ts:223`, `tests/parcours/acces-totp.test.ts:235`, `tests/parcours/acces-totp.test.ts:257`, `tests/parcours/acces-tracabilite.test.ts:90`, `tests/parcours/acces-tracabilite.test.ts:144`, `tests/parcours/zones-scan.test.ts:194` (à prouver), `tests/parcours/zones-scan.test.ts:274` (à prouver), `tests/parcours/invites-validation.test.ts:101` (à prouver), `tests/parcours/invites-validation.test.ts:124` (à prouver), `tests/parcours/course-invites.test.ts:128` (à prouver) | vert au run 125, le reste à prouver au run après | Lot 9 ter : chaque passage est tracé avec la porte, la zone et le mode « liste des invités » ; un billet n’entre qu’une fois, même scanné par trois contrôleurs à la fois ou validé par la liste puis scanné |
+| §40 | Scan : vert, ou rouge invalide ou déjà utilisé | fait | `M/20261110000009_lot9ter_zones.sql:900`, `lib/scan/scan-result.ts`, `components/scan/CombatFlashOverlay.tsx` | `tests/parcours/acces-tracabilite.test.ts:90`, `tests/parcours/acces-scan.test.ts:108`, `tests/parcours/acces-fenetre.test.ts:95`, `tests/parcours/acces-fenetre.test.ts:116`, `tests/parcours/scan-renvoi-seulement.test.ts:143`, `e2e/terrain.spec.ts:119`, `e2e/terrain.spec.ts:468`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:692`, `tests/parcours/zones-scan.test.ts:194` (à prouver), `tests/parcours/zones-scan.test.ts:226` (à prouver), `tests/parcours/zones-scan.test.ts:452` (à prouver), `tests/parcours/zones-ecran.test.ts:153` (à prouver), `tests/parcours/zones-ecran.test.ts:218` (à prouver), `tests/parcours/invites-validation.test.ts:124` (à prouver), `e2e/recette.spec.ts:1191` (à prouver) | vert au run 125, le reste à prouver au run après | Lot 9 ter (décision) : écran orange en plus pour la mauvaise zone et « Pas encore entré » ; « Déjà utilisé à {heure}, porte {x} » ; contraste d’au moins 7:1 mesuré sur les jetons de couleur et sur chaque texte du plein écran des captures |
+| §41, §82, §184 | Annulation, remboursement, régularisations financière et de parrainage | fait | `M/20261106000003_lot8_paiement.sql:266`, `M/20261108000001_lot9_securite.sql:21`, `M/20261106000004_lot8_commissions.sql:123`, `components/partner/pilotage/TicketRefundPanel.tsx`, `components/admin/RefundsToRetry.tsx` | `tests/parcours/finance-annulation.test.ts:89`, `tests/parcours/finance-annulation.test.ts:140`, `tests/parcours/finance-remboursement-billet.test.ts:155`, `tests/parcours/finance-remboursement-billet.test.ts:231`, `tests/parcours/finance-commissions.test.ts:346`, `tests/parcours/finance-commissions.test.ts:375`, `tests/parcours/finance-commissions.test.ts:401`, `tests/parcours/commissions-plafond.test.ts:226`, `tests/parcours/commissions-plafond.test.ts:251`, `tests/parcours/double-paiement.test.ts:258`, `tests/parcours/admin-remboursements.test.ts:360`, `tests/parcours/admin-remboursements.test.ts:478`, `tests/parcours/admin-remboursements.test.ts:492`, `tests/parcours/pilotage-remboursement-billet.test.ts:235`, `tests/parcours/pilotage-remboursement-billet.test.ts:356`, `tests/parcours/pilotage-remboursement-billet.test.ts:369`, `e2e/fumee.spec.ts:99`, `e2e/recette.spec.ts:809`, `e2e/recette.spec.ts:886`, `e2e/recette.spec.ts:1039`, `tests/parcours/versements-reprise.test.ts:326` (à prouver), `tests/parcours/versements-reprise.test.ts:473` (à prouver) | vert au run 125, le reste à prouver au run après | Lot 9 bis (R1, R9, R10) : tout versement resté à envoyer est repris, la liste « Versements à reprendre » remplace « Remboursements à reprendre », avec « Renvoyer » et « Marquer versé » justifiés. Lot 9 ter (0.3) : « Constater non versé » s’ajoute à la liste (essai 84) ; les deux preuves de versements-reprise, adaptées à ce nouveau champ, restent à prouver |
 
 ### Parties VII à IX : salles, tables, commandes
 
@@ -114,11 +116,11 @@ Une ligne « fait » exige les deux : le corps de chaque test cité est lu, et s
 | § | Exigence | Statut | Code | Test | CI | Manque ou remarque |
 |---|---|---|---|---|---|---|
 | §75 | Transaction, montant, client, partenaire, frais, agrégateur, revenu, statut | fait | `M/20261105000006_lot7_client.sql:24` | `tests/parcours/finance-moteur.test.ts:153`, `tests/parcours/finance-moteur.test.ts:191` | vert au run 113 | — |
-| §76 | Hors plateforme hors du solde Event Village | fait | `M/20261101000003_lot3_moteur.sql:151`, `components/partner/pilotage/CashRefundsList.tsx` | `tests/parcours/finance-hors-plateforme.test.ts:142`, `tests/parcours/finance-hors-plateforme.test.ts:223`, `tests/parcours/finance-retraits.test.ts:215`, `tests/parcours/lot9bis-guichet-annulation.test.ts:167` (à prouver), `tests/parcours/lot9bis-guichet-annulation.test.ts:199` (à prouver) | vert au run 113, le reste à prouver au run après | Lot 9 bis (R20) : à l’annulation, les ventes au guichet ne sont jamais remboursées par la plateforme ; la liste « Espèces à rembourser par l’organisateur » se coche « Remboursé », avec journal |
+| §76 | Hors plateforme hors du solde Event Village | fait | `M/20261101000003_lot3_moteur.sql:151`, `components/partner/pilotage/CashRefundsList.tsx` | `tests/parcours/finance-hors-plateforme.test.ts:142`, `tests/parcours/finance-hors-plateforme.test.ts:223`, `tests/parcours/finance-retraits.test.ts:215`, `tests/parcours/lot9bis-guichet-annulation.test.ts:167`, `tests/parcours/lot9bis-guichet-annulation.test.ts:199` | vert au run 125 | Lot 9 bis (R20) : à l’annulation, les ventes au guichet ne sont jamais remboursées par la plateforme ; la liste « Espèces à rembourser par l’organisateur » se coche « Remboursé », avec journal |
 | §77 | Frais agrégateur configurables par moyen de paiement | fait | `M/20261101000002_lot3_reglages.sql:64` | `tests/parcours/finance-moteur.test.ts:119`, `tests/parcours/finance-reglages.test.ts:91` | vert au run 113 | — |
 | §78, Annexe F | Service direct : agrégateur à la charge d’Event Village | fait | `M/20261101000003_lot3_moteur.sql:47` | `tests/parcours/finance-moteur.test.ts:136` | vert au run 113 | — |
 | §81 | Soldes | fait | `app/api/finance/balance/route.ts` | `tests/parcours/finance-retraits.test.ts:215`, `tests/parcours/finance-retraits.test.ts:242`, `tests/parcours/finance-retraits.test.ts:522` | vert au run 113 | — |
-| §83, §118 | Retraits : Mobile Money, banque, 1 %, seuil 5 000 | partiel | `M/20261101000014_lot4_correctif_retraits_concurrents.sql:12`, `app/partner/finance/page.tsx` | `tests/parcours/finance-retraits.test.ts:301`, `tests/parcours/finance-retraits.test.ts:316`, `tests/parcours/finance-retraits.test.ts:325`, `e2e/recette.spec.ts:809`, `tests/parcours/lot9bis-retrait-devis.test.ts:98` (à prouver), `tests/parcours/lot9bis-retrait-devis.test.ts:122` (à prouver) | vert au run 113, le reste à prouver au run après | A10 : virement non traité, réglage fermé par défaut. Lot 9 bis (R62) : minimum, frais et montant net affichés avant l’envoi du code, aucun code sous le minimum |
+| §83, §118 | Retraits : Mobile Money, banque, 1 %, seuil 5 000 | partiel | `M/20261101000014_lot4_correctif_retraits_concurrents.sql:12`, `app/partner/finance/page.tsx` | `tests/parcours/finance-retraits.test.ts:301`, `tests/parcours/finance-retraits.test.ts:316`, `tests/parcours/finance-retraits.test.ts:325`, `e2e/recette.spec.ts:809`, `tests/parcours/lot9bis-retrait-devis.test.ts:98`, `tests/parcours/lot9bis-retrait-devis.test.ts:122` | vert au run 125 | A10 : virement non traité, réglage fermé par défaut. Lot 9 bis (R62) : minimum, frais et montant net affichés avant l’envoi du code, aucun code sous le minimum |
 | §84 | Rapprochement : paiements, frais, agrégateurs, revenus, commissions, retraits | partiel | `app/api/admin/finance/reconciliation/route.ts`, `lib/admin/admin.service.ts`, `app/admin/finance/page.tsx` | `tests/parcours/finance-hors-plateforme.test.ts:167`, `tests/parcours/paiement-reconciliation.test.ts:47`, `tests/parcours/paiement-reconciliation.test.ts:64` | vert au run 113 | Le test vérifie quelles lignes figurent, pas les montants ni les totaux de commissions et de retraits |
 
 ### Partie XI : parrainage, part billetterie
@@ -168,20 +170,20 @@ Une ligne « fait » exige les deux : le corps de chaque test cité est lu, et s
 | §135, §137 | Données client et événement | fait | `M/0001_initial_schema.sql:214`, `M/0001_initial_schema.sql:218` | `tests/parcours/inscription-numero-dabord.test.ts:194`, `tests/parcours/edition-formulaire.test.ts:378` | vert au run 113 | — |
 | §136, §139 à §141 | Données partenaire, réservation, produit, commande | hors périmètre | — | — | sans objet | — |
 | §142 | Données financières : du montant brut au revenu final | partiel | `M/20261101000003_lot3_moteur.sql:47` | `tests/parcours/finance-moteur.test.ts:153`, `tests/parcours/finance-commissions.test.ts:256` | vert au run 113 | « Revenu final » (net moins commissions) calculé seulement en total, « Revenu net après parrainage » des finances de l’administration (`lib/admin/admin.service.ts:244`, `app/admin/finance/page.tsx:234`), jamais par paiement ni stocké |
-| §144 | API : agrégateur, Mobile Money, SMS, email, WhatsApp | fait | `lib/samirpay/http-client.ts`, `lib/notifications/dispatcher.ts` | `tests/samirpay-contrat.test.ts:143`, `tests/parcours/notif-canaux.test.ts:313`, `tests/parcours/notif-canaux.test.ts:802`, `tests/parcours/email-regle-envoi.test.ts:527` (à prouver) | vert au run 113, le reste à prouver au run après | WhatsApp hors V1 : écart de la section 4 (A8, Q1 fermée). Lot 9 bis : client SamirPay aligné sur la version 1.2 de son API ; email envoyé seulement vers une adresse vérifiée |
+| §144 | API : agrégateur, Mobile Money, SMS, email, WhatsApp | fait | `lib/samirpay/http-client.ts`, `lib/notifications/dispatcher.ts` | `tests/samirpay-contrat.test.ts:143`, `tests/parcours/notif-canaux.test.ts:313`, `tests/parcours/notif-canaux.test.ts:802`, `tests/parcours/email-regle-envoi.test.ts:527` | vert au run 125 | WhatsApp hors V1 : écart de la section 4 (A8, Q1 fermée). Lot 9 bis : client SamirPay aligné sur la version 1.2 de son API ; email envoyé seulement vers une adresse vérifiée |
 | §146, §147 | Automatisation des réservations et des commandes | hors périmètre | — | — | sans objet | — |
 | §148 | Paiements : confirmation, frais, revenu, remboursement, retrait | fait | `supabase/ops/schedule-crons.sql`, `M/20261106000003_lot8_paiement.sql:84` | `tests/parcours/paiement-webhook.test.ts:52`, `tests/parcours/paiement-webhook.test.ts:101`, `tests/parcours/paiement-reconciliation.test.ts:47`, `tests/parcours/paiement-reconciliation.test.ts:64`, `tests/parcours/finance-moteur.test.ts:153`, `tests/parcours/finance-retraits.test.ts:325` | vert au run 113 | — |
 | §149 | Chaîne du parrainage | partiel | `M/20261106000004_lot8_commissions.sql:37` | `tests/parcours/finance-commissions.test.ts:256`, `tests/parcours/finance-commissions.test.ts:315` | vert au run 113 | A5 : complète pour un filleul client, absente pour un prestataire |
 | §150 | Confirmation, rappel, expiration, notification | fait | `lib/notifications/reminders.ts`, `lib/notifications/dispatcher.ts` | `tests/parcours/confirmation-achat.test.ts:574`, `tests/parcours/notif-rappels.test.ts:320`, `tests/parcours/notif-rappels-annulation.test.ts:310`, `tests/parcours/dette-transferts.test.ts:552`, `e2e/fumee.spec.ts:99` | vert au run 113 | Campagne : hors périmètre |
 | §151 | Mot de passe, OTP, récupération | partiel | `app/forgot-password/page.tsx`, `app/reset-password/page.tsx`, `lib/auth/otp-store.ts` | `tests/parcours/otp-serveur.test.ts:68`, `tests/parcours/otp-objet.test.ts:77`, `tests/parcours/invitation-identite.test.ts:95` | vert au run 113 | Récupération : le code et le compte visé sont testés, le changement final du mot de passe (Supabase) ne l’est pas |
 | §152 | Droits minimaux | partiel | `lib/admin/admin-auth.ts`, `middleware.ts` | `tests/security/r1-inscription-roles.test.ts:31`, `tests/security/r8-controleur-lectures.test.ts:14`, `tests/schema/rls-toutes-tables.test.ts:12`, `tests/schema/fonctions-privileges.test.ts:86`, `tests/schema/fonctions-privileges.test.ts:124`, `tests/parcours/admin-audit-lot9.test.ts:77` | vert au run 113 | A24 corrigée. A30 et A31 : hors périmètre, derrière interrupteur |
-| §153 | OTP pour les opérations sensibles | partiel | `app/api/withdrawals/otp/route.ts`, `lib/auth/password-confirm.ts`, `components/auth/PasswordConfirmDialog.tsx` | `tests/parcours/otp-objet.test.ts:77`, `tests/parcours/otp-objet.test.ts:130`, `tests/parcours/finance-retraits.test.ts:325`, `e2e/recette.spec.ts:809`, `tests/parcours/mot-de-passe-recent.test.ts:148` (à prouver), `tests/parcours/mot-de-passe-recent.test.ts:175` (à prouver), `tests/parcours/mot-de-passe-recent.test.ts:200` (à prouver) | vert au run 113, le reste à prouver au run après | Lot 9 bis (R57, décision) : transfert d’un billet, changement de numéro et changement d’email exigent un mot de passe saisi depuis moins de 10 minutes. Le serveur l’exige partout, mais l’écran du transfert (`components/tickets/TransferModal.tsx`) n’ouvre pas encore la boîte « Confirmez votre mot de passe » : passé 10 minutes, il affiche le refus sans champ pour le mot de passe (essai 27) |
+| §153 | OTP pour les opérations sensibles | partiel | `app/api/withdrawals/otp/route.ts`, `lib/auth/password-confirm.ts`, `components/auth/PasswordConfirmDialog.tsx` | `tests/parcours/otp-objet.test.ts:77`, `tests/parcours/otp-objet.test.ts:130`, `tests/parcours/finance-retraits.test.ts:325`, `e2e/recette.spec.ts:809`, `tests/parcours/mot-de-passe-recent.test.ts:148`, `tests/parcours/mot-de-passe-recent.test.ts:175`, `tests/parcours/mot-de-passe-recent.test.ts:200` | vert au run 125 | Lot 9 bis (R57, décision) : transfert d’un billet, changement de numéro et changement d’email exigent un mot de passe saisi depuis moins de 10 minutes. Le serveur l’exige partout, mais l’écran du transfert (`components/tickets/TransferModal.tsx`) n’ouvre pas encore la boîte « Confirmez votre mot de passe » : passé 10 minutes, il affiche le refus sans champ pour le mot de passe (essai 27) |
 | §155 | Protection des données | fait | `middleware.ts`, `lib/supabase/server.ts` | `tests/security/r5-lectures-anon.test.ts:12`, `tests/security/r8-controleur-lectures.test.ts:42`, `tests/security/r18-partenaires-public.test.ts:61`, `tests/parcours/notif-admin.test.ts:293` | vert au run 113 | A30 : hors périmètre, service fermé |
 | §156 | Traçabilité | fait | `M/20261105000001_lot7_reglages.sql:103`, `M/20261108000005_lot9_nettoyage.sql:21` | `tests/parcours/cycle-transitions.test.ts:579`, `tests/parcours/acces-tracabilite.test.ts:144`, `tests/parcours/finance-reglages.test.ts:159`, `tests/parcours/pilotage-equipe-caisse.test.ts:94` | vert au run 113 | — |
 | §157 | Statistiques client | partiel | `app/tickets/page.tsx`, `app/wallet/page.tsx` | `tests/parcours/finance-commissions.test.ts:475` | vert au run 113 | A18 |
 | §158 | Statistiques partenaire | partiel | `app/partner/stats/page.tsx`, `components/partner/pilotage/OverviewTab.tsx` | `tests/parcours/pilotage-apercu-ventes.test.ts:76`, `tests/parcours/pilotage-apercu-ventes.test.ts:89` | vert au run 113 | Pilotage assertés par événement ; /partner/stats sans assertion de chiffres |
 | §159 | Statistiques des commandes | hors périmètre | — | — | sans objet | — |
-| §160 | Tickets, participants, taux de présence | fait | `M/20261102000005_lot5_pilotage.sql:375`, `components/partner/pilotage/OverviewTab.tsx` | `tests/parcours/pilotage-invariant.test.ts:67`, `tests/parcours/pilotage-invariant.test.ts:100`, `tests/parcours/pilotage-entrees.test.ts:68`, `tests/parcours/pilotage-apercu-ventes.test.ts:98`, `tests/parcours/invitations.test.ts:579`, `tests/parcours/invitations.test.ts:591`, `e2e/recette.spec.ts:809` | vert au run 113 | — |
+| §160 | Tickets, participants, taux de présence | fait | `M/20261102000005_lot5_pilotage.sql:375`, `M/20261110000010_lot9ter_pilotage.sql:486`, `M/20261110000010_lot9ter_pilotage.sql:753`, `components/partner/pilotage/OverviewTab.tsx`, `components/partner/pilotage/EntriesTab.tsx` | `tests/parcours/pilotage-invariant.test.ts:67`, `tests/parcours/pilotage-invariant.test.ts:100`, `tests/parcours/pilotage-entrees.test.ts:68`, `tests/parcours/pilotage-apercu-ventes.test.ts:98`, `tests/parcours/invitations.test.ts:579`, `tests/parcours/invitations.test.ts:591` (à prouver), `e2e/recette.spec.ts:809`, `tests/parcours/pilotage-tableau-entrees.test.ts:209` (à prouver), `tests/parcours/pilotage-tableau-entrees.test.ts:317` (à prouver), `tests/parcours/pilotage-cloture-entrees.test.ts:195` (à prouver), `tests/parcours/pilotage-cloture-entrees.test.ts:213` (à prouver), `tests/parcours/pilotage-cloture-entrees.test.ts:264` (à prouver), `e2e/recette.spec.ts:1191` (à prouver) | vert au run 125, le reste à prouver au run après | Lot 9 ter : entrés et attendus par zone, porte, catégorie et origine ; rapport de clôture et export alignés (colonne « Canal » devenue « Origine ») |
 | §161 | Finance : volume, frais, revenus, commissions, retraits | partiel | `M/20261101000008_lot3_rapports.sql:77`, `app/api/admin/metrics/route.ts` | `tests/parcours/finance-hors-plateforme.test.ts:132` | vert au run 113 | Volume et revenu net assertés ; frais, commissions et retraits non |
 | §162 | Parrainage : filleuls, apports, commissions, ROI | partiel | `app/api/admin/metrics/route.ts` | — | sans objet | A9 : total des commissions et nombre d’ambassadeurs seulement, sans test |
 | §163 | Tableau de bord global | partiel | `app/admin/dashboard/page.tsx` | `tests/parcours/finance-hors-plateforme.test.ts:132` | vert au run 113 | Comme §127 ; parrainage réduit (A9) |
@@ -266,14 +268,14 @@ Gravité : **Élevée** trompe un utilisateur, ou bloque une opération d’arge
 | A29 | Moyenne | §131 | L’alerte d’un remboursement bloqué pour solde insuffisant parlait d’un bénéficiaire incomplet | corrigée | `fix(8.3-A29)` f2334de ; `lib/notifications/catalog.ts` | `tests/parcours/notif-modeles.test.ts:504` | vert au run 113 |
 | A30 | Élevée | §152, §155 | GET partner/halls/[id] sans contrôle de rôle ni de propriétaire : réservations et téléphone du partenaire lisibles par tout compte connecté quand le service est ouvert. Hors périmètre, service fermé aujourd’hui | listée | `app/api/partner/halls/[id]/route.ts` | — | sans objet |
 | A31 | Moyenne | §152 | GET partner/products/[id] sans contrôle de propriétaire. Hors périmètre, service fermé | listée | `app/api/partner/products/[id]/route.ts` | — | sans objet |
-| A32 | Faible | qualité | Panne présentée comme une absence, non journalisée : getEventById, getHallById, getProductById, GET orders/[id]. Désormais 500 journalisé, 404 seulement pour un objet absent | corrigée | `fix(9.3-A32)` 3796cdeb ; `lib/events/event.service.ts:291`, `lib/halls/hall.service.ts:125`, `lib/products/product.service.ts:165` | `tests/parcours/pannes-absences.test.ts:120`, `tests/parcours/pannes-absences.test.ts:129`, `tests/parcours/pannes-absences.test.ts:133`, `tests/parcours/pannes-absences.test.ts:169` | vert au run 113 |
+| A32 | Faible | qualité | Panne présentée comme une absence, non journalisée : getEventById, getHallById, getProductById, GET orders/[id]. Désormais 500 journalisé, 404 seulement pour un objet absent | corrigée | `fix(9.3-A32)` 3796cdeb ; `lib/events/event.service.ts:318`, `lib/halls/hall.service.ts:125`, `lib/products/product.service.ts:165` | `tests/parcours/pannes-absences.test.ts:120`, `tests/parcours/pannes-absences.test.ts:129`, `tests/parcours/pannes-absences.test.ts:133`, `tests/parcours/pannes-absences.test.ts:169` | vert au run 113 |
 | A33 | Moyenne | qualité | Écritures ignorées : admin/permissions POST, partner/register. Une transaction, l’échec se voit, le compte créé est retiré | corrigée | `fix(9.3-A33)` 84da7d5a ; `app/api/admin/permissions/route.ts`, `app/api/partner/register/route.ts`, `M/20261108000001_lot9_securite.sql:579`, `M/20261108000001_lot9_securite.sql:637` | `tests/parcours/ecritures-ignorees.test.ts:120`, `tests/parcours/ecritures-ignorees.test.ts:134`, `tests/parcours/ecritures-ignorees.test.ts:299`, `tests/parcours/ecritures-ignorees.test.ts:319` | vert au run 113 |
 | A34 | Moyenne | qualité | Lectures ignorées : admin/communications POST, admin/pricing POST, send-otp, verify-otp, admin/users PATCH. Une panne n’est plus prise pour un résultat vide | corrigée | `fix(9.3-A34)` cca809dc ; `app/api/admin/communications/route.ts`, `app/api/admin/pricing/route.ts`, `app/api/auth/send-otp/route.ts`, `app/api/auth/verify-otp/route.ts`, `app/api/admin/users/route.ts` | `tests/parcours/lectures-ignorees.test.ts:67`, `tests/parcours/lectures-ignorees.test.ts:114`, `tests/parcours/lectures-ignorees.test.ts:161`, `tests/parcours/lectures-ignorees.test.ts:198`, `tests/parcours/lectures-ignorees.test.ts:253` | vert au run 113 |
 | A35 | Faible | 8.2 i | Un refus du fournisseur SMS arrivait à l’écran : send-otp recopiait `sendResult.error`. Texte fixe, détail au journal | corrigée | `test(8.3-A35)` 02e331f, `fix(8.3-A35)` 15dc7d0 ; `app/api/auth/send-otp/route.ts` | `tests/parcours/otp-serveur.test.ts:77` | vert au run 113 |
 | A36 | Faible | 8.2 i | Le refus de rembourser un billet utilisé montrait le statut technique : `ticket_refund_request` l’écrit, migration gelée, la route met un texte fixe | corrigée | `test(8.3-A36)` ef3e9fa, `fix(8.3-A36)` ffc0167 ; `app/api/partner/events/[id]/tickets/[ticketId]/refund/route.ts`, `M/20261101000005_lot3_remboursements.sql:85` | `tests/parcours/pilotage-remboursement-billet.test.ts:266` | vert au run 113 |
 | A37 | Faible | design | Effet de 8.2 s : les barres fixes en bas des pages salles, menu et tables passent sous la navigation mobile. Hors périmètre, derrière interrupteurs | listée | `app/halls/[id]/page.tsx:347`, `app/restaurants/[id]/menu/page.tsx:395`, `app/restaurants/[id]/tables/page.tsx:343` | — | sans objet |
 | A38 | Faible | §134 | La colonne Utilisateur montrait un identifiant tronqué. Jointure côté serveur, nom et rôle courant à l’écran | corrigée | `fix(9.3-A38s)` 9c63b516, `fix(9.3-A38e)` ee9b0966 ; `app/api/admin/audit/route.ts:34`, `app/admin/audit/page.tsx:228` | `tests/parcours/admin-audit-lot9.test.ts:136`, `tests/parcours/admin-audit-lot9.test.ts:141`, `tests/parcours/admin-audit-lot9.test.ts:150`, `tests/parcours/admin-audit-lot9.test.ts:207` | vert au run 113 |
-| A39 | Moyenne | §158 | Le PDF de clôture portait « Document comptable certifie » et « Certificat de cloture ». Intitulé « Rapport de clôture », plus aucune mention de certification | corrigée | `fix(9.3-A39)` 62be3f26 ; `lib/partner/partner-dashboard.service.ts:918`, `lib/partner/partner-dashboard.service.ts:1072` | `tests/parcours/cloture-vocabulaire.test.ts:61`, `tests/parcours/cloture-vocabulaire.test.ts:66`, `tests/parcours/cloture-vocabulaire.test.ts:74` | vert au run 113 |
+| A39 | Moyenne | §158 | Le PDF de clôture portait « Document comptable certifie » et « Certificat de cloture ». Intitulé « Rapport de clôture », plus aucune mention de certification | corrigée | `fix(9.3-A39)` 62be3f26 ; `lib/partner/partner-dashboard.service.ts:891`, `lib/partner/partner-dashboard.service.ts:1026` | `tests/parcours/cloture-vocabulaire.test.ts:61`, `tests/parcours/cloture-vocabulaire.test.ts:66`, `tests/parcours/cloture-vocabulaire.test.ts:74` | vert au run 113 |
 | A40 | Faible | outil d’essai | La route de développement ignorait le statut du webhook : un webhook en 500 rendait ok:true. Désormais 502 et message clair | corrigée | `fix(9.3-A40)` a118e370 ; `app/api/dev/samirpay/[action]/route.dev.ts:54`, `components/dev/FakePaymentPanel.tsx` | `tests/schema/essai-route-dev.test.ts:70` | vert au run 113 |
 | A41 | Élevée | §36, §179 | Depuis le lot 3, un visiteur sans compte ne pouvait pas commencer un achat : le middleware refusait le devis public, la fiche affichait « Total indisponible ». Trouvée par le parcours de recette au run 99. Le devis passe sans session, le paiement reste protégé | corrigée | `test(8.3-A41)` 697f9ec, `fix(8.3-A41)` c532ca7 ; `middleware.ts:38` | `tests/parcours/finance-affichage.test.ts:80`, `e2e/recette.spec.ts:540` | vert au run 113 |
 | PO3 | Moyenne | concurrence | Remboursement d’un billet sans paiement : billet avant catégorie, cycle possible avec l’annulation. Ordre unique rétabli | corrigée | `fix(9.3-PO3)` bf96b1d3 ; `M/20261108000001_lot9_securite.sql:21` | `tests/parcours/course-verrous-lot9.test.ts:186`, `tests/parcours/course-verrous-lot9.test.ts:219`, `tests/parcours/course-verrous-lot9.test.ts:444` | vert au run 113 |
@@ -296,7 +298,7 @@ Toutes les questions sont fermées. Q4 l’a été par la consigne du lot 9 ; Q1
 
 ## 7. Cahier de recette manuelle
 
-Ce cahier se déroule sur event-village-dev, à l’ordinateur et au téléphone. Il ne demande aucune connaissance technique. Comptez environ 4 h, sans les attentes des essais 50 et 72.
+Ce cahier se déroule sur event-village-dev, à l’ordinateur et au téléphone. Il ne demande aucune connaissance technique. Comptez environ 6 h, sans les attentes des essais 50, 72, 79 et 92.
 
 Avant de commencer, suivez le guide `docs/essai-local.md`. Il explique comment lancer l’application, créer les comptes de test, ouvrir l’application sur le téléphone, et lire les SMS simulés.
 
@@ -304,13 +306,14 @@ Pour chaque essai, suivez les étapes, comparez avec le résultat attendu, puis 
 
 Quelques essais demandent une condition particulière :
 
-- Les essais 19, 42, 58 et 75 se font en mode simulé.
+- Les essais 19, 42, 58, 75, 83 et 84 se font en mode simulé.
 - Les essais 25, 26 et 32 se font en mode B, avec le tunnel (sections 9 et 11 du guide).
 - L’essai 48 suit la section 8.7 du guide. L’essai 50 se termine 7 jours plus tard.
 - Les essais 62 à 69 suivent les sections 8.8 bis et 8.12 à 8.15 du guide. L’essai 62 se fait avant l’annulation de la section 8.10, l’essai 67 après tous les autres essais de `client2`.
 - L’essai 46 se prépare avant de confirmer l’annulation de l’essai 44 : les ventes au guichet doivent exister avant.
 - Les essais 70 à 76 couvrent le lot 9 bis. L’essai 72 demande un événement sans date de fin et se termine 12 h après son début. L’essai 74 se fait en même temps que l’essai 67.
-- L’essai 60 se fait en dernier, car il repasse en réel.
+- Les essais 77 à 93 couvrent le lot 9 ter. Les essais 77, 78, 81 et 82 se suivent sur le même événement du jour. L’essai 80 se fait avec une commande, l’essai 87 après l’essai 50, l’essai 93 avec le retrait retardé de l’essai 75. L’essai 92 se termine 1 h 30 après sa préparation.
+- L’essai 60 se fait en dernier, car il repasse en réel. L’essai 85 se fait avec lui, en réel.
 
 ### A. Préparation
 
@@ -498,14 +501,14 @@ Remarque : ______________________________
 
 **Préparation :** Compte `partenaire`. Une image pour l’affiche.
 
-1. Touchez « Créer un événement ». Remplissez titre, description, dates, lieu, ville, capacité et affiche.
+1. Touchez « Créer un événement ». Remplissez titre, description, dates, lieu, capacité et affiche, et choisissez la ville dans la liste « Ville ».
 2. Ajoutez une ligne de programme.
-3. Remplissez adresse, accès, stationnement, contact et règles.
+3. Remplissez adresse, accès, stationnement, contact et règles. Le téléphone de contact est un numéro sénégalais, par exemple 77 123 45 67.
 4. Créez 4 catégories : Standard (en ligne et guichet), Sur place (guichet seulement), Invitations (aucun canal), Découverte à 0 F (en ligne).
-5. Lisez l’aide sous les deux cases « Vendue en ligne » et « Vendue au guichet ».
+5. Lisez l’aide sous les deux cases « Vendue en ligne » et « Vendue au guichet », puis celle de la quantité.
 6. Touchez « Enregistrer le brouillon ».
 
-**Résultat attendu :** Les aides sont claires (« Sur place uniquement », « Invitations seulement »). L’enregistrement réussit sans message d’erreur.
+**Résultat attendu :** Les aides sont claires (« Sur place uniquement », « Invitations seulement »). Sous chaque quantité : « Pour vendre des places supplémentaires à un autre prix, créez une nouvelle catégorie. ». L’enregistrement réussit sans message d’erreur.
 
 - [ ] OK
 - [ ] Anomalie
@@ -841,8 +844,9 @@ Remarque : ______________________________
 **Préparation :** Suite de l’essai 30.
 
 1. Présentez le même QR.
+2. Attendez 30 secondes et présentez-le encore.
 
-**Résultat attendu :** Le message dit « déjà utilisé ». La vibration est différente de celle de l’essai 30.
+**Résultat attendu :** Écran rouge « Billet déjà utilisé ». À l’étape 1, la ligne dit « Déjà validé par vous à {heure} » : vous l’avez validé il y a moins de 30 secondes. À l’étape 2, elle dit « Déjà utilisé à {heure} », suivie du point d’entrée du contrôleur s’il en a un. La vibration, trois impulsions, est différente de celle de l’essai 30, et aucun son n’est émis.
 
 - [ ] OK
 - [ ] Anomalie
@@ -992,10 +996,10 @@ Remarque : ______________________________
 
 **Préparation :** Onglet Clôture du pilotage.
 
-1. Touchez « Exporter les participants ».
+1. Sans cocher « Inclure le téléphone et l’email des participants », touchez « Exporter les participants ».
 2. Ouvrez le fichier dans Excel.
 
-**Résultat attendu :** Le fichier s’ouvre et les accents sont corrects.
+**Résultat attendu :** Le fichier s’ouvre et les accents sont corrects. Les colonnes sont Nom, Catégorie, Origine, Statut du billet, Heure d’entrée, Zone et Porte. L’origine dit En ligne, Guichet, Gratuit ou Invitation. Aucune donnée de paiement ni numéro de billet.
 
 - [ ] OK
 - [ ] Anomalie
@@ -1010,8 +1014,9 @@ Remarque : ______________________________
 
 1. Touchez Clôture sur la ligne de l’événement.
 2. Lisez le rapport, puis téléchargez le PDF.
+3. Ouvrez le pilotage de l’événement, onglet « Clôture ».
 
-**Résultat attendu :** Ventes en ligne et espèces sont séparées. Le PDF se télécharge, s’intitule « Rapport de clôture » et ne porte aucune mention de certification.
+**Résultat attendu :** La fenêtre et l’onglet montrent le même rapport, aux mêmes chiffres : les cartes « Montant net organisateur », « Disponibilité des fonds » et « Absents », puis « Rapport de clôture » avec « Billets vendus (hors invitations) », « Invitations », « Capacité mise en vente », « Entrées (dont guichet) », « Refus au contrôle », puis « Recettes en ligne » et « Recettes en espèces », séparées, et enfin la section « Entrées ». La fenêtre ajoute « Ventes par catégorie ». Aucun taux n’est calculé. Le PDF se télécharge, s’intitule « Rapport de clôture », ne porte aucune mention de certification et finit par « Entrées par zone », « Entrées par origine » et « Entrées par porte ».
 
 - [ ] OK
 - [ ] Anomalie
@@ -1030,7 +1035,7 @@ Remarque : ______________________________
 4. Touchez « Recevoir le code de confirmation ».
 5. Saisissez le code, puis touchez « Confirmer le retrait ».
 
-**Résultat attendu :** Avant tout code, l’écran donne le minimum de retrait (5 000 F CFA), les frais (1 %, soit 60 F CFA) et « Vous recevrez 5 940 F CFA ». Le code arrive ensuite par SMS, et le montant versé est de 5 940 F.
+**Résultat attendu :** Avant tout code, l’écran donne le minimum de retrait (5 000 F CFA), les frais (1 %, soit 60 F CFA) et « Vous recevrez 5 940 F CFA ». Le code arrive ensuite par SMS, et le montant versé est de 5 940 F. Tant que le versement est en cours, la carte « Retraits en cours » affiche 6 000 F CFA, le montant réservé frais compris, avec l’aide « Montant réservé sur votre solde, frais compris, pendant l’envoi vers Wave ou Orange Money. ».
 
 - [ ] OK
 - [ ] Anomalie
@@ -1305,7 +1310,7 @@ Remarque : ______________________________
 
 **Appareil :** ordinateur.
 
-**Préparation :** Mode simulé, faux SamirPay lancé, un billet payé en ligne. Ouvrez une fenêtre PowerShell et collez la commande ci-dessous telle quelle : elle vide le solde du faux SamirPay. C’est la seule commande de ce cahier.
+**Préparation :** Mode simulé, faux SamirPay lancé, un billet payé en ligne. Ouvrez une fenêtre PowerShell et collez la commande ci-dessous telle quelle : elle vide le solde du faux SamirPay. Ce cahier n’a que trois commandes : celle-ci, celle de l’essai 80 et celle de l’essai 84.
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:4010/__test/samirpay/balance -ContentType application/json -Body '{"solde":0}'
@@ -1382,11 +1387,11 @@ Remarque : ______________________________
 **Préparation :** Compte `partenaire`, « Essai du jour », onglet Invitations (section 8.8 bis du guide). L’inscription de la section 8.6 est terminée.
 
 1. Choisissez la catégorie « Entrée » et 1 billet par numéro.
-2. Dans la zone des numéros, saisissez : le numéro du compte créé en 8.6, celui de `client2`, et un numéro inventé qui commence par 70.
+2. Dans « Numéro 1 », saisissez le numéro du compte créé en 8.6. Touchez « Ajouter un numéro » et saisissez celui de `client2` dans « Numéro 2 », puis, de même, un numéro inventé qui commence par 70 dans « Numéro 3 ». Laissez vides les champs « Nom de l’invité ».
 3. Touchez « Envoyer les invitations », puis Confirmer.
 4. Ouvrez l’onglet Ventes, puis, dans la fenêtre des SMS, attendez le passage suivant des tâches planifiées.
 
-**Résultat attendu :** Le bandeau « Invitations envoyées » s’affiche. L’historique porte trois lignes, numéros masqués, à 0 F, statut « Envoyée ». Le stock baisse de 3 et l’onglet Ventes compte 3 dans la colonne Invitations. Trois SMS partent, avec un lien vers Mes billets et aucun code.
+**Résultat attendu :** La fenêtre de confirmation montre « — » dans la colonne « Invité ». Le bandeau « Invitations envoyées » s’affiche. L’historique porte trois lignes, numéros masqués, à 0 F, statut « Envoyée ». Le stock baisse de 3 et l’onglet Ventes compte 3 dans la colonne Invitations. Trois SMS partent, avec un lien vers Mes billets et aucun code.
 
 - [ ] OK
 - [ ] Anomalie
@@ -1645,3 +1650,340 @@ Remarque : ______________________________
 
 Remarque : ______________________________
 
+### Q. Ajouts du lot 9 ter
+
+Les essais 77, 78, 81 et 82 se suivent sur le même événement du jour. Le téléphone ne décide jamais : chaque couleur et chaque refus vient du serveur. Les heures se lisent à la place de {heure}, les noms à la place de {nom}.
+
+#### Essai 77. Une porte, trois catégories, un faux VIP
+
+**Appareil :** ordinateur et deux téléphones.
+
+**Préparation :** Compte `partenaire`. Un événement du jour publié, créé comme « Essai du jour » (sections 8.1 et 8.2 du guide), avec trois catégories vendues en ligne : SIMPLE, VIP et VVIP. `client1` a acheté un billet SIMPLE et un billet VVIP, `client2` un billet VIP. Le `controleur` est affecté à l’événement (section 8.8 du guide). Aucun billet n’est encore scanné.
+
+1. Côté partenaire, ouvrez l’événement, touchez « Modifier », étape « Billets ». Sur la catégorie VIP, dans « Au contrôle des entrées », choisissez « Or » dans « Couleur au contrôle » et écrivez « Remettre bracelet doré » dans « Consigne d’entrée ». Touchez « Enregistrer la catégorie ».
+2. Ouvrez le pilotage de l’événement, onglet « Équipe », section « Zones et portes ». Lisez l’encadré, puis touchez « Configurer des zones ».
+3. Renommez la zone proposée « Entrée générale » et sa porte « Porte principale ». Laissez le type « Entrée » et les trois catégories cochées.
+4. Touchez « Ajouter une zone ». Nommez-la « Carré VIP », choisissez le type « Contrôle de zone », cochez VIP et VVIP, et nommez sa porte « Accès carré ». Touchez « Enregistrer les zones ».
+5. Sur la ligne du contrôleur, choisissez la porte « Porte principale — Entrée générale », activez « Peut changer de porte » et touchez « Enregistrer ».
+6. Côté contrôleur, ouvrez le scanner sur l’événement et lisez la phrase sous la liste des événements. Commencez le contrôle, scannez le billet VIP de `client2`, puis le billet SIMPLE de `client1`.
+7. Touchez « Changer d’événement », puis « Changer de porte ». Dans « Choisir ma porte », choisissez « Accès carré · Carré VIP (Contrôle de zone) », touchez « Enregistrer cette porte », puis commencez le contrôle.
+8. Au carré, présentez le billet SIMPLE de `client1` : c’est le faux VIP. Présentez ensuite son billet VVIP, puis le billet VIP de `client2`.
+9. Revenez à la « Porte principale » comme à l’étape 7. Attendez au moins 30 secondes, puis présentez de nouveau le billet VIP de `client2`.
+
+**Résultat attendu :** Étape 1 : « Catégorie enregistrée. ». Étape 2 : l’encadré dit « Une seule entrée, toutes les catégories » : sans zone, rien n’est à régler. Étape 4 : « Zones enregistrées. ». Étape 5 : « Porte de {nom} : Porte principale. ». Étape 6 : « Votre porte : Porte principale · Entrée générale (Entrée). Le compteur affichera les entrées de cette porte. Le téléphone vibre à chaque résultat ; aucun son n’est émis. ». Le billet VIP donne un écran vert « Entrée validée », « VIP » en très grand sur une bande or, « Remettre bracelet doré », « Zone : Entrée générale · Porte principale », puis le nom et le numéro du billet, avec une vibration courte. Le billet SIMPLE donne aussi un écran vert, sans bande de couleur ni consigne. Étape 8 : le billet SIMPLE donne un écran orange « Accès refusé : billet SIMPLE » et « Présentez-vous à : Entrée générale », avec deux vibrations longues ; il n’est pas composté. Le billet VVIP donne un écran orange « Pas encore entré » et « Passez d’abord par : Entrée générale ». Le billet VIP donne un écran vert « Accès autorisé », « VIP » sur sa bande or, « Zone : Carré VIP » et « Entré à {heure}, Porte principale » : le carré vérifie sans jamais composter. Étape 9 : écran rouge « Billet déjà utilisé » et « Déjà utilisé à {heure}, Porte principale », avec trois vibrations. Aucun son à aucune étape.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 78. Invité VIP sans smartphone
+
+**Appareil :** ordinateur et téléphone.
+
+**Préparation :** Suite de l’essai 77 : le contrôleur est à la « Porte principale ». Un numéro inventé de 9 chiffres qui commence par 70, sans compte.
+
+1. Côté partenaire, onglet « Invitations » : choisissez la catégorie VIP et 1 billet par numéro. Dans « Numéro 1 », saisissez le numéro inventé ; dans « Nom de l’invité 1 », écrivez « Awa Diop ». Touchez « Envoyer les invitations ».
+2. Lisez la fenêtre « Confirmer l’envoi », puis confirmez.
+3. Dans « Historique des invitations », touchez « Modifier le nom » sur cette ligne, écrivez « Awa Ndiaye Diop » et enregistrez.
+4. Côté contrôleur, touchez « Liste des invités ». Dans « Numéro de l’invité », saisissez les 4 derniers chiffres du numéro inventé et touchez « Rechercher ».
+5. Touchez « Choisir ». Essayez de toucher « Valider l’entrée d’une personne » sans cocher la case, puis cochez « J’ai vérifié la pièce d’identité » et validez.
+6. Recherchez de nouveau les mêmes 4 chiffres.
+7. Côté partenaire, regardez la ligne de l’invitation dans l’historique, puis l’onglet « Entrées ».
+8. Dans une fenêtre de navigation privée, créez un compte avec le numéro inventé. Ouvrez Mes billets, onglet « Reçus », touchez « Ajouter à mes billets » et confirmez.
+
+**Résultat attendu :** Étape 2 : la colonne « Invité » montre « Awa Diop » à côté du numéro masqué. Étape 3 : « Nom de l’invité enregistré. », et la colonne « Invité » de l’historique dit « Awa Ndiaye Diop ». Étape 4 : une carte avec « Awa Ndiaye Diop » en grand, « VIP », « 1 billet » et le bouton « Choisir » ; le numéro n’est jamais affiché. Étape 5 : le nom en très grand, « VIP », « 1 billet » et le bandeau « Vérifiez la pièce d’identité » : « Comparez le nom avec la pièce d’identité de la personne avant de valider. ». Le bouton reste inactif tant que la case n’est pas cochée. Après la validation : écran vert « Entrée validée », « VIP » sur sa bande or, « Remettre bracelet doré », le nom « Awa Ndiaye Diop » et le badge « Invitation ». Étape 6 : « Aucune invitation non utilisée pour ce numéro. ». Étape 7 : « Modifier le nom » n’est plus proposé sur la ligne. Dans « Entrées », la carte « Liste des invités » vaut 1, et « Validations par la liste des invités » donne l’heure, « Awa Ndiaye Diop », VIP, « Porte principale » et le contrôleur. Étape 8 : la ligne dit « Entrée déjà validée à la porte le {date} à {heure}. », avec « Ajouter à mes billets » et sans « Refuser ». La confirmation dit « Ce billet a déjà servi à l’entrée : il apparaîtra comme utilisé. », puis « Billet ajouté à vos billets. » s’affiche. Présenté au scanner, ce billet donne « Billet déjà utilisé ».
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 79. Catégorie épuisée puis réouverte
+
+**Appareil :** ordinateur et téléphone.
+
+**Préparation :** Compte `partenaire`. Un événement publié (sections 8.1 et 8.2 du guide), avec une « Capacité totale (jauge) » de 3 et deux catégories vendues en ligne : « Petit » à 1 000 F, quantité 2, et « Grand » à 2 000 F, quantité 1. Aucune vente. Sur le téléphone, la fiche de l’événement reste ouverte ; sur l’ordinateur, l’accueil ou Explorer, dans une autre fenêtre.
+
+1. Côté `client1`, achetez les 2 billets « Petit » et validez le paiement (section 8.3 du guide). Regardez la fiche et la carte de l’événement, sans recharger.
+2. Côté `client2`, achetez le billet « Grand » et validez le paiement. Regardez de nouveau, sans recharger.
+3. Côté partenaire, touchez « Modifier », étape « Billets ». Passez la quantité de « Petit » à 4 et touchez « Enregistrer la catégorie ».
+4. Passez la « Capacité totale (jauge) » à 5 et enregistrez. Revenez à « Petit », passez sa quantité à 4 et enregistrez.
+5. Regardez la fiche et la carte, sans recharger.
+6. Côté `client2`, commencez l’achat des 2 billets « Petit », puis fermez la page du paiement sans payer. Regardez la fiche, puis attendez 15 minutes sans recharger.
+
+**Résultat attendu :** Étape 1 : sur la fiche, « Petit » affiche « Complet » et « Grand » « Plus qu’une place » ; la carte porte le badge « Dernières places » et « À partir de 2 000 F CFA ». Étape 2 : la carte porte le badge « Complet », et la fiche dit « Toutes les places ont été vendues. ». Étape 3 : la quantité est refusée, et le message sous « Quantité mise en vente » dit quoi faire : « Les quantités mises en vente des catégories actives totaliseraient 5 places. Augmentez d’abord la capacité totale de l’événement (actuellement 3). ». Sous chaque quantité, l’aide « Pour vendre des places supplémentaires à un autre prix, créez une nouvelle catégorie. » reste visible. Étape 4 : « Catégorie enregistrée. ». Étape 5 : en moins d’une minute et sans recharger, « Petit » affiche « Plus que 2 places » sur la fiche ; la carte reprend le badge « Dernières places » et « À partir de 1 000 F CFA ». Étape 6 : pendant l’attente, les 2 places sont retenues : la fiche dit « Toutes les places sont vendues ou en cours de paiement. Des places peuvent se libérer : cette page se met à jour d’elle-même. ». Au plus 15 minutes après l’abandon (10 minutes de garde, puis un passage des tâches planifiées), « Plus que 2 places » revient sans recharger.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 80. Une partenaire en attente tente de se valider elle-même
+
+**Appareil :** ordinateur.
+
+**Préparation :** Les comptes de test sont créés (section 7 du guide) et les migrations du lot 9 ter sont appliquées (section 3 du guide). Une fenêtre PowerShell est ouverte dans le dossier de l’application. Cet essai se fait avec un outil, pas à la main : il se connecte comme la partenaire de test, avec seulement ce que possède une application publique, et lui fait demander elle-même un changement du statut de sa fiche. Il ne modifie rien, même si la protection manquait : il redemande le statut que la fiche a déjà.
+
+1. Collez la commande ci-dessous telle quelle, puis appuyez sur Entrée.
+
+```powershell
+npm run essai:fiche-partenaire
+```
+
+2. Lisez les lignes qui s’affichent.
+
+**Résultat attendu :** Deux lignes s’affichent, la seconde se termine par « Protégé » et le statut relu :
+
+```text
+[fiche-partenaire] projet {référence du projet} : connexion du compte partenaire@essai.eventvillage.invalid avec la clé publique seulement.
+[fiche-partenaire] Protégé : la fiche partenaire refuse toute modification directe de son statut (statut {statut} inchangé).
+```
+
+Aucune clé, aucun mot de passe et aucun jeton ne s’affichent. La partenaire de test est validée : la protection ne dépend pas de l’état de la fiche, et les tests automatiques le prouvent pour une partenaire en attente, refusée ou suspendue (`tests/parcours/securite-fiche-partenaire-9ter.test.ts`). Si la seconde ligne commence par « [fiche-partenaire] NON PROTÉGÉ », arrêtez l’essai et prévenez l’équipe technique : la migration 01 du lot 9 ter n’est pas appliquée sur ce projet. Une ligne « [fiche-partenaire] contrôle impossible : … » dit pourquoi l’outil n’a pas pu vérifier, par exemple un compte de test absent : lancez alors d’abord la section 7 du guide.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 81. Deux zones, trois portes : affectation et changement de porte
+
+**Appareil :** ordinateur et téléphone.
+
+**Préparation :** Suite de l’essai 78, même événement : zones « Entrée générale » et « Carré VIP ». Le téléphone du `controleur` est ouvert sur le scanner.
+
+1. Côté partenaire, onglet « Équipe », zone « Entrée générale » : touchez « Ajouter une porte », nommez-la « Porte Sud » et touchez « Enregistrer les zones ». Regardez la porte « Porte principale ».
+2. Sur la ligne du contrôleur, choisissez « Aucune porte » et touchez « Enregistrer ». Lisez le haut de la section « Zones et portes ».
+3. Côté contrôleur, rechargez le scanner. Commencez le contrôle et présentez un billet.
+4. Côté partenaire, choisissez la porte « Porte Sud — Entrée générale », désactivez « Peut changer de porte » et touchez « Enregistrer ».
+5. Côté contrôleur, rechargez le scanner, lisez la phrase de la porte, puis présentez le billet VIP de `client2`.
+6. Côté partenaire, activez « Peut changer de porte » et enregistrez. Côté contrôleur, rechargez le scanner.
+
+**Résultat attendu :** Étape 1 : « Zones enregistrées. ». « Porte principale » porte la mention « Déjà utilisée au contrôle » et n’a pas de bouton pour la retirer. Étape 2 : « Porte de {nom} retirée. », puis le bandeau « Contrôleur sans porte » : « 1 contrôleur sans porte : il ne peut pas scanner tant que vous ne lui attribuez pas une porte. ». Étape 3 : le bandeau « Aucune porte attribuée » dit « Cet événement a des portes : demandez à l’organisateur de vous en attribuer une avant de scanner. ». Le billet donne un écran gris « Aucune porte affectée » : « Demandez à l’organisateur de vous attribuer une porte. Rien n’a été validé. », sans vibration. Étape 4 : « Porte de {nom} : Porte Sud. ». Étape 5 : « Votre porte : Porte Sud · Entrée générale (Entrée). », sans bouton « Changer de porte ». Le billet VIP donne l’écran rouge « Billet déjà utilisé » et « Déjà utilisé à {heure}, Porte principale » : la porte de la première entrée. Étape 6 : le bouton « Changer de porte » apparaît.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 82. Tableau de bord des entrées et alerte de refus
+
+**Appareil :** deux ordinateurs, ou ordinateur et téléphone.
+
+**Préparation :** Suite de l’essai 81 : le contrôleur est à la « Porte Sud ». Compte `superadmin`, page Finances de l’administration, lien « Réglages de la plateforme » (essai 52). Côté partenaire, le pilotage de l’événement est ouvert sur l’onglet « Entrées ».
+
+1. Côté `superadmin`, section « Contrôle d’accès », modifiez « Alerte de refus à une porte : nombre de refus » : mettez 3, avec un motif.
+2. Côté contrôleur, présentez trois fois de suite le billet VIP de `client2`, déjà entré.
+3. Côté partenaire, attendez au plus une minute sans recharger. Lisez les cartes, l’alerte et les sections de l’onglet, puis ouvrez la cloche.
+4. Côté `superadmin`, remettez le réglage à 10, avec un motif.
+
+**Résultat attendu :** Étape 2 : trois écrans rouges « Billet déjà utilisé ». Étape 3 : une alerte rouge « Beaucoup de refus à Porte Sud » dit « {n} refus dans les 5 dernières minutes. Vérifiez avec le contrôleur : faux billets, mauvaise porte ou billets déjà utilisés. », sans que l’écran ait été rechargé. Les cartes montrent « Entrées validées », « Au guichet », « Refus », « Liste des invités » (1, l’invitée de l’essai 78), « Débit » en « {x} par minute » et « Contrôleurs actifs » en « 1 sur 1 » ; dessous, « Mis à jour à {heure} ». Les sections « Par zone », « Par porte » (Porte principale, Porte Sud et Accès carré, avec leur zone, leurs entrées, leurs refus, leur débit et leurs contrôleurs), « Par catégorie », « Par origine », « Refus par motif », « Validations par la liste des invités » et « Débit par minute » sont remplies. La cloche du partenaire affiche « Refus en série à une porte » : « Porte Sud : {n} refus en 5 minutes pour « {titre} ». Vérifiez la porte avec vos contrôleurs. ». Aucun SMS ne part. Une seule alerte arrive pour cette porte pendant ces 5 minutes.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 83. Billet transféré puis remboursé : le détenteur actuel est prévenu
+
+**Appareil :** ordinateur et deux téléphones.
+
+**Préparation :** Mode simulé. `client1` a un billet payé en ligne d’un événement publié (essai 16) et l’a transféré à `client2`, qui l’a accepté (essai 27).
+
+1. Côté `client2`, ouvrez Mes billets et lisez le numéro du billet reçu.
+2. Côté partenaire, remboursez ce billet depuis le pilotage (essai 59).
+3. Attendez un passage des tâches planifiées. Regardez la fenêtre des SMS, puis les cloches de `client2` et de `client1`.
+
+**Résultat attendu :** `client2`, qui détient le billet, reçoit ce SMS : « Event Village : votre billet {catégorie} pour {titre} a été annulé. Le remboursement est versé à l'acheteur d'origine. » (accents de la catégorie et du titre parfois retirés dans le SMS). Sa cloche affiche « Billet annulé » : « Votre billet {catégorie} pour « {titre} » du {date et heure} a été annulé. Le remboursement est versé à l'acheteur d'origine. ». `client1`, l’acheteur d’origine, garde ses avis habituels : « Remboursement demandé » dans sa cloche, puis « Remboursement versé » quand l’argent est parti ; c’est lui qui est remboursé. Un seul SMS part vers `client2`, même si le partenaire a touché deux fois.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 84. Versement incertain déclaré non parti
+
+**Appareil :** ordinateur.
+
+**Préparation :** Mode simulé, faux SamirPay lancé. Un billet payé en ligne, pas encore remboursé. Compte `superadmin`, page Finances, section « Versements à reprendre ». Une fenêtre PowerShell.
+
+1. Dans PowerShell, collez la commande ci-dessous telle quelle : le prochain versement du faux SamirPay sera interrompu, sans que rien ne parte.
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:4010/__test/samirpay/conflict
+```
+
+2. Côté partenaire, remboursez ce billet (essai 59). Attendez un passage des tâches planifiées, puis actualisez la section.
+3. Sur la ligne du remboursement, touchez « Constater non versé ». Essayez de confirmer sans référence, puis avec un motif de moins de 10 caractères.
+4. Saisissez « SUP-2026-001 » dans « Référence du support SamirPay » et un vrai motif, puis confirmez. Si la fenêtre « Confirmez votre mot de passe » s’ouvre, saisissez votre mot de passe.
+5. Attendez un passage des tâches planifiées et actualisez la section.
+6. Touchez « Renvoyer » sur la ligne, écrivez une justification et confirmez.
+
+**Résultat attendu :** Étape 2 : la ligne est en « Issue incertaine » et propose « Marquer versé » et « Constater non versé ». Étape 3 : la fenêtre s’intitule « Constater que ce versement n’est pas parti ? » et dit « À faire seulement si le support SamirPay confirme que ce versement n’est jamais parti. Il passera « Non versé » : un remboursement pourra ensuite être renvoyé, par un nouvel envoi ; un retrait sera annulé et son montant rendu au bénéficiaire. Rien ne repart automatiquement. ». Le bouton « Constater non versé » de la fenêtre reste inactif. Étape 4 : « Versement constaté non versé » : « Il reste dans la liste : renvoyez-le quand vous le souhaitez. ». La ligne passe à « Non versé (constaté avec le support SamirPay) », avec le conseil « Le support SamirPay a confirmé que ce versement n’est pas parti (référence SUP-2026-001) : vous pouvez le renvoyer. ». Étape 5 : rien n’est reparti seul, la ligne est toujours là. Étape 6 : « Versement envoyé » ou « Versement confirmé », la ligne quitte la liste et le client est remboursé. « Constater non versé » n’existe que pour un superadmin, et seulement sur une issue incertaine.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 85. Retour du client après le paiement, en réel
+
+**Appareil :** téléphone.
+
+**Préparation :** À faire avec l’essai 60, en réel (section 13 du guide) : de l’argent réel est débité. L’adresse de l’application commence par https. Un événement publié avec une catégorie payante au plus petit prix. Un compte client avec Wave.
+
+1. Achetez 1 billet, choisissez Wave et payez dans Wave.
+2. Laissez Wave vous ramener vers l’application.
+3. Recommencez l’achat, et cette fois annulez le paiement dans Wave.
+
+**Résultat attendu :** Étape 2 : Wave ramène sur la page de suivi de votre paiement, dans Event Village. Elle affiche « Paiement confirmé » une fois que le serveur a reçu la confirmation, jamais avant, et le billet est dans Mes billets. Étape 3 : la même page s’ouvre et affiche l’état lu sur le serveur, par exemple « Le paiement n’a pas abouti » ou « Paiement annulé », avec « Réessayer le paiement » ; aucun billet n’est créé. Si Wave ne revient pas vers l’application, notez-le : SamirPay n’a peut-être pas pris en compte les adresses de retour. En simulé, rien de cela ne s’applique.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 86. Contrôleur venant d’une autre partenaire : invitation à accepter
+
+**Appareil :** ordinateur et téléphone.
+
+**Préparation :** Le partenaire inscrit à l’essai 9 et validé à l’essai 10 a un événement publié. Le `controleur` (numéro 70 000 90 04) contrôle déjà les événements de `partenaire`, jamais ceux de ce partenaire.
+
+1. Avec le compte du partenaire de l’essai 9, ouvrez le pilotage de son événement, onglet « Équipe ». Dans « Téléphone du contrôleur », saisissez 70 000 90 04 et touchez « Inviter le contrôleur ».
+2. Lisez la fenêtre « Compte existant », puis touchez « Envoyer l’invitation ».
+3. Sur le téléphone du `controleur`, ouvrez la cloche, puis l’invitation. Touchez « Accepter l’invitation ».
+4. Avec le compte `partenaire`, affectez le `controleur` à un autre de ses événements (section 8.8 du guide).
+
+**Résultat attendu :** Étape 2 : la fenêtre dit « Ce numéro appartient déjà à un compte Event Village ({nom masqué}). Ce titulaire n’a jamais contrôlé vos événements : il doit accepter votre invitation dans l’application avant d’être affecté. Confirmez-vous l’envoi de l’invitation ? ». Après l’envoi : « Invitation envoyée : {nom masqué} doit l’accepter dans l’application avant d’être affecté. ». Le contrôleur n’est pas encore dans l’équipe. Étape 3 : la page « Invitations à contrôler » s’ouvre ; après l’acceptation, « Vous contrôlez maintenant les événements de {société} » s’affiche et il entre dans l’équipe. Étape 4 : `partenaire` l’a déjà eu dans son équipe : il est affecté directement, sans invitation.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 87. Commissions de parrainage gelées pendant une suspension
+
+**Appareil :** ordinateur.
+
+**Préparation :** Après l’essai 50 : `client1` a des commissions disponibles au retrait, toutes issues des achats de son filleul sur un même événement publié. Compte `superadmin` sur un second navigateur.
+
+1. Côté `client1`, ouvrez le Portefeuille et notez « Disponible au retrait ».
+2. Côté `superadmin`, suspendez cet événement avec un motif (essai 70).
+3. Côté `client1`, rechargez le Portefeuille.
+4. Côté `superadmin`, réactivez l’événement, puis rechargez le Portefeuille de `client1`.
+
+**Résultat attendu :** Étape 3 : au-dessus de « Disponible au retrait », un bandeau dit « Commissions gelées : {montant}. » et « Un événement pour lequel vos filleuls ont acheté des billets est suspendu : ces commissions ne sont pas retirables tant qu’il l’est. ». Le disponible au retrait baisse du même montant ; ici tout est gelé, et le bouton dit « Aucun montant disponible au retrait ». Étape 4 : le bandeau disparaît et le disponible revient à sa valeur de l’étape 1 : rien n’a été retiré du compte.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 88. « En direct » seulement quand les ventes sont suivies
+
+**Appareil :** deux ordinateurs, ou ordinateur et téléphone.
+
+**Préparation :** Compte `partenaire` : un événement publié en vente. Compte `superadmin` sur un second navigateur. Compte `client1` sur le téléphone.
+
+1. Côté partenaire, ouvrez le pilotage de l’événement et regardez l’indicateur en haut de l’écran.
+2. Ouvrez « Mes événements » et regardez l’indicateur.
+3. Côté `superadmin`, ouvrez le tableau de bord de l’administration et regardez l’indicateur.
+4. Côté `client1`, achetez un billet de l’événement. Regardez le pilotage sans recharger.
+
+**Résultat attendu :** Le pilotage affiche « En direct » avec un point vert animé, et se met à jour seul après l’achat. « Mes événements » et le tableau de bord de l’administration ne disent jamais « En direct » : ils affichent « Mis à jour à {heure} », l’heure de leur dernière lecture, avec un point gris immobile. Sans réseau, ils affichent « Hors ligne · mis à jour à {heure} ».
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 89. Verrous de l’événement et avertissement avant de quitter
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire`, « Concert d’essai à Dakar ». Dans l’onglet « Invitations », envoyez une invitation dans « Carré invités », puis annulez-la : aucun autre billet n’existe dans cette catégorie.
+
+1. Touchez « Modifier ». Lisez l’aide sous « Capacité totale (jauge) ».
+2. Étape « Billets » : regardez le prix de « Carré invités ».
+3. Changez la quantité d’une catégorie sans l’enregistrer, puis touchez « Retour à mes événements ».
+4. Touchez « Rester sur la page ». Recommencez l’étape 3 et touchez « Quitter sans enregistrer ».
+
+**Résultat attendu :** Étape 1 : l’aide dit « Des billets sont vendus ou réservés : la jauge ne peut plus être retirée ni descendre sous {n} places. », avec un cadenas. Étape 2 : le prix est verrouillé avec « Prix verrouillé : des billets ont déjà été émis pour cette catégorie. Créez une autre catégorie pour un nouveau tarif. » : une invitation annulée verrouille le prix, comme le serveur le refuse déjà. Étape 3 : la fenêtre « Quitter sans enregistrer ? » dit « Catégorie « {nom} » : vos modifications ne sont pas enregistrées et seront perdues. », avec « Quitter sans enregistrer » et « Rester sur la page ». Étape 4 : « Rester sur la page » garde la saisie ; « Quitter sans enregistrer » ouvre « Mes événements » sans rien enregistrer. Le bouton « Précédent » du navigateur, lui, n’est pas arrêté.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 90. Cloche de l’administration après une validation
+
+**Appareil :** deux ordinateurs.
+
+**Préparation :** Compte `partenaire` : un événement validé, pas encore publié, sans aucune vente, avec une catégorie vendue en ligne et au guichet ; un second événement complet en brouillon. Compte `superadmin` sur le second ordinateur.
+
+1. Côté partenaire, publiez l’événement validé.
+2. Touchez « Modifier », étape « Billets » : changez le prix de la catégorie et touchez « Enregistrer la catégorie ».
+3. Décochez « Vendue au guichet » sur la même catégorie et enregistrez.
+4. Soumettez le second événement à la validation, puis touchez « Retirer de la validation ».
+5. Côté `superadmin`, ouvrez la cloche après chaque étape. Regardez aussi la fenêtre des SMS.
+
+**Résultat attendu :** Étape 1 : « Événement publié par l'organisateur » : « « {titre} » de {société} est publié par l'organisateur : sa page publique est en ligne. ». Étape 2 : « Événement modifié après validation » : « « {titre} » de {société} : nouveau prix pour « {catégorie} » ({nouveau prix} au lieu de {ancien prix}) après validation. Vérifiez la fiche. ». Étape 3 : même titre, « … : canaux de vente de « {catégorie} » changés (en ligne seulement) après validation. Vérifiez la fiche. ». Étape 4 : « Soumission retirée par l'organisateur » : « « {titre} » de {société} est retiré de la validation par l'organisateur : il n'attend plus votre examen. ». Aucun SMS ne part vers l’administration. Changer seulement la couleur ou la consigne d’une catégorie ne prévient personne.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 91. Ville dans une liste, téléphone de contact
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire`. L’événement publié de l’essai 77.
+
+1. Touchez « Créer un événement ». Ouvrez la liste « Ville » et parcourez-la, puis choisissez « Autre ville ». Quittez sans enregistrer.
+2. Sur l’événement de l’essai 77, touchez « Modifier ». Étape « Accès », saisissez « 12345 » dans « Téléphone de contact » et enregistrez.
+3. Remplacez par « 771234567 » et enregistrez.
+4. Ouvrez la fiche publique de l’événement, section « Lieu et accès ».
+
+**Résultat attendu :** Étape 1 : la liste propose 26 villes du Sénégal, dans l’ordre, de « Cap Skirring » à « Ziguinchor », puis « Autre ville ». « Autre ville » fait apparaître le champ « Précisez la ville », avec l’aide « Ville absente de la liste. ». Étape 2 : l’aide du champ dit « Mobile ou fixe sénégalais, par exemple 77 123 45 67 ou 33 821 00 00. », et l’enregistrement est refusé : « Numéro sénégalais invalide. Exemple : 77 123 45 67 ou 33 821 00 00. ». Étape 3 : l’enregistrement réussit. Étape 4 : « Contact de l’organisateur » affiche « 77 123 45 67 », et le toucher sur un téléphone lance l’appel.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 92. Événement validé jamais publié : passage à Terminé sans message
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire` : un événement créé comme à la section 8.1 du guide, qui commence dans 1 h et finit 30 minutes après, soumis puis validé par `superadmin` (section 8.2), mais jamais publié.
+
+1. Attendez l’heure de fin, puis un passage des tâches planifiées.
+2. Côté partenaire, regardez « Mes événements » et la cloche.
+3. Côté `superadmin`, ouvrez la fiche de l’événement dans l’administration.
+4. Ouvrez Explorer et cherchez le titre de l’événement.
+
+**Résultat attendu :** L’événement passe « Terminé » dans « Mes événements ». Aucun avis ne part : ni « Événement terminé » dans la cloche du partenaire, ni SMS, ni message aux invités éventuels. Dans l’administration, il est Terminé, sans lien « Page publique ». Il n’apparaît jamais dans Explorer.
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
+
+#### Essai 93. Textes corrigés : invitation annulée, motif de la clôture, retrait retardé
+
+**Appareil :** ordinateur.
+
+**Préparation :** Compte `partenaire`, onglet « Invitations » d’un événement publié, avec une invitation non scannée. Compte `superadmin` et un événement suspendu dont la fin est passée. Le retrait retardé de l’essai 75, avant qu’il ne soit renvoyé.
+
+1. Lisez la description de « Historique des invitations ». Touchez « Annuler l’invitation » sur une ligne, lisez la fenêtre et confirmez. Regardez la fenêtre des SMS au passage suivant des tâches planifiées.
+2. Côté `superadmin`, sur la fiche de l’événement suspendu, touchez « Clore l’événement ». Lisez le champ, puis fermez la fenêtre.
+3. Côté partenaire, ouvrez Finances et regardez le retrait retardé.
+
+**Résultat attendu :** Étape 1 : la description dit « Les numéros sont masqués. Une invitation non scannée peut être annulée : la place revient au stock et l’invité est prévenu par SMS. ». La fenêtre « Annuler cette invitation ? » dit « Le billet {catégorie} de {numéro masqué} ne sera plus valable. La place revient au stock et l’invité est prévenu par SMS. ». Un SMS part bien vers l’invité. Étape 2 : la fenêtre « Terminer l’événement ? » a un champ « Motif de la clôture » (et non plus « Motif du refus »), avec l’aide « Au moins 3 caractères. Ce motif est communiqué à l’organisateur et reste dans l’historique. ». Étape 3 : le retrait porte le badge « Retardé » et la phrase « Retardé : l’équipe Event Village s’en occupe. ».
+
+- [ ] OK
+- [ ] Anomalie
+
+Remarque : ______________________________
