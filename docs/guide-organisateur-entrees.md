@@ -113,7 +113,7 @@ Chaque scan affiche un résultat **plein écran** : une couleur, une grande icô
 | **Orange**, texte noir | « Accès refusé : billet SIMPLE » (la catégorie du billet), puis la zone où se présenter : « Présentez-vous à : Entrée générale ». Si aucune zone n'admet ce billet : « Aucune zone n’admet ce billet : appelez l’organisateur. » | deux impulsions longues | Ne pas laisser passer ici : orienter la personne. Rien n'est composté, le billet reste valable pour la bonne zone. |
 | **Orange**, texte noir | « Pas encore entré », à une porte de « Contrôle de zone », puis « Passez d’abord par : Entrée générale » | deux impulsions longues | Le billet n'a jamais été validé à une entrée : envoyer la personne à l'entrée d'abord. |
 | **Rouge**, texte blanc | « Billet déjà utilisé », avec l'heure et la porte de la première entrée : « Déjà utilisé à 21:04, Porte Nord » (sans porte connue : « Déjà utilisé à 21:04 »), ou « Déjà validé par vous à 21:04 » si ce même contrôleur l'a validé il y a moins de 30 secondes | trois impulsions | Refuser. « Déjà validé par vous » : c'est un double passage du même billet, à l'instant, à votre porte. |
-| **Rouge foncé**, texte blanc | le motif : « Billet invalide », « Billet annulé », « Billet remboursé », « Billet d'un autre événement », « QR expiré : demandez au client de rafraîchir son billet », « QR dynamique requis (billet ouvert dans l'application) », « Paiement requis », « Saisie manuelle refusée » | trois impulsions | Refuser. Pour « QR expiré » : souvent une capture d'écran ou un billet transféré à quelqu'un d'autre ; demandez au spectateur d'ouvrir son billet dans l'application. |
+| **Rouge foncé**, texte blanc | le motif : « Billet invalide », « Billet annulé », « Billet remboursé », « Billet d’un autre événement », « QR expiré : demandez au client d’ouvrir son billet dans l’application », « QR dynamique requis (billet ouvert dans l’application) », « Paiement requis », « Transfert en cours », « Saisie manuelle refusée » | trois impulsions | Refuser. Pour « QR expiré » : souvent une capture d'écran ou un billet transféré à quelqu'un d'autre ; demandez au spectateur d'ouvrir son billet dans l'application. |
 | **Bleu foncé**, texte blanc | « Encaissement requis : 5 000 F CFA » | deux impulsions longues | Le billet n'est pas encore payé : il se règle sur place, en espèces. Voir la section 6. L'écran attend une décision. |
 | **Jaune**, texte noir | « Contrôle pas encore ouvert » ou « Événement terminé » | deux impulsions longues | Hors des heures de contrôle : personne n'entre avec ce billet pour l'instant. |
 | **Rouge foncé**, icône différente | « Événement annulé » ou « Événement suspendu » | trois impulsions | Aucune entrée possible. Prévenez l'organisation. |
@@ -179,6 +179,8 @@ Ce qui peut arriver :
 - Un billet transféré change de numéro : seul le numéro du **nouveau** titulaire marche.
 - Chaque vérification est enregistrée. Un contrôleur peut en faire 20 par minute au plus.
 - La saisie manuelle demande du réseau. Par défaut, seul un contrôleur affecté à l'événement peut l'utiliser.
+- Sur un événement à zones, la vérification tient compte de la porte du contrôleur : à une porte d'entrée qui n'admet pas la catégorie, « Entrée impossible : Mauvaise zone ». À une porte de « Contrôle de zone », la saisie manuelle ne valide rien (elle n'affiche qu'un aperçu « Entrée impossible : … ») : scannez le billet à la caméra.
+- Pour un invité sans smartphone ni numéro de billet, utilisez plutôt la **liste des invités** (section 15).
 
 ---
 
