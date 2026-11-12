@@ -15,7 +15,8 @@
 --     1 à 60, patron low_stock_threshold()).
 --  4. Nouvelle pilotage_compute_entries (F43) : source unique des vues figées des entrées (tableau de bord et
 --     clôture) ; une seule lecture du journal de l'événement (refus par scan_is_refusal, une fois par ligne) et des
---     billets (origine par ticket_origin, une fois par billet).
+--     billets (origine par ticket_origin, une fois par billet) ; l'origine d'une entrée est lue par la clé primaire
+--     du billet, jamais par jointure entre CTE (boucle imbriquée sous statistiques périmées, 9t.18 T6).
 --  5. Recopie pilotage_compute_overview (F45) : base 20261102000005_lot5_pilotage.sql:212-301 ; refus par
 --     scan_is_refusal, compteur guest_list ; tickets.*, entries.total, entries.counter, attendance_rate, revenue.*
 --     inchangés (invariant (l)).
@@ -172,11 +173,21 @@ DECLARE
 BEGIN
     v_configured := EXISTS (SELECT 1 FROM public.event_zones z WHERE z.event_id = p_event);
 
+    -- Origine du billet d'une ligne lue par jointure sur les tables, par la seule clé primaire de tickets (une
+    -- condition sur tk.event_id dans la jointure faisait choisir l'index par événement, relu pour chaque ligne) et
+    -- de payments, et non par jointure entre les deux CTE : sous une estimation d'une ligne (billets insérés depuis la dernière
+    -- analyse), le planificateur joignait s et k par boucle imbriquée, refaite pour chacune des 4 origines
+    -- (25 millions de comparaisons pour 5 000 entrées, 7,8 s au run 132 ; 9t.18 T6).
     WITH s AS MATERIALIZED (
         SELECT sc.id, sc.ticket_id, sc.category_id, sc.gate_id, sc.zone_id, sc.entry_point, sc.accepted, sc.method,
                sc.result, sc.zone_result, sc.created_at,
-               public.scan_is_refusal(sc.accepted, sc.result, sc.zone_result, sc.consumed_at) AS refused
+               public.scan_is_refusal(sc.accepted, sc.result, sc.zone_result, sc.consumed_at) AS refused,
+               CASE WHEN tk.event_id = p_event THEN
+                   public.ticket_origin(tk.sale_channel, tk.price, pay.id IS NOT NULL AND NOT pay.is_platform_payment)
+               END AS origin
           FROM public.ticket_scans sc
+          LEFT JOIN public.tickets tk ON tk.id = sc.ticket_id
+          LEFT JOIN public.payments pay ON pay.id = tk.payment_id
          WHERE sc.event_id = p_event
     ), k AS MATERIALIZED (
         SELECT tk.id, tk.category_id, tk.status::text AS status,
@@ -192,11 +203,6 @@ BEGIN
                count(*) FILTER (WHERE s.refused) AS refused,
                count(DISTINCT s.ticket_id) FILTER (WHERE s.zone_result = 'zone_ok') AS zone_checks
           FROM s
-    ), acc AS (
-        SELECT s.category_id, k.origin
-          FROM s
-          JOIN k ON k.id = s.ticket_id
-         WHERE s.accepted
     ), sz AS (
         SELECT s.zone_id,
                count(*) FILTER (WHERE s.accepted) AS entered,
@@ -205,11 +211,16 @@ BEGIN
           FROM s
          GROUP BY s.zone_id
     ), kz AS (
+        -- billets comptés par catégorie avant la jointure aux zones (aucune boucle billet × zone_categories)
         SELECT zc.zone_id,
-               count(*) FILTER (WHERE k.expected) AS expected_all,
-               count(*) FILTER (WHERE k.status = 'UTILISE') AS expected_used
-          FROM k
-          JOIN public.zone_categories zc ON zc.event_id = p_event AND zc.category_id = k.category_id
+               sum(kc.expected_all)::bigint AS expected_all,
+               sum(kc.expected_used)::bigint AS expected_used
+          FROM (SELECT k.category_id,
+                       count(*) FILTER (WHERE k.expected) AS expected_all,
+                       count(*) FILTER (WHERE k.status = 'UTILISE') AS expected_used
+                  FROM k
+                 GROUP BY k.category_id) kc
+          JOIN public.zone_categories zc ON zc.event_id = p_event AND zc.category_id = kc.category_id
          GROUP BY zc.zone_id
     ), zones AS (
         SELECT 0 AS part, z.position AS zpos, lower(z.name) AS zname, z.id AS zid,
@@ -329,10 +340,13 @@ BEGIN
                    SELECT jsonb_agg(jsonb_build_object(
                               'origin', o.origin,
                               'label', public.ticket_origin_label(o.origin),
-                              'expected', (SELECT count(*) FROM k WHERE k.expected AND k.origin = o.origin),
-                              'entered', (SELECT count(*) FROM acc WHERE acc.origin = o.origin))
+                              'expected', COALESCE(ko.n, 0),
+                              'entered', COALESCE(so.n, 0))
                           ORDER BY o.ord)
-                     FROM (VALUES ('ONLINE', 1), ('COUNTER', 2), ('FREE', 3), ('INVITATION', 4)) AS o(origin, ord)),
+                     FROM (VALUES ('ONLINE', 1), ('COUNTER', 2), ('FREE', 3), ('INVITATION', 4)) AS o(origin, ord)
+                     LEFT JOIN (SELECT k.origin, count(*) AS n FROM k WHERE k.expected GROUP BY k.origin) ko ON ko.origin = o.origin
+                     LEFT JOIN (SELECT s.origin, count(*) AS n FROM s WHERE s.accepted AND s.origin IS NOT NULL GROUP BY s.origin) so
+                            ON so.origin = o.origin),
                'by_quarter', COALESCE((
                    SELECT jsonb_agg(jsonb_build_object('start', quarters.q AT TIME ZONE 'Africa/Dakar', 'accepted', quarters.accepted,
                                                        'refused', quarters.refused)
