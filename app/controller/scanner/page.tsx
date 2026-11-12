@@ -334,6 +334,8 @@ export default function ControllerScannerPage() {
     const [showCloseShift, setShowCloseShift] = useState(false);
     const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    // Réglages de l'appareil : le menu n'est rendu (et son code chargé) que replié ouvert
+    const [settingsOpen, setSettingsOpen] = useState(false);
 
     const selected = assignments.find((a) => a.id === selectedId) ?? null;
     const eventId = selected?.events?.id ?? null;
@@ -868,7 +870,8 @@ export default function ControllerScannerPage() {
         void fetchAssignments();
     };
 
-    const logoutDialog = (
+    // Passe du run 132 : la boîte n'est rendue (donc son code chargé) qu'à l'ouverture, hors du premier chargement mesuré
+    const logoutDialog = showLogoutConfirm && (
         <ConfirmDialog
             isOpen={showLogoutConfirm}
             onClose={() => setShowLogoutConfirm(false)}
@@ -1114,20 +1117,20 @@ export default function ControllerScannerPage() {
                 error={statsError}
             />
 
-            <details className="rounded-2xl border border-border bg-surface">
+            <details className="rounded-2xl border border-border bg-surface" onToggle={(e) => setSettingsOpen(e.currentTarget.open)}>
                 <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-4 text-base font-semibold text-fg">
                     <Settings2 size={18} aria-hidden="true" className="text-fg-muted" />
                     Réglages de cet appareil
                 </summary>
                 <div className="px-4 pb-4">
-                    <Select
+                    {settingsOpen && <Select
                         id="scanner-auto-return"
                         label="Retour au scan après une entrée validée"
                         hint="Un refus reste affiché 3 secondes. Touchez l’écran pour revenir tout de suite."
                         value={String(autoReturnMs)}
                         onChange={(e) => changeAutoReturn(Number(e.target.value))}
                         options={ACCEPT_RETURN_CHOICES.map((ms) => ({ value: String(ms), label: `${String(ms / 1000).replace('.', ',')} s` }))}
-                    />
+                    />}
                 </div>
             </details>
         </div>
