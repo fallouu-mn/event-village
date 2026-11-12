@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
-import { CATALOG_SELECT, catalogCities, formatCatalogEvent, type CatalogRow } from '@/lib/events/catalog.server';
+import { CATALOG_SELECT, catalogCities, formatCatalogEvent, type CatalogEventDto, type CatalogRow } from '@/lib/events/catalog.server';
 import { eventEndAt } from '@/lib/events/event-end';
+import { lowStockThreshold } from '@/lib/events/low-stock.server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { foldText } from '@/lib/text/fold';
 
@@ -30,7 +31,24 @@ function failure(err: unknown): NextResponse {
  * ouverte) ; `saleLabel` et `endFormatted` servis par formatCatalogEvent.
  * Lot 9 bis (ex-10.0 e, B94) : `q` et `city` comparés par foldText (« thies » trouve « Thiès ») ; `cities` dédoublonnée
  * par forme pliée (catalogCities).
+ * Lot 9 ter (9t.19, consigne 5, contrat D.2.3) : chaque carte porte `stock` (SOLD_OUT, LOW ou null, seuil
+ * access.low_stock_threshold) ; ordre : date de début, puis à date égale les événements complets après ceux en vente,
+ * puis l'heure de début, puis l'identifiant. Un événement complet reste listé jusqu'à sa fin.
  */
+type Ordered = { row: CatalogRow; dto: CatalogEventDto };
+
+function compareText(a: string, b: string): number {
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Lot 9 ter (9t.19) : date de début, complet après en vente, heure de début, identifiant. */
+function catalogOrder(a: Ordered, b: Ordered): number {
+    return compareText(a.row.start_date, b.row.start_date)
+        || Number(a.dto.stock === 'SOLD_OUT') - Number(b.dto.stock === 'SOLD_OUT')
+        || compareText(a.row.start_time ?? '', b.row.start_time ?? '')
+        || compareText(a.row.id, b.row.id);
+}
+
 export async function GET(req: NextRequest) {
     try {
         const supabase = getServiceRoleClient();
@@ -48,10 +66,13 @@ export async function GET(req: NextRequest) {
 
         if (error) return failure(error);
 
+        const threshold = await lowStockThreshold();
         const now = Date.now();
         const formatted = ((events ?? []) as unknown as CatalogRow[])
             .filter((evt) => eventEndAt(evt).getTime() > now)
-            .map(formatCatalogEvent);
+            .map((row) => ({ row, dto: formatCatalogEvent(row, threshold) }))
+            .sort(catalogOrder)
+            .map(({ dto }) => dto);
         const cities = catalogCities(formatted);
 
         // Filtrage en mémoire pour recherche et ville si demandés

@@ -3,13 +3,11 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { formatEventEnd } from '@/lib/events/catalog.server';
 import { eventEndAt } from '@/lib/events/event-end';
+import { lowStockThreshold } from '@/lib/events/low-stock.server';
 import { isEventId, isPublicEvent, type PublicEventStatus } from '@/lib/events/public-status';
 import { formatSnPhone, toSenegaleseContactE164 } from '@/lib/validations/auth';
 
 export const dynamic = 'force-dynamic';
-
-const LOW_STOCK_KEY = 'access.low_stock_threshold';
-const LOW_STOCK_DEFAULT = 10;
 
 type BannerKind = Exclude<PublicEventStatus, 'PUBLIE'>;
 
@@ -33,15 +31,6 @@ const REFUND_INFO =
     + 'frais de service compris. Les billets réglés en espèces sont remboursés par l’organisateur.';
 
 const NOT_FOUND = () => NextResponse.json({ error: 'Événement introuvable.' }, { status: 404 });
-
-/** Seuil de la tranche « bientôt complet » (réglage access.low_stock_threshold, défaut 10). */
-async function lowStockThreshold(): Promise<number> {
-    const { data, error } = await getServiceRoleClient().from('platform_settings').select('value').eq('key', LOW_STOCK_KEY).maybeSingle();
-    if (error) throw new Error(`réglage ${LOW_STOCK_KEY} illisible : ${error.message}`);
-    const raw = (data?.value as { value?: unknown } | null | undefined)?.value;
-    const n = Number(raw);
-    return Number.isInteger(n) && n >= 1 && n <= 1000 ? n : LOW_STOCK_DEFAULT;
-}
 
 /**
  * GET /api/events/[id] — fiche publique (lot 5, contrat E).

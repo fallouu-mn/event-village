@@ -23,6 +23,8 @@ export interface CatalogEvent {
     price: number | null;
     /** Lot 9 bis (R35, B60) : état de la vente dit par le serveur (« Vente sur place uniquement », « Complet »…). */
     saleLabel: string | null;
+    /** Lot 9 ter (9t.19) : badge de stock dit par le serveur (« Complet » ou « Dernières places »), null sinon. */
+    stock: 'SOLD_OUT' | 'LOW' | null;
 }
 
 export type CatalogResult = { ok: true; events: CatalogEvent[]; cities: string[] } | { ok: false; message: string };
@@ -64,6 +66,7 @@ function toCatalogEvent(raw: unknown): CatalogEvent | null {
         city: text(r.city),
         price,
         saleLabel: text(r.saleLabel),
+        stock: r.stock === 'SOLD_OUT' || r.stock === 'LOW' ? r.stock : null,
     };
 }
 

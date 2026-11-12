@@ -10,6 +10,9 @@ import { foldText } from '@/lib/text/fold';
  * restantes, vente commencée et non close ; `saleLabel` dit l'état de la vente en une ligne (« À partir de … »,
  * « Gratuit », « Bientôt en vente », « Vente sur place uniquement », « Complet », « Vente en ligne terminée ») ;
  * `endFormatted` seulement quand une date de fin est saisie. `priceFormatted` garde sa règle (contrat E du lot 5).
+ * Lot 9 ter (9t.19, consigne 5, contrat D.2.3) : `stock` (« Complet », « Dernières places ») calculé sur les catégories
+ * actives vendues en ligne, jamais un nombre de places ; « Complet » passe avant « Vente sur place uniquement » quand
+ * plus aucune catégorie au guichet n'a de place (le guichet partage le quota de la catégorie).
  */
 export const CATALOG_SELECT = `
     id,
@@ -82,7 +85,12 @@ export interface CatalogEventDto {
     /** Lot 9 bis (R36) : fin lisible, seulement si une date de fin est saisie. */
     endFormatted?: string;
     status: string;
+    /** Lot 9 ter (9t.19) : tranche de stock en ligne (badge « Complet » ou « Dernières places »), null sinon. */
+    stock: CatalogStock;
 }
+
+/** Lot 9 ter (9t.19) : SOLD_OUT = plus aucune place en ligne ; LOW = toutes les catégories achetables au seuil ou dessous. */
+export type CatalogStock = 'SOLD_OUT' | 'LOW' | null;
 
 function remainingOf(c: CatalogCategoryRow): number {
     return Number(c.total_quantity ?? 0) - Number(c.sold_quantity ?? 0) - Number(c.held_quantity ?? 0);
@@ -101,12 +109,34 @@ export function isBuyableOnline(c: CatalogCategoryRow, now: number): boolean {
     return c.is_active === true && c.sale_online === true && remainingOf(c) > 0 && saleStarted(c, now) && !saleEnded(c, now);
 }
 
+/**
+ * Lot 9 ter (9t.19) : une catégorie en ligne épuisée sans être close, et toutes les autres épuisées ou closes. Les
+ * places au guichet ne comptent pas : elles partagent le quota de la catégorie.
+ */
+function onlineSoldOut(online: CatalogCategoryRow[], now: number): boolean {
+    return online.length > 0
+        && online.some((c) => remainingOf(c) <= 0 && !saleEnded(c, now))
+        && online.every((c) => remainingOf(c) <= 0 || saleEnded(c, now));
+}
+
+/** Lot 9 ter (9t.19, contrat D.2.3) : tranche de stock de la carte, sans nombre de places. */
+function stockOf(categories: CatalogCategoryRow[], threshold: number, now: number): CatalogStock {
+    const online = categories.filter((c) => c.is_active === true && c.sale_online === true);
+    const buyable = online.filter((c) => isBuyableOnline(c, now));
+    if (buyable.length === 0) return onlineSoldOut(online, now) ? 'SOLD_OUT' : null;
+    return buyable.every((c) => remainingOf(c) <= threshold) ? 'LOW' : null;
+}
+
 function saleLabelOf(categories: CatalogCategoryRow[], minPrice: number | null, now: number): string {
     if (minPrice !== null) return minPrice === 0 ? 'Gratuit' : `À partir de ${minPrice.toLocaleString('fr-FR')} F CFA`;
     const active = categories.filter((c) => c.is_active === true);
     const online = active.filter((c) => c.sale_online === true);
     if (online.some((c) => remainingOf(c) > 0 && !saleStarted(c, now) && !saleEnded(c, now))) return 'Bientôt en vente';
-    if (active.some((c) => c.sale_counter === true)) return 'Vente sur place uniquement';
+    // Lot 9 ter (9t.19) : « Complet » d'abord quand le guichet n'a plus de place non plus ; « sur place » seulement
+    // s'il en reste au guichet.
+    const counterOpen = active.some((c) => c.sale_counter === true && remainingOf(c) > 0);
+    if (!counterOpen && onlineSoldOut(online, now)) return 'Complet';
+    if (counterOpen) return 'Vente sur place uniquement';
     if (online.length > 0 && online.every((c) => saleEnded(c, now))) return 'Vente en ligne terminée';
     if (online.length > 0 && online.every((c) => remainingOf(c) <= 0 || saleEnded(c, now))) return 'Complet';
     return 'Bientôt en vente';
@@ -147,7 +177,8 @@ export function catalogCities(events: ReadonlyArray<Pick<CatalogEventDto, 'city'
 
 const MONTHS = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];
 
-export function formatCatalogEvent(evt: CatalogRow): CatalogEventDto {
+/** `threshold` : seuil « bientôt complet » courant (lowStockThreshold, lib/events/low-stock.server.ts). */
+export function formatCatalogEvent(evt: CatalogRow, threshold: number): CatalogEventDto {
     const startDate = new Date(evt.start_date);
     const monthShort = MONTHS[startDate.getMonth()] || 'SEP';
     const dayNumber = String(startDate.getDate()).padStart(2, '0');
@@ -184,5 +215,6 @@ export function formatCatalogEvent(evt: CatalogRow): CatalogEventDto {
         saleLabel: saleLabelOf(categories, minPrice, now),
         ...(endFormatted ? { endFormatted } : {}),
         status: evt.status,
+        stock: stockOf(categories, threshold, now),
     };
 }
