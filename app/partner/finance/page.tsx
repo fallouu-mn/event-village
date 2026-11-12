@@ -595,7 +595,7 @@ export default function PartnerFinancePage() {
                                 <KpiCard
                                     label="Retraits en cours"
                                     value={formatFcfa(balance.inProgress)}
-                                    hint="Montant réservé pendant l’envoi vers Wave ou Orange Money."
+                                    hint="Montant réservé sur votre solde, frais compris, pendant l’envoi vers Wave ou Orange Money."
                                     tone="info"
                                     icon={<Send size={18} />}
                                 />

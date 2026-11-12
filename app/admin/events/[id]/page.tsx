@@ -63,6 +63,8 @@ interface SheetEvent {
   practical_info: Record<string, unknown> | null;
   created_at: string | null;
   updated_at: string | null;
+  /** Lot 9 ter (R106 a) : VALIDE jamais publié terminé par le cron ; jamais public. */
+  ended_unpublished?: boolean | null;
 }
 
 interface SheetCategory {
@@ -472,7 +474,7 @@ export default function AdminEventSheetPage() {
       .map(([key, label]) => ({ key, label, value: str(event.practical_info?.[key]) }))
       .filter((r): r is { key: string; label: string; value: string } => r.value !== null)
     : [];
-  const isPublic = isEventStatus(currentStatus) && PUBLIC_STATUSES.includes(currentStatus);
+  const isPublic = isEventStatus(currentStatus) && PUBLIC_STATUSES.includes(currentStatus) && event.ended_unpublished !== true;
   const isCancelled = currentStatus === 'ANNULE';
   const partnerStatus = organizer?.status ? PARTNER_STATUS[organizer.status] : undefined;
   const historyNewestFirst = history.slice().reverse();
