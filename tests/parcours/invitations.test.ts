@@ -10,7 +10,7 @@
  *  - réponse identique avec ou sans compte (L7), liste sans numéro de billet ni QR ;
  *  - SMS INVITATION_RECEIVED : une ligne SMS par numéro, ESSENTIAL, sans actor_id ni compte (lot 9 bis, R79 : in-app et push au compte vérifié), texte exact, 1 segment
  *    GSM-7 (calculé ici), aucun claim, token, 6 chiffres ; audit sans numéro en clair ;
- *  - pilotage (invitations comptées à part, restants) et CSV (colonne « Canal », nom « Invitation en attente »).
+ *  - pilotage (invitations comptées à part, restants) et CSV (colonne « Origine » au lot 9 ter, ex-« Canal », nom « Invitation en attente »).
  *
  * Rouge avant correctif : ni la route app/api/partner/events/[id]/invitations/route.ts, ni la RPC
  * ticket_invitation_create (M2), ni le type INVITATION_RECEIVED n'existent : chaque cas échoue en nommant la route
@@ -588,7 +588,7 @@ describe('9.0 Invitations : pilotage et export (L13)', () => {
         assert.equal(numberAt(row, 'remaining', 'restants'), 27, 'restants = 30 − 3');
     });
 
-    test('CSV : colonne « Canal » en troisième position ; invitation en attente, invitation attribuée et vente en ligne ; aucun numéro', async () => {
+    test('CSV : colonne « Origine » en troisième position ; invitation en attente, invitation attribuée et vente en ligne ; aucun numéro', async () => {
         const ev = await newEvent('export');
         const account = await verifiedAccount('export');
         const pending = randomSenegalPhone('76');
@@ -600,7 +600,7 @@ describe('9.0 Invitations : pilotage et export (L13)', () => {
         assert.equal(res.status, 200, showExport(res));
         const lines = res.text.split(/\r?\n/).filter((l) => l.trim() !== '').map((l) => l.split(';'));
         const [header, ...rows] = lines;
-        assert.deepEqual(header, ['Nom', 'Catégorie', 'Canal', 'Statut du billet', 'Heure d’entrée'], showExport(res));
+        assert.deepEqual(header, ['Nom', 'Catégorie', 'Origine', 'Statut du billet', 'Heure d’entrée', 'Zone', 'Porte'], showExport(res));
         assert.equal(rows.length, 3, showExport(res));
         const channelOf = (name: string): string | undefined => rows.find((r) => r[0].includes(name))?.[2];
         assert.equal(channelOf('Invitation en attente'), 'Invitation', showExport(res));
