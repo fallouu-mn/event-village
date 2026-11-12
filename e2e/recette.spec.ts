@@ -57,7 +57,7 @@ import { posterHtml, POSTER_SIZE } from './support/poster';
 import {
     clearPasswordConfirmations, createControllerAccount, createPublishedEvent, eventImageUrl, outboxOfEvent, partnerPosterOf, serviceClient, ticketNumbers, unusedPhone, userIdByEmail, userIdByPhone,
 } from './support/service';
-import { installScanProbe, livePayload, openScanner, presentPayload, probeVibrations, verifyHolderPhone, type ProbeRecord } from './support/terrain';
+import { computedPayload, installScanProbe, livePayload, openScanner, presentPayload, probeVibrations, verifyHolderPhone, type ProbeRecord } from './support/terrain';
 import { FIXTURE_USERS, TEST_PASSWORD } from '../tests/helpers/fixture-data';
 
 test.describe.configure({ mode: 'serial' });
@@ -1369,7 +1369,7 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
         await k2Page.goto('/controller/scanner');
         await chooseEvent(k2Page, title, /^Votre porte : Porte Sud · Entrée générale \(Entrée\)\./, true);
         await startControl(k2Page, title);
-        await scanShown(k2Page, await livePayload(client, simple[0]), 'SIMPLE#1 à la Porte Sud', 'already_used', async (o) => {
+        await scanShown(k2Page, usedPayload(simple[0], 'SIMPLE#1 à la Porte Sud'), 'SIMPLE#1 à la Porte Sud', 'already_used', async (o) => {
             await expect(o.getByText(/^Déjà utilisé à \d{1,2}:\d{2}, Porte Nord$/), 'heure et porte de la première entrée (X5)').toBeVisible();
         });
     });
@@ -1386,7 +1386,7 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
         await chooseEvent(k2Page, title, /^Votre porte : Accès carré · Carré VIP \(Contrôle de zone\)\./, true);
         await startControl(k2Page, title);
 
-        const wrong = await scanShown(k2Page, await livePayload(client, simple[0]), 'SIMPLE#1 à l’accès du carré', 'wrong_zone', async (o) => {
+        const wrong = await scanShown(k2Page, usedPayload(simple[0], 'SIMPLE#1 à l’accès du carré'), 'SIMPLE#1 à l’accès du carré', 'wrong_zone', async (o) => {
             await expect(o).toHaveAttribute('data-scan-category', 'oriente');
             await expect(o.getByText('Accès refusé : billet SIMPLE', { exact: true }), 'mauvaise zone').toBeVisible();
             await expect(o.getByText('Présentez-vous à : Entrée générale', { exact: true })).toBeVisible();
@@ -1404,7 +1404,7 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
             await expect(o.getByText(GRANDE_SOIREE_VIP_INSTRUCTION, { exact: true }), 'consigne de VIP').toBeVisible();
             await expect(o.getByText('Zone : Entrée générale · Porte Nord', { exact: true })).toBeVisible();
         });
-        await scanShown(k2Page, await livePayload(client, vip), 'VIP entré, à l’accès du carré', 'zone_ok', async (o) => {
+        await scanShown(k2Page, usedPayload(vip, 'VIP entré, à l’accès du carré'), 'VIP entré, à l’accès du carré', 'zone_ok', async (o) => {
             await expect(o).toHaveAttribute('data-scan-category', 'accepte');
             await expect(o.getByText('Accès autorisé', { exact: true })).toBeVisible();
             await expect(o.getByText('Zone : Carré VIP', { exact: true })).toBeVisible();
@@ -1527,6 +1527,17 @@ async function startControl(page: Page, title: string): Promise<void> {
     await expect(camera).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText(title).filter({ visible: true }).first(), `contrôle de « ${title} »`).toBeVisible();
     await videoPlaying(page, `contrôle de « ${title} »`);
+}
+
+/**
+ * QR du pas courant d'un billet DÉJÀ COMPOSTÉ : la route live-code du porteur refuse un billet UTILISE (409, depuis le
+ * lot 4 ; run 132, étape 4), le porteur montrerait l'écran de son billet utilisé. Calculé comme la série « déjà utilisé »
+ * du terrain (computedPayload, lib/security/totp.ts et le secret de la base locale) ; statut UTILISE exigé.
+ */
+function usedPayload(ticketId: string, what: string): string {
+    const out = computedPayload(ticketId);
+    expect(out.status, `${what} : billet composté avant sa relecture`).toBe('UTILISE');
+    return out.payload;
 }
 
 /** QR présenté, plein écran du résultat attendu et lu (lignes exactes de C.2.4), puis refermé ; rend la lecture de la sonde. */
