@@ -44,7 +44,7 @@ const SALES_COLUMNS: DataColumn<CategorySalesSummary>[] = [
   { key: 'unitPrice', header: 'Prix unitaire', align: 'right', render: (cat) => formatFcfa(cat.unitPrice) },
   { key: 'allocated', header: 'Quota', align: 'right', render: (cat) => formatInteger(cat.totalAllocated) },
   { key: 'sold', header: 'Vendus', align: 'right', render: (cat) => formatInteger(cat.soldQuantity) },
-  { key: 'checkedIn', header: 'Entrées', align: 'right', render: (cat) => formatInteger(cat.checkedInQuantity) },
+  { key: 'invitations', header: 'Invitations', align: 'right', render: (cat) => formatInteger(cat.invitations) },
   { key: 'gross', header: 'Ventes en ligne', align: 'right', render: (cat) => <span className="font-semibold tabular-nums">{formatFcfa(cat.grossAmount)}</span> },
 ];
 
@@ -64,7 +64,10 @@ function ReportSkeleton() {
 }
 
 function ReportBody({ report }: { report: ClosingReportData }) {
-  const { event, financialSummary: money, paymentsSummary: payments, ticketsSummary: tickets } = report;
+  const { event, financialSummary: money, ticketsSummary: tickets } = report;
+  // Lot 9 ter (R106 b) : données lues de pilotage_closing ; taux calculés ici, en attendant le composant partagé (vague E)
+  const fillRate = tickets.capacity > 0 ? Math.min(1, tickets.sold / tickets.capacity) : 0;
+  const presenceRate = tickets.sold > 0 ? Math.min(1, tickets.entries / tickets.sold) : 0;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4">
@@ -89,21 +92,21 @@ function ReportBody({ report }: { report: ClosingReportData }) {
       <div className="grid grid-cols-2 gap-3 tabular-nums lg:grid-cols-4">
         <KpiCard
           label="Billets vendus"
-          value={<KpiValue>{formatInteger(tickets.sold)} / {formatInteger(tickets.totalAllocated)}</KpiValue>}
-          hint={`Remplissage : ${formatPercent(tickets.fillRatePercent / 100)}`}
+          value={<KpiValue>{formatInteger(tickets.sold)} / {formatInteger(tickets.capacity)}</KpiValue>}
+          hint={`Remplissage : ${formatPercent(fillRate)}`}
           icon={<Users size={18} />}
         />
         <KpiCard
           label="Entrées validées"
-          value={<KpiValue>{formatInteger(tickets.checkedIn)}</KpiValue>}
-          hint={`Présence : ${formatPercent(tickets.checkInRatePercent / 100)}`}
+          value={<KpiValue>{formatInteger(tickets.entries)}</KpiValue>}
+          hint={`Présence : ${formatPercent(presenceRate)}`}
           tone="success"
           icon={<QrCode size={18} />}
         />
         <KpiCard
-          label="Paiements confirmés"
-          value={<KpiValue>{formatInteger(payments.confirmedCount)}</KpiValue>}
-          hint={`Ventes en ligne : ${formatFcfa(money.totalGross)}`}
+          label="Ventes en ligne"
+          value={<KpiAmount value={formatFcfa(money.totalGross)} />}
+          hint={`Ventes au guichet : ${formatFcfa(money.cashSales)}`}
           icon={<Banknote size={18} />}
         />
         <KpiCard
