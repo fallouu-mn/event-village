@@ -150,7 +150,7 @@ describe('8.2 h — statique : layout serveur, constante partagée, page inchang
 
     test('la route partage PUBLIC_EVENT_STATUSES : un seul exemplaire', () => {
         const sf = source(API_ROUTE);
-        assert.ok(imports(sf, /lib\/events\/public-status$/, 'PUBLIC_EVENT_STATUSES'), `${API_ROUTE} n'importe pas PUBLIC_EVENT_STATUSES`);
+        assert.ok(imports(sf, /lib\/events\/public-status$/, 'PUBLIC_EVENT_STATUSES') || imports(sf, /lib\/events\/public-status$/, 'isPublicEvent'), `${API_ROUTE} n'importe ni PUBLIC_EVENT_STATUSES ni isPublicEvent (lot 9 ter, R106 a : la constante partagée y est lue)`);
         const local: string[] = [];
         (function visit(n: ts.Node): void {
             if (ts.isStringLiteral(n) && n.text === 'SUSPENDU' && !ts.isPropertyAssignment(n.parent) && !ts.isBinaryExpression(n.parent)) {
