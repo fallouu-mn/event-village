@@ -1,6 +1,6 @@
 # Déploiement — montage du futur projet de production depuis zéro
 
-**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 9 bis, cycle de l'événement, email vérifié, SamirPay v1.2 et mode réel, migrations `20261109…`, section 3 quinquies ; avant lui, lot 9, migrations `20261108…`). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet monté le 02/11 est devenu event-village-dev, le projet d'essai manuel : il suit `docs/essai-local.md`, et la production se fera sur un projet neuf.
+**Statut :** procédure préparée au lot 1A, complétée à chaque lot (dernière mise à jour : lot 9 ter, écritures REST fermées, zones et portes, liste des invités, tableau de bord des entrées, stock au public, migrations `20261110…`, section 3 sexies ; avant lui, lot 9 bis, migrations `20261109…`, section 3 quinquies). **À ne pas exécuter maintenant** : elle sera déroulée quand l'hébergeur de l'application sera choisi. Le projet monté le 02/11 est devenu event-village-dev, le projet d'essai manuel : il suit `docs/essai-local.md`, et la production se fera sur un projet neuf.
 
 **Principe :** la production se fait sur un projet Supabase **neuf**. On n'y copie rien du projet de test : ni données, ni comptes, ni clés. Le schéma vient uniquement des migrations du dépôt.
 
@@ -305,14 +305,272 @@ Puis exécuter `03-verification.sql` : tout `OK`. La liste blanche des aides RLS
 
 **Déployer l'application du lot 9 bis juste après, dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Elle appelle des fonctions et lit des colonnes qui n'existent qu'après ces migrations : sans la migration 12, chaque SMS, email et push resterait « à réessayer », car le contrôle des comptes de démonstration échoue fermé. Dans le même déploiement : retirer `PAYMENT_HOLD_MINUTES` de l'hébergeur, et ne poser `SAMIRPAY_WEBHOOK_SECRET` qu'en suivant 6.1. Ensuite, donner leurs permissions aux administrateurs relevés au contrôle 3.
 
+## 3 sexies. Projet déjà en service : appliquer seulement les migrations du lot 9 ter
+
+Cas d'un projet où les migrations jusqu'au lot 9 bis compris (`20261109000001` à `20261109000012`) sont déjà appliquées. Sur un projet neuf, la section 3 suffit : `db push` applique tout. Le projet d'essai event-village-dev suit `docs/essai-local.md`, section 3. Les migrations `20261103…` à `20261109…` sont **gelées**. Le lot 9 ter apporte onze migrations nouvelles, à appliquer dans cet ordre, celui des noms, que suit `db push`.
+
+| Ordre | Migration | Ce qu'elle fait |
+|---|---|---|
+| 1 | `20261110000001_lot9ter_rls.sql` | **Sécurité, indépendante des dix autres.** Plus aucune écriture par l'API REST dans le schéma `public` pour `anon` et `authenticated` : suppression des 25 politiques d'écriture (dont `partners_update_owner`, qui laissait une partenaire écrire son propre `status`), retrait des droits `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE` sur toute relation de `public`, et des privilèges par défaut correspondants. `is_admin()` et `is_superadmin()` exigent désormais un compte `ACTIF`. Les politiques de lecture ne changent pas ; les écritures légitimes passent déjà par les routes serveur et les fonctions. Bloc final qui fait échouer la migration en nommant chaque écriture encore possible (`lot 9 ter (0.1) : écritures REST encore possibles : …`). Aucune donnée modifiée. |
+| 2 | `20261110000002_lot9ter_reglages.sql` | Crée les 2 réglages de l'alerte de refus (4 quinquies) : `access.refusal_alert_threshold` (10) et `access.refusal_alert_minutes` (5). Recrée `fin_setting_valid` et `finance_setting_set` avec ces clés. Fonctions `ticket_origin` (origine d'un billet : en ligne, guichet, gratuit, invitation) et `scan_is_refusal` (règle unique d'un refus). |
+| 3 | `20261110000003_lot9ter_transfert_statut.sql` | Ajoute seule la valeur `ADMITTED` au type `ticket_transfer_status` : une invitation validée à la porte par la liste des invités avant d'être réclamée est close. |
+| 4 | `20261110000004_lot9ter_registre.sql` | Registre des notifications : 4 types nouveaux, `TICKET_REFUNDED_HOLDER` (SMS indispensable au détenteur actuel d'un billet transféré puis remboursé), `ADMIN_EVENT_PUBLISHED` et `ADMIN_EVENT_WITHDRAWN` (cloche et email aux administrateurs qui ont `events.read`), `SCAN_REFUSALS_ALERT` (cloche, push et email à l'organisateur, **aucun SMS**). |
+| 5 | `20261110000005_lot9ter_argent.sql` | « Constater non versé » : colonnes `cashouts.not_sent_reference`, `not_sent_reason`, `not_sent_at`, `not_sent_by`, contrainte `cashouts_not_sent_chk`, fonction `cashout_admin_not_sent` (SUPERADMIN, mot de passe saisi depuis moins de 10 minutes ; le versement passe à ÉCHOUÉ, rien ne repart seul). Recopie de `cashout_fee_apply` (frais d'un remboursement passé en créance, risque w19). Commissions de parrainage d'un événement suspendu gelées à la lecture (`fin_frozen_amount`, `fin_withdrawal_check`). |
+| 6 | `20261110000006_lot9ter_equipe_messages.sql` | Table `partner_controllers` (un organisateur « connaît » un contrôleur dès sa première affectation), reprise depuis les affectations, caisses, invitations acceptées et scans existants ; un contrôleur jamais affecté par cet organisateur doit accepter une invitation. Avis au détenteur actuel d'un billet transféré remboursé ; cloches aux administrateurs à la publication, au retrait de la validation, à un changement de prix ou de canaux après validation (triggers `trg_event_controllers_partner_link`, `trg_event_status_admin_alert`, `trg_ticket_categories_admin_update_alert`). |
+| 7 | `20261110000007_lot9ter_evenements.sql` | Colonne `events.ended_unpublished` ; la tâche de fin termine aussi un événement **validé jamais publié** dont la fin est passée, sans aucun message, invisible du public et jamais scannable ; transition `VALIDE → TERMINE` (17 transitions). Verrous de modification servis à l'écran (`event_edit_locks`). « Retraits en cours » au montant brut (`finance_account_balance`). |
+| 8 | `20261110000008_lot9ter_invites.sql` | Colonne `tickets.guest_name` (nom de l'invité, 60 caractères, jamais lisible par l'API REST ni le temps réel) ; méthode de scan `GUEST_LIST` ; recherche du contrôleur dans la liste des invités (`ticket_guest_list_search`, quota par contrôleur et par heure, 5.3 sexies) ; nom modifiable tant que le billet n'est pas utilisé. |
+| 9 | `20261110000009_lot9ter_zones.sql` | Tables `event_zones`, `zone_categories`, `event_gates` ; porte d'un contrôleur (`event_controllers.gate_id`, `gate_change_allowed`) ; porte, zone et verdict de zone de chaque scan (`ticket_scans.gate_id`, `zone_id`, `zone_result`) ; couleur et consigne d'entrée d'une catégorie (`scan_color`, `entry_instruction`, jamais lisibles par REST). Recopies de `ticket_scan`, `ticket_manual_lookup`, `counter_sale`, `controller_scan_stats`. Un événement sans zone se comporte comme avant. |
+| 10 | `20261110000010_lot9ter_pilotage.sql` | Tableau de bord des entrées par zone, porte, catégorie et origine ; rapport de clôture et export des participants alignés (colonnes Origine, Zone, Porte) ; alerte de refus par le trigger `trg_ticket_scans_refusal_alert` sur les **nouveaux** scans seulement (aucune alerte rétroactive). |
+| 11 | `20261110000011_lot9ter_stock.sql` | Colonne `public_event_state.stock_level` (badges « Complet » et « Dernières places » des cartes) et sa contrainte ; recopies des synchronisations publiques et de `ticket_category_create`, `ticket_category_update` (couleur, consigne). Reprise en fin de fichier, événement par événement : chaque événement public émet un signal temps réel au moment de l'application (sans effet visible hors rechargement des cartes ouvertes). |
+
+Toutes sont rejouables, sans `BEGIN` ni `COMMIT` de transaction. Aucune ne lève de `NOTICE` de comptage à recopier ; les avis « … does not exist, skipping » des suppressions conditionnelles sont normaux. Chaque fonction créée ou recréée est `SECURITY DEFINER`, réservée au service_role. Les quatre tables nouvelles (`partner_controllers`, `event_zones`, `zone_categories`, `event_gates`) ont la sécurité par ligne activée, sans politique : seul le serveur les lit. Aucune tâche planifiée n'est ajoutée (section 7 inchangée, 9 tâches).
+
+**Migration 1 seule, en avance (facultatif, sur décision du chef de projet).** Elle ne dépend d'aucune autre et ne casse pas l'application du lot 9 bis, dont le navigateur n'écrit dans aucune table. Pour l'appliquer seule, depuis un dossier de travail placé sur le commit `bcb1d3da` (`fix(9t.1)`), où elle est la seule migration `20261110…` : `git worktree add ..\event-village-m01 bcb1d3da`, puis, dans ce dossier, les commandes `link`, `migration list`, `db push --linked --dry-run` (exactement **1** fichier, `20261110000001_lot9ter_rls.sql`) et `db push --linked` ci-dessous ; contrôles « 1 » avant et après ; enfin `git worktree remove ..\event-village-m01`. Les dix autres suivent plus tard, par la procédure complète (le `--dry-run` en liste alors 10). Ne jamais l'appliquer à la main dans l'éditeur SQL, ni utiliser `supabase migration repair`.
+
+**Contrôles avant d'appliquer :**
+
+1. Depuis le poste de l'opérateur, comme en 3 quater :
+
+   ```powershell
+   npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
+   npx supabase@2.122.0 migration list --linked
+   npx supabase@2.122.0 db push --linked --dry-run
+   ```
+
+   `migration list` : `20261109000012` présent des deux côtés, les onze `20261110…` en local seulement (dix si la migration 1 a été appliquée en avance). `--dry-run` : exactement les fichiers `20261110000001` à `…11` restants, dans cet ordre.
+
+2. **Si la liste contient autre chose** : même règle qu'en 3 bis. S'arrêter, sans `--include-all` et sans `supabase migration repair`.
+
+3. Dans l'éditeur SQL, **avant** `db push`, une requête à la fois. Garder chaque résultat : la plupart se comparent après.
+
+   ```sql
+   -- 1 (migration 1). Écritures REST encore possibles. Avant : une ligne par politique d'écriture et par droit.
+   --   Après : 0 ligne.
+   SELECT 'politique' AS genre, tablename AS objet, policyname || ' (' || cmd || ')' AS detail
+     FROM pg_policies WHERE schemaname = 'public' AND cmd IN ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+   UNION ALL
+   SELECT 'droit', c.relname, r.rol || ' : ' || k.priv
+     FROM pg_class c CROSS JOIN (VALUES ('anon'), ('authenticated')) r(rol)
+     CROSS JOIN (VALUES ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) k(priv)
+    WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+      AND CASE WHEN k.priv IN ('INSERT', 'UPDATE') THEN has_any_column_privilege(r.rol, c.oid, k.priv)
+               ELSE has_table_privilege(r.rol, c.oid, k.priv) END
+   ORDER BY 1, 2, 3;
+
+   -- 2 (migration 1). Traces d'une fiche partenaire, d'un compte ou d'un paiement modifiés par un jeton
+   --   (les fonctions du serveur journalisent user_id NULL). À relire avec le client ; la migration ne réécrit rien.
+   SELECT a.created_at, a.user_id, a.user_role, a.action, a.object_id AS partner_id,
+          a.old_value->>'status' AS ancien_statut, a.new_value->>'status' AS nouveau_statut,
+          a.old_value->>'is_verified' AS ancien_verifie, a.new_value->>'is_verified' AS nouveau_verifie,
+          a.old_value->>'subscription_plan_id' AS ancienne_formule, a.new_value->>'subscription_plan_id' AS nouvelle_formule
+     FROM public.audit_logs a
+    WHERE a.object_type = 'partners' AND a.action IN ('INSERT', 'UPDATE', 'DELETE') AND a.user_id IS NOT NULL
+    ORDER BY a.created_at;
+   SELECT user_id, count(*) FROM public.partners GROUP BY user_id HAVING count(*) > 1;
+   SELECT p.id, p.user_id, p.status FROM public.partners p
+    WHERE NOT EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = p.user_id AND r.role = 'PARTENAIRE');
+   SELECT p.id, p.status, u.status AS compte FROM public.partners p JOIN public.users u ON u.id = p.user_id
+    WHERE p.status = 'VALIDE' AND u.status <> 'ACTIF';
+   SELECT a.created_at, a.user_id, a.object_id FROM public.audit_logs a
+    WHERE a.object_type = 'payments' AND a.action = 'UPDATE' AND a.user_id IS NOT NULL
+      AND a.old_value->>'status' IS DISTINCT FROM a.new_value->>'status';
+
+   -- 3 (migration 2). Attendu : 0 ligne, puis 0 ligne.
+   SELECT key FROM public.platform_settings WHERE key LIKE 'access.refusal_alert_%';
+   SELECT proname FROM pg_proc WHERE proname IN ('ticket_origin', 'scan_is_refusal');
+
+   -- 4 (migrations 3, 8, 9). Attendus en commentaire ; les deux derniers comptes sont pour mémoire.
+   SELECT enum_range(NULL::public.ticket_transfer_status);                                   -- sans ADMITTED
+   SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
+    WHERE conrelid = 'public.ticket_scans'::regclass AND conname IN ('ticket_scans_method_check', 'ticket_scans_result_check');
+   SELECT count(*) FROM public.ticket_scans WHERE method NOT IN ('QR', 'MANUAL', 'COUNTER') OR result IS NULL;   -- 0
+   SELECT to_regclass('public.event_zones'), to_regclass('public.zone_categories'), to_regclass('public.event_gates');  -- NULL ×3
+   SELECT count(*) FROM pg_constraint WHERE conname = 'ticket_categories_event_id_id_key';  -- 0
+   SELECT count(*) AS invitations_en_attente FROM public.tickets
+    WHERE sale_channel = 'INVITATION' AND user_id IS NULL AND status = 'VALIDE';
+   SELECT count(*) AS points_entree FROM public.event_controllers WHERE entry_point IS NOT NULL;
+
+   -- 5 (migration 4). Attendu : 0 ligne.
+   SELECT type FROM public.notification_types
+    WHERE type IN ('TICKET_REFUNDED_HOLDER','ADMIN_EVENT_PUBLISHED','ADMIN_EVENT_WITHDRAWN','SCAN_REFUSALS_ALERT');
+
+   -- 6 (migration 5). a) Attendu : 0 ligne (sinon lister et décider ; la migration ne réécrit rien).
+   SELECT l.id, l.source_key, l.amount, l.available_at FROM public.finance_ledger l
+     LEFT JOIN public.cashouts c ON c.id::text = substr(l.source_key, length('CASHOUT_FEE-') + 1)
+    WHERE l.source_key LIKE 'CASHOUT_FEE-%'
+      AND (c.id IS NULL OR c.status <> 'CONFIRME' OR c.samirpay_fees IS NULL OR l.amount <> -c.samirpay_fees
+           OR NOT EXISTS (SELECT 1 FROM public.finance_ledger r WHERE r.entry_type = 'REMBOURSEMENT' AND r.owner_id = l.owner_id
+                           AND r.refund_id = c.refund_id AND r.available_at = l.available_at));
+   --    b) Versements incertains sans identifiant SamirPay : candidats au constat « non versé ».
+   SELECT kind, count(*), sum(amount) FROM public.cashouts WHERE status = 'INCERTAIN' AND samirpay_transaction_id IS NULL GROUP BY kind;
+   --    c) Parrains dont le disponible au retrait baissera (commissions d'un événement suspendu gelées), puis gel
+   --       ORGANISATEUR, à comparer après (inchangé).
+   SELECT l.owner_id, COALESCE(l.event_id, p.event_id) AS event_id, sum(l.amount) AS net
+     FROM public.finance_ledger l LEFT JOIN public.payments p ON p.id = l.payment_id
+     JOIN public.events e ON e.id = COALESCE(l.event_id, p.event_id)
+    WHERE l.account_kind = 'PARRAINAGE' AND l.available_at <= now() AND e.status::text = 'SUSPENDU'
+    GROUP BY 1, 2 HAVING sum(l.amount) > 0;
+   SELECT DISTINCT pa.user_id, public.fin_frozen_amount(pa.user_id, 'ORGANISATEUR', now()) AS gel
+     FROM public.partners pa JOIN public.events e ON e.partner_id = pa.id WHERE e.status::text = 'SUSPENDU';
+
+   -- 7 (migration 6). Attendu : NULL, puis un nombre à garder.
+   SELECT to_regclass('public.partner_controllers');
+   SELECT count(*) FROM public.event_controllers;
+
+   -- 8 (migration 7). Événements validés jamais publiés dont la fin est passée : ils passeront à « Terminé », sans
+   --   message et invisibles, au premier passage de la tâche ev_events_finish. Puis le montant des retraits en cours,
+   --   affiché désormais au brut (frais compris) au lieu du net.
+   SELECT id, title, public.event_end_at(id) FROM public.events WHERE status = 'VALIDE' AND public.event_end_at(id) < now();
+   SELECT count(*), sum(net_amount), sum(gross_amount) FROM public.withdrawals WHERE status IN ('PENDING','PROCESSING');
+
+   -- 9 (migration 10). Refus déjà enregistrés : aucun ne déclenchera d'alerte. Pour un événement publié connu,
+   --   le total des entrées, à comparer après.
+   SELECT count(*) FROM public.ticket_scans WHERE NOT accepted;
+   SELECT public.pilotage_entries(jsonb_build_object('event_id', '<id de l''événement>', 'actor_id', '<id du compte propriétaire>'))->'total';
+
+   -- 10 (migration 11). N = nombre de résumés publics, puis résumés laissés faux (attendu 0, corrigés par la reprise sinon).
+   SELECT count(*) FROM public.public_event_state;
+   SELECT count(*) FROM public.public_event_state s WHERE s.has_purchasable AND NOT EXISTS (SELECT 1 FROM public.ticket_categories c WHERE c.event_id = s.event_id AND c.is_active AND c.sale_online AND c.total_quantity - c.sold_quantity - c.held_quantity > 0);
+   ```
+
+   Limite du contrôle 2 : le journal des fiches partenaire ne retient que `status`, `subscription_plan_id`, `company_name` et `is_verified`. Une écriture passée de `trial_ends_at`, `is_founder`, `resubmitted_at` ou `phone_verified` est indétectable.
+
+**Appliquer** (les migrations 7 à 11 dans le même `db push`, d'un seul tenant) :
+
+```powershell
+npx supabase@2.122.0 db push --linked
+```
+
+**Contrôles après, dans l'éditeur SQL, une requête à la fois :**
+
+```sql
+-- attendu : 11 lignes, de 20261110000001 à 20261110000011
+select version from supabase_migrations.schema_migrations where version like '20261110%' order by version;
+
+-- 1 (migration 1) : la requête 1 d'avant, relancée, rend 0 ligne. Puis : actif = true et proconfig = {search_path=public}
+--   pour les deux fonctions, et vrai pour la dernière requête.
+SELECT proname, prosrc ~ 'ACTIF' AS actif, proconfig FROM pg_proc
+ WHERE pronamespace = 'public'::regnamespace AND proname IN ('is_admin', 'is_superadmin');
+SELECT has_function_privilege('anon', 'public.is_admin()', 'EXECUTE');
+
+-- 3 (migration 2) : 2 lignes, {"value": 10} et {"value": 5} ; puis 2 fonctions ; puis vrai.
+SELECT key, value FROM public.platform_settings WHERE key LIKE 'access.refusal_alert_%' ORDER BY key;
+SELECT proname FROM pg_proc WHERE proname IN ('ticket_origin', 'scan_is_refusal');
+SELECT public.fin_setting_valid('access.refusal_alert_threshold', '10'::jsonb);
+
+-- 4 (migrations 3, 8, 9) : attendus en commentaire.
+SELECT 'ADMITTED' = ANY (enum_range(NULL::public.ticket_transfer_status)::text[]);        -- vrai
+SELECT c.relname, c.relrowsecurity, (SELECT count(*) FROM pg_policies p WHERE p.tablename = c.relname AND p.schemaname = 'public') AS politiques
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE n.nspname = 'public' AND c.relname IN ('event_zones', 'zone_categories', 'event_gates');   -- true, 0
+SELECT has_column_privilege('authenticated', 'public.tickets', 'guest_name', 'SELECT'),
+       has_column_privilege('anon', 'public.ticket_categories', 'scan_color', 'SELECT'),
+       has_column_privilege('authenticated', 'public.ticket_categories', 'entry_instruction', 'SELECT');   -- faux ×3
+SELECT p.proname, count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND p.proname IN ('ticket_scan', 'ticket_manual_lookup', 'counter_sale', 'scan_log', 'scan_log_at',
+       'scan_gate_context', 'scan_zone_verdict', 'event_zones_get', 'event_zones_save', 'event_controller_gate_set',
+       'controller_gate_select', 'ticket_guest_list_search', 'ticket_invitation_guest_name_set') GROUP BY 1;   -- 1 chacune
+SELECT count(*) FROM public.ticket_scans WHERE gate_id IS NOT NULL OR zone_id IS NOT NULL OR zone_result IS NOT NULL;  -- 0
+SELECT count(*) FROM public.tickets WHERE guest_name IS NOT NULL;                         -- 0
+SELECT count(*) FROM public.event_controllers WHERE gate_id IS NOT NULL OR gate_change_allowed;   -- 0
+-- et le compte points_entree d'avant : inchangé.
+
+-- 5 (migration 4) : 4 lignes.
+SELECT type, family, channels, audience, admin_permission FROM public.notification_types
+ WHERE type IN ('TICKET_REFUNDED_HOLDER','ADMIN_EVENT_PUBLISHED','ADMIN_EVENT_WITHDRAWN','SCAN_REFUSALS_ALERT') ORDER BY type;
+
+-- 6 (migration 5) : 4 colonnes, 1 contrainte ; puis vrai, faux (la fonction existe et n'est pas ouverte aux comptes).
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema = 'public' AND table_name = 'cashouts' AND column_name LIKE 'not\_sent\_%' ORDER BY 1;
+SELECT conname FROM pg_constraint WHERE conname = 'cashouts_not_sent_chk';
+SELECT to_regprocedure('public.cashout_admin_not_sent(jsonb)') IS NOT NULL,
+       has_function_privilege('authenticated', 'public.cashout_admin_not_sent(jsonb)', 'EXECUTE');
+--   La dernière requête du contrôle 6 c d'avant rend les mêmes valeurs (gel ORGANISATEUR inchangé) ; pour chaque parrain
+--   relevé en 6 c, fin_frozen_amount('<id du parrain>', 'PARRAINAGE', now()) vaut la somme relevée.
+
+-- 7 (migration 6) : table présente avec RLS active ; puis 0 ; puis les 3 triggers.
+SELECT relname, relrowsecurity FROM pg_class WHERE oid = to_regclass('public.partner_controllers');
+SELECT count(*) FROM public.event_controllers ec JOIN public.events e ON e.id = ec.event_id
+ WHERE NOT EXISTS (SELECT 1 FROM public.partner_controllers pc WHERE pc.partner_id = e.partner_id AND pc.user_id = ec.user_id);
+SELECT tgname FROM pg_trigger
+ WHERE tgname IN ('trg_event_controllers_partner_link', 'trg_event_status_admin_alert', 'trg_ticket_categories_admin_update_alert');
+
+-- 8 (migration 7) : 17 ; puis 0 avant le premier passage de ev_events_finish.
+SELECT count(*) FROM public.event_status_transitions;
+SELECT count(*) FROM public.events WHERE ended_unpublished;
+
+-- 9 (migration 10) : 1 ligne ; puis, pour l'événement du contrôle 9, une ligne « Entrée » (zone implicite) et un total
+--   égal à celui d'avant.
+SELECT tgname FROM pg_trigger WHERE tgname = 'trg_ticket_scans_refusal_alert';
+SELECT public.pilotage_entries(jsonb_build_object('event_id', '<id de l''événement>', 'actor_id', '<id du compte propriétaire>'))->'by_zone';
+SELECT public.pilotage_entries(jsonb_build_object('event_id', '<id de l''événement>', 'actor_id', '<id du compte propriétaire>'))->'total';
+
+-- 10 (migration 11) : colonne et contrainte présentes ; puis 0 ; et le nombre N d'avant, inchangé.
+SELECT conname FROM pg_constraint WHERE conname = 'public_event_state_stock_level_check';
+SELECT count(*) FROM public.public_event_state s WHERE s.stock_level IS NULL AND EXISTS (SELECT 1 FROM public.ticket_categories c WHERE c.event_id = s.event_id AND c.is_active AND c.sale_online);
+SELECT count(*) FROM public.public_event_state;
+
+-- 10 bis (migration 11) : résumés publics justes après la reprise. Attendu : 0 ligne.
+WITH thr AS (SELECT public.low_stock_threshold() AS t),
+cat AS (
+  SELECT tc.id, tc.event_id, tc.price,
+         GREATEST(COALESCE(tc.total_quantity, 0) - COALESCE(tc.sold_quantity, 0) - COALESCE(tc.held_quantity, 0), 0) AS r
+    FROM public.ticket_categories tc
+   WHERE tc.is_active AND tc.sale_online
+),
+ev AS (
+  SELECT s.event_id, s.min_price, s.has_purchasable, s.stock_level, e.status::text AS status,
+         (SELECT min(c.price) FILTER (WHERE c.r > 0) FROM cat c WHERE c.event_id = s.event_id) AS want_min,
+         (SELECT COALESCE(bool_or(c.r > 0), FALSE) FROM cat c WHERE c.event_id = s.event_id) AS want_any,
+         (SELECT CASE WHEN count(*) = 0 THEN NULL
+                      WHEN NOT bool_or(c.r > 0) THEN 'SOLD_OUT'
+                      WHEN bool_and(c.r <= (SELECT t FROM thr)) FILTER (WHERE c.r > 0) THEN 'LOW'
+                      ELSE 'AVAILABLE' END
+            FROM cat c WHERE c.event_id = s.event_id) AS want_level
+    FROM public.public_event_state s
+    JOIN public.events e ON e.id = s.event_id
+)
+SELECT 'x13'::text AS regle, ev.event_id::text AS objet,
+       format('résumé public faux : min_price %s (attendu %s), has_purchasable %s (attendu %s), stock_level %s (attendu %s)',
+              ev.min_price, ev.want_min, ev.has_purchasable, (ev.status = 'PUBLIE' AND ev.want_any),
+              COALESCE(ev.stock_level, 'NULL'), COALESCE(ev.want_level, 'NULL')) AS detail
+  FROM ev
+ WHERE ev.min_price IS DISTINCT FROM ev.want_min
+    OR ev.has_purchasable IS DISTINCT FROM (ev.status = 'PUBLIE' AND ev.want_any)
+    OR ev.stock_level IS DISTINCT FROM ev.want_level
+UNION ALL
+SELECT 'x13', s.category_id::text,
+       format('tranche publique fausse : %s/%s (attendu %s/%s)', s.availability, COALESCE(s.remaining_hint::text, 'NULL'),
+              CASE WHEN c.r = 0 THEN 'SOLD_OUT' WHEN c.r <= thr.t THEN 'LOW' ELSE 'AVAILABLE' END,
+              CASE WHEN c.r > 0 AND c.r <= thr.t THEN c.r::text ELSE 'NULL' END)
+  FROM public.public_category_stock s
+  JOIN cat c ON c.id = s.category_id
+ CROSS JOIN thr
+ WHERE s.availability IS DISTINCT FROM (CASE WHEN c.r = 0 THEN 'SOLD_OUT' WHEN c.r <= thr.t THEN 'LOW' ELSE 'AVAILABLE' END)
+    OR s.remaining_hint IS DISTINCT FROM (CASE WHEN c.r > 0 AND c.r <= thr.t THEN c.r END)
+UNION ALL
+SELECT 'x13', s.category_id::text, 'tranche publique d''une catégorie inactive, hors vente en ligne ou d''un événement non public'
+  FROM public.public_category_stock s
+  JOIN public.ticket_categories tc ON tc.id = s.category_id
+  JOIN public.events e ON e.id = tc.event_id
+ WHERE NOT (tc.is_active AND tc.sale_online AND e.status::text IN ('PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE'));
+
+-- attendu : 42 (40 depuis le lot 9 bis, 2 de plus)
+select count(*) from public.platform_settings;
+```
+
+Puis exécuter `03-verification.sql` : tout `OK`. Après la migration 1, `npm run essai:fiche-partenaire` n'a de sens que sur un projet d'essai qui a les comptes de `seed:dev` (`docs/essai-local.md`, section 3) : jamais sur la production.
+
+**Déployer l'application du lot 9 ter juste après les migrations 2 à 11, dans la même fenêtre de maintenance, en dehors de tout contrôle d'entrée.** Elle appelle des fonctions et lit des colonnes qui n'existent qu'après ces migrations (zones, liste des invités, tableau de bord, badges de stock). Dans le même déploiement : la variable facultative `GUEST_LIST_SEARCH_PER_SCANNER_HOUR` (5.3 sexies), rien d'autre à poser ni à retirer. Un événement sans zone se comporte comme avant : aucune partenaire n'a de réglage à faire.
+
 ## 4. Données de référence (sans données de test)
 
 - `supabase/seed.sql` n'est **pas** joué par `db push`. Les données de référence nécessaires au fonctionnement sont créées par les migrations :
-  - `platform_settings` : **40 clés** depuis le lot 9 bis : 37 depuis le lot 7, les lots 8 et 9 n'en ajoutent aucune, le lot 9 bis en ajoute 3 (4 quater) (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
+  - `platform_settings` : **42 clés** depuis le lot 9 ter : 37 depuis le lot 7, les lots 8 et 9 n'en ajoutent aucune, le lot 9 bis en ajoute 3 (4 quater), le lot 9 ter 2 (4 quinquies) (dont `ticketing_fee_config`, migration `0012`, les réglages `finance.*` et `access.*`, les réglages `notif.*` des lots 6 et 7, et les 3 interrupteurs `features.*` du lot 7) ;
   - `referral_config` (4 barèmes) ;
-  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs), `20261105000007` (email de `TRANSFER_RECEIVED`), `20261106000003` (alerte `ADMIN_DUPLICATE_PAYMENT`), `20261108000002` (`INVITATION_RECEIVED`), `20261108000004` (`PHONE_CHANGED`, `OTP_PHONE_CHANGE`) et `20261109000003` (26 types du lot 9 bis, canal email des messages indispensables).
+  - `notification_types` : registre des types de notifications (famille, sujet, canaux, destinataires), migration `20261103000002`, complété par les migrations `20261105000002` (deux alertes SMS des administrateurs), `20261105000007` (email de `TRANSFER_RECEIVED`), `20261106000003` (alerte `ADMIN_DUPLICATE_PAYMENT`), `20261108000002` (`INVITATION_RECEIVED`), `20261108000004` (`PHONE_CHANGED`, `OTP_PHONE_CHANGE`), `20261109000003` (26 types du lot 9 bis, canal email des messages indispensables) et `20261110000004` (4 types du lot 9 ter).
 
-  Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33 ; après celles du lot 7, 37 (33 + 5 clés nouvelles − `notif.sms_daily_alert`) ; après celles du lot 9 bis, 40.
+  Relevé sur le projet de production le 02/11/2026 après `db push`, **avant** le lot 6 : 24 clés et 4 barèmes, aucune donnée de compte, d'événement, de billet ni de paiement. Après les migrations du lot 6, `select count(*) from platform_settings;` doit donner 33 ; après celles du lot 7, 37 (33 + 5 clés nouvelles − `notif.sms_daily_alert`) ; après celles du lot 9 bis, 40 ; après celles du lot 9 ter, 42.
 - `subscription_plans` n'est **pas** rempli par les migrations : ses lignes ne figurent que dans `supabase/seed.sql`, qui ne doit pas être joué en production. La table reste vide tant que le client n'a pas validé les formules et leurs tarifs (point de l'audit) ; elles seront alors créées par une migration dédiée.
 - **Ne jamais exécuter** `npm run seed:test` ni `tests/seed/seed-test.ts` contre ce projet : ce seed crée des comptes de test avec un mot de passe connu. Le garde-fou `tests/helpers/env.ts` refuse de toute façon une URL non locale. Même interdiction pour `npm run seed:dev`, réservé au projet d'essai.
 - Avant l'ouverture, vérifier et corriger les valeurs métier contradictoires relevées par l'audit (taux de parrainage `referral_config` de la migration `0011` contre CDC §95-§97, tarifs des packs) : traité dans un lot ultérieur, à valider avec le client.
@@ -361,6 +619,17 @@ Créés par la migration `20261109000001`. Modifiables par un SUPERADMIN actif s
 | `notif.sms_essential_daily_alert` | `2000` | entier de 1 à 1 000 000 | « Seuil d'alerte des SMS indispensables du jour ». Les administrateurs sont alertés une fois par jour au-delà ; ces SMS ne sont jamais plafonnés (5.5) |
 
 Réglages existants dont l'effet change au lot 9 bis : `finance.referral_availability_days` se compte désormais depuis la **fin** de l'événement pour une commission sur un billet ; `finance.withdrawal_fee_rate` est comparé au coût réel constaté des versements, et la page affiche « Frais de retrait sous le coût réel » s'il est plus bas (l'enregistrement n'est pas bloqué).
+
+### 4 quinquies. Réglages du lot 9 ter
+
+Créés par la migration `20261110000002`, valeurs posées seulement si la clé n'existe pas. Modifiables par un SUPERADMIN actif seulement, page **Réglages de la plateforme** (`/admin/finance-settings`), section « Contrôle d’accès », même mécanisme que 4 bis : valeur validée en base, motif, historique. Ils valent pour tous les événements.
+
+| Clé | Défaut | Valeurs admises | Libellé de la page, rôle |
+|---|---|---|---|
+| `access.refusal_alert_threshold` | `10` | entier de 3 à 500 | « Alerte de refus à une porte : nombre de refus ». Nombre de refus à une même porte, pendant la durée observée, qui déclenche l'alerte `SCAN_REFUSALS_ALERT` à l'organisateur (cloche, push, email ; aucun SMS) |
+| `access.refusal_alert_minutes` | `5` | entier de 1 à 60 | « Alerte de refus à une porte : durée observée ». Durée pendant laquelle les refus d'une porte sont comptés ; au plus une alerte par porte et par durée |
+
+Comptent pour l'alerte : billet invalide, déjà utilisé, annulé, remboursé, d'un autre événement, paiement requis, QR expiré, QR dynamique requis, transfert en cours, mauvaise zone, pas encore entré (`scan_alert_refusal`, migration `20261110000010`). Ne comptent pas : les refus liés aux droits du contrôleur, l'encaissement requis, l'état et les horaires de l'événement. Les refus enregistrés avant la migration ne déclenchent rien. Lot 9 ter : aucune autre clé nouvelle ; `access.low_stock_threshold` (existante) sert aussi, désormais, au badge « Dernières places » des cartes.
 
 ## 5. Variables d'environnement de l'application
 
@@ -437,6 +706,14 @@ Aucune variable obligatoire n'est ajoutée. Les quotas sont de même nature que 
 | `SUPPORT_EMAIL` | `support@eventvillage.sn` | adresse de support montrée aux personnes. Existait, désormais lue, côté serveur seulement |
 
 **Retirée** : `PAYMENT_HOLD_MINUTES`, remplacée par le réglage `finance.payment_hold_minutes` (4 quater). La retirer de l'hébergeur.
+
+### 5.3 sexies Facultative, nouvelle au lot 9 ter
+
+Une seule variable, facultative, de même nature que les quotas du lot 4 (chaque appel compte, fenêtre fixe d'une heure ; au-delà, HTTP 429 avec `Retry-After`). Ce n'est pas un secret. Aucune variable obligatoire n'est ajoutée, aucune n'est retirée. Ligne `# GUEST_LIST_SEARCH_PER_SCANNER_HOUR=30` de `.env.example`.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `GUEST_LIST_SEARCH_PER_SCANNER_HOUR` | 30 | recherches dans la « Liste des invités » par contrôleur et par heure (portée de quota `guest_list_search`). Au-delà, le scanner affiche « Trop de recherches dans l’heure : réessayez dans {n} min. » |
 
 ### 5.4 Facultatives existantes
 
@@ -537,6 +814,10 @@ select result, count(*) from public.payment_webhook_events
  group by result order by result;
 ```
 
+### 6.2 Retour du client après le paiement (lot 9 ter)
+
+Quand `NEXT_PUBLIC_APP_URL` commence par `https://`, chaque initialisation de paiement envoie aussi à SamirPay `successUrl` et `errorUrl`, toutes deux égales à `{NEXT_PUBLIC_APP_URL}/paiement/{id du paiement}` (`lib/payments/cashin-init.ts:56-60`) : Wave et Orange Money ramènent le client sur la page de suivi de son paiement, en cas de succès comme d'échec. Cette page lit l'issue sur le serveur ; elle n'en déduit jamais rien de l'adresse de retour. En `http` (essai local, CI), rien n'est envoyé. Aucune variable nouvelle. **À vérifier en bac à sable SamirPay** avant toute séance réelle : que l'API accepte ces deux champs.
+
 ## 6 ter. Finance (lot 3)
 
 - **Réglages financiers** : clés `finance.*` de `platform_settings`, créées par la migration `20261101000002_lot3_reglages.sql` avec les valeurs par défaut ci-dessous. Elles ne sont modifiables que par un SUPERADMIN, par `PUT /api/admin/finance-settings` (valeur validée en base, motif obligatoire, historique dans `platform_settings_history`). Une modification ne s'applique qu'aux opérations suivantes : les taux sont recopiés sur chaque paiement, commission et retrait au moment où ils naissent.
@@ -592,7 +873,7 @@ L'hébergeur n'est pas choisi : la planification est portée par la base, avec *
 | `ev_notifications_dispatch` | `/api/cron/notifications-dispatch` | `* * * * *` | chaque minute | envoyeur unique de la boîte d'envoi (in-app, SMS, email, push) : la première relance est prévue à 1 min, les envois interrompus sont repris après 10 min, la confirmation d'achat et la cloche n'attendent pas 5 min ; un passage sans ligne due coûte une lecture indexée. Délai pg_net de 55 s (l'envoyeur travaille 45 s au plus) |
 | `ev_reminders` | `/api/cron/reminders` | `1-59/5 * * * *` | toutes les 5 minutes, à 1, 6, 11… | crée les rappels dus (veille, avant le début, rappel des contrôleurs) ; chaque rappel est créé dans les 15 min de tolérance qui suivent son échéance (5 min suffisent, sans rattrapage). Décalé d'une minute pour ne pas tomber avec la réconciliation |
 | `ev_payments_reconcile` | `/api/cron/payments-reconcile` | `*/5 * * * *` | toutes les 5 minutes (**obligatoire**) | statut SamirPay des paiements en attente : confirmation (billets), échec ou annulation (stock rendu), expiration des paiements trop anciens, succès tardifs, confirmation et contrôle des remboursements ; le webhook SamirPay n'étant envoyé qu'en cas de succès, c'est le seul moyen de connaître FAILED et CANCELLED |
-| `ev_events_finish` | `/api/cron/events-finish` | `3-59/15 * * * *` | toutes les 15 minutes, à 3, 18, 33, 48 (**obligatoire**) | passage à TERMINÉ des événements publiés dont la fin est passée (fin renseignée, sinon jour du début à 23:59, heure de Dakar), journalisé par le système ; le scan et l'ouverture de caisse restent possibles jusqu'à la fermeture de la fenêtre de scan (`access.scan_window_after_hours`) |
+| `ev_events_finish` | `/api/cron/events-finish` | `3-59/15 * * * *` | toutes les 15 minutes, à 3, 18, 33, 48 (**obligatoire**) | passage à TERMINÉ des événements publiés dont la fin est passée (fin renseignée ; date de fin sans heure : 23:59 ; depuis le lot 9 bis, sans date de fin : début + 6 h ; heure de Dakar), journalisé par le système ; depuis le lot 9 ter, aussi des événements validés jamais publiés, sans aucun message ; le scan et l'ouverture de caisse restent possibles jusqu'à la fermeture de la fenêtre de scan (`access.scan_window_after_hours`) |
 | `ev_stock_reservations` | `/api/cron/stock-reservations` | `7 * * * *` | horaire, à la minute 7 | purge des réservations de stock échues ; la réconciliation, toutes les 5 minutes, la fait aussi en début de passage, d'où l'heure suffisante |
 | `ev_ticket_transfers` | `/api/cron/ticket-transfers` | `17 * * * *` | horaire, à la minute 17 | expiration des transferts de billets non acceptés sous 48 h (l'expéditeur est prévenu) |
 | `ev_moratoriums` | `/api/cron/moratoriums` | `27 * * * *` | horaire, à la minute 27 | moratoires des réservations de salle |
@@ -681,6 +962,7 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - Lot 8 : aucune variable `EV_` dans l'hébergeur (5.3 ter) ; `/dev/paiements` répond « page introuvable » ; `select count(*) from payments where simulated;` et la même requête sur `cashouts` donnent 0.
 - Lot 9 : contrôles après migration de 3 quater ; une invitation envoyée depuis l'onglet **Invitations** du pilotage, le SMS reçu et le billet scanné ; une photo envoyée puis supprimée sur la page profil (5.6) ; **un changement de numéro de bout en bout** : c'est le seul contrôle, sur un projet hébergé, des écritures sur `auth.sessions` et `auth.refresh_tokens` de `account_phone_finalize` (la CI les exerce sur une instance locale) ; une ligne d'audit `ACCOUNT_AUTH_DESYNC` signale une désynchronisation à réparer (`docs/lot9-rapport.md`).
 - Lot 9 bis : contrôles après migration de 3 quinquies ; `select count(*) from platform_settings;` donne 40 ; chaque administrateur a ses permissions (contrôle 3 de 3 quinquies, refait après) ; un compte avec adresse email reçoit le lien de vérification, l'ouvre, et le profil affiche « Email vérifié » ; un achat réel de faible montant par Wave puis par Orange Money, avec l'email de confirmation ; si la signature des avis est activée, aucune ligne `REJECTED_SIGNATURE` (6.1) ; `/admin/finance`, section « Frais SamirPay », comparée au tableau de bord SamirPay.
+- Lot 9 ter : contrôles après migration de 3 sexies ; `select count(*) from platform_settings;` donne 42 ; la page **Réglages de la plateforme** montre les deux réglages « Alerte de refus à une porte » (4 quinquies). Sur un événement d'essai à faible enjeu : une zone « Entrée générale » et une zone « Carré VIP » de type « Contrôle de zone », un contrôleur à chaque porte ; un billet VIP validé à l'entrée puis « Accès autorisé » au carré, un billet SIMPLE orienté au carré (« Accès refusé : billet SIMPLE »), un second passage refusé (« Déjà utilisé à …, … ») ; une invitation nommée validée par « Liste des invités » ; l'onglet **Entrées** du pilotage montre ces passages par zone, porte, catégorie et origine. Un achat réel par Wave puis par Orange Money ramène le client sur la page de suivi du paiement (6.2).
 - Surveillance : journaux de l'hébergeur, **Logs > API** de Supabase et page **Notifications** de l'administration (SMS à l'issue incertaine, échecs) pendant les premiers jours.
 
 ## 10. Points ouverts d'exploitation
@@ -689,7 +971,8 @@ Le rôle SUPERADMIN n'est **plus** attribué par l'inscription (l'ancien trigger
 - Budget des SMS optionnels et `SMS_GLOBAL_DAILY_CAP` à fixer avec le client avant l'ouverture des ventes (5.5).
 - SMS à l'issue incertaine (délai MTarget dépassé) : jamais renvoyés automatiquement ; leur vérification se fait auprès de MTarget, par l'opérateur (procédure à convenir avec le fournisseur).
 - Email : compte Resend du client et domaine d'envoi vérifié à configurer ; d'ici là, le canal email reste désactivé. Depuis le lot 9 bis, tout message indispensable adressé à un compte part aussi par email quand l'adresse est vérifiée : suivre le volume face à la limite de l'offre Resend.
-- SamirPay v1.2 : clé exacte de la signature des avis (6.1), vrai minimum d'encaissement (réglage `finance.min_paid_price`) et limites de transfert du compte à confirmer en bac à sable avant l'ouverture.
+- SamirPay v1.2 : clé exacte de la signature des avis (6.1), vrai minimum d'encaissement (réglage `finance.min_paid_price`), limites de transfert du compte et acceptation de `successUrl` et `errorUrl` (6.2) à confirmer en bac à sable avant l'ouverture.
+- Seuil de l'alerte de refus (4 quinquies) : 10 refus en 5 minutes par défaut, à ajuster après les premières grandes soirées (une porte très fréquentée peut l'atteindre sans fraude).
 - Interrupteurs `features.*` : à ouvrir seulement quand le client aura validé les frais des salles, des tables et des commandes (4 ter).
 - Lot de codes hors ligne : compressé par sa route depuis le lot 8 ; vérifier qu'aucun proxy de l'hébergeur ne retire `Content-Encoding` (5.6).
 - Billet hors ligne sur iPhone : stockage de l'application installée séparé de celui de Safari, aucune vibration au scanner ; aucun test automatisé ne couvre l'iPhone (`docs/installer-application.md`).
