@@ -48,7 +48,7 @@ const PANEL = 'components/admin/RefundsToRetry.tsx';
 const FINANCE_PAGE = 'app/admin/finance/page.tsx';
 const DECISION_ROUTE = (action: 'resend' | 'mark-paid'): string => `../../app/api/admin/cashouts/[id]/${action}/route`;
 const ITEM_KEYS = [
-    'advice', 'amount', 'beneficiary', 'block_label', 'can_mark_paid', 'can_resend', 'event_title', 'id', 'kind', 'kind_label', 'since', 'state', 'state_label',
+    'advice', 'amount', 'beneficiary', 'block_label', 'can_mark_not_sent', 'can_mark_paid', 'can_resend', 'event_title', 'id', 'kind', 'kind_label', 'since', 'state', 'state_label',
 ];
 /** Code technique en capitales, jamais affiché (Conventions, Textes). */
 const RAW_CODE = /\b[A-Z]{2,}(?:_[A-Z]+)+\b/;

@@ -68,7 +68,7 @@ const REFERENCE = 'TXAB12CD34';
 /** Code technique en capitales, jamais affiché (Conventions, Textes). */
 const RAW_CODE = /\b[A-Z]{2,}(?:_[A-Z]+)+\b/;
 /** Champs d'une ligne de « Versements à reprendre » (contrat 4.1). */
-const ITEM_KEYS = ['advice', 'amount', 'beneficiary', 'block_label', 'can_mark_paid', 'can_resend', 'event_title', 'id', 'kind', 'kind_label', 'since', 'state', 'state_label'];
+const ITEM_KEYS = ['advice', 'amount', 'beneficiary', 'block_label', 'can_mark_not_sent', 'can_mark_paid', 'can_resend', 'event_title', 'id', 'kind', 'kind_label', 'since', 'state', 'state_label'];
 const WITHDRAWAL_RULES = { 'finance.withdrawal_fee_rate': 1, 'finance.withdrawal_min_amount': 5000, 'finance.withdrawal_bank_enabled': false } as const;
 
 let admin: TestAdmin;
