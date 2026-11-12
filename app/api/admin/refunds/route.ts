@@ -33,6 +33,8 @@ interface CashoutLine {
     phone_number: string | null;
     first_name: string | null;
     last_name: string | null;
+    not_sent_at: string | null;
+    not_sent_reference: string | null;
 }
 
 /** Libellés en français : ni le code du type, ni celui de l'état, ni celui du motif ne quittent le serveur. */
@@ -49,6 +51,8 @@ const STATE_LABELS: Readonly<Record<ResumeState, string>> = {
     EN_ATTENTE: 'En attente depuis plus de 30 min',
     ENVOYE_NON_CONFIRME: 'Envoyé, non confirmé',
 };
+/** Lot 9 ter (0.3) : libellé d'un versement constaté non versé, tant qu'aucun nouvel envoi n'a suivi le constat. */
+const NOT_SENT_STATE_LABEL = 'Non versé (constaté avec le support SamirPay)';
 const UNKNOWN_BLOCK_LABEL = 'blocage à vérifier';
 /** Motifs sans destination : rien ne peut repartir, seul « Marquer versé » reste (B3). */
 const NO_DESTINATION = new Set(['OPERATOR_UNKNOWN', 'PHONE_UNKNOWN']);
@@ -128,6 +132,15 @@ function beneficiary(row: CashoutLine): string | null {
 }
 
 /**
+ * Lot 9 ter (0.3, contrat A.2.3) : versement ECHOUE par « Constater non versé », sans nouvel envoi depuis le constat
+ * (aucune réservation postérieure). Après « Renvoyer », un nouvel échec garde « Refusé par l’opérateur ».
+ */
+function constatedNotSent(line: ResumeLine, row: CashoutLine): boolean {
+    if (line.state !== 'ECHOUE' || row.not_sent_at === null) return false;
+    return row.send_started_at === null || Date.parse(row.send_started_at) <= Date.parse(row.not_sent_at);
+}
+
+/**
  * B3 : « Renvoyer » seulement si rien n'est parti. NOW : remboursement refusé (400, aucun débit conservé), blocage
  * levable (solde, limites du compte, nom complété), à envoyer jamais réservé ; AFTER_CHECK : incertain ou envoyé avec
  * identifiant SamirPay, renvoyé seulement si le statut SamirPay dit FAILED ou CANCELLED ; false sinon (B2).
@@ -147,6 +160,9 @@ function canResend(line: ResumeLine, row: CashoutLine): 'NOW' | 'AFTER_CHECK' | 
 }
 
 function advice(line: ResumeLine, row: CashoutLine): string {
+    if (constatedNotSent(line, row)) {
+        return `Le support SamirPay a confirmé que ce versement n’est pas parti (référence ${row.not_sent_reference ?? ''}) : vous pouvez le renvoyer.`;
+    }
     switch (line.state) {
         case 'ECHOUE':
             return 'Refusé par l’opérateur sans débit : vous pouvez le renvoyer.';
@@ -169,6 +185,9 @@ function advice(line: ResumeLine, row: CashoutLine): string {
  * refunds.manage. Lit public.cashouts_to_resume() (tous types, retraits compris) filtrée par le mode du serveur, du plus
  * ancien au plus récent, 100 lignes au plus ; `total` compte toutes les lignes. Le numéro est masqué, last_error et les
  * codes restent en base. Les décisions passent par POST /api/admin/cashouts/[id]/resend et …/mark-paid (B4).
+ * Lot 9 ter (0.3, contrat A.2.3) : `can_mark_not_sent` (INCERTAIN sans identifiant SamirPay, lecteur SUPERADMIN) ouvre
+ * POST /api/admin/cashouts/[id]/not-sent ; un versement constaté non versé est libellé « Non versé (constaté avec le
+ * support SamirPay) » avec la référence du support dans le conseil, jusqu'au nouvel envoi décidé par « Renvoyer ».
  */
 export async function GET(request: NextRequest) {
     const auth = await verifyAdminAuth(request, { requiredPermission: 'refunds.manage' });
@@ -191,10 +210,12 @@ export async function GET(request: NextRequest) {
 
         const ids = lines.map((l) => l.id);
         const rows = ids.length === 0 ? [] : rowsOf<CashoutLine>('cashouts', await supabase.from('cashouts')
-            .select('id, kind, amount, blocked_reason, send_started_at, ticket_id, payment_id, phone_number, first_name, last_name')
+            .select('id, kind, amount, blocked_reason, send_started_at, ticket_id, payment_id, phone_number, first_name, last_name, not_sent_at, not_sent_reference')
             .in('id', ids));
         const byId = new Map(rows.map((r) => [r.id, r]));
         const titles = await eventTitles(rows);
+        // Lot 9 ter (0.3) : « Constater non versé » réservé au SUPERADMIN ; le serveur décide, l'écran affiche.
+        const superadmin = auth.user.roles.includes('SUPERADMIN');
 
         const items = lines.flatMap((line) => {
             const row = byId.get(line.id);
@@ -207,7 +228,7 @@ export async function GET(request: NextRequest) {
                 kind: line.kind,
                 kind_label: KIND_LABELS[line.kind] ?? 'Versement',
                 state: line.state,
-                state_label: STATE_LABELS[line.state],
+                state_label: constatedNotSent(line, row) ? NOT_SENT_STATE_LABEL : STATE_LABELS[line.state],
                 since: line.since,
                 amount: Number(row.amount),
                 beneficiary: beneficiary(row),
@@ -215,6 +236,7 @@ export async function GET(request: NextRequest) {
                 block_label: blockLabel(line, row),
                 can_resend: canResend(line, row),
                 can_mark_paid: true,
+                can_mark_not_sent: line.state === 'INCERTAIN' && !line.has_provider_id && superadmin,
                 advice: advice(line, row),
             }];
         });

@@ -116,6 +116,17 @@ const DECISION_REFUSALS: Readonly<Record<string, number>> = {
     NAME_STILL_UNKNOWN: 409,
 };
 
+/** Lot 9 ter (0.3, contrat A.2.3) : refus de cashout_admin_not_sent → statut HTTP ; tout autre code est une panne. */
+const NOT_SENT_REFUSALS: Readonly<Record<string, number>> = {
+    REASON_REQUIRED: 400,
+    SUPPORT_REFERENCE_REQUIRED: 400,
+    SUPERADMIN_ONLY: 403,
+    PASSWORD_CONFIRMATION_REQUIRED: 403,
+    CASHOUT_NOT_FOUND: 404,
+    NOT_UNCERTAIN: 409,
+    PROVIDER_ID_KNOWN: 409,
+};
+
 /** Lot 9 bis (B5, H7) : refus SamirPay sans débit, classés par http-client (SamirPayError.code) → motif de blocage. */
 const PROVIDER_BLOCKS: Readonly<Record<string, 'SOLDE_INSUFFISANT' | 'LIMITE_COMPTE'>> = {
     INSUFFICIENT_BALANCE: 'SOLDE_INSUFFISANT',
@@ -551,6 +562,47 @@ export class CashoutService {
             throw new PublicError('Versement remis à envoyer, mais l’envoi n’a pas abouti : il repartira automatiquement.', 'CASHOUT_SEND_FAILED', 502);
         }
         return { ok: !outcome.skipped && (outcome.status === 'CONFIRME' || outcome.status === 'ENVOYE'), status: outcome.status };
+    }
+
+    /**
+     * Lot 9 ter (0.3, contrat A.2.3) — « Constater non versé » : un SUPERADMIN constate, avec le support SamirPay,
+     * qu'un versement INCERTAIN sans identifiant SamirPay n'est jamais parti. La route a vérifié la session, le rôle
+     * SUPERADMIN et la saisie récente du mot de passe ; la RPC cashout_admin_not_sent revérifie le rôle et la saisie
+     * de cette session, verrouille le versement, le passe ECHOUE (remboursement FAILED, retrait REJECTED et montant
+     * rendu) et écrit l'audit CASHOUT_NOT_SENT dans la même transaction. Aucun appel SamirPay, rien ne repart :
+     * « Renvoyer » reste une décision humaine. Motif de 10 à 500 caractères, référence du support de 1 à 100.
+     * Refus : PublicError au code et au texte de la RPC ; tout autre code ou erreur RPC est une panne levée.
+     */
+    static async adminNotSent(input: {
+        cashoutId: string; actorId: string; sessionId: string; reference: unknown; reason: unknown;
+    }): Promise<{ ok: true; status: 'ECHOUE'; kind: CashoutKind }> {
+        if (!UUID_RE.test(input.cashoutId)) throw new PublicError('Versement introuvable.', 'CASHOUT_NOT_FOUND', 404);
+        const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+        const reasonLength = Array.from(reason).length;
+        if (reasonLength < 10) throw new PublicError('Indiquez la raison (10 caractères au moins).', 'REASON_REQUIRED', 400);
+        if (reasonLength > 500) throw new PublicError('La raison ne doit pas dépasser 500 caractères.', 'REASON_REQUIRED', 400);
+        const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
+        const referenceChars = Array.from(reference);
+        const control = referenceChars.some((ch) => {
+            const cp = ch.codePointAt(0) ?? 0;
+            return cp < 32 || (cp >= 127 && cp <= 159);
+        });
+        if (referenceChars.length < 1 || referenceChars.length > 100 || control) {
+            throw new PublicError('Indiquez la référence du support SamirPay (100 caractères au plus).', 'SUPPORT_REFERENCE_REQUIRED', 400);
+        }
+
+        const { data, error } = await getServiceRoleClient().rpc('cashout_admin_not_sent', {
+            p: { cashout_id: input.cashoutId, actor_id: input.actorId, session_id: input.sessionId, reference, reason },
+        });
+        if (error || !data) throw new Error(`Constat « non versé » du versement ${input.cashoutId} impossible : ${error?.message ?? 'réponse vide'}`);
+        const out = data as { ok?: boolean; code?: string; message?: string; status?: string; kind?: CashoutKind };
+        if (out.ok !== true) {
+            const code = String(out.code ?? '');
+            if (!(code in NOT_SENT_REFUSALS) || !out.message) throw new Error(`Refus inattendu de cashout_admin_not_sent : ${JSON.stringify(out).slice(0, 300)}`);
+            throw new PublicError(out.message, code, NOT_SENT_REFUSALS[code]);
+        }
+        if (out.status !== 'ECHOUE' || !out.kind) throw new Error(`Réponse inattendue de cashout_admin_not_sent : ${JSON.stringify(out).slice(0, 300)}`);
+        return { ok: true, status: 'ECHOUE', kind: out.kind };
     }
 
     /** Confirmation des envois ENVOYE par l'endpoint de statut (réconciliation). */
