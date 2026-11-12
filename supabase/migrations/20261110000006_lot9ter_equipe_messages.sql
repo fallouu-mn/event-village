@@ -11,7 +11,81 @@
 --      TICKET_REFUNDED_HOLDER au porteur (clé TICKET_REFUNDED_HOLDER:<billet>, données ticket_id et category) ; le
 --      porteur d'un billet payé en espèces reçoit ce texte à la place de TICKET_CANCELLED CASH (B-D2). Verrous,
 --      refus, codes, audit TICKET_REFUND_REQUESTED, montants, retours et rejeu « already » inchangés.
+--  9t.5 (consigne 0.5, fix(9t.5)) — consentement d'un contrôleur déjà actif ailleurs (arbitrage 13, B-D5 à B-D8) :
+--   1. Table partner_controllers (partner_id, user_id, first_seen_at) : lien durable « cette partenaire a déjà eu ce
+--      contrôleur dans son équipe », jamais supprimé ; RLS sans politique, service_role seul, aucune clé étrangère
+--      (K9 : aucun KEY SHARE sur users ou partners dans le chemin d'une affectation).
+--   2. partner_controllers_link() (nouvelle, F11) + trigger trg_event_controllers_partner_link AFTER INSERT sur
+--      event_controllers : toute insertion (route, RPC, acceptation d'une invitation, graine) pose le lien (x5).
+--   3. partner_controller_known(p_partner, p_user) (nouvelle, F12) : lue par les routes invite et assignments.
+--   7. controller_assignments_sync (recopie F16, base 20261109000008_lot9bis_cycle.sql:2223-2306) : un ajout vers
+--      un événement d'une partenaire inconnue du contrôleur, pour un compte qui n'est pas temporaire, est refusé
+--      CONTROLLER_CONSENT_REQUIRED avant toute écriture (B-D7).
+--   8. Rétro-remplissage de partner_controllers (affectations, caisses, invitations acceptées, scans de contrôleur),
+--      ON CONFLICT DO NOTHING : rejouable.
 -- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- 1. Table partner_controllers (9t.5 ; K9 : aucune clé étrangère)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.partner_controllers (
+    partner_id    uuid NOT NULL,
+    user_id       uuid NOT NULL,
+    first_seen_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT partner_controllers_pkey PRIMARY KEY (partner_id, user_id)
+);
+COMMENT ON TABLE public.partner_controllers IS
+    'Lot 9 ter (0.5) : lien durable « cette partenaire a déjà eu ce contrôleur dans son équipe », posé à toute insertion dans event_controllers, jamais supprimé ; sans clé étrangère (aucun KEY SHARE sur users ou partners). Service_role seul.';
+ALTER TABLE public.partner_controllers ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.partner_controllers FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.partner_controllers TO service_role;
+
+
+-- ----------------------------------------------------------------------------
+-- 2. partner_controllers_link (nouvelle, F11) + trigger trg_event_controllers_partner_link — tâche 9t.5.
+--    Lecture d'events sans verrou ; aucun audit (le lien suit une affectation déjà journalisée). Un upsert qui
+--    rencontre une ligne existante ne déclenche pas AFTER INSERT : la ligne avait déjà son lien (x5).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.partner_controllers_link()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    INSERT INTO public.partner_controllers (partner_id, user_id)
+    SELECT e.partner_id, NEW.user_id
+      FROM public.events e
+     WHERE e.id = NEW.event_id AND e.partner_id IS NOT NULL
+    ON CONFLICT (partner_id, user_id) DO NOTHING;
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_event_controllers_partner_link ON public.event_controllers;
+CREATE TRIGGER trg_event_controllers_partner_link
+    AFTER INSERT ON public.event_controllers
+    FOR EACH ROW
+    EXECUTE FUNCTION public.partner_controllers_link();
+
+
+-- ----------------------------------------------------------------------------
+-- 3. partner_controller_known (nouvelle, F12) — tâche 9t.5. Service_role seul (r3, bloc LOT9TER_RPCS).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.partner_controller_known(p_partner uuid, p_user uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN p_partner IS NOT NULL AND p_user IS NOT NULL
+       AND EXISTS (SELECT 1 FROM public.partner_controllers pc WHERE pc.partner_id = p_partner AND pc.user_id = p_user);
+END;
+$$;
 
 
 -- ----------------------------------------------------------------------------
@@ -296,17 +370,150 @@ $$;
 
 
 -- ----------------------------------------------------------------------------
--- 9. Privilèges : RPC au service_role seul
+-- 7. controller_assignments_sync (recopie F16, base 20261109000008_lot9bis_cycle.sql:2223-2306) — tâche 9t.5.
+--    Un seul ajout, juste après le refus EVENT_NOT_ELIGIBLE et avant le DELETE : CONTROLLER_CONSENT_REQUIRED quand
+--    un événement ajouté appartient à une partenaire inconnue du contrôleur (partner_controller_known) et que le
+--    compte n'est pas temporaire (lecture de auth.users, précédent 20261109000008:2204). Lectures sans verrou
+--    (partner_controllers, auth.users, events) avant event_controllers : ordre du tableau 3.3 tenu. Les lignes
+--    ajoutées gardent les colonnes de la base (gate_id NULL, gate_change_allowed FALSE, entry_point NULL).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.controller_assignments_sync(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_ctrl uuid := public.try_uuid(p->>'controller_id');
+    v_partner uuid := public.try_uuid(p->>'partner_id');
+    v_role text := COALESCE(NULLIF(p->>'actor_role', ''), 'PARTENAIRE');
+    v_req jsonb;
+    v_requested uuid[];
+    v_current uuid[];
+    v_added uuid[];
+    v_removed uuid[];
+    v_updated integer := 0;
+BEGIN
+    IF v_actor IS NULL OR v_ctrl IS NULL OR jsonb_typeof(p->'assignments') IS DISTINCT FROM 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Affectations illisibles.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p->'assignments') a
+                WHERE public.try_uuid(a->>'event_id') IS NULL
+                   OR COALESCE(jsonb_typeof(a->'can_accept_cash'), 'null') NOT IN ('boolean', 'null')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Affectations illisibles.');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_ctrl) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'CONTROLLER_NOT_FOUND', 'message', 'Contrôleur introuvable.');
+    END IF;
+
+    -- Une ligne par événement (la dernière l'emporte)
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('event_id', x.event_id, 'can_accept_cash', x.cash) ORDER BY x.event_id), '[]'::jsonb)
+      INTO v_req
+      FROM (SELECT DISTINCT ON (public.try_uuid(a->>'event_id')) public.try_uuid(a->>'event_id') AS event_id,
+                   CASE WHEN jsonb_typeof(a->'can_accept_cash') = 'boolean' THEN (a->>'can_accept_cash')::boolean END AS cash
+              FROM jsonb_array_elements(p->'assignments') WITH ORDINALITY AS t(a, o)
+             ORDER BY public.try_uuid(a->>'event_id'), o DESC) x;
+    SELECT COALESCE(array_agg((a->>'event_id')::uuid), ARRAY[]::uuid[]) INTO v_requested FROM jsonb_array_elements(v_req) a;
+
+    IF EXISTS (SELECT 1 FROM unnest(v_requested) r(id) LEFT JOIN public.events e ON e.id = r.id
+                WHERE e.id IS NULL OR (v_partner IS NOT NULL AND e.partner_id IS DISTINCT FROM v_partner)) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_OWNED', 'message', 'Vous n''êtes pas propriétaire de tous les événements sélectionnés.');
+    END IF;
+
+    SELECT COALESCE(array_agg(ec.event_id), ARRAY[]::uuid[]) INTO v_current
+      FROM public.event_controllers ec JOIN public.events e ON e.id = ec.event_id
+     WHERE ec.user_id = v_ctrl AND (v_partner IS NULL OR e.partner_id = v_partner);
+    SELECT COALESCE(array_agg(r.id ORDER BY r.id), ARRAY[]::uuid[]) INTO v_added FROM unnest(v_requested) r(id) WHERE NOT r.id = ANY (v_current);
+    SELECT COALESCE(array_agg(c.id ORDER BY c.id), ARRAY[]::uuid[]) INTO v_removed FROM unnest(v_current) c(id) WHERE NOT c.id = ANY (v_requested);
+
+    -- Seuls les événements confirmés (VALIDE ou PUBLIE) sont nouvellement affectés
+    IF EXISTS (SELECT 1 FROM public.events e WHERE e.id = ANY (v_added) AND e.status::text NOT IN ('VALIDE', 'PUBLIE')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_ELIGIBLE', 'message', 'Seuls les événements validés ou publiés peuvent être affectés.');
+    END IF;
+
+    -- Lot 9 ter (9t.5, consigne 0.5, B-D6 à B-D8) : une partenaire qui n'a jamais eu ce contrôleur dans son équipe
+    -- ne l'affecte pas directement ; il accepte d'abord son invitation (R37). Compte temporaire jamais activé :
+    -- inchangé (il consent par l'activation). Admin agissant : la partenaire de chaque événement ajouté.
+    IF cardinality(v_added) > 0
+       AND COALESCE((SELECT a.raw_user_meta_data->>'is_temporary_controller_account' FROM auth.users a WHERE a.id = v_ctrl), 'false') <> 'true'
+       AND EXISTS (SELECT 1 FROM public.events e
+                    WHERE e.id = ANY (v_added) AND NOT public.partner_controller_known(e.partner_id, v_ctrl)) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'CONTROLLER_CONSENT_REQUIRED',
+                                  'message', 'Ce contrôleur doit d’abord accepter votre invitation.');
+    END IF;
+
+    IF cardinality(v_removed) > 0 THEN
+        DELETE FROM public.event_controllers WHERE user_id = v_ctrl AND event_id = ANY (v_removed);
+    END IF;
+    IF cardinality(v_added) > 0 THEN
+        INSERT INTO public.event_controllers (event_id, user_id, can_accept_cash, created_by)
+        SELECT (a->>'event_id')::uuid, v_ctrl, COALESCE((a->>'can_accept_cash')::boolean, FALSE), v_actor
+          FROM jsonb_array_elements(v_req) a
+         WHERE (a->>'event_id')::uuid = ANY (v_added);
+    END IF;
+    UPDATE public.event_controllers ec
+       SET can_accept_cash = (a->>'can_accept_cash')::boolean
+      FROM jsonb_array_elements(v_req) a
+     WHERE ec.user_id = v_ctrl AND ec.event_id = (a->>'event_id')::uuid
+       AND NOT ec.event_id = ANY (v_added)
+       AND jsonb_typeof(a->'can_accept_cash') = 'boolean'
+       AND ec.can_accept_cash IS DISTINCT FROM (a->>'can_accept_cash')::boolean;
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+
+    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+    VALUES (v_actor, v_role, 'CONTROLLER_ASSIGNMENTS_UPDATED', 'event_controllers', v_ctrl,
+            jsonb_build_object('event_ids', to_jsonb(v_current)),
+            jsonb_build_object('event_ids', to_jsonb(v_requested), 'added', to_jsonb(v_added), 'removed', to_jsonb(v_removed),
+                               'cash_updated', v_updated),
+            jsonb_build_object('partner_id', v_partner, 'controller_id', v_ctrl));
+
+    RETURN jsonb_build_object('ok', true, 'added', to_jsonb(v_added), 'removed', to_jsonb(v_removed), 'updated', v_updated);
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- 8. Rétro-remplissage de partner_controllers (9t.5, DML après toute la DDL ; rejouable par ON CONFLICT DO NOTHING).
+--    Sources : event_controllers.created_at (20260904000002:11), controller_shifts.partner_id/controller_id/opened_at
+--    (20260906000002:15-21), controller_invitations acceptées (20261109000008:180-191), scans d'un contrôleur
+--    (ticket_scans.scanner_role, 20261101000013:21). Première date vue = la plus ancienne des sources.
+-- ----------------------------------------------------------------------------
+INSERT INTO public.partner_controllers (partner_id, user_id, first_seen_at)
+SELECT x.partner_id, x.user_id, min(x.seen_at)
+  FROM (SELECT e.partner_id, ec.user_id, ec.created_at AS seen_at
+          FROM public.event_controllers ec JOIN public.events e ON e.id = ec.event_id
+        UNION ALL
+        SELECT s.partner_id, s.controller_id, s.opened_at FROM public.controller_shifts s
+        UNION ALL
+        SELECT ci.partner_id, ci.user_id, COALESCE(ci.responded_at, ci.created_at)
+          FROM public.controller_invitations ci WHERE ci.status = 'ACCEPTED'
+        UNION ALL
+        SELECT e.partner_id, sc.scanner_id, sc.created_at
+          FROM public.ticket_scans sc JOIN public.events e ON e.id = sc.event_id
+         WHERE sc.scanner_role = 'CONTROLEUR' AND sc.scanner_id IS NOT NULL) x
+ WHERE x.partner_id IS NOT NULL AND x.user_id IS NOT NULL
+ GROUP BY x.partner_id, x.user_id
+ON CONFLICT (partner_id, user_id) DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- 9. Privilèges : RPC au service_role seul ; fonctions de trigger sans aucun droit d'exécution pour l'API
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE
     f text;
 BEGIN
     FOREACH f IN ARRAY ARRAY[
-        'public.ticket_refund_request(uuid, uuid, text)'
+        'public.partner_controller_known(uuid, uuid)',
+        'public.ticket_refund_request(uuid, uuid, text)',
+        'public.controller_assignments_sync(jsonb)'
     ] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);
     END LOOP;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.partner_controllers_link() FROM PUBLIC, anon, authenticated;

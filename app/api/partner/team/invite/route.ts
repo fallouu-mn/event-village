@@ -215,14 +215,37 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
+        // 1 ter. Lot 9 ter (0.5, B-D6, B-D8) : un contrôleur déjà établi (compte non temporaire) qu'une partenaire des
+        //    événements demandés n'a jamais eu dans son équipe (aucun lien partner_controllers) consent d'abord :
+        //    confirmation, puis invitation à accepter (R37), jamais d'affectation directe. Admin agissant : la
+        //    partenaire de chaque événement demandé. La RPC controller_assignments_sync applique la même règle.
+        let needsConsent = false;
+        if (existingProfile && alreadyController && !isPendingActivation) {
+            const partnerIds = Array.from(new Set(partnerEvents.map((ev) => ev.partner_id as string | null)));
+            for (const partnerId of partnerIds) {
+                const { data: known, error: knownErr } = await supabase.rpc('partner_controller_known', {
+                    p_partner: partnerId, p_user: existingProfile.id,
+                });
+                if (knownErr) {
+                    console.error('[invite-controller] lien partenaire–contrôleur :', knownErr.message);
+                    return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
+                }
+                if (known !== true) {
+                    needsConsent = true;
+                    break;
+                }
+            }
+        }
+
         // 1 bis. Lot 9 bis (R98, B90, fix(9b.43-SC)) : une unité INVITE_PER_PHONE_DAY n'est réservée que si un message
         //    part au numéro : SMS d'activation (numéro neuf ou compte encore temporaire) ou invitation à accepter
-        //    (compte établi, après la confirmation). L'étape de confirmation, l'affectation d'un contrôleur déjà établi
-        //    et un compte non ACTIF (refusé plus bas) ne consomment rien. Si aucun message ne part finalement (SMS refusé,
-        //    invitation refusée, erreur), l'unité est rendue (finally, releaseQuota).
+        //    (compte établi, après la confirmation ; lot 9 ter : contrôleur inconnu de la partenaire compris). L'étape de
+        //    confirmation, l'affectation d'un contrôleur déjà connu et un compte non ACTIF (refusé plus bas) ne consomment
+        //    rien. Si aucun message ne part finalement (SMS refusé, invitation refusée, erreur), l'unité est rendue
+        //    (finally, releaseQuota).
         const willMessage = !existingProfile
             || (existingProfile.status === 'ACTIF'
-                && (isPendingActivation ? (alreadyController || confirm_promotion) : (!alreadyController && confirm_promotion)));
+                && (isPendingActivation ? (alreadyController || confirm_promotion) : ((!alreadyController || needsConsent) && confirm_promotion)));
         if (willMessage) {
             const phoneQuota = await reserveQuota([
                 { scope: 'invite_phone', bucket: normalizedPhone, windowSecs: PHONE_WINDOW_SECS, max: env.INVITE_PER_PHONE_DAY },
@@ -250,16 +273,19 @@ export async function POST(req: NextRequest) {
             }
             controllerUserId = existingProfile.id;
 
-            if (!alreadyController) {
+            if (!alreadyController || needsConsent) {
                 // Lot 1C.1 : confirmation explicite obligatoire (« resend » ne la contourne plus).
                 // Le partenaire ne voit que le nom masqué du titulaire : ni identifiant, ni rôles.
+                // Lot 9 ter (0.5) : un contrôleur établi inconnu de la partenaire suit le même chemin (invitation R37).
                 const displayName = maskPersonName(existingProfile.first_name, existingProfile.last_name);
                 if (!confirm_promotion) {
                     return NextResponse.json({
                         requires_confirmation: true,
                         code: 'EXISTING_ACCOUNT',
                         existing_user: { display_name: displayName, phone: normalizedPhone },
-                        message: `Ce numéro appartient déjà à un compte Event Village (${displayName}). Confirmez-vous l'affectation de ce titulaire comme contrôleur de vos événements ? Son identité et ses identifiants ne seront pas modifiés.`,
+                        message: needsConsent
+                            ? `Ce numéro appartient déjà à un compte Event Village (${displayName}). Ce titulaire n’a jamais contrôlé vos événements : il doit accepter votre invitation dans l’application avant d’être affecté. Confirmez-vous l’envoi de l’invitation ?`
+                            : `Ce numéro appartient déjà à un compte Event Village (${displayName}). Confirmez-vous l'affectation de ce titulaire comme contrôleur de vos événements ? Son identité et ses identifiants ne seront pas modifiés.`,
                     }, { status: 200 });
                 }
 

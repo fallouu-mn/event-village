@@ -48,6 +48,8 @@ const SYNC_REFUSALS: Record<string, number> = {
     CONTROLLER_NOT_FOUND: 404,
     EVENT_NOT_OWNED: 403,
     EVENT_NOT_ELIGIBLE: 400,
+    // Lot 9 ter (0.5) : contrôleur inconnu de la partenaire, à inviter (garde de la RPC ; la route invite avant)
+    CONTROLLER_CONSENT_REQUIRED: 409,
 };
 
 // ──────────────────────────────────────────────────────────
@@ -110,7 +112,7 @@ export async function PATCH(req: NextRequest) {
         }
 
         // 2. Vérifier que tous les événements demandés appartiennent bien à ce partenaire
-        let partnerEventsQuery = supabase.from('events').select('id, title, status');
+        let partnerEventsQuery = supabase.from('events').select('id, title, status, partner_id');
         if (partnerId) {
             partnerEventsQuery = partnerEventsQuery.eq('partner_id', partnerId);
         }
@@ -235,6 +237,66 @@ export async function PATCH(req: NextRequest) {
                     error: INELIGIBLE_EVENT_ASSIGNMENT_ERROR,
                     details: `L'événement "${ev?.title ?? evId}" est en statut ${ev?.status ?? 'inconnu'}. Seuls les événements confirmés (VALIDÉ ou PUBLIÉ) peuvent être affectés.`,
                 }, { status: 400 });
+            }
+        }
+
+        // 3 bis. Lot 9 ter (0.5, B-D6 à B-D8) : un contrôleur déjà établi (compte non temporaire) qu'une partenaire des
+        //    événements ajoutés n'a jamais eu dans son équipe (aucun lien partner_controllers) consent d'abord :
+        //    confirmation, puis invitation à accepter (R37), aucune affectation ici. Admin agissant : la partenaire de
+        //    chaque événement ajouté. La RPC controller_assignments_sync refuse de même (CONTROLLER_CONSENT_REQUIRED).
+        const added = requestedEventIds.filter((id) => !current.has(id));
+        if (alreadyController && added.length > 0) {
+            const { data: authRow, error: authErr } = await supabase.auth.admin.getUserById(controllerId);
+            if (authErr || !authRow?.user) {
+                console.error('[PATCH team/assignments] lecture du compte d’authentification :', authErr?.message ?? 'compte absent');
+                return NextResponse.json({ error: 'Impossible de lire le compte du contrôleur.' }, { status: 500 });
+            }
+            let needsConsent = false;
+            if (authRow.user.user_metadata?.is_temporary_controller_account !== true) {
+                const partnerIds = Array.from(new Set(added.map((id) => (partnerEventMap.get(id)?.partner_id ?? null) as string | null)));
+                for (const ownerId of partnerIds) {
+                    const { data: known, error: knownErr } = await supabase.rpc('partner_controller_known', {
+                        p_partner: ownerId, p_user: controllerId,
+                    });
+                    if (knownErr) {
+                        console.error('[PATCH team/assignments] lien partenaire–contrôleur :', knownErr.message);
+                        return NextResponse.json({ error: 'Impossible de lire l’équipe du contrôleur.' }, { status: 500 });
+                    }
+                    if (known !== true) {
+                        needsConsent = true;
+                        break;
+                    }
+                }
+            }
+            if (needsConsent) {
+                const displayName = maskPersonName(ctrlUser.first_name, ctrlUser.last_name);
+                if (!confirm_promotion) {
+                    return NextResponse.json({
+                        requires_confirmation: true,
+                        code: 'EXISTING_ACCOUNT',
+                        existing_user: { display_name: displayName },
+                        message: `Ce compte (${displayName}) n’a jamais contrôlé vos événements : il doit accepter votre invitation dans l’application avant d’être affecté. Confirmez-vous l’envoi de l’invitation ?`,
+                    }, { status: 200 });
+                }
+                const addedSet = new Set(added);
+                const invited = await createControllerInvitation(supabase, {
+                    actorId: user.id,
+                    actorRole: partnerId ? 'PARTENAIRE' : 'ADMIN',
+                    partnerId,
+                    userId: controllerId,
+                    assignments: assignments.filter((a) => addedSet.has(a.event_id))
+                        .map((a) => ({ event_id: a.event_id, can_accept_cash: a.can_accept_cash ?? false })),
+                });
+                if (invited.response) return invited.response;
+                return NextResponse.json({
+                    success: true,
+                    invitation_id: invited.invitationId,
+                    invitation_expires_at: invited.expiresAt,
+                    added: [],
+                    removed: [],
+                    notification: 'QUEUED',
+                    message: `Invitation envoyée : ${displayName} doit l’accepter dans l’application avant d’être affecté.`,
+                });
             }
         }
 
