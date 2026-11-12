@@ -23,6 +23,9 @@
 --      (recopie F54, base 20261109000008_lot9bis_cycle.sql:1835-1980) : texte du refus QUOTA_ABOVE_CAPACITY, qui dit
 --      quoi faire (code, statut 409 et champ inchangés).
 --   6. Reprise : par événement résumé (ordre event_id), ses tranches (ordre id) puis son résumé (X28, ED5).
+--  9t.12 (consigne 0.8, R106 a, délégation fix(9t.12-SK) de S-E ; colonne de 20261110000007_lot9ter_evenements.sql) :
+--   7. public_category_stock_sync et public_event_state_sync lisent events.ended_unpublished : un événement terminé
+--      sans avoir été publié n'a ni tranche ni résumé public (ligne supprimée comme pour un statut non public, x7).
 -- ============================================================================
 
 
@@ -39,7 +42,8 @@ COMMENT ON COLUMN public.public_event_state.stock_level IS
 
 -- ============================================================================
 -- (2) public_category_stock_sync (recopie F51 de 20261106000001_lot8_canaux.sql:1047-1111)
--- Changement : verrou du résumé public de l'événement avant toute lecture et écriture de la tranche.
+-- Changements : verrou du résumé public de l'événement avant toute lecture et écriture de la tranche (9t.19) ;
+-- tranche supprimée pour un événement terminé sans publication (9t.12, ended_unpublished).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.public_category_stock_sync(p_category_id uuid, p_threshold integer DEFAULT NULL)
 RETURNS void
@@ -56,6 +60,7 @@ DECLARE
     v_active boolean;
     v_online boolean;
     v_status text;
+    v_unpublished boolean;
     v_threshold integer;
     v_remaining integer;
     v_availability text;
@@ -70,8 +75,9 @@ BEGIN
     IF v_event IS NOT NULL THEN
         PERFORM 1 FROM public.public_event_state WHERE event_id = v_event FOR UPDATE;
     END IF;
-    SELECT tc.event_id, tc.total_quantity, tc.sold_quantity, tc.held_quantity, tc.is_active, tc.sale_online, e.status::text
-      INTO v_event, v_total, v_sold, v_held, v_active, v_online, v_status
+    SELECT tc.event_id, tc.total_quantity, tc.sold_quantity, tc.held_quantity, tc.is_active, tc.sale_online, e.status::text,
+           e.ended_unpublished
+      INTO v_event, v_total, v_sold, v_held, v_active, v_online, v_status, v_unpublished
       FROM public.ticket_categories tc
       JOIN public.events e ON e.id = tc.event_id
      WHERE tc.id = p_category_id;
@@ -79,8 +85,9 @@ BEGIN
         DELETE FROM public.public_category_stock WHERE category_id = p_category_id;
         RETURN;
     END IF;
+    -- Lot 9 ter (9t.12, R106 a) : un événement terminé sans publication n'est jamais public.
     IF NOT (COALESCE(v_active, FALSE) AND COALESCE(v_online, FALSE)
-            AND v_status IN ('PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE')) THEN
+            AND v_status IN ('PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE') AND NOT COALESCE(v_unpublished, FALSE)) THEN
         DELETE FROM public.public_category_stock WHERE category_id = p_category_id;
         RETURN;
     END IF;
@@ -118,7 +125,8 @@ $$;
 -- ============================================================================
 -- (3) public_event_state_sync (recopie F50 de 20261106000001_lot8_canaux.sql:1117-1180)
 -- Changements : verrou du résumé en première instruction ; min_price sur les catégories qui ont encore des places ;
--- stock_level calculé, comparé et écrit avec les autres colonnes.
+-- stock_level calculé, comparé et écrit avec les autres colonnes (9t.19) ; résumé supprimé pour un événement terminé
+-- sans publication (9t.12, ended_unpublished).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.public_event_state_sync(p_event_id uuid)
 RETURNS void
@@ -129,6 +137,7 @@ SET search_path = public
 AS $$
 DECLARE
     v_status text;
+    v_unpublished boolean;
     v_title text;
     v_start_date date;
     v_start_time time;
@@ -147,15 +156,16 @@ BEGIN
     -- Lot 9 ter (9t.19, D-stk 3.4) : une seule synchronisation à la fois par événement ; la suivante relit les
     -- catégories après la validation de la précédente (nouvel instantané à chaque instruction).
     PERFORM 1 FROM public.public_event_state WHERE event_id = p_event_id FOR UPDATE;
-    SELECT e.status::text, e.title, e.start_date, e.start_time, e.location, e.city, e.image_url
-      INTO v_status, v_title, v_start_date, v_start_time, v_location, v_city, v_image
+    SELECT e.status::text, e.ended_unpublished, e.title, e.start_date, e.start_time, e.location, e.city, e.image_url
+      INTO v_status, v_unpublished, v_title, v_start_date, v_start_time, v_location, v_city, v_image
       FROM public.events e
      WHERE e.id = p_event_id;
     IF NOT FOUND THEN
         DELETE FROM public.public_event_state WHERE event_id = p_event_id;
         RETURN;
     END IF;
-    IF v_status NOT IN ('PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE') THEN
+    -- Lot 9 ter (9t.12, R106 a) : un événement terminé sans publication n'est jamais public.
+    IF v_status NOT IN ('PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE') OR COALESCE(v_unpublished, FALSE) THEN
         DELETE FROM public.public_event_state WHERE event_id = p_event_id;
         RETURN;
     END IF;
