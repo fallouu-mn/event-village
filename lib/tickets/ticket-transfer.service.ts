@@ -45,6 +45,10 @@ export interface IncomingTransfer {
         city: string | null;
         image_url: string | null;
     };
+    /** Lot 9 ter (9t.17) : invitation déjà validée à la porte par la liste des invités (transfert ADMITTED). */
+    used: boolean;
+    /** Heure de l'entrée validée par la liste ; null pour un transfert en attente. */
+    checked_in_at: string | null;
 }
 
 export interface IncomingTransfersResult {
@@ -59,6 +63,8 @@ export interface AcceptTransferResult {
     ticket_number: string;
     event_title: string;
     claimed_at: string;
+    /** Lot 9 ter (9t.17) : billet déjà utilisé à l'entrée (invitation validée par la liste), rattaché au compte. */
+    already_used: boolean;
 }
 
 export interface CancelTransferResult {
@@ -83,7 +89,8 @@ export interface TicketTransferRecord {
     to_user_id: string | null;
     to_phone_or_email: string;
     /** Lot 9 bis (R46, B55) : DECLINED, refusé par son destinataire. */
-    status: 'PENDING' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED' | 'DECLINED';
+    /** Lot 9 ter (9t.17) : ADMITTED, invitation validée à la porte par la liste des invités. */
+    status: 'PENDING' | 'CLAIMED' | 'CANCELLED' | 'EXPIRED' | 'DECLINED' | 'ADMITTED';
     claim_token_hash: string | null;
     created_at: string;
     expires_at: string;
@@ -256,6 +263,7 @@ export class TicketTransferService {
             ticket_number: ticketNumber,
             event_title: String(body.event_title ?? ''),
             claimed_at: String(body.claimed_at),
+            already_used: body.already_used === true,
         };
     }
 

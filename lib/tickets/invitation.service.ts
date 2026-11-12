@@ -38,6 +38,8 @@ const REFUSAL_STATUS: Readonly<Record<string, number>> = {
     SALE_CHECK_FAILED: 409,
     TICKET_ALREADY_USED: 409,
     TICKET_NOT_CANCELLABLE: 409,
+    // Lot 9 ter (9t.17) : nom d'une invitation qui n'est plus VALIDE (annulée)
+    TICKET_NOT_EDITABLE: 409,
     QUOTA_EXCEEDED: 429,
 };
 
@@ -69,6 +71,10 @@ function refusalOf(body: RpcBody, rpc: string): Error {
         const scope = typeof body.scope === 'string' ? body.scope : '';
         return new InvitationRefusal(QUOTA_MESSAGES[scope] ?? body.message, code, status,
             { retry_after_seconds: retryAfter }, { 'Retry-After': String(retryAfter) });
+    }
+    // Lot 9 ter (9t.17) : refus de forme qui nomme son champ (nom de l'invité)
+    if (code === 'INVALID_INPUT' && typeof body.field === 'string') {
+        return new InvitationRefusal(body.message, code, status, { field: body.field });
     }
     if (code === 'PERMISSION_MISSING' && typeof body.permission === 'string') {
         return new InvitationRefusal(body.message, code, status, { permission: body.permission });
@@ -102,9 +108,28 @@ export async function createInvitations(actorId: string, eventId: string, input:
         category_id: input.category_id,
         phones: input.phones,
         quantity: input.quantity,
+        // Lot 9 ter (9t.17) : clé absente sans noms (la RPC garde alors l'audit d'aujourd'hui)
+        ...(input.guest_names !== undefined ? { guest_names: input.guest_names } : {}),
         limits: { per_event_hour: env.INVITATION_PER_EVENT_HOUR, per_phone_day: env.INVITATION_PER_PHONE_DAY },
     });
     return { ticket_count: Number(body.ticket_count), phone_count: Number(body.phone_count) };
+}
+
+export interface InvitationGuestName {
+    ticket_id: string;
+    guest_name: string | null;
+}
+
+/**
+ * Lot 9 ter (9t.17, contrat C.3.3 F22) : nom de l'invité d'un billet d'invitation VALIDE (null : retiré). Droits,
+ * billet et statut décidés par la RPC ; appel unique.
+ */
+export async function setInvitationGuestName(actorId: string, eventId: string, ticketId: string, guestName: string | null): Promise<InvitationGuestName> {
+    const body = await callRpc('ticket_invitation_guest_name_set', { actor_id: actorId, event_id: eventId, ticket_id: ticketId, guest_name: guestName });
+    if (typeof body.ticket_id !== 'string' || !(body.guest_name === null || typeof body.guest_name === 'string')) {
+        throw new Error(`ticket_invitation_guest_name_set : réponse incomplète ${JSON.stringify(body)}`);
+    }
+    return { ticket_id: body.ticket_id, guest_name: body.guest_name };
 }
 
 export async function cancelInvitation(actorId: string, eventId: string, ticketId: string): Promise<void> {
