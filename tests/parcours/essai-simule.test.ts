@@ -15,7 +15,7 @@
  * et SAMIRPAY_API_URL est locale en test, donc isSimulationRun() est vrai par sa seconde branche (contrat 5.2).
  *
  * Rouge aujourd'hui : M2 n'existe pas ; chaque test nomme les objets absents (`assertM2`) avant toute écriture.
- * Vert après fix(8.1s) et fix(8.2a) (CashoutService.send et resumeUnsentRefunds), section 18.2.
+ * Vert après fix(8.1s) et fix(8.2a) (CashoutService.send et resumeUnsent), section 18.2.
  *
  * Un test de M2 lit `error.code` : EV403 pour l'envoi ; marque immuable : toute erreur, ligne inchangée (le code
  * n'est pas fixé par le contrat).
@@ -25,7 +25,7 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { EventCancellationService } from '../../lib/events/event-cancellation.service';
+import { PublicError } from '../../lib/api/public-error';
 import { renderNotification } from '../../lib/notifications/catalog';
 import { CashoutService } from '../../lib/payments/cashout.service';
 import { inspect, openConcurrentClient } from '../helpers/db';
@@ -427,13 +427,15 @@ describe('envoi refusé dans le code', () => {
         assert.match(rendered.channel === 'IN_APP' ? rendered.content : '', /opération créée en mode simulé : aucun versement/i);
     });
 
-    test('relance admin (retryRefund) d’un cashout simulé bloqué : aucun appel, reste bloqué', async () => {
+    test('décision « Renvoyer » d’un cashout simulé bloqué : refusée, aucun appel, reste bloqué', async () => {
         await assertM2();
         const { id, row } = await simulatedCashout('relance');
         await CashoutService.send(id);
         const solde = soldeCalls();
-        const result = await EventCancellationService.retryRefund(String(row.refund_id), adminId);
-        assert.equal(result.success, false, JSON.stringify(result));
+        await assert.rejects(
+            CashoutService.adminDecide({ cashoutId: id, actorId: adminId, action: 'RESEND', reason: 'Relance d’essai (test du lot 9 ter)' }),
+            (e) => e instanceof PublicError && e.code === 'NOT_RESENDABLE' && e.status === 409,
+        );
         assert.equal(soldeCalls(), solde, 'getSolde ne doit pas être appelé');
         assert.equal(sendsTo(row), 0, 'sendCashout ne doit pas être appelé');
         const reread = await cashout(id);
@@ -441,14 +443,14 @@ describe('envoi refusé dans le code', () => {
         assert.equal(reread.status, 'A_ENVOYER');
     });
 
-    test('relance admin d’un cashout simulé ECHOUE : remis à envoyer puis bloqué, aucun appel', async () => {
+    test('décision « Renvoyer » d’un cashout simulé ECHOUE : remis à envoyer puis bloqué, aucun appel', async () => {
         await assertM2();
         const { id, row } = await simulatedCashout('relance-echoue');
         const { error } = await service.from('cashouts').update({ status: 'ECHOUE' }).eq('id', id);
         assert.equal(error, null, `préparation : ${error?.message}`);
         const solde = soldeCalls();
-        const result = await EventCancellationService.retryRefund(String(row.refund_id), adminId);
-        assert.equal(result.success, false, JSON.stringify(result));
+        const result = await CashoutService.adminDecide({ cashoutId: id, actorId: adminId, action: 'RESEND', reason: 'Relance d’essai (test du lot 9 ter)' });
+        assert.deepEqual(result, { ok: false, status: 'A_ENVOYER' });
         assert.equal(soldeCalls(), solde, 'getSolde ne doit pas être appelé');
         assert.equal(sendsTo(row), 0, 'sendCashout ne doit pas être appelé');
         const reread = await cashout(id);
@@ -458,8 +460,8 @@ describe('envoi refusé dans le code', () => {
 
     test('cron de reprise : le cashout simulé n’est pas repris, le réel l’est', async () => {
         await assertM2();
-        const resume = (CashoutService as unknown as { resumeUnsentRefunds?: (limit: number) => Promise<unknown> }).resumeUnsentRefunds;
-        assert.equal(typeof resume, 'function', 'CashoutService.resumeUnsentRefunds absente : livrée par fix(8.2a) (L33)');
+        const resume = (CashoutService as unknown as { resumeUnsent?: (limit: number) => Promise<unknown> }).resumeUnsent;
+        assert.equal(typeof resume, 'function', 'CashoutService.resumeUnsent absente (lot 9 bis, B8)');
         const simulated = await simulatedCashout('reprise');
         const real = await realCashout('reprise-temoin');
         const old = new Date(Date.now() - SIX_MINUTES).toISOString();
