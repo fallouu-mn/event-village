@@ -790,7 +790,7 @@ export default function AdminEventSheetPage() {
         }}
         title={reasonCopy?.title ?? 'Motif'}
         description={reasonCopy?.body}
-        label={reasonAction?.to === 'SUSPENDU' ? 'Motif de la suspension' : 'Motif du refus'}
+        label={reasonAction?.to === 'SUSPENDU' ? 'Motif de la suspension' : reasonAction?.to === 'TERMINE' ? 'Motif de la clôture' : 'Motif du refus'}
         hint="Au moins 3 caractères. Ce motif est communiqué à l’organisateur et reste dans l’historique."
         confirmLabel={reasonAction?.label ?? 'Confirmer'}
         variant="danger"
