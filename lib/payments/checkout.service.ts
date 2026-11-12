@@ -21,7 +21,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
-import { initCashinOnce, initFailureOf, recordAdoptedInit } from './cashin-init';
+import { cashinReturnUrls, initCashinOnce, initFailureOf, recordAdoptedInit } from './cashin-init';
 import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
 import { readFinanceSetting } from '@/lib/finance/engine';
 import { reserveQuota } from '@/lib/security/quota';
@@ -311,6 +311,8 @@ export async function startTicketCheckout(params: {
             operatorName: operator,
             telephone: payerPhone,
             description: `Billets ${String(event.title ?? '')}`.slice(0, 100),
+            // Lot 9 ter (0.4) : retour du client vers /paiement/<id>, en https seulement
+            ...cashinReturnUrls(env.NEXT_PUBLIC_APP_URL, paymentId),
         });
         if (outcome.kind === 'ADOPTED') {
             await recordAdoptedInit(paymentId, outcome.transactionId);

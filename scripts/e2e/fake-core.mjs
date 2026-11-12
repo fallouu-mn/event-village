@@ -198,7 +198,8 @@ export function createFakeCore({ base, sp, mt, transactions, authorized, webhook
             const parsed = parseJson(await readBody(req));
             if (!parsed.ok) return formatD(res, 400, 'MALFORMED_JSON', `Corps invalide : ${parsed.error}`, sub);
             const b = parsed.value;
-            const extra = extraKeys(b, ['amount', 'orderId', 'callBackUrl', 'operatorName', 'telephone', 'description']);
+            // Lot 9 ter (0.4, contrat A.3.2) : successUrl et errorUrl facultatifs, vérifiés quand ils sont envoyés
+            const extra = extraKeys(b, ['amount', 'orderId', 'callBackUrl', 'operatorName', 'telephone', 'description', 'successUrl', 'errorUrl']);
             const problems = [
                 ...extra.map((k) => `champ hors contrat : ${k}`),
                 typeof b.amount === 'string' && AMOUNT.test(b.amount) ? null : 'amount : chaîne de chiffres attendue',
@@ -207,6 +208,8 @@ export function createFakeCore({ base, sp, mt, transactions, authorized, webhook
                 OPERATORS.has(b.operatorName) ? null : 'operatorName : WAVE ou ORANGE_MONEY',
                 typeof b.telephone === 'string' && PHONE9.test(b.telephone) ? null : 'telephone : 9 chiffres',
                 b.description === undefined || (typeof b.description === 'string' && b.description.length <= 255) ? null : 'description invalide',
+                b.successUrl === undefined || (typeof b.successUrl === 'string' && URL.canParse(b.successUrl)) ? null : 'successUrl : URL attendue',
+                b.errorUrl === undefined || (typeof b.errorUrl === 'string' && URL.canParse(b.errorUrl)) ? null : 'errorUrl : URL attendue',
             ].filter(Boolean);
             if (problems.length > 0) return json(res, 400, { success: false, errorCode: 'INVALID_REQUEST', errorMessage: problems.join(' ; ') });
             const existing = transactionOfOrder(b.orderId);
@@ -215,6 +218,7 @@ export function createFakeCore({ base, sp, mt, transactions, authorized, webhook
             transactions.set(transactionId, {
                 transactionId, kind: 'CASHIN', orderId: b.orderId, amount: Number(b.amount), operatorName: b.operatorName,
                 telephone: b.telephone, callBackUrl: b.callBackUrl, status: 'PENDING', createdAt: new Date().toISOString(),
+                successUrl: b.successUrl ?? null, errorUrl: b.errorUrl ?? null,
             });
             const page = paymentPage(transactionId);
             const orange = b.operatorName === 'ORANGE_MONEY';

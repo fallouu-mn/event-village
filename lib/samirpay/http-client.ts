@@ -231,6 +231,9 @@ export class SamirPayHttpClient implements PaymentGateway {
             telephone: payload.telephone,
         };
         if (payload.description) body.description = payload.description;
+        // Lot 9 ter (0.4) : adresses de retour transmises telles quelles ; la règle (https seulement) est chez l'appelant
+        if (payload.successUrl) body.successUrl = payload.successUrl;
+        if (payload.errorUrl) body.errorUrl = payload.errorUrl;
         const context = `Cashin ${payload.orderId}`;
         const res = await this.call('POST', '/api/tiers/direct/initPayment', body);
         if (res.status !== 200 && res.status !== 201) {

@@ -35,6 +35,12 @@ export interface SamirPayDirectInitRequest {
     operatorName: SamirPayOperatorName;
     telephone: string;
     description?: string;
+    /**
+     * Lot 9 ter (0.4, contrat A.3.2) : adresses de retour du client après le paiement (Wave, Orange Money), données
+     * seulement quand l'application est en https (cashinReturnUrls) ; jamais lues pour décider de l'issue.
+     */
+    successUrl?: string;
+    errorUrl?: string;
 }
 
 export interface SamirPayDirectInitResult {

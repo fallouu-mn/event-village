@@ -47,6 +47,18 @@ export function initFailureOf(err: unknown): InitFailure | null {
     };
 }
 
+/**
+ * Lot 9 ter (0.4, contrat A.3.2) : adresses de retour du client après le paiement, `{APP_URL}/paiement/{id}` pour le
+ * succès comme pour l'échec, seulement si l'URL de l'application est en https (une adresse http ou illisible n'est
+ * jamais envoyée : `{}`, corps identique au lot 9 bis). La page de suivi lit l'issue sur le serveur et n'en déduit
+ * rien de l'adresse. Chemin écrit ici : importer statusPageUrl de checkout.service ferait un cycle d'import.
+ */
+export function cashinReturnUrls(appUrl: string, paymentId: string): { successUrl?: string; errorUrl?: string } {
+    if (!URL.canParse(appUrl) || new URL(appUrl).protocol !== 'https:') return {};
+    const url = `${appUrl.replace(/\/+$/, '')}/paiement/${encodeURIComponent(paymentId)}`;
+    return { successUrl: url, errorUrl: url };
+}
+
 /** Motif du paiement rendu après l'adoption d'une transaction existante (provider_final faux). */
 export const ADOPTED_INIT_REASON = 'INIT_CONFLICT_ADOPTED';
 

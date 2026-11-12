@@ -9,7 +9,7 @@
 import crypto from 'node:crypto';
 import { PublicError } from '@/lib/api/public-error';
 import { getServerEnv } from '@/lib/env';
-import { initCashinOnce, initFailureOf, recordAdoptedInit } from './cashin-init';
+import { cashinReturnUrls, initCashinOnce, initFailureOf, recordAdoptedInit } from './cashin-init';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import type { CreatePaymentInput } from '@/lib/validations/payment';
 import { hashCallbackToken, paymentView } from './checkout.service';
@@ -231,6 +231,8 @@ export class PaymentService {
                 operatorName: input.operator,
                 telephone: payerPhone,
                 description: description.slice(0, 100),
+                // Lot 9 ter (0.4) : retour du client vers /paiement/<id>, en https seulement
+                ...cashinReturnUrls(env.NEXT_PUBLIC_APP_URL, payment.id),
             });
             if (outcome.kind === 'INITIATED') {
                 const init = outcome.init;
