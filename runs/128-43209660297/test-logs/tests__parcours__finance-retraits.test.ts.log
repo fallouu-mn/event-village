@@ -1,0 +1,137 @@
+TAP version 13
+# Subtest: Lot 3.6 — soldes et retraits
+    # Subtest: solde organisateur : prix faciaux des billets payés en ligne seulement ; vente espèces et invitation n’ajoutent rien
+    ok 1 - solde organisateur : prix faciaux des billets payés en ligne seulement ; vente espèces et invitation n’ajoutent rien
+      ---
+      duration_ms: 629.774528
+      type: 'test'
+      ...
+    # Subtest: fonds en attente jusqu’à la fin de l’événement + 48 h ; disponibles dès la confirmation si payout_hold_enabled = false (non rétroactif)
+    ok 2 - fonds en attente jusqu’à la fin de l’événement + 48 h ; disponibles dès la confirmation si payout_hold_enabled = false (non rétroactif)
+      ---
+      duration_ms: 703.888643
+      type: 'test'
+      ...
+    # Subtest: date de fin absente : début + 6 h (lot 9 bis R16, règle changée) + 48 h
+    ok 3 - date de fin absente : début + 6 h (lot 9 bis R16, règle changée) + 48 h
+      ---
+      duration_ms: 485.71301
+      type: 'test'
+      ...
+    # Subtest: deux retraits simultanés qui dépassent ensemble le solde : un seul accepté
+    ok 4 - deux retraits simultanés qui dépassent ensemble le solde : un seul accepté
+      ---
+      duration_ms: 514.644626
+      type: 'test'
+      ...
+    # Subtest: montants et comptes refusés : BELOW_MINIMUM (seuil 5 000 F), INVALID_AMOUNT, INSUFFICIENT_BALANCE, NOT_PARTNER
+    ok 5 - montants et comptes refusés : BELOW_MINIMUM (seuil 5 000 F), INVALID_AMOUNT, INSUFFICIENT_BALANCE, NOT_PARTNER
+      ---
+      duration_ms: 626.175993
+      type: 'test'
+      ...
+    # Subtest: virement bancaire refusé tant que finance.withdrawal_bank_enabled est désactivé (BANK_DISABLED)
+    ok 6 - virement bancaire refusé tant que finance.withdrawal_bank_enabled est désactivé (BANK_DISABLED)
+      ---
+      duration_ms: 472.757095
+      type: 'test'
+      ...
+    # Subtest: frais de 1 % arrondis au FCFA supérieur ; cashout WITHDRAWAL-<id> au montant net, vers le numéro déclaré
+    ok 7 - frais de 1 % arrondis au FCFA supérieur ; cashout WITHDRAWAL-<id> au montant net, vers le numéro déclaré
+      ---
+      duration_ms: 588.150309
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-510aaede-cc57-40fb-8e87-4888607dc6b5 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-2d999a4d-f521-4c6e-8d71-b569ae4dcb29 indisponible : Transaction introuvable (simulation)
+    # Subtest: délai dépassé après envoi : cashout INCERTAIN, aucun second envoi, retrait non REJECTED, solde toujours réservé
+    not ok 8 - délai dépassé après envoi : cashout INCERTAIN, aucun second envoi, retrait non REJECTED, solde toujours réservé
+      ---
+      duration_ms: 557.998388
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:2:19784'
+      failureType: 'testCodeFailure'
+      error: |-
+        retrait en cours au montant brut réservé, frais compris (lot 9 ter, R106 c) : {"available":4000,"pending":0,"next_available_at":null,"in_progress":5940}
+        
+        5940 !== 6000
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 6000
+      actual: 5940
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:397:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: refus explicite de SamirPay : retrait REJECTED, écriture RETRAIT_ANNULE, solde rendu
+    ok 9 - refus explicite de SamirPay : retrait REJECTED, écriture RETRAIT_ANNULE, solde rendu
+      ---
+      duration_ms: 553.69824
+      type: 'test'
+      ...
+    # Subtest: solde de parrainage distinct du solde organisateur ; retirable au FCFA inférieur ; commissions allouées
+    ok 10 - solde de parrainage distinct du solde organisateur ; retirable au FCFA inférieur ; commissions allouées
+      ---
+      duration_ms: 511.069953
+      type: 'test'
+      ...
+[requireActiveSession] accès refusé à /api/withdrawals/request : compte c23c475d-fc78-4481-a25e-d3f69bdb70d4 au statut SUSPENDU
+[requireActiveSession] accès refusé à /api/withdrawals/otp : compte c23c475d-fc78-4481-a25e-d3f69bdb70d4 au statut SUSPENDU
+[requireActiveSession] accès refusé à /api/finance/balance : compte c23c475d-fc78-4481-a25e-d3f69bdb70d4 au statut SUSPENDU
+    # Subtest: compte SUSPENDU : retrait, code de retrait et solde refusés (ACCOUNT_NOT_ACTIVE)
+    ok 11 - compte SUSPENDU : retrait, code de retrait et solde refusés (ACCOUNT_NOT_ACTIVE)
+      ---
+      duration_ms: 475.828738
+      type: 'test'
+      ...
+    # Subtest: Idempotency-Key : même clé → même retrait, un seul cashout, un seul envoi ; RPC : DUPLICATE avant le contrôle du solde
+    ok 12 - Idempotency-Key : même clé → même retrait, un seul cashout, un seul envoi ; RPC : DUPLICATE avant le contrôle du solde
+      ---
+      duration_ms: 583.351869
+      type: 'test'
+      ...
+    # Subtest: GET /api/finance/balance : disponible, en attente, retraits en cours et historique ; 401 sans session
+    ok 13 - GET /api/finance/balance : disponible, en attente, retraits en cours et historique ; 401 sans session
+      ---
+      duration_ms: 473.545796
+      type: 'test'
+      ...
+    # Subtest: contrôle statique : plus d’envoi d’argent hors du module de cashout, plus de request_withdrawal
+    ok 14 - contrôle statique : plus d’envoi d’argent hors du module de cashout, plus de request_withdrawal
+      ---
+      duration_ms: 28.202783
+      type: 'test'
+      ...
+    # Subtest: ancienne RPC request_withdrawal supprimée
+    ok 15 - ancienne RPC request_withdrawal supprimée
+      ---
+      duration_ms: 10.437373
+      type: 'test'
+      ...
+    1..15
+not ok 1 - Lot 3.6 — soldes et retraits
+  ---
+  duration_ms: 7217.274702
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/finance-retraits.test.ts:2:8278'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] finance-retraits — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] finance-retraits — purge des réservations échues : {"expired":0}
+[INVARIANT] finance-retraits — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] finance-retraits — (d)(e)(f) : 0 violation(s)
+1..1
+# tests 15
+# suites 1
+# pass 14
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7306.911939

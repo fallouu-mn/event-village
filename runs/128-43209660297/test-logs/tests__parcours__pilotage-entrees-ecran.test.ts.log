@@ -1,0 +1,367 @@
+TAP version 13
+# Subtest: 9t.18 T4 — écrans du tableau de bord des entrées
+    # Subtest: l’onglet Entrées se recharge toutes les 60 s et nettoie son intervalle
+    not ok 1 - l’onglet Entrées se recharge toutes les 60 s et nettoie son intervalle
+      ---
+      duration_ms: 2.544029
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:2:3587'
+      failureType: 'testCodeFailure'
+      error: 'components/partner/pilotage/EntriesTab.tsx : setInterval(…, 60_000)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React from 'react';
+        import { Ban, DoorOpen, Store } from 'lucide-react';
+        import { DataList, type DataColumn } from '@/components/ui/DataList';
+        import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+        import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { formatDateTime, formatInteger, formatTime } from '@/lib/format';
+        import { scanReasonLabel } from '@/lib/scan/scan-result';
+        import { useServerData } from '@/components/partner/useServerData';
+        import { BarList, PilotageSection } from './PilotageBlocks';
+        import { dakarLocalToIso, incidentLabel, type PilotageEntries } from './types';
+        
+        type ScannerRow = PilotageEntries['by_scanner'][number];
+        type RepeatedRow = PilotageEntries['repeated_attempts'][number];
+        type IncidentRow = PilotageEntries['incidents'][number];
+        
+        function Moment({ at, timeOnly = false }: { at: string | null; timeOnly?: boolean }) {
+            if (!at) return <span className="text-fg-muted">Aucune</span>;
+            return <time dateTime={at} className="tabular-nums">{timeOnly ? formatTime(at) : formatDateTime(at)}</time>;
+        }
+        
+        const SCANNER_COLUMNS: DataColumn<ScannerRow>[] = [
+            { key: 'name', header: 'Contrôleur', hideOnCard: true, render: (s) => <span className="font-semibold">{s.name}</span> },
+            { key: 'entry_point', header: 'Point d'entrée', render: (s) => s.entry_point || <span className="text-fg-muted">Non précisé</span> },
+            { key: 'accepted', header: 'Entrées', align: 'right', render: (s) => formatInteger(s.accepted) },
+            { key: 'refused', header: 'Refus', align: 'right', render: (s) => formatInteger(s.refused) },
+            { key: 'incidents', header: 'Incidents', align: 'right', render: (s) => formatInteger(s.incidents) },
+            { key: 'last', header: 'Dernière activité', render: (s) => <Moment at={s.last_activity_at} /> },
+        ];
+        
+        const REPEATED_COLUMNS: DataColumn<RepeatedRow>[] = [
+            { key: 'ticket', header: 'Billet', hideOnCard: true, render: (r) => <span className="font-semibold">{r.ticket_number || 'Billet sans numéro affiché'}</span> },
+            { key: 'category', header: 'Catégorie', render: (r) => r.category || 'Catégorie inconnue' },
+            { key: 'attempts', header: 'Tentatives', align: 'right', render: (r) => formatInteger(r.attempts) },
+            { key: 'last_result', header: 'Dernier résultat', render: (r) => r.last_result_label || scanReasonLabel(r.last_result) },
+            { key: 'last_at', header: 'Dernière tentative', render: (r) => <Moment at={r.last_at} timeOnly /> },
+        ];
+        
+        const INCIDENT_COLUMNS: DataColumn<IncidentRow>[] = [
+            { key: 'name', header: 'Contrôleur', hideOnCard: true, render: (i) => <span className="font-semibold">{i.name}</span> },
+            { key: 'kind', header: 'Incident', render: (i) => incidentLabel(i.kind) },
+            { key: 'count', header: 'Nombre', align: 'right', render: (i) => formatInteger(i.count) },
+            { key: 'last_at', header: 'Dernier', render: (i) => <Moment at={i.last_at} timeOnly /> },
+        ];
+        
+           
+                                                                                                                 
+                                                                                            
+           
+        export function EntriesTab({ eventId, signal }: { eventId: string; signal: number }) {
+            const { data, error, loading, refreshing, reload } = useServerData<PilotageEntries>(`/api/partner/events/${eventId}/pilotage/entries`, signal);
+        
+            if (loading) {
+                return (
+                    <div className="grid grid-cols-2 gap-3 xl:grid-cols-3" role="status" aria-busy="true" aria-label="Chargement des entrées">
+                        <KpiCardSkeleton />
+                        <KpiCardSkeleton />
+                        <KpiCardSkeleton />
+                    </div>
+                );
+            }
+            if (error || !data) {
+                return <ErrorState title="Entrées indisponibles" description={error ?? undefined} onRetry={() => void reload()} isRetrying={refreshing} />;
+            }
+        
+            const maxEntryPoint = Math.max(0, ...data.by_entry_point.map((e) => e.accepted));
+            const maxCategory = Math.max(0, ...data.by_category.map((c) => c.accepted));
+            const maxQuarter = Math.max(0, ...data.by_quarter.map((q) => q.accepted));
+            const maxRefusal = Math.max(0, ...data.refusals_by_reason.map((r) => r.count));
+        
+            return (
+                <div className="flex flex-col gap-6">
+                    <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+                        <KpiCard label="Entrées validées" value={formatInteger(data.total)} hint="Scans acceptés, guichet compris" tone="success" icon={<DoorOpen size={18} />} />
+                        <KpiCard label="Au guichet" value={formatInteger(data.counter)} hint="Billets vendus et validés sur place" tone="info" icon={<Store size={18} />} />
+                        <KpiCard label="Refus" value={formatInteger(data.refused)} hint="Tentatives refusées au contrôle" tone="danger" icon={<Ban size={18} />} />
+                    </div>
+        
+                    {data.repeated_attempts.length > 0 && (
+                        <PilotageSection title="Tentatives multiples" description="Même billet présenté plusieurs fois en moins de dix minutes, ou billet déjà utilisé.">
+                            <StatusBanner tone="warning" title="Billets présentés plusieurs fois">
+                                Vérifiez ces billets avec vos contrôleurs : il peut s'agir d'une capture d'écran partagée.
+                            </StatusBanner>
+                            <DataList
+                                items={data.repeated_attempts}
+                                columns={REPEATED_COLUMNS}
+                                getKey={(r) => r.ticket_id}
+                                caption="Billets présentés plusieurs fois"
+                                cardTitle={(r) => REPEATED_COLUMNS[0].render(r)}
+                            />
+                        </PilotageSection>
+                    )}
+        
+                    <PilotageSection title="Par contrôleur" description="Entrées, refus et incidents de chaque compte qui a scanné.">
+                        <DataList
+                            items={data.by_scanner}
+                            columns={SCANNER_COLUMNS}
+                            getKey={(s) => s.scanner_id}
+                            caption="Entrées par contrôleur"
+                            cardTitle={(s) => SCANNER_COLUMNS[0].render(s)}
+                            empty={<EmptyState title="Aucun scan pour le moment" description="Les entrées s'affichent ici dès le premier scan, sans recharger la page." className="my-0" />}
+                        />
+                    </PilotageSection>
+        
+                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                        <PilotageSection title="Par point d'entrée">
+                            <BarList
+                                ariaLabel="Entrées par point d'entrée"
+                                unit={['entrée', 'entrées']}
+                                max={maxEntryPoint}
+                                emptyLabel="Aucune entrée pour le moment."
+                                items={data.by_entry_point.map((e, i) => ({
+                                    key: `${e.entry_point ?? 'sans-point'}-${i}`,
+                                    label: e.entry_point || 'Point d'entrée non précisé',
+                                    value: e.accepted,
+                                    detail: e.refused > 0 ? `${formatInteger(e.refused)} refus` : undefined,
+                                }))}
+                            />
+                        </PilotageSection>
+                        <PilotageSection title="Par catégorie">
+                            <BarList
+                                ariaLabel="Entrées par catégorie"
+                                unit={['entrée', 'entrées']}
+                                max={maxCategory}
+                                emptyLabel="Aucune catégorie."
+                                items={data.by_category.map((c) => ({ key: c.category_id, label: c.name, value: c.accepted }))}
+                            />
+                        </PilotageSection>
+                        <PilotageSection title="Flux par quart d'heure" description="Heure de Dakar.">
+                            <BarList
+                                ariaLabel="Entrées par quart d'heure"
+                                unit={['entrée', 'entrées']}
+                                max={maxQuarter}
+                                emptyLabel="Aucun passage pour le moment."
+                                items={data.by_quarter.map((q) => {
+                                    const iso = dakarLocalToIso(q.start);
+                                    return {
+                                        key: q.start,
+                                        label: iso ? <time dateTime={iso}>{formatDateTime(iso)}</time> : 'Horaire inconnu',
+                                        value: q.accepted,
+                                        detail: q.refused > 0 ? `${formatInteger(q.refused)} refus` : undefined,
+                                    };
+                                })}
+                            />
+                        </PilotageSection>
+                        <PilotageSection title="Refus par motif">
+                            <BarList
+                                ariaLabel="Refus par motif"
+                                unit="refus"
+                                max={maxRefusal}
+                                emptyLabel="Aucun refus."
+                                items={data.refusals_by_reason.map((r) => ({ key: r.result, label: r.label || scanReasonLabel(r.result), value: r.count }))}
+                            />
+                        </PilotageSection>
+                    </div>
+        
+                    <PilotageSection title="Incidents techniques" description="Coupures réseau, délais dépassés ou erreurs du serveur rencontrés par les scanners (sans effet sur les billets).">
+                        <DataList
+                            items={data.incidents}
+                            columns={INCIDENT_COLUMNS}
+                            getKey={(i) => `${i.scanner_id}-${i.kind}`}
+                            caption="Incidents techniques par contrôleur"
+                            cardTitle={(i) => INCIDENT_COLUMNS[0].render(i)}
+                            empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucun incident technique.</p>}
+                        />
+                    </PilotageSection>
+                </div>
+            );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:90:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: un seul composant pour les vues figées
+    not ok 2 - un seul composant pour les vues figées
+      ---
+      duration_ms: 0.316112
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:2:3974'
+      failureType: 'testCodeFailure'
+      error: 'components/partner/pilotage/EntriesBreakdown.tsx absent (composant EntriesBreakdown, déclaré par R0 (8.3))'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        source (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:40:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:96:9)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: textes exacts du tableau de bord
+    not ok 3 - textes exacts du tableau de bord
+      ---
+      duration_ms: 0.254436
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:2:4463'
+      failureType: 'testCodeFailure'
+      error: 'components/partner/pilotage/EntriesBreakdown.tsx absent (composant EntriesBreakdown)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        source (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:40:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:103:27)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: aucun calcul d’agrégat dans EntriesBreakdown
+    not ok 4 - aucun calcul d’agrégat dans EntriesBreakdown
+      ---
+      duration_ms: 0.227621
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:3:339'
+      failureType: 'testCodeFailure'
+      error: 'components/partner/pilotage/EntriesBreakdown.tsx absent (composant EntriesBreakdown)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        source (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:40:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:112:21)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: réglages de l’alerte à l’écran de l’administration
+    not ok 5 - réglages de l’alerte à l’écran de l’administration
+      ---
+      duration_ms: 1.781619
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:3:815'
+      failureType: 'testCodeFailure'
+      error: |-
+        app/admin/finance-settings/page.tsx : textes exacts du contrat absents
+        + actual - expected
+        
+        + [
+        +   "'access.refusal_alert_threshold'",
+        +   "'access.refusal_alert_minutes'",
+        +   'Alerte de refus à une porte : nombre de refus',
+        +   'Alerte de refus à une porte : durée observée',
+        +   "Quand une porte enregistre ce nombre de refus ou plus pendant la durée observée, l'organisateur reçoit une alerte, au plus une fois par porte et par durée.",
+        +   'Entier de 3 à 500.',
+        +   "Durée pendant laquelle les refus d'une même porte sont comptés pour l'alerte. Entier de 1 à 60.",
+        +   'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet, seuil de stock affiché au public et alerte de refus à une porte.'
+        + ]
+        - []
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+        0: "'access.refusal_alert_threshold'"
+        1: "'access.refusal_alert_minutes'"
+        2: 'Alerte de refus à une porte : nombre de refus'
+        3: 'Alerte de refus à une porte : durée observée'
+        4: "Quand une porte enregistre ce nombre de refus ou plus pendant la durée observée, l'organisateur reçoit une alerte, au plus une fois par porte et par durée."
+        5: 'Entier de 3 à 500.'
+        6: "Durée pendant laquelle les refus d'une même porte sont comptés pour l'alerte. Entier de 1 à 60."
+        7: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet, seuil de stock affiché au public et alerte de refus à une porte.'
+      operator: 'deepStrictEqual'
+      stack: |-
+        assertTexts (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:46:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:120:9)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: description de l’export à jour
+    not ok 6 - description de l’export à jour
+      ---
+      duration_ms: 0.600563
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:3:1668'
+      failureType: 'testCodeFailure'
+      error: |-
+        components/partner/pilotage/ClosingTab.tsx : textes exacts du contrat absents
+        + actual - expected
+        
+        + [
+        +   "Fichier CSV : nom, catégorie, origine, statut du billet, heure d'entrée, zone et porte. Aucune donnée de paiement ni numéro de billet."
+        + ]
+        - []
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+        0: "Fichier CSV : nom, catégorie, origine, statut du billet, heure d'entrée, zone et porte. Aucune donnée de paiement ni numéro de billet."
+      operator: 'deepStrictEqual'
+      stack: |-
+        assertTexts (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:46:12)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:134:9)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..6
+not ok 1 - 9t.18 T4 — écrans du tableau de bord des entrées
+  ---
+  duration_ms: 6.782348
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/pilotage-entrees-ecran.test.ts:2:3494'
+  failureType: 'subtestsFailed'
+  error: '6 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 0
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 73.011729
