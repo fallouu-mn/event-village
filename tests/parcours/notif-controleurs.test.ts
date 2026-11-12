@@ -39,7 +39,7 @@ import { getFakes } from '../fakes';
 import { BASE_URL, randomSenegalPhone } from './helpers';
 import { importModule, service, type Buyer } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { authed, newController, openShift, type RouteResult } from './acces-helpers';
+import { authed, linkController, newController, openShift, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, type DraftEvent } from './cycle-helpers';
 import {
     assertNotificationInvariants, deleteOutboxRows, dispatchAt, insertOutboxRow, loadLotModule, noonDakarTomorrow,
@@ -176,7 +176,9 @@ function smsMessages(phone: string, since: number): string[] {
 }
 
 async function controllerWithoutAssignment(label: string): Promise<Buyer> {
-    return newController(partner, null, { label });
+    const c = await newController(partner, null, { label });
+    await linkController(partner.partnerId, c.userId); // lot 9 ter (0.5, T-B8) : contrôleur déjà connu de la partenaire, affectation directe
+    return c;
 }
 
 // ── 1. Affectation ─────────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ import { getFakes } from '../fakes';
 import { randomSenegalPhone } from './helpers';
 import { newBuyer, service, type CategorySpec, type SaleEvent } from './paiement-helpers';
 import { jsonRequest, newPartner, type TestPartner } from './finance-helpers';
-import { createTimedEvent, newController, type RouteResult } from './acces-helpers';
+import { createTimedEvent, linkController, newController, type RouteResult } from './acces-helpers';
 import { withEnv } from './notif-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { alignQuotaWindow, assertSameQuotaWindow } from './terrain-helpers';
@@ -78,6 +78,7 @@ async function assignedEvents(userId: string): Promise<string[]> {
 describe('R98 — invite_phone ne compte que les SMS envoyés', () => {
     test('contrôleur déjà activé, 4 affectations le même jour (limite 3) : la 4ᵉ est acceptée, aucun SMS, compteur à 0', async () => {
         const ctrl = await newController(partner, null, { label: 'quota-etabli' });
+        await linkController(partner.partnerId, ctrl.userId); // lot 9 ter (0.5, T-B7) : compte établi = déjà connu de la partenaire, sinon invitation à accepter
         await withEnv(LIMITS, async () => {
             const win = await alignQuotaWindow(86_400, 60_000);
             const since = getFakes().sms.messagesTo(ctrl.phoneE164).length;

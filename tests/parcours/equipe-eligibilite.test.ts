@@ -38,7 +38,7 @@ import { getFakes } from '../fakes';
 import { randomSenegalPhone } from './helpers';
 import { newBuyer, service, type CategorySpec, type SaleEvent } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { assignController, authed, createTimedEvent, freshSession, newController, respondControllerInvitations, type RouteResult } from './acces-helpers';
+import { assignController, authed, createTimedEvent, freshSession, linkController, newController, respondControllerInvitations, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createEventInStatus, type EventStatus } from './cycle-helpers';
 import { assertTerrainInvariants } from './terrain-helpers';
 
@@ -186,6 +186,7 @@ describe('8.2 v — PATCH /api/partner/team/assignments selon le statut de l’�
 
     test('anti-contournement { controllerId, eventId } : brouillon 400, événement d’un autre 403, publié 200', async () => {
         const controller = await newController(partnerA, null, { label: 'contournement' });
+        await linkController(partnerA.partnerId, controller.userId); // lot 9 ter (0.5, T-B9) : contrôleur déjà connu de la partenaire A
         assertIneligible(await patchAssignments(partnerA, { controllerId: controller.userId, eventId: closed.BROUILLON.eventId }), 'brouillon');
         const foreign = await patchAssignments(partnerA, { controllerId: controller.userId, eventId: evB.eventId });
         assert.equal(foreign.status, 403, `événement d’un autre partenaire : ${show(foreign)}`);
