@@ -143,11 +143,11 @@ describe('0.4 — retour du client après le paiement (lot 9 ter, 9t.4)', () => 
                 const calls = await initArgsOf(id);
                 assert.equal(calls.length, expectedCalls, `${label} : nombre d'appels d'initialisation (${calls.length})`);
                 const expected = `${HTTPS_APP_URL}/paiement/${id}`;
-                for (const [i, args] of calls.entries()) {
+                calls.forEach((args, i) => {
                     assert.deepEqual({ successUrl: args.successUrl, errorUrl: args.errorUrl }, { successUrl: expected, errorUrl: expected },
                         `${label}, appel ${i + 1} : successUrl et errorUrl vers la page de suivi du paiement (aujourd’hui absents)`);
                     assert.match(String(args.callBackUrl), /^https:\/\/eventvillage\.example\/api\/webhooks\/samirpay\?t=/, `${label} : callBackUrl inchangée dans sa forme`);
-                }
+                });
             }
         } finally {
             restoreAppUrl();
