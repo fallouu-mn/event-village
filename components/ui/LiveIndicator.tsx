@@ -31,22 +31,20 @@ const DOTS: Record<RealtimeStatus, string> = {
  * Indicateur de mise à jour (contrat O3, Q ; lot 9 ter R49) : « En direct » seulement quand le canal est abonné
  * et que les ventes sont suivies ; sinon l'heure de la dernière mise à jour (« Mis à jour à 14:32 ») ;
  * « Hors ligne » discret, suivi de l'heure si elle est connue (les données restent celles du dernier chargement).
- * Annoncé poliment.
+ * Annoncé poliment. Rendu par défaut (sans salesLive ni updatedTime) inchangé.
  */
-export const LiveIndicator: React.FC<LiveIndicatorProps> = ({ status, salesLive = true, updatedTime = null, className }) => {
+export const LiveIndicator: React.FC<LiveIndicatorProps> = ({ status, salesLive = true, updatedTime, className }) => {
   const notFollowed = !salesLive && status !== 'offline';
   let label = LABELS[status];
   if (notFollowed) label = updatedTime ? `Mis à jour à ${updatedTime}` : 'Mise à jour en cours';
-  else if (status === 'offline' && updatedTime) label = `Hors ligne · mis à jour à ${updatedTime}`;
-  const live = status === 'live' && !notFollowed;
+  else if (status === 'offline' && updatedTime) label += ` · mis à jour à ${updatedTime}`;
   return (
     <span
       role="status"
       aria-live="polite"
-      aria-atomic={notFollowed || updatedTime ? true : undefined}
       className={cn(
         'inline-flex items-center gap-2 whitespace-nowrap text-sm font-medium',
-        live ? 'text-success-fg' : 'text-fg-muted',
+        status === 'live' && salesLive ? 'text-success-fg' : 'text-fg-muted',
         className,
       )}
       title={status === 'offline' ? 'Les chiffres affichés sont ceux du dernier chargement.' : undefined}
