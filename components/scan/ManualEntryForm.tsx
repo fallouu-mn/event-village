@@ -153,6 +153,18 @@ export function ManualEntryForm({ eventId, gateId, onValidate, isSubmitting, dis
                                 Pièce conforme, valider l’entrée
                             </Button>
                         </>
+                    ) : found.preview === 'zone_ok' ? (
+                        // Lot 9 ter (9t.15) : porte de contrôle de zone, billet déjà entré et admis ici ; rien à composter
+                        <StatusBanner tone="success" title="Accès autorisé" announce="status">
+                            Billet déjà entré, admis dans cette zone : laissez passer le spectateur.
+                        </StatusBanner>
+                    ) : found.preview === 'wrong_zone' || found.preview === 'not_entered' ? (
+                        // Lot 9 ter (9t.15) : orientation (orange), jamais un refus définitif
+                        <StatusBanner tone="warning" title={found.preview_label} announce="alert">
+                            {found.preview === 'wrong_zone'
+                                ? 'Ce billet n’est pas admis dans cette zone : orientez le spectateur vers la zone de son billet.'
+                                : 'Ce billet n’a pas encore été validé à l’entrée : orientez le spectateur vers une porte d’entrée.'}
+                        </StatusBanner>
                     ) : (
                         <StatusBanner tone="danger" title={`Entrée impossible : ${found.preview_label}`} announce="alert">
                             Ne laissez pas entrer le spectateur avec ce billet.
