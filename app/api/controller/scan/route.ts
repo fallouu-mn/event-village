@@ -22,6 +22,16 @@ const ManualSchema = z.object({
     identityVerified: z.unknown().optional(),
     gateId: GateId,
 });
+/**
+ * Lot 9 ter (9t.17, contrat C.2.3) : validation d'une invitation par la liste des invités (`guestTicketId` = billet
+ * choisi dans POST /api/controller/scan/guests) ; pièce vérifiée obligatoire, même garde que la saisie manuelle.
+ */
+const GuestSchema = z.object({
+    eventId: z.string().uuid(),
+    guestTicketId: z.string().uuid(),
+    identityVerified: z.unknown().optional(),
+    gateId: GateId,
+});
 /** Lot 8 (contrat 3.5) : un renvoi n'exige que l'événement ; payload et numéro, s'ils sont là, ne sont jamais lus. */
 const ReplaySchema = z.object({ eventId: z.string().uuid() });
 
@@ -125,6 +135,9 @@ async function serverError(userId: string, eventId: string | null, message: stri
  * seulement s'il est dans le corps (null compris) ; problème de porte → 409 { error, code } (GATE_REQUIRED,
  * GATE_CHANGED, GATE_INVALID) : rien n'est écrit, rien du billet n'est rendu ; la règle des zones est appliquée dans la
  * RPC (wrong_zone, not_entered, zone_ok, jamais composté hors d'une zone d'entrée qui admet la catégorie).
+ * Lot 9 ter (9t.17, contrat C.2.3) : liste des invités `{ eventId, guestTicketId, identityVerified, gateId? }` (méthode
+ * GUEST_LIST, empreinte sha256('GUEST:' + guestTicketId)) : invitation seulement, pièce vérifiée, transfert
+ * d'invitation clos dans la transaction du compostage.
  */
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
@@ -150,9 +163,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Scan invalide : eventId requis.', code: 'INVALID_EVENT_ID' }, { status: 400 });
     }
     const camera = replay ? null : CameraSchema.safeParse(body);
-    const manual = replay || camera?.success ? null : ManualSchema.safeParse(body);
-    if (!replay && !camera?.success && !manual?.success) {
-        return NextResponse.json({ error: 'Scan invalide : eventId et payload (ou manualTicketNumber) requis.' }, { status: 400 });
+    const guest = replay || camera?.success ? null : GuestSchema.safeParse(body);
+    const manual = replay || camera?.success || guest?.success ? null : ManualSchema.safeParse(body);
+    if (!replay && !camera?.success && !guest?.success && !manual?.success) {
+        return NextResponse.json({ error: 'Scan invalide : eventId et payload (ou manualTicketNumber, ou guestTicketId) requis.' }, { status: 400 });
     }
 
     const p: Record<string, unknown> = { scanner_id: user.id, client_key: clientKey };
@@ -176,6 +190,14 @@ export async function POST(req: NextRequest) {
                 // Version du secret avec lequel le code a été vérifié : recontrôlée sous verrou par ticket_scan
                 if (t) p.secret_version = Number(t.security_version);
             }
+        } else if (guest?.success) {
+            // Lot 9 ter (9t.17, contrat C.2.3) : validation par la liste des invités, une personne (un billet) à la fois
+            const g = guest.data;
+            p.event_id = g.eventId;
+            p.method = 'GUEST_LIST';
+            p.ticket_id = g.guestTicketId;
+            p.identity_verified = g.identityVerified === true;
+            p.payload_hash = sha256(`GUEST:${g.guestTicketId}`);
         } else {
             const m = manual!.data!;
             p.event_id = m.eventId;
@@ -186,7 +208,7 @@ export async function POST(req: NextRequest) {
         }
         // Lot 9 ter (9t.15) : porte annoncée, posée seulement si la clé est dans le corps (null compris)
         if (!replay && body && typeof body === 'object' && 'gateId' in body) {
-            p.gate_id = (camera?.success ? camera.data.gateId : manual?.data?.gateId) ?? null;
+            p.gate_id = (camera?.success ? camera.data.gateId : guest?.success ? guest.data.gateId : manual?.data?.gateId) ?? null;
         }
         const { data, error } = await rpcWithRetry<Rpc>('ticket_scan', { p });
         if (error || !data) throw new Error(`ticket_scan : ${error?.message ?? 'réponse vide'}`);

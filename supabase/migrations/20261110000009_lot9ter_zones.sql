@@ -885,6 +885,14 @@ $$;
 --          `checked_in_gate` (porte, sinon point d'entrée, de la ligne acceptée) sur « déjà utilisé » et « accès
 --          autorisé », lu après le verrou du billet (le perdant d'une course voit la porte du gagnant) ; même billet au
 --          rejeu.
+--  9t.17 (délégation fix(9t.17-SZ), D-inv 3.3) : méthode GUEST_LIST (validation par la liste des invités) : même garde
+--          que la saisie manuelle (pièce vérifiée, access.manual_entry_scope) ; billet désigné par son identifiant ; un
+--          billet qui n'est pas une invitation donne `invalid` sans ticket_id ni donnée (requête forgée) ; étape 7 bis :
+--          transfert d'invitation PENDING ou EXPIRED du billet pris FOR UPDATE SKIP LOCKED (un autre transfert en
+--          attente, ou l'invitation tenue par une acceptation en cours : transfer_pending) ; étape 9 : billet déverrouillé
+--          et transfert clos ADMITTED avec claimed_at = now() dans la transaction du compostage (même heure que la ligne
+--          GUEST_LIST, x11) ; `is_guest_list` dans le billet ; porteur « {nom de l'invité} » ou « Invité » pour une
+--          invitation sans porteur (au lieu de « Vente au guichet »), au rejeu aussi.
 CREATE OR REPLACE FUNCTION public.ticket_scan(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -926,8 +934,10 @@ DECLARE
     v_kind text;
     -- Lot 9 ter (9t.16) : porte du premier compostage
     v_checked_gate text;
+    -- Lot 9 ter (9t.17) : transfert d'invitation clos par la liste des invités
+    v_invite uuid;
 BEGIN
-    IF v_method NOT IN ('QR', 'MANUAL') THEN
+    IF v_method NOT IN ('QR', 'MANUAL', 'GUEST_LIST') THEN
         RAISE EXCEPTION 'ticket_scan : méthode % inconnue', v_method;
     END IF;
     -- Clé d'idempotence : facultative pour la RPC (seed, appels internes), obligatoire pour la route
@@ -982,13 +992,15 @@ BEGIN
                  WHERE tk.id = s.ticket_id;
                 IF FOUND THEN
                     v_info := jsonb_build_object('id', t.id, 'ticket_number', t.ticket_number, 'category', t.category_name,
-                                                 'holder', CASE WHEN t.user_id IS NULL THEN 'Vente au guichet'
+                                                 'holder', CASE WHEN t.user_id IS NULL AND t.sale_channel = 'INVITATION' THEN COALESCE(t.guest_name, 'Invité')
+                                                                WHEN t.user_id IS NULL THEN 'Vente au guichet'
                                                                 ELSE btrim(COALESCE(t.first_name, '') || ' ' || COALESCE(t.last_name, '')) END,
                                                  'price', t.price, 'is_manual_entry', s.method = 'MANUAL',
                                                  'checked_in_at', t.checked_in_at,
                                                  'checked_in_by_me', t.checked_in_by IS NOT DISTINCT FROM v_scanner,
                                                  'category_color', t.scan_color,
-                                                 'origin', public.ticket_origin(t.sale_channel, t.price, t.pay_id IS NOT NULL AND NOT t.pay_platform));
+                                                 'origin', public.ticket_origin(t.sale_channel, t.price, t.pay_id IS NOT NULL AND NOT t.pay_platform),
+                                                 'is_guest_list', s.method = 'GUEST_LIST');
                     -- Lot 9 ter (9t.16) : porte du compostage sur « déjà utilisé » et « accès autorisé » ; consigne sur
                     -- l'entrée validée seulement
                     IF COALESCE(s.result, s.zone_result) IN ('already_used', 'zone_ok') THEN
@@ -1042,8 +1054,9 @@ BEGIN
         v_scan := public.scan_log_at(NULL, v_event, v_scanner, v_pre, NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
         RETURN jsonb_build_object('result', v_pre, 'scan_id', v_scan);
     END IF;
-    -- 3. Saisie manuelle : périmètre réglé et pièce d'identité vérifiée
-    IF v_method = 'MANUAL' THEN
+    -- 3. Saisie manuelle : périmètre réglé et pièce d'identité vérifiée. Lot 9 ter (9t.17) : même garde pour la
+    --    validation par la liste des invités, qui désigne le billet par son identifiant.
+    IF v_method IN ('MANUAL', 'GUEST_LIST') THEN
         v_scope := public.fin_setting_text('access.manual_entry_scope');
         IF NOT v_identity
            OR (v_scope = 'ASSIGNED_CONTROLLER' AND NOT EXISTS (
@@ -1051,7 +1064,11 @@ BEGIN
             v_scan := public.scan_log_at(NULL, v_event, v_scanner, 'manual_entry_refused', NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
             RETURN jsonb_build_object('result', 'manual_entry_refused', 'scan_id', v_scan);
         END IF;
-        SELECT id INTO v_ticket_id FROM public.tickets WHERE ticket_number = upper(btrim(p->>'ticket_number'));
+        IF v_method = 'MANUAL' THEN
+            SELECT id INTO v_ticket_id FROM public.tickets WHERE ticket_number = upper(btrim(p->>'ticket_number'));
+        ELSE
+            v_ticket_id := public.try_uuid(p->>'ticket_id');
+        END IF;
     ELSE
         v_ticket_id := NULLIF(p->>'ticket_id', '')::uuid;
     END IF;
@@ -1074,11 +1091,20 @@ BEGIN
         v_scan := public.scan_log_at(t.id, v_event, v_scanner, 'wrong_event', NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
         RETURN jsonb_build_object('result', 'wrong_event', 'scan_id', v_scan);
     END IF;
+    -- Lot 9 ter (9t.17) : la liste des invités ne valide qu'une invitation ; un autre billet désigné par son
+    -- identifiant est une requête forgée : ligne invalid sans ticket_id, réponse sans billet
+    IF v_method = 'GUEST_LIST' AND t.sale_channel IS DISTINCT FROM 'INVITATION' THEN
+        v_scan := public.scan_log_at(NULL, v_event, v_scanner, 'invalid', NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
+        RETURN jsonb_build_object('result', 'invalid', 'scan_id', v_scan);
+    END IF;
     v_info := jsonb_build_object('id', t.id, 'ticket_number', t.ticket_number, 'category', t.category_name,
-                                 'holder', CASE WHEN t.user_id IS NULL THEN 'Vente au guichet' ELSE btrim(COALESCE(t.first_name, '') || ' ' || COALESCE(t.last_name, '')) END, 'price', t.price,
+                                 'holder', CASE WHEN t.user_id IS NULL AND t.sale_channel = 'INVITATION' THEN COALESCE(t.guest_name, 'Invité')
+                                                WHEN t.user_id IS NULL THEN 'Vente au guichet'
+                                                ELSE btrim(COALESCE(t.first_name, '') || ' ' || COALESCE(t.last_name, '')) END, 'price', t.price,
                                  'is_manual_entry', v_method = 'MANUAL',
                                  'category_color', t.scan_color,
-                                 'origin', public.ticket_origin(t.sale_channel, t.price, t.pay_id IS NOT NULL AND NOT t.pay_platform));
+                                 'origin', public.ticket_origin(t.sale_channel, t.price, t.pay_id IS NOT NULL AND NOT t.pay_platform),
+                                 'is_guest_list', v_method = 'GUEST_LIST');
     -- 5. Code dynamique (calculé hors base avec la clé maître) et version du secret, lus sous le verrou du
     --    billet : une rotation (transfert, annulation, remboursement, régénération) validée avant le verrou
     --    rend le code présenté périmé. Statut d'annulation contrôlé avant la version (D3).
@@ -1159,7 +1185,23 @@ BEGIN
     -- 7 bis. Lot 9 bis (R19, R44) : billet engagé dans un transfert encore en attente → refusé, rien de composté.
     --        Un transfert échu est d'abord expiré ; un transfert tenu par une acceptation est sauté (SKIP LOCKED,
     --        X27) et compte comme en attente. Conditions imbriquées : aucun court-circuit garanti sur AND.
-    IF t.transfer_locked THEN
+    --        Lot 9 ter (9t.17) : par la liste des invités, le transfert d'invitation du billet (PENDING, ou EXPIRED à la
+    --        fin de l'événement alors que le contrôle reste ouvert) est pris sans attente ; un autre transfert en attente
+    --        (d'un porteur), ou l'invitation tenue par une acceptation en cours (sautée), refuse transfer_pending.
+    IF v_method = 'GUEST_LIST' THEN
+        PERFORM public.ticket_transfers_expire_due(t.id, TRUE);
+        SELECT x.id INTO v_invite
+          FROM public.ticket_transfers x
+         WHERE x.ticket_id = t.id AND x.from_user_id IS NULL AND x.status::text IN ('PENDING', 'EXPIRED')
+         ORDER BY x.created_at DESC, x.id DESC
+         LIMIT 1
+           FOR UPDATE SKIP LOCKED;
+        IF EXISTS (SELECT 1 FROM public.ticket_transfers x
+                    WHERE x.ticket_id = t.id AND x.status = 'PENDING' AND x.id IS DISTINCT FROM v_invite) THEN
+            v_scan := public.scan_log_at(t.id, v_event, v_scanner, 'transfer_pending', NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
+            RETURN jsonb_build_object('result', 'transfer_pending', 'scan_id', v_scan, 'ticket', v_info, 'zone', v_zone, 'gate', v_gate);
+        END IF;
+    ELSIF t.transfer_locked THEN
         IF public.ticket_transfers_expire_due(t.id, TRUE) THEN
             v_scan := public.scan_log_at(t.id, v_event, v_scanner, 'transfer_pending', NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
             RETURN jsonb_build_object('result', 'transfer_pending', 'scan_id', v_scan, 'ticket', v_info, 'zone', v_zone, 'gate', v_gate);
@@ -1191,8 +1233,12 @@ BEGIN
                                       'redirect_zones', COALESCE(v_redirect, '[]'::jsonb));
         END IF;
     END IF;
-    -- 9. Compostage (une seule ligne modifiée, sous verrou)
-    UPDATE public.tickets SET status = 'UTILISE', checked_in_at = now(), checked_in_by = v_scanner, updated_at = now()
+    -- 9. Compostage (une seule ligne modifiée, sous verrou). Lot 9 ter (9t.17) : une invitation validée par la liste
+    --    est déverrouillée et son transfert clos ADMITTED (claimed_at = now(), heure de la ligne GUEST_LIST) dans la même
+    --    transaction ; aucun avis (billet sans porteur).
+    UPDATE public.tickets SET status = 'UTILISE', checked_in_at = now(), checked_in_by = v_scanner,
+                              transfer_locked = CASE WHEN v_invite IS NOT NULL THEN FALSE ELSE transfer_locked END,
+                              updated_at = now()
      WHERE id = t.id AND status = 'VALIDE';
     IF NOT FOUND THEN
         SELECT checked_in_at, checked_in_by INTO v_checked_at, v_checked_by FROM public.tickets WHERE id = t.id;
@@ -1205,6 +1251,9 @@ BEGIN
                                                                          'checked_in_by_me', v_checked_by IS NOT DISTINCT FROM v_scanner,
                                                                          'checked_in_gate', v_checked_gate),
                                   'zone', v_zone, 'gate', v_gate);
+    END IF;
+    IF v_invite IS NOT NULL THEN
+        UPDATE public.ticket_transfers SET status = 'ADMITTED', claimed_at = now() WHERE id = v_invite;
     END IF;
     v_scan := public.scan_log_at(t.id, v_event, v_scanner, 'valid', NULL, TRUE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
     RETURN jsonb_build_object('result', 'valid', 'scan_id', v_scan,
@@ -1221,6 +1270,7 @@ $$;
 -- Changements : 9t.15 : contexte de porte après le contrôle de droit (problème → 409, sans audit) ; aperçu à une porte
 -- de CONTRÔLE (refus du billet, puis not_entered, zone_ok ou wrong_zone) ou d'ENTRÉE (chemin d'avant, puis
 -- wrong_zone si l'entrée était possible) ; zones proposées dans le billet. Toujours aucune ligne ticket_scans.
+-- 9t.17 (délégation fix(9t.17-SZ)) : porteur « {nom de l'invité} » ou « Invité » d'une invitation sans porteur.
 CREATE OR REPLACE FUNCTION public.ticket_manual_lookup(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -1265,7 +1315,7 @@ BEGIN
     END IF;
 
     SELECT tk.id, tk.event_id, tk.ticket_number, tk.status::text AS status, tk.price, tk.payment_id, tk.order_id, tk.user_id,
-           tk.transfer_locked, tk.category_id, c.name AS category_name, u.first_name, u.last_name
+           tk.transfer_locked, tk.category_id, tk.sale_channel, tk.guest_name, c.name AS category_name, u.first_name, u.last_name
       INTO t
       FROM public.tickets tk
       JOIN public.ticket_categories c ON c.id = tk.category_id
@@ -1342,7 +1392,10 @@ BEGIN
             jsonb_build_object('event_id', v_event, 'found', true, 'ticket_number_hash', v_hash));
     v_ticket := jsonb_build_object(
         'ticket_number', t.ticket_number,
-        'holder', CASE WHEN t.user_id IS NULL THEN 'Vente au guichet' ELSE btrim(COALESCE(t.first_name, '') || ' ' || COALESCE(t.last_name, '')) END,
+        -- Lot 9 ter (9t.17) : une invitation sans porteur est « {nom de l'invité} » ou « Invité », pas une vente au guichet
+        'holder', CASE WHEN t.user_id IS NULL AND t.sale_channel = 'INVITATION' THEN COALESCE(t.guest_name, 'Invité')
+                       WHEN t.user_id IS NULL THEN 'Vente au guichet'
+                       ELSE btrim(COALESCE(t.first_name, '') || ' ' || COALESCE(t.last_name, '')) END,
         'category', t.category_name,
         'status', t.status,
         'preview', v_preview);

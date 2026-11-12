@@ -148,13 +148,15 @@ export function scanReasonLabel(reason: unknown): string {
 }
 
 /** Méthodes de `ticket_scans.method` : caméra, numéro saisi, vente au guichet (contrat C7). */
-export const SCAN_METHODS = ['QR', 'MANUAL', 'COUNTER'] as const;
+export const SCAN_METHODS = ['QR', 'MANUAL', 'COUNTER', 'GUEST_LIST'] as const;
 export type ScanMethod = (typeof SCAN_METHODS)[number];
 
 export const SCAN_METHOD_LABELS: Record<ScanMethod, string> = {
     QR: 'QR',
     MANUAL: 'Saisie manuelle',
     COUNTER: 'Guichet',
+    // Lot 9 ter (9t.17) : validation par la liste des invités (invitation pas encore acceptée dans l'application)
+    GUEST_LIST: 'Liste des invités',
 };
 
 export function isScanMethod(value: unknown): value is ScanMethod {
