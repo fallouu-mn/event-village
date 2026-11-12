@@ -1,14 +1,16 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Ban, Send, Ticket } from 'lucide-react';
+import { Ban, Pencil, Plus, Send, Ticket, Trash2 } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
-import { Select, Textarea } from '@/components/ui/Field';
+import { Select, TextInput } from '@/components/ui/Field';
+import { IconButton } from '@/components/ui/IconButton';
 import { KpiCardSkeleton } from '@/components/ui/KpiCard';
+import { Modal } from '@/components/ui/Modal';
 import { Pagination } from '@/components/ui/Pagination';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
@@ -16,7 +18,7 @@ import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-jso
 import { useServerData } from '@/components/partner/useServerData';
 import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
-import { MAX_INVITATION_PHONES, MAX_INVITATION_QUANTITY } from '@/lib/validations/invitation';
+import { MAX_GUEST_NAME_LENGTH, MAX_INVITATION_PHONES, MAX_INVITATION_QUANTITY } from '@/lib/validations/invitation';
 import { PilotageSection } from './PilotageBlocks';
 import type { PilotageSales } from './types';
 
@@ -31,6 +33,8 @@ interface InvitationRow {
     status_label: string;
     phone_masked: string | null;
     can_cancel: boolean;
+    /** Lot 9 ter (9t.17) : nom de l'invité, montré au contrôleur qui consulte la liste des invités. */
+    guest_name?: string | null;
 }
 
 interface InvitationsPage {
@@ -51,14 +55,19 @@ interface Draft {
     categoryId: string;
     categoryName: string;
     phones: string[];
+    /** Lot 9 ter : nom de chaque numéro (null : sans nom), dans l'ordre des numéros. */
+    guestNames: Array<string | null>;
     quantity: number;
 }
+
+/** Lot 9 ter (9t.17) : une ligne du formulaire, numéro et nom facultatif. */
+interface GuestLine { key: number; phone: string; name: string }
 
 interface SendFailure {
     tone: 'danger' | 'warning';
     title: string;
     lines: string[];
-    field?: { name: 'category' | 'phones' | 'quantity'; message: string };
+    field?: { name: 'category' | 'phones' | 'quantity'; message: string; line?: number; guestName?: boolean };
     /** Le stock ou l'historique affiché peut être dépassé : à relire. */
     refresh?: boolean;
 }
@@ -91,23 +100,26 @@ function maskPhone(e164: string): string {
     return `+221***${e164.slice(-2)}`;
 }
 
-function phoneLines(text: string): string[] {
-    return text.split('\n').map((line) => line.trim()).filter(Boolean);
-}
-
-/** Mêmes règles que `CreateInvitationsSchema` (10 au plus, format sénégalais, distincts une fois normalisés). */
-function readPhones(text: string): { phones: string[]; error?: string } {
-    const lines = phoneLines(text);
-    if (lines.length === 0) return { phones: [], error: 'Saisissez au moins un numéro de téléphone.' };
-    if (lines.length > MAX_INVITATION_PHONES) return { phones: [], error: `${MAX_INVITATION_PHONES} numéros au plus par envoi.` };
+/**
+ * Mêmes règles que `CreateInvitationsSchema` (10 au plus, format sénégalais, distincts une fois normalisés, nom de 60
+ * caractères au plus). Une ligne entièrement vide est ignorée ; l'erreur désigne sa ligne.
+ */
+function readLines(lines: GuestLine[]): { phones: string[]; guestNames: Array<string | null>; error?: string; line?: number } {
     const phones: string[] = [];
+    const guestNames: Array<string | null> = [];
     for (let index = 0; index < lines.length; index += 1) {
-        const phone = toSenegaleseE164(lines[index]);
-        if (!phone) return { phones: [], error: `Numéro ${index + 1} : ${PHONE_FORMAT_HELP}` };
-        if (phones.includes(phone)) return { phones: [], error: `Numéro ${index + 1} : ce numéro figure deux fois dans la liste.` };
+        const raw = lines[index].phone.trim();
+        const name = lines[index].name.trim();
+        if (!raw && !name) continue;
+        const phone = toSenegaleseE164(raw);
+        if (!phone) return { phones: [], guestNames: [], error: `Numéro ${index + 1} : ${PHONE_FORMAT_HELP}`, line: index };
+        if (phones.includes(phone)) return { phones: [], guestNames: [], error: `Numéro ${index + 1} : ce numéro figure deux fois dans la liste.`, line: index };
+        if (name.length > MAX_GUEST_NAME_LENGTH) return { phones: [], guestNames: [], error: 'Le nom de l’invité ne doit pas dépasser 60 caractères.', line: index };
         phones.push(phone);
+        guestNames.push(name || null);
     }
-    return { phones };
+    if (phones.length === 0) return { phones, guestNames, error: 'Saisissez au moins un numéro de téléphone.', line: 0 };
+    return { phones, guestNames };
 }
 
 function categoryOption(category: Category): { value: string; label: string; disabled: boolean } {
@@ -129,9 +141,13 @@ function invalidField(err: ApiError): SendFailure['field'] {
     const field = typeof err.body?.field === 'string' ? err.body.field : '';
     if (field === 'category_id') return { name: 'category', message: err.message };
     if (field === 'quantity') return { name: 'quantity', message: err.message };
-    if (field === 'phones') return { name: 'phones', message: err.message };
-    const line = /^phones\.(\d+)$/.exec(field);
-    return line ? { name: 'phones', message: `Numéro ${Number(line[1]) + 1} : ${err.message}` } : undefined;
+    if (field === 'phones' || field === 'guest_names') return { name: 'phones', message: err.message };
+    const line = /^(phones|guest_names)\.(\d+)$/.exec(field);
+    if (!line) return undefined;
+    const index = Number(line[2]);
+    return line[1] === 'phones'
+        ? { name: 'phones', message: `Numéro ${index + 1} : ${err.message}`, line: index }
+        : { name: 'phones', message: err.message, line: index, guestName: true };
 }
 
 /** Réponse d'échec de l'envoi, par code (contrat 4.1). Les textes viennent de la liste blanche des routes. */
@@ -158,9 +174,12 @@ function sendFailure(err: unknown): SendFailure {
 
 function InvitationForm({ eventId, categories, onChanged }: { eventId: string; categories: Category[]; onChanged: () => void }) {
     const categoryRef = useRef<HTMLSelectElement>(null);
-    const phonesRef = useRef<HTMLTextAreaElement>(null);
+    const formRef = useRef<HTMLFormElement>(null);
+    const lineSeq = useRef(1);
     const [categoryId, setCategoryId] = useState('');
-    const [phonesText, setPhonesText] = useState('');
+    const [lines, setLines] = useState<GuestLine[]>([{ key: 0, phone: '', name: '' }]);
+    /** Ligne en erreur (numéro ou nom), pour placer le message sous le bon champ. */
+    const [errorLine, setErrorLine] = useState<{ line: number; guestName: boolean } | null>(null);
     const [quantity, setQuantity] = useState('1');
     const [categoryError, setCategoryError] = useState<string | undefined>(undefined);
     const [phonesError, setPhonesError] = useState<string | undefined>(undefined);
@@ -177,8 +196,17 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
         { label: 'Sans canal de vente', items: withoutChannel },
         { label: 'En vente en ligne ou au guichet', items: withChannel },
     ];
-    const lineCount = phoneLines(phonesText).length;
+    const lineCount = lines.length;
 
+    /** Focus sur le champ en cause (numéro ou nom de la ligne). */
+    const focusLine = (line: number, guestName = false): void => {
+        setTimeout(() => formRef.current?.querySelector<HTMLInputElement>(`[data-line="${line}-${guestName ? 'name' : 'phone'}"]`)?.focus(), 0);
+    };
+    const updateLine = (key: number, patch: Partial<GuestLine>): void => {
+        setLines((list) => list.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+        setPhonesError(undefined);
+        setErrorLine(null);
+    };
     const clearOutcome = (): void => {
         setFailure(null);
         setSent(null);
@@ -190,18 +218,20 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
         setQuantityError(undefined);
         const category = categories.find((c) => c.category_id === categoryId);
         const nextCategoryError = category && !categoryOption(category).disabled ? undefined : 'Choisissez une catégorie encore disponible.';
-        const { phones, error: nextPhonesError } = readPhones(phonesText);
+        const { phones, guestNames, error: nextPhonesError, line } = readLines(lines);
         setCategoryError(nextCategoryError);
         setPhonesError(nextPhonesError);
+        const nameError = nextPhonesError?.startsWith('Le nom') === true;
+        setErrorLine(nextPhonesError && line !== undefined ? { line, guestName: nameError } : null);
         if (nextCategoryError || !category) {
             categoryRef.current?.focus();
             return;
         }
         if (nextPhonesError) {
-            phonesRef.current?.focus();
+            focusLine(line ?? 0, nameError);
             return;
         }
-        setDraft({ categoryId: category.category_id, categoryName: category.name, phones, quantity: Number(quantity) });
+        setDraft({ categoryId: category.category_id, categoryName: category.name, phones, guestNames, quantity: Number(quantity) });
     };
 
     const send = async (): Promise<void> => {
@@ -212,16 +242,24 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                 category_id: draft.categoryId,
                 phones: draft.phones,
                 quantity: draft.quantity,
+                // Lot 9 ter : noms envoyés seulement si au moins un est saisi (sinon, envoi identique au lot 9)
+                ...(draft.guestNames.some((n) => n !== null) ? { guest_names: draft.guestNames } : {}),
             });
             setSent({ tickets: res.ticket_count, phones: res.phone_count });
-            setPhonesText('');
+            setLines([{ key: lineSeq.current++, phone: '', name: '' }]);
             setDraft(null);
             onChanged();
         } catch (err) {
             const next = sendFailure(err);
             setFailure(next);
             if (next.field?.name === 'category') setCategoryError(next.field.message);
-            if (next.field?.name === 'phones') setPhonesError(next.field.message);
+            if (next.field?.name === 'phones') {
+                setPhonesError(next.field.message);
+                if (next.field.line !== undefined) {
+                    setErrorLine({ line: next.field.line, guestName: next.field.guestName === true });
+                    focusLine(next.field.line, next.field.guestName === true);
+                }
+            }
             if (next.field?.name === 'quantity') setQuantityError(next.field.message);
             setDraft(null);
             if (next.refresh) onChanged();
@@ -235,7 +273,7 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
             title="Inviter par SMS"
             description="Chaque numéro reçoit un SMS avec un lien vers Mes billets. Sans compte, ses billets l’attendent jusqu’à son inscription avec ce numéro."
         >
-            <form onSubmit={review} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 sm:p-5" noValidate>
+            <form ref={formRef} onSubmit={review} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 sm:p-5" noValidate>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] sm:items-start">
                     <Select
                         ref={categoryRef}
@@ -270,27 +308,66 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                         }}
                     />
                 </div>
-                <Textarea
-                    ref={phonesRef}
-                    label="Numéros de téléphone"
-                    hint={`Un numéro par ligne, ${MAX_INVITATION_PHONES} au plus par envoi.`}
-                    aside={<span className="tabular-nums">{lineCount} / {MAX_INVITATION_PHONES}</span>}
-                    placeholder={'77 123 45 67\n78 123 45 68'}
-                    required
-                    rows={4}
-                    inputMode="tel"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={phonesText}
-                    error={phonesError}
-                    onChange={(e) => {
-                        setPhonesText(e.target.value);
-                        setPhonesError(undefined);
-                    }}
-                    onBlur={() => {
-                        if (phonesText.trim()) setPhonesError(readPhones(phonesText).error);
-                    }}
-                />
+                <fieldset className="flex flex-col gap-3">
+                    <legend className="mb-1 flex w-full items-baseline justify-between gap-3 text-sm font-semibold text-fg">
+                        <span>Numéros de téléphone</span>
+                        <span className="font-normal tabular-nums text-fg-muted">{lineCount} / {MAX_INVITATION_PHONES}</span>
+                    </legend>
+                    <ol className="flex flex-col gap-3">
+                        {lines.map((line, index) => {
+                            const lineError = errorLine?.line === index ? phonesError : undefined;
+                            return (
+                                <li key={line.key} className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface-sunken p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-start">
+                                    <TextInput
+                                        data-line={`${index}-phone`}
+                                        label={`Numéro ${index + 1}`}
+                                        type="tel"
+                                        inputMode="tel"
+                                        autoComplete="off"
+                                        placeholder="77 123 45 67"
+                                        required={index === 0}
+                                        value={line.phone}
+                                        error={lineError && !errorLine?.guestName ? lineError : undefined}
+                                        onChange={(e) => updateLine(line.key, { phone: e.target.value })}
+                                    />
+                                    <TextInput
+                                        data-line={`${index}-name`}
+                                        label={`Nom de l’invité ${index + 1}`}
+                                        hint="Facultatif, 60 caractères au plus. Montré au contrôleur qui consulte la liste des invités."
+                                        aside={<span className="tabular-nums">{line.name.length} / {MAX_GUEST_NAME_LENGTH}</span>}
+                                        maxLength={MAX_GUEST_NAME_LENGTH}
+                                        autoComplete="off"
+                                        value={line.name}
+                                        error={lineError && errorLine?.guestName ? lineError : undefined}
+                                        onChange={(e) => updateLine(line.key, { name: e.target.value })}
+                                    />
+                                    {lines.length > 1 && (
+                                        <IconButton
+                                            aria-label={`Retirer le numéro ${index + 1}`}
+                                            variant="ghost"
+                                            className="sm:mt-7"
+                                            onClick={() => { setLines((list) => list.filter((l) => l.key !== line.key)); setPhonesError(undefined); setErrorLine(null); }}
+                                        >
+                                            <Trash2 size={18} />
+                                        </IconButton>
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ol>
+                    {phonesError && !errorLine && <p role="alert" className="text-sm font-medium text-danger-fg">{phonesError}</p>}
+                    <div>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            leftIcon={<Plus size={16} />}
+                            disabled={lines.length >= MAX_INVITATION_PHONES}
+                            onClick={() => setLines((list) => [...list, { key: lineSeq.current++, phone: '', name: '' }])}
+                        >
+                            Ajouter un numéro
+                        </Button>
+                    </div>
+                </fieldset>
 
                 {failure && (
                     <StatusBanner tone={failure.tone} title={failure.title} announce="alert">
@@ -325,9 +402,14 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                             <dt className="text-fg-muted">Catégorie</dt>
                             <dd className="min-w-0 break-words text-right font-semibold text-fg">{draft.categoryName}</dd>
                         </div>
-                        <div className="flex items-baseline justify-between gap-3 border-b border-border py-2">
-                            <dt className="text-fg-muted">{draft.phones.length > 1 ? 'Numéros' : 'Numéro'}</dt>
-                            <dd className="min-w-0 text-right font-semibold tabular-nums text-fg">{draft.phones.map(maskPhone).join(', ')}</dd>
+                        <div className="flex flex-col gap-1 border-b border-border py-2">
+                            <dt className="flex justify-between gap-3 text-fg-muted"><span>{draft.phones.length > 1 ? 'Numéros' : 'Numéro'}</span><span>Invité</span></dt>
+                            {draft.phones.map((phone, index) => (
+                                <dd key={phone} className="flex items-baseline justify-between gap-3">
+                                    <span className="font-semibold tabular-nums text-fg">{maskPhone(phone)}</span>
+                                    <span className="min-w-0 break-words text-right text-fg">{draft.guestNames[index] ?? '—'}</span>
+                                </dd>
+                            ))}
                         </div>
                         <div className="flex items-baseline justify-between gap-3 border-b border-border py-2">
                             <dt className="text-fg-muted">Billets par numéro</dt>
@@ -361,6 +443,33 @@ function InvitationHistory({
     const { data, error, loading, refreshing, reload } = useServerData<InvitationsPage>(`/api/partner/events/${eventId}/invitations?page=${page}`, signal);
     const [target, setTarget] = useState<InvitationRow | null>(null);
     const [cancelling, setCancelling] = useState(false);
+    /** Lot 9 ter (9t.17) : nom de l'invité modifié dans une fenêtre (invitation encore annulable). */
+    const [naming, setNaming] = useState<InvitationRow | null>(null);
+    const [nameValue, setNameValue] = useState('');
+    const [nameError, setNameError] = useState<string | undefined>(undefined);
+    const [savingName, setSavingName] = useState(false);
+
+    const openNaming = (row: InvitationRow): void => {
+        setNaming(row);
+        setNameValue(row.guest_name ?? '');
+        setNameError(undefined);
+    };
+
+    const saveName = async (): Promise<void> => {
+        if (!naming) return;
+        setSavingName(true);
+        setNameError(undefined);
+        try {
+            await sendJson(`/api/partner/events/${eventId}/invitations/${naming.ticket_id}`, 'PATCH', { guest_name: nameValue.trim() || null });
+            toast.success('Nom de l’invité enregistré.');
+            setNaming(null);
+            await reload();
+        } catch (err) {
+            setNameError(errorMessage(err, 'Modification impossible pour le moment.'));
+        } finally {
+            setSavingName(false);
+        }
+    };
 
     const confirmCancel = async (): Promise<void> => {
         if (!target) return;
@@ -385,6 +494,7 @@ function InvitationHistory({
     const columns: DataColumn<InvitationRow>[] = [
         { key: 'category', header: 'Catégorie', hideOnCard: true, render: (row) => <span className="font-semibold">{row.category}</span> },
         { key: 'phone', header: 'Numéro', render: (row) => <span className="tabular-nums">{row.phone_masked ?? 'Numéro masqué'}</span> },
+        { key: 'guest', header: 'Invité', render: (row) => <span className="break-words">{row.guest_name || '—'}</span> },
         { key: 'date', header: 'Envoi', render: (row) => <time dateTime={row.created_at}>{formatDateTime(row.created_at)}</time> },
         { key: 'channel', header: 'Canal et prix', render: (row) => `${row.channel} · ${formatFcfa(row.price)}` },
         { key: 'status', header: 'Statut', render: (row) => <Badge variant={STATUS_VARIANT[row.status_label] ?? 'neutral'}>{row.status_label}</Badge> },
@@ -393,16 +503,27 @@ function InvitationHistory({
             header: 'Action',
             align: 'right',
             render: (row) => (row.can_cancel ? (
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    leftIcon={<Ban size={16} />}
-                    aria-label={`Annuler l’invitation de ${row.phone_masked ?? row.category}`}
-                    onClick={() => setTarget(row)}
-                    className="text-danger-fg"
-                >
-                    Annuler l’invitation
-                </Button>
+                <span className="flex flex-wrap justify-end gap-1">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={<Pencil size={16} />}
+                        aria-label={`Modifier le nom de l’invité de ${row.phone_masked ?? row.category}`}
+                        onClick={() => openNaming(row)}
+                    >
+                        Modifier le nom
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={<Ban size={16} />}
+                        aria-label={`Annuler l’invitation de ${row.phone_masked ?? row.category}`}
+                        onClick={() => setTarget(row)}
+                        className="text-danger-fg"
+                    >
+                        Annuler l’invitation
+                    </Button>
+                </span>
             ) : <span className="text-fg-muted">Aucune</span>),
         },
     ];
@@ -453,6 +574,31 @@ function InvitationHistory({
                 isLoading={cancelling}
                 maxWidth="md"
             />
+
+            <Modal
+                isOpen={naming !== null}
+                onClose={() => { if (!savingName) setNaming(null); }}
+                title="Nom de l’invité"
+                busy={savingName}
+                maxWidth="md"
+                footer={
+                    <>
+                        <Button variant="secondary" onClick={() => setNaming(null)} disabled={savingName} className="flex-1 sm:flex-none">Annuler</Button>
+                        <Button variant="primary" onClick={() => void saveName()} isLoading={savingName} className="flex-1 sm:flex-none">Enregistrer</Button>
+                    </>
+                }
+            >
+                <TextInput
+                    label="Nom de l’invité"
+                    hint="Facultatif, 60 caractères au plus. Montré au contrôleur qui consulte la liste des invités."
+                    aside={<span className="tabular-nums">{nameValue.length} / {MAX_GUEST_NAME_LENGTH}</span>}
+                    maxLength={MAX_GUEST_NAME_LENGTH}
+                    autoComplete="off"
+                    value={nameValue}
+                    error={nameError}
+                    onChange={(e) => { setNameValue(e.target.value); setNameError(undefined); }}
+                />
+            </Modal>
         </PilotageSection>
     );
 }

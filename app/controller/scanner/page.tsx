@@ -52,6 +52,9 @@
  * Lot 9 ter (9t.15, contrat C.1.4) : sur un événement à zones, porte et zone de l'affectation sur l'écran de départ,
  * « Changer de porte » si l'organisateur l'autorise, `gateId` envoyé avec chaque scan et chaque vérification, compteur
  * des contrôles à une porte de contrôle de zone. Le serveur décide de tout (GATE_REQUIRED, GATE_CHANGED).
+ * Lot 9 ter (9t.17, contrat C.3.5) : bouton « Liste des invités » (hors du groupe « Mode de contrôle », porte d'entrée
+ * ou zone implicite seulement, inactif hors ligne) ; le panneau, chargé à la demande, remplace la zone de lecture et met
+ * la caméra en pause ; chaque validation passe par la voie unique du scan (verdict plein écran, vibration).
  * Lot 9 ter (9t.16, contrat C.2.3, C.2.4) : plein écran avec couleur de la catégorie, consigne, zone, porte, badge
  * d'origine, zones où se présenter et porte de la première entrée ; un incident de porte (409 GATE_*) est un écran
  * technique, et GATE_CHANGED fait relire les affectations.
@@ -59,7 +62,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Calendar, Camera, Keyboard, Loader2, LogOut, Settings2 } from 'lucide-react';
+import { Calendar, Camera, Keyboard, Loader2, LogOut, Settings2, Users } from 'lucide-react';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { detachPushSubscription } from '@/lib/push/client';
 import { Button } from '@/components/ui/Button';
@@ -98,6 +101,11 @@ const ZSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').th
 const ManualEntryForm = dynamic(() => import('@/components/scan/ManualEntryForm').then((m) => m.ManualEntryForm), {
     ssr: false,
     loading: () => <p role="status" className="text-sm text-fg-muted">Chargement de la saisie manuelle…</p>,
+});
+// Lot 9 ter (9t.17) : liste des invités chargée à la demande (hors du budget de poids du scanner)
+const GuestListPanel = dynamic(() => import('@/components/scan/GuestListPanel').then((m) => m.GuestListPanel), {
+    ssr: false,
+    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement de la liste des invités…</p>,
 });
 const CounterSalePanel = dynamic(() => import('@/components/scan/CounterSalePanel').then((m) => m.CounterSalePanel), {
     ssr: false,
@@ -301,6 +309,8 @@ export default function ControllerScannerPage() {
 
     // Scan
     const [inputMode, setInputMode] = useState<InputMode>('camera');
+    /** Lot 9 ter : liste des invités ouverte à la place de la zone de lecture (mode non mémorisé). */
+    const [guestOpen, setGuestOpen] = useState(false);
     const [area, setArea] = useState<Area>('controle');
     const [stage, setStage] = useState<Stage>('idle');
     const [attempt, setAttempt] = useState(1);
@@ -706,18 +716,19 @@ export default function ControllerScannerPage() {
             busyRef.current = false;
             setStage('idle');
             if (document.visibilityState === 'visible') resumePendingRef.current('visible');
-            return;
+            return null;
         }
         if (redirectIfSessionExpired(outcome)) {
             if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
             busyRef.current = false;
             setStage('idle');
-            return;
+            return null;
         }
         // R107 : refus 403 (« Vous ne contrôlez plus cet événement ») : affectations relues ; une affectation retirée
         // ramène à l'écran de choix, un contrôle fermé entre-temps affiche son bandeau. Lot 9 ter : porte changée, idem
         if (outcome.failure === 'forbidden' || outcome.code === 'GATE_CHANGED') void fetchAssignments({ quiet: true });
         presentOutcome(outcome, payload, recoveredAt);
+        return outcome;
     }, [presentOutcome, redirectIfSessionExpired, fetchAssignments]);
 
     const runScanRef = useRef(runScan);
@@ -800,6 +811,17 @@ export default function ControllerScannerPage() {
         await runScanRef.current({ eventId: id, manualTicketNumber, identityVerified: true, gateId: gateIdRef.current }, null, key);
     }, []);
 
+    /** Lot 9 ter : validation d'un invité de la liste (pièce vérifiée), clé neuve, même voie que le QR. */
+    const handleGuestAdmit = useCallback(async (guestTicketId: string): Promise<ScanOutcome | null> => {
+        const id = eventIdRef.current;
+        if (!id || busyRef.current) {
+            console.info('[scanner] validation par la liste ignorée : un scan est déjà en cours ou affiché');
+            return null;
+        }
+        mark('ev-scan:read');
+        return runScanRef.current({ eventId: id, guestTicketId, identityVerified: true, gateId: gateIdRef.current }, null);
+    }, []);
+
     const handleLogout = async () => {
         // A10 : la mémoire du contrôle (événement, mode, scan en attente) ne survit pas à la déconnexion
         clearAllScanMemory();
@@ -823,6 +845,7 @@ export default function ControllerScannerPage() {
     /** Changement de mode : choix explicite, la caméra démarre aussitôt (le toucher vaut geste). */
     const chooseMode = (mode: InputMode) => {
         setResumeGate(false);
+        setGuestOpen(false);
         setInputMode(mode);
     };
 
@@ -835,6 +858,7 @@ export default function ControllerScannerPage() {
         setRestoreNotice(null);
         setStarted(false);
         setArea('controle');
+        setGuestOpen(false);
         setStats(null);
         void fetchAssignments();
     };
@@ -955,7 +979,9 @@ export default function ControllerScannerPage() {
     const outcome = shown?.outcome ?? null;
     const modalOpen = showOpenShift || showCloseShift || zSummary !== null;
     // Hors ligne, la caméra continue de lire : chaque lecture affiche « Hors ligne : rien n'est validé »
-    const cameraPaused = stage !== 'idle' || modalOpen;
+    const cameraPaused = stage !== 'idle' || modalOpen || guestOpen;
+    // Lot 9 ter : liste des invités à une porte d'entrée, ou sans zone (le serveur décide de tout le reste)
+    const guestList = selected.gate?.zone.kind !== 'CONTROLE';
     const tabs = [
         { id: 'controle', label: 'Contrôle' },
         ...(showCounter ? [{ id: 'guichet', label: 'Guichet' }] : []),
@@ -988,7 +1014,14 @@ export default function ControllerScannerPage() {
                 </StatusBanner>
             ) : (
                 <>
-                    {inputMode === 'camera' && (CameraQrScanner ? (
+                    {guestOpen && (
+                        <div className="relative flex flex-col gap-3">
+                            {pendingLayer && <div className="relative min-h-40 overflow-hidden rounded-2xl">{pendingLayer}</div>}
+                            <GuestListPanel eventId={selected.events.id} gateId={gateId} onAdmit={handleGuestAdmit}
+                                onClose={() => setGuestOpen(false)} onSessionExpired={goToLogin} />
+                        </div>
+                    )}
+                    {!guestOpen && inputMode === 'camera' && (CameraQrScanner ? (
                         <CameraQrScanner
                             onScan={handleCameraRead}
                             paused={cameraPaused}
@@ -1005,7 +1038,7 @@ export default function ControllerScannerPage() {
                             <p className="text-base font-semibold">Préparation de la caméra…</p>
                         </div>
                     ))}
-                    {inputMode === 'manual' && (
+                    {!guestOpen && inputMode === 'manual' && (
                         <div className="relative flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
                             {pendingLayer && <div className="relative min-h-40 overflow-hidden rounded-2xl">{pendingLayer}</div>}
                             <ManualEntryForm
@@ -1055,6 +1088,15 @@ export default function ControllerScannerPage() {
                             Saisie manuelle
                         </Button>
                     </div>
+
+                    {guestList && !guestOpen && (
+                        <div className="flex flex-col gap-1">
+                            <Button variant="secondary" size="lg" fullWidth leftIcon={<Users size={18} />} disabled={!online} onClick={() => setGuestOpen(true)}>
+                                Liste des invités
+                            </Button>
+                            {!online && <p className="text-sm text-fg-muted">Hors ligne : la liste des invités reprendra au retour du réseau.</p>}
+                        </div>
+                    )}
                 </>
             )}
 

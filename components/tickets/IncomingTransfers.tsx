@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CalendarClock, Gift, Hourglass, MapPin, ShieldCheck, Ticket, UserRound, X } from 'lucide-react';
+import { CalendarClock, DoorOpen, Gift, Hourglass, MapPin, ShieldCheck, Ticket, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { PhoneVerifyDialog } from '@/components/tickets/PhoneVerifyDialog';
-import { formatDateTime, formatEventDateTime, formatFcfa } from '@/lib/format';
+import { formatDate, formatDateTime, formatEventDateTime, formatFcfa, formatTime } from '@/lib/format';
 
 /**
  * Billets reçus (lot 6, contrat B3 à B5 et amendement 2) : onglet « Reçus » de « Mes billets ».
@@ -22,6 +22,9 @@ import { formatDateTime, formatEventDateTime, formatFcfa } from '@/lib/format';
  *  - Lot 9 bis : R104 textes choisis par `kind` (transfert d'un particulier ou invitation de l'organisateur) ;
  *    R46 (B55) « Refuser » confirmé, POST /api/tickets/transfers/{id}/decline (transfert : le billet reste à
  *    l'expéditeur, prévenu ; invitation : billet annulé, place rendue) ; refus du serveur affiché en clair.
+ *  - Lot 9 ter (9t.17, contrat C.3.5) : une invitation déjà validée à la porte par la liste des invités (`used`, servi par
+ *    le serveur) dit « Entrée déjà validée à la porte le … » ; « Ajouter à mes billets » la rattache au compte (elle
+ *    apparaît comme utilisée), sans « Refuser » ni échéance.
  */
 
 export interface IncomingTransfer {
@@ -30,6 +33,9 @@ export interface IncomingTransfer {
   kind: 'INVITATION' | 'TRANSFER';
   expires_at: string;
   sender_display: string;
+  /** Lot 9 ter : invitation déjà validée à la porte (liste des invités) et heure de l'entrée. */
+  used: boolean;
+  checked_in_at: string | null;
   ticket: { category_name: string | null; price: number };
   event: {
     id: string;
@@ -65,6 +71,8 @@ function toTransfer(raw: unknown): IncomingTransfer | null {
     kind: raw.kind === 'INVITATION' ? 'INVITATION' : 'TRANSFER',
     expires_at: typeof raw.expires_at === 'string' ? raw.expires_at : '',
     sender_display: typeof raw.sender_display === 'string' && raw.sender_display ? raw.sender_display : 'Un utilisateur',
+    used: raw.used === true,
+    checked_in_at: typeof raw.checked_in_at === 'string' ? raw.checked_in_at : null,
     ticket: {
       category_name: typeof t.category_name === 'string' ? t.category_name : null,
       price: typeof t.price === 'number' ? t.price : Number(t.price ?? 0),
@@ -289,15 +297,29 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                         </span>
                       </dd>
                     </div>
-                    <div>
-                      <dt className="sr-only">Délai</dt>
-                      <dd className="flex items-start gap-2 font-semibold text-warning-fg">
-                        <Hourglass size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-                        <span className="min-w-0">
-                          {t.expires_at ? `À accepter avant le ${formatDateTime(t.expires_at)}` : 'À accepter sous 48 h'}
-                        </span>
-                      </dd>
-                    </div>
+                    {t.used ? (
+                      <div>
+                        <dt className="sr-only">Entrée</dt>
+                        <dd className="flex items-start gap-2 font-semibold text-fg">
+                          <DoorOpen size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                          <span className="min-w-0 tabular-nums">
+                            {t.checked_in_at
+                              ? `Entrée déjà validée à la porte le ${formatDate(t.checked_in_at)} à ${formatTime(t.checked_in_at)}.`
+                              : 'Entrée déjà validée à la porte.'}
+                          </span>
+                        </dd>
+                      </div>
+                    ) : (
+                      <div>
+                        <dt className="sr-only">Délai</dt>
+                        <dd className="flex items-start gap-2 font-semibold text-warning-fg">
+                          <Hourglass size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                          <span className="min-w-0">
+                            {t.expires_at ? `À accepter avant le ${formatDateTime(t.expires_at)}` : 'À accepter sous 48 h'}
+                          </span>
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Button
@@ -309,9 +331,9 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                       }}
                       leftIcon={<Gift size={18} aria-hidden="true" />}
                     >
-                      Accepter le billet
+                      {t.used ? 'Ajouter à mes billets' : 'Accepter le billet'}
                     </Button>
-                    <Button
+                    {!t.used && <Button
                       variant="secondary"
                       fullWidth
                       onClick={() => {
@@ -322,7 +344,7 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                       aria-label={`Refuser ${t.kind === 'INVITATION' ? 'l’invitation' : 'le billet'} pour ${t.event.title}`}
                     >
                       Refuser
-                    </Button>
+                    </Button>}
                   </div>
                 </article>
               </li>
@@ -335,11 +357,13 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
         isOpen={Boolean(confirming)}
         onClose={() => { if (!isAccepting) setConfirming(null); }}
         onConfirm={() => void accept()}
-        title="Accepter ce billet ?"
-        message={!confirming ? undefined : confirming.kind === 'INVITATION'
+        title={confirming?.used ? 'Ajouter ce billet à vos billets ?' : 'Accepter ce billet ?'}
+        message={!confirming ? undefined : confirming.used
+          ? 'Ce billet a déjà servi à l’entrée : il apparaîtra comme utilisé.'
+          : confirming.kind === 'INVITATION'
           ? `L’invitation pour « ${confirming.event.title} » rejoint vos billets avec son QR code.`
           : `Le billet pour « ${confirming.event.title} » rejoint vos billets avec un nouveau QR code. L’expéditeur est prévenu et ne peut plus l’utiliser.`}
-        confirmLabel="Accepter le billet"
+        confirmLabel={confirming?.used ? 'Ajouter à mes billets' : 'Accepter le billet'}
         variant="default"
         isLoading={isAccepting}
       />
