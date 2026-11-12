@@ -18,6 +18,7 @@ import { Select, TextInput, Textarea } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
+import { OTHER_CITY_VALUE, SENEGAL_CITIES, senegalCity } from '@/lib/events/senegal-cities';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { formatInteger } from '@/lib/format';
 import {
@@ -62,10 +63,11 @@ import {
  *    { notified_holders, sms_queued } affiché ; billetterie par les routes /categories (EventTicketing) ;
  *  - erreurs du serveur (fields[]) affichées près de leur champ, récapitulatif focalisable.
  * Seule la billetterie est proposée (tâche 5.9).
- * Lot 9 ter (R93) :
+ * Lot 9 ter (R93, R96) :
  *  - verrous de l'écran servis par le serveur (`edit_locks` du GET, mêmes règles qu'event_update), relus après chaque
  *    enregistrement de catégorie ; textes de la jauge selon le plancher servi ;
  *  - garde avant de quitter (useUnsavedGuard) : informations de l'événement et catégories non enregistrées ;
+ *  - ville dans la liste SENEGAL_CITIES ou « Autre ville » ; téléphone de contact sénégalais (normalisé par le schéma).
  */
 
 const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => m.MapPicker), {
@@ -92,6 +94,11 @@ const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
+
+const CITY_OPTIONS = [
+    ...SENEGAL_CITIES.map((c) => ({ value: c, label: c })),
+    { value: OTHER_CITY_VALUE, label: 'Autre ville' },
+];
 
 /** Lot 9 ter (R93, F17) : verrous servis par GET /api/partner/events/[id] (RPC event_edit_locks). */
 interface EditLocks {
@@ -473,6 +480,8 @@ export function EventForm(props: EventFormProps) {
     const [editLocks, setEditLocks] = useState<EditLocks | null>(null);
     /** Catégories modifiées et non enregistrées (édition, EventTicketingManager). */
     const [ticketingDirty, setTicketingDirty] = useState<string[]>([]);
+    /** « Autre ville » choisie : la ville est saisie dans « Précisez la ville ». */
+    const [cityOther, setCityOther] = useState(false);
     /** Brouillon créé : la page part vers la liste, la garde de sortie est levée. */
     const [leaving, setLeaving] = useState(false);
     const headingRef = useRef<HTMLHeadingElement>(null);
@@ -514,6 +523,7 @@ export function EventForm(props: EventFormProps) {
             const locks = readEditLocks(body.edit_locks);
             setEditLocks(locks);
             setInitialLocks(locks);
+            setCityOther(senegalCity(v.city) === null);
             setValues(v);
             setBaseline(eventPayload(v).payload);
             setErrors({});
@@ -629,6 +639,11 @@ export function EventForm(props: EventFormProps) {
                 end_date: ev.end_date ? str(ev.end_date) : null,
                 end_time: ev.end_time ? str(ev.end_time) : null,
                 image_url: ev.image_url ? str(ev.image_url) : null,
+                // Lot 9 ter (R96) : ville et téléphone actuels gardés tels quels (anciennes saisies libres)
+                city: ev.city ? str(ev.city) : null,
+                contact_phone: ev.practical_info && typeof ev.practical_info === 'object'
+                    ? str((ev.practical_info as Row).contactPhone) || null
+                    : null,
             },
         }), patch);
         const map = parsed.success ? {} : issuesToErrors(fieldErrors(parsed.error), maps, { ignoreImageOrigin: false });
@@ -965,8 +980,19 @@ export function EventForm(props: EventFormProps) {
                             <TextInput id="ev-location" label="Lieu" required maxLength={EVENT_LIMITS.locationMax} value={values.location}
                                 onChange={(e) => set('location', e.target.value)} placeholder="Par exemple : Grand Théâtre National"
                                 error={errors.location} hint={hint(undefined, true)} />
-                            <TextInput id="ev-city" label="Ville" required maxLength={EVENT_LIMITS.cityMax} value={values.city}
-                                onChange={(e) => set('city', e.target.value)} error={errors.city} hint={hint(undefined, true)} />
+                            <Select id="ev-city" label="Ville" required options={CITY_OPTIONS}
+                                value={cityOther ? OTHER_CITY_VALUE : senegalCity(values.city) ?? OTHER_CITY_VALUE}
+                                onChange={(e) => {
+                                    const choice = e.target.value;
+                                    setCityOther(choice === OTHER_CITY_VALUE);
+                                    set('city', choice === OTHER_CITY_VALUE ? '' : choice);
+                                }}
+                                error={cityOther ? undefined : errors.city} hint={hint(undefined, true)} />
+                            {cityOther && (
+                                <TextInput id="ev-city-other" label="Précisez la ville" required minLength={EVENT_LIMITS.cityMin} maxLength={EVENT_LIMITS.cityMax}
+                                    value={values.city} onChange={(e) => set('city', e.target.value)} error={errors.city}
+                                    hint="Ville absente de la liste." fieldClassName="sm:col-start-2" />
+                            )}
                         </div>
 
                         <TextInput
@@ -1079,9 +1105,10 @@ export function EventForm(props: EventFormProps) {
                                 value={values.practical.address} onChange={(e) => setPractical('address', e.target.value)}
                                 placeholder="Rue, quartier, point de repère" error={errors['practical_info.address']}
                                 hint={hint(undefined, true)} fieldClassName="sm:col-span-2" />
-                            <TextInput id="ev-practical_info-contactPhone" type="tel" label="Téléphone de contact" maxLength={EVENT_LIMITS.practicalInfoMax}
+                            <TextInput id="ev-practical_info-contactPhone" type="tel" inputMode="tel" label="Téléphone de contact" maxLength={EVENT_LIMITS.practicalInfoMax}
                                 value={values.practical.contactPhone} onChange={(e) => setPractical('contactPhone', e.target.value)}
-                                placeholder="77 123 45 67" autoComplete="tel" error={errors['practical_info.contactPhone']} />
+                                placeholder="77 123 45 67" autoComplete="tel" error={errors['practical_info.contactPhone']}
+                                hint="Mobile ou fixe sénégalais, par exemple 77 123 45 67 ou 33 821 00 00." />
                             <TextInput id="ev-practical_info-parking" label="Stationnement" maxLength={EVENT_LIMITS.practicalInfoMax}
                                 value={values.practical.parking} onChange={(e) => setPractical('parking', e.target.value)}
                                 placeholder="Parking gratuit sur place" error={errors['practical_info.parking']} />

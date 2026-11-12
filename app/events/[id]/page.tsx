@@ -178,6 +178,8 @@ interface PublicEvent {
     accessNotes?: string | null;
     parking?: string | null;
     contactPhone?: string | null;
+    /** Lot 9 ter (R96) : numéro E.164 du lien d'appel, null pour une ancienne saisie libre. */
+    contactPhoneTel?: string | null;
     rules?: string | null;
   } | null;
   categories: PublicCategory[];
@@ -973,7 +975,7 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
                   {info?.contactPhone && (
                     <PracticalRow icon={<Phone size={18} />} label="Contact de l’organisateur">
                       <a
-                        href={`tel:${info.contactPhone.replace(/\s+/g, '')}`}
+                        href={`tel:${info.contactPhoneTel ?? info.contactPhone.replace(/\s+/g, '')}`}
                         className="inline-flex min-h-11 items-center font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {info.contactPhone}
