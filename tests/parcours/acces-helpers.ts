@@ -8,6 +8,9 @@
  * Lot 9 bis (R42, A11, T47) : openShift passe un PIN régisseur, posé par l'aide le temps de l'ouverture (PIN de la suite
  * remis ensuite) ; `pin: null` ouvre sans PIN (refus PIN_REQUIRED). respondControllerInvitations (R37, T49) : réponse du
  * titulaire à ses invitations de contrôleur par les routes /api/account/controller-invitations.
+ * Lot 9 ter (K10, contrat 10.1) : clés access.refusal_alert_threshold et access.refusal_alert_minutes (9t.18) ;
+ * linkController(partnerId, controllerId) pose le lien partenaire–contrôleur (table partner_controllers, 0.5,
+ * migration 20261110000006) au montage d'un contrôleur « établi » de la partenaire.
  */
 import '../helpers/env';
 import assert from 'node:assert/strict';
@@ -21,11 +24,18 @@ import {
 } from './paiement-helpers';
 import { superadminId, type TestPartner } from './finance-helpers';
 
-export type AccessSettingKey =
+/** Clés access.* du lot 4 (contrat A du lot 4 ; acces-reglages en fixe les valeurs par défaut). */
+export type Lot4AccessSettingKey =
     | 'access.manual_entry_scope'
     | 'access.scan_window_before_hours'
     | 'access.scan_window_after_hours'
     | 'access.counter_sale_enabled';
+
+export type AccessSettingKey =
+    | Lot4AccessSettingKey
+    // Lot 9 ter (9t.18, contrat 3.1 migration 02) : seuil et durée de l'alerte de refus en série à une porte
+    | 'access.refusal_alert_threshold'
+    | 'access.refusal_alert_minutes';
 
 // ── Réglages access.* (même RPC que le lot 3) ──────────────────────────────
 
@@ -112,6 +122,20 @@ export async function assignController(partner: TestPartner, controllerId: strin
         { event_id: eventId, user_id: controllerId, can_accept_cash: canAcceptCash, created_by: partner.userId },
         { onConflict: 'event_id,user_id' });
     assert.equal(error, null, `affectation du contrôleur : ${error?.message}`);
+}
+
+/**
+ * Lot 9 ter (0.5, contrat 3.8.1) : lien partenaire–contrôleur posé au montage (service_role, jamais l'acteur testé),
+ * pour un contrôleur que la partenaire connaît déjà (« compte établi ») : sans lui, l'affectation directe passe par
+ * l'invitation R37 (CONTROLLER_CONSENT_REQUIRED). Idempotent. Avant la migration 20261110000006, la table n'existe
+ * pas : échec explicite qui la nomme.
+ */
+export async function linkController(partnerId: string, controllerId: string): Promise<void> {
+    const { error } = await service.from('partner_controllers').upsert(
+        { partner_id: partnerId, user_id: controllerId },
+        { onConflict: 'partner_id,user_id', ignoreDuplicates: true });
+    assert.equal(error, null,
+        `lien partenaire–contrôleur (table partner_controllers, lot 9 ter 0.5, migration 20261110000006) : ${error?.code ?? ''} ${error?.message ?? ''}`);
 }
 
 // ── Billets ────────────────────────────────────────────────────────────────

@@ -2,10 +2,12 @@
  * Lot 9 (AR7, contrat 3.1) — migrations gelées : 20261103… (lot 6, production), 20261105… (lot 7), 20261106…
  * (lot 8) et, depuis le lot 9 bis (T1, contrat 3.1), 20261108… (lot 9), appliquées sur event-village-dev. Chacune
  * garde son empreinte SHA-256 sur son contenu normalisé en LF, et la liste des fichiers de chaque préfixe reste
- * exacte : ni suppression, ni ajout. Toute correction passe par une migration 20261109….
+ * exacte : ni suppression, ni ajout. Depuis le lot 9 ter (contrat 3.2) : 20261109… (lot 9 bis) gelées aussi ; toute
+ * correction passe par une migration 20261110….
  *
  * Empreintes : FROZEN_LOT6 et FROZEN_LOT7 recopiées de tests/schema/migration-lot7-rejouable.test.ts (ce fichier ne
- * change pas) ; 20261106… calculées sur 534d6b3 ; 20261108… calculées sur 7cca60f (identiques sur c3f03f6).
+ * change pas) ; 20261106… calculées sur 534d6b3 ; 20261108… calculées sur 7cca60f (identiques sur c3f03f6) ;
+ * 20261109… calculées sur 2bd6086 (`git show HEAD:<f> | tr -d '\r' | sha256sum`, contrat 3.2, identiques à D-out 3.1).
  * Sans base : vert dès l'écriture, annoncé ; aucune écriture, donc aucun appel d'invariants (écart signalé).
  */
 import '../helpers/env';
@@ -59,11 +61,28 @@ const FROZEN_LOT9: Readonly<Record<string, string>> = {
     '20261108000005_lot9_nettoyage.sql': 'f842a5208f52bda7ed7910d0669f1f668a8979d8947f6141fb4c05535950c353',
 };
 
+/** Empreintes SHA-256 (LF) des migrations du lot 9 bis, calculées sur 2bd6086 (contrat 3.2). */
+const FROZEN_LOT9BIS: Readonly<Record<string, string>> = {
+    '20261109000001_lot9bis_reglages.sql': '72128d385f7896ac65d13de80001173ae03e5c364a2ed0366ffd9e2c915f0fc4',
+    '20261109000002_lot9bis_transfert_statut.sql': 'd5fb11ef3c6a41a4fea8ac09a5d7cff85185233dcf512e2b9fb1b1e4e143ce0b',
+    '20261109000003_lot9bis_registre.sql': 'b36ca37b2b0139d895dd440cc8d7140f8e7d49e4d449ad059cbfe6a78a61994d',
+    '20261109000004_lot9bis_droits.sql': '4c513d69567c0dcb959a0f09ffea0bdf7de256c86355eaa843cc48f7f67b4af5',
+    '20261109000005_lot9bis_samirpay.sql': '7fa83ec57296aa15741d077210bb934291b3163c001c1cac4defee2dc8a5b08d',
+    '20261109000006_lot9bis_argent.sql': '7b6f47e39845c5216701bd61e65a1c0fbec2b0de5e87af1698985408d76a44b3',
+    '20261109000007_lot9bis_versements.sql': 'ac251b02a327b97dbe3d4572cd9dabecea3a18e34fcedc43e71cb033758dc436',
+    '20261109000008_lot9bis_cycle.sql': 'ab659db52d28fb9111e3d4f24fcb2e49cde07c0301a701bf9ecf97de87800de4',
+    '20261109000009_lot9bis_messages.sql': 'a79272720936184029c15c3f79e1d35d0ad05b619d77c95e95702875fc40a4bf',
+    '20261109000010_lot9bis_email.sql': '2601cf92da3f665ad6065a080748511fe1b22ba2bd89df1779a824b9e4a197a5',
+    '20261109000011_lot9bis_textes.sql': '6b8ac4ac4f812dc998629a0c0999dddf441d53c263f5c33497a093710aed1fb5',
+    '20261109000012_lot9bis_mode_reel.sql': 'edb721aa07011c51a17b5ac1d01eedbc70ec8100c7d2620b2c416fa989c33faa',
+};
+
 const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> = [
     ['20261103', 'lot 6', FROZEN_LOT6],
     ['20261105', 'lot 7', FROZEN_LOT7],
     ['20261106', 'lot 8', FROZEN_LOT8],
     ['20261108', 'lot 9', FROZEN_LOT9],
+    ['20261109', 'lot 9 bis', FROZEN_LOT9BIS],
 ];
 
 function sha256Lf(name: string): string {
@@ -71,18 +90,18 @@ function sha256Lf(name: string): string {
     return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
-describe('Migrations gelées : 20261103…, 20261105…, 20261106…, 20261108…', () => {
+describe('Migrations gelées : 20261103…, 20261105…, 20261106…, 20261108…, 20261109…', () => {
     for (const [prefix, lot, frozen] of FROZEN) {
-        test(`${prefix}… : la liste des fichiers du ${lot} reste exacte (gelée, toute correction passe par une migration 20261109…)`, () => {
+        test(`${prefix}… : la liste des fichiers du ${lot} reste exacte (gelée, toute correction passe par une migration 20261110…)`, () => {
             const present = fs.readdirSync(DIR).filter((f) => f.startsWith(prefix)).sort();
             assert.deepEqual(present, Object.keys(frozen).sort(),
-                `${prefix}… : fichiers gelés modifiés. Gelée, toute correction passe par une migration 20261109…`);
+                `${prefix}… : fichiers gelés modifiés. Gelée, toute correction passe par une migration 20261110…`);
         });
 
         for (const [name, sha] of Object.entries(frozen)) {
             test(`${name} : empreinte inchangée (${lot})`, () => {
                 assert.ok(fs.existsSync(path.join(DIR, name)), `migration gelée supprimée : supabase/migrations/${name}`);
-                assert.equal(sha256Lf(name), sha, `${name} a été modifiée : gelée, toute correction passe par une migration 20261109…`);
+                assert.equal(sha256Lf(name), sha, `${name} a été modifiée : gelée, toute correction passe par une migration 20261110…`);
             });
         }
     }

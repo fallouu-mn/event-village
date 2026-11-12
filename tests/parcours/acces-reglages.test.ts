@@ -25,18 +25,18 @@ import { assertAccessInvariants } from '../helpers/access-invariants';
 import { signInAs } from '../helpers/fixtures';
 import { jsonRequest } from './finance-helpers';
 import { importModule, newBuyer, service } from './paiement-helpers';
-import { getAccessSetting, setAccessSetting, type AccessSettingKey } from './acces-helpers';
+import { getAccessSetting, setAccessSetting, type AccessSettingKey, type Lot4AccessSettingKey } from './acces-helpers';
 
 type Handler = (req: NextRequest) => Promise<Response>;
 
 /** Valeurs par défaut du contrat A du lot 4. */
-const DEFAULTS: Record<AccessSettingKey, unknown> = {
+const DEFAULTS: Record<Lot4AccessSettingKey, unknown> = {
     'access.manual_entry_scope': 'ASSIGNED_CONTROLLER',
     'access.scan_window_before_hours': 6,
     'access.scan_window_after_hours': 6,
     'access.counter_sale_enabled': true,
 };
-const KEYS = Object.keys(DEFAULTS) as AccessSettingKey[];
+const KEYS = Object.keys(DEFAULTS) as Lot4AccessSettingKey[];
 const ROUTE = '/api/admin/finance-settings';
 
 let GET: Handler;

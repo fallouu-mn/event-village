@@ -220,4 +220,16 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/admin/PartnerStatusDialog.tsx',
     // A (4, R20) : « Espèces à rembourser par l'organisateur » (E-A)
     'components/partner/pilotage/CashRefundsList.tsx',
+    // ── Lot 9 ter (contrat, section 8.3 ; K10) ──
+    // Fichiers créés par le lot (aucun autre nouveau .tsx n'est permis sans amendement ; hooks/useUnsavedGuard.ts ne
+    // rend aucun JSX : non déclaré). Absents tant que l'écran n'est pas écrit : la suite design-systeme est rouge
+    // jusqu'aux commits d'écran (fix(9t.15e), fix(9t.17e), fix(9t.18e), fix(9t.12e)).
+    // C (9t.15) : zones, portes et catégories admises, onglet Équipe du pilotage (E-C)
+    'components/partner/zones/ZonesEditor.tsx',
+    // C (9t.17) : liste des invités du scanner, chargée par import() (E-C)
+    'components/scan/GuestListPanel.tsx',
+    // D (9t.18) : entrées par zone, porte, catégorie et origine (onglet Entrées et rapport de clôture) (E-D)
+    'components/partner/pilotage/EntriesBreakdown.tsx',
+    // B (9t.12, R106 b) : rapport de clôture unique, partagé par l'onglet et la fenêtre (E-B)
+    'components/partner/pilotage/ClosingReportSummary.tsx',
 ];

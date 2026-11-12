@@ -11,6 +11,10 @@
  * (M1 fix(9.3-A33), M2 fix(9.0s), M3 fix(9.1s), M4 fix(9.2s)). ticket_cash_checkin retirée (A16, supprimée par M5).
  * Lot 9 bis (T2, contrat 3.2) : fonctions nouvelles du lot, même contrôle strict (42501, jamais PGRST202) ; rouges
  * chacune jusqu'à sa migration (20261109000004 à …12). Ajout seul : aucune entrée existante ne change.
+ * Lot 9 ter (contrat 8.4, K10) : bloc LOT9TER_RPCS, fonctions nouvelles du lot (F5, F6, F7, F12, F17, F21, F22, F27 à F33,
+ * F40 à F43), même contrôle strict (42501 pour anon et pour un compte, jamais PGRST202) ; rouges chacune jusqu'à sa
+ * migration (20261110000002, …05 à …10). Hors liste : is_admin() et is_superadmin() (aides RLS du groupe a, recopiées
+ * par 01, toujours exécutables : bloc des aides RLS ci-dessous), fonctions de trigger, recopies. Ajout seul.
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -163,6 +167,51 @@ const LOT9BIS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['essai_check_reel', { p: {} }],
 ];
 
+/**
+ * Lot 9 ter (contrat 3.4, 8.4) : fonctions créées par le lot, avec des arguments factices valides en type. Les noms de
+ * paramètres font partie du contrat (PostgREST appelle par nom) : ticket_origin(p_channel text, p_price numeric,
+ * p_offline_paid boolean), scan_is_refusal(p_accepted boolean, p_result text, p_zone_result text, p_consumed_at
+ * timestamptz) (02) ; cashout_admin_not_sent(p jsonb) (05) ; partner_controller_known(p_partner uuid, p_user uuid) (06) ;
+ * event_edit_locks(p_event uuid) (07) ; ticket_guest_list_search(p jsonb), ticket_invitation_guest_name_set(p jsonb)
+ * (08) ; scan_gate_context(p_scanner uuid, p_event uuid, p_claimed uuid, p_claimed_given boolean),
+ * scan_zone_verdict(p_event uuid, p_zone uuid, p_kind text, p_category uuid, p_status text), scan_log_at (14 arguments
+ * nommés, sans DEFAULT, F29), event_zones_get, event_zones_save, event_controller_gate_set, controller_gate_select
+ * (p jsonb) (09) ; ticket_origin_label(p_origin text), scan_alert_refusal(p_result text, p_zone_result text),
+ * scan_refusal_alert_settings() (paramètres OUT seuls), pilotage_compute_entries(p_event uuid, p_with_names boolean)
+ * (10). Les fonctions de triggers (partner_controllers_link, notif_event_status_admin_alert,
+ * notif_ticket_categories_admin_update_alert, zone_categories_default_admit, scan_refusal_alert) ne sont pas des RPC.
+ */
+const LOT9TER_RPCS: Array<[string, Record<string, unknown>]> = [
+    // 02 : réglages et aides pures
+    ['ticket_origin', { p_channel: 'ONLINE', p_price: 0, p_offline_paid: false }],
+    ['scan_is_refusal', { p_accepted: false, p_result: 'invalid', p_zone_result: null, p_consumed_at: null }],
+    // 05 : argent
+    ['cashout_admin_not_sent', { p: {} }],
+    // 06 : équipe
+    ['partner_controller_known', { p_partner: ZERO_UUID, p_user: ZERO_UUID }],
+    // 07 : événements
+    ['event_edit_locks', { p_event: ZERO_UUID }],
+    // 08 : invités
+    ['ticket_guest_list_search', { p: {} }],
+    ['ticket_invitation_guest_name_set', { p: {} }],
+    // 09 : zones et portes
+    ['scan_gate_context', { p_scanner: ZERO_UUID, p_event: ZERO_UUID, p_claimed: null, p_claimed_given: false }],
+    ['scan_zone_verdict', { p_event: ZERO_UUID, p_zone: ZERO_UUID, p_kind: 'ENTREE', p_category: ZERO_UUID, p_status: 'VALIDE' }],
+    ['scan_log_at', {
+        p_ticket: ZERO_UUID, p_event: ZERO_UUID, p_scanner: ZERO_UUID, p_result: 'invalid', p_zone_result: null, p_accepted: false,
+        p_method: 'QR', p_identity: false, p_hash: null, p_amount: null, p_secret_version: null, p_client_key: null, p_gate: null, p_zone: null,
+    }],
+    ['event_zones_get', { p: {} }],
+    ['event_zones_save', { p: {} }],
+    ['event_controller_gate_set', { p: {} }],
+    ['controller_gate_select', { p: {} }],
+    // 10 : pilotage
+    ['ticket_origin_label', { p_origin: 'ONLINE' }],
+    ['scan_alert_refusal', { p_result: 'invalid', p_zone_result: null }],
+    ['scan_refusal_alert_settings', {}],
+    ['pilotage_compute_entries', { p_event: ZERO_UUID, p_with_names: false }],
+];
+
 /** RPC métier (groupe b) avec des arguments factices valides en type. */
 const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['validate_and_check_in_ticket', { p_qr_code: 'EV-QR-INEXISTANT', p_controller_id: ZERO_UUID }],
@@ -272,6 +321,8 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ...LOT9_RPCS,
     // Lot 9 bis : argent, versements, droits, cycle, email, textes, mode réel ; service_role uniquement
     ...LOT9BIS_RPCS,
+    // Lot 9 ter : réglages, argent, équipe, événements, invités, zones, pilotage ; service_role uniquement
+    ...LOT9TER_RPCS,
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */
@@ -391,6 +442,28 @@ describe('R3 — lot 9 : chaque fonction du lot existe et reste réservée au r�
 describe('R3 — lot 9 bis : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
     const MIGRATIONS = 'migrations 20261109000004 (droits), …05 (SamirPay), …06 (argent), …07 (versements), …08 (cycle), …10 (email), …11 (textes), …12 (mode réel)';
     for (const [fn, args] of LOT9BIS_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
+/**
+ * Lot 9 ter (contrat 8.4), même exigence que les lots 6 à 9 bis : une fonction absente (PGRST202) passerait pour
+ * refusée dans la boucle générale ; ici chaque fonction du lot doit exister ET être refusée par le privilège EXECUTE
+ * (42501), pour anon et pour un compte.
+ */
+describe('R3 — lot 9 ter : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261110000002 (réglages), …05 (argent), …06 (équipe), …07 (événements), …08 (invités), …09 (zones), …10 (pilotage)';
+    for (const [fn, args] of LOT9TER_RPCS) {
         test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
             const anon = await anonClient().rpc(fn, args);
             assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
