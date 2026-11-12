@@ -394,7 +394,7 @@ describe('Lot 3.6 — soldes et retraits', () => {
         assert.deepEqual(entries(ledger, 'RETRAIT_ANNULE'), [], 'aucune annulation');
         const b = await balanceOf(partner.userId, 'ORGANISATEUR');
         assert.equal(b.available, 4_000, `solde réservé : ${JSON.stringify(b)}`);
-        assert.equal(b.in_progress, 5_940, `retrait en cours au montant net (6 000 − 60) : ${JSON.stringify(b)}`);
+        assert.equal(b.in_progress, 6_000, `retrait en cours au montant brut réservé, frais compris (lot 9 ter, R106 c) : ${JSON.stringify(b)}`);
     });
 
     test('refus explicite de SamirPay : retrait REJECTED, écriture RETRAIT_ANNULE, solde rendu', async () => {

@@ -1,7 +1,7 @@
 /**
  * Lot 5, tâche 5.2 — machine à états stricte de l'événement (constats R27, events-cdc-1, events-cdc-10).
  * Contrat : sections D1 à D5 et U de la conception du lot 5.
- *  - event_status_transitions reprend mot pour mot la liste de 5.2 (16 couples statut, rôle, canal), et
+ *  - event_status_transitions reprend mot pour mot la liste de 5.2 (17 couples statut, rôle, canal ; lot 9 ter : VALIDE → TERMINE par le cron), et
  *    la table est lisible par authenticated ;
  *  - event_transition(p) { event_id, actor_id, to_status, reason? } : chaque transition permise au bon
  *    rôle passe et écrit sa ligne event_status_history (acteur, ancien, nouveau, motif, canal TRANSITION) ;
@@ -228,7 +228,7 @@ const EXPECTED_TRANSITIONS: Array<[EventStatus, EventStatus, 'PARTENAIRE' | 'ADM
     ['VALIDE', 'ANNULE', 'ADMIN', 'CANCELLATION', null],
     ['SUSPENDU', 'TERMINE', 'ADMIN', 'TRANSITION', true], // lot 9 bis (R3, T41) ; SUSPENDU → ANNULE par la partenaire retiré (R105)
     ['SUSPENDU', 'ANNULE', 'ADMIN', 'CANCELLATION', null],
-    ['PUBLIE', 'TERMINE', 'SYSTEM', 'CRON', false],
+    ['PUBLIE', 'TERMINE', 'SYSTEM', 'CRON', false], ['VALIDE', 'TERMINE', 'SYSTEM', 'CRON', false], // lot 9 ter (R106 a)
     ['PUBLIE', 'TERMINE', 'ADMIN', 'TRANSITION', false],
 ];
 
@@ -239,7 +239,7 @@ function transitionKey(from: string, to: string, actor: string, channel: string)
 }
 
 describe('5.2 Table de transitions (event_status_transitions)', () => {
-    test('liste exacte de 5.2 : 16 couples (ancien, nouveau, rôle, canal), motif obligatoire pour le refus, la suspension et la clôture d’un suspendu', async () => {
+    test('liste exacte de 5.2 : 17 couples (ancien, nouveau, rôle, canal), motif obligatoire pour le refus, la suspension et la clôture d’un suspendu', async () => {
         const { data, error } = await service.from('event_status_transitions').select('from_status, to_status, actor_kind, reason_required, channel');
         assert.equal(error, null, `event_status_transitions : ${error?.message} (code ${error?.code})`);
         const rows = (data ?? []) as TransitionRow[];
@@ -259,7 +259,7 @@ describe('5.2 Table de transitions (event_status_transitions)', () => {
         try {
             const { data, error } = await client.from('event_status_transitions').select('from_status, to_status, actor_kind, channel');
             assert.equal(error, null, `lecture par authenticated : ${error?.message}`);
-            assert.equal((data ?? []).length, EXPECTED_TRANSITIONS.length, `16 lignes lues par le partenaire connecté : ${JSON.stringify(data)}`);
+            assert.equal((data ?? []).length, EXPECTED_TRANSITIONS.length, `17 lignes lues par le partenaire connecté : ${JSON.stringify(data)}`);
         } finally {
             await disposeClients(client);
         }
