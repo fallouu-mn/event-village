@@ -21,18 +21,27 @@ export function isEventId(id: string | null | undefined): boolean {
 export type PublicEventRead = 'PUBLIC' | 'NOT_PUBLIC' | 'UNAVAILABLE';
 
 /**
- * Statut public d'un événement, lu en service_role. Identifiant non UUID, ligne absente ou statut non public :
- * NOT_PUBLIC. Erreur de lecture : journalisée, UNAVAILABLE ; la page s'affiche et l'API reste protectrice (L49).
+ * Lot 9 ter (R106 a) : un événement terminé par le cron sans avoir jamais été publié (events.ended_unpublished) n'est
+ * pas public, même au statut TERMINE (même règle que la politique events_read_public et la vue events_public_status).
+ */
+export function isPublicEvent<T extends { status: unknown; ended_unpublished?: unknown }>(row: T | null | undefined): row is T {
+    return !!row && PUBLIC_EVENT_STATUSES.has(String(row.status)) && row.ended_unpublished !== true;
+}
+
+/**
+ * Statut public d'un événement, lu en service_role. Identifiant non UUID, ligne absente, statut non public ou
+ * terminé sans publication : NOT_PUBLIC. Erreur de lecture : journalisée, UNAVAILABLE ; la page s'affiche et l'API
+ * reste protectrice (L49).
  */
 export async function readPublicEventStatus(id: string): Promise<PublicEventRead> {
     if (!isEventId(id)) return 'NOT_PUBLIC';
     try {
-        const { data, error } = await getServiceRoleClient().from('events').select('id, status').eq('id', id).maybeSingle();
+        const { data, error } = await getServiceRoleClient().from('events').select('id, status, ended_unpublished').eq('id', id).maybeSingle();
         if (error) {
             console.error('[events/public-status] lecture du statut impossible :', error.message);
             return 'UNAVAILABLE';
         }
-        return data && PUBLIC_EVENT_STATUSES.has(String(data.status)) ? 'PUBLIC' : 'NOT_PUBLIC';
+        return isPublicEvent(data) ? 'PUBLIC' : 'NOT_PUBLIC';
     } catch (err) {
         console.error('[events/public-status] lecture du statut impossible :', err instanceof Error ? err.message : String(err));
         return 'UNAVAILABLE';

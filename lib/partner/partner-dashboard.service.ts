@@ -5,6 +5,7 @@ import { dakarInstant } from '@/lib/validations/event';
 import { eventStatusLabel } from '@/lib/events/event-status';
 import { pdfAmount, pdfText } from '@/lib/pdf/pdf-text';
 import { supportEmail } from '@/lib/support';
+import type { PilotageClosing, PilotageSales } from '@/components/partner/pilotage/types';
 
 /**
  * Tableau de bord, rapport de clôture (et son PDF) et export comptable du partenaire (lot 3, contrat G).
@@ -135,25 +136,30 @@ export interface PartnerDashboardData {
     trial: PartnerTrial;
 }
 
+/**
+ * Lot 9 ter (R106 b, B-D22) : une catégorie du rapport de clôture, lue telle quelle dans pilotage_sales.by_category
+ * (même source que l'onglet Ventes) : vendus hors invitations, invitations, canaux, restant, recettes en ligne.
+ */
 export interface CategorySalesSummary {
     categoryId: string;
     name: string;
     unitPrice: number;
     totalAllocated: number;
-    /** Billets valables ou utilisés, tous canaux. */
+    /** Billets vendus (valables ou utilisés), invitations exclues. */
     soldQuantity: number;
+    invitations: number;
     onlineQuantity: number;
     cashQuantity: number;
-    checkedInQuantity: number;
     remainingQuantity: number;
-    /** Prix faciaux des billets payés en ligne encore valables (prix réellement payés). */
+    /** Recettes en ligne de la catégorie (prix des billets payés en ligne encore valables). */
     grossAmount: number;
-    /** Prix des billets payés en espèces (informatif). */
-    cashAmount: number;
-    /** Reversement organisateur de la catégorie : prix facial (aucune commission déduite). */
-    netAmount: number;
 }
 
+/**
+ * Lot 9 ter (R106 b, B-D22) : un seul rapport de clôture. `closing` est le corps de pilotage_closing tel quel (source
+ * unique de l'onglet Clôture, de la fenêtre et du PDF) ; `ticketsSummary` et `financialSummary` en sont des lectures,
+ * jamais un second calcul ; `salesByCategory` vient de pilotage_sales.
+ */
 export interface ClosingReportData {
     reportId: string;
     generatedAt: string;
@@ -166,6 +172,7 @@ export interface ClosingReportData {
         venue: string;
         city: string;
         status: string;
+        /** Capacité mise en vente (quotas des catégories actives), closing.report.tickets.capacity. */
         capacity: number;
     };
     partner: {
@@ -175,24 +182,20 @@ export interface ClosingReportData {
         phone: string;
         email: string;
     };
+    closing: PilotageClosing;
     salesByCategory: CategorySalesSummary[];
-    paymentsSummary: {
-        confirmedCount: number;
-        confirmedGross: number;
-        pendingCount: number;
-        pendingGross: number;
-        refundedCount: number;
-        refundedGross: number;
-    };
     ticketsSummary: {
-        totalAllocated: number;
+        /** Billets vendus hors invitations (closing.report.tickets.sold). */
         sold: number;
-        checkedIn: number;
-        cancelled: number;
-        refunded: number;
-        remaining: number;
-        checkInRatePercent: number;
-        fillRatePercent: number;
+        invitations: number;
+        /** Capacité mise en vente (closing.report.tickets.capacity). */
+        capacity: number;
+        /** Entrées acceptées au contrôle (closing.report.entries.total), dont guichet (counterEntries). */
+        entries: number;
+        counterEntries: number;
+        refused: number;
+        /** Billets valides jamais scannés (closing.absents.count). */
+        absents: number;
     };
     financialSummary: {
         /** Ventes en ligne de l'événement, prix faciaux (Σ VENTE). */
@@ -495,6 +498,19 @@ const DELIVERY_MODE_LABELS: Record<string, string> = { LIVRAISON: 'Livraison', R
 const WITHDRAWAL_METHOD_LABELS: Record<string, string> = { MOBILE_MONEY: 'Mobile Money', BANK: 'Virement bancaire' };
 
 const SOLD = new Set(['VALIDE', 'UTILISE']);
+
+/**
+ * Lot 9 ter (R106 b) : libellé fixe du PDF de clôture. Ses parenthèses, équilibrées, restent telles quelles (permis dans
+ * une chaîne PDF) : le texte du document se lit comme à l'écran (« Entrées (dont guichet) »).
+ */
+function pdfLabel(label: string): string {
+    return pdfText(label).replace(/\\([()])/g, '$1');
+}
+
+/** Nombre entier pour le PDF (séparateurs de milliers en espaces simples). */
+function pdfCount(n: number): string {
+    return pdfText(n.toLocaleString('fr-FR'));
+}
 const REFUNDED_TICKET = new Set(['REMBOURSE', 'REMBOURSEMENT_EN_COURS']);
 
 interface TicketRow {
@@ -725,8 +741,11 @@ export class PartnerDashboardService {
     }
 
     /**
-     * Rapport de clôture (Z de caisse / clôture événement) : net organisateur lu dans le grand livre
-     * de l'événement, frais de service de l'acheteur et ventes espèces en lignes informatives.
+     * Rapport de clôture : lot 9 ter (R106 b, B-D22), un seul calcul. Le corps de pilotage_closing est servi tel quel
+     * (`closing`, mêmes chiffres que l'onglet Clôture : vendus hors invitations, capacité mise en vente, entrées par le
+     * contrôle, net organisateur du grand livre) ; les catégories viennent de pilotage_sales. Aucun billet n'est relu
+     * ici. Un refus de pilotage_closing ou de pilotage_sales (ok: false) est un événement introuvable (404) ; une
+     * erreur de lecture lève une erreur (500, journalisée par la route).
      */
     public static async getClosingReportData(userId: string, eventId: string): Promise<ClosingReportData> {
         const supabase = getServiceRoleClient();
@@ -738,62 +757,44 @@ export class PartnerDashboardService {
 
         const { data: event, error: evErr } = await supabase
             .from('events')
-            .select('*')
+            .select('id, partner_id, title, category, start_date, start_time, location, city, status')
             .eq('id', eventId)
             .maybeSingle();
         if (evErr) throw new Error(`Lecture impossible (événement) : ${evErr.message}`);
         if (!event) throw new Error('EVENEMENT_INTROUVABLE');
         if (event.partner_id !== partner.id) throw new Error('ACCES_REFUSE_AUTRE_TENANT');
 
-        const [categoriesRes, tickets, summaryRes, eventPayments] = await Promise.all([
-            supabase.from('ticket_categories').select('id, name, price, total_quantity').eq('event_id', eventId).order('price', { ascending: true }),
-            ticketsOfEvents<TicketRow>([eventId], 'id, category_id, price, service_fee, status, payment_id'),
-            supabase.rpc('finance_partner_summary', { p_partner_id: partner.id, p_event_id: eventId }),
-            fetchAllRows<{ id: string; status: string; amount: number; refunded_amount: number | null }>('paiements de l’événement', (from, to) => supabase
-                .from('payments')
-                .select('id, status, amount, refunded_amount')
-                .eq('event_id', eventId)
-                .eq('is_platform_payment', true)
-                .order('id', { ascending: true })
-                .range(from, to)),
+        const p = { event_id: eventId, actor_id: userId };
+        const [closingRes, salesRes] = await Promise.all([
+            supabase.rpc('pilotage_closing', { p }),
+            supabase.rpc('pilotage_sales', { p }),
         ]);
-        if (categoriesRes.error) throw new Error(`Lecture impossible (catégories) : ${categoriesRes.error.message}`);
-        const categories = categoriesRes.data ?? [];
-        const summary = toPartnerSummary(summaryRes);
-        const flags = await platformFlags(tickets.map((t) => t.payment_id).filter((id): id is string => Boolean(id)));
-        const isOnline = (t: TicketRow) => Boolean(t.payment_id && flags.get(t.payment_id)?.platform);
+        if (closingRes.error) throw new Error(`Lecture impossible (pilotage_closing) : ${closingRes.error.message}`);
+        if (salesRes.error) throw new Error(`Lecture impossible (pilotage_sales) : ${salesRes.error.message}`);
+        const closingBody = (closingRes.data ?? {}) as { ok?: boolean; code?: string };
+        const salesBody = (salesRes.data ?? {}) as { ok?: boolean; code?: string };
+        if (closingBody.ok === false || salesBody.ok === false) {
+            console.error(`[PartnerDashboardService] rapport de clôture de ${eventId} refusé : ${closingBody.code ?? salesBody.code ?? 'refus'}`);
+            throw new Error('EVENEMENT_INTROUVABLE');
+        }
+        const closing = closingRes.data as PilotageClosing;
+        const sales = salesRes.data as Pick<PilotageSales, 'by_category'>;
+        const tickets = closing.report.tickets;
+        const entries = closing.report.entries;
+        const finance = closing.finance;
 
-        // Ventilation par catégorie : prix réellement payés (billets), canal de paiement séparé
-        const salesByCategory: CategorySalesSummary[] = categories.map((cat) => {
-            const sold = tickets.filter((t) => t.category_id === cat.id && SOLD.has(t.status));
-            const online = sold.filter(isOnline);
-            const cash = sold.filter((t) => !isOnline(t) && Number(t.price) > 0);
-            const grossAmount = online.reduce((s, t) => s + Number(t.price), 0);
-            const totalAllocated = Number(cat.total_quantity) || 0;
-            return {
-                categoryId: cat.id,
-                name: cat.name,
-                unitPrice: Number(cat.price) || 0,
-                totalAllocated,
-                soldQuantity: sold.length,
-                onlineQuantity: online.length,
-                cashQuantity: cash.length,
-                checkedInQuantity: sold.filter((t) => t.status === 'UTILISE').length,
-                remainingQuantity: Math.max(0, totalAllocated - sold.length),
-                grossAmount,
-                cashAmount: cash.reduce((s, t) => s + Number(t.price), 0),
-                netAmount: grossAmount,
-            };
-        });
-
-        const totalAllocated = categories.reduce((s, c) => s + (Number(c.total_quantity) || 0), 0);
-        const totalSold = tickets.filter((t) => SOLD.has(t.status)).length;
-        const totalCheckedIn = tickets.filter((t) => t.status === 'UTILISE').length;
-        const capacity = Number(event.capacity) || totalAllocated;
-
-        const confirmed = eventPayments.filter((p) => p.status === 'SUCCESS' || p.status === 'PARTIAL');
-        const pending = eventPayments.filter((p) => p.status === 'PENDING');
-        const refundedPayments = eventPayments.filter((p) => p.status === 'REFUNDED');
+        const salesByCategory: CategorySalesSummary[] = (sales.by_category ?? []).map((cat) => ({
+            categoryId: cat.category_id,
+            name: cat.name,
+            unitPrice: Number(cat.price ?? 0),
+            totalAllocated: Number(cat.total ?? 0),
+            soldQuantity: Number(cat.sold ?? 0),
+            invitations: Number(cat.invitations ?? 0),
+            onlineQuantity: Number(cat.sold_online ?? 0),
+            cashQuantity: Number(cat.sold_cash ?? 0),
+            remainingQuantity: Number(cat.remaining ?? 0),
+            grossAmount: Number(cat.revenue_online ?? 0),
+        }));
 
         const dateSuffix = new Date().toISOString().split('T')[0].replace(/-/g, '');
         return {
@@ -808,7 +809,7 @@ export class PartnerDashboardService {
                 venue: event.location,
                 city: event.city,
                 status: event.status,
-                capacity,
+                capacity: Number(tickets.capacity ?? 0),
             },
             partner: {
                 id: partner.id,
@@ -817,34 +818,26 @@ export class PartnerDashboardService {
                 phone: partner.phone || '',
                 email: partner.email || '',
             },
+            closing,
             salesByCategory,
-            paymentsSummary: {
-                confirmedCount: confirmed.length,
-                confirmedGross: confirmed.reduce((s, p) => s + Number(p.amount), 0),
-                pendingCount: pending.length,
-                pendingGross: pending.reduce((s, p) => s + Number(p.amount), 0),
-                refundedCount: refundedPayments.length,
-                refundedGross: eventPayments.reduce((s, p) => s + Number(p.refunded_amount ?? 0), 0),
-            },
             ticketsSummary: {
-                totalAllocated: capacity,
-                sold: totalSold,
-                checkedIn: totalCheckedIn,
-                cancelled: tickets.filter((t) => t.status === 'ANNULE').length,
-                refunded: tickets.filter((t) => REFUNDED_TICKET.has(t.status)).length,
-                remaining: Math.max(0, capacity - totalSold),
-                checkInRatePercent: totalSold > 0 ? Math.min(100, Math.round((totalCheckedIn / totalSold) * 100)) : 0,
-                fillRatePercent: capacity > 0 ? Math.min(100, Math.round((totalSold / capacity) * 100)) : 0,
+                sold: Number(tickets.sold ?? 0),
+                invitations: Number(tickets.invitations ?? 0),
+                capacity: Number(tickets.capacity ?? 0),
+                entries: Number(entries.total ?? 0),
+                counterEntries: Number(entries.counter ?? 0),
+                refused: Number(entries.refused ?? 0),
+                absents: Number(closing.absents.count ?? 0),
             },
             financialSummary: {
-                totalGross: summary.onlineSales,
-                totalRefunded: summary.refunded,
-                totalNet: summary.organizerNet,
-                availableNet: summary.available,
-                pendingNet: summary.pending,
-                buyerServiceFees: summary.buyerServiceFees,
-                cashSales: summary.cashSales,
-                cashTickets: summary.cashTickets,
+                totalGross: Number(finance.online_sales ?? 0),
+                totalRefunded: Number(finance.refunded ?? 0),
+                totalNet: Number(finance.organizer_net ?? 0),
+                availableNet: Number(finance.available ?? 0),
+                pendingNet: Number(finance.pending ?? 0),
+                buyerServiceFees: Number(finance.buyer_service_fees ?? 0),
+                cashSales: Number(finance.cash_sales ?? 0),
+                cashTickets: Number(finance.cash_tickets ?? 0),
             },
         };
     }
@@ -901,7 +894,7 @@ export class PartnerDashboardService {
         stream += `50 ${infoY + 26} Td\n(${pdfText(`Date : ${data.event.startDate} à ${data.event.startTime} -- Lieu : ${data.event.venue}, ${data.event.city}`)}) Tj\nET\n`;
 
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `50 ${infoY + 12} Td\n(${pdfText(`Statut : ${eventStatusLabel(data.event.status)} -- Capacité : ${data.event.capacity} places`)}) Tj\nET\n`;
+        stream += `50 ${infoY + 12} Td\n(${pdfText(`Statut : ${eventStatusLabel(data.event.status)} -- Capacité mise en vente : ${data.event.capacity} places`)}) Tj\nET\n`;
 
         // Colonne 2 : Organisateur / Partenaire
         stream += 'BT\n/F2 10 Tf\n1 0.34 0.13 rg\n';
@@ -913,27 +906,72 @@ export class PartnerDashboardService {
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
         stream += `${pageWidth - 230} ${infoY + 12} Td\n(${pdfText(`Contact : ${data.partner.phone || data.partner.email || supportEmail()}`)}) Tj\nET\n`;
 
-        // 4. Section : VENTES PAR CATÉGORIE (Tableau Vectoriel)
-        const tableY = infoY - 26;
+        // 4. Section : RAPPORT DE CLÔTURE — lot 9 ter (R106 b) : mêmes libellés et mêmes valeurs que l'onglet Clôture,
+        //    lus dans le corps de pilotage_closing (data.closing), sans second calcul.
+        const closing = data.closing;
+        const tickets = data.ticketsSummary;
+        const revenue = closing.report.revenue;
+        const fin = data.financialSummary;
+        const sectionY = infoY - 26;
         stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `36 ${tableY} Td\n(${pdfText('1. VENTILATION DES VENTES PAR CATÉGORIE')}) Tj\nET\n`;
+        stream += `36 ${sectionY} Td\n(${pdfText('1. RAPPORT DE CLÔTURE')}) Tj\nET\n`;
 
-        // En-tête du tableau
+        const rows: Array<[string, string]> = [
+            ['Billets vendus (hors invitations)', pdfCount(tickets.sold)],
+            ['Invitations', pdfCount(tickets.invitations)],
+            ['Capacité mise en vente', pdfCount(tickets.capacity)],
+            ['Entrées (dont guichet)', pdfLabel(`${tickets.entries.toLocaleString('fr-FR')} (${tickets.counterEntries.toLocaleString('fr-FR')})`)],
+            ['Refus au contrôle', pdfCount(tickets.refused)],
+            ['Absents (billets valides jamais scannés)', pdfCount(tickets.absents)],
+            ['Recettes en ligne', pdfAmount(Number(revenue.online ?? 0))],
+            ['Recettes en espèces', pdfAmount(Number(revenue.cash ?? 0))],
+            ['Remboursé', pdfAmount(Number(revenue.refunded ?? 0))],
+            ['Frais de service payés par les acheteurs', pdfAmount(fin.buyerServiceFees)],
+            ['Déjà disponible / en attente', pdfText(`${fin.availableNet.toLocaleString('fr-FR')} / ${fin.pendingNet.toLocaleString('fr-FR')} F CFA`)],
+        ];
+        const rowHeight = 16;
+        const boxHeight = rows.length * rowHeight + 12 + 26;
+        const boxY = sectionY - 12 - boxHeight;
+        stream += '0.96 0.97 0.99 rg\n0.80 0.85 0.90 RG\n1.5 w\n';
+        stream += `36 ${boxY} ${pageWidth - 72} ${boxHeight} re B\n`;
+        rows.forEach(([label, value], idx) => {
+            const y = boxY + boxHeight - 18 - idx * rowHeight;
+            stream += 'BT\n/F1 9.5 Tf\n0.20 0.25 0.35 rg\n';
+            stream += `52 ${y} Td\n(${pdfLabel(label)}) Tj\nET\n`;
+            stream += 'BT\n/F2 10 Tf\n0.06 0.09 0.16 rg\n';
+            stream += `${pageWidth - 200} ${y} Td\n(${value}) Tj\nET\n`;
+        });
+
+        // Montant net organisateur (grand livre, ventes en ligne, remboursements déduits)
+        stream += '1 0.34 0.13 rg\n';
+        stream += `36 ${boxY} ${pageWidth - 72} 26 re f\n`;
+        stream += 'BT\n/F2 11 Tf\n1 1 1 rg\n';
+        stream += `52 ${boxY + 8} Td\n(${pdfText('MONTANT NET ORGANISATEUR -- VENTES EN LIGNE, REMBOURSEMENTS DÉDUITS')}) Tj\nET\n`;
+        stream += 'BT\n/F2 13 Tf\n1 1 1 rg\n';
+        stream += `${pageWidth - 150} ${boxY + 7} Td\n(${pdfAmount(fin.totalNet)}) Tj\nET\n`;
+
+        // 5. Section : PAR CATÉGORIE (pilotage_sales, mêmes colonnes que la fenêtre)
+        const tableY = boxY - 26;
+        stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
+        stream += `36 ${tableY} Td\n(${pdfText('2. PAR CATÉGORIE')}) Tj\nET\n`;
+
         const theadY = tableY - 22;
         stream += '0.94 0.96 0.98 rg\n';
         stream += `36 ${theadY} ${pageWidth - 72} 20 re f\n`;
-
         stream += 'BT\n/F2 8.5 Tf\n0.20 0.25 0.35 rg\n';
-        stream += `44 ${theadY + 6} Td\n(${pdfText('CATÉGORIE')}) Tj\n`;
-        stream += `160 0 Td\n(PRIX UNIT.) Tj\n`;
-        stream += `80 0 Td\n(VENDUS) Tj\n`;
-        stream += `70 0 Td\n(${pdfText('COMPOSTÉS')}) Tj\n`;
-        stream += `70 0 Td\n(RESTANTS) Tj\n`;
-        stream += `70 0 Td\n(EN LIGNE) Tj\n`;
+        stream += `44 ${theadY + 6} Td\n(${pdfText('Catégorie')}) Tj\n`;
+        stream += `200 0 Td\n(Prix) Tj\n`;
+        stream += `90 0 Td\n(Vendus) Tj\n`;
+        stream += `80 0 Td\n(Invitations) Tj\n`;
+        stream += `80 0 Td\n(Reste) Tj\n`;
         stream += 'ET\n';
 
-        // Lignes du tableau
         let rowY = theadY - 18;
+        if (data.salesByCategory.length === 0) {
+            stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
+            stream += `44 ${rowY + 5} Td\n(${pdfText('Aucune catégorie.')}) Tj\nET\n`;
+            rowY -= 18;
+        }
         data.salesByCategory.forEach((cat, idx) => {
             const bg = idx % 2 === 0 ? '1 1 1' : '0.98 0.98 0.99';
             stream += `${bg} rg\n`;
@@ -943,81 +981,15 @@ export class PartnerDashboardService {
             stream += `36 ${rowY} m ${pageWidth - 36} ${rowY} l S\n`;
 
             stream += 'BT\n/F1 8.5 Tf\n0.06 0.09 0.16 rg\n';
-            stream += `44 ${rowY + 5} Td\n(${pdfText(cat.name.slice(0, 22))}) Tj\n`;
-            stream += `160 0 Td\n(${pdfAmount(cat.unitPrice)}) Tj\n`;
-            stream += `80 0 Td\n(${cat.soldQuantity}) Tj\n`;
-            stream += `70 0 Td\n(${cat.checkedInQuantity}) Tj\n`;
-            stream += `70 0 Td\n(${cat.remainingQuantity}) Tj\n`;
+            stream += `44 ${rowY + 5} Td\n(${pdfText(cat.name.slice(0, 30))}) Tj\n`;
+            stream += `200 0 Td\n(${pdfAmount(cat.unitPrice)}) Tj\n`;
+            stream += `90 0 Td\n(${pdfCount(cat.soldQuantity)}) Tj\n`;
+            stream += `80 0 Td\n(${pdfCount(cat.invitations)}) Tj\n`;
+            stream += `80 0 Td\n(${pdfCount(cat.remainingQuantity)}) Tj\n`;
             stream += 'ET\n';
-
-            stream += 'BT\n/F2 8.5 Tf\n0.06 0.09 0.16 rg\n';
-            stream += `${pageWidth - 110} ${rowY + 5} Td\n(${pdfAmount(cat.grossAmount)}) Tj\nET\n`;
 
             rowY -= 18;
         });
-
-        // 5. Section : SYNTHÈSE DE BILLETTERIE & CONTRÔLE D'ACCÈS
-        const summaryBoxY = rowY - 14;
-        stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `36 ${summaryBoxY} Td\n(${pdfText('2. STATISTIQUES D’ACCÈS ET RÉCONCILIATION')}) Tj\nET\n`;
-
-        const statGridY = summaryBoxY - 58;
-        const boxWidth = (pageWidth - 72 - 20) / 3;
-
-        // Box 1 : Billets Vendus / Capacité
-        stream += '1 1 1 rg\n0.85 0.88 0.92 RG\n1 w\n';
-        stream += `36 ${statGridY} ${boxWidth} 48 re B\n`;
-        stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `46 ${statGridY + 34} Td\n(${pdfText('BILLETS VENDUS / CAPACITÉ')}) Tj\nET\n`;
-        stream += 'BT\n/F2 12 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `46 ${statGridY + 16} Td\n(${data.ticketsSummary.sold} / ${data.ticketsSummary.totalAllocated} (${data.ticketsSummary.fillRatePercent}%)) Tj\nET\n`;
-
-        // Box 2 : Billets Compostés aux Portes
-        stream += '1 1 1 rg\n0.85 0.88 0.92 RG\n1 w\n';
-        stream += `${36 + boxWidth + 10} ${statGridY} ${boxWidth} 48 re B\n`;
-        stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${46 + boxWidth + 10} ${statGridY + 34} Td\n(${pdfText('ENTRÉES VALIDÉES / SCAN')}) Tj\nET\n`;
-        stream += 'BT\n/F2 12 Tf\n0.10 0.60 0.30 rg\n';
-        stream += `${46 + boxWidth + 10} ${statGridY + 16} Td\n(${data.ticketsSummary.checkedIn} entr\xE9es (${data.ticketsSummary.checkInRatePercent}%)) Tj\nET\n`;
-
-        // Box 3 : Annulations & Remboursements
-        stream += '1 1 1 rg\n0.85 0.88 0.92 RG\n1 w\n';
-        stream += `${36 + (boxWidth + 10) * 2} ${statGridY} ${boxWidth} 48 re B\n`;
-        stream += 'BT\n/F1 8 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 34} Td\n(${pdfText('ANNULÉS / REMBOURSÉS')}) Tj\nET\n`;
-        stream += 'BT\n/F2 12 Tf\n0.80 0.20 0.20 rg\n';
-        stream += `${46 + (boxWidth + 10) * 2} ${statGridY + 16} Td\n(${pdfText(`${data.ticketsSummary.cancelled} annulé(s) / ${data.ticketsSummary.refunded} remb.`)}) Tj\nET\n`;
-
-        // 6. Section : SYNTHÈSE COMPTABLE (grand livre) & REVERSEMENT NET
-        const finSectionY = statGridY - 26;
-        stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
-        stream += `36 ${finSectionY} Td\n(${pdfText('3. RÉCAPITULATIF FINANCIER ET REVERSEMENT NET')}) Tj\nET\n`;
-
-        const finBoxY = finSectionY - 150;
-        stream += '0.96 0.97 0.99 rg\n0.80 0.85 0.90 RG\n1.5 w\n';
-        stream += `36 ${finBoxY} ${pageWidth - 72} 138 re B\n`;
-
-        const finLine = (y: number, label: string, amount: string, color: string) => {
-            stream += 'BT\n/F1 10 Tf\n0.20 0.25 0.35 rg\n';
-            stream += `52 ${finBoxY + y} Td\n(${pdfText(label)}) Tj\nET\n`;
-            stream += `BT\n/F2 11 Tf\n${color} rg\n`;
-            stream += `${pageWidth - 180} ${finBoxY + y} Td\n(${amount}) Tj\nET\n`;
-        };
-        const fin = data.financialSummary;
-        finLine(114, 'Ventes en ligne (prix faciaux des billets)', pdfAmount(fin.totalGross), '0.06 0.09 0.16');
-        finLine(94, 'Remboursements aux acheteurs (part organisateur)', `- ${pdfAmount(fin.totalRefunded)}`, '0.80 0.20 0.20');
-        finLine(74, 'Frais de service payés par l’acheteur (informatif, non déduits)', pdfAmount(fin.buyerServiceFees), '0.45 0.52 0.60');
-        finLine(54, `Ventes en espèces au guichet, hors plateforme (${fin.cashTickets} billet(s), informatif)`, pdfAmount(fin.cashSales), '0.45 0.52 0.60');
-        finLine(34, 'Dont disponible / en attente de disponibilité', pdfText(`${fin.availableNet.toLocaleString('fr-FR')} / ${fin.pendingNet.toLocaleString('fr-FR')} F CFA`), '0.06 0.09 0.16');
-
-        // NET PARTENAIRE (Surbrillance Orange)
-        stream += '1 0.34 0.13 rg\n';
-        stream += `36 ${finBoxY} ${pageWidth - 72} 26 re f\n`;
-
-        stream += 'BT\n/F2 11 Tf\n1 1 1 rg\n';
-        stream += `52 ${finBoxY + 8} Td\n(${pdfText('NET ORGANISATEUR -- VENTES EN LIGNE')}) Tj\nET\n`;
-        stream += 'BT\n/F2 13 Tf\n1 1 1 rg\n';
-        stream += `${pageWidth - 190} ${finBoxY + 7} Td\n(${pdfAmount(fin.totalNet)}) Tj\nET\n`;
 
         // 7. Footer & Sceau d'authenticité
         const footerY = 30;

@@ -5,6 +5,13 @@ import { PartnerDashboardService } from '@/lib/partner/partner-dashboard.service
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * GET /api/partner/reports/closing?eventId= — rapport de clôture de la propriétaire (session ACTIF, PARTENAIRE).
+ * Lot 9 ter (R106 b, B-D22) : un seul rapport. 200 `{ success, report }` : `report.closing` = corps de pilotage_closing
+ * tel quel (source de l'onglet Clôture, de la fenêtre et du PDF), `salesByCategory` lu dans pilotage_sales,
+ * `ticketsSummary` et `financialSummary` lus dans `closing` (PartnerDashboardService.getClosingReportData). Refus de
+ * pilotage_closing ou de pilotage_sales : 404 « Événement introuvable. » ; événement d'une autre partenaire : 403.
+ */
 export async function GET(req: NextRequest) {
     try {
         const activeSession = await requireActiveSession(req);

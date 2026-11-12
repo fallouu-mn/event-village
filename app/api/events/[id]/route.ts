@@ -3,7 +3,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { formatEventEnd } from '@/lib/events/catalog.server';
 import { eventEndAt } from '@/lib/events/event-end';
-import { isEventId, PUBLIC_EVENT_STATUSES, type PublicEventStatus } from '@/lib/events/public-status';
+import { isEventId, isPublicEvent, type PublicEventStatus } from '@/lib/events/public-status';
 import { formatSnPhone, toSenegaleseContactE164 } from '@/lib/validations/auth';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +46,7 @@ async function lowStockThreshold(): Promise<number> {
 /**
  * GET /api/events/[id] — fiche publique (lot 5, contrat E).
  *  - BROUILLON, EN_ATTENTE, VALIDE : 404 pour tous (l'aperçu du propriétaire passe par /api/partner/events/[id]) ;
+ *    lot 9 ter (R106 a) : TERMINE sans publication (ended_unpublished) aussi ;
  *  - PUBLIE, SUSPENDU, ANNULE, TERMINE : 200 avec `purchasable` (PUBLIE, fin à venir, au moins une catégorie
  *    achetable) et `banner` (null pour PUBLIE) ; ANNULE : `cancellation { publicNotice, cancelledAt, refundInfo }`,
  *    jamais le motif interne ;
@@ -80,6 +81,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
                 gallery_urls,
                 capacity,
                 status,
+                ended_unpublished,
                 program,
                 practical_info,
                 created_at,
@@ -94,7 +96,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             console.error('[API /api/events/[id]] lecture de l’événement impossible :', error.message);
             return NextResponse.json({ error: 'Impossible de charger l’événement.' }, { status: 500 });
         }
-        if (!event || !PUBLIC_EVENT_STATUSES.has(String(event.status))) return NOT_FOUND();
+        // Lot 9 ter (R106 a) : un événement terminé sans avoir été publié répond 404, comme un statut non public.
+        if (!isPublicEvent(event)) return NOT_FOUND();
 
         const status = String(event.status) as PublicEventStatus;
         const now = new Date();
