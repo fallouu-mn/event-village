@@ -16,7 +16,7 @@
  */
 
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { CashoutService, sendOutcomeLabel } from '@/lib/payments/cashout.service';
+import { CashoutService } from '@/lib/payments/cashout.service';
 import { EventLifecycleError, refusalToError, type LifecycleRefusal } from '@/lib/events/event-lifecycle.service';
 import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 
@@ -37,14 +37,6 @@ export interface EventCancellationResult {
     /** Bloqués, différés ou à vérifier (suivis dans l'avancement). */
     refundsPending: number;
     totalAmountSent: number;
-    message: string;
-}
-
-export interface RefundRetryResult {
-    success: boolean;
-    refundId: string;
-    status: 'PROCESSED' | 'FAILED';
-    transactionId?: string;
     message: string;
 }
 
@@ -184,50 +176,5 @@ export class EventCancellationService {
         }
         const body = await callLifecycleRpc<CancellationImpact & { ok: true }>('event_cancellation_impact', { event_id: eventId, actor_id: actorId }, 'Lecture de l’impact de l’annulation');
         return { impact: stripOk(body) as CancellationImpact };
-    }
-
-    /**
-     * Nouvelle tentative d'un remboursement par un administrateur (lot 2.7) :
-     *  - ECHOUE (refus explicite de SamirPay) : remis à envoyer puis envoyé une fois ;
-     *  - bloqué (solde insuffisant, opérateur ou numéro inconnu) : débloqué si la cause est levée ;
-     *  - INCERTAIN : refusé — l'argent a pu partir, vérification manuelle obligatoire ;
-     *  - CONFIRME / ENVOYE : rien à faire.
-     */
-    public static async retryRefund(refundId: string, adminUserId: string): Promise<RefundRetryResult> {
-        const supabase = getServiceRoleClient();
-        const { data: cashout, error } = await supabase.from('cashouts').select('*').eq('refund_id', refundId).maybeSingle();
-        if (error) throw new Error(`Lecture du remboursement ${refundId} impossible : ${error.message}`);
-        if (!cashout) throw new Error(`Remboursement introuvable (ID: ${refundId}).`);
-        if (cashout.status === 'CONFIRME' || cashout.status === 'ENVOYE') {
-            return { success: true, refundId, status: 'PROCESSED', transactionId: cashout.samirpay_transaction_id ?? undefined, message: 'Remboursement déjà envoyé.' };
-        }
-        if (cashout.status === 'INCERTAIN') {
-            return { success: false, refundId, status: 'FAILED', message: 'Issue incertaine : vérifiez auprès de SamirPay avant toute nouvelle tentative (aucun renvoi automatique).' };
-        }
-        if (cashout.status === 'ECHOUE') {
-            const { data: reset, error: rErr } = await supabase.from('cashouts')
-                .update({ status: 'A_ENVOYER', send_started_at: null, last_error: null, updated_at: new Date().toISOString() })
-                .eq('id', cashout.id).eq('status', 'ECHOUE').select('id');
-            if (rErr) throw new Error(`Remise à envoyer impossible : ${rErr.message}`);
-            if (!reset?.length) return { success: false, refundId, status: 'FAILED', message: 'Remboursement modifié par une autre opération.' };
-            const { error: refErr } = await supabase.from('refunds').update({ status: 'PENDING', updated_at: new Date().toISOString() }).eq('id', refundId).eq('status', 'FAILED');
-            if (refErr) throw new Error(`Remboursement ${refundId} non remis en attente : ${refErr.message}`);
-        } else if (cashout.blocked_reason === 'SOLDE_INSUFFISANT') {
-            const { error: uErr } = await supabase.from('cashouts').update({ blocked_reason: null, updated_at: new Date().toISOString() }).eq('id', cashout.id).eq('status', 'A_ENVOYER');
-            if (uErr) throw new Error(`Déblocage impossible : ${uErr.message}`);
-        }
-        const { error: auditErr } = await supabase.from('audit_logs').insert({
-            user_id: adminUserId, action: 'REFUND_RETRY', object_type: 'cashouts', object_id: cashout.id,
-            metadata: { refund_id: refundId, previous_status: cashout.status, blocked_reason: cashout.blocked_reason },
-        });
-        if (auditErr) console.error('[EventCancellationService] journal de la nouvelle tentative impossible :', auditErr.message);
-        const outcome = await CashoutService.send(cashout.id);
-        const sent = outcome.status === 'CONFIRME' || outcome.status === 'ENVOYE';
-        return {
-            success: sent,
-            refundId,
-            status: sent ? 'PROCESSED' : 'FAILED',
-            message: sent ? 'Remboursement envoyé.' : `Remboursement non envoyé : ${sendOutcomeLabel(outcome)}.`,
-        };
     }
 }

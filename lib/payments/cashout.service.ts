@@ -136,28 +136,6 @@ const PROVIDER_BLOCKS: Readonly<Record<string, 'SOLDE_INSUFFISANT' | 'LIMITE_COM
 /** Motif du refus d'un transfert par l'opérateur, recopié sur le retrait refusé (R75) : jamais de code technique. */
 const OPERATOR_REFUSAL_DETAIL = 'Refusé par l’opérateur Mobile Money';
 
-const SKIPPED_LABELS: Record<NonNullable<SendOutcome['skipped']>, string> = {
-    NOT_A_ENVOYER: "il n'est plus à envoyer",
-    BLOCKED: 'il est bloqué',
-    ALREADY_CLAIMED: 'un envoi est déjà en cours',
-    SOLDE_INSUFFISANT: BLOCK_LABELS.SOLDE_INSUFFISANT,
-    SOLDE_UNAVAILABLE: 'solde SamirPay indisponible, nouvel essai automatique',
-    ACCOUNT_SUSPENDED: BLOCK_LABELS.ACCOUNT_SUSPENDED,
-    SIMULATED: BLOCK_LABELS.SIMULATED,
-    REAL_IN_SIMULATION: "opération réelle refusée par un serveur d'essai",
-};
-
-const UNSENT_STATUS_LABELS: Partial<Record<CashoutStatus, string>> = {
-    ECHOUE: "refusé par l'opérateur",
-    INCERTAIN: 'issue incertaine, à vérifier auprès de SamirPay',
-};
-
-/** Raison d'un envoi qui n'a pas abouti, en français : jamais de code ni de statut technique à l'écran. */
-export function sendOutcomeLabel(outcome: SendOutcome): string {
-    if (outcome.skipped) return SKIPPED_LABELS[outcome.skipped];
-    return UNSENT_STATUS_LABELS[outcome.status] ?? 'envoi non abouti';
-}
-
 /** Envoi parti chez SamirPay (ou peut-être parti) : il consomme le solde estimé d'un lot. */
 function mayHaveLeft(outcome: SendOutcome): boolean {
     return !outcome.skipped && (outcome.status === 'CONFIRME' || outcome.status === 'ENVOYE' || outcome.status === 'INCERTAIN');
@@ -482,14 +460,6 @@ export class CashoutService {
         const resumed = ids.filter((id) => outcomes[id] && mayHaveLeft(outcomes[id])).length;
         const failed = ids.filter((id) => !outcomes[id]).length;
         return { checked: ids.length, resumed, failed };
-    }
-
-    /**
-     * Ancien nom (lot 8, L33), gardé parce que tests/parcours/essai-simule.test.ts:461 l'appelle (suite hors de la
-     * section 9 du contrat) : même reprise que resumeUnsent, tous types. Aucun appelant dans l'application.
-     */
-    static async resumeUnsentRefunds(limit = 50): Promise<{ checked: number; resumed: number; failed: number }> {
-        return CashoutService.resumeUnsent(limit);
     }
 
     /**
