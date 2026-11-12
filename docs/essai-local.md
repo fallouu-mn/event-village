@@ -460,7 +460,7 @@ Ce que voit chaque invité :
 
 Compte `controleur`, **Saisie manuelle** : entrez le numéro d'un de ces billets, lu dans **Mes billets** de l'invité. Résultat attendu : écran vert.
 
-Pour voir l'annulation, invitez un autre numéro inventé, sur le même onglet, puis **Annuler l'invitation** dans l'historique et confirmez. Résultat attendu : « Invitation annulée : la place revient au stock. », statut « Annulée », aucun SMS. Un numéro ne reçoit que 3 invitations par jour : au-delà, l'envoi est refusé.
+Pour voir l'annulation, invitez un autre numéro inventé, sur le même onglet, puis **Annuler l'invitation** dans l'historique et confirmez. Résultat attendu : « Invitation annulée : la place revient au stock. », statut « Annulée » ; le numéro invité est prévenu par SMS (simulé : il apparaît dans la fenêtre des SMS). Un numéro ne reçoit que 3 invitations par jour : au-delà, l'envoi est refusé.
 
 L'export (onglet **Clôture**, **Exporter les participants**) porte, depuis le lot 9 ter, les colonnes « Nom », « Catégorie », « Origine » (« En ligne », « Guichet », « Gratuit », « Invitation »), « Statut du billet », « Heure d’entrée », « Zone » et « Porte », et « Invitation en attente » à la place du nom tant que le billet n'est pas réclamé. Sur « Concert d'essai à Dakar », « Carré invités » s'affiche en premier, sous « Sans canal de vente ».
 
