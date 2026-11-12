@@ -880,6 +880,11 @@ $$;
 --          garde scan_log) ; étape 7 bis-zone (porte de CONTRÔLE : refus rouges du billet, puis verdict de zone, jamais
 --          de compostage) ; étape 8 bis (porte d'ENTRÉE : mauvaise zone après les refus rouges) ; toute réponse qui
 --          porte le billet porte aussi `zone` et `gate` ; le rejeu rend le verdict de zone avec son billet.
+--  9t.16 : billet servi avec `category_color` (ticket_categories.scan_color), `origin` (ticket_origin, F5, règle R50 :
+--          un ancien billet encaissé à l'entrée est « Guichet »), `entry_instruction` sur l'entrée validée seulement,
+--          `checked_in_gate` (porte, sinon point d'entrée, de la ligne acceptée) sur « déjà utilisé » et « accès
+--          autorisé », lu après le verrou du billet (le perdant d'une course voit la porte du gagnant) ; même billet au
+--          rejeu.
 CREATE OR REPLACE FUNCTION public.ticket_scan(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -919,6 +924,8 @@ DECLARE
     v_zone jsonb;
     v_gate jsonb;
     v_kind text;
+    -- Lot 9 ter (9t.16) : porte du premier compostage
+    v_checked_gate text;
 BEGIN
     IF v_method NOT IN ('QR', 'MANUAL') THEN
         RAISE EXCEPTION 'ticket_scan : méthode % inconnue', v_method;
@@ -965,11 +972,13 @@ BEGIN
             -- d'un autre événement, ou une lecture refusée avant le billet). Lot 9 ter : COALESCE, sinon une ligne de
             -- zone (result NULL) perdrait son billet (NULL NOT IN … vaut NULL).
             IF s.ticket_id IS NOT NULL AND COALESCE(s.result, s.zone_result) NOT IN ('invalid', 'wrong_event', 'dynamic_qr_required', 'manual_entry_refused', 'forbidden') THEN
-                SELECT tk.*, c.name AS category_name, u.first_name, u.last_name
+                SELECT tk.*, c.name AS category_name, c.scan_color, c.entry_instruction, u.first_name, u.last_name,
+                       pay.id AS pay_id, pay.is_platform_payment AS pay_platform
                   INTO t
                   FROM public.tickets tk
                   JOIN public.ticket_categories c ON c.id = tk.category_id
                   LEFT JOIN public.users u ON u.id = tk.user_id
+                  LEFT JOIN public.payments pay ON pay.id = tk.payment_id
                  WHERE tk.id = s.ticket_id;
                 IF FOUND THEN
                     v_info := jsonb_build_object('id', t.id, 'ticket_number', t.ticket_number, 'category', t.category_name,
@@ -977,7 +986,20 @@ BEGIN
                                                                 ELSE btrim(COALESCE(t.first_name, '') || ' ' || COALESCE(t.last_name, '')) END,
                                                  'price', t.price, 'is_manual_entry', s.method = 'MANUAL',
                                                  'checked_in_at', t.checked_in_at,
-                                                 'checked_in_by_me', t.checked_in_by IS NOT DISTINCT FROM v_scanner);
+                                                 'checked_in_by_me', t.checked_in_by IS NOT DISTINCT FROM v_scanner,
+                                                 'category_color', t.scan_color,
+                                                 'origin', public.ticket_origin(t.sale_channel, t.price, t.pay_id IS NOT NULL AND NOT t.pay_platform));
+                    -- Lot 9 ter (9t.16) : porte du compostage sur « déjà utilisé » et « accès autorisé » ; consigne sur
+                    -- l'entrée validée seulement
+                    IF COALESCE(s.result, s.zone_result) IN ('already_used', 'zone_ok') THEN
+                        SELECT COALESCE(eg.name, NULLIF(btrim(a.entry_point), '')) INTO v_checked_gate
+                          FROM public.ticket_scans a LEFT JOIN public.event_gates eg ON eg.id = a.gate_id
+                         WHERE a.ticket_id = t.id AND a.accepted;
+                        v_info := v_info || jsonb_build_object('checked_in_gate', v_checked_gate);
+                    END IF;
+                    IF s.result = 'valid' THEN
+                        v_info := v_info || jsonb_build_object('entry_instruction', t.entry_instruction);
+                    END IF;
                     -- Zone et porte de la ligne d'origine (zone NULL : zone implicite)
                     IF s.zone_id IS NULL THEN
                         v_zone := jsonb_build_object('id', NULL, 'name', 'Entrée', 'kind', 'ENTREE', 'implicit', TRUE);
@@ -1033,12 +1055,15 @@ BEGIN
     ELSE
         v_ticket_id := NULLIF(p->>'ticket_id', '')::uuid;
     END IF;
-    -- 4. Billet de l'événement (aucune donnée sinon), sous verrou
-    SELECT tk.*, c.name AS category_name, u.first_name, u.last_name
+    -- 4. Billet de l'événement (aucune donnée sinon), sous verrou. Lot 9 ter (9t.16) : couleur et consigne de la
+    --    catégorie, paiement (origine du billet) lus sans verrou de plus.
+    SELECT tk.*, c.name AS category_name, c.scan_color, c.entry_instruction, u.first_name, u.last_name,
+           pay.id AS pay_id, pay.is_platform_payment AS pay_platform
       INTO t
       FROM public.tickets tk
       JOIN public.ticket_categories c ON c.id = tk.category_id
       LEFT JOIN public.users u ON u.id = tk.user_id
+      LEFT JOIN public.payments pay ON pay.id = tk.payment_id
      WHERE tk.id = v_ticket_id
        FOR UPDATE OF tk;
     IF NOT FOUND THEN
@@ -1051,7 +1076,9 @@ BEGIN
     END IF;
     v_info := jsonb_build_object('id', t.id, 'ticket_number', t.ticket_number, 'category', t.category_name,
                                  'holder', CASE WHEN t.user_id IS NULL THEN 'Vente au guichet' ELSE btrim(COALESCE(t.first_name, '') || ' ' || COALESCE(t.last_name, '')) END, 'price', t.price,
-                                 'is_manual_entry', v_method = 'MANUAL');
+                                 'is_manual_entry', v_method = 'MANUAL',
+                                 'category_color', t.scan_color,
+                                 'origin', public.ticket_origin(t.sale_channel, t.price, t.pay_id IS NOT NULL AND NOT t.pay_platform));
     -- 5. Code dynamique (calculé hors base avec la clé maître) et version du secret, lus sous le verrou du
     --    billet : une rotation (transfert, annulation, remboursement, régénération) validée avant le verrou
     --    rend le code présenté périmé. Statut d'annulation contrôlé avant la version (D3).
@@ -1093,10 +1120,15 @@ BEGIN
             RAISE EXCEPTION 'ticket_scan : verdict de zone absent pour le billet % (statut %)', t.id, t.status;
         END IF;
         IF v_zone_result = 'zone_ok' THEN
+            -- Lot 9 ter (9t.16) : heure et porte de l'entrée (ligne acceptée, lue sous le verrou du billet)
+            SELECT COALESCE(eg.name, NULLIF(btrim(a.entry_point), '')) INTO v_checked_gate
+              FROM public.ticket_scans a LEFT JOIN public.event_gates eg ON eg.id = a.gate_id
+             WHERE a.ticket_id = t.id AND a.accepted;
             v_scan := public.scan_log_at(t.id, v_event, v_scanner, NULL, v_zone_result, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
             RETURN jsonb_build_object('result', v_zone_result, 'scan_id', v_scan,
                                       'ticket', v_info || jsonb_build_object('checked_in_at', t.checked_in_at,
-                                                                             'checked_in_by_me', t.checked_in_by IS NOT DISTINCT FROM v_scanner),
+                                                                             'checked_in_by_me', t.checked_in_by IS NOT DISTINCT FROM v_scanner,
+                                                                             'checked_in_gate', v_checked_gate),
                                       'zone', v_zone, 'gate', v_gate);
         END IF;
         v_scan := public.scan_log_at(t.id, v_event, v_scanner, NULL, v_zone_result, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
@@ -1112,11 +1144,17 @@ BEGIN
         WHEN 'REMBOURSEMENT_EN_COURS' THEN 'refunded'
         ELSE 'invalid' END;
     IF v_problem IS NOT NULL THEN
+        v_info := v_info || jsonb_build_object('checked_in_at', t.checked_in_at,
+                                               'checked_in_by_me', t.checked_in_by IS NOT DISTINCT FROM v_scanner);
+        IF v_problem = 'already_used' THEN
+            -- Lot 9 ter (9t.16) : « Déjà utilisé à {heure}, {porte} » (ligne acceptée, lue sous le verrou du billet)
+            SELECT COALESCE(eg.name, NULLIF(btrim(a.entry_point), '')) INTO v_checked_gate
+              FROM public.ticket_scans a LEFT JOIN public.event_gates eg ON eg.id = a.gate_id
+             WHERE a.ticket_id = t.id AND a.accepted;
+            v_info := v_info || jsonb_build_object('checked_in_gate', v_checked_gate);
+        END IF;
         v_scan := public.scan_log_at(t.id, v_event, v_scanner, v_problem, NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
-        RETURN jsonb_build_object('result', v_problem, 'scan_id', v_scan,
-                                  'ticket', v_info || jsonb_build_object('checked_in_at', t.checked_in_at,
-                                                                         'checked_in_by_me', t.checked_in_by IS NOT DISTINCT FROM v_scanner),
-                                  'zone', v_zone, 'gate', v_gate);
+        RETURN jsonb_build_object('result', v_problem, 'scan_id', v_scan, 'ticket', v_info, 'zone', v_zone, 'gate', v_gate);
     END IF;
     -- 7 bis. Lot 9 bis (R19, R44) : billet engagé dans un transfert encore en attente → refusé, rien de composté.
     --        Un transfert échu est d'abord expiré ; un transfert tenu par une acceptation est sauté (SKIP LOCKED,
@@ -1158,15 +1196,20 @@ BEGIN
      WHERE id = t.id AND status = 'VALIDE';
     IF NOT FOUND THEN
         SELECT checked_in_at, checked_in_by INTO v_checked_at, v_checked_by FROM public.tickets WHERE id = t.id;
+        SELECT COALESCE(eg.name, NULLIF(btrim(a.entry_point), '')) INTO v_checked_gate
+          FROM public.ticket_scans a LEFT JOIN public.event_gates eg ON eg.id = a.gate_id
+         WHERE a.ticket_id = t.id AND a.accepted;
         v_scan := public.scan_log_at(t.id, v_event, v_scanner, 'already_used', NULL, FALSE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
         RETURN jsonb_build_object('result', 'already_used', 'scan_id', v_scan,
                                   'ticket', v_info || jsonb_build_object('checked_in_at', v_checked_at,
-                                                                         'checked_in_by_me', v_checked_by IS NOT DISTINCT FROM v_scanner),
+                                                                         'checked_in_by_me', v_checked_by IS NOT DISTINCT FROM v_scanner,
+                                                                         'checked_in_gate', v_checked_gate),
                                   'zone', v_zone, 'gate', v_gate);
     END IF;
     v_scan := public.scan_log_at(t.id, v_event, v_scanner, 'valid', NULL, TRUE, v_method, v_identity, v_hash, NULL, v_version, v_key, g.gate_id, g.zone_id);
     RETURN jsonb_build_object('result', 'valid', 'scan_id', v_scan,
-                              'ticket', v_info || jsonb_build_object('checked_in_at', now(), 'checked_in_by_me', TRUE),
+                              'ticket', v_info || jsonb_build_object('checked_in_at', now(), 'checked_in_by_me', TRUE,
+                                                                     'entry_instruction', t.entry_instruction),
                               'zone', v_zone, 'gate', v_gate);
 END;
 $$;

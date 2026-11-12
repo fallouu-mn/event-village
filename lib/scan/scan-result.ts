@@ -183,3 +183,40 @@ export type GateProblemCode = keyof typeof GATE_PROBLEM_MESSAGES;
 export function isGateProblemCode(value: unknown): value is GateProblemCode {
     return typeof value === 'string' && Object.prototype.hasOwnProperty.call(GATE_PROBLEM_MESSAGES, value);
 }
+
+/** Même motif que le point d'entrée nommé de GET /api/controller/scans (« Porte », « Portail », « Entrée », « Accès », « Guichet »). */
+const NAMED_GATE = /^(porte|portail|entr[ée]e|acc[èe]s|guichet)\b/i;
+
+/**
+ * Porte dans une phrase (« Déjà utilisé à 21:14, porte Nord ») : un nom qui se nomme déjà (« Porte Nord », « Entrée VIP »)
+ * est gardé tel quel, sinon « porte {nom} ».
+ */
+export function gatePhrase(name: string): string {
+    const value = name.trim();
+    return NAMED_GATE.test(value) ? value : `porte ${value}`;
+}
+
+// ── Lot 9 ter (9t.16, contrat C.2.3, X2, arbitrage 19) — couleur de la catégorie au scanner ──
+
+/**
+ * Palette fermée des couleurs de catégorie (seule liste du lot, X2) : mêmes clés, dans le même ordre, que la contrainte
+ * ticket_categories_scan_color_check (supabase/migrations/20261110000009_lot9ter_zones.sql). Jamais rouge, vert ni
+ * orange (confusion avec le verdict) ; jetons --scan-cat-<clé>-bg / -fg d'app/globals.css.
+ */
+export const SCAN_CATEGORY_COLORS = ['BLANC', 'OR', 'ARGENT', 'ROSE', 'TURQUOISE', 'BLEU', 'VIOLET', 'NOIR'] as const;
+export type ScanCategoryColor = (typeof SCAN_CATEGORY_COLORS)[number];
+
+export const SCAN_CATEGORY_COLOR_LABELS: Record<ScanCategoryColor, string> = {
+    BLANC: 'Blanc',
+    OR: 'Or',
+    ARGENT: 'Argent',
+    ROSE: 'Rose',
+    TURQUOISE: 'Turquoise',
+    BLEU: 'Bleu nuit',
+    VIOLET: 'Violet',
+    NOIR: 'Noir',
+};
+
+export function isScanCategoryColor(value: unknown): value is ScanCategoryColor {
+    return typeof value === 'string' && (SCAN_CATEGORY_COLORS as readonly string[]).includes(value);
+}

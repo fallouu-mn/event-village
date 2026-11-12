@@ -35,6 +35,13 @@ const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 type Rpc = Record<string, unknown> & { result?: string; http?: number; code?: string; replayed?: unknown };
 
+/** Lot 9 ter (9t.16, contrat 11.3) : « Accès refusé : billet {catégorie} » ; libellé court si la catégorie manque. */
+function wrongZoneMessage(data: Rpc): string {
+    const ticket = data.ticket;
+    const category = ticket && typeof ticket === 'object' ? (ticket as { category?: unknown }).category : undefined;
+    return typeof category === 'string' && category.trim() !== '' ? `Accès refusé : billet ${category}` : SCAN_RESULT_LABELS.wrong_zone;
+}
+
 /**
  * Réponse d'un résultat de scan (HTTP 200) : résultat de l'union partagée, jamais d'erreur technique déguisée.
  * `replayed` est toujours un booléen (vrai seulement pour le rejeu d'une clé déjà traitée, D40).
@@ -42,7 +49,9 @@ type Rpc = Record<string, unknown> & { result?: string; http?: number; code?: st
 function scanResponse(data: Rpc): NextResponse {
     const result = data.result;
     if (!isScanResult(result)) throw new Error(`résultat de scan inconnu : ${JSON.stringify(data)}`);
-    const message = result === 'not_processed' ? NOT_PROCESSED_MESSAGE : SCAN_RESULT_LABELS[result as ScanResult];
+    const message = result === 'not_processed' ? NOT_PROCESSED_MESSAGE
+        : result === 'wrong_zone' ? wrongZoneMessage(data)
+            : SCAN_RESULT_LABELS[result as ScanResult];
     return NextResponse.json({ ...data, result, replayed: data.replayed === true, message }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
