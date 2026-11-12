@@ -507,6 +507,27 @@ function pdfLabel(label: string): string {
     return pdfText(label).replace(/\\([()])/g, '$1');
 }
 
+/**
+ * Lot 9 ter (9t.18, X9) : lignes des vues figées des entrées lues par le PDF de clôture dans closing.entries
+ * (pilotage_closing → pilotage_compute_entries, sans nom d'invité). Seuls les champs imprimés sont décrits ici.
+ */
+interface ClosingEntriesViews {
+    configured: boolean;
+    by_zone: Array<{ name: string; kind: 'ENTREE' | 'CONTROLE' | null; expected: number | null; entered: number | null; checked: number | null }>;
+    by_origin: Array<{ origin: string; label: string | null; expected: number; entered: number }>;
+    by_gate: Array<{ name: string | null; zone_name: string | null; accepted: number; refused: number }>;
+}
+
+/** Vues des entrées de la clôture ; leur absence (migration 20261110000010 non appliquée) est une panne, jamais un tableau vide. */
+function closingEntriesViews(closing: PilotageClosing): ClosingEntriesViews {
+    const raw = (closing as { entries?: unknown }).entries;
+    const v = raw !== null && typeof raw === 'object' ? (raw as Partial<ClosingEntriesViews>) : null;
+    if (!v || !Array.isArray(v.by_zone) || !Array.isArray(v.by_origin) || !Array.isArray(v.by_gate)) {
+        throw new Error('Lecture impossible (pilotage_closing) : vues des entrées absentes.');
+    }
+    return { configured: v.configured === true, by_zone: v.by_zone, by_origin: v.by_origin, by_gate: v.by_gate };
+}
+
 /** Nombre entier pour le PDF (séparateurs de milliers en espaces simples). */
 function pdfCount(n: number): string {
     return pdfText(n.toLocaleString('fr-FR'));
@@ -991,45 +1012,111 @@ export class PartnerDashboardService {
             rowY -= 18;
         });
 
-        // 7. Footer & Sceau d'authenticité
-        const footerY = 30;
-        stream += '0.85 0.88 0.92 RG\n0.75 w\n';
-        stream += `36 ${footerY + 22} m ${pageWidth - 36} ${footerY + 22} l S\n`;
+        // 6. Lot 9 ter (9t.18, X9, ED4) : entrées par zone, par origine et par porte, lues dans closing.entries
+        //    (vues figées de pilotage_compute_entries, sans nom d'invité) ; une page de plus quand la place manque.
+        const views = closingEntriesViews(closing);
+        const pages: string[] = [];
+        const footer = (): string => {
+            const footerY = 30;
+            let f = '0.85 0.88 0.92 RG\n0.75 w\n';
+            f += `36 ${footerY + 22} m ${pageWidth - 36} ${footerY + 22} l S\n`;
+            f += 'BT\n/F1 7.5 Tf\n0.45 0.52 0.60 rg\n';
+            f += `36 ${footerY + 10} Td\n(${pdfText(`Généré automatiquement par Event Village Sénégal -- ${supportEmail()}`)}) Tj\nET\n`;
+            f += 'BT\n/F2 7.5 Tf\n0.35 0.40 0.50 rg\n';
+            f += `36 ${footerY} Td\n(${pdfText(`Référence : ${data.reportId}`)}) Tj\nET\n`;
+            return `${f}Q\n`;
+        };
+        const ensureSpace = (needed: number): void => {
+            if (rowY - needed >= 64) return;
+            pages.push(stream + footer());
+            stream = `q\n0.98 0.98 0.99 rg\n0 0 ${pageWidth} ${pageHeight} re f\n`;
+            rowY = pageHeight - 40;
+        };
+        const entriesTable = (title: string, columns: Array<[string, number]>, lines: string[][], empty: string): void => {
+            ensureSpace(26 + 22 + 18);
+            rowY -= 8;
+            stream += 'BT\n/F2 11 Tf\n0.06 0.09 0.16 rg\n';
+            stream += `36 ${rowY} Td\n(${pdfText(title)}) Tj\nET\n`;
+            rowY -= 22;
+            stream += '0.94 0.96 0.98 rg\n';
+            stream += `36 ${rowY} ${pageWidth - 72} 20 re f\n`;
+            stream += 'BT\n/F2 8.5 Tf\n0.20 0.25 0.35 rg\n';
+            columns.forEach(([label, dx], i) => {
+                stream += `${i === 0 ? `44 ${rowY + 6}` : `${dx} 0`} Td\n(${pdfText(label)}) Tj\n`;
+            });
+            stream += 'ET\n';
+            rowY -= 18;
+            if (lines.length === 0) {
+                stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
+                stream += `44 ${rowY + 5} Td\n(${pdfText(empty)}) Tj\nET\n`;
+                rowY -= 18;
+            }
+            lines.forEach((cells, idx) => {
+                ensureSpace(18);
+                stream += `${idx % 2 === 0 ? '1 1 1' : '0.98 0.98 0.99'} rg\n`;
+                stream += `36 ${rowY} ${pageWidth - 72} 18 re f\n`;
+                stream += '0.88 0.90 0.94 RG\n0.5 w\n';
+                stream += `36 ${rowY} m ${pageWidth - 36} ${rowY} l S\n`;
+                stream += 'BT\n/F1 8.5 Tf\n0.06 0.09 0.16 rg\n';
+                cells.forEach((cell, i) => {
+                    stream += `${i === 0 ? `44 ${rowY + 5}` : `${columns[i][1]} 0`} Td\n(${pdfText(cell)}) Tj\n`;
+                });
+                stream += 'ET\n';
+                rowY -= 18;
+            });
+        };
+        const count = (n: number | null | undefined): string => (n === null || n === undefined ? '-' : Number(n).toLocaleString('fr-FR'));
 
-        stream += 'BT\n/F1 7.5 Tf\n0.45 0.52 0.60 rg\n';
-        stream += `36 ${footerY + 10} Td\n(${pdfText(`Généré automatiquement par Event Village Sénégal -- ${supportEmail()}`)}) Tj\nET\n`;
+        rowY -= 10;
+        entriesTable('3. Entrées par zone', [['Zone', 0], ['Entrés', 290], ['Attendus', 100]],
+            views.by_zone.map((z) => [
+                `${z.name.slice(0, 40)}${z.kind === 'CONTROLE' ? ' (contrôle de zone)' : ''}`,
+                z.kind === 'CONTROLE' ? `${count(z.checked)} contrôlés` : count(z.entered),
+                count(z.expected),
+            ]), 'Aucune zone.');
+        entriesTable('4. Entrées par origine', [['Origine', 0], ['Entrés', 290], ['Attendus', 100]],
+            views.by_origin.map((o) => [o.label ?? o.origin, count(o.entered), count(o.expected)]), 'Aucun billet.');
+        entriesTable('5. Entrées par porte', [['Porte', 0], ['Zone', 170], ['Entrées', 170], ['Refus', 100]],
+            views.by_gate.map((g) => [
+                (g.name ?? 'Point d’entrée non précisé').slice(0, 30),
+                (g.zone_name ?? (views.configured ? '-' : 'Entrée')).slice(0, 30),
+                count(g.accepted),
+                count(g.refused),
+            ]), 'Aucune entrée.');
 
-        stream += 'BT\n/F2 7.5 Tf\n0.35 0.40 0.50 rg\n';
-        stream += `36 ${footerY} Td\n(${pdfText(`Référence : ${data.reportId}`)}) Tj\nET\n`;
+        // 7. Footer & Sceau d'authenticité (sur chaque page)
+        pages.push(stream + footer());
 
-        stream += 'Q\n';
-
-        // 8. Structure PDF-1.4 standard
-        const streamLength = Buffer.byteLength(stream, 'latin1');
-        const objects = [];
+        // 8. Structure PDF-1.4 standard : catalogue (1), pages (2), polices (3, 4), puis une page et son contenu par page
+        const objects: string[] = [];
+        const kids = pages.map((_, i) => `${5 + 2 * i} 0 R`).join(' ');
         objects[1] = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj';
-        objects[2] = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj';
-        objects[3] = `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>\nendobj`;
-        objects[4] = `4 0 obj\n<< /Length ${streamLength} >>\nstream\n${stream}\nendstream\nendobj`;
-        objects[5] = '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj';
-        objects[6] = '6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj';
+        objects[2] = `2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>\nendobj`;
+        objects[3] = '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj';
+        objects[4] = '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj';
+        pages.forEach((content, i) => {
+            const pageObj = 5 + 2 * i;
+            objects[pageObj] = `${pageObj} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Contents ${pageObj + 1} 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> >>\nendobj`;
+            objects[pageObj + 1] = `${pageObj + 1} 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream\nendobj`;
+        });
+        const lastObj = objects.length - 1;
 
         let body = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
         const xrefOffsets = [0];
 
-        for (let i = 1; i <= 6; i++) {
+        for (let i = 1; i <= lastObj; i++) {
             xrefOffsets[i] = Buffer.byteLength(body, 'latin1');
             body += objects[i] + '\n';
         }
 
         const startXref = Buffer.byteLength(body, 'latin1');
-        body += 'xref\n0 7\n0000000000 65535 f \n';
-        for (let i = 1; i <= 6; i++) {
+        body += `xref\n0 ${lastObj + 1}\n0000000000 65535 f \n`;
+        for (let i = 1; i <= lastObj; i++) {
             const offsetStr = String(xrefOffsets[i]).padStart(10, '0');
             body += `${offsetStr} 00000 n \n`;
         }
 
-        body += 'trailer\n<< /Size 7 /Root 1 0 R >>\n';
+        body += `trailer\n<< /Size ${lastObj + 1} /Root 1 0 R >>\n`;
         body += `startxref\n${startXref}\n%%EOF\n`;
 
         return Buffer.from(body, 'latin1');

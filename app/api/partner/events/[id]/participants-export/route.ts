@@ -15,7 +15,8 @@ const bodySchema = z.object({
 /**
  * POST /api/partner/events/[id]/participants-export — lot 5 (contrat I, décision du 31/10 : liste fermée).
  * Corps `{ includeContacts, purpose? }`. Partenaire propriétaire (compte ACTIF) ou admin, sinon 404.
- * Fichier CSV UTF-8 avec BOM : nom, catégorie, statut du billet, heure d'entrée (Dakar) ; téléphone et
+ * Fichier CSV UTF-8 avec BOM : nom, catégorie, origine, statut du billet, heure d'entrée (Dakar), zone et porte
+ * (lot 9 ter, 9t.18) ; téléphone et
  * email seulement avec `includeContacts` et une finalité URGENT_EVENT_INFO ou SAFETY_AND_RECEPTION, sinon
  * 400 PURPOSE_REQUIRED. Aucune donnée de paiement, aucun numéro de billet. Chaque export est journalisé
  * (participant_exports) par la RPC, dans la même transaction que la lecture : sans journal, pas de fichier.

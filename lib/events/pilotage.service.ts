@@ -153,9 +153,14 @@ export async function pilotageTabResponse(tab: PilotageTab, ctx: RouteParams<{ i
 export interface ParticipantRow {
     name: string;
     category: string;
-    channel: string;
+    /** Lot 9 ter (9t.18) : origine du billet (règle unique ticket_origin : En ligne, Guichet, Gratuit, Invitation). */
+    origin: string;
     status: string;
     entered_at: string | null;
+    /** Lot 9 ter (9t.18) : zone de l'entrée (« Entrée » sans zone) ; null si le billet n'est pas entré. */
+    zone: string | null;
+    /** Lot 9 ter (9t.18) : porte de l'entrée, sinon son point d'entrée ; null si le billet n'est pas entré. */
+    gate: string | null;
     phone?: string | null;
     email?: string | null;
 }
@@ -195,11 +200,11 @@ function csvCell(value: unknown): string {
 
 /** CSV UTF-8 avec BOM, séparateur « ; », fins de ligne CRLF, en-têtes français. */
 export function participantsCsv(exp: ParticipantsExport): string {
-    const header = ['Nom', 'Catégorie', 'Canal', 'Statut du billet', 'Heure d’entrée'];
+    const header = ['Nom', 'Catégorie', 'Origine', 'Statut du billet', 'Heure d’entrée', 'Zone', 'Porte'];
     if (exp.includeContacts) header.push('Téléphone', 'E-mail');
     const lines = [header.map(csvCell).join(';')];
     for (const r of exp.rows) {
-        const cells: unknown[] = [r.name, r.category, r.channel, r.status, r.entered_at ?? ''];
+        const cells: unknown[] = [r.name, r.category, r.origin, r.status, r.entered_at ?? '', r.zone ?? '', r.gate ?? ''];
         if (exp.includeContacts) cells.push(r.phone ?? '', r.email ?? '');
         lines.push(cells.map(csvCell).join(';'));
     }
