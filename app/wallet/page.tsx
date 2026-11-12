@@ -13,6 +13,8 @@
  * Lot 7 (7.3, E4) : système de design (tokens, 14 px au moins, aucune couleur écrite en dur, plus de dégradé
  * sous du texte) ; montants par formatFcfa de lib/format (D60) ; statuts et opérations par leurs libellés
  * français, jamais le code brut ; statut effectif du retrait (effective_status) lu s'il est servi.
+ * Lot 9 ter (9t.7, contrat A.5.3) : `frozen` (commissions gelées parce qu'un événement de leurs achats est suspendu,
+ * calculé par le serveur) est lu ; s'il est positif, un bandeau « Commissions gelées » le dit au-dessus du disponible.
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -39,6 +41,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { OPERATOR_VISUALS } from '@/components/payment/PaymentModal';
@@ -66,6 +69,8 @@ interface Balance {
   inProgress: number;
   debt: number;
   withdrawable: number;
+  /** Lot 9 ter (9t.7) : commissions gelées par un événement suspendu, servies par le serveur (F CFA). */
+  frozen: number;
   /** Réglage finance.withdrawal_min_amount, servi par le serveur (F CFA). */
   minimum: number;
   /** Réglage finance.withdrawal_fee_rate, servi par le serveur (en %). */
@@ -198,6 +203,7 @@ function parseAccount(body: unknown): AccountView | null {
       nextAvailableAt: text(body.next_available_at),
       inProgress: readAmount(body.in_progress) ?? 0,
       debt: readAmount(body.debt) ?? 0,
+      frozen: readAmount(body.frozen) ?? 0,
       withdrawable,
       minimum,
       feeRate,
@@ -607,6 +613,11 @@ export default function WalletPage() {
               <AlertCircle size={16} className="flex-shrink-0" aria-hidden="true" />
               {loadError}
             </p>
+          )}
+          {balance.frozen > 0 && (
+            <StatusBanner tone="suspended" title={<span className="tabular-nums">{`Commissions gelées : ${formatFcfa(balance.frozen)}.`}</span>}>
+              Un événement pour lequel vos filleuls ont acheté des billets est suspendu : ces commissions ne sont pas retirables tant qu’il l’est.
+            </StatusBanner>
           )}
           <div className="space-y-2 rounded-3xl bg-brand p-6 text-on-brand shadow-lg sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-2">
