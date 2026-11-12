@@ -649,7 +649,7 @@ export default function WalletPage() {
                 <Send size={16} className="text-brand-fg" aria-hidden="true" /> Retraits en cours
               </p>
               <p className="text-lg font-bold tabular-nums text-fg">{formatFcfa(balance.inProgress)}</p>
-              <p className="text-sm leading-relaxed text-fg-muted">Montant réservé pendant l’envoi vers Wave ou Orange Money.</p>
+              <p className="text-sm leading-relaxed text-fg-muted">Montant réservé sur votre solde, frais compris, pendant l’envoi vers Wave ou Orange Money.</p>
             </div>
             <div className={statClass}>
               <p className="flex items-center gap-1.5 text-sm font-semibold text-fg-muted">
