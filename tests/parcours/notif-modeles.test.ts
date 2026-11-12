@@ -202,7 +202,7 @@ function sync(type: string): ExpectedType {
 }
 
 const PE = '/partner/events/:event';
-const EXPECTED: ExpectedType[] = [...lot9bisExpected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier
+const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types
     ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A', 'TICKET', ['/tickets'], 'Achat confirmé'),
     ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B', 'TICKET', ['/tickets'], 'Billets confirmés'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A', null, null, null),
@@ -294,7 +294,7 @@ const IN_APP_WITH_TITLE = new Set([
     'EVENT_REJECTED', 'EVENT_SUSPENDED', 'EVENT_REACTIVATED', 'EVENT_PUBLISHED_BY_ADMIN', 'FIRST_TICKET_SOLD', 'NEW_ORDER',
     'CATEGORY_SOLD_OUT', 'EVENT_SOLD_OUT', 'SHIFT_DISCREPANCY', 'SHIFT_CLOSED_BY_OTHER', 'CANCEL_REFUNDS_DONE',
     'CANCEL_REFUNDS_BLOCKED', 'CONTROLLER_ASSIGNED', 'CONTROLLER_UNASSIGNED', 'CONTROLLER_REMINDER', 'ADMIN_EVENT_SUBMITTED',
-    'PROMOTION_DECIDED',
+    'PROMOTION_DECIDED', 'TICKET_REFUNDED_HOLDER', 'ADMIN_EVENT_PUBLISHED', 'ADMIN_EVENT_WITHDRAWN', 'SCAN_REFUSALS_ALERT',
 ]);
 
 /**
@@ -387,7 +387,7 @@ function variants(type: string, base: Data): Data[] {
     if (type === 'CONTROLLER_REMINDER' || type === 'CONTROLLER_ASSIGNED') {
         return [{ ...base, can_accept_cash: false }, { ...base, can_accept_cash: true }, { ...base, entry_point: null }];
     }
-    return [base];
+    return type === 'ADMIN_EVENT_CHANGED' ? adminChangeVariants(base) : [base]; // lot 9 ter (B.7 T-B3) : parties PRICE et CHANNELS
 }
 
 /** Toutes les sorties texte d'un type pour un jeu de données (canaux déclarés). */
@@ -804,13 +804,16 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['CONTROLLER_REMINDER', { ...ev, entry_point: null, can_accept_cash: false }, [],
                 `Event Village : demain Gala Dakar à 20:00, point à préciser, espèces non autorisées. Connexion : ${U}/login`],
             ['CONTROLLER_ACTIVATED', {}, [], 'Event Village : votre compte est activé. Vous pouvez vous connecter et scanner les billets.'],
+            // Lot 9 ter (9t.2, contrat 11.1 et 11.2 N1) : détenteur actuel d'un billet transféré, texte de la consigne 0.2 mot pour mot.
+            ['TICKET_REFUNDED_HOLDER', { ...ev, ticket_id: '5d1f0c3e-8a2b-4c6d-9e0f-1a2b3c4d5e6f', category: 'VIP' }, [],
+                'Event Village : votre billet VIP pour Gala Dakar a été annulé. Le remboursement est versé à l\'acheteur d\'origine.'],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).
         assert.deepEqual(SMS_TYPES.map((e) => e.type).filter((t) => !covered.has(t) && !(t in LOT9BIS_SMS_PATTERNS)), [], 'chaque type SMS de G3 a son texte exact');
         const issues: string[] = [];
         for (const [type, over, drop, expected] of cases) {
-            const e = catalog[type];
+            const e = known(catalog, type); // lot 9 ter : type absent nommé (jamais une TypeError)
             const text = e.sms!(dataFrom(e.sample, over, drop), CTX);
             if (text !== expected) issues.push(`${type}\n  reçu    : ${text}\n  attendu : ${expected}`);
             else if (measureSms(text).encoding !== 'GSM7') issues.push(`${type} : hors GSM-7`);
@@ -1115,5 +1118,110 @@ describe('Lot 9 bis (T51) : textes fixes des types nouveaux et modifiés (contra
             }
         }
         assert.deepEqual(issues, [], issues.join('\n'));
+    });
+});
+
+// ── Lot 9 ter (B.7 T-B1 à T-B3, contrat 11.1 et 11.2) : types nouveaux et parties nouvelles d'ADMIN_EVENT_CHANGED ──
+
+/**
+ * Lot 9 ter (B.7 T-B1, contrat 11.1 N1 à N4) : les 4 types nouveaux du lot, dont SCAN_REFUSALS_ALERT de la section D
+ * (9t.18), insérés dans la table G2 par cette déclaration hissée (le fichier est cité par la matrice à la ligne 504 : les
+ * lignes d'avant gardent leur numéro). Rouge jusqu'à fix(9t.registre) (M04 et catalogue) : chaque boucle nomme le type absent.
+ */
+function lot9terExpected(): ExpectedType[] {
+    return [
+        ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A', 'TICKET', ['/tickets'], 'Billet annulé'),
+        ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement publié par l\'organisateur', 'events.read'),
+        ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Soumission retirée par l\'organisateur', 'events.read'),
+        ess('SCAN_REFUSALS_ALERT', [I, P, M], 'PARTNER', 'B', 'ALERT', ['/partner/events/:event?tab=entrees'], 'Refus en série à une porte'),
+    ];
+}
+
+/** Lot 9 ter (B.7 T-B3, 9t.10) : ADMIN_EVENT_CHANGED rendu aussi avec les parties PRICE, CHANNELS et les deux ensemble. */
+function adminChangeVariants(base: Data): Data[] {
+    return [
+        base,
+        { ...base, changes: ['PRICE'], category: base.category ?? 'VIP', old_price: 10000, new_price: 15000 },
+        { ...base, changes: ['CHANNELS'], category: base.category ?? 'VIP', sale_online: false, sale_counter: true },
+        { ...base, changes: ['PRICE', 'CHANNELS'], category: base.category ?? 'VIP', old_price: 10000, new_price: 15000, sale_online: true, sale_counter: false },
+    ];
+}
+
+const LOT9TER_TICKET_ID = '5d1f0c3e-8a2b-4c6d-9e0f-1a2b3c4d5e6f';
+
+describe('Lot 9 ter : textes exacts des types nouveaux et des parties nouvelles (contrat 11.1, 11.2 N1 à N4, M1)', () => {
+    test('TICKET_REFUNDED_HOLDER (N1, 9t.2) : in-app « Billet annulé », catégorie et titre en entier, lien /tickets ; SMS d\'un segment GSM-7 au pire cas', async () => {
+        const e = await entry('TICKET_REFUNDED_HOLDER');
+        const d = dataFrom(e.sample, { ...SHORT_EVENT, ticket_id: LOT9TER_TICKET_ID, category: 'VIP' });
+        const r = e.inApp!(d);
+        assert.equal(norm(r.title), 'Billet annulé');
+        assert.match(norm(r.content), fixedText('Votre billet VIP pour « Gala Dakar » du {date} a été annulé. Le remboursement est versé à l\'acheteur d\'origine.'),
+            `contenu in-app (N1) : « ${norm(r.content)} »`);
+        assert.ok(norm(r.content).startsWith('Votre billet VIP pour « Gala Dakar » du '), `catégorie et titre en clair : « ${norm(r.content)} »`);
+        assert.equal(e.link(d), '/tickets', 'lien N1');
+        const worst = dataFrom(e.sample, { title: LONG_GSM_TEXT, category: 'Carré VVIP « Prestige » {[~]} € tribune d’honneur' });
+        const text = e.sms!(worst, CTX);
+        const m = measureSms(text);
+        assert.deepEqual({ encoding: m.encoding, segments: m.segments }, { encoding: 'GSM7', segments: 1 }, `SMS au pire cas : ${m.length} septets — ${text}`);
+        assert.ok(text.endsWith(' a été annulé. Le remboursement est versé à l\'acheteur d\'origine.'), `fin du SMS (consigne 0.2) : ${text}`);
+    });
+
+    test('ADMIN_EVENT_PUBLISHED et ADMIN_EVENT_WITHDRAWN (N2, N3, 9t.10) : titres, contenus exacts avec et sans société, lien de la fiche admin, aucun SMS', async () => {
+        const pub = await entry('ADMIN_EVENT_PUBLISHED');
+        const wd = await entry('ADMIN_EVENT_WITHDRAWN');
+        const withCompany = { ...SHORT_EVENT, company: 'Sabar Events' };
+        const rendered = (e: CatalogEntry, d: Data): { title: string; content: string } => {
+            const r = e.inApp!(d);
+            return { title: norm(r.title), content: norm(r.content) };
+        };
+        assert.deepEqual(rendered(pub, dataFrom(pub.sample, withCompany)), {
+            title: 'Événement publié par l\'organisateur',
+            content: '« Gala Dakar » de Sabar Events est publié par l\'organisateur : sa page publique est en ligne.',
+        }, 'N2 avec société');
+        assert.equal(rendered(pub, dataFrom(pub.sample, SHORT_EVENT, ['company'])).content,
+            '« Gala Dakar » est publié par l\'organisateur : sa page publique est en ligne.', 'N2 sans société');
+        assert.deepEqual(rendered(wd, dataFrom(wd.sample, withCompany)), {
+            title: 'Soumission retirée par l\'organisateur',
+            content: '« Gala Dakar » de Sabar Events est retiré de la validation par l\'organisateur : il n\'attend plus votre examen.',
+        }, 'N3 avec société');
+        assert.equal(rendered(wd, dataFrom(wd.sample, SHORT_EVENT, ['company'])).content,
+            '« Gala Dakar » est retiré de la validation par l\'organisateur : il n\'attend plus votre examen.', 'N3 sans société');
+        assert.equal(pub.link(dataFrom(pub.sample, withCompany)), `/admin/events/${EVENT_ID}`, 'lien N2');
+        assert.equal(wd.link(dataFrom(wd.sample, withCompany)), `/admin/events/${EVENT_ID}`, 'lien N3');
+        assert.equal(pub.sms, undefined, 'N2 : aucun SMS');
+        assert.equal(wd.sms, undefined, 'N3 : aucun SMS');
+    });
+
+    test('SCAN_REFUSALS_ALERT (N4, 9t.18) : « {porte} : {n} refus en {m} minutes pour « {titre} ». » ; « minute » au singulier ; lien vers l\'onglet Entrées ; aucun SMS', async () => {
+        const e = await entry('SCAN_REFUSALS_ALERT');
+        const d = dataFrom(e.sample, { ...SHORT_EVENT, gate_name: 'Porte B', zone_name: 'Entrée générale', refused_count: 12, window_minutes: 5, threshold: 10 });
+        const r = e.inApp!(d);
+        assert.deepEqual({ title: norm(r.title), content: norm(r.content) }, {
+            title: 'Refus en série à une porte',
+            content: 'Porte B : 12 refus en 5 minutes pour « Gala Dakar ». Vérifiez la porte avec vos contrôleurs.',
+        }, 'N4, 5 minutes');
+        assert.equal(norm(e.inApp!(dataFrom(d, { window_minutes: 1 })).content),
+            'Porte B : 12 refus en 1 minute pour « Gala Dakar ». Vérifiez la porte avec vos contrôleurs.', 'N4, 1 minute');
+        assert.equal(e.link(d), `/partner/events/${EVENT_ID}?tab=entrees`, 'lien N4');
+        assert.equal(e.sms, undefined, 'N4 : aucun SMS (D-P3)');
+    });
+
+    test('ADMIN_EVENT_CHANGED (M1, 9t.10) : parties PRICE et CHANNELS, phrase finale inchangée', async () => {
+        const e = await entry('ADMIN_EVENT_CHANGED');
+        const base: Data = { ...SHORT_EVENT, company: 'Sabar Events', category: 'VIP' };
+        const content = (over: Data): string => norm(e.inApp!(dataFrom(e.sample, { ...base, ...over }, ['old_title'])).content);
+        const fcfa = (n: number): string => norm(formatFcfa(n));
+        assert.equal(content({ changes: ['PRICE'], old_price: 10000, new_price: 15000 }),
+            `« Gala Dakar » de Sabar Events : nouveau prix pour « VIP » (${fcfa(15000)} au lieu de ${fcfa(10000)}) après validation. Vérifiez la fiche.`, 'PRICE');
+        const channels: Array<[boolean, boolean, string]> = [
+            [true, true, 'en ligne et au guichet'], [true, false, 'en ligne seulement'], [false, true, 'au guichet seulement'], [false, false, 'aucun canal'],
+        ];
+        for (const [online, counter, label] of channels) {
+            assert.equal(content({ changes: ['CHANNELS'], sale_online: online, sale_counter: counter }),
+                `« Gala Dakar » de Sabar Events : canaux de vente de « VIP » changés (${label}) après validation. Vérifiez la fiche.`, `CHANNELS ${online}/${counter}`);
+        }
+        assert.equal(content({ changes: ['PRICE', 'CHANNELS'], old_price: 10000, new_price: 15000, sale_online: true, sale_counter: false }),
+            `« Gala Dakar » de Sabar Events : nouveau prix pour « VIP » (${fcfa(15000)} au lieu de ${fcfa(10000)}), canaux de vente de « VIP » changés (en ligne seulement) après validation. Vérifiez la fiche.`,
+            'PRICE et CHANNELS : une alerte, deux parties');
     });
 });

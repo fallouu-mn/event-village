@@ -443,7 +443,7 @@ const INVENTORY: Insertion[] = [
     { k1: '9.2', fn: 'account_phone_finalize', types: ['PHONE_CHANGED', 'TRANSFER_RECIPIENT_CHANGED'] }, // lot 9 bis (R63, T37)
     // Lot 9 bis (T37, contrat 3.2 et 11.1) : points d'insertion des types nouveaux ; rouges jusqu'à leur migration (M04, M06, M08, M09).
     { k1: '9b.17', fn: 'partner_dossier_resubmit', types: ['ADMIN_PARTNER_RESUBMITTED'] },
-    { k1: '9b.23, 9b.34', fn: 'ticket_refund_request', types: ['TRANSFER_REVOKED', 'TICKET_CANCELLED'] },
+    { k1: '9b.23, 9b.34, 9t.2', fn: 'ticket_refund_request', types: ['TRANSFER_REVOKED', 'TICKET_CANCELLED', 'TICKET_REFUNDED_HOLDER'] },
     { k1: '9b.23', fn: 'ticket_transfer_decline', types: ['TRANSFER_DECLINED_SENDER'] },
     { k1: '9b.26', fn: 'controller_invitation_create', types: ['CONTROLLER_INVITATION'] },
     { k1: '9b.34', fn: 'ticket_invitation_cancel', types: ['TICKET_CANCELLED'] },
@@ -451,6 +451,10 @@ const INVENTORY: Insertion[] = [
     { k1: '9b.36', trigger: { name: 'trg_events_admin_change_alert', table: 'public.events' }, types: ['ADMIN_EVENT_CHANGED'] },
     { k1: '9b.36', trigger: { name: 'trg_ticket_categories_admin_alert', table: 'public.ticket_categories' }, types: ['ADMIN_EVENT_CHANGED'] },
     { k1: '9b.37', trigger: { name: 'trg_controller_shifts_report_ready', table: 'public.controller_shifts' }, types: ['CLOSING_REPORT_READY'] },
+    // Lot 9 ter (B.7 T-B6, K1) : points d'insertion des types nouveaux ; rouges jusqu'à M06 (9t.10) et M10 (9t.18).
+    { k1: '9t.10', trigger: { name: 'trg_event_status_admin_alert', table: 'public.event_status_history' }, types: ['ADMIN_EVENT_PUBLISHED', 'ADMIN_EVENT_WITHDRAWN'] },
+    { k1: '9t.10', trigger: { name: 'trg_ticket_categories_admin_update_alert', table: 'public.ticket_categories' }, types: ['ADMIN_EVENT_CHANGED'] },
+    { k1: '9t.18', trigger: { name: 'trg_ticket_scans_refusal_alert', table: 'public.ticket_scans' }, types: ['SCAN_REFUSALS_ALERT'] },
 ];
 
 /** Types sans point d'insertion SQL littéral : appelés par TypeScript (OTP, invitation, plafond SMS ; lot 9 bis : lien de vérification d'email, synchrone, T37). */

@@ -185,6 +185,11 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('CLOSING_REPORT_READY', [I, M], 'PARTNER', 'A'),
     ess('FUNDS_AVAILABLE', [I, M], 'PARTNER', 'B'),
     { type: 'EMAIL_VERIFICATION', family: 'ESSENTIAL', topic: null, channels: [M], audience: 'ANY', suspended_policy: 'ALLOW', sync_only: true, admin_permission: null },
+    // Lot 9 ter (B.7 T-B4, contrat 11.1) : types nouveaux du lot, dont SCAN_REFUSALS_ALERT de la section D ; rouges jusqu'à M04.
+    ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A'),
+    ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'events.read'),
+    ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'events.read'),
+    ess('SCAN_REFUSALS_ALERT', [I, P, M], 'PARTNER', 'B'),
 ];
 
 const LOT6_TABLES = ['notification_outbox', 'notification_types', 'notification_preferences', 'push_subscriptions'] as const;
