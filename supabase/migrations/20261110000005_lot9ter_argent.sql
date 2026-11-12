@@ -19,6 +19,11 @@
 --  9t.6 (consigne 0.6, fix(9t.6), conditionnel, déclenché par le run « avant » 128) — risque w19 :
 --   3. cashout_fee_apply (recopie F10, base 20261109000005_lot9bis_samirpay.sql:80-182) : frais d'un remboursement
 --      passé en entier en créance → entièrement en créance, plus de repli de date ; w19 inchangé.
+--  9t.7 (consigne 0.7, fix(9t.7)) — commissions de parrainage d'un événement suspendu :
+--   4. fin_frozen_amount (recopie F8, base 20261109000006_lot9bis_argent.sql:205-228) : branche PARRAINAGE (événement
+--      de l'écriture, à défaut celui du paiement) ; branche ORGANISATEUR identique à la base.
+--   5. fin_withdrawal_check (recopie F9, base 20261109000006_lot9bis_argent.sql:236-321) : message FUNDS_FROZEN propre
+--      au parrain ; texte ORGANISATEUR inchangé. fin_referral_allocate non recopiée (D-A20).
 -- ============================================================================
 
 
@@ -249,3 +254,157 @@ $$;
 
 REVOKE ALL ON FUNCTION public.cashout_fee_apply(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.cashout_fee_apply(uuid) TO service_role;
+
+
+-- ----------------------------------------------------------------------------
+-- 4. fin_frozen_amount(p_owner uuid, p_kind text, p_at timestamptz) — gel des commissions de parrainage (9t.7, F8)
+--    Base : 20261109000006_lot9bis_argent.sql:205-228 (dernière définition, grep de toutes les migrations), recopie
+--    à signature (uuid, text, timestamptz) → numeric, STABLE, SECURITY DEFINER et search_path identiques.
+--    Garde d'entrée élargie à PARRAINAGE (équivaut à la base pour ORGANISATEUR : tout autre compte → 0) ; branche
+--    ORGANISATEUR identique à la requête de base, mot pour mot. Nouvelle branche PARRAINAGE (D-A20) : net échu des
+--    écritures dont l'événement est SUSPENDU, événement de l'écriture, à défaut celui du paiement (crédits au prorata,
+--    annulations, régularisations) ; sans événement : jamais gelé. Calculé à la lecture : dégel à la reprise, sans
+--    écriture. Lu par finance_account_balance (F20, B) et fin_withdrawal_check (F9) sans changement d'appel.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fin_frozen_amount(p_owner uuid, p_kind text, p_at timestamptz)
+RETURNS numeric
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_frozen numeric;
+BEGIN
+    IF p_owner IS NULL OR p_kind IS NULL OR p_kind NOT IN ('ORGANISATEUR', 'PARRAINAGE') THEN
+        RETURN 0;
+    END IF;
+    IF p_kind = 'ORGANISATEUR' THEN
+        SELECT COALESCE(sum(GREATEST(n.net, 0)), 0) INTO v_frozen
+          FROM (SELECT l.event_id, sum(l.amount) AS net
+                  FROM public.finance_ledger l
+                  JOIN public.events e ON e.id = l.event_id
+                 WHERE l.owner_id = p_owner AND l.account_kind = 'ORGANISATEUR'
+                   AND e.status::text = 'SUSPENDU'
+                   AND l.available_at <= COALESCE(p_at, now())
+                 GROUP BY l.event_id) n;
+        RETURN v_frozen;
+    END IF;
+    -- Lot 9 ter (0.7) : commissions gelées comme les recettes de l'événement (B14), calculé à la lecture. Événement de
+    -- l'écriture, à défaut celui du paiement (crédits au prorata, annulations, régularisations) ; sans événement
+    -- (abonnement, retrait, compensation sans événement) : jamais gelé. Dégel à la reprise, sans écriture.
+    SELECT COALESCE(sum(GREATEST(n.net, 0)), 0) INTO v_frozen
+      FROM (SELECT COALESCE(l.event_id, p.event_id) AS event_id, sum(l.amount) AS net
+              FROM public.finance_ledger l
+              LEFT JOIN public.payments p ON p.id = l.payment_id
+             WHERE l.owner_id = p_owner AND l.account_kind = 'PARRAINAGE'
+               AND l.available_at <= COALESCE(p_at, now())
+             GROUP BY 1) n
+      JOIN public.events e ON e.id = n.event_id
+     WHERE e.status::text = 'SUSPENDU';
+    RETURN v_frozen;
+END;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- 5. fin_withdrawal_check(p_user uuid, p_kind text, p_gross numeric, p_at timestamptz) — refus de gel juste pour un
+--    parrain (9t.7, F9)
+--    Base : 20261109000006_lot9bis_argent.sql:236-321 (dernière définition, grep de toutes les migrations), recopie
+--    intégrale à signature (uuid, text, numeric, timestamptz) → jsonb, STABLE, SECURITY DEFINER et search_path
+--    identiques. Seul changement : le message du refus FUNDS_FROZEN (base :295-296) dépend du compte ; texte
+--    ORGANISATEUR inchangé à l'octet.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fin_withdrawal_check(p_user uuid, p_kind text, p_gross numeric, p_at timestamptz)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_at           timestamptz := COALESCE(p_at, now());
+    v_status       text;
+    v_min          numeric;
+    v_available    numeric;
+    v_frozen       numeric;
+    v_withdrawable numeric;
+    v_rate         numeric;
+    v_fee          numeric;
+    v_net          numeric;
+    v_unlock       timestamptz;
+BEGIN
+    IF p_kind IS NULL OR p_kind NOT IN ('ORGANISATEUR', 'PARRAINAGE') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ACCOUNT', 'message', 'Compte inconnu.');
+    END IF;
+    IF p_gross IS NULL OR p_gross <= 0 OR p_gross <> trunc(p_gross) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_AMOUNT', 'message', 'Montant entier en FCFA attendu.');
+    END IF;
+
+    -- Statut du compte
+    SELECT u.status::text INTO v_status FROM public.users u WHERE u.id = p_user;
+    IF v_status IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Compte inconnu.');
+    END IF;
+    IF v_status <> 'ACTIF' THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Compte inactif.');
+    END IF;
+    IF p_kind = 'ORGANISATEUR'
+       AND NOT EXISTS (SELECT 1 FROM public.partners pa WHERE pa.user_id = p_user AND pa.status::text = 'VALIDE') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'NOT_PARTNER', 'message', 'Aucun compte organisateur validé.');
+    END IF;
+
+    -- Minimum (milliers séparés par une espace insécable)
+    v_min := public.fin_setting_num('finance.withdrawal_min_amount');
+    IF p_gross < v_min THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'BELOW_MINIMUM', 'minimum', v_min,
+            'message', format('Le minimum de retrait est de %s F CFA.',
+                              regexp_replace(trunc(v_min)::bigint::text, '(\d)(?=(\d{3})+$)', '\1' || chr(160), 'g')));
+    END IF;
+
+    -- Solde disponible (écritures échues à v_at)
+    SELECT COALESCE(sum(amount), 0) INTO v_available FROM public.finance_ledger
+     WHERE owner_id = p_user AND account_kind = p_kind AND available_at <= v_at;
+    IF p_gross > public.fin_round_down(GREATEST(v_available, 0)) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INSUFFICIENT_BALANCE', 'available', v_available,
+                                  'message', 'Solde disponible insuffisant.');
+    END IF;
+
+    -- Gel (R4) : le net échu des événements suspendus n'est pas retirable
+    v_frozen := public.fin_frozen_amount(p_user, p_kind, v_at);
+    v_withdrawable := public.fin_round_down(GREATEST(v_available - v_frozen, 0));
+    IF p_gross > v_withdrawable THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'FUNDS_FROZEN', 'frozen', v_frozen, 'withdrawable', v_withdrawable,
+                                  'message', CASE WHEN p_kind = 'PARRAINAGE'
+                                                  THEN 'Une partie de vos commissions est gelée : un événement pour lequel vos filleuls ont acheté des billets est suspendu.'
+                                                  ELSE 'Une partie de vos fonds est gelée : un de vos événements est suspendu.' END);
+    END IF;
+
+    -- Lot 9 bis (ex-10.0 a, B26) : 24 h fixes après le dernier changement de numéro (audit écrit par
+    -- account_phone_finalize dans sa transaction), pour les deux comptes et tous les moyens de retrait
+    SELECT max(a.created_at) + interval '24 hours' INTO v_unlock
+      FROM public.audit_logs a
+     WHERE a.action = 'ACCOUNT_PHONE_CHANGED' AND a.object_type = 'users' AND a.object_id = p_user;
+    IF v_unlock IS NOT NULL AND v_unlock > v_at THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'WITHDRAWAL_LOCKED_PHONE_CHANGE', 'unlock_at', v_unlock,
+            'message', format('Retrait impossible pendant 24 h après un changement de numéro. Réessayez après le %s.',
+                              to_char(v_unlock AT TIME ZONE 'Africa/Dakar', 'DD/MM/YYYY "à" HH24:MI')));
+    END IF;
+
+    -- Frais et net
+    v_rate := public.fin_setting_num('finance.withdrawal_fee_rate');
+    v_fee := public.fin_round_up(p_gross * v_rate / 100);
+    v_net := p_gross - v_fee;
+    IF v_net <= 0 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_AMOUNT', 'message', 'Montant trop faible après frais.');
+    END IF;
+
+    RETURN jsonb_build_object('ok', true, 'minimum', v_min, 'fee_rate', v_rate, 'fee_amount', v_fee, 'net_amount', v_net,
+                              'available', v_available, 'frozen', v_frozen, 'withdrawable', v_withdrawable);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fin_frozen_amount(uuid, text, timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fin_frozen_amount(uuid, text, timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fin_withdrawal_check(uuid, text, numeric, timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fin_withdrawal_check(uuid, text, numeric, timestamptz) TO service_role;
