@@ -23,6 +23,16 @@
 --      CONTROLLER_CONSENT_REQUIRED avant toute écriture (B-D7).
 --   8. Rétro-remplissage de partner_controllers (affectations, caisses, invitations acceptées, scans de contrôleur),
 --      ON CONFLICT DO NOTHING : rejouable.
+--  9t.10 (consigne 0.8, R95 reste, fix(9t.10)) — cloche aux admins events.read (B-D10 à B-D12) :
+--   4. notif_event_status_admin_alert() (nouvelle, F13) + trigger trg_event_status_admin_alert AFTER INSERT sur
+--      event_status_history : VALIDE → PUBLIE par la partenaire → ADMIN_EVENT_PUBLISHED ; EN_ATTENTE → BROUILLON par
+--      la partenaire → ADMIN_EVENT_WITHDRAWN (cloche et email, aucun SMS) ; clé <type>:<historique>:<admin>. Rien
+--      quand un admin agit. notif_event_status_changed non recopiée.
+--   5. notif_ticket_categories_admin_update_alert() (nouvelle, F14) + trigger trg_ticket_categories_admin_update_alert
+--      AFTER UPDATE OF price, sale_online, sale_counter (WHEN l'un d'eux change) sur ticket_categories : événement
+--      VALIDE, PUBLIE ou SUSPENDU → ADMIN_EVENT_CHANGED parties PRICE et CHANNELS, une alerte par enregistrement,
+--      clé <event>:catupd<catégorie>:tx<txid> (distincte de l'ajout …:cat<catégorie>). Une vente, une quantité, la
+--      couleur ou la consigne ne déclenchent rien ; aucune alerte de désactivation (B-D12).
 -- ============================================================================
 
 
@@ -86,6 +96,105 @@ BEGIN
        AND EXISTS (SELECT 1 FROM public.partner_controllers pc WHERE pc.partner_id = p_partner AND pc.user_id = p_user);
 END;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 4. notif_event_status_admin_alert (nouvelle, F13) + trigger trg_event_status_admin_alert — tâche 9t.10 (R95).
+--    Dans event_status_apply : événement (tenu) → historique → lecture partners sans verrou → boîte d'envoi.
+--    Destinataires : SUPERADMIN et ADMIN actifs munis de events.read (notif_enqueue_admins, 20261103000002:598-624).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notif_event_status_admin_alert()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_type text;
+    v_company text;
+BEGIN
+    IF NEW.old_status IS NULL OR NEW.channel <> 'TRANSITION' OR NEW.actor_role <> 'PARTENAIRE' THEN
+        RETURN NULL;
+    END IF;
+    IF NEW.old_status::text = 'VALIDE' AND NEW.new_status::text = 'PUBLIE' THEN
+        v_type := 'ADMIN_EVENT_PUBLISHED';
+    ELSIF NEW.old_status::text = 'EN_ATTENTE' AND NEW.new_status::text = 'BROUILLON' THEN
+        v_type := 'ADMIN_EVENT_WITHDRAWN';
+    ELSE
+        RETURN NULL;
+    END IF;
+    SELECT pa.company_name INTO v_company
+      FROM public.events e LEFT JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = NEW.event_id;
+    PERFORM public.notif_enqueue_admins(jsonb_build_object(
+        'type', v_type, 'ref', NEW.id::text, 'event_id', NEW.event_id,
+        'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object('company', v_company))));
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_event_status_admin_alert ON public.event_status_history;
+CREATE TRIGGER trg_event_status_admin_alert
+    AFTER INSERT ON public.event_status_history
+    FOR EACH ROW
+    EXECUTE FUNCTION public.notif_event_status_admin_alert();
+
+
+-- ----------------------------------------------------------------------------
+-- 5. notif_ticket_categories_admin_update_alert (nouvelle, F14) + trigger trg_ticket_categories_admin_update_alert
+--    — tâche 9t.10 (R95). Dans ticket_category_update (un seul UPDATE, une alerte par enregistrement) : catégorie
+--    (tenue) → lecture events, partners sans verrou → boîte d'envoi. Le chemin d'achat n'écrit ni price ni les
+--    canaux : le trigger ne s'y exécute pas.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notif_ticket_categories_admin_update_alert()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_status text;
+    v_company text;
+    v_changes text[] := ARRAY[]::text[];
+BEGIN
+    SELECT e.status::text, pa.company_name INTO v_status, v_company
+      FROM public.events e LEFT JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = NEW.event_id;
+    IF v_status IS NULL OR v_status NOT IN ('VALIDE', 'PUBLIE', 'SUSPENDU') THEN
+        RETURN NULL;
+    END IF;
+    IF NEW.price IS DISTINCT FROM OLD.price THEN
+        v_changes := array_append(v_changes, 'PRICE');
+    END IF;
+    IF NEW.sale_online IS DISTINCT FROM OLD.sale_online OR NEW.sale_counter IS DISTINCT FROM OLD.sale_counter THEN
+        v_changes := array_append(v_changes, 'CHANNELS');
+    END IF;
+    IF cardinality(v_changes) = 0 THEN
+        RETURN NULL;
+    END IF;
+    PERFORM public.notif_enqueue_admins(jsonb_build_object(
+        'type', 'ADMIN_EVENT_CHANGED',
+        'ref', NEW.event_id::text || ':catupd' || NEW.id::text || ':tx' || txid_current()::text,
+        'event_id', NEW.event_id,
+        'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+            'changes', to_jsonb(v_changes), 'category', NEW.name,
+            'old_price', CASE WHEN 'PRICE' = ANY (v_changes) THEN OLD.price END,
+            'new_price', CASE WHEN 'PRICE' = ANY (v_changes) THEN NEW.price END,
+            'sale_online', CASE WHEN 'CHANNELS' = ANY (v_changes) THEN NEW.sale_online END,
+            'sale_counter', CASE WHEN 'CHANNELS' = ANY (v_changes) THEN NEW.sale_counter END,
+            'company', v_company))));
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_ticket_categories_admin_update_alert ON public.ticket_categories;
+CREATE TRIGGER trg_ticket_categories_admin_update_alert
+    AFTER UPDATE OF price, sale_online, sale_counter ON public.ticket_categories
+    FOR EACH ROW
+    WHEN (OLD.price IS DISTINCT FROM NEW.price OR OLD.sale_online IS DISTINCT FROM NEW.sale_online OR OLD.sale_counter IS DISTINCT FROM NEW.sale_counter)
+    EXECUTE FUNCTION public.notif_ticket_categories_admin_update_alert();
 
 
 -- ----------------------------------------------------------------------------
@@ -517,3 +626,5 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.partner_controllers_link() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.notif_event_status_admin_alert() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.notif_ticket_categories_admin_update_alert() FROM PUBLIC, anon, authenticated;
