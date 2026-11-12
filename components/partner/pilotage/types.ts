@@ -36,7 +36,7 @@ export interface PilotageOverview {
         capacity_exceeded: boolean;
         by_channel?: { online: number; cash: number; unpaid: number; free: number };
     };
-    entries: { total: number; counter: number; refused: number; attendance_rate: number | null };
+    entries: { total: number; counter: number; refused: number; attendance_rate: number | null; guest_list: number };
     revenue: {
         online: number;
         online_gross?: number;
@@ -71,15 +71,112 @@ export interface PilotageSales {
     computed_at: string;
 }
 
-export interface PilotageEntries {
+/** Origine d'un billet (règle R50, ticket_origin) : libellé servi par la base (ticket_origin_label). */
+export type EntryOrigin = 'ONLINE' | 'COUNTER' | 'FREE' | 'INVITATION';
+
+/** Ligne « par zone » de pilotage_compute_entries (lot 9 ter, 9t.18). ENTREE : entrés sur attendus ; CONTROLE : contrôlés sur entrés. */
+export interface EntriesZoneRow {
+    zone_id: string | null;
+    name: string;
+    kind: 'ENTREE' | 'CONTROLE' | null;
+    implicit: boolean;
+    expected: number | null;
+    entered: number | null;
+    checked: number | null;
+    refused: number;
+}
+
+/** Ligne « par porte » : une porte d'une zone, ou un point d'entrée sans porte (gate_id null). Débit et contrôleurs actifs : en direct seulement. */
+export interface EntriesGateRow {
+    gate_key: string;
+    gate_id: string | null;
+    name: string | null;
+    zone_id: string | null;
+    zone_name: string | null;
+    accepted: number;
+    refused: number;
+    controllers_assigned: number;
+    rate_per_minute?: number;
+    controllers_active?: number;
+}
+
+export interface EntriesCategoryRow {
+    category_id: string;
+    name: string;
+    expected: number;
+    accepted: number;
+}
+
+export interface EntriesOriginRow {
+    origin: EntryOrigin;
+    label: string;
+    expected: number;
+    entered: number;
+}
+
+export interface EntriesQuarterRow {
+    start: string;
+    accepted: number;
+    refused: number;
+}
+
+export interface EntriesRefusalRow {
+    result: string;
+    label: string | null;
+    count: number;
+}
+
+/** Entrées validées par la liste des invités ; guest_name n'est servi qu'à la propriétaire de l'événement. */
+export interface EntriesGuestList {
+    count: number;
+    items: Array<{
+        scan_id: string;
+        at: string;
+        category: string | null;
+        gate: string | null;
+        zone: string | null;
+        controller: string;
+        guest_name: string | null;
+    }>;
+}
+
+/**
+ * Vues figées des entrées (pilotage_compute_entries) : même source pour l'onglet Entrées et le rapport de clôture.
+ * Tous les nombres sont calculés par la base.
+ */
+export interface EntriesViews {
+    configured: boolean;
+    totals: { total: number; counter: number; guest_list: number; refused: number; zone_checks: number };
+    by_zone: EntriesZoneRow[];
+    by_gate: EntriesGateRow[];
+    by_category: EntriesCategoryRow[];
+    by_origin: EntriesOriginRow[];
+    by_quarter: EntriesQuarterRow[];
+    refusals_by_reason: EntriesRefusalRow[];
+    guest_list: EntriesGuestList;
+}
+
+/** Données « en direct » de l'onglet Entrées seulement (pilotage_entries), jamais dans la clôture. */
+export interface EntriesLive {
+    rate: { window_minutes: number; per_minute: number; by_minute: Array<{ start: string; accepted: number }> };
+    controllers: { window_minutes: number; assigned: number; active: number };
+    alerts: Array<{ gate_key: string; name: string; zone_name: string | null; refused: number; window_minutes: number; threshold: number }>;
+    alert_settings: { threshold: number; minutes: number };
+}
+
+export interface PilotageEntries extends EntriesLive {
     total: number;
     counter: number;
     refused: number;
+    configured: boolean;
+    zone_checks: number;
     by_scanner: Array<{
         scanner_id: string;
         name: string;
         role: string | null;
         entry_point: string | null;
+        gate: string | null;
+        active: boolean;
         assigned: boolean;
         accepted: number;
         refused: number;
@@ -88,9 +185,13 @@ export interface PilotageEntries {
         last_incident_at: string | null;
     }>;
     by_entry_point: Array<{ entry_point: string | null; accepted: number; refused: number }>;
-    by_category: Array<{ category_id: string; name: string; accepted: number }>;
-    by_quarter: Array<{ start: string; accepted: number; refused: number }>;
-    refusals_by_reason: Array<{ result: string; label: string | null; count: number }>;
+    by_zone: EntriesZoneRow[];
+    by_gate: EntriesGateRow[];
+    by_category: EntriesCategoryRow[];
+    by_origin: EntriesOriginRow[];
+    by_quarter: EntriesQuarterRow[];
+    refusals_by_reason: EntriesRefusalRow[];
+    guest_list: EntriesGuestList;
     repeated_attempts: Array<{
         ticket_id: string;
         ticket_number: string | null;
@@ -188,6 +289,8 @@ export interface PilotageClosing {
         funds_available_to: string | null;
     };
     report: Pick<PilotageOverview, 'tickets' | 'entries' | 'revenue'>;
+    /** Vues figées des entrées (pilotage_compute_entries, sans nom d'invité ni donnée en direct). */
+    entries?: EntriesViews;
     computed_at: string;
 }
 
@@ -222,4 +325,12 @@ export function incidentLabel(kind: string | null | undefined): string {
 export function dakarLocalToIso(value: string | null | undefined): string | null {
     if (!value) return null;
     return /(?:Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value.replace(' ', 'T')}Z`;
+}
+
+const PER_MINUTE_FORMAT = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** Débit servi par la base (arrondi à une décimale) : « 2,2 par minute ». */
+export function formatPerMinute(value: number | null | undefined): string {
+    const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    return `${PER_MINUTE_FORMAT.format(n)} par minute`;
 }
