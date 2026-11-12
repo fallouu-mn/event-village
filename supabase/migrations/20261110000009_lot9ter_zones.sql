@@ -487,6 +487,7 @@ DECLARE
     v_gate_keys text[] := ARRAY[]::text[];
     v_req_zones uuid[] := ARRAY[]::uuid[];
     v_req_gates uuid[] := ARRAY[]::uuid[];
+    v_final_zones uuid[] := ARRAY[]::uuid[];
     v_has_entry boolean := FALSE;
     v_id uuid;
     v_zone uuid;
@@ -694,12 +695,13 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- 7. Écritures
+    -- 7. Écritures. Portes absentes supprimées d'abord ; toutes les zones et les portes gardées prennent leur identifiant
+    --    pour nom (première passe : un échange ou un nom repris d'une zone supprimée ne viole jamais l'unicité) ; zones
+    --    absentes supprimées en dernier, une fois leurs portes gardées déplacées (clé étrangère RESTRICT des portes).
     DELETE FROM public.zone_categories zc WHERE zc.event_id = v_event;
     DELETE FROM public.event_gates eg WHERE eg.event_id = v_event AND NOT (eg.id = ANY (v_req_gates));
-    DELETE FROM public.event_zones ez WHERE ez.event_id = v_event AND NOT (ez.id = ANY (v_req_zones));
-    UPDATE public.event_zones ez SET name = ez.id::text WHERE ez.event_id = v_event AND ez.id = ANY (v_req_zones);
-    UPDATE public.event_gates eg SET name = eg.id::text WHERE eg.event_id = v_event AND eg.id = ANY (v_req_gates);
+    UPDATE public.event_zones ez SET name = ez.id::text WHERE ez.event_id = v_event;
+    UPDATE public.event_gates eg SET name = eg.id::text WHERE eg.event_id = v_event;
     FOR i IN 0 .. v_n - 1 LOOP
         z := v_zones->i;
         v_pos := CASE WHEN jsonb_typeof(z->'position') = 'number' THEN (z->>'position')::integer ELSE i END;
@@ -712,6 +714,7 @@ BEGIN
             VALUES (v_event, btrim(z->>'name'), z->>'kind', v_pos)
             RETURNING id INTO v_zone;
         END IF;
+        v_final_zones := v_final_zones || v_zone;
         INSERT INTO public.zone_categories (event_id, zone_id, category_id)
         SELECT DISTINCT v_event, v_zone, public.try_uuid(cid)
           FROM jsonb_array_elements_text(z->'category_ids') cid
@@ -725,6 +728,7 @@ BEGIN
             END IF;
         END LOOP;
     END LOOP;
+    DELETE FROM public.event_zones ez WHERE ez.event_id = v_event AND NOT (ez.id = ANY (v_final_zones));
     -- Porte renommée : le point d'entrée des contrôleurs qui y sont affectés suit
     UPDATE public.event_controllers ec SET entry_point = eg.name
       FROM public.event_gates eg
