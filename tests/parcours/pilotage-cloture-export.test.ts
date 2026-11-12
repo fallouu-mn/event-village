@@ -297,8 +297,8 @@ describe('5.10 Export des participants : POST …/participants-export', () => {
     });
 
     test('contacts avec une finalité de la liste fermée : téléphone et email ajoutés, toujours sans donnée de paiement', async () => {
-        for (const purpose of ['URGENT_EVENT_INFO', 'SAFETY_AND_RECEPTION']) {
-            const res = await participantsExport(ds.partner, ds.eventId, { includeContacts: true, purpose });
+        const exported: Array<[string, Awaited<ReturnType<typeof participantsExport>>]> = []; for (const p of ['URGENT_EVENT_INFO', 'SAFETY_AND_RECEPTION']) exported.push([p, await participantsExport(ds.partner, ds.eventId, { includeContacts: true, purpose: p })]); // lot 9 ter (run 128) : les deux exports avant toute assertion, journalisés pour :318
+        for (const [purpose, res] of exported) {
             const csv = assertCsv(res, `export avec contacts (${purpose})`);
             assert.equal(csv.header.length, 9, `${purpose} : neuf colonnes avec téléphone et email (lot 9 ter) : ${JSON.stringify(csv.header)}`);
             const nameCol = columnIndex(csv.header, HEADER_PATTERNS.name, purpose);
