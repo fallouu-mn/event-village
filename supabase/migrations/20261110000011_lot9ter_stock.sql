@@ -26,6 +26,12 @@
 --  9t.12 (consigne 0.8, R106 a, délégation fix(9t.12-SK) de S-E ; colonne de 20261110000007_lot9ter_evenements.sql) :
 --   7. public_category_stock_sync et public_event_state_sync lisent events.ended_unpublished : un événement terminé
 --      sans avoir été publié n'a ni tranche ni résumé public (ligne supprimée comme pour un statut non public, x7).
+--  9t.15 (consigne 1, délégation fix(9t.15-SK) de S-Z ; colonnes de 20261110000009_lot9ter_zones.sql) :
+--   8. ticket_category_create et ticket_category_update acceptent scan_color (une des 8 clés de la palette, ou null)
+--      et entry_instruction (espaces ramenés à un seul, vide → null, 60 caractères au plus) ; refus INVALID_INPUT
+--      avec le champ en cause. La création les lit à part (ticket_category_normalize refuse toute clé hors de sa
+--      liste, rectification 10) et n'écrit jamais zone_categories (le trigger de 09 admet la catégorie, F34).
+--      L'audit CATEGORY_CREATED porte la couleur, jamais la consigne ; CATEGORY_UPDATED est inchangé (fields).
 -- ============================================================================
 
 
@@ -247,9 +253,11 @@ $$;
 
 -- ============================================================================
 -- (5) ticket_category_create (recopie F53 de 20261106000001_lot8_canaux.sql:835-890)
--- Changement (9t.19) : texte du refus QUOTA_ABOVE_CAPACITY (code, champ et statut inchangés).
+-- Changements : texte du refus QUOTA_ABOVE_CAPACITY (9t.19 ; code, champ et statut inchangés) ; scan_color et
+-- entry_instruction lus à part, vérifiés, insérés, couleur à l'audit (9t.15).
 -- p : { event_id, actor_id, category: { name, description?, price, total_quantity, max_per_order?, sale_start?,
---       sale_end?, sale_online?, sale_counter?, is_visible?, is_active? } } → { ok, category }
+--       sale_end?, sale_online?, sale_counter?, is_visible?, is_active?, scan_color?, entry_instruction? } }
+--     → { ok, category }
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.ticket_category_create(p jsonb)
 RETURNS jsonb
@@ -261,6 +269,9 @@ AS $$
 DECLARE
     v_event uuid := public.try_uuid(p->>'event_id');
     v_actor uuid := public.try_uuid(p->>'actor_id');
+    v_cat jsonb := p->'category';
+    v_color text;
+    v_instr text;
     v_guard jsonb;
     v_capacity integer;
     v_norm jsonb;
@@ -273,9 +284,30 @@ BEGIN
         RETURN v_guard;
     END IF;
     SELECT capacity INTO v_capacity FROM public.events WHERE id = v_event;
-    v_norm := public.ticket_category_normalize(p->'category', public.event_end_at(v_event), '');
+    -- Lot 9 ter (9t.15) : couleur et consigne lues à part, la normalisation refuse toute clé hors de sa liste.
+    IF jsonb_typeof(v_cat) = 'object' THEN
+        v_norm := public.ticket_category_normalize(v_cat - 'scan_color' - 'entry_instruction', public.event_end_at(v_event), '');
+    ELSE
+        v_norm := public.ticket_category_normalize(v_cat, public.event_end_at(v_event), '');
+    END IF;
     IF (v_norm->>'ok')::boolean IS NOT TRUE THEN
         RETURN v_norm;
+    END IF;
+    IF v_cat ? 'scan_color' AND jsonb_typeof(v_cat->'scan_color') <> 'null' THEN
+        IF jsonb_typeof(v_cat->'scan_color') <> 'string'
+           OR (v_cat->>'scan_color') NOT IN ('BLANC', 'OR', 'ARGENT', 'ROSE', 'TURQUOISE', 'BLEU', 'VIOLET', 'NOIR') THEN
+            RETURN public.event_edit_refusal('INVALID_INPUT', 'Choisissez une couleur dans la liste.', 'scan_color');
+        END IF;
+        v_color := v_cat->>'scan_color';
+    END IF;
+    IF v_cat ? 'entry_instruction' AND jsonb_typeof(v_cat->'entry_instruction') <> 'null' THEN
+        IF jsonb_typeof(v_cat->'entry_instruction') <> 'string' THEN
+            RETURN public.event_edit_refusal('INVALID_INPUT', 'La consigne d’entrée ne dépasse pas 60 caractères.', 'entry_instruction');
+        END IF;
+        v_instr := NULLIF(btrim(regexp_replace(v_cat->>'entry_instruction', '\s+', ' ', 'g')), '');
+        IF char_length(v_instr) > 60 THEN
+            RETURN public.event_edit_refusal('INVALID_INPUT', 'La consigne d’entrée ne dépasse pas 60 caractères.', 'entry_instruction');
+        END IF;
     END IF;
     IF EXISTS (SELECT 1 FROM public.ticket_categories c
                 WHERE c.event_id = v_event AND lower(btrim(c.name)) = lower(v_norm->>'name')) THEN
@@ -293,15 +325,17 @@ BEGIN
     END IF;
 
     INSERT INTO public.ticket_categories (event_id, name, description, price, total_quantity, sold_quantity, max_per_order,
-                                          sale_start, sale_end, sale_online, sale_counter, is_active)
+                                          sale_start, sale_end, sale_online, sale_counter, is_active, scan_color, entry_instruction)
     VALUES (v_event, v_norm->>'name', v_norm->>'description', (v_norm->>'price')::numeric, (v_norm->>'total_quantity')::int, 0,
             (v_norm->>'max_per_order')::int, (v_norm->>'sale_start')::timestamptz, (v_norm->>'sale_end')::timestamptz,
-            (v_norm->>'sale_online')::boolean, (v_norm->>'sale_counter')::boolean, (v_norm->>'is_active')::boolean)
+            (v_norm->>'sale_online')::boolean, (v_norm->>'sale_counter')::boolean, (v_norm->>'is_active')::boolean,
+            v_color, v_instr)
     RETURNING id INTO v_id;
 
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
     VALUES (v_actor, 'PARTENAIRE', 'CATEGORY_CREATED', 'TICKET_CATEGORY', v_id,
-            jsonb_build_object('event_id', v_event, 'name', v_norm->>'name', 'price', v_norm->'price', 'total_quantity', v_norm->'total_quantity'));
+            jsonb_build_object('event_id', v_event, 'name', v_norm->>'name', 'price', v_norm->'price', 'total_quantity', v_norm->'total_quantity',
+                               'scan_color', v_color));
 
     SELECT to_jsonb(c) INTO v_row FROM public.ticket_categories c WHERE c.id = v_id;
     RETURN jsonb_build_object('ok', true, 'category', v_row);
@@ -310,7 +344,8 @@ $$;
 
 -- ============================================================================
 -- (6) ticket_category_update (recopie F54 de 20261109000008_lot9bis_cycle.sql:1835-1980)
--- Changement (9t.19) : texte du refus QUOTA_ABOVE_CAPACITY (code, champ et statut inchangés).
+-- Changements : texte du refus QUOTA_ABOVE_CAPACITY (9t.19 ; code, champ et statut inchangés) ; clés scan_color et
+-- entry_instruction acceptées, vérifiées et écrites (9t.15) ; audit et retour inchangés.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.ticket_category_update(p jsonb)
 RETURNS jsonb
@@ -338,6 +373,8 @@ DECLARE
     n_online boolean;
     n_counter boolean;
     n_active boolean;
+    n_color text;
+    n_instr text;
     v_sum integer;
     v_row jsonb;
 BEGIN
@@ -353,7 +390,7 @@ BEGIN
         RETURN public.event_edit_refusal('CATEGORY_NOT_FOUND', 'Catégorie de billets introuvable pour cet événement.');
     END IF;
     SELECT k INTO v_key FROM jsonb_object_keys(v_patch) AS k
-     WHERE k <> ALL (ARRAY['name', 'description', 'price', 'total_quantity', 'max_per_order', 'sale_start', 'sale_end', 'sale_online', 'sale_counter', 'is_visible', 'is_active'])
+     WHERE k <> ALL (ARRAY['name', 'description', 'price', 'total_quantity', 'max_per_order', 'sale_start', 'sale_end', 'sale_online', 'sale_counter', 'is_visible', 'is_active', 'scan_color', 'entry_instruction'])
      ORDER BY k LIMIT 1;
     IF v_key IS NOT NULL THEN
         RETURN public.event_edit_refusal('FIELD_NOT_EDITABLE', 'Ce champ de la catégorie de billets ne se modifie pas.', v_key);
@@ -361,6 +398,7 @@ BEGIN
 
     n_name := c.name; n_desc := c.description; n_price := c.price; n_total := c.total_quantity; n_max := c.max_per_order;
     n_start := c.sale_start; n_end := c.sale_end; n_online := c.sale_online; n_counter := c.sale_counter; n_active := c.is_active;
+    n_color := c.scan_color; n_instr := c.entry_instruction;
     BEGIN
         IF v_patch ? 'name' THEN n_name := btrim(v_patch->>'name'); END IF;
         IF v_patch ? 'description' THEN n_desc := NULLIF(btrim(COALESCE(v_patch->>'description', '')), ''); END IF;
@@ -395,6 +433,29 @@ BEGIN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'Indiquez oui ou non pour les canaux de vente et la mise en vente.',
                                          CASE WHEN n_online IS NULL THEN CASE WHEN v_patch ? 'sale_online' THEN 'sale_online' ELSE 'is_visible' END
                                               WHEN n_counter IS NULL THEN 'sale_counter' ELSE 'is_active' END);
+    END IF;
+    -- Lot 9 ter (9t.15) : couleur de la catégorie au scan (palette fermée) et consigne d'entrée (60 caractères au plus).
+    IF v_patch ? 'scan_color' THEN
+        IF jsonb_typeof(v_patch->'scan_color') = 'null' THEN
+            n_color := NULL;
+        ELSIF jsonb_typeof(v_patch->'scan_color') = 'string'
+              AND (v_patch->>'scan_color') IN ('BLANC', 'OR', 'ARGENT', 'ROSE', 'TURQUOISE', 'BLEU', 'VIOLET', 'NOIR') THEN
+            n_color := v_patch->>'scan_color';
+        ELSE
+            RETURN public.event_edit_refusal('INVALID_INPUT', 'Choisissez une couleur dans la liste.', 'scan_color');
+        END IF;
+    END IF;
+    IF v_patch ? 'entry_instruction' THEN
+        IF jsonb_typeof(v_patch->'entry_instruction') = 'null' THEN
+            n_instr := NULL;
+        ELSIF jsonb_typeof(v_patch->'entry_instruction') = 'string' THEN
+            n_instr := NULLIF(btrim(regexp_replace(v_patch->>'entry_instruction', '\s+', ' ', 'g')), '');
+            IF char_length(n_instr) > 60 THEN
+                RETURN public.event_edit_refusal('INVALID_INPUT', 'La consigne d’entrée ne dépasse pas 60 caractères.', 'entry_instruction');
+            END IF;
+        ELSE
+            RETURN public.event_edit_refusal('INVALID_INPUT', 'La consigne d’entrée ne dépasse pas 60 caractères.', 'entry_instruction');
+        END IF;
     END IF;
 
     -- Prix : modifiable seulement sans billet ni réservation en cours
@@ -445,7 +506,8 @@ BEGIN
 
     UPDATE public.ticket_categories
        SET name = n_name, description = n_desc, price = n_price, total_quantity = n_total, max_per_order = n_max,
-           sale_start = n_start, sale_end = n_end, sale_online = n_online, sale_counter = n_counter, is_active = n_active, updated_at = now()
+           sale_start = n_start, sale_end = n_end, sale_online = n_online, sale_counter = n_counter, is_active = n_active,
+           scan_color = n_color, entry_instruction = n_instr, updated_at = now()
      WHERE id = c.id;
 
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)

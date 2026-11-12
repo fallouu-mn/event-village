@@ -16,6 +16,7 @@
 import { z } from 'zod';
 import { eventEndAt } from '@/lib/events/event-end';
 import { canonicalCity } from '@/lib/events/senegal-cities';
+import { SCAN_CATEGORY_COLORS, type ScanCategoryColor } from '@/lib/scan/scan-result';
 import { foldText } from '@/lib/text/fold';
 import { INVALID_SN_CONTACT_PHONE_MESSAGE, toSenegaleseContactE164 } from '@/lib/validations/auth';
 
@@ -512,9 +513,34 @@ export interface TicketCategorySchemaContext {
     eventEnd: Date | null;
 }
 
+/**
+ * Lot 9 ter (9t.15, contrat D.2.3, X2) : couleur de la catégorie au scan (une des 8 clés de SCAN_CATEGORY_COLORS,
+ * seule liste, ou null) et consigne d'entrée (60 caractères au plus, vide → null), acceptées par les seules routes des
+ * catégories : categoryCreateObject (création d'événement) ne les connaît pas, event_create les refuserait
+ * (rectification 13). Refus INVALID_INPUT avec le champ en cause, comme la RPC ; messages explicites, jamais
+ * remplacés par frenchErrorMap.
+ */
+const SCAN_COLOR_MESSAGE = 'Choisissez une couleur dans la liste.';
+const ENTRY_INSTRUCTION_MESSAGE = 'La consigne d’entrée ne dépasse pas 60 caractères.';
+const scanColorField = z.custom<ScanCategoryColor>(
+    (v) => typeof v === 'string' && (SCAN_CATEGORY_COLORS as readonly string[]).includes(v),
+    { message: SCAN_COLOR_MESSAGE, params: { code: 'INVALID_INPUT' } },
+).nullable();
+const entryInstructionField = z.custom<string>((v) => typeof v === 'string', { message: ENTRY_INSTRUCTION_MESSAGE, params: { code: 'INVALID_INPUT' } })
+    .transform((v) => v.trim())
+    .refine((v) => v.length <= 60, { message: ENTRY_INSTRUCTION_MESSAGE, params: { code: 'INVALID_INPUT' } })
+    .nullable()
+    .transform((v) => (v === '' ? null : v));
+
+const ticketCategoryCreateObject = z.object({
+    ...categoryCreateShape,
+    scan_color: scanColorField.optional(),
+    entry_instruction: entryInstructionField.optional(),
+}).strict();
+
 export function createTicketCategorySchema(ctx: TicketCategorySchemaContext) {
     const eventEnd = ctx.eventEnd ? ctx.eventEnd.getTime() : null;
-    return categoryCreateObject.superRefine((v, c) => {
+    return ticketCategoryCreateObject.superRefine((v, c) => {
         checkSaleWindow(c, [], v.sale_start, v.sale_end, eventEnd);
     });
 }
@@ -537,6 +563,8 @@ export function updateTicketCategorySchema(ctx: UpdateTicketCategorySchemaContex
         sale_counter: z.boolean().optional(),
         is_visible: z.boolean().optional(),
         is_active: z.boolean().optional(),
+        scan_color: scanColorField.optional(),
+        entry_instruction: entryInstructionField.optional(),
     }).strict().superRefine((v, c) => {
         if (v.sale_start === undefined && v.sale_end === undefined) return;
         const start = v.sale_start !== undefined ? v.sale_start : ctx.current.sale_start;
