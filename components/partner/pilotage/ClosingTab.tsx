@@ -191,7 +191,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                 )}
             </PilotageSection>
 
-            <PilotageSection title="Export des participants" description="Fichier CSV : nom, catégorie, statut du billet et heure d’entrée. Aucune donnée de paiement ni numéro de billet.">
+            <PilotageSection title="Export des participants" description="Fichier CSV : nom, catégorie, origine, statut du billet, heure d’entrée, zone et porte. Aucune donnée de paiement ni numéro de billet.">
                 <form onSubmit={(e) => void exportCsv(e)} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 sm:p-5" noValidate>
                     <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm font-medium text-fg">
                         <input
