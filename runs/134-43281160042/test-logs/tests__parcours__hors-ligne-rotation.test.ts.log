@@ -1,0 +1,108 @@
+TAP version 13
+# Subtest: 7.1 Codes téléchargés invalidés par la rotation de la version du secret
+    # Subtest: 1. lot téléchargé puis transfert accepté : code courant de l’ancien lot → qr_expired, billet non composté, historique TRANSFER ; lot du nouveau porteur accepté
+    ok 1 - 1. lot téléchargé puis transfert accepté : code courant de l’ancien lot → qr_expired, billet non composté, historique TRANSFER ; lot du nouveau porteur accepté
+      ---
+      duration_ms: 791.045316
+      type: 'test'
+      ...
+    # Subtest: 2. lot téléchargé puis event_cancel : ancien code → event_cancelled, version + 1 (CANCEL)
+    ok 2 - 2. lot téléchargé puis event_cancel : ancien code → event_cancelled, version + 1 (CANCEL)
+      ---
+      duration_ms: 544.845334
+      type: 'test'
+      ...
+    # Subtest: 3. lot téléchargé puis ticket_refund_request (billet payé) : ancien code → refunded, version + 1 (REFUND)
+    ok 3 - 3. lot téléchargé puis ticket_refund_request (billet payé) : ancien code → refunded, version + 1 (REFUND)
+      ---
+      duration_ms: 563.830027
+      type: 'test'
+      ...
+    # Subtest: 4. lot téléchargé puis ticket_secret_rotate : ancien code → qr_expired, version + 1 (REGENERATE), nouveau lot accepté
+    ok 4 - 4. lot téléchargé puis ticket_secret_rotate : ancien code → qr_expired, version + 1 (REGENERATE), nouveau lot accepté
+      ---
+      duration_ms: 541.073437
+      type: 'test'
+      ...
+    # Subtest: 4 bis. ticket_secret_rotate : billet inconnu → TICKET_NOT_FOUND ; billet non VALIDE → TICKET_NOT_VALID, version inchangée
+    ok 5 - 4 bis. ticket_secret_rotate : billet inconnu → TICKET_NOT_FOUND ; billet non VALIDE → TICKET_NOT_VALID, version inchangée
+      ---
+      duration_ms: 476.519145
+      type: 'test'
+      ...
+    1..5
+ok 1 - 7.1 Codes téléchargés invalidés par la rotation de la version du secret
+  ---
+  duration_ms: 2918.354652
+  type: 'suite'
+  ...
+# Subtest: 7.1 ticket_scan contrôle la version sous verrou (M5 étape 5, D32)
+    # Subtest: 5. totp_ok = true avec secret_version ancienne → qr_expired ; sans secret_version → qr_expired ; témoin : version courante → valid
+    ok 1 - 5. totp_ok = true avec secret_version ancienne → qr_expired ; sans secret_version → qr_expired ; témoin : version courante → valid
+      ---
+      duration_ms: 651.07567
+      type: 'test'
+      ...
+    1..1
+ok 2 - 7.1 ticket_scan contrôle la version sous verrou (M5 étape 5, D32)
+  ---
+  duration_ms: 651.254398
+  type: 'suite'
+  ...
+# Subtest: 7.1 Course : la route lit le secret sans verrou, le transfert est validé avant le verrou de ticket_scan
+    # Subtest: 6. A tient ticket_transfer_accept ; le scan d’un code de l’ancienne version attend le verrou du billet ; après le COMMIT de A → qr_expired, billet non composté
+    ok 1 - 6. A tient ticket_transfer_accept ; le scan d’un code de l’ancienne version attend le verrou du billet ; après le COMMIT de A → qr_expired, billet non composté
+      ---
+      duration_ms: 676.047087
+      type: 'test'
+      ...
+    1..1
+ok 3 - 7.1 Course : la route lit le secret sans verrou, le transfert est validé avant le verrou de ticket_scan
+  ---
+  duration_ms: 676.238174
+  type: 'suite'
+  ...
+# Subtest: 7.1 Trigger de rotation et reprise (M4.2, M4.3)
+    # Subtest: 7. VALIDE → UTILISE ne fait pas tourner la version : second scan du même code → already_used
+    ok 1 - 7. VALIDE → UTILISE ne fait pas tourner la version : second scan du même code → already_used
+      ---
+      duration_ms: 480.359025
+      type: 'test'
+      ...
+    # Subtest: 8. UPDATE de totp_secret → version + 1 (secret posé gardé) ; security_version + 2 → TK409 ; security_version + 1 → nouveau secret
+    ok 2 - 8. UPDATE de totp_secret → version + 1 (secret posé gardé) ; security_version + 2 → TK409 ; security_version + 1 → nouveau secret
+      ---
+      duration_ms: 375.928648
+      type: 'test'
+      ...
+    # Subtest: 10. reprise : chaque billet a une ligne d’historique de sa version courante
+    ok 3 - 10. reprise : chaque billet a une ligne d’historique de sa version courante
+      ---
+      duration_ms: 336.047398
+      type: 'test'
+      ...
+    1..3
+ok 4 - 7.1 Trigger de rotation et reprise (M4.2, M4.3)
+  ---
+  duration_ms: 1192.638127
+  type: 'suite'
+  ...
+[INVARIANT] hors-ligne-rotation — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] hors-ligne-rotation — purge des réservations échues : {"expired":0}
+[INVARIANT] hors-ligne-rotation — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] hors-ligne-rotation — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] hors-ligne-rotation — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] hors-ligne-rotation — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] hors-ligne-rotation — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] hors-ligne-rotation — envoyeur : 995 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] hors-ligne-rotation — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] hors-ligne-rotation — (p)(q) : 0 violation(s)
+1..4
+# tests 10
+# suites 4
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6702.185383
