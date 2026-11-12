@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Lock, Plus, Ticket, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -19,6 +19,8 @@ import { DEFAULT_MAX_PER_ORDER, EVENT_LIMITS } from '@/lib/validations/event';
  *  - EventTicketingManager : en édition, chaque catégorie s'enregistre par les routes dédiées
  *    (POST /categories, PATCH et DELETE /categories/[categoryId]) avec les verrous visibles
  *    (« Prix verrouillé : 12 billets vendus ») et les refus du serveur affichés près de leur champ.
+ *  - Lot 9 ter (R93) : « il y a des ventes » vient du serveur (edit_locks.categories[].has_sales : un billet de tout
+ *    statut ou une réservation active), jamais des compteurs ; le plancher du quota reste vendus + en cours.
  */
 
 export type Row = Record<string, unknown>;
@@ -59,6 +61,8 @@ export interface CategoryDraft {
     /** Billets vendus et réservés en cours de paiement (lus en base, jamais calculés ici). */
     sold: number;
     held: number;
+    /** Lot 9 ter (R93) : des billets ont été émis ou réservés (edit_locks du serveur) ; faux pour une nouvelle catégorie. */
+    has_sales: boolean;
 }
 
 export type CategoryErrors = Partial<Record<CategoryField, string>>;
@@ -90,6 +94,7 @@ export function newCategoryDraft(): CategoryDraft {
         is_active: true,
         sold: 0,
         held: 0,
+        has_sales: false,
     };
 }
 
@@ -125,6 +130,7 @@ export function categoryDraftFromRow(row: Row, key?: string): CategoryDraft {
         is_active: row.is_active !== false,
         sold: count(row.sold_quantity),
         held: count(row.held_quantity),
+        has_sales: row.has_sales === true,
     };
 }
 
@@ -162,7 +168,13 @@ export function categoryPatch(d: CategoryDraft, base: CategoryDraft): Row {
     return patch;
 }
 
+/** Lot 9 ter (R93) : verrou du prix et de la suppression, tel que le serveur l'applique (edit_locks). */
 function hasSales(d: CategoryDraft): boolean {
+    return d.has_sales;
+}
+
+/** Billets vendus ou en cours de paiement comptés en ce moment (plancher du quota). */
+function countedSales(d: CategoryDraft): boolean {
     return d.sold > 0 || d.held > 0;
 }
 
@@ -172,6 +184,8 @@ function plural(n: number, one: string, many: string): string {
 
 /** Texte du verrou de prix : « Prix verrouillé : 12 billets vendus ». */
 export function priceLockText(d: CategoryDraft): string {
+    // Billets émis puis remboursés ou annulés, ou offerts : plus aucun compté, le verrou reste (serveur).
+    if (!countedSales(d)) return 'Prix verrouillé : des billets ont déjà été émis pour cette catégorie. Créez une autre catégorie pour un nouveau tarif.';
     const parts: string[] = [];
     if (d.sold > 0) parts.push(plural(d.sold, 'billet vendu', 'billets vendus'));
     if (d.held > 0) parts.push(plural(d.held, 'billet en cours de paiement', 'billets en cours de paiement'));
@@ -194,7 +208,7 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
     const priceLocked = showLocks && draft.id !== null && hasSales(draft);
     const id = (field: CategoryField) => categoryFieldId(draft.key, field);
 
-    const quotaHint = showLocks && hasSales(draft)
+    const quotaHint = showLocks && countedSales(draft)
         ? `Jamais sous les ventes : ${plural(draft.sold, 'billet vendu', 'billets vendus')}, ${formatInteger(draft.held)} en cours de paiement.`
         : 'Nombre de billets de cette catégorie (1 à 100 000).';
 
@@ -429,16 +443,55 @@ interface ManagedCategory {
 interface EventTicketingManagerProps {
     eventId: string;
     initialCategories: Row[];
+    /** Lot 9 ter (R93) : catégories modifiées et pas encore enregistrées (libellés pour la garde de sortie). */
+    onDirtyChange?: (names: string[]) => void;
+    /** Après chaque création, enregistrement ou suppression réussi : l'écran relit ses verrous. */
+    onSaved?: () => void;
+    /** has_sales par identifiant de catégorie (edit_locks.categories), relu après chaque enregistrement. */
+    categoryLocks?: Record<string, boolean> | null;
+}
+
+/** Libellé d'une catégorie non enregistrée dans la fenêtre « Quitter sans enregistrer ? ». */
+function dirtyLabel(d: CategoryDraft): string {
+    const name = d.name.trim();
+    if (d.id === null) return name ? `Nouvelle catégorie « ${name} »` : 'Nouvelle catégorie';
+    return `Catégorie « ${name || 'sans nom'} »`;
 }
 
 const NETWORK_MESSAGE = 'Connexion impossible : la catégorie n’a pas été enregistrée. Vérifiez votre réseau, puis réessayez.';
 
-export function EventTicketingManager({ eventId, initialCategories }: EventTicketingManagerProps) {
+export function EventTicketingManager({ eventId, initialCategories, onDirtyChange, onSaved, categoryLocks = null }: EventTicketingManagerProps) {
     const [items, setItems] = useState<ManagedCategory[]>(() => initialCategories.map((row) => {
         const draft = categoryDraftFromRow(row);
         return { draft, base: { ...draft }, errors: {}, message: null, suggestDeactivate: false, busy: false };
     }));
     const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+    // Catégories modifiées : annoncées à l'écran (garde de sortie) seulement quand la liste change
+    const dirtyNames = items
+        .filter((it) => it.draft.id === null || (it.base !== null && Object.keys(categoryPatch(it.draft, it.base)).length > 0))
+        .map((it) => dirtyLabel(it.draft));
+    const dirtyKey = JSON.stringify(dirtyNames);
+    const onDirtyRef = useRef(onDirtyChange);
+    const onSavedRef = useRef(onSaved);
+    useEffect(() => {
+        onDirtyRef.current = onDirtyChange;
+        onSavedRef.current = onSaved;
+    });
+    useEffect(() => {
+        onDirtyRef.current?.(JSON.parse(dirtyKey) as string[]);
+    }, [dirtyKey]);
+
+    // Verrous relus par l'écran (has_sales servi par le serveur) : appliqués aux catégories enregistrées
+    useEffect(() => {
+        if (!categoryLocks) return;
+        setItems((list) => list.map((it) => {
+            const id = it.draft.id;
+            if (!id || !(id in categoryLocks) || categoryLocks[id] === it.draft.has_sales) return it;
+            const has = categoryLocks[id];
+            return { ...it, draft: { ...it.draft, has_sales: has }, base: it.base ? { ...it.base, has_sales: has } : null };
+        }));
+    }, [categoryLocks]);
 
     const update = (key: string, change: (item: ManagedCategory) => ManagedCategory) => {
         setItems((list) => list.map((item) => (item.draft.key === key ? change(item) : item)));
@@ -451,8 +504,12 @@ export function EventTicketingManager({ eventId, initialCategories }: EventTicke
     };
 
     const applyRow = (key: string, row: Row, text: string) => {
-        const draft = categoryDraftFromRow(row, key);
-        update(key, () => ({ draft, base: { ...draft }, errors: {}, message: { tone: 'success', text }, suggestDeactivate: false, busy: false }));
+        update(key, (item) => {
+            // La réponse de la route ne porte pas has_sales : le verrou connu est gardé jusqu'à la relecture des verrous
+            const draft = { ...categoryDraftFromRow(row, key), has_sales: row.has_sales === true || item.draft.has_sales };
+            return { draft, base: { ...draft }, errors: {}, message: { tone: 'success', text }, suggestDeactivate: false, busy: false };
+        });
+        onSavedRef.current?.();
     };
 
     const refuse = (key: string, body: ApiBody) => {
@@ -521,6 +578,7 @@ export function EventTicketingManager({ eventId, initialCategories }: EventTicke
         }
         await send(key, `/api/partner/events/${eventId}/categories/${item.draft.id}`, { method: 'DELETE' }, () => {
             setItems((list) => list.filter((it) => it.draft.key !== key));
+            onSavedRef.current?.();
         });
     };
 
@@ -544,6 +602,7 @@ export function EventTicketingManager({ eventId, initialCategories }: EventTicke
                 const isNew = draft.id === null;
                 const dirty = isNew || (item.base !== null && Object.keys(categoryPatch(draft, item.base)).length > 0);
                 const sales = hasSales(draft);
+                const counted = countedSales(draft);
                 return (
                     <section
                         key={draft.key}
@@ -558,7 +617,7 @@ export function EventTicketingManager({ eventId, initialCategories }: EventTicke
                                 <p className="text-sm text-fg-muted tabular-nums">
                                     {isNew
                                         ? 'Nouvelle catégorie, pas encore enregistrée'
-                                        : sales
+                                        : counted
                                             ? `${plural(draft.sold, 'billet vendu', 'billets vendus')}${draft.held > 0 ? `, ${formatInteger(draft.held)} en cours de paiement` : ''}`
                                             : 'Aucun billet vendu'}
                                     {!isNew && !draft.is_active

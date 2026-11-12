@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Check, ChevronLeft, ChevronRight, Lock, Plus, Save, Trash2 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
 import { ImageUpload } from '@/components/ui/ImageUpload';
@@ -17,6 +18,7 @@ import { Select, TextInput, Textarea } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { formatInteger } from '@/lib/format';
 import {
     EVENT_LIMITS,
@@ -60,6 +62,10 @@ import {
  *    { notified_holders, sms_queued } affiché ; billetterie par les routes /categories (EventTicketing) ;
  *  - erreurs du serveur (fields[]) affichées près de leur champ, récapitulatif focalisable.
  * Seule la billetterie est proposée (tâche 5.9).
+ * Lot 9 ter (R93) :
+ *  - verrous de l'écran servis par le serveur (`edit_locks` du GET, mêmes règles qu'event_update), relus après chaque
+ *    enregistrement de catégorie ; textes de la jauge selon le plancher servi ;
+ *  - garde avant de quitter (useUnsavedGuard) : informations de l'événement et catégories non enregistrées ;
  */
 
 const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => m.MapPicker), {
@@ -86,6 +92,38 @@ const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
+
+/** Lot 9 ter (R93, F17) : verrous servis par GET /api/partner/events/[id] (RPC event_edit_locks). */
+interface EditLocks {
+    has_sales: boolean;
+    engaged: number;
+    active_quota: number;
+    capacity_floor: number;
+    capacity_removable: boolean;
+    categories: Record<string, boolean>;
+}
+
+function readEditLocks(v: unknown): EditLocks | null {
+    if (!v || typeof v !== 'object') return null;
+    const r = v as Record<string, unknown>;
+    const n = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) ? x : Number(x) || 0);
+    const categories: Record<string, boolean> = {};
+    if (Array.isArray(r.categories)) {
+        for (const c of r.categories as unknown[]) {
+            if (c && typeof c === 'object' && typeof (c as Record<string, unknown>).id === 'string') {
+                categories[(c as Record<string, unknown>).id as string] = (c as Record<string, unknown>).has_sales === true;
+            }
+        }
+    }
+    return {
+        has_sales: r.has_sales === true,
+        engaged: n(r.engaged),
+        active_quota: n(r.active_quota),
+        capacity_floor: n(r.capacity_floor),
+        capacity_removable: r.capacity_removable === true,
+        categories,
+    };
+}
 
 /**
  * Lot 9 bis (R12, R26, B71, contrat 5.30) : résultat d'une modification. Les comptes sont prévenus tout de suite
@@ -431,7 +469,12 @@ export function EventForm(props: EventFormProps) {
     const [submitting, setSubmitting] = useState(false);
     /** Version du chargement : la billetterie repart des catégories relues à chaque rechargement. */
     const [loadVersion, setLoadVersion] = useState(0);
-    const leavingRef = useRef(false);
+    /** Lot 9 ter (R93) : verrous du serveur ; null en création ou tant qu'ils ne sont pas lus. */
+    const [editLocks, setEditLocks] = useState<EditLocks | null>(null);
+    /** Catégories modifiées et non enregistrées (édition, EventTicketingManager). */
+    const [ticketingDirty, setTicketingDirty] = useState<string[]>([]);
+    /** Brouillon créé : la page part vers la liste, la garde de sortie est levée. */
+    const [leaving, setLeaving] = useState(false);
     const headingRef = useRef<HTMLHeadingElement>(null);
     const summaryRef = useRef<HTMLDivElement>(null);
     const stepMoved = useRef(false);
@@ -440,11 +483,16 @@ export function EventForm(props: EventFormProps) {
     const status = event ? str(event.status) : '';
     const afterValidation = isEdit && AFTER_VALIDATION.has(status);
     const withHolders = isEdit && WITH_HOLDERS.has(status);
+    /** Catégories lues avec l'événement, verrou de chacune (has_sales) servi par le serveur. */
+    const [initialLocks, setInitialLocks] = useState<EditLocks | null>(null);
     const eventCategories = useMemo<Row[]>(
-        () => (event && Array.isArray(event.ticket_categories) ? (event.ticket_categories as Row[]) : []),
-        [event],
+        () => (event && Array.isArray(event.ticket_categories)
+            ? (event.ticket_categories as Row[]).map((c) => ({ ...c, has_sales: typeof c.id === 'string' && initialLocks?.categories[c.id] === true }))
+            : []),
+        [event, initialLocks],
     );
-    const salesStarted = afterValidation && eventCategories.some((c) => Number(c.sold_quantity) > 0 || Number(c.held_quantity) > 0);
+    const categoryLocks = editLocks?.categories ?? null;
+    const salesStarted = editLocks?.has_sales === true;
 
     // Chargement (édition)
     const loadEvent = useCallback(async () => {
@@ -463,6 +511,9 @@ export function EventForm(props: EventFormProps) {
             }
             const ev = body.event as Row;
             const v = valuesFromEvent(ev);
+            const locks = readEditLocks(body.edit_locks);
+            setEditLocks(locks);
+            setInitialLocks(locks);
             setValues(v);
             setBaseline(eventPayload(v).payload);
             setErrors({});
@@ -479,20 +530,30 @@ export function EventForm(props: EventFormProps) {
         void loadEvent();
     }, [loadEvent]);
 
-    // Sortie de page avec des modifications non enregistrées
+    /** Relit les seuls verrous après un enregistrement de catégorie (jauge, catégorie d'événement, prix). */
+    const refreshLocks = useCallback(async () => {
+        if (!eventId) return;
+        try {
+            const res = await fetch(`/api/partner/events/${eventId}`, { cache: 'no-store' });
+            const body = await readApiBody(res);
+            if (!res.ok) throw new Error(body.error || `erreur ${res.status}`);
+            setEditLocks(readEditLocks(body.edit_locks));
+        } catch (err) {
+            console.error('[EventForm] relecture des verrous', err);
+            toast.error('Les règles de la jauge n’ont pas pu être relues : rechargez la page pour les voir à jour.');
+        }
+    }, [eventId, toast]);
+
+    // Sortie de page avec des modifications non enregistrées (garde : fermeture, rechargement, liens internes)
     const current = useMemo(() => eventPayload(values), [values]);
-    const dirty = (isEdit ? Object.keys(diffPayload(current.payload, baseline)).length > 0 : JSON.stringify(current.payload) !== JSON.stringify(baseline))
-        || (!isEdit && categories.length > 0);
-    useEffect(() => {
-        if (!dirty) return undefined;
-        const handler = (e: BeforeUnloadEvent) => {
-            if (leavingRef.current) return;
-            e.preventDefault();
-            e.returnValue = '';
-        };
-        window.addEventListener('beforeunload', handler);
-        return () => window.removeEventListener('beforeunload', handler);
-    }, [dirty]);
+    const fieldsDirty = isEdit ? Object.keys(diffPayload(current.payload, baseline)).length > 0 : JSON.stringify(current.payload) !== JSON.stringify(baseline);
+    const dirty = !leaving && (fieldsDirty || (isEdit ? ticketingDirty.length > 0 : categories.length > 0));
+    const describeUnsaved = (): string[] => {
+        const list: string[] = fieldsDirty ? ['Informations de l’événement'] : [];
+        if (isEdit) return [...list, ...ticketingDirty];
+        return [...list, ...categories.map((c) => (c.name.trim() ? `Nouvelle catégorie « ${c.name.trim()} »` : 'Nouvelle catégorie'))];
+    };
+    const unsaved = useUnsavedGuard(dirty, describeUnsaved);
 
     // Focus du titre de l'étape après un changement d'étape
     useEffect(() => {
@@ -623,7 +684,7 @@ export function EventForm(props: EventFormProps) {
                 });
                 const data = await readApiBody(res);
                 if (res.ok && data.success !== false) {
-                    leavingRef.current = true;
+                    setLeaving(true);
                     toast.success('Brouillon enregistré. Soumettez-le à la validation depuis la liste de vos événements.');
                     router.push('/partner/events');
                     return;
@@ -749,7 +810,7 @@ export function EventForm(props: EventFormProps) {
                     <ul className="list-disc space-y-1 pl-5">
                         <li>Description, programme, informations pratiques, affiche et position : modifiables librement.</li>
                         <li>Titre, dates, heures, lieu, ville et adresse&nbsp;: les détenteurs de billets sont prévenus.</li>
-                        <li>Catégorie d’événement et jauge : verrouillées dès la première vente (la jauge peut seulement augmenter).</li>
+                        <li>Catégorie d’événement : verrouillée dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.</li>
                     </ul>
                 </StatusBanner>
             )}
@@ -771,7 +832,7 @@ export function EventForm(props: EventFormProps) {
                     title="L’événement a été modifié entre-temps"
                     announce="alert"
                     className="mb-4"
-                    action={<Button type="button" variant="secondary" size="sm" onClick={() => void loadEvent()}>Recharger l’événement</Button>}
+                    action={<Button type="button" variant="secondary" size="sm" onClick={() => unsaved.guard(() => void loadEvent())}>Recharger l’événement</Button>}
                 >
                     Une autre session a enregistré des changements. Rechargez l’événement pour repartir de la dernière version (vos saisies non enregistrées seront perdues).
                 </StatusBanner>
@@ -920,8 +981,10 @@ export function EventForm(props: EventFormProps) {
                             onChange={(e) => set('capacity', e.target.value)}
                             aside={salesStarted ? <Lock size={16} aria-hidden="true" /> : undefined}
                             hint={salesStarted
-                                ? 'Des billets sont vendus : la jauge peut augmenter, mais ni descendre sous les ventes ni être retirée.'
-                                : 'Facultative. La somme des quantités des catégories de billets ne peut pas la dépasser.'}
+                                ? `Des billets sont vendus ou réservés : la jauge ne peut plus être retirée ni descendre sous ${formatInteger(editLocks?.capacity_floor ?? 0)} places.`
+                                : editLocks && editLocks.active_quota > 0
+                                    ? `Facultative. Elle ne descend pas sous la somme des quantités des catégories actives : ${formatInteger(editLocks.active_quota)} places.`
+                                    : 'Facultative. La somme des quantités des catégories actives ne peut pas la dépasser.'}
                             error={errors.capacity}
                             fieldClassName="sm:max-w-xs"
                         />
@@ -1036,7 +1099,14 @@ export function EventForm(props: EventFormProps) {
 
                 {isEdit && eventId && (
                     <div hidden={step !== 'billetterie'}>
-                        <EventTicketingManager key={loadVersion} eventId={eventId} initialCategories={eventCategories} />
+                        <EventTicketingManager
+                            key={loadVersion}
+                            eventId={eventId}
+                            initialCategories={eventCategories}
+                            categoryLocks={categoryLocks}
+                            onDirtyChange={setTicketingDirty}
+                            onSaved={() => void refreshLocks()}
+                        />
                     </div>
                 )}
 
@@ -1114,6 +1184,19 @@ export function EventForm(props: EventFormProps) {
                     </p>
                 )}
             </form>
+
+            <ConfirmDialog
+                isOpen={unsaved.open}
+                onClose={unsaved.stay}
+                onConfirm={unsaved.leave}
+                title="Quitter sans enregistrer ?"
+                message={unsaved.items.length > 0
+                    ? `${unsaved.items.join(', ')} : vos modifications ne sont pas enregistrées et seront perdues.`
+                    : 'Vos modifications ne sont pas enregistrées et seront perdues.'}
+                confirmLabel="Quitter sans enregistrer"
+                cancelLabel="Rester sur la page"
+                variant="danger"
+            />
         </div>
     );
 }
