@@ -290,15 +290,16 @@ function toNumber(v: unknown): number {
 
 export default function ControllerScannerPage() {
     const router = useRouter();
-    // Parties préchargées dès le montage (null tant qu'elles ne sont pas arrivées : repli neutre ci-dessous)
-    const CameraQrScanner = useDeferredPart(cameraPart);
-    const CombatFlashOverlay = useDeferredPart(overlayPart);
-    const ScannerShiftBanner = useDeferredPart(shiftBannerPart);
-    const tabsUi = useDeferredPart(tabsPart);
-
     // Affectations
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Parties préchargées dès que l'écran de départ est affiché (affectations lues), donc après le premier affichage
+    // utile et bien avant le premier scan (null tant qu'elles ne sont pas arrivées : repli neutre ci-dessous)
+    const CameraQrScanner = useDeferredPart(cameraPart, !loading);
+    const CombatFlashOverlay = useDeferredPart(overlayPart, !loading);
+    const ScannerShiftBanner = useDeferredPart(shiftBannerPart, !loading);
+    const tabsUi = useDeferredPart(tabsPart, !loading);
     const [loadError, setLoadError] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [started, setStarted] = useState(false);

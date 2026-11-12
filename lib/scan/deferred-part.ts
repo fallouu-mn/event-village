@@ -47,16 +47,22 @@ export function deferredPart<T>(label: string, load: () => Promise<T>): Deferred
     return { preload, current: () => value };
 }
 
-/** Précharge la partie au montage et la rend dès qu'elle est là (tout de suite si elle l'est déjà). */
-export function useDeferredPart<T>(part: DeferredPart<T>): T | null {
+/**
+ * Précharge la partie et la rend dès qu'elle est là (tout de suite si elle l'est déjà).
+ * Lot 9 ter (passe du run 133) : `start` retarde le préchargement jusqu'à ce que la page ait rendu son premier
+ * affichage utile (écran de départ du scanner), pour que ces morceaux n'entrent pas dans le JavaScript chargé avant
+ * lui (e2e/perf.spec.ts, JS (a)) ; ils restent chargés bien avant le premier scan. Sans `start`, préchargement au montage.
+ */
+export function useDeferredPart<T>(part: DeferredPart<T>, start = true): T | null {
     // Fonction rangée par un « updater » : un composant est une fonction, il ne doit pas être appelé par setState
     const [value, setValue] = useState<T | null>(part.current);
     useEffect(() => {
+        if (!start) return undefined;
         let alive = true;
         void part.preload().then((v) => {
             if (alive) setValue(() => v);
         });
         return () => { alive = false; };
-    }, [part]);
+    }, [part, start]);
     return value;
 }
