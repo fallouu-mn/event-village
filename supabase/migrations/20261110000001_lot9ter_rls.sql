@@ -10,7 +10,7 @@
 -- 25 politiques d'écriture au total (tableau A du contrat), et les droits INSERT, UPDATE, DELETE, TRUNCATE par
 -- défaut de Supabase pour anon et authenticated sur 29 relations (sortie [RLS-ECRITURES] du run 128).
 -- Le navigateur n'écrit dans aucune table de public : toutes les écritures légitimes passent par les routes
--- serveur (service_role) et les RPC, que cette migration ne touche pas. Les politiques SELECT ne changent pas.
+-- serveur (service_role) et les RPC, que cette migration ne touche pas. Politiques SELECT inchangées (sauf 6).
 --
 --  1. suppression des 25 politiques d'écriture (INSERT, UPDATE, DELETE, ALL), y compris celles de l'admin ;
 --  2. REVOKE INSERT, UPDATE, DELETE, TRUNCATE à PUBLIC, anon et authenticated sur toute relation de public
@@ -162,3 +162,21 @@ BEGIN
     END IF;
 END;
 $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 6. users_select_policy (dernière définition M/20261031000004_lot1b3_controleur_lectures.sql:34-36) : mêmes lignes
+--    visibles, mêmes rôles, auth.uid() et is_admin() lus une fois par requête (sous-requêtes scalaires) au lieu d'une
+--    fois par ligne de users.
+--    Cause (runs 131 et 132, temps-reel-billets) : la garde « compte non suspendu » des politiques de lecture
+--    (EXISTS sur users WHERE u.id = auth.uid(), M/20261103000001_lot6_dette.sql) ne prend pas l'index de users sous
+--    RLS : auth.uid(), mis en ligne, contient un COALESCE que le planificateur tient pour non étanche ; users est
+--    parcourue en entier et users_select_policy évaluée par ligne, soit un appel de is_admin() par compte (corps
+--    alourdi d'une sous-requête par D3, section 4). Realtime refait ce contrôle pour chaque abonné authentifié de
+--    chaque changement : environ 0,5 s par abonné d'après les horodatages des runs 131 et 132, billets et
+--    notifications livrés en 1,6 à 7,9 s.
+--    Rejouable : DROP POLICY IF EXISTS puis CREATE POLICY.
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "users_select_policy" ON public.users;
+CREATE POLICY "users_select_policy" ON public.users
+    FOR SELECT USING (id = (SELECT auth.uid()) OR (SELECT public.is_admin()));
