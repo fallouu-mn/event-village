@@ -104,6 +104,8 @@ const serverEnvSchema = z.object({
     // Lot 9 (9.0) : invitations (lignes numéro) par événement et par heure, puis par numéro et par jour
     INVITATION_PER_EVENT_HOUR: limit(50),
     INVITATION_PER_PHONE_DAY: limit(3),
+    // Lot 9 ter (consigne 3) : recherches dans la liste des invités par contrôleur et par heure
+    GUEST_LIST_SEARCH_PER_SCANNER_HOUR: limit(30),
     // Lot 9 (9.2) : codes de changement de numéro par compte et par jour ; envois de photo par compte et par heure
     PHONE_CHANGE_PER_ACCOUNT_DAY: limit(5),
     AVATAR_UPLOADS_PER_ACCOUNT_HOUR: limit(20),
