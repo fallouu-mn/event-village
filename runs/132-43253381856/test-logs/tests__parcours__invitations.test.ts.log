@@ -1,0 +1,260 @@
+TAP version 13
+# Subtest: 9.0 Invitations : droits (contrat 4.1, 5.1 étape 3)
+    # Subtest: sans session : middleware 401 sur /api/partner/events/<id>/invitations, puis route 401 AUTH_REQUIRED en POST et en GET
+    ok 1 - sans session : middleware 401 sur /api/partner/events/<id>/invitations, puis route 401 AUTH_REQUIRED en POST et en GET
+      ---
+      duration_ms: 134.123563
+      type: 'test'
+      ...
+    # Subtest: partenaire propriétaire : 200 { ok, ticket_count, phone_count, message }
+    ok 2 - partenaire propriétaire : 200 { ok, ticket_count, phone_count, message }
+      ---
+      duration_ms: 104.120196
+      type: 'test'
+      ...
+    # Subtest: tiers : autre partenaire, client et contrôleur affecté → 404 EVENT_NOT_FOUND, sans écriture ; un actor_id dans le corps n’y change rien
+    ok 3 - tiers : autre partenaire, client et contrôleur affecté → 404 EVENT_NOT_FOUND, sans écriture ; un actor_id dans le corps n’y change rien
+      ---
+      duration_ms: 602.240743
+      type: 'test'
+      ...
+    # Subtest: ADMIN sans events.write : 403 FORBIDDEN ; ADMIN avec events.write et SUPERADMIN : 200
+    ok 4 - ADMIN sans events.write : 403 FORBIDDEN ; ADMIN avec events.write et SUPERADMIN : 200
+      ---
+      duration_ms: 604.231465
+      type: 'test'
+      ...
+[requireActiveSession] accès refusé à /api/partner/events/69e24a38-d9ba-443e-9cd0-ecea85aa6483/invitations : compte 558c6b0b-abb6-451f-94c2-ecd574fac51a au statut SUSPENDU
+    # Subtest: compte inactif : route 403 ACCOUNT_NOT_ACTIVE ; RPC directe ACCOUNT_NOT_ACTIVE
+    ok 5 - compte inactif : route 403 ACCOUNT_NOT_ACTIVE ; RPC directe ACCOUNT_NOT_ACTIVE
+      ---
+      duration_ms: 286.423843
+      type: 'test'
+      ...
+    # Subtest: statuts BROUILLON, EN_ATTENTE, SUSPENDU, TERMINE, ANNULE : 409 EVENT_NOT_ACTIVE, sans écriture
+    ok 6 - statuts BROUILLON, EN_ATTENTE, SUSPENDU, TERMINE, ANNULE : 409 EVENT_NOT_ACTIVE, sans écriture
+      ---
+      duration_ms: 487.217754
+      type: 'test'
+      ...
+    # Subtest: statuts VALIDE et PUBLIE : acceptés, billets créés
+    ok 7 - statuts VALIDE et PUBLIE : acceptés, billets créés
+      ---
+      duration_ms: 170.023979
+      type: 'test'
+      ...
+    # Subtest: événement inconnu : 404 EVENT_NOT_FOUND
+    ok 8 - événement inconnu : 404 EVENT_NOT_FOUND
+      ---
+      duration_ms: 102.683665
+      type: 'test'
+      ...
+    1..8
+ok 1 - 9.0 Invitations : droits (contrat 4.1, 5.1 étape 3)
+  ---
+  duration_ms: 2723.799105
+  type: 'suite'
+  ...
+# Subtest: 9.0 Invitations : forme de la demande (contrat 4.1, Zod)
+    # Subtest: 11 numéros, aucun numéro, 5 billets, 0 billet, numéro invalide, doublon, catégorie non uuid : 400 INVALID_FIELD avec field
+    ok 1 - 11 numéros, aucun numéro, 5 billets, 0 billet, numéro invalide, doublon, catégorie non uuid : 400 INVALID_FIELD avec field
+      ---
+      duration_ms: 157.685186
+      type: 'test'
+      ...
+[POST /api/partner/events/[id]/invitations] corps illisible : Expected property name or '}' in JSON at position 1 (line 1 column 2)
+    # Subtest: corps illisible : 400 INVALID_BODY
+    ok 2 - corps illisible : 400 INVALID_BODY
+      ---
+      duration_ms: 89.552042
+      type: 'test'
+      ...
+    # Subtest: limites admises : 10 numéros, 4 billets par numéro ; numéro à 9 chiffres normalisé en +221
+    ok 3 - limites admises : 10 numéros, 4 billets par numéro ; numéro à 9 chiffres normalisé en +221
+      ---
+      duration_ms: 150.014031
+      type: 'test'
+      ...
+    1..3
+ok 2 - 9.0 Invitations : forme de la demande (contrat 4.1, Zod)
+  ---
+  duration_ms: 397.548864
+  type: 'suite'
+  ...
+# Subtest: 9.0 Invitations : catégories admises et stock (L5, 5.1 étapes 5 et 6)
+    # Subtest: catégorie sans canal, vente close, un billet maximum par commande : acceptée, décision à faux sur les deux canaux
+    ok 1 - catégorie sans canal, vente close, un billet maximum par commande : acceptée, décision à faux sur les deux canaux
+      ---
+      duration_ms: 129.112372
+      type: 'test'
+      ...
+    # Subtest: catégorie vendue en ligne : acceptée, décision à vrai
+    ok 2 - catégorie vendue en ligne : acceptée, décision à vrai
+      ---
+      duration_ms: 110.154396
+      type: 'test'
+      ...
+    # Subtest: catégorie inactive : 409 SALE_CHECK_FAILED, problems CATEGORY_INACTIVE, sans écriture
+    ok 3 - catégorie inactive : 409 SALE_CHECK_FAILED, problems CATEGORY_INACTIVE, sans écriture
+      ---
+      duration_ms: 101.625619
+      type: 'test'
+      ...
+    # Subtest: catégorie d’un autre événement : 409 SALE_CHECK_FAILED, sans écriture des deux côtés
+    ok 4 - catégorie d’un autre événement : 409 SALE_CHECK_FAILED, sans écriture des deux côtés
+      ---
+      duration_ms: 194.04102
+      type: 'test'
+      ...
+    # Subtest: événement passé : 409 SALE_CHECK_FAILED, problems EVENT_PAST
+    ok 5 - événement passé : 409 SALE_CHECK_FAILED, problems EVENT_PAST
+      ---
+      duration_ms: 130.64846
+      type: 'test'
+      ...
+    # Subtest: stock : au-delà du restant (numéros × quantité) 409 INSUFFICIENT_STOCK sans écriture ; exactement le restant accepté, stock décrémenté, réservé à 0
+    ok 6 - stock : au-delà du restant (numéros × quantité) 409 INSUFFICIENT_STOCK sans écriture ; exactement le restant accepté, stock décrémenté, réservé à 0
+      ---
+      duration_ms: 134.780367
+      type: 'test'
+      ...
+    1..6
+ok 3 - 9.0 Invitations : catégories admises et stock (L5, 5.1 étapes 5 et 6)
+  ---
+  duration_ms: 800.847902
+  type: 'suite'
+  ...
+# Subtest: 9.0 Invitations : billet créé et attribution (L3, L6, AR15)
+    # Subtest: compte ACTIF au numéro vérifié : billets au compte, canal INVITATION, prix 0, décision INVITATION, aucun paiement, aucun transfert
+    ok 1 - compte ACTIF au numéro vérifié : billets au compte, canal INVITATION, prix 0, décision INVITATION, aucun paiement, aucun transfert
+      ---
+      duration_ms: 256.865486
+      type: 'test'
+      ...
+    # Subtest: numéro sans compte : billets sans porteur et verrouillés, un transfert PENDING par billet, sans expéditeur ni jeton, échéance à la fin de l’événement
+    ok 2 - numéro sans compte : billets sans porteur et verrouillés, un transfert PENDING par billet, sans expéditeur ni jeton, échéance à la fin de l’événement
+      ---
+      duration_ms: 133.850269
+      type: 'test'
+      ...
+    # Subtest: compte au numéro non vérifié ou compte suspendu : attente (AR15), jamais attribué
+    ok 3 - compte au numéro non vérifié ou compte suspendu : attente (AR15), jamais attribué
+      ---
+      duration_ms: 426.956355
+      type: 'test'
+      ...
+    # Subtest: réponse identique avec ou sans compte : aucune énumération (L7)
+    ok 4 - réponse identique avec ou sans compte : aucune énumération (L7)
+      ---
+      duration_ms: 263.231496
+      type: 'test'
+      ...
+    1..4
+ok 4 - 9.0 Invitations : billet créé et attribution (L3, L6, AR15)
+  ---
+  duration_ms: 1081.203135
+  type: 'suite'
+  ...
+# Subtest: 9.0 Invitations : liste du pilotage (L7, L14, 4.1)
+    # Subtest: GET : mêmes champs avec ou sans compte, statut « Envoyée », numéro masqué ; ni numéro de billet, ni QR, ni numéro en clair
+    ok 1 - GET : mêmes champs avec ou sans compte, statut « Envoyée », numéro masqué ; ni numéro de billet, ni QR, ni numéro en clair
+      ---
+      duration_ms: 290.603369
+      type: 'test'
+      ...
+    # Subtest: page 2 vide, total conservé
+    ok 2 - page 2 vide, total conservé
+      ---
+      duration_ms: 112.057291
+      type: 'test'
+      ...
+    # Subtest: lecture : admin sans events.write 200 (L14) ; autre partenaire et client 404 EVENT_NOT_FOUND
+    ok 3 - lecture : admin sans events.write 200 (L14) ; autre partenaire et client 404 EVENT_NOT_FOUND
+      ---
+      duration_ms: 620.338512
+      type: 'test'
+      ...
+    1..3
+ok 5 - 9.0 Invitations : liste du pilotage (L7, L14, 4.1)
+  ---
+  duration_ms: 1023.209495
+  type: 'suite'
+  ...
+# Subtest: 9.0 Invitations : SMS INVITATION_RECEIVED (L10, AR15, 5.1 étape 9)
+    # Subtest: une ligne SMS par numéro, ESSENTIAL, sans actor_id ni compte, même pour un compte vérifié (in-app et push au compte, R79) ; quantité portée dans les données
+    ok 1 - une ligne SMS par numéro, ESSENTIAL, sans actor_id ni compte, même pour un compte vérifié (in-app et push au compte, R79) ; quantité portée dans les données
+      ---
+      duration_ms: 264.918404
+      type: 'test'
+      ...
+    # Subtest: texte exact au singulier et au pluriel, 1 segment GSM-7, lien /tickets, aucun claim, token ni code à 6 chiffres
+    ok 2 - texte exact au singulier et au pluriel, 1 segment GSM-7, lien /tickets, aucun claim, token ni code à 6 chiffres
+      ---
+      duration_ms: 221.857279
+      type: 'test'
+      ...
+    1..2
+ok 6 - 9.0 Invitations : SMS INVITATION_RECEIVED (L10, AR15, 5.1 étape 9)
+  ---
+  duration_ms: 486.964957
+  type: 'suite'
+  ...
+# Subtest: 9.0 Invitations : audit (5.1 étape 10)
+    # Subtest: TICKET_INVITATIONS_SENT : acteur, rôle, catégorie, nombres, numéros masqués ; ni numéro complet ni 9 chiffres
+    ok 1 - TICKET_INVITATIONS_SENT : acteur, rôle, catégorie, nombres, numéros masqués ; ni numéro complet ni 9 chiffres
+      ---
+      duration_ms: 106.165821
+      type: 'test'
+      ...
+    # Subtest: envoi par un ADMIN : rôle ADMIN au journal
+    ok 2 - envoi par un ADMIN : rôle ADMIN au journal
+      ---
+      duration_ms: 259.561141
+      type: 'test'
+      ...
+    1..2
+ok 7 - 9.0 Invitations : audit (5.1 étape 10)
+  ---
+  duration_ms: 365.892582
+  type: 'suite'
+  ...
+# Subtest: 9.0 Invitations : pilotage et export (L13)
+    # Subtest: pilotage : invitations comptées à part, hors ventes, restants diminués
+    ok 1 - pilotage : invitations comptées à part, hors ventes, restants diminués
+      ---
+      duration_ms: 137.288955
+      type: 'test'
+      ...
+    # Subtest: CSV : colonne « Origine » en troisième position ; invitation en attente, invitation attribuée et vente en ligne ; aucun numéro
+    ok 2 - CSV : colonne « Origine » en troisième position ; invitation en attente, invitation attribuée et vente en ligne ; aucun numéro
+      ---
+      duration_ms: 484.75305
+      type: 'test'
+      ...
+    1..2
+ok 8 - 9.0 Invitations : pilotage et export (L13)
+  ---
+  duration_ms: 622.234985
+  type: 'suite'
+  ...
+[INVARIANT] invitations — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] invitations — purge des réservations échues : {"expired":0}
+[INVARIANT] invitations — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] invitations — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] invitations — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] invitations — cron events_finish_overdue : 1 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] invitations — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] invitations — envoyeur : 997 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] invitations — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] invitations — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] invitations — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] invitations — (t)(u)(v) : 0 violation(s)
+1..8
+# tests 30
+# suites 8
+# pass 30
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9933.907211
