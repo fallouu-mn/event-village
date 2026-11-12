@@ -70,7 +70,7 @@ const SCREENS: Screen[] = [
     { label: 'Mes billets', file: 'app/tickets/page.tsx', tables: ['tickets', 'notifications'], filter: 'user_id=eq.', indicator: true },
     { label: 'cloche des notifications', file: BELL, tables: ['notifications'], indicator: false },
     { label: 'liste des événements du partenaire', file: 'app/partner/events/page.tsx', tables: ['event_status_history'], indicator: true },
-    { label: 'page de pilotage', file: 'app/partner/events/[id]/page.tsx', tables: ['ticket_scans', 'scan_incidents', 'controller_shifts'], filter: 'event_id=eq.', indicator: true },
+    { label: 'page de pilotage', file: 'app/partner/events/[id]/page.tsx', tables: ['ticket_scans', 'scan_incidents', 'controller_shifts', 'ticket_categories'], filter: 'event_id=eq.', indicator: true },
     { label: 'admin : file de validation des événements', file: 'app/admin/events/page.tsx', tables: ['admin_signals'], indicator: true },
     { label: 'admin : nouveaux partenaires', file: 'app/admin/dashboard/page.tsx', tables: ['admin_signals'], indicator: true },
 ];
