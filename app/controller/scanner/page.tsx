@@ -66,9 +66,7 @@ import { Calendar, Camera, Keyboard, Loader2, LogOut, Settings2, Users } from 'l
 import { getBrowserClient } from '@/lib/supabase/client';
 import { detachPushSubscription } from '@/lib/push/client';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ErrorState } from '@/components/ui/EmptyState';
-import { Select } from '@/components/ui/Field';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import type { CameraReadVerdict } from '@/components/scan/CameraQrScanner';
@@ -92,6 +90,13 @@ import { triggerHapticFeedback } from '@/lib/hardware/feedback';
 import { isGateProblemCode } from '@/lib/scan/scan-result';
 import type { ShiftSummary } from '@/lib/shifts/shift.service';
 
+// Lot 9 ter (budget 7.5, run 132) : confirmation de déconnexion et réglage du retour au scan (replié sous « Réglages de
+// cet appareil ») hors du premier chargement ; chargés après le montage, prêts avant le premier toucher
+const ConfirmDialog = dynamic(() => import('@/components/ui/ConfirmDialog').then((m) => m.ConfirmDialog), { ssr: false });
+const Select = dynamic(() => import('@/components/ui/Field').then((m) => m.Select), {
+    ssr: false,
+    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du réglage…</p>,
+});
 // Caisse et guichet chargés à la demande : ni la caisse ni le guichet ne pèsent sur l'ouverture du scanner
 const OpenShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.OpenShiftModal), { ssr: false });
 const CloseShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CloseShiftModal), { ssr: false });

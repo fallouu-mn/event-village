@@ -10,9 +10,9 @@
  * l'organisateur l'autorise (GET /api/controller/gates, POST /api/controller/gate). Sans zone : textes du lot 7.
  */
 import React, { useEffect, useId, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { DoorOpen, Play, ScanLine } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
@@ -35,6 +35,13 @@ export interface StartChoice {
     zoneKind?: ZoneKind | null;
     gateChangeAllowed?: boolean;
 }
+
+// Lot 9 ter (budget 7.5, run 132) : fenêtre de « Changer de porte » (droit rare, accordé par l'organisateur) chargée
+// à la demande, hors du premier chargement du scanner ; pendant son arrivée, une ligne d'état
+const Modal = dynamic(() => import('@/components/ui/Modal').then((m) => m.Modal), {
+    ssr: false,
+    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement des portes…</p>,
+});
 
 interface GateOption { id: string; name: string; zone: { name: string; kind: ZoneKind } }
 
