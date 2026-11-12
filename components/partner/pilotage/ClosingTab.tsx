@@ -1,17 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CalendarClock, Download, FileSpreadsheet, Landmark, UserX } from 'lucide-react';
+import { Download, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { ErrorState } from '@/components/ui/EmptyState';
-import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
+import { KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import { apiErrorOf, errorMessage } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
-import { DefinitionRow, KpiAmount, KpiValue, PilotageSection } from './PilotageBlocks';
+import { ClosingReportSummary } from './ClosingReportSummary';
+import { DefinitionRow, PilotageSection } from './PilotageBlocks';
 import { shiftStatusLabel, type PilotageClosing, type ZReport } from './types';
 
 type Absent = NonNullable<PilotageClosing['absents']['list']>[number];
@@ -87,10 +88,10 @@ function fileNameOf(res: Response): string {
 }
 
 /**
- * Onglet Clôture (contrat I) : absents (nombre en direct, liste après la fin), rapport de clôture, Z de
- * caisse par caisse, montant net et disponibilité des fonds (pilotage_closing) ; export CSV des
- * participants, journalisé par la base, sans donnée de paiement, contacts seulement pour une finalité de
- * la liste fermée.
+ * Onglet Clôture (contrat I) : rapport de clôture (ClosingReportSummary, le même que la fenêtre du tableau de bord :
+ * montant net, disponibilité des fonds, absents, bilan, entrées), Z de caisse par caisse, absents (nombre en direct,
+ * liste après la fin), tous lus dans pilotage_closing ; export CSV des participants, journalisé par la base, sans
+ * donnée de paiement, contacts seulement pour une finalité de la liste fermée.
  */
 export function ClosingTab({ eventId, signal }: { eventId: string; signal: number }) {
     const toast = useToast();
@@ -153,43 +154,11 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
         return <ErrorState title="Clôture indisponible" description={error ?? undefined} onRetry={() => void reload()} isRetrying={refreshing} />;
     }
 
-    const { finance, report, absents } = data;
-    const fundsFrom = finance.funds_available_from;
-    const fundsTo = finance.funds_available_to;
+    const { absents } = data;
 
     return (
         <div className="flex flex-col gap-6">
-            {/* Une colonne sous sm : à deux colonnes, libellés coupés sur 4 lignes, montant et date sur 2 (run 98) */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <KpiCard label="Montant net organisateur" value={<KpiAmount value={formatFcfa(finance.organizer_net)} />} hint="Ventes en ligne, remboursements déduits" tone="success" icon={<Landmark size={18} />} />
-                <KpiCard
-                    label="Disponibilité des fonds"
-                    value={<KpiValue>{fundsFrom ? formatDateTime(fundsFrom) : 'Aucune vente en ligne'}</KpiValue>}
-                    hint={fundsFrom && fundsTo && fundsTo !== fundsFrom ? `jusqu’au ${formatDateTime(fundsTo)} pour les dernières ventes` : 'Selon le délai de versement de la plateforme'}
-                    tone="info"
-                    icon={<CalendarClock size={18} />}
-                />
-                <KpiCard label="Absents" value={formatInteger(absents.count)} hint="Billets valides jamais scannés à l’entrée" tone="neutral" icon={<UserX size={18} />} />
-            </div>
-
-            <PilotageSection title="Rapport de clôture" description="Bilan complet de l’événement.">
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <dl className="rounded-2xl border border-border bg-surface px-4 py-1">
-                        <DefinitionRow label="Billets vendus (hors invitations)" value={formatInteger(report.tickets.sold)} />
-                        <DefinitionRow label="Invitations" value={formatInteger(report.tickets.invitations)} />
-                        <DefinitionRow label="Capacité mise en vente" value={formatInteger(report.tickets.capacity)} />
-                        <DefinitionRow label="Entrées (dont guichet)" value={`${formatInteger(report.entries.total)} (${formatInteger(report.entries.counter)})`} />
-                        <DefinitionRow label="Refus au contrôle" value={formatInteger(report.entries.refused)} />
-                    </dl>
-                    <dl className="rounded-2xl border border-border bg-surface px-4 py-1">
-                        <DefinitionRow label="Recettes en ligne" value={formatFcfa(report.revenue.online)} />
-                        <DefinitionRow label="Recettes en espèces" value={formatFcfa(report.revenue.cash)} />
-                        <DefinitionRow label="Remboursé" value={formatFcfa(report.revenue.refunded)} />
-                        <DefinitionRow label="Frais de service payés par les acheteurs" value={formatFcfa(finance.buyer_service_fees)} />
-                        <DefinitionRow label="Déjà disponible / en attente" value={`${formatFcfa(finance.available)} / ${formatFcfa(finance.pending)}`} />
-                    </dl>
-                </div>
-            </PilotageSection>
+            <ClosingReportSummary closing={data} />
 
             <PilotageSection title="Z de caisse" description="Une fiche par caisse : fonds, attendu, déclaré hors fonds et écart, détail par source et par catégorie.">
                 {data.z.length === 0 ? (

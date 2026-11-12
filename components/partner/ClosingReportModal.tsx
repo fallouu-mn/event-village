@@ -1,19 +1,20 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Banknote, Calendar, Download, FileSpreadsheet, FileText, MapPin, QrCode, Users, Wallet } from 'lucide-react';
+import { Calendar, Download, FileSpreadsheet, FileText, MapPin } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { ErrorState } from '@/components/ui/EmptyState';
-import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
+import { KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { apiErrorOf } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
-import { DefinitionRow, KpiAmount, KpiValue } from '@/components/partner/pilotage/PilotageBlocks';
+import { ClosingReportSummary } from '@/components/partner/pilotage/ClosingReportSummary';
+import { PilotageSection } from '@/components/partner/pilotage/PilotageBlocks';
 import type { CategorySalesSummary, ClosingReportData } from '@/lib/partner/partner-dashboard.service';
-import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger, formatPercent } from '@/lib/format';
+import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger } from '@/lib/format';
 
 interface ClosingReportModalProps {
   isOpen: boolean;
@@ -39,23 +40,18 @@ const DOWNLOADS: Record<DownloadKind, { url: (eventId: string) => string; fileNa
   },
 };
 
+/** Colonnes lues telles quelles dans pilotage_sales.by_category (même source que l'onglet Ventes). */
 const SALES_COLUMNS: DataColumn<CategorySalesSummary>[] = [
   { key: 'name', header: 'Catégorie', render: (cat) => <span className="font-semibold">{cat.name}</span>, hideOnCard: true },
-  { key: 'unitPrice', header: 'Prix unitaire', align: 'right', render: (cat) => formatFcfa(cat.unitPrice) },
-  { key: 'allocated', header: 'Quota', align: 'right', render: (cat) => formatInteger(cat.totalAllocated) },
+  { key: 'unitPrice', header: 'Prix', align: 'right', render: (cat) => formatFcfa(cat.unitPrice) },
   { key: 'sold', header: 'Vendus', align: 'right', render: (cat) => formatInteger(cat.soldQuantity) },
   { key: 'invitations', header: 'Invitations', align: 'right', render: (cat) => formatInteger(cat.invitations) },
-  { key: 'gross', header: 'Ventes en ligne', align: 'right', render: (cat) => <span className="font-semibold tabular-nums">{formatFcfa(cat.grossAmount)}</span> },
+  { key: 'remaining', header: 'Reste', align: 'right', render: (cat) => formatInteger(cat.remainingQuantity) },
 ];
-
-function amount(value: number, prefix = ''): React.ReactNode {
-  return <span className="whitespace-nowrap tabular-nums">{prefix}{formatFcfa(value)}</span>;
-}
 
 function ReportSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement du rapport de clôture">
-      <KpiCardSkeleton />
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-busy="true" aria-label="Chargement du rapport de clôture">
       <KpiCardSkeleton />
       <KpiCardSkeleton />
       <KpiCardSkeleton />
@@ -63,11 +59,12 @@ function ReportSkeleton() {
   );
 }
 
+/**
+ * En-tête (référence, date de génération, date et lieu), puis le rapport unique ClosingReportSummary, le même que
+ * l'onglet Clôture du pilotage (lot 9 ter, R106 b), puis les ventes par catégorie.
+ */
 function ReportBody({ report }: { report: ClosingReportData }) {
-  const { event, financialSummary: money, ticketsSummary: tickets } = report;
-  // Lot 9 ter (R106 b) : données lues de pilotage_closing ; taux calculés ici, en attendant le composant partagé (vague E)
-  const fillRate = tickets.capacity > 0 ? Math.min(1, tickets.sold / tickets.capacity) : 0;
-  const presenceRate = tickets.sold > 0 ? Math.min(1, tickets.entries / tickets.sold) : 0;
+  const { event } = report;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4">
@@ -89,36 +86,9 @@ function ReportBody({ report }: { report: ClosingReportData }) {
         </ul>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 tabular-nums lg:grid-cols-4">
-        <KpiCard
-          label="Billets vendus"
-          value={<KpiValue>{formatInteger(tickets.sold)} / {formatInteger(tickets.capacity)}</KpiValue>}
-          hint={`Remplissage : ${formatPercent(fillRate)}`}
-          icon={<Users size={18} />}
-        />
-        <KpiCard
-          label="Entrées validées"
-          value={<KpiValue>{formatInteger(tickets.entries)}</KpiValue>}
-          hint={`Présence : ${formatPercent(presenceRate)}`}
-          tone="success"
-          icon={<QrCode size={18} />}
-        />
-        <KpiCard
-          label="Ventes en ligne"
-          value={<KpiAmount value={formatFcfa(money.totalGross)} />}
-          hint={`Ventes au guichet : ${formatFcfa(money.cashSales)}`}
-          icon={<Banknote size={18} />}
-        />
-        <KpiCard
-          label="Net à reverser"
-          value={<KpiAmount value={formatFcfa(money.totalNet)} />}
-          tone="brand"
-          icon={<Wallet size={18} />}
-        />
-      </div>
+      <ClosingReportSummary closing={report.closing} />
 
-      <section aria-labelledby="rapport-ventes" className="flex flex-col gap-3">
-        <h3 id="rapport-ventes" className="text-base font-bold text-fg">Ventes par catégorie</h3>
+      <PilotageSection title="Ventes par catégorie">
         <DataList
           items={report.salesByCategory}
           columns={SALES_COLUMNS}
@@ -126,37 +96,17 @@ function ReportBody({ report }: { report: ClosingReportData }) {
           caption="Ventes par catégorie"
           cardTitle={(cat) => cat.name}
           className="tabular-nums"
-          empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune vente sur cet événement.</p>}
+          empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune catégorie.</p>}
         />
-      </section>
-
-      <section aria-labelledby="rapport-synthese" className="flex flex-col gap-3">
-        <h3 id="rapport-synthese" className="text-base font-bold text-fg">Synthèse comptable</h3>
-        <dl className="rounded-2xl bg-surface-sunken px-4 py-1 tabular-nums">
-          <DefinitionRow label="Ventes en ligne, prix des billets" value={amount(money.totalGross)} />
-          {money.totalRefunded > 0 && (
-            <DefinitionRow label="Remboursements aux acheteurs" value={<span className="text-danger-fg">{amount(money.totalRefunded, '− ')}</span>} />
-          )}
-          <DefinitionRow
-            label={<span className="font-semibold text-fg">Net à reverser au partenaire</span>}
-            value={<span className="text-base font-bold text-brand-fg">{amount(money.totalNet)}</span>}
-          />
-          <DefinitionRow label="Dont disponible" value={amount(money.availableNet)} />
-          <DefinitionRow label="Dont en attente" value={amount(money.pendingNet)} />
-          <DefinitionRow label="Frais de service payés par l’acheteur, non déduits" value={amount(money.buyerServiceFees)} />
-          <DefinitionRow
-            label={`Espèces au guichet, ${formatInteger(money.cashTickets)} billet${money.cashTickets > 1 ? 's' : ''}, hors plateforme, pour information`}
-            value={amount(money.cashSales)}
-          />
-        </dl>
-      </section>
+      </PilotageSection>
     </div>
   );
 }
 
 /**
- * Rapport de clôture d'un événement (tableau de bord partenaire, 8.2 r). Les chiffres viennent de la route ; une
- * lecture ou un téléchargement en échec est signalé par un texte fixe, jamais par le message de la réponse.
+ * Rapport de clôture d'un événement (tableau de bord partenaire, 8.2 r). Les chiffres viennent de la route (corps de
+ * pilotage_closing et de pilotage_sales, aucun calcul ici) ; une lecture ou un téléchargement en échec est signalé par
+ * un texte fixe, jamais par le message de la réponse.
  */
 export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({ isOpen, onClose, eventId, eventTitle }) => {
   const toast = useToast();
