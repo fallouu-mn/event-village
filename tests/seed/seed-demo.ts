@@ -75,6 +75,18 @@
  *    verrouillé (R44) ;
  *  - fin par assertLot9bisInvariants('seed-demo') : (a) à (v), schéma du lot 9 bis, puis (w1) à (w21).
  *
+ * Lot 9 ter (contrat D.3.2, X7, ED7 ; commit fix(9t.seed), après toutes les migrations du lot), graine v4 :
+ *  - compte controleurZones (contrôleur neuf : l'écran de départ des contrôleurs existants ne change pas) ;
+ *  - événement « zones » de l'organisatrice, VALIDE hors catalogue, fin future : SIMPLE (Blanc), VIP (Or, consigne),
+ *    VVIP (Violet, consigne) ; zones par event_zones_save (« Entrée générale » : Porte Nord, Porte Sud ; « Carré VIP »,
+ *    contrôle de zone : Accès carré) ; controleurZones affecté par le même upsert que les autres contrôleurs (le trigger
+ *    crée son lien partner_controllers, x5 ; jamais controller_assignments_sync, X7), porte Nord par
+ *    event_controller_gate_set, sans droit d'en changer ; une invitation VIP nommée « Awa Diop » à un numéro sans compte
+ *    (ticket_invitation_create), non réclamée ; aucun scan (un VALIDE n'est pas scannable, ED7) ;
+ *  - événement « dernieresPlaces » d'organisateur2, PUBLIE à J+1 : « Standard » 3 000 F ×20, 14 billets vendus par le
+ *    checkout réel (6 restants, au plus le seuil de 10 : « Dernières places ») ;
+ *  - fin par assertLot9terInvariants('seed-demo') : (a) à (w), schéma du lot 9 ter, puis (x1) à (x13).
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -91,12 +103,13 @@ import { loadPayment, reconcilePayment } from '../../lib/payments/confirmation.s
 import { CashoutService } from '../../lib/payments/cashout.service';
 import { ShiftService } from '../../lib/shifts/shift.service';
 import { buildTicketPayload, generateTicketCode, parseTicketPayload, verifyTicketCode } from '../../lib/security/totp';
+import type { ScanCategoryColor } from '../../lib/scan/scan-result';
 import { dispatchNotifications } from '../../lib/notifications/dispatcher';
 import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
 import { inspect } from '../helpers/db';
 import { TEST_PASSWORD } from '../helpers/fixture-data';
-import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
+import { assertLot9terInvariants } from '../helpers/lot9ter-invariants';
 import { missingRecetteSchema } from '../helpers/recette-invariants';
 import { missingTerrainSchema } from '../helpers/terrain-invariants';
 import { DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoIds } from '../../e2e/support/demo-ids';
@@ -263,6 +276,8 @@ const PEOPLE: Record<DemoAccountKey, Person & { roles: string[]; primaryRole: st
     controleur2: { firstName: 'Seynabou', lastName: 'Ba', phone: '+221700000107', email: 'seynabou.ba@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
     controleur3: { firstName: 'Lamine', lastName: 'Cissé', phone: '+221700000108', email: 'lamine.cisse@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
     partenaireNeuf: { firstName: 'Ndèye', lastName: 'Gning', phone: '+221700000109', email: 'ndeye.gning@demo.eventvillage.local', roles: ['CLIENT', 'PARTENAIRE'], primaryRole: 'PARTENAIRE' },
+    // Lot 9 ter (D.3.2) : contrôleur de l'événement à zones, porte Nord
+    controleurZones: { firstName: 'Mamadou', lastName: 'Sall', phone: '+221700000110', email: 'mamadou.sall@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
 };
 
 /** Lot 9 bis (R87) : adresse saisie par le client de démonstration, en attente de vérification (jamais une adresse technique). */
@@ -378,7 +393,11 @@ type EventCategory = 'CONCERT' | 'FESTIVAL' | 'FOOD' | 'SALLE';
 const CATEGORY_LABEL: Record<EventCategory, string> = { CONCERT: 'Concert', FESTIVAL: 'Festival', FOOD: 'Gastronomie', SALLE: 'Soirée & réception' };
 
 /** hidden : non vendue en ligne (sale_online faux) ; noCounter : non vendue au guichet (sale_counter faux). Les deux : aucun canal. */
-interface CategorySeed { name: string; price: number; total: number; description: string; hidden?: boolean; noCounter?: boolean; inactive?: boolean; deactivateAfterSales?: boolean; maxPerOrder?: number }
+interface CategorySeed {
+    name: string; price: number; total: number; description: string; hidden?: boolean; noCounter?: boolean; inactive?: boolean; deactivateAfterSales?: boolean; maxPerOrder?: number;
+    /** Lot 9 ter (9t.16) : couleur au contrôle et consigne d'entrée (ticket_categories.scan_color, entry_instruction). */
+    scanColor?: ScanCategoryColor; entryInstruction?: string;
+}
 interface SaleSeed { category: string; qty: number }
 
 interface EventSeed {
@@ -417,6 +436,16 @@ const S = (category: string, qty: number): SaleSeed => ({ category, qty });
 function sales(list: Array<[string, number[]]>): SaleSeed[] {
     return list.flatMap(([category, quantities]) => quantities.map((q) => S(category, q)));
 }
+
+/**
+ * Lot 9 ter (D.3.2) : ventes de « dernieresPlaces » (14 billets), passées en fin de seed par des acheteurs fixes : les
+ * tirages du générateur pseudo-aléatoire des lots précédents (acheteurs, entrées de « ce soir », horodatages) restent
+ * ceux d'avant la graine v4.
+ */
+const DERNIERES_PLACES_SALES = [2, 3, 2, 3, 2, 2];
+
+/** Lot 9 ter (D.3.2) : consigne d'entrée de la catégorie VIP de l'événement à zones (60 caractères au plus). */
+const ZONES_VIP_INSTRUCTION = 'Remettre bracelet doré — orienter vers le carré VIP';
 
 const EVENTS: EventSeed[] = [
     {
@@ -688,6 +717,35 @@ const EVENTS: EventSeed[] = [
         lifecycle: 'REFUSE', sales: [],
         reason: 'L’affiche ne mentionne ni la date ni le lieu : merci de la compléter avant une nouvelle soumission.',
     },
+    {
+        // Lot 9 ter (D.3.2) : événement à zones, VALIDE hors catalogue (fin J+4 02:00, future) ; zones, porte et invitation
+        // posées par setupZonesEvent ; aucun scan (ED7)
+        key: 'zones', organizer: 'organisateur', title: 'Grande soirée du Monument de la Renaissance', category: 'CONCERT',
+        venue: 'Esplanade du Monument de la Renaissance', city: 'Dakar', lat: 14.7222, lng: -17.4950, start: dayAt(3, 20), hours: 6, capacity: 170,
+        palette: 'indigo', motif: 'etoiles',
+        description: 'Une nuit de concerts en plein air : entrée générale par deux portes, carré VIP réservé, bracelets remis à l’entrée.',
+        program: [
+            { time: '20:00', kind: 'ACTIVITE', title: 'Ouverture des portes' },
+            { time: '21:30', kind: 'ARTISTE', title: 'Concert', participant: 'Orchestre de la Renaissance' },
+        ],
+        categories: [
+            { name: 'SIMPLE', price: 5000, total: 100, description: 'Accès à l’esplanade.', scanColor: 'BLANC' },
+            { name: 'VIP', price: 15000, total: 50, description: 'Carré VIP, entrée dédiée.', scanColor: 'OR', entryInstruction: ZONES_VIP_INSTRUCTION },
+            { name: 'VVIP', price: 30000, total: 20, description: 'Carré VIP, service à table.', scanColor: 'VIOLET', entryInstruction: 'Bracelet violet, accompagner au carré VIP' },
+        ],
+        lifecycle: 'VALIDE', sales: [],
+    },
+    {
+        // Lot 9 ter (D.3.2) : 14 places vendues sur 20 (DERNIERES_PLACES_SALES, en fin de seed), 6 restantes (seuil 10) :
+        // « Dernières places » à l'accueil
+        key: 'dernieresPlaces', organizer: 'organisateur2', title: 'Nuit du slam de Kaolack', category: 'CONCERT',
+        venue: 'Centre culturel régional', city: 'Kaolack', lat: 14.1460, lng: -16.0730, start: dayAt(1, 21), hours: 3, capacity: 20,
+        palette: 'savane', motif: 'bandes',
+        description: 'Scène ouverte de slam et de poésie en wolof et en français, places assises en nombre limité.',
+        program: [{ time: '21:00', kind: 'ARTISTE', title: 'Scène ouverte', participant: 'Collectif Kaolack Slam' }],
+        categories: [{ name: 'Standard', price: 3000, total: 20, description: 'Place assise.' }],
+        lifecycle: 'PUBLIE', sales: [],
+    },
 ];
 
 /** Début affiché (affiche, rapport) : la date finale, passée pour un événement terminé. */
@@ -732,6 +790,7 @@ async function createEvent(seed: EventSeed, partnerId: string, ownerId: string, 
         const { data, error: catErr } = await service.from('ticket_categories').insert({
             event_id: ev.id, name: c.name, description: c.description, price: c.price, total_quantity: c.total, sold_quantity: 0,
             is_active: !c.inactive, sale_online: !c.hidden, sale_counter: !c.noCounter, max_per_order: c.maxPerOrder ?? 10, sale_start: saleStart, sale_end: null,
+            scan_color: c.scanColor ?? null, entry_instruction: c.entryInstruction ?? null,
         }).select('id').single();
         if (catErr || !data) fail(`catégorie « ${c.name} » de « ${seed.title} »`, catErr);
         categories[c.name] = { id: data.id as string, price: c.price };
@@ -867,6 +926,41 @@ async function assign(ev: CreatedEvent, ctrl: Account, entryPoint: string, cash:
         { event_id: ev.id, user_id: ctrl.userId, can_accept_cash: cash, created_by: ev.ownerId, entry_point: entryPoint },
         { onConflict: 'event_id,user_id' });
     if (error) fail(`affectation de ${ctrl.firstName} ${ctrl.lastName}`, error);
+}
+
+/** Numéro sans compte de l'invitée « Awa Diop » de l'événement à zones (aucun compte du seed ne le porte). */
+const ZONES_GUEST_PHONE = '+221700000311';
+
+/**
+ * Lot 9 ter (D.3.2, X7) : zones et portes de l'événement « zones » enregistrées par l'organisatrice (event_zones_save),
+ * contrôleur affecté par le même upsert que les autres (le trigger crée son lien partner_controllers, x5) puis posé à la
+ * Porte Nord sans droit d'en changer (event_controller_gate_set), une invitation VIP nommée à un numéro sans compte
+ * (ticket_invitation_create, transfert en attente). Aucun scan : un VALIDE n'est pas scannable (ED7).
+ */
+async function setupZonesEvent(ev: CreatedEvent, ctrl: Account): Promise<void> {
+    const cat = (name: string): string => {
+        const c = ev.categories[name];
+        if (!c) fail('événement à zones', `catégorie « ${name} » absente`);
+        return c.id;
+    };
+    const saved = await rpcOk('event_zones_save', {
+        event_id: ev.id, actor_id: ev.ownerId,
+        zones: [
+            { name: 'Entrée générale', kind: 'ENTREE', position: 0, category_ids: [cat('SIMPLE'), cat('VIP'), cat('VVIP')], gates: [{ name: 'Porte Nord' }, { name: 'Porte Sud' }] },
+            { name: 'Carré VIP', kind: 'CONTROLE', position: 1, category_ids: [cat('VIP'), cat('VVIP')], gates: [{ name: 'Accès carré' }] },
+        ],
+    }, 'zones de l’événement à zones');
+    const zones = (saved.zones ?? []) as Array<{ name: string; gates: Array<{ id: string; name: string }> }>;
+    const north = zones.flatMap((z) => z.gates).find((g) => g.name === 'Porte Nord');
+    if (zones.length !== 2 || !north) fail('zones de l’événement à zones', `configuration inattendue ${JSON.stringify(saved)}`);
+    await assign(ev, ctrl, 'Porte Nord', false);
+    await rpcOk('event_controller_gate_set', {
+        actor_id: ev.ownerId, event_id: ev.id, controller_id: ctrl.userId, gate_id: north.id, gate_change_allowed: false,
+    }, 'porte du contrôleur de l’événement à zones');
+    await rpcOk('ticket_invitation_create', {
+        actor_id: ev.ownerId, event_id: ev.id, category_id: cat('VIP'), phones: [ZONES_GUEST_PHONE], guest_names: ['Awa Diop'], quantity: 1,
+        limits: { per_event_hour: 100, per_phone_day: 10 },
+    }, 'invitation nommée de l’événement à zones');
 }
 
 /** Garde M6 (lot 7) : au plus un paiement PENDING par acheteur et par événement, vérifiée sur la base. */
@@ -1279,6 +1373,11 @@ async function main(): Promise<void> {
     await closeShift(c3, shift3, await shiftExpected(shift3));
     log(`caisses : ${shift1} ouverte, ${shift2} clôturée avec écart de −2 000 F, ${shift3} clôturée sans écart`);
 
+    // Lot 9 ter (D.3.2) : événement à zones, VALIDE, sans scan
+    const zonesEvent = byKey('zones');
+    await setupZonesEvent(zonesEvent, accounts.controleurZones);
+    log(`« ${zonesEvent.seed.title} » : 2 zones, 3 portes, ${accounts.controleurZones.firstName} ${accounts.controleurZones.lastName} à la Porte Nord, invitation VIP « Awa Diop » en attente`);
+
     log('événements terminés (ventes, entrées, dates déplacées, events_finish_overdue)…');
     const ended: CreatedEvent[] = created.filter((c) => c.seed.lifecycle === 'TERMINE');
     for (const ev of ended) {
@@ -1406,6 +1505,15 @@ async function main(): Promise<void> {
     }
     await spreadScans(ceSoir.id, new Date(NOW.getTime() - 100 * 60_000), new Date(NOW.getTime() - 2 * 60_000));
 
+    // Lot 9 ter (D.3.2) : « dernieresPlaces », 14 places vendues sur 20 par le checkout réel (même chemin que publieComplet),
+    // après tous les tirages des lots précédents ; leurs SMS de confirmation partent avec l'envoyeur des invariants
+    const lastSeats = byKey('dernieresPlaces');
+    for (let i = 0; i < DERNIERES_PLACES_SALES.length; i++) await buyOnline(lastSeats, buyers[2 + i], 'Standard', DERNIERES_PLACES_SALES[i]);
+    const { data: lastCat, error: lastCatErr } = await service.from('ticket_categories').select('total_quantity, sold_quantity').eq('id', lastSeats.categories.Standard.id).single();
+    if (lastCatErr || !lastCat) fail('stock de « dernieresPlaces »', lastCatErr);
+    if (Number(lastCat.total_quantity) - Number(lastCat.sold_quantity) !== 6) fail('stock de « dernieresPlaces »', `reste ${Number(lastCat.total_quantity) - Number(lastCat.sold_quantity)} place(s) au lieu de 6`);
+    log(`« ${lastSeats.seed.title} » : 14 places vendues sur 20, 6 restantes`);
+
     const demoEvent = (ev: CreatedEvent, status: string): DemoEvent => ({ id: ev.id, title: ev.seed.title, status, organizer: ev.seed.organizer });
     const finalStatus: Record<Lifecycle, string> = {
         BROUILLON: 'BROUILLON', EN_ATTENTE: 'EN_ATTENTE', REFUSE: 'BROUILLON', VALIDE: 'VALIDE', PUBLIE: 'PUBLIE',
@@ -1437,9 +1545,9 @@ async function main(): Promise<void> {
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);
 
     // Lot 7 (contrat 10.1, fix(7.6)) : (a) à (o), envoyeur compris, puis (p)(q) et schéma du lot 7 ; lot 8 (T31) : (r)(s)(t) ; lot 9 (T29) : (t)(u)(v) ;
-    // lot 9 bis (T5) : schéma du lot 9 bis, puis (w1) à (w21)
-    log('invariants (a) à (w)…');
-    await assertLot9bisInvariants('seed-demo');
+    // lot 9 bis (T5) : schéma du lot 9 bis, puis (w1) à (w21) ; lot 9 ter (D.3.2) : schéma du lot 9 ter, puis (x1) à (x13)
+    log('invariants (a) à (w), puis (x)…');
+    await assertLot9terInvariants('seed-demo');
 
     log(`OK en ${((Date.now() - started) / 1000).toFixed(1)}s`);
 }

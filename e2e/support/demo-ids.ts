@@ -7,6 +7,9 @@
  * l'événement « la veille » (`events.veille`, début ≈ 20 h après le seed), le billet du client dans la fenêtre
  * hors ligne (`tickets.clientVeille`), le billet de la saisie manuelle (`tickets.manualLookup`) et les paiements
  * du client en attente, réussi et échoué (`payments`).
+ * Lot 9 ter (contrat D.3.2, amendement 3 de D ; commit fix(9t.seed)) : version 4, avec le contrôleur de l'événement à zones
+ * (`accounts.controleurZones`), l'événement à zones VALIDE (`events.zones`) et l'événement presque complet
+ * (`events.dernieresPlaces`), ajoutés en fin de liste.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,17 +19,17 @@ export const DEMO_IDS_FILE = path.join(E2E_OUTPUT_DIR, 'demo-ids.json');
 export const CAPTURES_DIR = path.join(E2E_OUTPUT_DIR, 'captures');
 export const RESULTS_DIR = path.join(E2E_OUTPUT_DIR, 'results');
 
-export const DEMO_IDS_VERSION = 3;
+export const DEMO_IDS_VERSION = 4;
 
 export const DEMO_ACCOUNT_KEYS = [
     'organisateur', 'organisateur2', 'organisateur3', 'admin', 'client', 'controleur', 'controleur2', 'controleur3',
-    'partenaireNeuf',
+    'partenaireNeuf', 'controleurZones',
 ] as const;
 export type DemoAccountKey = typeof DEMO_ACCOUNT_KEYS[number];
 
 export const DEMO_EVENT_KEYS = [
     'ceSoir', 'publie', 'publieComplet', 'suspendu', 'annule', 'annuleSansVente', 'termine', 'termine2',
-    'valide', 'enAttente', 'brouillon', 'refuse', 'veille',
+    'valide', 'enAttente', 'brouillon', 'refuse', 'veille', 'zones', 'dernieresPlaces',
 ] as const;
 export type DemoEventKey = typeof DEMO_EVENT_KEYS[number];
 

@@ -1,19 +1,19 @@
 /**
- * Lot 8 (contrat 15.5, L79, AR2), lot 9 (AR6, T29), lot 9 bis (T5) — invariants (a) à (w) de la recette, sur la base LOCALE du parcours, dans un
+ * Lot 8 (contrat 15.5, L79, AR2), lot 9 (AR6, T29), lot 9 bis (T5), lot 9 ter (D.3.2) — invariants (a) à (w), puis x1 à x13, de la recette, sur la base LOCALE du parcours, dans un
  * processus à part : jamais d'import du dépôt dans Playwright (alias @/ en CI, run 71). Lancé par e2e/support/parcours.ts :
  *
  *   EV_ENV_FILE=.env.e2e node --import tsx --import ./tests/helpers/env.ts scripts/e2e/invariants-run.ts <libellé>
  *
  * tests/helpers/env.ts installe les faux adaptateurs : une ligne due de la boîte d'envoi partirait ici dans le vide au lieu
  * d'aller aux faux services. La recette vide donc la boîte par la vraie route avant cet appel, et ce script rend le nombre
- * de lignes qu'il a trouvées dues, que la recette exige à 0. Ce passage précède assertLot9bisInvariants (lot 9 bis, T5 :
- * (a) à (v) par assertLot9Invariants, schéma du lot 9 bis, puis (w1) à (w21)), dont l'envoyeur ne trouve alors plus rien.
+ * de lignes qu'il a trouvées dues, que la recette exige à 0. Ce passage précède assertLot9terInvariants (lot 9 ter, D.3.2 :
+ * (a) à (w) par assertLot9bisInvariants, schéma du lot 9 ter, puis (x1) à (x13)), dont l'envoyeur ne trouve alors plus rien.
  *
  * Sortie : journaux [INVARIANT-…], puis une dernière ligne JSON { label, reserved } ; code 1 sur violation. Jamais d'appel
  * pendant un paiement en cours : la chaîne purge les réservations et passe le cron de fin d'événement.
  */
 import { dispatchPendingNotifications } from '../../tests/helpers/notification-invariants';
-import { assertLot9bisInvariants } from '../../tests/helpers/lot9bis-invariants';
+import { assertLot9terInvariants } from '../../tests/helpers/lot9ter-invariants';
 
 const TAG = '[invariants-run]';
 
@@ -23,7 +23,7 @@ async function main(): Promise<void> {
     if (process.env.EV_TEST_GUARD !== '1') throw new Error(`${TAG} garde-fou de test non chargé : --import ./tests/helpers/env.ts obligatoire.`);
     const pending = await dispatchPendingNotifications();
     const reserved = pending.claimed + pending.reclaimed;
-    await assertLot9bisInvariants(label);
+    await assertLot9terInvariants(label);
     process.stdout.write(`${JSON.stringify({ label, reserved })}\n`);
 }
 
