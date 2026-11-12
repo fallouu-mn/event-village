@@ -111,7 +111,7 @@ after(() => {
 function workDir(lines: Record<string, string>): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-fiche-partenaire-'));
     WORK_DIRS.push(dir);
-    fs.writeFileSync(path.join(dir, '.env.local'), Object.entries(lines).map(([k, v]) => `${k}=${v}`).join('\n'));
+    fs.writeFileSync(path.join(dir, '.env.local'), Object.entries(lines).map(([k, v]) => `${k}="${v}"`).join('\n'));
     return dir;
 }
 
