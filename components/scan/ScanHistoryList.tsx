@@ -41,6 +41,7 @@ function dotClass(result: string): string {
         case 'technique':
             return 'bg-fg-muted';
         case 'hors_fenetre':
+        case 'oriente':
             return 'bg-warning';
         default:
             return 'bg-danger';

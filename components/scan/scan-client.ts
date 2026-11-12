@@ -18,10 +18,14 @@
  * forme { eventId, replayOnly: true } à chaque essai, sans code ni numéro de billet. Le serveur rend le verdict de la
  * ligne de cette clé, ou `not_processed` s'il n'y en a pas ; il ne composte jamais. Un scan repris ne fait donc jamais
  * entrer un spectateur qui n'est plus devant le contrôleur.
+ * Lot 9 ter (9t.15 à 9t.17, contrat C.2.3) : `gateId` (porte de l'affectation) sur chaque envoi d'un événement à zones,
+ * validation par la liste des invités ({ eventId, guestTicketId, identityVerified }) ; un 409 GATE_REQUIRED, GATE_CHANGED
+ * ou GATE_INVALID est un incident technique (échec 'gate' : aucune entrée écrite, ni vibration ni compteur) ; billet servi avec
+ * sa couleur, sa consigne, son origine et la porte de la première entrée ; zone, porte et zones où se présenter.
  * Aucun son (D52).
  */
 import {
-    isScanResult, isTechnicalScanResult, SCAN_RESULT_LABELS, scanCategoryOf,
+    isGateProblemCode, isScanResult, isTechnicalScanResult, SCAN_RESULT_LABELS, scanCategoryOf,
     type ScanCategory, type ScanResult,
 } from '@/lib/scan/scan-result';
 
@@ -45,10 +49,19 @@ export interface ScanTicketInfo {
     checked_in_at?: string | null;
     /** Billet composté par le scanneur courant (already_used, D41). */
     checked_in_by_me?: boolean;
+    /** Lot 9 ter : couleur de la catégorie, consigne d'entrée, origine, porte de la première entrée, liste des invités. */
+    category_color?: string;
+    entry_instruction?: string;
+    origin?: string;
+    checked_in_gate?: string | null;
+    is_guest_list?: boolean;
 }
 
+/** Lot 9 ter : zone de la porte (`implicit` : zone « Entrée » sans configuration) et porte du scan. */
+export interface ScanZone { name?: string; kind?: string; implicit: boolean }
+
 /** Incident technique ou de droit : la réponse ne dit rien du billet. */
-export type ScanFailure = 'auth' | 'forbidden' | 'rate_limited' | 'server' | 'network' | 'timeout' | 'offline' | 'bad_request';
+export type ScanFailure = 'auth' | 'forbidden' | 'rate_limited' | 'server' | 'network' | 'timeout' | 'offline' | 'bad_request' | 'gate';
 
 export interface ScanOutcome {
     result: ScanResult;
@@ -63,11 +76,17 @@ export interface ScanOutcome {
     replayed?: boolean;
     /** Nombre d'essais envoyés pour cette lecture (1 à 3 ; 0 hors ligne). */
     attempts?: number;
+    zone?: ScanZone;
+    gate?: { name?: string } | null;
+    /** Zones où se présenter (wrong_zone, not_entered). */
+    redirectZones?: string[];
 }
 
-export type ScanRequest =
+export type ScanRequest = (
     | { eventId: string; payload: string }
-    | { eventId: string; manualTicketNumber: string; identityVerified: boolean };
+    | { eventId: string; manualTicketNumber: string; identityVerified: boolean }
+    | { eventId: string; guestTicketId: string; identityVerified: boolean }
+) & { gateId?: string | null };
 
 export interface SendOptions {
     /** Clé d'idempotence imposée (saisie manuelle : la clé de la vérification est reprise pour la validation). */
@@ -92,7 +111,16 @@ function ticketOf(v: unknown): ScanTicketInfo | undefined {
         is_manual_entry: t.is_manual_entry === true,
         checked_in_at: text(t.checked_in_at) ?? null,
         checked_in_by_me: t.checked_in_by_me === true,
+        category_color: text(t.category_color),
+        entry_instruction: text(t.entry_instruction),
+        origin: text(t.origin),
+        checked_in_gate: text(t.checked_in_gate) ?? null,
+        is_guest_list: t.is_guest_list === true,
     };
+}
+
+function namesOf(v: unknown): string[] | undefined {
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : undefined;
 }
 
 /** Clé d'idempotence d'une lecture : UUID v4 (crypto.randomUUID, repli sur getRandomValues hors contexte sûr). */
@@ -128,6 +156,10 @@ export async function readScanResponse(res: Response): Promise<ScanOutcome> {
     if (res.status === 429) {
         return { result: 'rate_limited', failure: 'rate_limited', httpStatus: 429, message: serverMessage ?? SCAN_RESULT_LABELS.rate_limited };
     }
+    // Lot 9 ter : incident de porte (rien n'est écrit), jamais un verdict sur le billet
+    if (res.status === 409 && !isScanResult(body.result) && isGateProblemCode(body.code)) {
+        return { result: 'server_error', failure: 'gate', httpStatus: 409, code: body.code, message: serverMessage ?? SCAN_RESULT_LABELS.server_error };
+    }
     if (res.status >= 500) {
         return { result: 'server_error', failure: 'server', httpStatus: res.status, message: serverMessage ?? SCAN_RESULT_LABELS.server_error };
     }
@@ -140,6 +172,9 @@ export async function readScanResponse(res: Response): Promise<ScanOutcome> {
             ticket: ticketOf(body.ticket),
             code: text(body.code),
             replayed: body.replayed === true,
+            zone: body.zone && typeof body.zone === 'object' ? { ...(body.zone as ScanZone), implicit: (body.zone as ScanZone).implicit !== false } : undefined,
+            gate: body.gate && typeof body.gate === 'object' ? body.gate as { name?: string } : null,
+            redirectZones: namesOf(body.redirect_zones),
         };
     }
     // 400 ou réponse hors contrat : incident technique, jamais un verdict sur le billet
@@ -240,7 +275,7 @@ export type ManualLookup =
     | { kind: 'refused'; httpStatus: number | null; message: string };
 
 /** Vérification d'un numéro de billet (lecture seule, aucune entrée) : titulaire et résultat prévu. */
-export async function lookupManualTicket(eventId: string, manualTicketNumber: string): Promise<ManualLookup> {
+export async function lookupManualTicket(eventId: string, manualTicketNumber: string, gateId?: string | null): Promise<ManualLookup> {
     if (isOffline()) return { kind: 'refused', httpStatus: null, message: 'Hors ligne : la vérification reprendra au retour du réseau.' };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), SCAN_ATTEMPT_TIMEOUTS_MS[SCAN_ATTEMPT_TIMEOUTS_MS.length - 1]);
@@ -248,7 +283,7 @@ export async function lookupManualTicket(eventId: string, manualTicketNumber: st
         const res = await fetch(SCAN_LOOKUP_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ eventId, manualTicketNumber }),
+            body: JSON.stringify(gateId ? { eventId, manualTicketNumber, gateId } : { eventId, manualTicketNumber }),
             cache: 'no-store',
             signal: controller.signal,
         });
@@ -309,6 +344,7 @@ export function categoryFor(outcome: ScanOutcome): ScanCategory {
 
 const TICKET_REFUSALS: ReadonlySet<ScanResult> = new Set<ScanResult>([
     'already_used', 'invalid', 'cancelled', 'refunded', 'wrong_event', 'qr_expired', 'dynamic_qr_required', 'payment_required',
+    'wrong_zone', 'not_entered',
 ]);
 
 /**
@@ -330,6 +366,7 @@ export function toneFor(outcome: ScanOutcome): ScanTone {
         case 'evenement_annule':
             return 'danger';
         case 'hors_fenetre':
+        case 'oriente':
             return 'warning';
         default:
             return 'neutral';
@@ -353,6 +390,9 @@ export function titleFor(outcome: ScanOutcome): string {
         case 'timeout':
         case 'network':
             return 'Résultat inconnu : scannez de nouveau';
+        // Lot 9 ter (C.2.4) : incident de porte
+        case 'gate':
+            return outcome.code === 'GATE_CHANGED' ? 'Votre porte a changé' : outcome.code === 'GATE_INVALID' ? 'Porte inconnue' : 'Aucune porte affectée';
         default:
             return SCAN_RESULT_LABELS[outcome.result];
     }

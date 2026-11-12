@@ -48,6 +48,10 @@
  *    d'encaisser a été retiré : il peut encore la clôturer ;
  *  - R107 : un 403 du scan (« Vous ne contrôlez plus cet événement ») fait relire les affectations ; une affectation
  *    retirée ramène à l'écran de choix.
+ *
+ * Lot 9 ter (9t.16, contrat C.2.3, C.2.4) : plein écran avec couleur de la catégorie, consigne, zone, porte, badge
+ * d'origine, zones où se présenter et porte de la première entrée ; un incident de porte (409 GATE_*) est un écran
+ * technique, et GATE_CHANGED fait relire les affectations.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -79,6 +83,7 @@ import { deferredPart, useDeferredPart } from '@/lib/scan/deferred-part';
 import { EVENT_STATUS_META, isEventStatus } from '@/lib/events/event-status';
 import { formatDate, formatEventDateTime, formatTime, toDate } from '@/lib/format';
 import { triggerHapticFeedback } from '@/lib/hardware/feedback';
+import { isGateProblemCode } from '@/lib/scan/scan-result';
 import type { ShiftSummary } from '@/lib/shifts/shift.service';
 
 // Caisse et guichet chargés à la demande : ni la caisse ni le guichet ne pèsent sur l'ouverture du scanner
@@ -693,8 +698,8 @@ export default function ControllerScannerPage() {
             return;
         }
         // R107 : refus 403 (« Vous ne contrôlez plus cet événement ») : affectations relues ; une affectation retirée
-        // ramène à l'écran de choix, un contrôle fermé entre-temps affiche son bandeau
-        if (outcome.failure === 'forbidden') void fetchAssignments({ quiet: true });
+        // ramène à l'écran de choix, un contrôle fermé entre-temps affiche son bandeau. Lot 9 ter : porte changée, idem
+        if (outcome.failure === 'forbidden' || outcome.code === 'GATE_CHANGED') void fetchAssignments({ quiet: true });
         presentOutcome(outcome, payload, recoveredAt);
     }, [presentOutcome, redirectIfSessionExpired, fetchAssignments]);
 
@@ -1083,7 +1088,7 @@ export default function ControllerScannerPage() {
     // contrôleur revient et doit le voir ; un scan non traité se perdrait en 3 s alors que le billet reste à rescanner)
     const overlayDuration = !outcome ? 0
         : shown?.resumed ? 0
-        : outcome.result === 'valid' && !isTechnicalOutcome(outcome) ? autoReturnMs
+        : categoryFor(outcome) === 'accepte' ? autoReturnMs
         : REFUSAL_RETURN_MS;
     const areaContent = (
         <>
@@ -1147,6 +1152,14 @@ export default function ControllerScannerPage() {
                     durationMs={overlayDuration}
                     onDismiss={dismissResult}
                     recoveredAt={shown?.recoveredAt ?? null}
+                    categoryColor={outcome.ticket?.category_color}
+                    entryInstruction={outcome.ticket?.entry_instruction}
+                    zoneName={outcome.zone && !outcome.zone.implicit ? outcome.zone.name : null}
+                    gateName={outcome.gate?.name}
+                    origin={outcome.ticket?.origin}
+                    redirectZones={outcome.redirectZones}
+                    checkedInGate={outcome.ticket?.checked_in_gate}
+                    gateProblem={outcome.failure === 'gate' && isGateProblemCode(outcome.code) ? outcome.code : null}
                 />
             )}
 

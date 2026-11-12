@@ -9,14 +9,17 @@
  * Amendement A10 : un scan renvoyé au retour dans l'application (même clé, verdict d'origine) porte `recoveredAt`
  * (ligne « Résultat retrouvé » avec l'heure de la lecture, attribut data-scan-recovered). Lot 8 (8.2 e) : jamais pour
  * `not_processed`, rien n'a été retrouvé.
+ * Lot 9 ter (9t.16, contrat C.2.4) : orientation (mauvaise zone, pas encore entré) en ton d'avertissement avec l'icône
+ * Signpost ; lignes « Zone », « Présentez-vous à » et « Déjà utilisé à {HH:MM}, {porte} » ; badge d'origine (Invitation,
+ * Gratuit) ; consigne d'entrée de la catégorie sur une entrée validée.
  */
 import {
-    AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ScanLine, ServerCrash, ShieldAlert, WifiOff, XCircle,
-    type LucideIcon,
+    AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ScanLine, ServerCrash, ShieldAlert, ShieldCheck, Signpost, WifiOff,
+    XCircle, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { formatTime } from '@/lib/format';
-import { NOT_PROCESSED_DETAIL } from '@/lib/scan/scan-result';
+import { gatePhrase, NOT_PROCESSED_DETAIL } from '@/lib/scan/scan-result';
 import { isTechnicalOutcome, titleFor, toneFor, type ScanOutcome, type ScanTone } from './scan-client';
 
 /** Tons du résultat sur les tokens sémantiques (contrat Q) : fond doux, bordure et titre du ton, texte courant. */
@@ -35,6 +38,11 @@ function iconFor(outcome: ScanOutcome): LucideIcon {
     switch (outcome.result) {
         case 'valid':
             return CheckCircle2;
+        case 'zone_ok':
+            return ShieldCheck;
+        case 'wrong_zone':
+        case 'not_entered':
+            return Signpost;
         case 'payment_required':
             return Banknote;
         case 'qr_expired':
@@ -67,6 +75,13 @@ export function ScanResultPanel({ outcome, title, recoveredAt }: ScanResultPanel
     const ticket = outcome.ticket;
     const detail = outcome.result === 'not_processed' ? NOT_PROCESSED_DETAIL : outcome.message;
     const showMessage = detail && detail !== heading;
+    const zone = outcome.zone && !outcome.zone.implicit && outcome.zone.name
+        ? [outcome.zone.name, outcome.gate?.name].filter(Boolean).join(' · ') : null;
+    const redirect = outcome.result === 'wrong_zone' || outcome.result === 'not_entered'
+        ? (outcome.redirectZones ?? []).slice(0, 2).join(' ou ') || 'Aucune zone n’admet ce billet : appelez l’organisateur.' : null;
+    const usedAt = outcome.result === 'already_used' && ticket?.checked_in_at
+        ? `${formatTime(ticket.checked_in_at)}${ticket.checked_in_gate ? `, ${gatePhrase(ticket.checked_in_gate)}` : ''}` : null;
+    const badge = ticket?.origin === 'INVITATION' ? 'Invitation' : ticket?.origin === 'FREE' ? 'Gratuit' : null;
 
     return (
         <div
@@ -91,12 +106,21 @@ export function ScanResultPanel({ outcome, title, recoveredAt }: ScanResultPanel
                             Incident technique : le billet n’est pas en cause. Ne refusez pas le spectateur pour ce motif, réessayez.
                         </p>
                     )}
-                    {ticket && (ticket.ticket_number || ticket.holder || ticket.category) && (
+                    {outcome.result === 'valid' && ticket?.entry_instruction && (
+                        <p className={cn('text-base font-bold', classes.body)}>{ticket.entry_instruction}</p>
+                    )}
+                    {((ticket && (ticket.ticket_number || ticket.holder || ticket.category)) || zone || redirect || usedAt) && (
                         <dl className={cn('grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 pt-1 text-sm', classes.body)}>
-                            {ticket.holder && (<><dt className="font-semibold">Titulaire</dt><dd className="truncate">{ticket.holder}</dd></>)}
-                            {ticket.category && (<><dt className="font-semibold">Catégorie</dt><dd className="truncate">{ticket.category}</dd></>)}
-                            {ticket.ticket_number && (<><dt className="font-semibold">Billet</dt><dd className="truncate tabular-nums">{ticket.ticket_number}</dd></>)}
+                            {redirect && (<><dt className="font-semibold">{outcome.result === 'wrong_zone' ? 'Présentez-vous à' : 'Passez d’abord par'}</dt><dd className="break-words">{redirect}</dd></>)}
+                            {usedAt && (<><dt className="font-semibold">Déjà utilisé à</dt><dd className="break-words tabular-nums">{usedAt}</dd></>)}
+                            {ticket?.holder && (<><dt className="font-semibold">Titulaire</dt><dd className="truncate">{ticket.holder}</dd></>)}
+                            {ticket?.category && (<><dt className="font-semibold">Catégorie</dt><dd className="truncate">{ticket.category}</dd></>)}
+                            {ticket?.ticket_number && (<><dt className="font-semibold">Billet</dt><dd className="truncate tabular-nums">{ticket.ticket_number}</dd></>)}
+                            {zone && (<><dt className="font-semibold">Zone</dt><dd className="break-words">{zone}</dd></>)}
                         </dl>
+                    )}
+                    {badge && (
+                        <p className={cn('self-start rounded-lg border-2 border-current px-2.5 py-0.5 text-sm font-bold', classes.body)}>{badge}</p>
                     )}
                     {ticket?.is_manual_entry && (
                         <p className={cn('inline-flex items-center gap-1.5 text-sm font-semibold', classes.body)}>

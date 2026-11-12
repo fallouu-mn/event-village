@@ -89,6 +89,23 @@ const config: Config = {
           // Lot 9 ter (9t.16, X13) : orange de la mauvaise zone (bg-scan-orient-bg, text-scan-orient-fg)
           'orient-bg': tone('scan-orient-bg'),
           'orient-fg': tone('scan-orient-fg'),
+          // Lot 9 ter (9t.16, C.2.4, EC4) : couleur de la catégorie (bg-scan-cat-<clé>-bg, text-scan-cat-<clé>-fg)
+          'cat-blanc-bg': tone('scan-cat-blanc-bg'),
+          'cat-blanc-fg': tone('scan-cat-blanc-fg'),
+          'cat-or-bg': tone('scan-cat-or-bg'),
+          'cat-or-fg': tone('scan-cat-or-fg'),
+          'cat-argent-bg': tone('scan-cat-argent-bg'),
+          'cat-argent-fg': tone('scan-cat-argent-fg'),
+          'cat-rose-bg': tone('scan-cat-rose-bg'),
+          'cat-rose-fg': tone('scan-cat-rose-fg'),
+          'cat-turquoise-bg': tone('scan-cat-turquoise-bg'),
+          'cat-turquoise-fg': tone('scan-cat-turquoise-fg'),
+          'cat-bleu-bg': tone('scan-cat-bleu-bg'),
+          'cat-bleu-fg': tone('scan-cat-bleu-fg'),
+          'cat-violet-bg': tone('scan-cat-violet-bg'),
+          'cat-violet-fg': tone('scan-cat-violet-fg'),
+          'cat-noir-bg': tone('scan-cat-noir-bg'),
+          'cat-noir-fg': tone('scan-cat-noir-fg'),
         },
         // Lot 7 (D59) : opérateurs de paiement (bg-op-wave text-on-op-wave, bg-op-orange-money text-on-op-orange-money)
         'op-wave': tone('op-wave'),
