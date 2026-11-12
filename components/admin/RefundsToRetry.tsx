@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { CheckCircle2, CircleCheckBig, RotateCcw } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { Ban, CheckCircle2, CircleCheckBig, RotateCcw } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -23,13 +24,28 @@ import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
  *  - « Renvoyer » (POST /api/admin/cashouts/<id>/resend) n'existe que sous can_resend : rien n'est parti, ou SamirPay
  *    sera relu avant (AFTER_CHECK) ; un versement incertain sans identifiant n'a jamais ce bouton (B2) ;
  *  - « Marquer versé » (POST /api/admin/cashouts/<id>/mark-paid) n'existe que sous can_mark_paid, avec la référence
- *    SamirPay et, si on les connaît, les frais réels.
+ *    SamirPay et, si on les connaît, les frais réels ;
+ *  - lot 9 ter (consigne 0.3, contrat A.2.4) : « Constater non versé » (POST /api/admin/cashouts/<id>/not-sent) n'existe
+ *    que sous can_mark_not_sent (décidé par le serveur : versement incertain sans identifiant SamirPay, compte
+ *    SUPERADMIN), avec la référence du support SamirPay (100 caractères au plus) et un motif. Un refus 403
+ *    PASSWORD_CONFIRMATION_REQUIRED ouvre PasswordConfirmDialog (chargé par import(), hors du premier chargement) ; le
+ *    mot de passe accepté, le même constat repart une fois, toujours depuis la confirmation ; la boîte fermée, le constat
+ *    est interrompu et les saisies sont gardées. Rien ne repart automatiquement après un constat.
  * Le refus du serveur (texte `error`, en français) est affiché tel quel. Une réponse perdue est dite « résultat
  * inconnu » et la liste est relue avant toute nouvelle décision.
  */
 
+/** Boîte « mot de passe » chargée à la demande (lot 9 ter, A.2.4 ; patron de components/tickets/TransferModal.tsx). */
+const PasswordConfirmDialog = dynamic(
+  () => import('@/components/auth/PasswordConfirmDialog').then((m) => m.PasswordConfirmDialog),
+  { ssr: false },
+);
+
+/** Code du refus « mot de passe à saisir » (lib/auth/password-confirm.ts), lu sans importer la boîte. */
+const PASSWORD_CONFIRMATION_REQUIRED = 'PASSWORD_CONFIRMATION_REQUIRED';
+
 type CanResend = 'NOW' | 'AFTER_CHECK' | false;
-type Action = 'resend' | 'mark-paid';
+type Action = 'resend' | 'mark-paid' | 'not-sent';
 
 interface ResumeItem {
   id: string;
@@ -44,12 +60,20 @@ interface ResumeItem {
   block_label: string | null;
   can_resend: CanResend;
   can_mark_paid: boolean;
+  /** Lot 9 ter (A.2.3) : « Constater non versé » permis, décidé par le serveur. */
+  can_mark_not_sent: boolean;
   /** Conseil du serveur ; absent quand l'état et le motif suffisent. */
   advice: string | null;
 }
 
 interface Notice {
   tone: StatusBannerTone;
+  title: string;
+  text: string;
+}
+
+/** Refus affiché dans la boîte : saisie refusée (400) ou constat interrompu (mot de passe non saisi). */
+interface Refusal {
   title: string;
   text: string;
 }
@@ -97,6 +121,21 @@ function resendNotice(reply: unknown): Notice {
   return { tone: 'warning', title: 'Versement non parti', text: 'Le renvoi est enregistré, mais le versement n’est pas parti : son nouvel état est affiché dans la liste.' };
 }
 
+/** Résultat d'un « Constater non versé » accepté (réponse `{ ok, status, kind }`) : un retrait est annulé. */
+function notSentNotice(reply: unknown, item: ResumeItem): Notice {
+  const kind = isRecord(reply) && typeof reply.kind === 'string' ? reply.kind : item.kind;
+  return kind === 'WITHDRAWAL'
+    ? { tone: 'success', title: 'Retrait annulé', text: 'Le montant est revenu sur le solde du bénéficiaire, qui peut refaire sa demande.' }
+    : { tone: 'success', title: 'Versement constaté non versé', text: 'Il reste dans la liste : renvoyez-le quand vous le souhaitez.' };
+}
+
+/** Titre du bandeau d'un refus du serveur (403, 404, 409, panne), par décision. */
+const REFUSAL_TITLES: Record<Action, string> = {
+  resend: 'Renvoi refusé',
+  'mark-paid': 'Marquage refusé',
+  'not-sent': 'Constat refusé',
+};
+
 export interface RefundsToRetryProps {
   /** Change quand l'écran est actualisé : la liste est relue avec lui. */
   refreshToken?: number;
@@ -118,8 +157,11 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
   const [reason, setReason] = useState('');
   const [reference, setReference] = useState('');
   const [fees, setFees] = useState('');
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [isSending, setIsSending] = useState(false);
+  /** Boîte « mot de passe » ouverte pendant un constat ; sa réponse reprend le constat en attente. */
+  const [askPassword, setAskPassword] = useState(false);
+  const passwordAnswer = useRef<((confirmed: boolean) => void) | null>(null);
 
   const load = useCallback(async () => {
     const mine = ++seq.current;
@@ -166,12 +208,30 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
     if (!isSending) setDecision(null);
   };
 
+  /** Attend la réponse de la boîte « mot de passe » : vrai si le mot de passe est accepté, faux si elle est fermée. */
+  const waitForPassword = () => new Promise<boolean>((resolve) => {
+    passwordAnswer.current = resolve;
+    setAskPassword(true);
+  });
+
+  const answerPassword = (confirmed: boolean) => {
+    setAskPassword(false);
+    const answer = passwordAnswer.current;
+    passwordAnswer.current = null;
+    answer?.(confirmed);
+  };
+
   const feesValue = parseFees(fees);
   const reasonReady = reason.trim().length >= REASON_MIN;
-  const referenceReady = decision?.action !== 'mark-paid' || reference.trim() !== '';
+  const needsReference = decision?.action === 'mark-paid' || decision?.action === 'not-sent';
+  const referenceReady = !needsReference || reference.trim() !== '';
   const feesReady = decision?.action !== 'mark-paid' || feesValue !== null;
 
-  /** Décision envoyée au serveur ; un refus de saisie (400) reste dans la boîte, tout autre résultat la ferme. */
+  /**
+   * Décision envoyée au serveur ; un refus de saisie (400) reste dans la boîte, tout autre résultat la ferme.
+   * Constat : un refus « mot de passe à saisir » ouvre la boîte du mot de passe et, s'il est accepté, le même constat
+   * repart une seule fois ; la boîte fermée, le constat est interrompu, la boîte de décision reste ouverte avec ses saisies.
+   */
   const decide = async () => {
     if (!decision || isSending) return;
     const { item, action } = decision;
@@ -181,30 +241,45 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
     try {
       const payload = action === 'resend'
         ? { reason: reason.trim() }
-        : { reason: reason.trim(), reference: reference.trim(), fees: feesValue ?? undefined };
+        : action === 'not-sent'
+          ? { reference: reference.trim(), reason: reason.trim() }
+          : { reason: reason.trim(), reference: reference.trim(), fees: feesValue ?? undefined };
       const url = action === 'resend'
         ? `/api/admin/cashouts/${encodeURIComponent(item.id)}/resend`
-        : `/api/admin/cashouts/${encodeURIComponent(item.id)}/mark-paid`;
-      const res = await fetch(url, {
+        : action === 'not-sent'
+          ? `/api/admin/cashouts/${encodeURIComponent(item.id)}/not-sent`
+          : `/api/admin/cashouts/${encodeURIComponent(item.id)}/mark-paid`;
+      const send = () => fetch(url, {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const body = await readJsonBody(res, `versement ${item.id} / ${action}`);
+      let res = await send();
+      let body = await readJsonBody(res, `versement ${item.id} / ${action}`);
+      if (action === 'not-sent' && res.status === 403 && isRecord(body) && body.code === PASSWORD_CONFIRMATION_REQUIRED) {
+        if (!(await waitForPassword())) {
+          setRefusal({ title: 'Mot de passe non saisi', text: 'Constat interrompu : votre mot de passe est demandé pour continuer.' });
+          return;
+        }
+        res = await send();
+        body = await readJsonBody(res, `versement ${item.id} / ${action} (après le mot de passe)`);
+      }
       if (res.ok) {
         result = action === 'resend'
           ? resendNotice(body)
-          : { tone: 'success', title: 'Versement marqué versé', text: 'Le versement est confirmé avec la référence indiquée : il quitte la liste.' };
+          : action === 'not-sent'
+            ? notSentNotice(body, item)
+            : { tone: 'success', title: 'Versement marqué versé', text: 'Le versement est confirmé avec la référence indiquée : il quitte la liste.' };
       } else {
         const message = isRecord(body) && typeof body.error === 'string' && body.error.trim() !== ''
           ? body.error
           : `Décision refusée par le serveur (erreur ${res.status}). Relisez la liste avant de recommencer.`;
         if (res.status === 400) {
-          setRefusal(message);
+          setRefusal({ title: 'Décision refusée', text: message });
           return;
         }
-        result = { tone: 'danger', title: action === 'resend' ? 'Renvoi refusé' : 'Marquage refusé', text: message };
+        result = { tone: 'danger', title: REFUSAL_TITLES[action], text: message };
       }
     } catch (err) {
       console.error(`[versements à reprendre] décision ${action} sur ${item.id} sans réponse lisible :`, err);
@@ -246,6 +321,19 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
             className="w-full sm:w-auto"
           >
             Marquer versé
+          </Button>
+        )}
+        {item.can_mark_not_sent && (
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<Ban size={16} aria-hidden="true" />}
+            disabled={isRefreshing}
+            aria-label={`Constater non versé le versement de ${formatFcfa(item.amount)}`}
+            onClick={() => openDecision(item, 'not-sent')}
+            className="w-full sm:w-auto"
+          >
+            Constater non versé
           </Button>
         )}
       </div>
@@ -301,9 +389,12 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
 
   const target = decision?.item ?? null;
   const isMarkPaid = decision?.action === 'mark-paid';
+  const isNotSent = decision?.action === 'not-sent';
   const dialogMessage = !decision
     ? undefined
-    : isMarkPaid
+    : isNotSent
+      ? 'À faire seulement si le support SamirPay confirme que ce versement n’est jamais parti. Il passera « Non versé » : un remboursement pourra ensuite être renvoyé, par un nouvel envoi ; un retrait sera annulé et son montant rendu au bénéficiaire. Rien ne repart automatiquement.'
+      : isMarkPaid
       ? 'Vérifiez auprès du support SamirPay que ce versement est bien parti, puis indiquez sa référence. Il sera confirmé sans nouvel envoi.'
       : decision.item.can_resend === 'AFTER_CHECK'
         ? 'Le statut SamirPay est relu d’abord : le versement ne repart que s’il a échoué.'
@@ -360,9 +451,9 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
         isOpen={decision !== null}
         onClose={closeDecision}
         onConfirm={() => void decide()}
-        title={isMarkPaid ? 'Marquer ce versement versé ?' : 'Renvoyer ce versement ?'}
+        title={isNotSent ? 'Constater que ce versement n’est pas parti ?' : isMarkPaid ? 'Marquer ce versement versé ?' : 'Renvoyer ce versement ?'}
         message={dialogMessage}
-        confirmLabel={isMarkPaid ? 'Marquer versé' : 'Renvoyer'}
+        confirmLabel={isNotSent ? 'Constater non versé' : isMarkPaid ? 'Marquer versé' : 'Renvoyer'}
         variant="warning"
         maxWidth="md"
         isLoading={isSending}
@@ -380,9 +471,23 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
               <dt className="text-fg-muted">État</dt>
               <dd className="min-w-0 break-words text-fg">{target.block_label ? `${target.state_label} : ${target.block_label}` : target.state_label}</dd>
             </dl>
+            {isNotSent && (
+              <TextInput
+                id={`${fieldId}-support`}
+                label="Référence du support SamirPay"
+                required
+                maxLength={100}
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                disabled={isSending}
+                autoComplete="off"
+                spellCheck={false}
+                hint="Numéro du ticket ou de l’échange avec le support SamirPay, 100 caractères au plus."
+              />
+            )}
             <Textarea
               id={`${fieldId}-raison`}
-              label="Justification"
+              label={isNotSent ? 'Motif' : 'Justification'}
               required
               rows={3}
               maxLength={REASON_MAX}
@@ -390,7 +495,7 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               disabled={isSending}
-              hint={`${REASON_MIN} caractères au moins, gardée au journal des décisions.`}
+              hint={isNotSent ? `${REASON_MIN} caractères au moins, gardé au journal des décisions.` : `${REASON_MIN} caractères au moins, gardée au journal des décisions.`}
               data-autofocus="true"
             />
             {isMarkPaid && (
@@ -421,13 +526,22 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
               </>
             )}
             {refusal && (
-              <StatusBanner tone="danger" title="Décision refusée" announce="alert">
-                {refusal}
+              <StatusBanner tone="danger" title={refusal.title} announce="alert">
+                {refusal.text}
               </StatusBanner>
             )}
           </div>
         )}
       </ConfirmDialog>
+
+      {askPassword && (
+        <PasswordConfirmDialog
+          isOpen
+          onClose={() => answerPassword(false)}
+          onConfirmed={() => answerPassword(true)}
+          actionHint="Le constat sera enregistré juste après."
+        />
+      )}
     </section>
   );
 }
