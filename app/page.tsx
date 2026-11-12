@@ -86,6 +86,8 @@ export default function HomePage() {
   const [category, setCategory] = useState<string>(ALL);
   const [search, setSearch] = useState('');
   const [isFiltering, setIsFiltering] = useState(false);
+  /** Lot 9 ter (9t.19) : signaux reçus, transmis aux sections de découverte pour qu'elles se relisent. */
+  const [liveTick, setLiveTick] = useState(0);
   const categoryRef = useRef<string>(ALL);
   /** Seule la dernière requête écrit : une réponse lente d'une catégorie précédente est ignorée. */
   const loadSeq = useRef(0);
@@ -126,7 +128,10 @@ export default function HomePage() {
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: 'accueil-public',
     subscriptions: [{ table: 'public_event_state' }],
-    onSignal: refreshEvents,
+    onSignal: () => {
+      setLiveTick((t) => t + 1);
+      return refreshEvents();
+    },
   });
 
   const retry = async () => {
@@ -290,6 +295,7 @@ export default function HomePage() {
                   categoryLabel={evt.categoryLabel}
                   price={evt.price}
                   saleLabel={evt.saleLabel}
+                  stock={evt.stock}
                   priority={i < 2}
                 />
               </li>
@@ -309,7 +315,7 @@ export default function HomePage() {
       </section>
 
       {/* 3. Populaires et Près de chez vous */}
-      <HomeDiscovery cities={phase === 'loading' ? null : cities} />
+      <HomeDiscovery cities={phase === 'loading' ? null : cities} liveTick={liveTick} />
 
       {/* 4. Organisateurs et salles */}
       <section aria-labelledby="organisateurs-titre" className={cn('grid gap-5', hallsEnabled && 'lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]')}>

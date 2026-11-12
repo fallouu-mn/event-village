@@ -53,6 +53,7 @@ function EventRail({ events, busy = false }: { events: CatalogEvent[]; busy?: bo
             categoryLabel={evt.categoryLabel}
             price={evt.price}
             saleLabel={evt.saleLabel}
+            stock={evt.stock}
             priority={false}
           />
         </li>
@@ -80,14 +81,17 @@ function RailSkeleton() {
   );
 }
 
-function PopularSection() {
+function PopularSection({ liveTick }: { liveTick: number }) {
   const [events, setEvents] = useState<CatalogEvent[]>([]);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [message, setMessage] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const result = await readPopular('accueil');
+    if (seq !== loadSeq.current) return;
     if (result.ok) {
       setEvents(result.events);
       setPhase('ready');
@@ -97,9 +101,10 @@ function PopularSection() {
     setPhase('error');
   }, []);
 
+  // Relue à chaque signal de l'accueil (liveTick), sans squelette : la liste reste affichée pendant la lecture.
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, liveTick]);
 
   const retry = async () => {
     setIsRetrying(true);
@@ -153,7 +158,7 @@ async function saveProfileCity(city: string): Promise<string | null> {
   return typeof error === 'string' && error.trim() !== '' ? error : SAVE_FAILED_MESSAGE;
 }
 
-function NearbySection({ cities }: { cities: string[] | null }) {
+function NearbySection({ cities, liveTick }: { cities: string[] | null; liveTick: number }) {
   const { isLoading: authLoading, isAuthenticated, profile, refreshProfile } = useAuth();
   const [localCity, setLocalCity] = useState<string | null>(null);
   const [cityReady, setCityReady] = useState(false);
@@ -173,9 +178,9 @@ function NearbySection({ cities }: { cities: string[] | null }) {
 
   const city = cityReady ? (profile?.city ?? localCity) : null;
 
-  const load = useCallback(async (target: string) => {
+  const load = useCallback(async (target: string, silent = false) => {
     const seq = ++loadSeq.current;
-    setPhase('loading');
+    if (!silent) setPhase('loading');
     const result = await readCatalog('proches', { city: target });
     if (seq !== loadSeq.current) return;
     if (result.ok) {
@@ -190,6 +195,14 @@ function NearbySection({ cities }: { cities: string[] | null }) {
   useEffect(() => {
     if (city) void load(city);
   }, [city, load]);
+
+  // Relue à chaque signal de l'accueil (liveTick), sans squelette : la liste ou l'état vide restent affichés.
+  const tickRef = useRef(liveTick);
+  useEffect(() => {
+    if (liveTick === tickRef.current) return;
+    tickRef.current = liveTick;
+    if (city) void load(city, true);
+  }, [liveTick, city, load]);
 
   const retry = async () => {
     if (!city) return;
@@ -291,12 +304,14 @@ function NearbySection({ cities }: { cities: string[] | null }) {
 /**
  * Populaires, puis Près de chez vous, sous « À l'affiche ».
  * `cities` : villes du catalogue, reçues de l'accueil pour éviter une requête de plus ; null tant qu'il charge.
+ * `liveTick` (lot 9 ter, 9t.19) : compteur des signaux temps réel de l'accueil (public_event_state) ; chaque
+ * changement relit les deux sections (badges de stock à jour), sans abonnement de plus.
  */
-export function HomeDiscovery({ cities }: { cities: string[] | null }) {
+export function HomeDiscovery({ cities, liveTick }: { cities: string[] | null; liveTick: number }) {
   return (
     <>
-      <PopularSection />
-      <NearbySection cities={cities} />
+      <PopularSection liveTick={liveTick} />
+      <NearbySection cities={cities} liveTick={liveTick} />
     </>
   );
 }

@@ -13,6 +13,7 @@ import { eventImageSrc } from '@/lib/events/event-image';
  *    catégorie achetable : l'état de la vente du serveur (`saleLabel`, lot 9 bis R35 : « Vente sur place
  *    uniquement », « Complet »…), « Bientôt en vente » à défaut, jamais « Gratuit » (un vrai 0 F reste « Gratuit »).
  *  - Affiche du stockage du projet seulement, sinon l'image locale neutre (lib/events/event-image.ts).
+ *  - Lot 9 ter (9t.19) : badge de stock du serveur dans le corps de la carte, le texte porte le sens (jamais la couleur seule).
  *  - Rien n'est superposé à l'affiche : le titre et la date sont souvent imprimés dans sa partie haute
  *    (relecture des captures du run 49). Pastille de date et catégorie vivent dans le corps de la carte.
  */
@@ -33,6 +34,8 @@ export interface EventCardProps {
   price: number | null;
   /** Lot 9 bis (R35, B60) : état de la vente servi par le catalogue, affiché sans prix (« Vente sur place uniquement »). */
   saleLabel?: string | null;
+  /** Lot 9 ter (9t.19) : tranche servie par le catalogue, badge « Complet » ou « Dernières places » ; jamais de nombre. */
+  stock?: 'SOLD_OUT' | 'LOW' | null;
   /** Rang dans la grille : seules les premières affiches sont chargées en priorité. */
   priority?: boolean;
 }
@@ -61,6 +64,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   categoryLabel,
   price,
   saleLabel,
+  stock,
   priority = false,
 }) => {
   const onSaleSoon = price === null || !Number.isFinite(price);
@@ -105,9 +109,10 @@ export const EventCard: React.FC<EventCardProps> = ({
           </div>
         </div>
 
-        {categoryLabel && (
-          <div>
-            <Badge variant="neutral">{categoryLabel}</Badge>
+        {(stock || categoryLabel) && (
+          <div className="flex flex-wrap gap-2">
+            {stock === 'SOLD_OUT' ? <Badge variant="danger">Complet</Badge> : stock === 'LOW' && <Badge variant="warning">Dernières places</Badge>}
+            {categoryLabel && <Badge variant="neutral">{categoryLabel}</Badge>}
           </div>
         )}
 

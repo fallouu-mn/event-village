@@ -324,6 +324,7 @@ export default function ExplorePage() {
                   categoryLabel={evt.categoryLabel}
                   price={evt.price}
                   saleLabel={evt.saleLabel}
+                  stock={evt.stock}
                   priority={i < 3}
                 />
               </li>
