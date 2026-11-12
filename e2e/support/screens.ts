@@ -61,10 +61,28 @@
  *    comptés ligne par ligne selon can_resend et can_mark_paid ; titre « Versements à reprendre », ligne « Retrait »,
  *    conseil exact d'un versement incertain sans identifiant ; plus aucun « Relancer » ;
  *  - caisse-ouverture : PIN obligatoire (R42, A11) : champ du PIN requis (aria-required), plus aucun « facultatif ».
+ *
+ * Lot 9 ter (contrat 7.1 à 7.4, tâche 9t.20 ; commit test(9t.20), vague R) : seize écrans ajoutés, rouges jusqu'à leurs
+ * écrans (vague E) et, pour ceux de l'événement à zones et de « Dernières places », jusqu'à la graine v4 (fix(9t.seed),
+ * vague F ; clés lues par seedEvent, erreur explicite tant qu'elles manquent) : scanner-accepte-consigne,
+ * scanner-mauvaise-zone, scanner-pas-encore-entre, scanner-zone-ok, scanner-porte-absente, scanner-liste-invites,
+ * scanner-liste-invites-resultat, partenaire-zones, partenaire-equipe-portes, pilotage-entrees-zones,
+ * accueil-dernieres-places, admin-versements-constater-non-verse, partenaire-finances-retrait-retarde,
+ * portefeuille-retrait-retarde, admin-cloture-motif, edition-quitter-sans-enregistrer. Aucune action qui écrit : les
+ * boîtes sont ouvertes puis capturées, jamais confirmées ; les réponses imposées portent des identifiants inconnus de la
+ * base. Modifications signalées (aucun seuil relâché) :
+ *  - scanner-deja-utilise : porte d'entrée dans la réponse (checked_in_gate « Porte Nord ») ; exige « Déjà utilisé à
+ *    19:42, Porte Nord » et le fond rouge #991B1B du jeton scan-used (consigne 2, C.4, X5) ;
+ *  - admin-remboursements-a-reprendre et admin-versements-marquer-verse (cashoutsReady partagée) : can_mark_not_sent sur
+ *    chaque ligne, vrai pour le seul versement incertain sans identifiant ; un bouton « Constater non versé » compté par
+ *    ligne où il est vrai (A.2.6) ;
+ *  - partenaire-rapport-cloture : « Entrées (dont guichet) » au lieu de « Entrées » (un seul rapport, R106 b, T-B16) ;
+ *  - invitations-confirmation : premier numéro saisi dans le champ « Numéro 1 » (lignes numéro et nom, 9t.17).
+ * Le contraste de chaque nœud [data-scan-contrast] du plein écran est contrôlé par checks.ts (arbitrage 19).
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { DemoAccountKey, DemoIds } from './demo-ids';
+import type { DemoAccountKey, DemoEvent, DemoIds } from './demo-ids';
 import type { FakePushCounters, FakePushMode } from './fake-push';
 import type { CaptureRole } from './fixtures';
 import type { PageGuard } from './network';
@@ -334,33 +352,35 @@ const CASHOUTS_TO_RESUME = {
         {
             id: 'f7b8c4ba-28ef-43ab-9ed1-b0cfd23e4a4a', kind: 'TICKET_REFUND', kind_label: 'Remboursement d’un billet', state: 'ECHOUE', state_label: 'Envoi en échec',
             since: '2026-11-04T18:30:00.000Z', amount: 5250, beneficiary: '77 ••• •• 34', event_title: 'Croisière musicale vers Gorée',
-            block_label: 'Refusé par l’opérateur Mobile Money', can_resend: 'NOW', can_mark_paid: true, advice: null,
+            block_label: 'Refusé par l’opérateur Mobile Money', can_resend: 'NOW', can_mark_paid: true, can_mark_not_sent: false, advice: null,
         },
         {
             id: '19dae6dc-4a0b-45cd-9af3-d2e1f4506c6c', kind: 'WITHDRAWAL', kind_label: 'Retrait', state: 'BLOQUE', state_label: 'Bloqué',
             since: '2026-11-04T19:05:00.000Z', amount: 48500, beneficiary: '76 ••• •• 18', event_title: null,
-            block_label: 'Solde SamirPay insuffisant', can_resend: 'NOW', can_mark_paid: true, advice: null,
+            block_label: 'Solde SamirPay insuffisant', can_resend: 'NOW', can_mark_paid: true, can_mark_not_sent: false, advice: null,
         },
         {
             id: '3bfc08fe-6c2d-47ef-9c15-f40316728e8e', kind: 'EVENT_CANCELLATION_REFUND', kind_label: 'Annulation d’événement', state: 'INCERTAIN', state_label: 'Issue incertaine',
             since: '2026-11-04T20:40:00.000Z', amount: 3150, beneficiary: '78 ••• •• 52', event_title: 'Festival Jazz sur le Fleuve',
-            block_label: null, can_resend: false, can_mark_paid: true, advice: ADVICE_UNCERTAIN_NO_ID,
+            block_label: null, can_resend: false, can_mark_paid: true, can_mark_not_sent: true, advice: ADVICE_UNCERTAIN_NO_ID,
         },
         {
             id: '4c0d19ef-7d3e-48fa-8d26-a51827839f9f', kind: 'REFUND', kind_label: 'Remboursement d’un paiement', state: 'ENVOYE_NON_CONFIRME', state_label: 'Envoyé, non confirmé',
             since: '2026-11-04T21:10:00.000Z', amount: 10500, beneficiary: '70 ••• •• 61', event_title: 'Nuit du Sabar — édition d’automne',
-            block_label: null, can_resend: 'AFTER_CHECK', can_mark_paid: true, advice: null,
+            block_label: null, can_resend: 'AFTER_CHECK', can_mark_paid: true, can_mark_not_sent: false, advice: null,
         },
         {
             id: '5d1e2a0f-8e4f-49ab-9e37-b62938940aa0', kind: 'TICKET_REFUND', kind_label: 'Remboursement d’un billet', state: 'BLOQUE', state_label: 'Bloqué',
             since: '2026-11-04T21:45:00.000Z', amount: 7350, beneficiary: '77 ••• •• 09', event_title: 'Croisière musicale vers Gorée',
-            block_label: 'Opérateur Mobile Money inconnu', can_resend: false, can_mark_paid: true, advice: null,
+            block_label: 'Opérateur Mobile Money inconnu', can_resend: false, can_mark_paid: true, can_mark_not_sent: false, advice: null,
         },
     ],
     total: 5,
 };
 const CASHOUTS_RESENDABLE = CASHOUTS_TO_RESUME.items.filter((i) => i.can_resend !== false).length;
 const CASHOUTS_MARKABLE = CASHOUTS_TO_RESUME.items.filter((i) => i.can_mark_paid).length;
+/** Lot 9 ter (A.2.3, A.2.6) : « Constater non versé » sur la seule ligne INCERTAIN sans identifiant SamirPay (SUPERADMIN). */
+const CASHOUTS_NOT_SENT = CASHOUTS_TO_RESUME.items.filter((i) => i.can_mark_not_sent).length;
 const EMPTY_RECONCILIATION = {
     summary: {
         period: 'Tout', totalTransactionsCount: 0, totalGrossVolume: 0, totalServiceFees: 0, totalAggregatorFees: 0, totalPlatformNetRevenue: 0,
@@ -388,9 +408,10 @@ const CASHOUTS_STUBS: StubResponse[] = [
  * Lot 9 bis : « Versements à reprendre » de /admin/finance (RefundsToRetry, contrat 5.1) chargé : titre exact, ligne
  * « Retrait » (retraits compris, R10), conseil exact d'un versement incertain sans identifiant (B2), puis un bouton
  * « Renvoyer » par ligne où can_resend n'est pas faux et un « Marquer versé » par ligne où can_mark_paid est vrai
- * (R51 : boutons conditionnés), et plus aucun « Relancer » (route retry supprimée, B4).
+ * (R51 : boutons conditionnés), et plus aucun « Relancer » (route retry supprimée, B4). Lot 9 ter (A.2.6) : un
+ * « Constater non versé » par ligne où can_mark_not_sent est vrai (jamais grisé, absent ailleurs).
  */
-async function cashoutsReady(page: Page): Promise<{ resend: Locator; markPaid: Locator }> {
+async function cashoutsReady(page: Page): Promise<{ resend: Locator; markPaid: Locator; markNotSent: Locator }> {
     await expect(page.getByRole('heading', { name: /^versements à reprendre$/i })).toBeVisible();
     await expect(page.getByText(/^retrait$/i).filter({ visible: true }).first(), 'ligne « Retrait » (retraits compris, R10)').toBeVisible();
     await expect(page.getByText(ADVICE_UNCERTAIN_NO_ID).filter({ visible: true }).first(), 'conseil d’un versement incertain sans identifiant (B2)').toBeVisible();
@@ -399,7 +420,9 @@ async function cashoutsReady(page: Page): Promise<{ resend: Locator; markPaid: L
     await expect(resend, 'un bouton « Renvoyer » par ligne où can_resend n’est pas faux').toHaveCount(CASHOUTS_RESENDABLE);
     await expect(markPaid, 'un bouton « Marquer versé » par ligne où can_mark_paid est vrai').toHaveCount(CASHOUTS_MARKABLE);
     await expect(page.getByRole('button', { name: /^relancer/i }), 'plus aucun « Relancer » (B4)').toHaveCount(0);
-    return { resend, markPaid };
+    const markNotSent = page.getByRole('button', { name: /^constater non versé/i }).filter({ visible: true });
+    await expect(markNotSent, 'un bouton « Constater non versé » par ligne où can_mark_not_sent est vrai (lot 9 ter, A.2.4)').toHaveCount(CASHOUTS_NOT_SENT);
+    return { resend, markPaid, markNotSent };
 }
 
 // ── Lot 9 : invitations, découverte, compte ─────────────────────────────────
@@ -456,6 +479,236 @@ function withExtraActions(screen: Screen, extra: (c: ScreenContext) => Promise<v
 /** Requêtes déjà parties vers un chemin d'API, lues dans le minutage des ressources de la page. */
 async function requestsTo(page: Page, pathname: string): Promise<number> {
     return page.evaluate((p) => performance.getEntriesByType('resource').filter((e) => new URL(e.name).pathname === p).length, pathname);
+}
+
+// ── Lot 9 ter : zones, portes, liste des invités, stock, versements (contrat 7.1 à 7.4) ──
+
+/** Clés de la graine v4 (D.3.2, fix(9t.seed), vague F), absentes de DemoIds jusque-là. */
+type Lot9terEventKey = 'zones' | 'dernieresPlaces';
+
+/** Événement de la graine v4 lu par sa clé ; erreur explicite tant que le seed ne l'a pas écrit (capture rouge). */
+function seedEvent(i: DemoIds | null, key: Lot9terEventKey): DemoEvent {
+    const events = ids(i).events as Partial<Record<string, DemoEvent>>;
+    const event = events[key];
+    if (!event?.id) throw new Error(`[e2e] demo-ids.json : events.${key} absent (graine v4 du lot 9 ter, fix(9t.seed))`);
+    return event;
+}
+
+/** Plein écran du résultat (CombatFlashOverlay). */
+function scanOverlay(page: Page): Locator {
+    return page.locator('[data-scan-state="result"]');
+}
+
+/** Jeton scan-used du lot 9 ter (#991B1B, C.2.4), tel que getComputedStyle le rend. */
+const SCAN_USED_RED = 'rgb(153, 27, 27)';
+
+/** Zones et portes des réponses imposées du scanner : identifiants inconnus de la base (C.6). */
+const ZONE_ENTREE_VIP = { id: '00000000-0000-4000-8000-000000000911', name: 'Entrée VIP', kind: 'ENTREE', implicit: false };
+const ZONE_ENTREE_GENERALE = { id: '00000000-0000-4000-8000-000000000912', name: 'Entrée générale', kind: 'ENTREE', implicit: false };
+const ZONE_CARRE_VIP = { id: '00000000-0000-4000-8000-000000000913', name: 'Carré VIP', kind: 'CONTROLE', implicit: false };
+const GATE_VIP = { id: '00000000-0000-4000-8000-000000000921', name: 'Porte VIP' };
+const GATE_NORD = { id: '00000000-0000-4000-8000-000000000922', name: 'Porte Nord' };
+const GATE_ACCES_CARRE = { id: '00000000-0000-4000-8000-000000000923', name: 'Accès carré' };
+const SCAN_TICKET_VIP = { ...SCAN_TICKET, category: 'VIP' };
+/** Consigne d'entrée de la capture scanner-accepte-consigne (C.6, mot pour mot). */
+const ENTRY_INSTRUCTION_VIP = 'Remettre bracelet doré — orienter vers le carré VVIP';
+
+/** Texte exact de GATE_REQUIRED au scan (contrat 11.3). */
+const GATE_REQUIRED_MESSAGE = 'Aucune porte ne vous est attribuée : demandez à l’organisateur de vous en attribuer une. Rien n’a été validé.';
+
+/** Plein écran attendu : résultat, famille de couleur (data-scan-category) et textes exacts de C.2.4. */
+async function expectScanLines(page: Page, category: string, lines: readonly string[]): Promise<void> {
+    const overlay = scanOverlay(page);
+    await expect(overlay, `famille du résultat (C.2.4) : ${category}`).toHaveAttribute('data-scan-category', category);
+    for (const line of lines) {
+        await expect(overlay.getByText(line, { exact: true }).first(), `texte exact du plein écran (C.2.4) : « ${line} »`).toBeVisible();
+    }
+}
+
+const GUESTS_URL = /\/api\/controller\/scan\/guests$/;
+/** Réponse imposée de POST /api/controller/scan/guests (C.6) : deux billets d'un même invité, identifiants inconnus de la base. */
+const GUEST_SEARCH_STUB = {
+    items: [{
+        guest_name: 'Awa Diop', category: 'VIP', ticket_count: 2,
+        ticket_ids: ['00000000-0000-4000-8000-000000000941', '00000000-0000-4000-8000-000000000942'],
+    }],
+    truncated: false,
+};
+
+/**
+ * Liste des invités du scanner (C.3.5) : ouverture hors du groupe « Mode de contrôle », saisie des 4 derniers chiffres,
+ * recherche envoyée avec `query` (corps de la route, C.3.4), carte de l'invité de la réponse imposée.
+ */
+async function searchGuestList(page: Page): Promise<void> {
+    await page.getByRole('button', { name: /^liste des invités$/i }).click();
+    await expect(page.getByRole('heading', { name: /^liste des invités$/i })).toBeVisible();
+    await page.getByLabel(/^numéro de l.invité/i).fill('4567');
+    const sent = page.waitForRequest((r) => GUESTS_URL.test(new URL(r.url()).pathname) && r.method() === 'POST');
+    await page.getByRole('button', { name: /^rechercher$/i }).click();
+    const body = (await sent).postDataJSON() as { query?: unknown } | null;
+    expect(body?.query, 'recherche envoyée avec les 4 chiffres saisis (C.3.4)').toBe('4567');
+    await expect(page.getByText('Awa Diop', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('2 billets', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /^choisir/i }), 'un bouton « Choisir » par invité trouvé').toHaveCount(1);
+}
+
+/** Lot 9 ter (B.6) : retrait en cours depuis 2 h, marqué retardé par le serveur. */
+const TWO_HOURS_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
+/** Réponse imposée de GET /api/finance/balance (B.6) : un retrait PROCESSING retardé, identifiant inconnu de la base. */
+function delayedWithdrawalBalance(account: 'ORGANISATEUR' | 'PARRAINAGE'): Record<string, unknown> {
+    return {
+        account_kind: account, available: 4000, pending: 0, next_available_at: null, in_progress: 6000, debt: 0, frozen: 0,
+        withdrawable: 4000, withdrawal_min_amount: 5000, withdrawal_fee_rate: 1, history: [],
+        withdrawals: [{
+            id: '00000000-0000-4000-8000-000000000901', gross_amount: 6000, fee_amount: 60, net_amount: 5940, status: 'PROCESSING',
+            operator: 'WAVE', phone_number: '771234567', withdrawal_method: 'MOBILE_MONEY', created_at: TWO_HOURS_AGO, processed_at: null,
+            rejection_reason: null, effective_status: 'PROCESSING', delayed: true,
+        }],
+    };
+}
+
+/** Badge « Retardé » et phrase des deux écrans de retraits (0.9). */
+async function delayedWithdrawalReady(page: Page): Promise<void> {
+    await expect(page.getByText('Retardé', { exact: true }).filter({ visible: true }).first(), 'badge « Retardé » (delayed servi par le serveur)').toBeVisible();
+    const phrase = page.getByText('Retardé : l’équipe Event Village s’en occupe.', { exact: true }).filter({ visible: true }).first();
+    await expect(phrase).toBeVisible();
+    await revealCenter(phrase);
+}
+
+/**
+ * Fiche admin imposée (B.6) au format d'AdminEventsService.getEventSheet : événement SUSPENDU dont la fin est passée,
+ * seule action « Clore l’événement » avec motif. Identifiants inconnus de la base : une clôture envoyée par erreur ne
+ * toucherait aucun événement réel.
+ */
+const CLOSING_SHEET = {
+    event: {
+        id: '00000000-0000-4000-8000-000000000931', title: 'Festival des Lumières de Saint-Louis', status: 'SUSPENDU',
+        description: 'Trois scènes sur les quais, musiques mandingues et mbalax jusqu’à l’aube.', category: 'FESTIVAL', image_url: null,
+        start_date: '2026-11-01', start_time: '20:00', end_date: '2026-11-02', end_time: '02:00', location: 'Quai Henri Jay', city: 'Saint-Louis',
+        capacity: 800, program: [], practical_info: null, created_at: '2026-10-10T09:00:00.000Z', updated_at: '2026-11-01T18:00:00.000Z',
+    },
+    categories: [{
+        id: '00000000-0000-4000-8000-000000000932', name: 'Standard', description: null, price: 5000, total_quantity: 600,
+        sale_start: null, sale_end: null, max_per_order: 10, sale_online: true, sale_counter: true, is_active: true,
+    }],
+    organizer: {
+        id: '00000000-0000-4000-8000-000000000933', company_name: 'Ndar Événements', commercial_name: null, phone: '+221771234567', email: null,
+        city: 'Saint-Louis', status: 'VALIDE', contact_name: 'Mariama Sall', contact_phone: '+221771234567', contact_email: null,
+    },
+    history: [
+        {
+            id: '00000000-0000-4000-8000-000000000934', old_status: 'PUBLIE', new_status: 'SUSPENDU', actor_role: 'ADMIN', actor_name: 'Ousmane Diallo',
+            reason: 'Lieu fermé par arrêté préfectoral : en attente d’une nouvelle date.', channel: 'TRANSITION', created_at: '2026-11-01T18:00:00.000Z',
+        },
+        {
+            id: '00000000-0000-4000-8000-000000000935', old_status: null, new_status: 'BROUILLON', actor_role: 'PARTENAIRE', actor_name: 'Mariama Sall',
+            reason: null, channel: 'CREATION', created_at: '2026-10-10T09:00:00.000Z',
+        },
+    ],
+    actions: {
+        status: 'SUSPENDU', actions: [{ to: 'TERMINE', label: 'Clore l’événement', reason_required: true }], can_edit: false, can_cancel: false,
+        last_reason: { kind: 'SUSPENSION', reason: 'Lieu fermé par arrêté préfectoral : en attente d’une nouvelle date.', at: '2026-11-01T18:00:00.000Z' },
+    },
+    cancellation: null,
+};
+
+const ENTRIES_URL = /\/api\/partner\/events\/[^/]+\/pilotage\/entries$/;
+const ENTRIES_GATE_NORD = '00000000-0000-4000-8000-000000000951';
+const ENTRIES_GATE_SUD = '00000000-0000-4000-8000-000000000952';
+const ENTRIES_GATE_CARRE = '00000000-0000-4000-8000-000000000953';
+const ENTRIES_ZONE_GENERALE = '00000000-0000-4000-8000-000000000954';
+const ENTRIES_ZONE_CARRE = '00000000-0000-4000-8000-000000000955';
+/** 30 minutes de débit (heure de Dakar), les 5 dernières à 11 entrées : 2,2 par minute. */
+const ENTRIES_BY_MINUTE = Array.from({ length: 30 }, (_, k) => ({
+    start: `2026-11-07T20:${String(30 + k).padStart(2, '0')}:00`,
+    accepted: k >= 25 ? [2, 3, 2, 2, 2][k - 25] : (k * 3) % 5,
+}));
+/**
+ * PilotageEntries complet d'un événement à zones (D.3.1) : réponse imposée de GET …/pilotage/entries, toutes les clés
+ * actuelles gardées (pilotage_entries) et celles du lot 9 ter (F46, D.1.3). Totaux cohérents : 112 entrées (Porte Nord 64,
+ * Porte Sud 48), 17 refus (zones 14 + 3, motifs 8 + 4 + 3 + 2), 180 attendus (catégories et origines).
+ */
+const ENTRIES_ZONES_STUB = {
+    ok: true, event_id: '00000000-0000-4000-8000-000000000950',
+    total: 112, counter: 4, refused: 17, cash_pending: 0,
+    by_scanner: [
+        { scanner_id: '00000000-0000-4000-8000-000000000961', name: 'Moussa Ndiaye', role: 'CONTROLEUR', entry_point: null, gate: 'Porte Nord', assigned: true, active: true, accepted: 64, refused: 2, incidents: 0, last_activity_at: '2026-11-07T20:58:00.000Z', last_incident_at: null },
+        { scanner_id: '00000000-0000-4000-8000-000000000962', name: 'Aminata Sow', role: 'CONTROLEUR', entry_point: null, gate: 'Porte Sud', assigned: true, active: true, accepted: 48, refused: 12, incidents: 0, last_activity_at: '2026-11-07T20:59:00.000Z', last_incident_at: null },
+        { scanner_id: '00000000-0000-4000-8000-000000000963', name: 'Khady Diouf', role: 'CONTROLEUR', entry_point: null, gate: 'Accès carré', assigned: true, active: true, accepted: 0, refused: 3, incidents: 0, last_activity_at: '2026-11-07T20:57:00.000Z', last_incident_at: null },
+        { scanner_id: '00000000-0000-4000-8000-000000000964', name: 'Cheikh Fall', role: 'CONTROLEUR', entry_point: null, gate: 'Porte Sud', assigned: true, active: false, accepted: 0, refused: 0, incidents: 0, last_activity_at: null, last_incident_at: null },
+    ],
+    by_entry_point: [
+        { entry_point: 'Porte Nord', accepted: 64, refused: 2 },
+        { entry_point: 'Porte Sud', accepted: 48, refused: 12 },
+        { entry_point: 'Accès carré', accepted: 0, refused: 3 },
+    ],
+    by_category: [
+        { category_id: '00000000-0000-4000-8000-000000000971', name: 'SIMPLE', expected: 120, accepted: 70 },
+        { category_id: '00000000-0000-4000-8000-000000000972', name: 'VIP', expected: 45, accepted: 30 },
+        { category_id: '00000000-0000-4000-8000-000000000973', name: 'VVIP', expected: 15, accepted: 12 },
+    ],
+    by_quarter: [
+        { start: '2026-11-07T20:00:00', accepted: 30, refused: 3 },
+        { start: '2026-11-07T20:15:00', accepted: 38, refused: 5 },
+        { start: '2026-11-07T20:30:00', accepted: 26, refused: 6 },
+        { start: '2026-11-07T20:45:00', accepted: 18, refused: 3 },
+    ],
+    refusals_by_reason: [
+        { result: 'invalid', label: 'Billet invalide', count: 8 },
+        { result: 'already_used', label: 'Billet déjà utilisé', count: 4 },
+        { result: 'wrong_zone', label: 'Mauvaise zone', count: 3 },
+        { result: 'not_entered', label: 'Pas encore entré', count: 2 },
+    ],
+    repeated_attempts: [],
+    incidents: [],
+    configured: true,
+    zone_checks: 21,
+    by_zone: [
+        { zone_id: ENTRIES_ZONE_GENERALE, name: 'Entrée générale', kind: 'ENTREE', implicit: false, expected: 180, entered: 112, checked: null, refused: 14 },
+        { zone_id: ENTRIES_ZONE_CARRE, name: 'Carré VIP', kind: 'CONTROLE', implicit: false, expected: 30, entered: null, checked: 21, refused: 3 },
+    ],
+    by_gate: [
+        { gate_key: ENTRIES_GATE_NORD, gate_id: ENTRIES_GATE_NORD, name: 'Porte Nord', zone_id: ENTRIES_ZONE_GENERALE, zone_name: 'Entrée générale', accepted: 64, refused: 2, controllers_assigned: 1, rate_per_minute: 1.4, controllers_active: 1 },
+        { gate_key: ENTRIES_GATE_SUD, gate_id: ENTRIES_GATE_SUD, name: 'Porte Sud', zone_id: ENTRIES_ZONE_GENERALE, zone_name: 'Entrée générale', accepted: 48, refused: 12, controllers_assigned: 2, rate_per_minute: 0.8, controllers_active: 1 },
+        { gate_key: ENTRIES_GATE_CARRE, gate_id: ENTRIES_GATE_CARRE, name: 'Accès carré', zone_id: ENTRIES_ZONE_CARRE, zone_name: 'Carré VIP', accepted: 0, refused: 3, controllers_assigned: 1, rate_per_minute: 0, controllers_active: 1 },
+    ],
+    by_origin: [
+        { origin: 'ONLINE', label: 'En ligne', expected: 160, entered: 98 },
+        { origin: 'COUNTER', label: 'Guichet', expected: 6, entered: 4 },
+        { origin: 'FREE', label: 'Gratuit', expected: 4, entered: 0 },
+        { origin: 'INVITATION', label: 'Invitation', expected: 10, entered: 10 },
+    ],
+    guest_list: {
+        count: 1,
+        items: [{
+            scan_id: '00000000-0000-4000-8000-000000000981', at: '2026-11-07T20:12:00.000Z', category: 'VIP', gate: 'Porte Nord',
+            zone: 'Entrée générale', controller: 'Moussa Ndiaye', guest_name: 'Awa Diop',
+        }],
+    },
+    rate: { window_minutes: 5, per_minute: 2.2, by_minute: ENTRIES_BY_MINUTE },
+    controllers: { window_minutes: 10, assigned: 4, active: 3 },
+    alert_settings: { threshold: 10, minutes: 5 },
+    alerts: [{ gate_key: 'porte-sud', name: 'Porte Sud', zone_name: 'Entrée générale', refused: 12, window_minutes: 5, threshold: 10 }],
+    computed_at: '2026-11-07T21:00:00.000Z',
+};
+
+/** Onglet Équipe de l'événement à zones de la graine v4 (organisateur ; C.1.4, ZonesEditor au-dessus des contrôleurs). */
+function zonesTeamPath(i: DemoIds | null): string {
+    return `/partner/events/${seedEvent(i, 'zones').id}?tab=equipe`;
+}
+
+/** Éditeur des zones chargé avec les deux zones et les trois portes de la graine v4 (D.3.2). */
+async function zonesEditorReady(page: Page): Promise<Locator> {
+    await expect(page.getByRole('tab', { name: /^équipe/i })).toHaveAttribute('aria-selected', 'true');
+    const heading = page.getByRole('heading', { name: /^zones et portes$/i });
+    await expect(heading, 'section « Zones et portes » de l’onglet Équipe (C.1.4)').toBeVisible({ timeout: 30_000 });
+    const zoneNames = page.getByLabel(/^nom de la zone/i);
+    await expect(zoneNames, 'deux zones de la graine v4').toHaveCount(2);
+    await expect(zoneNames.nth(0)).toHaveValue('Entrée générale');
+    await expect(zoneNames.nth(1)).toHaveValue('Carré VIP');
+    await expect(page.getByLabel(/^nom de la porte/i), 'trois portes de la graine v4').toHaveCount(3);
+    return heading;
 }
 
 function tabScreen(id: string, titre: string, tab: RegExp): Screen {
@@ -672,7 +925,7 @@ export const SCREENS: readonly Screen[] = [
             await expect(dialog).toBeVisible();
             await expect(dialog.getByText(title).first()).toBeVisible();
             await expect(dialog.getByText(/^généré le/i)).toBeVisible();
-            await expect(dialog.getByText('Entrées', { exact: true }).filter({ visible: true }).first()).toBeVisible();
+            await expect(dialog.getByText('Entrées (dont guichet)', { exact: true }).filter({ visible: true }).first(), 'un seul rapport (lot 9 ter, R106 b)').toBeVisible();
             await expect(dialog.getByRole('button', { name: /^télécharger le pdf$/i })).toBeVisible();
             await c.page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
         },
@@ -835,10 +1088,18 @@ export const SCREENS: readonly Screen[] = [
         ready: async ({ page }) => scannerStartReady(page),
     },
     scanResultScreen('scanner-accepte', 'Scanner — entrée validée (plein écran)', { result: 'valid', scan_id: '5d2c7a10-8e4b-4f61-9a3d-1c2b3e4f5a60', ticket: SCAN_TICKET }),
-    scanResultScreen('scanner-deja-utilise', 'Scanner — billet déjà utilisé (plein écran, heure d’entrée)', {
-        result: 'already_used', scan_id: '6e3d8b21-9f5c-4a72-8b4e-2d3c4f5a6b71',
-        ticket: { ...SCAN_TICKET, checked_in_at: '2026-11-04T19:42:00.000Z', checked_in_by_me: false },
-    }),
+    // Lot 9 ter (consigne 2, C.4, X5) : porte d'entrée servie ; ligne « Déjà utilisé à {HH:MM}, {porte} » et rouge #991B1B
+    withExtraActions(
+        scanResultScreen('scanner-deja-utilise', 'Scanner — billet déjà utilisé (plein écran, heure d’entrée)', {
+            result: 'already_used', scan_id: '6e3d8b21-9f5c-4a72-8b4e-2d3c4f5a6b71',
+            ticket: { ...SCAN_TICKET, checked_in_at: '2026-11-04T19:42:00.000Z', checked_in_by_me: false, checked_in_gate: 'Porte Nord' },
+        }),
+        async ({ page }) => {
+            const overlay = scanOverlay(page);
+            await expect(overlay.getByText('Déjà utilisé à 19:42, Porte Nord', { exact: true }), 'heure et porte de la première entrée (C.2.4, X5)').toBeVisible();
+            await expect(overlay, 'fond du jeton scan-used : rouge #991B1B (C.2.4)').toHaveCSS('background-color', SCAN_USED_RED);
+        },
+    ),
     scanResultScreen('scanner-refuse', 'Scanner — entrée refusée (plein écran, QR expiré)', { result: 'qr_expired', scan_id: '7f4e9c32-a06d-4b83-9c5f-3e4d5a6b7c82', ticket: SCAN_TICKET }),
     scanResultScreen('scanner-hors-fenetre', 'Scanner — contrôle pas encore ouvert (plein écran)', { result: 'event_not_open', scan_id: '91b6be54-c28f-4da5-9e7b-5a6f7c8d9ea4' }),
     scanResultScreen('scanner-evenement-annule', 'Scanner — événement annulé (plein écran)', { result: 'event_cancelled', scan_id: 'a2c7cf65-d39a-4eb6-8f8c-6b7a8d9eafb5' }),
@@ -1067,7 +1328,7 @@ export const SCREENS: readonly Screen[] = [
             const value = await category.locator('option:not([value=""]):not([disabled])').first().getAttribute('value');
             if (!value) throw new Error('[e2e] aucune catégorie proposée dans le champ Catégorie des invitations');
             await category.selectOption(value);
-            await page.getByLabel(/^numéros de téléphone/i).fill('771234567');
+            await page.getByLabel(/^numéro 1(?!\d)/i).fill('771234567'); // lot 9 ter (9t.17) : lignes numéro et nom
             await page.getByRole('button', { name: /^envoyer les invitations$/i }).click();
             await expect(page.getByRole('alertdialog', { name: /^confirmer l.envoi/i })).toBeVisible();
         },
@@ -1241,6 +1502,176 @@ export const SCREENS: readonly Screen[] = [
             const referrers = await page.evaluate(() => Array.from(document.querySelectorAll('meta[name="referrer"]'), (m) => m.getAttribute('content')));
             expect(referrers, 'politique de référent de la page (contrat 4.6)').toEqual(['no-referrer']);
             expect(await requestsTo(page, VERIFY_EMAIL_API), `aucun appel à ${VERIFY_EMAIL_API} au chargement (contrat 4.6)`).toBe(0);
+        },
+    },
+    // ── Lot 9 ter : zones, portes, liste des invités (C.6) ───────────────────
+    // Rouges jusqu'aux écrans d'E-C (fix(9t.15e), fix(9t.16e), fix(9t.17e)) ; partenaire-zones et partenaire-equipe-portes
+    // aussi jusqu'à la graine v4 (événement à zones VALIDE, fix(9t.seed)).
+    withExtraActions(
+        scanResultScreen('scanner-accepte-consigne', 'Scanner — entrée validée : bande de catégorie, consigne, zone et porte, badge Invitation', {
+            result: 'valid', scan_id: 'd3f8a1b2-4c5d-4e6f-8a7b-9c0d1e2f3a41',
+            ticket: { ...SCAN_TICKET_VIP, category_color: 'OR', entry_instruction: ENTRY_INSTRUCTION_VIP, origin: 'INVITATION' },
+            zone: ZONE_ENTREE_VIP, gate: GATE_VIP,
+        }),
+        async ({ page }) => expectScanLines(page, 'accepte', ['Entrée validée', ENTRY_INSTRUCTION_VIP, 'Zone : Entrée VIP · Porte VIP', 'Invitation']),
+    ),
+    withExtraActions(
+        scanResultScreen('scanner-mauvaise-zone', 'Scanner — mauvaise zone (plein écran orange, zone où se présenter)', {
+            result: 'wrong_zone', scan_id: 'd3f8a1b2-4c5d-4e6f-8a7b-9c0d1e2f3a42', message: 'Accès refusé : billet VIP',
+            ticket: SCAN_TICKET_VIP, redirect_zones: ['Entrée VIP'], zone: ZONE_ENTREE_GENERALE, gate: GATE_NORD,
+        }),
+        async ({ page }) => expectScanLines(page, 'oriente', ['Accès refusé : billet VIP', 'Présentez-vous à : Entrée VIP']),
+    ),
+    withExtraActions(
+        scanResultScreen('scanner-pas-encore-entre', 'Scanner — pas encore entré (contrôle de zone, plein écran orange)', {
+            result: 'not_entered', scan_id: 'd3f8a1b2-4c5d-4e6f-8a7b-9c0d1e2f3a43',
+            ticket: SCAN_TICKET_VIP, redirect_zones: ['Entrée VIP'], zone: ZONE_CARRE_VIP, gate: GATE_ACCES_CARRE,
+        }),
+        async ({ page }) => expectScanLines(page, 'oriente', ['Pas encore entré', 'Passez d’abord par : Entrée VIP']),
+    ),
+    withExtraActions(
+        scanResultScreen('scanner-zone-ok', 'Scanner — contrôle de zone accepté (heure et porte de l’entrée)', {
+            result: 'zone_ok', scan_id: 'd3f8a1b2-4c5d-4e6f-8a7b-9c0d1e2f3a44',
+            ticket: { ...SCAN_TICKET_VIP, category_color: 'VIOLET', checked_in_at: '2026-11-04T19:42:00.000Z', checked_in_gate: 'Porte VIP' },
+            zone: ZONE_CARRE_VIP, gate: GATE_ACCES_CARRE,
+        }),
+        async ({ page }) => expectScanLines(page, 'accepte', ['Accès autorisé', 'Zone : Carré VIP', 'Entré à 19:42, Porte VIP']),
+    ),
+    {
+        // 409 GATE_REQUIRED : incident technique (scan-client.ts, échec 'gate'), jamais un refus du billet
+        id: 'scanner-porte-absente', titre: 'Scanner — aucune porte affectée (incident technique, rien n’est validé)', role: 'controleur', needsIds: true,
+        path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: 'barcode-detector', initStorage: SCANNER_STORAGE, slowTimers: SCANNER_TIMERS,
+        stubResponses: [{ url: SCAN_URL, method: 'POST', status: 409, body: { error: GATE_REQUIRED_MESSAGE, code: 'GATE_REQUIRED' } }],
+        allowFailures: [SCAN_URL],
+        ready: async ({ page }) => startScanner(page),
+        actions: async (c) => {
+            await presentToFakeDetector(c.page, demoPayload(c));
+            await expectScanResult(c.page, 'server_error');
+            await expectScanLines(c.page, 'technique', ['Aucune porte affectée', 'Demandez à l’organisateur de vous attribuer une porte. Rien n’a été validé.']);
+        },
+    },
+    {
+        id: 'scanner-liste-invites', titre: 'Scanner — liste des invités : recherche par les 4 derniers chiffres (réponse imposée)', role: 'controleur', needsIds: true,
+        path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: true,
+        stubResponses: [{ url: GUESTS_URL, method: 'POST', status: 200, body: GUEST_SEARCH_STUB }],
+        ready: async ({ page }) => startScanner(page),
+        actions: async ({ page }) => searchGuestList(page),
+    },
+    {
+        id: 'scanner-liste-invites-resultat', titre: 'Scanner — liste des invités : invité choisi, pièce d’identité à vérifier (rien n’est validé)', role: 'controleur', needsIds: true,
+        path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: true,
+        stubResponses: [{ url: GUESTS_URL, method: 'POST', status: 200, body: GUEST_SEARCH_STUB }],
+        ready: async ({ page }) => startScanner(page),
+        actions: async ({ page }) => {
+            await searchGuestList(page);
+            await page.getByRole('button', { name: /^choisir/i }).click();
+            await expect(page.getByText('Vérifiez la pièce d’identité', { exact: true }), 'bandeau de vérification de l’identité (C.3.5)').toBeVisible();
+            const verified = page.getByRole('checkbox', { name: /^j.ai vérifié la pièce d.identité/i });
+            await expect(verified, 'case décochée à chaque personne (C.3.5)').not.toBeChecked();
+            // Jamais cliqué : la capture montre la confirmation, aucune entrée n'est validée
+            const validate = page.getByRole('button', { name: /^valider l.entrée d.une personne$/i });
+            await expect(validate, '« Valider » désactivé tant que la pièce n’est pas vérifiée (C.3.5)').toBeDisabled();
+            await revealCenter(verified);
+        },
+    },
+    {
+        id: 'partenaire-zones', titre: 'Pilotage — Équipe : zones et portes de l’événement (éditeur)', role: 'organisateur', needsIds: true,
+        path: zonesTeamPath,
+        ready: async ({ page }) => { await revealCenter(await zonesEditorReady(page)); },
+    },
+    {
+        id: 'partenaire-equipe-portes', titre: 'Pilotage — Équipe : porte d’un contrôleur et droit de changer de porte', role: 'organisateur', needsIds: true,
+        path: zonesTeamPath,
+        ready: async ({ page }) => { await zonesEditorReady(page); },
+        actions: async ({ page }) => {
+            const gate = page.getByLabel(/^porte(?: \(obligatoire\))?$/i).first();
+            await expect(gate, 'champ « Porte » de la ligne du contrôleur (C.1.4)').toBeVisible();
+            await expect(gate.locator('option:checked'), 'porte posée par la graine v4').toHaveText('Porte Nord — Entrée générale');
+            const canChange = page.getByRole('switch', { name: /^peut changer de porte/i }).first();
+            await expect(canChange, 'interrupteur « Peut changer de porte », fermé dans la graine v4').toHaveAttribute('aria-checked', 'false');
+            await revealCenter(gate);
+        },
+    },
+    // ── Lot 9 ter : pilotage et stock (D.3.1) ───────────────────────────────
+    {
+        id: 'pilotage-entrees-zones', titre: 'Pilotage — Entrées par zone et par porte, alerte de refus', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${seedEvent(i, 'zones').id}?tab=entrees`,
+        stubResponses: [{ url: ENTRIES_URL, method: 'GET', status: 200, body: ENTRIES_ZONES_STUB }],
+        ready: async ({ page }) => {
+            const alert = page.getByText('Beaucoup de refus à Porte Sud', { exact: true });
+            await expect(alert, 'alerte de refus de la porte Sud (D.1.4)').toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('heading', { name: 'Par zone', exact: true })).toBeVisible();
+            await expect(page.getByRole('heading', { name: 'Validations par la liste des invités', exact: true })).toBeVisible();
+            await revealCenter(alert);
+        },
+    },
+    {
+        id: 'accueil-dernieres-places', titre: 'Accueil — badge « Dernières places » d’un événement presque complet', role: 'anonyme', needsIds: true,
+        path: () => '/',
+        ready: async (c) => {
+            const { title } = seedEvent(c.ids, 'dernieresPlaces');
+            const card = c.page.locator('article').filter({ has: c.page.getByRole('heading', { name: title, exact: true }) }).first();
+            await expect(card, `carte de « ${title} » à l’accueil`).toBeVisible({ timeout: 30_000 });
+            await expect(card.getByText('Dernières places', { exact: true }), 'badge de stock bas (D.2.4)').toBeVisible();
+            await revealCenter(card);
+        },
+    },
+    // ── Lot 9 ter : versements, retraits retardés, clôture, édition (A.2.6, B.6) ──
+    {
+        id: 'admin-versements-constater-non-verse', titre: 'Administration — versements à reprendre : boîte « Constater non versé » (référence, motif ; réponses imposées)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: CASHOUTS_STUBS,
+        ready: async ({ page }) => { await cashoutsReady(page); },
+        actions: async ({ page }) => {
+            // Ligne incertaine sans identifiant SamirPay : seule ligne où can_mark_not_sent est vrai (A.2.3)
+            const row = page.locator('tr, li, article').filter({ hasText: 'Festival Jazz sur le Fleuve' });
+            await row.getByRole('button', { name: /^constater non versé/i }).filter({ visible: true }).first().click();
+            const dialog = anyDialog(page, /^constater que ce versement n.est pas parti/i);
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByLabel(/^référence du support samirpay/i), 'référence du support, 100 caractères au plus (A.2.4)').toHaveAttribute('maxlength', '100');
+            await expect(dialog.getByLabel(/^motif/i).first(), 'motif obligatoire (A.2.4)').toBeVisible();
+            // Jamais confirmé : bouton désactivé tant que le motif et la référence manquent
+            await expect(dialog.getByRole('button', { name: /^constater non versé$/i }), 'confirmation désactivée sans motif ni référence (A.2.4)').toBeDisabled();
+        },
+    },
+    {
+        id: 'partenaire-finances-retrait-retarde', titre: 'Partenaire — finances : retrait retardé (badge « Retardé » ; réponse imposée)', role: 'organisateur', needsIds: true,
+        path: () => '/partner/finance',
+        stubResponse: { url: /\/api\/finance\/balance\?account=ORGANISATEUR$/, status: 200, body: delayedWithdrawalBalance('ORGANISATEUR') },
+        ready: async ({ page }) => delayedWithdrawalReady(page),
+    },
+    {
+        id: 'portefeuille-retrait-retarde', titre: 'Portefeuille du client : retrait retardé (badge « Retardé » ; réponse imposée)', role: 'client', needsIds: true,
+        path: () => '/wallet',
+        stubResponse: { url: /\/api\/finance\/balance\?account=PARRAINAGE$/, status: 200, body: delayedWithdrawalBalance('PARRAINAGE') },
+        ready: async ({ page }) => delayedWithdrawalReady(page),
+    },
+    {
+        id: 'admin-cloture-motif', titre: 'Administration — clôture d’un événement suspendu : champ « Motif de la clôture » (fiche imposée, rien n’est envoyé)',
+        role: 'fumee-superadmin', needsIds: true, path: (i) => `/admin/events/${ids(i).events.termine.id}`,
+        stubResponses: [{ url: new RegExp(`/api/admin/events/${UUID}$`), method: 'GET', status: 200, body: CLOSING_SHEET }],
+        ready: async ({ page }) => { await expectHeading(page, /^festival des lumières de saint-louis$/i); },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^clore l.événement$/i }).click();
+            const dialog = anyDialog(page);
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByLabel(/^motif de la clôture/i), 'libellé du motif à la clôture (0.9, B-D24)').toBeVisible();
+        },
+    },
+    {
+        id: 'edition-quitter-sans-enregistrer', titre: 'Édition d’un événement — quitter sans enregistrer (fenêtre de confirmation)', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
+        actions: async ({ page }) => {
+            await openTicketingStep(page);
+            const quantity = page.getByLabel(/^quantité mise en vente/i).first();
+            await expect(quantity, 'quantité d’une catégorie modifiable').toBeEditable();
+            const current = Number(await quantity.inputValue());
+            if (!Number.isInteger(current)) throw new Error(`[e2e] quantité mise en vente illisible : « ${await quantity.inputValue()} »`);
+            await quantity.fill(String(current + 1)); // jamais enregistrée
+            await page.getByRole('link', { name: /^retour à mes événements$/i }).click();
+            const dialog = anyDialog(page, /^quitter sans enregistrer/i);
+            await expect(dialog, 'garde avant de quitter avec des modifications (R93)').toBeVisible();
+            await expect(dialog.getByRole('button', { name: /^rester sur la page$/i })).toBeVisible();
         },
     },
 ];

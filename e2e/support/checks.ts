@@ -36,6 +36,12 @@
  * une valeur technique. Seul usage : « CLOTURE-<8 hex>-<date> », numéro du rapport de clôture, que design-systeme et
  * legacy-exports-partenaire imposent à l'écran et dans le PDF ; CLOTURE reste refusé partout ailleurs, sur cet écran aussi.
  * Les avertissements bruts (nombres, détail axe, textes hors exemption) restent écrits dans index.txt.
+ * Lot 9 ter (contrat D.3.1, arbitrage 19, tâche 9t.20 ; modification signalée, plus stricte) : le contrôle du titre du plein
+ * écran du scanner est gardé tel quel ; en plus, CHAQUE nœud [data-scan-contrast] du plein écran (le conteneur compris s'il
+ * est marqué : titre, bande de catégorie, consigne, ligne de zone, ligne de porte, badge d'origine) est mesuré contre son fond
+ * effectif (premier ancêtre, lui compris, dont le fond est opaque). Bloquants : aucun nœud marqué (« contraste invérifiable »,
+ * pas de faux vert), fond semi-transparent rencontré avant un fond opaque, couleur illisible, contraste < 7:1. Chaque mesure
+ * est écrite en avertissement « contraste {r}:1 ({label}, « {texte} ») ≥ 7:1 », relue au relevé des captures (index.txt).
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -99,6 +105,8 @@ export interface PageCheckMetrics {
     axeRules: Array<{ id: string; impact: string; nodes: number }>;
     /** Lot 7 : contraste du titre du plein écran du scanner (null : aucun plein écran affiché). */
     scanContrast?: number | null;
+    /** Lot 9 ter : contraste de chaque nœud [data-scan-contrast] du plein écran (null : invérifiable). */
+    scanContrastNodes?: Array<{ label: string; ratio: number | null }>;
 }
 
 export interface PageCheckResult {
@@ -111,9 +119,15 @@ export interface PageCheckResult {
     metrics: PageCheckMetrics;
 }
 
+/**
+ * Lot 9 ter : nœud [data-scan-contrast] du plein écran. `bg` : fond du premier ancêtre (lui compris) au fond opaque, null
+ * si aucun ; `translucentBg` : premier fond semi-transparent ou illisible rencontré avant lui, null sinon.
+ */
+interface ScanContrastNode { label: string; text: string; fg: string; bg: string | null; translucentBg: string | null }
+
 interface DomReport {
-    /** Lot 7 : plein écran du scanner (titre, couleurs calculées), null s'il n'est pas affiché. */
-    scanResult: { result: string; title: string; fg: string; bg: string } | null;
+    /** Lot 7 : plein écran du scanner (titre, couleurs calculées), null s'il n'est pas affiché. Lot 9 ter : nœuds marqués. */
+    scanResult: { result: string; title: string; fg: string; bg: string; nodes: ScanContrastNode[] } | null;
     scrollWidth: number;
     viewportWidth: number;
     sectionSigns: string[];
@@ -242,11 +256,39 @@ function inspectDom(arg: { enums: string[]; captionSelector: string; references:
     const overlay = document.querySelector('[data-scan-state="result"]');
     if (overlay && isVisible(overlay)) {
         const heading = overlay.querySelector('p');
+        // Lot 9 ter (D.3.1) : alpha d'une couleur calculée ; NaN si le format n'est pas rgb()/rgba() (lu comme illisible)
+        const alphaOf = (css: string): number => {
+            const m = /^rgba?\(\s*[\d.]+[,\s]+[\d.]+[,\s]+[\d.]+(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(css.trim());
+            if (!m) return Number.NaN;
+            if (m[1] === undefined) return 1;
+            return m[1].endsWith('%') ? Number(m[1].slice(0, -1)) / 100 : Number(m[1]);
+        };
+        const marked = [overlay, ...Array.from(overlay.querySelectorAll('[data-scan-contrast]'))]
+            .filter((el) => el.hasAttribute('data-scan-contrast') && isVisible(el));
+        const nodes: ScanContrastNode[] = marked.map((el) => {
+            let bg: string | null = null;
+            let translucentBg: string | null = null;
+            for (let cur: Element | null = el; cur && bg === null && translucentBg === null; cur = cur.parentElement) {
+                const color = getComputedStyle(cur).backgroundColor;
+                const alpha = alphaOf(color);
+                if (alpha === 0) continue;
+                if (alpha >= 0.999) bg = color;
+                else translucentBg = color; // semi-transparent ou illisible : le fond effectif n'est pas mesurable
+            }
+            return {
+                label: el.getAttribute('data-scan-contrast') ?? '',
+                text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80),
+                fg: getComputedStyle(el).color,
+                bg,
+                translucentBg,
+            };
+        });
         scanResult = {
             result: overlay.getAttribute('data-scan-result') ?? '',
             title: (heading?.textContent ?? '').trim().slice(0, 80),
             fg: getComputedStyle(heading ?? overlay).color,
             bg: getComputedStyle(overlay).backgroundColor,
+            nodes,
         };
     }
     return {
@@ -329,6 +371,33 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
             else warnings.push(`${line} ≥ ${SCAN_RESULT_MIN_CONTRAST}:1 (contrôle bloquant satisfait)`);
         }
     }
+    // Lot 9 ter (D.3.1, arbitrage 19) : chaque nœud marqué du plein écran contre son fond effectif, ≥ 7:1, bloquant
+    let scanContrastNodes: PageCheckMetrics['scanContrastNodes'];
+    if (dom.scanResult) {
+        const where = `plein écran du scanner (${dom.scanResult.result})`;
+        scanContrastNodes = [];
+        if (dom.scanResult.nodes.length === 0) {
+            blocking.push(`${where} sans nœud marqué [data-scan-contrast] : contraste invérifiable`);
+        }
+        for (const node of dom.scanResult.nodes) {
+            const name = `${node.label || 'sans libellé'}, « ${oneLine(node.text, 80)} »`;
+            const fg = parseRgb(node.fg);
+            const bg = node.bg === null ? null : parseRgb(node.bg);
+            if (node.translucentBg !== null) {
+                blocking.push(`${where} : fond semi-transparent ou illisible (${node.translucentBg}) sous le nœud (${name}) avant un fond opaque, contraste ≥ ${SCAN_RESULT_MIN_CONTRAST}:1 invérifiable`);
+                scanContrastNodes.push({ label: node.label, ratio: null });
+            } else if (!fg || !bg) {
+                blocking.push(`${where} : couleurs illisibles ou transparentes du nœud (${name}) (texte ${node.fg}, fond ${node.bg ?? 'aucun fond opaque'}), contraste ≥ ${SCAN_RESULT_MIN_CONTRAST}:1 invérifiable`);
+                scanContrastNodes.push({ label: node.label, ratio: null });
+            } else {
+                const ratio = Math.round(contrastRatio(fg, bg) * 100) / 100;
+                scanContrastNodes.push({ label: node.label, ratio });
+                const line = `contraste ${ratio}:1 (${name})`;
+                if (ratio < SCAN_RESULT_MIN_CONTRAST) blocking.push(`${where} : ${line} < ${SCAN_RESULT_MIN_CONTRAST}:1 (texte ${node.fg}, fond ${node.bg})`);
+                else warnings.push(`${line} ≥ ${SCAN_RESULT_MIN_CONTRAST}:1`);
+            }
+        }
+    }
     if (dom.smallTexts.length > 0) {
         const bySize = summarize(dom.smallTexts, (t) => `${t.size} px`, 6);
         warnings.push(`${dom.smallTexts.length} texte(s) < 14 px [${bySize}] : ${dom.smallTexts.slice(0, 5).map((t) => `« ${t.sample} »`).join(', ')}`);
@@ -377,6 +446,7 @@ export async function runPageChecks(page: Page, opts: { mobile: boolean; axe: bo
             axeViolations,
             axeRules,
             scanContrast,
+            ...(scanContrastNodes ? { scanContrastNodes } : {}),
         },
     };
 }
