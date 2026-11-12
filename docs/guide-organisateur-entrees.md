@@ -179,7 +179,7 @@ Ce qui peut arriver :
 - Un billet transféré change de numéro : seul le numéro du **nouveau** titulaire marche.
 - Chaque vérification est enregistrée. Un contrôleur peut en faire 20 par minute au plus.
 - La saisie manuelle demande du réseau. Par défaut, seul un contrôleur affecté à l'événement peut l'utiliser.
-- Sur un événement à zones, la vérification tient compte de la porte du contrôleur : à une porte d'entrée qui n'admet pas la catégorie, « Entrée impossible : Mauvaise zone ». À une porte de « Contrôle de zone », la saisie manuelle ne valide rien (elle n'affiche qu'un aperçu « Entrée impossible : … ») : scannez le billet à la caméra.
+- Sur un événement à zones, la vérification tient compte de la porte du contrôleur : à une porte d'entrée qui n'admet pas la catégorie, « Mauvaise zone » en orange (orientez le spectateur), sans bouton de validation. À une porte de « Contrôle de zone », la saisie manuelle ne valide rien : elle affiche « Accès autorisé » (vert, billet déjà entré et admis : laissez passer), « Mauvaise zone » ou « Pas encore entré » (orange : orientez le spectateur) ; le plus simple reste de scanner le billet à la caméra.
 - Pour un invité sans smartphone ni numéro de billet, utilisez plutôt la **liste des invités** (section 15).
 
 ---
