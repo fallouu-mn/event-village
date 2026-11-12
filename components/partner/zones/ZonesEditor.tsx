@@ -107,10 +107,13 @@ export function ZonesEditor({ eventId, config, loading, error, refreshing, reloa
 
     const baseline = useMemo(() => (config ? draftOf(config) : []), [config]);
     const shownBaseline = useRef<string | null>(null);
-    // Nouvelle configuration lue (relecture, enregistrement) : le brouillon la suit, sauf s'il porte des modifications
+    // Nouvelle configuration lue (relecture, enregistrement) : le brouillon la suit, sauf s'il porte des modifications.
+    // La référence précédente est lue AVANT d'être remplacée : React peut n'exécuter la fonction de mise à jour qu'au
+    // rendu suivant, quand la ref porterait déjà la nouvelle référence (brouillon vide gardé, run 132).
     useEffect(() => {
-        setZones((current) => (shownBaseline.current === null || signature(current) === shownBaseline.current ? baseline : current));
+        const previous = shownBaseline.current;
         shownBaseline.current = signature(baseline);
+        setZones((current) => (previous === null || signature(current) === previous ? baseline : current));
     }, [baseline]);
 
     // Focus sur le champ en cause d'un refus (`field` de la réponse), une fois le bandeau rendu
