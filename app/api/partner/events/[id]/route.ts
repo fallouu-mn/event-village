@@ -3,13 +3,15 @@ import { apiFailure } from '@/lib/api/public-error';
 import { requireEventAccess } from '@/lib/auth/event-access';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { EventService, EventServiceError } from '@/lib/events/event.service';
+import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/partner/events/[id] — fiche de l'événement : la propriétaire, ou un admin muni de events.read, ou le
  * SUPERADMIN (lot 9 bis, R2 ; admin sans la permission : 403 PERMISSION_MISSING). Tout autre compte ne lit que ses
- * propres événements (404 sinon, getEventById).
+ * propres événements (404 sinon, getEventById). Lot 9 ter (R93) : `edit_locks` (RPC event_edit_locks) : has_sales,
+ * engaged, active_quota, capacity_floor, capacity_removable, categories[{ id, has_sales }].
  */
 export async function GET(
     request: NextRequest,
@@ -31,7 +33,12 @@ export async function GET(
             access.kind === 'ADMIN' ? undefined : user.id
         );
 
-        return NextResponse.json({ success: true, event });
+        // Lot 9 ter (R93, F17) : verrous d'écran calculés par le serveur avec les règles d'event_update (un billet de
+        // tout statut ou une réservation active) ; photo sans verrou, le serveur reste juge à l'enregistrement.
+        const { data: editLocks, error: locksError } = await getServiceRoleClient().rpc('event_edit_locks', { p_event: id });
+        if (locksError) throw new Error(`event_edit_locks : ${locksError.message}`);
+
+        return NextResponse.json({ success: true, event, edit_locks: editLocks });
     } catch (error: unknown) {
         // Lot 9 (A26) : l'absence est un 404 levé par getEventById ; ce repli ne vaut plus que pour une panne.
         return apiFailure('GET /api/partner/events/[id]', error, { message: 'Événement momentanément indisponible.', code: 'EVENT_UNAVAILABLE', status: 500 });
