@@ -79,6 +79,8 @@ const META: Record<string, SettingMeta> = {
   'access.manual_entry_scope': { label: 'Saisie manuelle d’un numéro de billet', help: 'Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.', kind: 'choice', options: MANUAL_ENTRY_SCOPE_LABELS },
   'access.counter_sale_enabled': { label: 'Vente au guichet en espèces', help: 'Un contrôleur autorisé à encaisser, avec une caisse ouverte, vend des billets au prix facial, sans frais.', kind: 'boolean' },
   'access.low_stock_threshold': { label: 'Seuil « bientôt complet »', help: 'Quand il reste ce nombre de places ou moins dans une catégorie, la page publique affiche le restant ; au-delà, seulement « disponible ». Entier de 1 à 1000.', kind: 'integer', unit: 'places' },
+  'access.refusal_alert_threshold': { label: 'Alerte de refus à une porte : nombre de refus', help: 'Quand une porte enregistre ce nombre de refus ou plus pendant la durée observée, l’organisateur reçoit une alerte, au plus une fois par porte et par durée. Comptent les billets invalides, déjà utilisés, annulés, remboursés, d’un autre événement, en attente de transfert, présentés dans la mauvaise zone ou pas encore entrés ; pas les refus liés au téléphone ou aux droits du contrôleur, à l’encaissement ni aux horaires de l’événement. Entier de 3 à 500.', kind: 'integer', unit: 'refus' },
+  'access.refusal_alert_minutes': { label: 'Alerte de refus à une porte : durée observée', help: 'Durée pendant laquelle les refus d’une même porte sont comptés pour l’alerte. Entier de 1 à 60.', kind: 'integer', unit: 'min' },
   'notif.reminder_j1_enabled': { label: 'Rappel la veille', help: 'Rappel envoyé la veille du début aux porteurs d’un billet valable de l’événement en ligne.', kind: 'boolean' },
   'notif.reminder_j1_hour': { label: 'Heure du rappel de la veille', help: 'Heure de Dakar à laquelle part le rappel de la veille. De 6 à 20.', kind: 'integer', unit: 'h' },
   'notif.reminder_h3_enabled': { label: 'Rappel avant le début', help: 'Rappel envoyé quelques heures avant le début, avec le conseil d’ouvrir son billet avant d’arriver.', kind: 'boolean' },
@@ -102,7 +104,7 @@ const rank = (key: string) => (META_ORDER.includes(key) ? META_ORDER.indexOf(key
 /** Sections de la page, dans l'ordre d'affichage, par préfixe de clé. */
 const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: LucideIcon }> = [
   { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
-  { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet et seuil de stock affiché au public.', icon: ScanLine },
+  { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet, seuil de stock affiché au public et alerte de refus à une porte.', icon: ScanLine },
   { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels, alerte sur les SMS indispensables et rappels des billets gratuits.', icon: Bell },
   { prefix: 'features.', title: 'Fonctionnalités', help: 'Services proposés en plus de la billetterie. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires.', icon: ToggleRight },
 ];
