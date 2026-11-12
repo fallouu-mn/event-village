@@ -9,7 +9,7 @@
  * patron finance-remboursement-billet), 1 invitation (route), remboursement d'un billet en ligne (route de la
  * partenaire, versement envoyé puis confirmé), 1 scan accepté d'un billet en ligne et 1 scan refusé (billet remboursé)
  * par un contrôleur affecté. Attendu (contrat) : vendus 3 (hors invitations), invitations 1, capacité mise en vente 10
- * (quotas actifs), entrées 1, guichet 0, refus 1, absents 2.
+ * (quotas actifs), entrées 1, guichet 0, refus 1, absents 3 (billets VALIDE : en ligne non scanné, espèces, invitation).
  *
  * Rouge avant correctif (S-E fix(9t.12) : lib/partner/partner-dashboard.service.ts, route ; E-B : ClosingReportSummary) :
  * deux calculs, getClosingReportData compte les invitations dans les vendus (:790), prend events.capacity (:792) et
@@ -142,7 +142,10 @@ describe('9t.12 b (R106) : un seul rapport de clôture', () => {
         assert.ok(report.closing && typeof report.closing === 'object', `report.closing servi tel quel (contrat 4.2 B.3) : clés ${Object.keys(report).join(', ')}`);
         assert.deepEqual(withoutComputedAt(report.closing), withoutComputedAt(closing), 'report.closing = corps de pilotage_closing');
         const summary = report.ticketsSummary as Row;
-        assert.deepEqual(summary, { sold: 3, invitations: 1, capacity: 10, entries: 1, counterEntries: 0, refused: 1, absents: 2 },
+        // absents = closing.absents.count = billets VALIDE (M/20261102000005:815, F47 inchangée hors entries) : billet en
+        // ligne non scanné, billet espèces et invitation (émise VALIDE) = 3 ; le 2 du contrat (vendus 3 − entrées 1)
+        // oubliait l'invitation, non scannée (correcteur S-P, run 132).
+        assert.deepEqual(summary, { sold: 3, invitations: 1, capacity: 10, entries: 1, counterEntries: 0, refused: 1, absents: 3 },
             `ticketsSummary (aujourd'hui vendus 4 invitation comprise, capacité 50) : ${JSON.stringify(summary)}`);
         const sources: Record<string, string> = {
             sold: 'report.tickets.sold', invitations: 'report.tickets.invitations', capacity: 'report.tickets.capacity',
