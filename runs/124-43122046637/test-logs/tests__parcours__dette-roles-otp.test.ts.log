@@ -1,0 +1,98 @@
+TAP version 13
+# Subtest: C4 et C6 — RPC du contrat
+    # Subtest: user_roles_set et otp_check : SECURITY DEFINER, search_path = public, service_role seul
+    ok 1 - user_roles_set et otp_check : SECURITY DEFINER, search_path = public, service_role seul
+      ---
+      duration_ms: 15.857848
+      type: 'test'
+      ...
+    # Subtest: setUserRoles passe par user_roles_set (plus d’INSERT puis DELETE séparés) ; otp-store passe par otp_check (plus d’UPDATE de attempts)
+    ok 2 - setUserRoles passe par user_roles_set (plus d’INSERT puis DELETE séparés) ; otp-store passe par otp_check (plus d’UPDATE de attempts)
+      ---
+      duration_ms: 0.440819
+      type: 'test'
+      ...
+    1..2
+ok 1 - C4 et C6 — RPC du contrat
+  ---
+  duration_ms: 261.610211
+  type: 'suite'
+  ...
+# Subtest: C4 — user_roles_set : tout ou rien
+    # Subtest: RPC : remplace l’ensemble des rôles d’un compte (CLIENT → CLIENT + PARTENAIRE)
+    ok 1 - RPC : remplace l’ensemble des rôles d’un compte (CLIENT → CLIENT + PARTENAIRE)
+      ---
+      duration_ms: 138.219694
+      type: 'test'
+      ...
+    # Subtest: RPC : retrait de CONTROLEUR (caisse ouverte) + ajout d’ADMIN → refus CONTROLLER_HAS_OPEN_SHIFT, aucun rôle modifié
+    ok 2 - RPC : retrait de CONTROLEUR (caisse ouverte) + ajout d’ADMIN → refus CONTROLLER_HAS_OPEN_SHIFT, aucun rôle modifié
+      ---
+      duration_ms: 195.348587
+      type: 'test'
+      ...
+    # Subtest: PATCH /api/admin/users (SUPERADMIN, roles: [ADMIN]) sur un contrôleur à caisse ouverte → 409 CONTROLLER_HAS_OPEN_SHIFT ; rôles et users.role inchangés
+    ok 3 - PATCH /api/admin/users (SUPERADMIN, roles: [ADMIN]) sur un contrôleur à caisse ouverte → 409 CONTROLLER_HAS_OPEN_SHIFT ; rôles et users.role inchangés
+      ---
+      duration_ms: 279.474769
+      type: 'test'
+      ...
+    1..3
+ok 2 - C4 — user_roles_set : tout ou rien
+  ---
+  duration_ms: 613.356032
+  type: 'suite'
+  ...
+# Subtest: C6 — otp_check : compteur atomique, limite de 5 essais, consommation
+    # Subtest: 5 essais faux comptés un par un ; le 6ᵉ et le bon code ensuite → TOO_MANY_ATTEMPTS ; attempts = 5
+    ok 1 - 5 essais faux comptés un par un ; le 6ᵉ et le bon code ensuite → TOO_MANY_ATTEMPTS ; attempts = 5
+      ---
+      duration_ms: 35.71929
+      type: 'test'
+      ...
+    # Subtest: bon code → accepté et consommé (verified) ; le même code rejoué → refusé
+    ok 2 - bon code → accepté et consommé (verified) ; le même code rejoué → refusé
+      ---
+      duration_ms: 9.066569
+      type: 'test'
+      ...
+    # Subtest: 10 essais faux simultanés (RPC) : attempts = 5 exactement, au plus 5 refus INVALID, puis le bon code refusé
+    ok 3 - 10 essais faux simultanés (RPC) : attempts = 5 exactement, au plus 5 refus INVALID, puis le bon code refusé
+      ---
+      duration_ms: 35.839166
+      type: 'test'
+      ...
+    # Subtest: 10 essais faux simultanés par verifyStoredOtp (vérificateur du retrait) : attempts = 5, puis le bon code refusé (TOO_MANY_ATTEMPTS)
+    ok 4 - 10 essais faux simultanés par verifyStoredOtp (vérificateur du retrait) : attempts = 5, puis le bon code refusé (TOO_MANY_ATTEMPTS)
+      ---
+      duration_ms: 29.573963
+      type: 'test'
+      ...
+    # Subtest: POST /api/withdrawals/request : quota par compte (WITHDRAWAL_REQUEST_PER_USER_HOUR = 3) → 4ᵉ demande en 429
+    ok 5 - POST /api/withdrawals/request : quota par compte (WITHDRAWAL_REQUEST_PER_USER_HOUR = 3) → 4ᵉ demande en 429
+      ---
+      duration_ms: 188.611904
+      type: 'test'
+      ...
+    1..5
+ok 3 - C6 — otp_check : compteur atomique, limite de 5 essais, consommation
+  ---
+  duration_ms: 299.382345
+  type: 'suite'
+  ...
+[INVARIANT] dette-roles-otp — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] dette-roles-otp — purge des réservations échues : {"expired":0}
+[INVARIANT] dette-roles-otp — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] dette-roles-otp — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] dette-roles-otp — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] dette-roles-otp — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] dette-roles-otp — (j)(k)(l) : 0 violation(s)
+1..3
+# tests 10
+# suites 3
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1383.288165
