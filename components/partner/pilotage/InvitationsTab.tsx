@@ -438,7 +438,7 @@ function InvitationHistory({
     }
 
     return (
-        <PilotageSection title="Historique des invitations" description="Les numéros sont masqués. Une invitation non scannée peut être annulée : la place revient au stock, sans SMS.">
+        <PilotageSection title="Historique des invitations" description="Les numéros sont masqués. Une invitation non scannée peut être annulée : la place revient au stock et l’invité est prévenu par SMS.">
             {content}
 
             <ConfirmDialog
@@ -446,7 +446,7 @@ function InvitationHistory({
                 onClose={() => setTarget(null)}
                 onConfirm={() => void confirmCancel()}
                 title="Annuler cette invitation ?"
-                message={target ? `Le billet ${target.category} de ${target.phone_masked ?? 'ce numéro'} ne sera plus valable. La place revient au stock et aucun SMS n’est envoyé.` : undefined}
+                message={target ? `Le billet ${target.category} de ${target.phone_masked ?? 'ce numéro'} ne sera plus valable. La place revient au stock et l’invité est prévenu par SMS.` : undefined}
                 confirmLabel="Annuler l’invitation"
                 cancelLabel="Garder l’invitation"
                 variant="danger"
