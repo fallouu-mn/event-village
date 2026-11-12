@@ -1,6 +1,6 @@
 /**
  * Lot 8 (consigne 8.3 b, contrat 15.5, décisions L79, L84 ; commit test(8.3b)) — recette de la billetterie : quatre parcours
- * enchaînés sur une seule base, celle du seed e2e, sans db reset, découpés en 9 actes étiquetés par rôle. Le parcours d'un
+ * enchaînés sur une seule base, celle du seed e2e, sans db reset, découpés en 10 actes étiquetés par rôle. Le parcours d'un
  * rôle est la réunion de ses actes :
  *   npx playwright test --project=recette --grep "\[client\]"
  * Mode « serial » : chaque acte s'appuie sur le précédent (le client achète ce que le partenaire a publié, le partenaire
@@ -55,9 +55,9 @@ import {
 } from './support/parcours';
 import { posterHtml, POSTER_SIZE } from './support/poster';
 import {
-    clearPasswordConfirmations, createPublishedEvent, eventImageUrl, outboxOfEvent, serviceClient, ticketNumbers, userIdByEmail, userIdByPhone,
+    clearPasswordConfirmations, createControllerAccount, createPublishedEvent, eventImageUrl, outboxOfEvent, partnerPosterOf, serviceClient, ticketNumbers, unusedPhone, userIdByEmail, userIdByPhone,
 } from './support/service';
-import { installScanProbe, livePayload, openScanner, presentPayload, verifyHolderPhone } from './support/terrain';
+import { installScanProbe, livePayload, openScanner, presentPayload, probeVibrations, verifyHolderPhone, type ProbeRecord } from './support/terrain';
 import { FIXTURE_USERS, TEST_PASSWORD } from '../tests/helpers/fixture-data';
 
 test.describe.configure({ mode: 'serial' });
@@ -436,7 +436,7 @@ test('acte 2 [partenaire] [admin] : inscription avec pièces, validation, E1 et 
         await partner.getByLabel(/date de fin/i).fill(e.date);
         await partner.getByLabel(/heure de fin/i).fill(e.time);
         await partner.getByLabel(/^lieu/i).fill('Corniche de Ngor');
-        await partner.getByLabel(/^ville/i).fill('Dakar');
+        await partner.getByLabel(/^ville/i).selectOption({ label: 'Dakar' });
         await partner.getByLabel(/capacité/i).fill('100');
         const upload = partner.waitForResponse((res) => res.url().includes('/api/partner/upload') && res.request().method() === 'POST');
         await partner.getByLabel(/affiche/i).setInputFiles({ name: 'affiche-recette.png', mimeType: 'image/png', buffer: await posterPng(partner, 'Nuit de Ngor', `${s.date} · ${s.time}`) });
@@ -844,7 +844,7 @@ test('acte 6 [partenaire] : pilotage, rapport de clôture, export, retrait, remb
         const dialog = partner.getByRole('dialog', { name: /^rapport de clôture$/i });
         await expect(dialog).toBeVisible();
         await expect(dialog.getByText(/^généré le/i)).toBeVisible();
-        await expect(dialog.getByText('Entrées validées', { exact: true })).toBeVisible();
+        await expect(dialog.getByText('Entrées (dont guichet)', { exact: true })).toBeVisible();
         await expectRoute(partner, 'GET', '/api/partner/reports/closing/pdf', () => dialog.getByRole('button', { name: /^télécharger le pdf$/i }).click(), 200, 'rapport PDF');
         await dialog.getByRole('button', { name: /^fermer$/i }).click();
         await expect(dialog).toBeHidden();
@@ -954,7 +954,7 @@ test('acte 9 [partenaire] [client] [contrôleur] : invitation d’un numéro san
         const value = await category.locator('option', { hasText: /^Invitations/ }).getAttribute('value');
         if (!value) throw new Error('[e2e] option « Invitations » sans valeur dans le champ Catégorie');
         await category.selectOption(value);
-        await panel.getByLabel(/^numéros de téléphone/i).fill(invite.local);
+        await panel.getByLabel(/^numéro 1(?!\d)/i).fill(invite.local);
         await panel.getByLabel(/^billets par numéro/i).selectOption('1');
         await panel.getByRole('button', { name: /^envoyer les invitations$/i }).click();
         const confirm = partner.getByRole('alertdialog', { name: /^confirmer l.envoi/i });
@@ -1157,3 +1157,384 @@ test('acte 8 [admin] : supervision et relance d’une notification, remboursemen
         await assertInvariants('recette-admin');
     });
 });
+
+// ── Lot 9 ter : acte 10 « grande soirée » (contrat D.3.3, consigne 6, tâche 9t.20 ; commit fix(9t.e2e)) ─────────────────
+
+/** Consigne d'entrée de VIP posée à l'écran à l'étape 1 et lue en grand au scanner (C.2.4). */
+const GRANDE_SOIREE_VIP_INSTRUCTION = 'Remettre bracelet doré — orienter vers le carré VIP';
+/** Refus QUOTA_ABOVE_CAPACITY de SIMPLE portée à 4 avec une jauge de 27 (contrat 9t.19, texte du serveur mot pour mot). */
+const GRANDE_SOIREE_QUOTA_REFUSAL = 'Les quantités mises en vente des catégories actives totaliseraient 29 places. Augmentez d’abord la capacité totale de l’événement (actuellement 27).';
+const CATEGORY_ROUTE = /^\/api\/partner\/events\/[^/]+\/categories\/[^/]+$/;
+
+/**
+ * Lot 9 ter (contrat D.3.3, consigne 6, tâche 9t.20, X5, X6, X7 ; commit fix(9t.e2e)) — acte 10, dernier du fichier, après
+ * l'acte 8 (mode serial : un acte 8 rouge le saute). Partenaire fumee-organisateur (PARTNER_A, jamais P1 que l'acte 8
+ * suspend) ; événement publié par les RPC du lot 5, début dans ≈ 2 h (fenêtre de contrôle de 24 h posée à l'acte 1) :
+ * SIMPLE 5 000 F ×2, VIP 15 000 F ×20, VVIP 30 000 F ×5, jauge 27. Contrôleurs : fumee-controleur, déjà de l'équipe de
+ * PARTNER_A, affecté par le formulaire de l'équipe ; K2, compte établi inconnu de PARTNER_A (createControllerAccount), invité
+ * à l'écran et qui accepte lui-même (0.5, x5 : aucune insertion directe). Étapes (textes lus à l'écran) :
+ *  1. couleur Or et consigne de VIP ; « Entrée générale » (Entrée ; SIMPLE, VIP, VVIP ; Porte Nord, Porte Sud) et « Carré VIP »
+ *     (Contrôle de zone ; VIP, VVIP ; Accès carré) ; fumee-controleur à la Porte Nord, K2 à la Porte Sud avec « Peut changer
+ *     de porte » ;
+ *  2. fumee-client achète 2 SIMPLE et 1 VIP ; invitation VIP nommée « Awa Diop » à un numéro sans compte ;
+ *  3. SIMPLE épuisée : fiche « Complet », carte « À partir de 15 000 F CFA » ; SIMPLE à 4 refusée (jauge 27, texte exact) ;
+ *     jauge à 29 puis SIMPLE à 4 ; sans recharger : « Plus que 2 places », « À partir de 5 000 F CFA », aucun badge (X6) ;
+ *  4. double entrée : SIMPLE#1 vert à la Porte Nord (catégorie, zone), puis « Déjà utilisé à {HH:MM}, Porte Nord » (X5) ;
+ *  5. K2 passe à « Accès carré » : SIMPLE#1 orange « Accès refusé : billet SIMPLE » et vibration [250, 100, 250] ; VIP jamais
+ *     entré « Pas encore entré » ; VIP vert à la Porte Nord avec la consigne ; VIP « Accès autorisé » à l'accès du carré ;
+ *  6. Porte Nord, liste des invités : 4 derniers chiffres, « Awa Diop », VIP, pièce vérifiée, vert ; plus rien ensuite ;
+ *  7. pilotage, onglet Entrées : par zone, porte, catégorie, origine ; 1 validation par la liste ; refus par motif ;
+ *  8. invariants (a) à (w) et x1 à x13.
+ * Le vert du scanner est tenu 3 s (réglage de l'appareil, ev_scanner_auto_return_ms) le temps de lire ses lignes. Durée
+ * estimée : 3 à 5 min.
+ */
+test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, trois portes, liste des invités, mauvaise zone, double entrée, catégorie épuisée puis réouverte', async ({ browser }, testInfo) => {
+    test.setTimeout(10 * 60_000);
+    const partner = await asRole(browser, testInfo, 'fumee-organisateur');
+    const client = await asRole(browser, testInfo, 'fumee-client');
+    const controllerA = FIXTURE_USERS.CONTROLLER_A;
+    const partnerUserId = await userIdByEmail(FIXTURE_USERS.PARTNER_A.email);
+    const title = `Recette — Grande soirée ${STAMP}`;
+    const start = new Date(Date.now() + 2 * 3600_000);
+    start.setUTCSeconds(0, 0);
+    start.setUTCMinutes(Math.ceil(start.getUTCMinutes() / 5) * 5);
+    const s = dakarParts(start);
+    const e = dakarParts(new Date(start.getTime() + 4 * 3600_000));
+    const eventId = await createPublishedEvent({
+        partnerUserId,
+        superadminId: await userIdByEmail(FIXTURE_USERS.SUPERADMIN.email),
+        title,
+        description: 'Grande soirée de la recette : deux zones, trois portes, liste des invités. Données fictives.',
+        startDate: s.date, startTime: `${s.time}:00`, endDate: e.date, endTime: `${e.time}:00`,
+        location: 'Esplanade du Monument', city: 'Dakar', capacity: 27,
+        imageUrl: await partnerPosterOf(partnerUserId),
+        categories: [{ name: 'SIMPLE', price: 5000, total: 2 }, { name: 'VIP', price: 15000, total: 20 }, { name: 'VVIP', price: 30000, total: 5 }],
+    });
+    const editUrl = `/partner/events/${eventId}/edit`;
+    const k2 = await createControllerAccount('grande-soiree');
+    const guestPhone = await unusedPhone('70');
+    const guestDigits = guestPhone.slice(-4);
+    let simple: string[] = [];
+    let vip = '';
+    let guestTicket = '';
+
+    const north = await scannerPage(browser, testInfo, 'fumee-controleur');
+    const k2Page = await scannerPage(browser, testInfo, null);
+
+    await test.step('1. partenaire : couleur et consigne de VIP ; deux zones et trois portes ; équipe à ses portes', async () => {
+        await partner.goto(editUrl);
+        await openTicketing(partner);
+        const vipSection = categorySection(partner, 'VIP');
+        await vipSection.getByLabel('Couleur au contrôle').selectOption({ label: 'Or' });
+        await vipSection.getByLabel('Consigne d’entrée').fill(GRANDE_SOIREE_VIP_INSTRUCTION);
+        await expectRoute(partner, 'PATCH', CATEGORY_ROUTE, () => vipSection.getByRole('button', { name: /^enregistrer la catégorie$/i }).click(), 200, 'couleur et consigne de VIP');
+        await expect(vipSection.getByText('Catégorie enregistrée.', { exact: true }), 'VIP enregistrée').toBeVisible();
+        const { data: vipRow, error: vipErr } = await serviceClient().from('ticket_categories').select('scan_color, entry_instruction').eq('event_id', eventId).eq('name', 'VIP').single();
+        if (vipErr || !vipRow) throw new Error(`[e2e] catégorie VIP de la grande soirée : ${vipErr?.message ?? 'introuvable'}`);
+        expect(vipRow, 'couleur et consigne de VIP en base').toEqual({ scan_color: 'OR', entry_instruction: GRANDE_SOIREE_VIP_INSTRUCTION });
+
+        await partner.goto(`/partner/events/${eventId}?tab=equipe`);
+        await expect(partner.getByRole('tab', { name: /^équipe/i }), 'onglet Équipe ouvert par ?tab=equipe').toHaveAttribute('aria-selected', 'true');
+        const zonesRegion = partner.getByRole('region', { name: 'Zones et portes', exact: true });
+        await zonesRegion.getByRole('button', { name: /^configurer des zones$/i }).click();
+        const zoneItems = zonesRegion.getByRole('list', { name: 'Zones de l’événement' }).locator(':scope > li');
+        const general = zoneItems.nth(0);
+        await general.getByLabel(/^nom de la zone/i).fill('Entrée générale');
+        await expect(general.getByRole('radio', { name: /^entrée/i }), '« Entrée générale » de type Entrée').toBeChecked();
+        for (const name of ['SIMPLE', 'VIP', 'VVIP']) await expect(general.getByRole('checkbox', { name: categoryBox(name) }), `« Entrée générale » admet ${name}`).toBeChecked();
+        await general.getByLabel(/^nom de la porte/i).first().fill('Porte Nord');
+        await general.getByRole('button', { name: /^ajouter une porte$/i }).click();
+        await general.getByLabel(/^nom de la porte/i).nth(1).fill('Porte Sud');
+        await zonesRegion.getByRole('button', { name: /^ajouter une zone$/i }).click();
+        const carre = zoneItems.nth(1);
+        await carre.getByLabel(/^nom de la zone/i).fill('Carré VIP');
+        await carre.getByRole('radio', { name: /^contrôle de zone/i }).check();
+        for (const name of ['VIP', 'VVIP']) await carre.getByRole('checkbox', { name: categoryBox(name) }).check();
+        await expect(carre.getByRole('checkbox', { name: categoryBox('SIMPLE') }), '« Carré VIP » n’admet pas SIMPLE').not.toBeChecked();
+        await carre.getByLabel(/^nom de la porte/i).fill('Accès carré');
+        const saved = await expectRoute(partner, 'PUT', `/api/partner/events/${eventId}/zones`,
+            () => zonesRegion.getByRole('button', { name: /^enregistrer les zones$/i }).click(), 200, 'zones et portes');
+        const zones = (saved.zones ?? []) as Array<{ name: string; kind: string; category_ids: string[]; gates: Array<{ name: string }> }>;
+        expect(zones.map((z) => `${z.name} ${z.kind} ${z.category_ids.length} ${z.gates.map((g) => g.name).join(' + ')}`), 'configuration enregistrée')
+            .toEqual(['Entrée générale ENTREE 3 Porte Nord + Porte Sud', 'Carré VIP CONTROLE 2 Accès carré']);
+
+        // fumee-controleur, déjà de l'équipe de PARTNER_A : affecté directement
+        const phone = partner.getByLabel(/^téléphone du contrôleur/i);
+        await phone.fill(controllerA.phone.replace(/^\+221/, ''));
+        await expectRoute(partner, 'POST', '/api/partner/team/invite', () => partner.getByRole('button', { name: /^inviter le contrôleur$/i }).click(), 201, 'affectation de fumee-controleur');
+        // K2, compte établi inconnu de PARTNER_A : confirmation, puis invitation qu'il accepte lui-même (0.5)
+        await phone.fill(k2.local);
+        const asked = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => partner.getByRole('button', { name: /^inviter le contrôleur$/i }).click(), 200, 'K2 : compte existant');
+        expect(asked.requires_confirmation, `K2 inconnu de la partenaire : confirmation demandée (${JSON.stringify(asked)})`).toBe(true);
+        const existing = partner.getByRole('dialog', { name: /^compte existant/i });
+        await expect(existing).toBeVisible();
+        const invited = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => existing.getByRole('button', { name: /^envoyer l.invitation$/i }).click(), 201, 'invitation de K2');
+        expect(typeof invited.invitation_id, 'invitation à accepter, aucune affectation directe').toBe('string');
+
+        await signIn(k2Page, k2.email, /^\/controller\/scanner/);
+        await k2Page.goto('/invitations');
+        const offer = k2Page.getByRole('article').filter({ hasText: title });
+        await expect(offer, 'invitation de PARTNER_A pour la grande soirée').toBeVisible({ timeout: 30_000 });
+        await expectRoute(k2Page, 'POST', /^\/api\/account\/controller-invitations\/[^/]+$/, () => offer.getByRole('button', { name: /^accepter l.invitation$/i }).click(), 200, 'K2 accepte');
+        await expect(k2Page.getByText(/^vous contrôlez maintenant les événements de /i), 'acceptation annoncée').toBeVisible();
+
+        await partner.reload();
+        await expect(partner.getByRole('tab', { name: /^équipe/i })).toHaveAttribute('aria-selected', 'true');
+        const team = partner.getByRole('list', { name: /^contrôleurs affectés$/i });
+        await setGate(partner, team, controllerA.firstName, 'Porte Nord — Entrée générale', false);
+        await setGate(partner, team, k2.firstName, 'Porte Sud — Entrée générale', true);
+        const { data: gates, error: gatesErr } = await serviceClient().from('event_gates').select('id, name').eq('event_id', eventId);
+        if (gatesErr) throw new Error(`[e2e] portes de la grande soirée : ${gatesErr.message}`);
+        const gateName = new Map((gates ?? []).map((g) => [String(g.id), String(g.name)]));
+        const { data: rows, error: rowsErr } = await serviceClient().from('event_controllers').select('user_id, gate_id, gate_change_allowed').eq('event_id', eventId);
+        if (rowsErr) throw new Error(`[e2e] équipe de la grande soirée : ${rowsErr.message}`);
+        const controllerAId = await userIdByEmail(controllerA.email);
+        expect((rows ?? []).map((x) => `${x.user_id === k2.userId ? 'K2' : x.user_id === controllerAId ? 'A' : String(x.user_id)} ${gateName.get(String(x.gate_id)) ?? 'sans porte'} ${String(x.gate_change_allowed)}`).sort(),
+            'équipe en base : une porte chacun, K2 seul peut en changer').toEqual(['A Porte Nord false', 'K2 Porte Sud true']);
+    });
+
+    await test.step('2. client : 2 SIMPLE et 1 VIP ; partenaire : invitation VIP « Awa Diop » à un numéro sans compte', async () => {
+        simple = await buyThroughUi(client, eventId, 'SIMPLE', 2);
+        vip = (await buyThroughUi(client, eventId, 'VIP', 1))[0];
+
+        await partner.goto(`/partner/events/${eventId}?tab=invitations`);
+        await expect(partner.getByRole('tab', { name: /^invitations/i })).toHaveAttribute('aria-selected', 'true');
+        const panel = partner.getByRole('tabpanel');
+        const category = panel.getByLabel(/^catégorie/i);
+        const value = await category.locator('option', { hasText: /^VIP/ }).getAttribute('value');
+        if (!value) throw new Error('[e2e] option « VIP » sans valeur dans le champ Catégorie');
+        await category.selectOption(value);
+        await panel.getByLabel(/^numéro 1(?!\d)/i).fill(guestPhone.replace(/^\+221/, ''));
+        await panel.getByLabel(/^nom de l.invité 1(?!\d)/i).fill('Awa Diop');
+        await panel.getByLabel(/^billets par numéro/i).selectOption('1');
+        await panel.getByRole('button', { name: /^envoyer les invitations$/i }).click();
+        const confirm = partner.getByRole('alertdialog', { name: /^confirmer l.envoi/i });
+        await expect(confirm.getByText('Awa Diop', { exact: true }), 'colonne « Invité » de la confirmation').toBeVisible();
+        const sent = await expectRoute(partner, 'POST', `/api/partner/events/${eventId}/invitations`, () => confirm.getByRole('button', { name: /^confirmer$/i }).click(), 200, 'invitation nommée');
+        expect(sent, 'un billet pour un numéro').toMatchObject({ ok: true, ticket_count: 1, phone_count: 1 });
+
+        const { data: invitations, error } = await serviceClient().from('tickets').select('id, user_id, guest_name, status').eq('event_id', eventId).eq('sale_channel', 'INVITATION');
+        if (error) throw new Error(`[e2e] invitations de la grande soirée : ${error.message}`);
+        expect((invitations ?? []).map((t) => `${String(t.guest_name)} ${String(t.user_id)} ${String(t.status)}`), 'invitation nommée sans porteur').toEqual(['Awa Diop null VALIDE']);
+        guestTicket = String(invitations![0].id);
+    });
+
+    await test.step('3. SIMPLE épuisée puis réouverte : fiche et carte relues sans recharger', async () => {
+        const visitorContext = await openAnonymousContext(browser, testInfo, 'clair');
+        const catalog = adopt('visiteur-grande-soiree', visitorContext, await visitorContext.newPage());
+        const sheet = adopt('visiteur-grande-soiree-fiche', visitorContext, await visitorContext.newPage());
+        await catalog.goto(`/explore?q=${encodeURIComponent(title)}`);
+        const card = catalog.locator('article').filter({ has: catalog.getByRole('heading', { name: title, exact: true }) });
+        await expect(card, 'carte de la grande soirée au catalogue').toBeVisible({ timeout: 30_000 });
+        await expect(card.getByText(fcfa(15_000)), 'SIMPLE épuisée : « À partir de 15 000 F CFA »').toBeVisible();
+        await expect(card.getByText(/^(Complet|Dernières places)$/), 'aucun badge de stock sur la carte').toHaveCount(0);
+        await sheet.goto(`/events/${eventId}`);
+        const simpleLine = sheet.getByRole('listitem').filter({ has: sheet.getByRole('heading', { level: 3, name: 'SIMPLE', exact: true }) });
+        await expect(simpleLine.getByText('Complet', { exact: true }), 'fiche : SIMPLE « Complet »').toBeVisible({ timeout: 30_000 });
+
+        await partner.goto(editUrl);
+        await openTicketing(partner);
+        const quantity = categorySection(partner, 'SIMPLE').getByLabel(/^quantité mise en vente/i);
+        await quantity.fill('4');
+        await expectRoute(partner, 'PATCH', CATEGORY_ROUTE, () => categorySection(partner, 'SIMPLE').getByRole('button', { name: /^enregistrer la catégorie$/i }).click(), 409, 'SIMPLE à 4 sur une jauge de 27');
+        await expect(categorySection(partner, 'SIMPLE').getByText(GRANDE_SOIREE_QUOTA_REFUSAL, { exact: true }).first(), 'refus de la jauge, texte exact').toBeVisible();
+        await quantity.fill('2'); // brouillon rendu à sa valeur : la page se quitte sans garde
+
+        await partner.goto(editUrl);
+        const capacity = partner.getByLabel(/^capacité totale/i);
+        await expect(capacity, 'jauge lue').toHaveValue('27');
+        await capacity.fill('29');
+        await expectRoute(partner, 'PUT', `/api/partner/events/${eventId}`, () => partner.getByRole('button', { name: /^enregistrer les modifications$/i }).click(), 200, 'jauge portée à 29');
+        await openTicketing(partner);
+        await categorySection(partner, 'SIMPLE').getByLabel(/^quantité mise en vente/i).fill('4');
+        await expectRoute(partner, 'PATCH', CATEGORY_ROUTE, () => categorySection(partner, 'SIMPLE').getByRole('button', { name: /^enregistrer la catégorie$/i }).click(), 200, 'SIMPLE portée à 4');
+
+        // Sans recharger : la fiche et la carte suivent le temps réel (consigne 5)
+        await expect(simpleLine.getByText('Plus que 2 places', { exact: true }), 'fiche relue en direct : SIMPLE « Plus que 2 places »').toBeVisible({ timeout: 45_000 });
+        await expect(card.getByText(fcfa(5_000)), 'carte relue en direct : « À partir de 5 000 F CFA »').toBeVisible({ timeout: 45_000 });
+        await expect(card.getByText(/^(Complet|Dernières places)$/), 'aucun badge : 18 VIP restent au-dessus du seuil (X6)').toHaveCount(0);
+    });
+
+    await test.step('4. double entrée : SIMPLE#1 vert à la Porte Nord, puis « Déjà utilisé » à la Porte Sud', async () => {
+        await north.goto('/controller/scanner');
+        await chooseEvent(north, title, /^Votre porte : Porte Nord · Entrée générale \(Entrée\)\./, false);
+        await startControl(north, title);
+        await scanShown(north, await livePayload(client, simple[0]), 'SIMPLE#1 à la Porte Nord', 'valid', async (o) => {
+            await expect(o).toHaveAttribute('data-scan-category', 'accepte');
+            await expect(o.getByText('SIMPLE', { exact: true }), 'catégorie').toBeVisible();
+            await expect(o.getByText('Zone : Entrée générale · Porte Nord', { exact: true }), 'zone et porte').toBeVisible();
+        });
+        expect(await ticketStatus(simple[0]), 'SIMPLE#1 composté').toBe('UTILISE');
+
+        await k2Page.goto('/controller/scanner');
+        await chooseEvent(k2Page, title, /^Votre porte : Porte Sud · Entrée générale \(Entrée\)\./, true);
+        await startControl(k2Page, title);
+        await scanShown(k2Page, await livePayload(client, simple[0]), 'SIMPLE#1 à la Porte Sud', 'already_used', async (o) => {
+            await expect(o.getByText(/^Déjà utilisé à \d{1,2}:\d{2}, Porte Nord$/), 'heure et porte de la première entrée (X5)').toBeVisible();
+        });
+    });
+
+    await test.step('5. K2 à « Accès carré » : mauvaise zone, pas encore entré ; VIP à la Porte Nord avec sa consigne ; accès autorisé', async () => {
+        await k2Page.getByRole('button', { name: 'Changer d’événement' }).click();
+        await chooseEvent(k2Page, title, /^Votre porte : Porte Sud · Entrée générale \(Entrée\)\./, true);
+        await k2Page.getByRole('button', { name: /^changer de porte$/i }).click();
+        const picker = k2Page.getByRole('dialog', { name: /^choisir ma porte$/i });
+        await expect(picker).toBeVisible();
+        await picker.getByRole('radio', { name: /^Accès carré · Carré VIP \(Contrôle de zone\)$/ }).check();
+        await expectRoute(k2Page, 'POST', '/api/controller/gate', () => picker.getByRole('button', { name: /^enregistrer cette porte$/i }).click(), 200, 'K2 passe à « Accès carré »');
+        await expect(picker).toBeHidden();
+        await chooseEvent(k2Page, title, /^Votre porte : Accès carré · Carré VIP \(Contrôle de zone\)\./, true);
+        await startControl(k2Page, title);
+
+        const wrong = await scanShown(k2Page, await livePayload(client, simple[0]), 'SIMPLE#1 à l’accès du carré', 'wrong_zone', async (o) => {
+            await expect(o).toHaveAttribute('data-scan-category', 'oriente');
+            await expect(o.getByText('Accès refusé : billet SIMPLE', { exact: true }), 'mauvaise zone').toBeVisible();
+            await expect(o.getByText('Présentez-vous à : Entrée générale', { exact: true })).toBeVisible();
+        });
+        await expect.poll(async () => (await probeVibrations(k2Page)).filter((v) => v.at >= wrong.armedAt).map((v) => v.pattern.join(',')),
+            { message: 'vibration orange de la mauvaise zone', timeout: 10_000 }).toContain('250,100,250');
+        await scanShown(k2Page, await livePayload(client, vip), 'VIP jamais entré à l’accès du carré', 'not_entered', async (o) => {
+            await expect(o).toHaveAttribute('data-scan-category', 'oriente');
+            await expect(o.getByText('Pas encore entré', { exact: true })).toBeVisible();
+            await expect(o.getByText('Passez d’abord par : Entrée générale', { exact: true })).toBeVisible();
+        });
+        expect(await ticketStatus(vip), 'un contrôle de zone ne composte jamais').toBe('VALIDE');
+        await scanShown(north, await livePayload(client, vip), 'VIP à la Porte Nord', 'valid', async (o) => {
+            await expect(o.getByText('VIP', { exact: true }), 'catégorie').toBeVisible();
+            await expect(o.getByText(GRANDE_SOIREE_VIP_INSTRUCTION, { exact: true }), 'consigne de VIP').toBeVisible();
+            await expect(o.getByText('Zone : Entrée générale · Porte Nord', { exact: true })).toBeVisible();
+        });
+        await scanShown(k2Page, await livePayload(client, vip), 'VIP entré, à l’accès du carré', 'zone_ok', async (o) => {
+            await expect(o).toHaveAttribute('data-scan-category', 'accepte');
+            await expect(o.getByText('Accès autorisé', { exact: true })).toBeVisible();
+            await expect(o.getByText('Zone : Carré VIP', { exact: true })).toBeVisible();
+            await expect(o.getByText(/^Entré à \d{1,2}:\d{2}, Porte Nord$/)).toBeVisible();
+        });
+    });
+
+    await test.step('6. Porte Nord : liste des invités, « Awa Diop », pièce vérifiée, entrée validée ; plus rien à valider ensuite', async () => {
+        await north.getByRole('button', { name: /^liste des invités$/i }).click();
+        const search = north.getByRole('region', { name: /^liste des invités$/i });
+        await expect(search).toBeVisible();
+        await search.getByLabel(/^numéro de l.invité/i).fill(guestDigits);
+        await expectRoute(north, 'POST', '/api/controller/scan/guests', () => search.getByRole('button', { name: /^rechercher$/i }).click(), 200, 'recherche par les 4 derniers chiffres');
+        const found = search.getByRole('list', { name: /^invités trouvés$/i }).getByRole('listitem');
+        await expect(found, 'un invité trouvé').toHaveCount(1);
+        for (const text of ['Awa Diop', 'VIP', '1 billet']) await expect(found.getByText(text, { exact: true }), `carte de l’invité : « ${text} »`).toBeVisible();
+        await found.getByRole('button', { name: /^choisir$/i }).click();
+        await expect(north.getByText('Vérifiez la pièce d’identité', { exact: true })).toBeVisible();
+        const verified = north.getByRole('checkbox', { name: /^j.ai vérifié la pièce d.identité$/i });
+        await expect(verified, 'case décochée').not.toBeChecked();
+        const admit = north.getByRole('button', { name: /^valider l.entrée d.une personne$/i });
+        await expect(admit, 'validation impossible sans la pièce').toBeDisabled();
+        await verified.check();
+        await admit.click();
+        const overlay = north.locator('[data-scan-state="result"][data-scan-result="valid"]');
+        await expect(overlay, 'invitée validée par la liste').toBeVisible({ timeout: 30_000 });
+        await expect(overlay.getByText('Awa Diop', { exact: true }).first(), 'porteur : nom de l’invitée').toBeVisible();
+        await expect(overlay.getByText('Invitation', { exact: true }), 'badge Invitation').toBeVisible();
+        await resultClosed(north);
+        expect(await ticketStatus(guestTicket), 'invitation compostée').toBe('UTILISE');
+        const { data: transfers, error } = await serviceClient().from('ticket_transfers').select('status').eq('ticket_id', guestTicket);
+        if (error) throw new Error(`[e2e] transfert de l’invitation : ${error.message}`);
+        expect((transfers ?? []).map((t) => String(t.status)), 'transfert clos ADMITTED').toEqual(['ADMITTED']);
+
+        await search.getByLabel(/^numéro de l.invité/i).fill(guestDigits);
+        await expectRoute(north, 'POST', '/api/controller/scan/guests', () => search.getByRole('button', { name: /^rechercher$/i }).click(), 200, 'nouvelle recherche');
+        await expect(search.getByText('Aucune invitation non utilisée pour ce numéro.', { exact: true }), 'plus aucun billet à valider').toBeVisible();
+        await search.getByRole('button', { name: /^fermer la liste$/i }).click();
+    });
+
+    await test.step('7. pilotage, onglet Entrées : zone, porte, catégorie, origine ; liste des invités ; refus par motif', async () => {
+        await partner.goto(`/partner/events/${eventId}?tab=entrees`);
+        await expect(partner.getByRole('tab', { name: /^entrées/i })).toHaveAttribute('aria-selected', 'true');
+        const panel = partner.getByRole('tabpanel');
+        for (const heading of ['Par zone', 'Par porte', 'Par catégorie', 'Par origine', 'Refus par motif', 'Validations par la liste des invités']) {
+            await expect(panel.getByRole('heading', { name: heading, exact: true }), `section « ${heading} »`).toBeVisible({ timeout: 30_000 });
+        }
+        await expect(kpi(panel, /^liste des invités$/i), 'validations par la liste des invités : 1').toContainText(/(^|\D)1(\D|$)/);
+        await expect(panel.getByRole('region', { name: 'Validations par la liste des invités', exact: true }).getByText('Awa Diop').filter({ visible: true }).first(),
+            'invitée dans les validations par la liste').toBeVisible();
+        const reasons = panel.getByRole('list', { name: 'Refus par motif', exact: true }).getByRole('listitem');
+        await expect(reasons, 'trois motifs de refus').toHaveCount(3);
+        for (const label of ['Mauvaise zone', 'Pas encore entré', 'Billet déjà utilisé']) {
+            await expect(reasons.filter({ hasText: label }), `refus « ${label} » : 1`).toHaveText(new RegExp(`^${escapeRe(label)}\\s*1 refus$`));
+        }
+    });
+
+    await test.step('8. invariants (a) à (w), puis x1 à x13', async () => {
+        await assertInvariants('recette-grande-soiree');
+    });
+});
+
+/** Réglage de l'appareil du scanner (1 000 à 3 000 ms) : le vert reste 3 s, le temps de lire la bande, la consigne et la zone. */
+function holdGreenThreeSeconds(): void {
+    if (window.location.protocol.startsWith('http')) window.localStorage.setItem('ev_scanner_auto_return_ms', '3000');
+}
+
+/** Scanner d'un contrôleur (sonde des lectures, vert tenu 3 s) : rôle du seed, ou sans session pour K2 (connexion à l'écran). */
+async function scannerPage(browser: Browser, testInfo: TestInfo, role: RoleKey | null): Promise<Page> {
+    const context = role ? await openRoleContext(browser, testInfo, role, 'sombre') : await openAnonymousContext(browser, testInfo, 'sombre');
+    await context.addInitScript(installScanProbe);
+    await context.addInitScript(holdGreenThreeSeconds);
+    return adopt(role ? `${role}-grande-soiree` : 'K2', context, await context.newPage());
+}
+
+/** Étape « Billets » du formulaire d'édition (EventTicketingManager). */
+async function openTicketing(page: Page): Promise<void> {
+    await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: /billetterie/i }).click();
+    await expect(page.getByRole('heading', { name: /^billetterie$/i })).toBeVisible();
+}
+
+/** Bloc d'une catégorie enregistrée, repéré par son titre exact. */
+function categorySection(page: Page, name: string): Locator {
+    return page.locator('section').filter({ has: page.getByRole('heading', { level: 3, name, exact: true }) });
+}
+
+/** Case d'une catégorie dans l'éditeur des zones : « VIP · Or », « SIMPLE » (nom, puis couleur nommée s'il y en a une). */
+function categoryBox(name: string): RegExp {
+    return new RegExp(`^${escapeRe(name)}(?: ·|$)`);
+}
+
+/** Porte d'un contrôleur de l'équipe (liste « Porte », droit de changer), enregistrée par PATCH /api/partner/team/gate. */
+async function setGate(page: Page, team: Locator, firstName: string, gateLabel: string, canChange: boolean): Promise<void> {
+    const card = team.getByRole('listitem').filter({ hasText: firstName });
+    await expect(card, `ligne de ${firstName} dans l’équipe`).toHaveCount(1, { timeout: 30_000 });
+    await card.getByLabel(/^porte$/i).selectOption({ label: gateLabel });
+    const allowed = card.getByRole('switch', { name: /^peut changer de porte/i });
+    if (canChange) await allowed.click();
+    await expect(allowed, `droit de changer de porte de ${firstName}`).toHaveAttribute('aria-checked', String(canChange));
+    await expectRoute(page, 'PATCH', '/api/partner/team/gate', () => card.getByRole('button', { name: /^enregistrer$/i }).click(), 200, `porte de ${firstName}`);
+    await expect(card.getByLabel(/^porte$/i).locator('option:checked'), `porte de ${firstName} enregistrée`).toHaveText(gateLabel);
+}
+
+/** Écran « Commencer le contrôle » : événement choisi, porte annoncée (zone et type), « Changer de porte » selon le droit. */
+async function chooseEvent(page: Page, title: string, gateLine: RegExp, canChangeGate: boolean): Promise<void> {
+    await expect(page.getByRole('heading', { level: 1, name: /^commencer le contr[ôo]le$/i }), 'écran « Commencer le contrôle »').toBeVisible({ timeout: 45_000 });
+    const radio = page.getByRole('radio', { name: new RegExp(escapeRe(title)) });
+    await radio.check();
+    await expect(radio).toBeChecked();
+    await expect(page.getByText(gateLine).first(), `porte annoncée : ${gateLine.source}`).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: /^changer de porte$/i }), `« Changer de porte » ${canChangeGate ? 'proposé' : 'absent'}`).toHaveCount(canChangeGate ? 1 : 0);
+}
+
+/** « Commencer le contrôle », mode caméra, flux vidéo en lecture (comme openScanner, sans revenir à l'écran de départ). */
+async function startControl(page: Page, title: string): Promise<void> {
+    await page.getByRole('button', { name: /^commencer le contr[ôo]le$/i }).click();
+    const camera = page.getByRole('button', { name: /^caméra$/i });
+    await expect(camera, 'bascule « Caméra / Saisie manuelle »').toBeVisible({ timeout: 30_000 });
+    if ((await camera.getAttribute('aria-pressed')) !== 'true') await camera.click();
+    await expect(camera).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText(title).filter({ visible: true }).first(), `contrôle de « ${title} »`).toBeVisible();
+    await videoPlaying(page, `contrôle de « ${title} »`);
+}
+
+/** QR présenté, plein écran du résultat attendu et lu (lignes exactes de C.2.4), puis refermé ; rend la lecture de la sonde. */
+async function scanShown(page: Page, payload: string, what: string, expected: string, read: (overlay: Locator) => Promise<void>): Promise<ProbeRecord> {
+    const { record } = await presentPayload(page, payload, what);
+    const overlay = page.locator(`[data-scan-state="result"][data-scan-result="${expected}"]`);
+    await expect(overlay, `${what} : « ${expected} » attendu (sonde : « ${record.result ?? '—'} »)`).toBeVisible();
+    await read(overlay);
+    await resultClosed(page);
+    return record;
+}

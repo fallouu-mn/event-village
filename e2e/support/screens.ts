@@ -82,7 +82,7 @@
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { DemoAccountKey, DemoEvent, DemoIds } from './demo-ids';
+import type { DemoAccountKey, DemoEvent, DemoEventKey, DemoIds } from './demo-ids';
 import type { FakePushCounters, FakePushMode } from './fake-push';
 import type { CaptureRole } from './fixtures';
 import type { PageGuard } from './network';
@@ -483,13 +483,12 @@ async function requestsTo(page: Page, pathname: string): Promise<number> {
 
 // ── Lot 9 ter : zones, portes, liste des invités, stock, versements (contrat 7.1 à 7.4) ──
 
-/** Clés de la graine v4 (D.3.2, fix(9t.seed), vague F), absentes de DemoIds jusque-là. */
-type Lot9terEventKey = 'zones' | 'dernieresPlaces';
+/** Clés de la graine v4 (D.3.2, fix(9t.seed), vague F). */
+type Lot9terEventKey = Extract<DemoEventKey, 'zones' | 'dernieresPlaces'>;
 
-/** Événement de la graine v4 lu par sa clé ; erreur explicite tant que le seed ne l'a pas écrit (capture rouge). */
+/** Événement de la graine v4 lu par sa clé ; erreur explicite si le seed ne l'a pas écrit (capture rouge). */
 function seedEvent(i: DemoIds | null, key: Lot9terEventKey): DemoEvent {
-    const events = ids(i).events as Partial<Record<string, DemoEvent>>;
-    const event = events[key];
+    const event: DemoEvent | undefined = ids(i).events[key];
     if (!event?.id) throw new Error(`[e2e] demo-ids.json : events.${key} absent (graine v4 du lot 9 ter, fix(9t.seed))`);
     return event;
 }

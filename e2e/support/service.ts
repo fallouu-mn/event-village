@@ -7,7 +7,9 @@
  * revérifiée ici (même règle que scripts/e2e/env.mjs:requireLocalUrl) ; la clé vient de `.env.e2e`
  * (secret aléatoire du run en CI), jamais du code.
  */
+import { randomInt } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { TEST_PASSWORD } from '../../tests/helpers/fixture-data';
 import { e2eConfig, LOCAL_HOSTNAMES } from './env';
 
 let client: SupabaseClient | null = null;
@@ -81,11 +83,17 @@ export interface PublishedEventInput {
     /** Affiche déjà déposée par le partenaire (chemin vérifié par event_poster_path_ok). */
     imageUrl: string;
     /** maxPerOrder : limite par compte (défaut 10 ; contrainte 1 à 50). */
-    category: { name: string; price: number; total: number; maxPerOrder?: number };
+    category?: PublishedCategoryInput;
+    /** Lot 9 ter (D.3.3, amendement 4 de D) : plusieurs catégories, prioritaires sur `category`. */
+    categories?: PublishedCategoryInput[];
 }
+
+export interface PublishedCategoryInput { name: string; price: number; total: number; maxPerOrder?: number }
 
 /** Événement créé par event_create au nom du partenaire, soumis, validé par le SUPERADMIN puis publié. */
 export async function createPublishedEvent(input: PublishedEventInput): Promise<string> {
+    const categories = input.categories ?? (input.category ? [input.category] : []);
+    if (categories.length === 0) throw new Error(`[e2e] createPublishedEvent « ${input.title} » : aucune catégorie`);
     const created = await rpcOk('event_create', {
         actor_id: input.partnerUserId,
         event: {
@@ -101,7 +109,7 @@ export async function createPublishedEvent(input: PublishedEventInput): Promise<
             capacity: input.capacity,
             image_url: input.imageUrl,
         },
-        ticket_categories: [{ name: input.category.name, price: input.category.price, total_quantity: input.category.total, max_per_order: input.category.maxPerOrder ?? 10 }],
+        ticket_categories: categories.map((c) => ({ name: c.name, price: c.price, total_quantity: c.total, max_per_order: c.maxPerOrder ?? 10 })),
     });
     const eventId = String(created.event_id ?? '');
     if (!/^[0-9a-f-]{36}$/.test(eventId)) throw new Error(`[e2e] event_create : identifiant absent (${JSON.stringify(created)})`);
@@ -144,6 +152,23 @@ export async function sendingOfEvent(eventId: string): Promise<OutboxLine[]> {
         .eq('event_id', eventId).eq('status', 'SENDING');
     if (error) throw new Error(`[e2e] lecture des lignes SENDING (${eventId}) : ${error.message}`);
     return (data ?? []) as OutboxLine[];
+}
+
+/**
+ * Lot 9 ter (D.3.3) : affiche déjà déposée par la partenaire d'un compte (chemin admis par event_poster_path_ok), la plus
+ * ancienne de ses événements ; même règle que scripts/e2e/terrain-setup.ts.
+ */
+export async function partnerPosterOf(partnerUserId: string): Promise<string> {
+    const { data: partner, error: partnerErr } = await serviceClient().from('partners').select('id').eq('user_id', partnerUserId).maybeSingle();
+    if (partnerErr) throw new Error(`[e2e] partenaire du compte ${partnerUserId} : ${partnerErr.message}`);
+    if (!partner?.id) throw new Error(`[e2e] aucun partenaire pour le compte ${partnerUserId} (seed:test non abouti ?)`);
+    const { data, error } = await serviceClient().from('events').select('image_url')
+        .eq('partner_id', String(partner.id)).not('image_url', 'is', null)
+        .order('created_at', { ascending: true }).limit(1);
+    if (error) throw new Error(`[e2e] affiche du partenaire ${String(partner.id)} : ${error.message}`);
+    const url = String(data?.[0]?.image_url ?? '');
+    if (!url) throw new Error(`[e2e] aucun événement du partenaire ${String(partner.id)} n'a d'affiche (seed:test non abouti ?)`);
+    return url;
 }
 
 /** Affiche (image_url) d'un événement : réutilisée pour le second événement du même partenaire. */
@@ -205,4 +230,53 @@ export async function ticketNumbers(ticketIds: readonly string[]): Promise<strin
         if (!n) throw new Error(`[e2e] billet ${id} introuvable`);
         return n;
     });
+}
+
+// ── Lot 9 ter (D.3.3, amendement 4 de D) : comptes de l'acte 10 de la recette ──────────────────────────────
+
+/** Préfixes mobiles admis par la validation des numéros (`^\+2217[05678]\d{7}$`). */
+export type MobilePrefix = '70' | '75' | '76' | '77' | '78';
+
+/** Numéro mobile (+221…) qu'aucun compte ne porte encore (forme +221… ou 221…), tiré au hasard ; cinq essais au plus. */
+export async function unusedPhone(prefix: MobilePrefix): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+        const phone = `+221${prefix}${String(randomInt(0, 10_000_000)).padStart(7, '0')}`;
+        const { data, error } = await serviceClient().from('users').select('id').in('phone', [phone, phone.slice(1)]);
+        if (error) throw new Error(`[e2e] numéro libre (${prefix}) : ${error.message}`);
+        if ((data ?? []).length === 0) return phone;
+    }
+    throw new Error(`[e2e] aucun numéro libre trouvé en 5 essais (préfixe ${prefix})`);
+}
+
+export interface ControllerAccount { userId: string; email: string; phone: string; local: string; firstName: string; lastName: string }
+
+/**
+ * Compte contrôleur établi (rôles CLIENT et CONTROLEUR, ACTIF, numéro vérifié, mot de passe de test), sans aucune affectation
+ * ni lien avec une partenaire : c'est l'organisatrice qui l'invite à l'écran, et lui qui accepte (0.5, x5 ; jamais d'insertion
+ * dans event_controllers ni dans partner_controllers). Préparation de données de la base LOCALE, jamais une route.
+ */
+export async function createControllerAccount(label: string): Promise<ControllerAccount> {
+    if (!/^[a-z0-9-]{1,40}$/.test(label)) throw new Error(`[e2e] createControllerAccount : libellé attendu en minuscules et tirets, reçu « ${label} »`);
+    const phone = await unusedPhone('76');
+    const local = phone.replace(/^\+221/, '');
+    const firstName = 'Ndiaga';
+    const lastName = 'Diagne';
+    const email = `k2.${label}.${local}@recette.eventvillage.local`;
+    const admin = serviceClient();
+    const { data, error } = await admin.auth.admin.createUser({
+        email, password: TEST_PASSWORD, email_confirm: true, phone, phone_confirm: true,
+        user_metadata: { first_name: firstName, last_name: lastName, phone },
+    });
+    if (error || !data.user) throw new Error(`[e2e] compte contrôleur ${label} : ${error?.message ?? 'utilisateur absent'}`);
+    const userId = data.user.id;
+    const now = new Date().toISOString();
+    const { error: profileErr } = await admin.from('users').upsert({
+        id: userId, first_name: firstName, last_name: lastName, phone, email, role: 'CONTROLEUR', status: 'ACTIF',
+        referral_status: 'STANDARD', phone_verified_at: now, updated_at: now,
+    }, { onConflict: 'id' });
+    if (profileErr) throw new Error(`[e2e] profil du contrôleur ${label} : ${profileErr.message}`);
+    const { error: rolesErr } = await admin.from('user_roles').upsert(
+        ['CLIENT', 'CONTROLEUR'].map((role) => ({ user_id: userId, role })), { onConflict: 'user_id,role' });
+    if (rolesErr) throw new Error(`[e2e] rôles du contrôleur ${label} : ${rolesErr.message}`);
+    return { userId, email, phone, local, firstName, lastName };
 }

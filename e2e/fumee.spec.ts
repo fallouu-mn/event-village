@@ -146,7 +146,7 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             await partner.getByLabel(/date de fin/i).fill(e.date);
             await partner.getByLabel(/heure de fin/i).fill(e.time);
             await partner.getByLabel(/^lieu/i).fill('Esplanade des Parcelles Assainies');
-            await partner.getByLabel(/^ville/i).fill('Dakar');
+            await partner.getByLabel(/^ville/i).selectOption({ label: 'Dakar' });
             await partner.getByLabel(/capacité/i).fill('100');
 
             const posterPage = await partner.context().newPage();
