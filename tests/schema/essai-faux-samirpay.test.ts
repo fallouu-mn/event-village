@@ -387,3 +387,35 @@ describe('scripts/dev/essai-start.mjs (mode B)', () => {
         assert.doesNotMatch(source, /['"]-H['"]|['"]--hostname['"]/, 'lancement sans -H : les redirections partiraient sur localhost derrière le tunnel');
     });
 });
+
+// ── Lot 9 ter (9t.4, consigne 0.4, contrat A.3) : adresses de retour du client, facultatives ──
+
+describe('scripts/e2e/fake-core.mjs : adresses de retour du cashin (lot 9 ter, 0.4)', () => {
+    test('contrat SamirPay : successUrl et errorUrl facultatifs, acceptés s’ils sont des URL, refusés sinon (lot 9 ter, 0.4)', async () => {
+        const app = await fakeApp();
+        const fake = await startFake(workDir(appEnv(app.port)), await freePort());
+        try {
+            const back = `${TUNNEL}/paiement/${randomUUID()}`;
+            const both = await call(fake.base, 'POST', '/samirpay/api/tiers/direct/initPayment', initBody(`${TUNNEL}/api/webhooks/samirpay?token=essai`, { successUrl: back, errorUrl: back }));
+            assert.equal(both.status, 201, `successUrl et errorUrl https acceptés (aujourd’hui « champ hors contrat ») : ${JSON.stringify(both.json)}`);
+            assert.equal(both.json.success, true);
+            assert.match(String((both.json.data as { transactionId?: unknown } | undefined)?.transactionId), /^[0-9a-f-]{36}$/, 'transaction créée');
+
+            const without = await call(fake.base, 'POST', '/samirpay/api/tiers/direct/initPayment', initBody(`${TUNNEL}/api/webhooks/samirpay?token=essai`));
+            assert.equal(without.status, 201, `les deux champs restent facultatifs : ${JSON.stringify(without.json)}`);
+
+            const bad = await call(fake.base, 'POST', '/samirpay/api/tiers/direct/initPayment', initBody(`${TUNNEL}/api/webhooks/samirpay?token=essai`, { successUrl: 'pas une url' }));
+            assert.equal(bad.status, 400, `successUrl illisible refusé : ${JSON.stringify(bad.json)}`);
+            assert.equal(bad.json.errorCode, 'INVALID_REQUEST', JSON.stringify(bad.json));
+            assert.match(String(bad.json.errorMessage), /successUrl : URL attendue/, `motif du refus : ${JSON.stringify(bad.json)}`);
+            assert.doesNotMatch(String(bad.json.errorMessage), /champ hors contrat/, `successUrl fait partie du contrat : ${JSON.stringify(bad.json)}`);
+
+            const badError = await call(fake.base, 'POST', '/samirpay/api/tiers/direct/initPayment', initBody(`${TUNNEL}/api/webhooks/samirpay?token=essai`, { errorUrl: 42 }));
+            assert.equal(badError.status, 400, `errorUrl illisible refusé : ${JSON.stringify(badError.json)}`);
+            assert.match(String(badError.json.errorMessage), /errorUrl : URL attendue/, `motif du refus : ${JSON.stringify(badError.json)}`);
+        } finally {
+            await fake.stop();
+            await app.close();
+        }
+    });
+});

@@ -258,3 +258,22 @@ describe('Client SamirPay réel — orderId en double, identifiant repris (H4, c
         });
     });
 });
+
+// ── Lot 9 ter (9t.4, consigne 0.4, contrat A.3) : adresses de retour du client après le paiement ──
+
+describe('Client SamirPay réel — adresses de retour du cashin (lot 9 ter, 0.4)', () => {
+    test('cashin direct : successUrl et errorUrl envoyés tels quels quand ils sont fournis', async () => {
+        const orderId = `ORD-EV-${Date.now()}-E9E9E9`;
+        const back = 'https://eventvillage.example/paiement/0b6f3f7e-5a43-4d61-9b3a-7c1f2e8d9a10';
+        // Payload élargi sans dépendre du type : les deux champs n'existent dans SamirPayDirectInitRequest qu'après fix(9t.4).
+        const payload = { amount: 3000, orderId, callBackUrl: 'https://eventvillage.example/api/webhooks/samirpay?t=retour', operatorName: 'WAVE', telephone: '771234567', successUrl: back, errorUrl: back };
+        await new SamirPayHttpClient().initDirectPayment(payload as unknown as Parameters<SamirPayHttpClient['initDirectPayment']>[0]);
+        const req = last('/api/tiers/direct/initPayment');
+        assert.ok(req, 'requête de cashin reçue par le serveur de test');
+        assert.equal(JSON.parse(req.body).orderId, orderId, 'dernière requête de cashin = celle de ce cas');
+        assert.deepEqual(JSON.parse(req.body), {
+            amount: '3000', orderId, callBackUrl: 'https://eventvillage.example/api/webhooks/samirpay?t=retour', operatorName: 'WAVE', telephone: '771234567',
+            successUrl: back, errorUrl: back,
+        }, 'successUrl et errorUrl repris tels quels dans le corps (aujourd’hui absents)');
+    });
+});
