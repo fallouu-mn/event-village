@@ -219,7 +219,7 @@ lecture des tarifs (`app/api/admin/pricing/route.ts:16`), liste des permissions 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
    | Titulaire suspendu | SMS | indispensable (envoyé malgré la suspension) | file d’envoi | « Event Village : votre compte est suspendu. Motif : {motif}. Vos billets payés restent valables à l'entrée. Contactez le support. » ; ex. « Event Village : votre compte est suspendu. Motif : Paiements contestés. Vos billets payés restent valables à l'entrée. Contactez le support. » (`lib/notifications/catalog.ts:1577-1586`, `M/20261109000003_lot9bis_registre.sql:79`) |
-   | Titulaire suspendu | cloche, email | indispensable | file d’envoi | titre « Compte suspendu », « Votre compte est suspendu. Motif : {motif} Vos billets payés restent valables à l'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d'identité. Contactez le support. » |
+   | Titulaire suspendu | cloche, email | indispensable | file d’envoi | titre « Compte suspendu », « Votre compte est suspendu. Motif : {motif}. Vos billets payés restent valables à l'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d'identité. Contactez le support. » |
    | Titulaire réactivé | SMS | indispensable | file d’envoi | « Event Village : votre compte est réactivé. Vous pouvez de nouveau vous connecter : {lien}/login » (`lib/notifications/catalog.ts:1588-1595`) |
    | Titulaire réactivé | cloche, email | indispensable | file d’envoi | titre « Compte réactivé », « Votre compte est réactivé : vous pouvez de nouveau vous connecter. » |
    | Admin | écran | — | immédiat | « Le compte de {prénom} {nom} a été suspendu. » ; « Le compte de {prénom} {nom} a été réactivé avec succès. » (`app/admin/users/page.tsx:228-231`) |
@@ -227,9 +227,11 @@ lecture des tarifs (`app/api/admin/pricing/route.ts:16`), liste des permissions 
    Le motif de la réactivation n’est repris dans aucun message : la fonction ne le transmet que pour la suspension
    (`M/20261109000004_lot9bis_droits.sql:517-523`, `admin_user_status_set` : motif transmis seulement si
    `ACCOUNT_SUSPENDED`), alors que l’écran annonce « Il est prévenu avec votre motif » : écart noté.
-5. **Ce que voient les autres rôles** : le titulaire est déconnecté ; il peut rouvrir une session par mot de passe mais
-   toute action protégée lui répond « Votre compte n'est pas actif. Contactez le support. » (01.3) — l’écran dit « ne
-   pourra plus se connecter » : écart noté. Ses billets payés restent valables à l’entrée (voir 05 et 07).
+5. **Ce que voient les autres rôles** : le titulaire est déconnecté ; s’il essaie de se reconnecter, l’écran de
+   connexion ferme aussitôt la session et affiche « Votre compte est suspendu. Veuillez contacter le support. »
+   (01.3, `components/auth/LoginForm.tsx:280-285`). Le serveur de connexion, lui, ne refuse pas le compte : une session
+   ouverte hors écran reçoit « Votre compte n'est pas actif. Contactez le support. » sur toute action protégée (écart
+   noté). Ses billets payés restent valables à l’entrée (voir 05 et 07).
 6. **Refus exacts** : « Indiquez le motif de la suspension (3 caractères au moins). » ; « Ce compte est celui d’un
    partenaire : suspendez-le ou réactivez-le depuis sa fiche partenaire, avec un motif. » ; « Seul un superadmin peut
    créer un administrateur ou changer ce rôle. » (compte ADMIN visé par un ADMIN) ; « Impossible de modifier un compte
@@ -345,13 +347,14 @@ Détail du parcours partenaire : 03. Côté admin :
    |---|---|---|---|---|
    | Partenaire suspendu | SMS | indispensable | file d’envoi | « Event Village : votre compte partenaire est suspendu. Motif : {motif}. Contactez le support. » (`lib/notifications/catalog.ts:1036-1042`) |
    | Partenaire réactivé | SMS | indispensable | file d’envoi | « Event Village : votre compte partenaire est réactivé. Connectez-vous : {lien}/login » (`:1043-1049`) |
-   | Partenaire | cloche, email | indispensable | file d’envoi | « Compte suspendu » : « Votre compte partenaire est suspendu. Motif : {motif} Contactez le support. » ; « Compte réactivé » : « Votre compte partenaire est réactivé. Vous pouvez de nouveau publier vos événements. » |
+   | Partenaire | cloche, email | indispensable | file d’envoi | « Compte suspendu » : « Votre compte partenaire est suspendu. Motif : {motif}. Contactez le support. » ; « Compte réactivé » : « Votre compte partenaire est réactivé. Vous pouvez de nouveau publier vos événements. » |
    | Admin | écran | — | immédiat | « {nom} est suspendu. Événements suspendus avec le compte : {n}. » ; « {nom} est réactivé. Événements remis en ligne : {n}. » suivi de « Restés suspendus : {n}. » s’il y en a (`app/admin/dashboard/page.tsx:376-386`) ; ex. « Concert Test est suspendu. Événements suspendus avec le compte : 1. » |
 
    Le motif de la réactivation n’est repris dans aucun message (le modèle `PARTNER_REACTIVATED` n’a pas de motif),
    contrairement à l’aide de la fenêtre : écart noté.
-5. **Ce que voient les autres rôles** : la partenaire, déconnectée, retrouve à sa reconnexion un tableau de bord en
-   erreur (01.8) ; ses événements disparaissent d’Explorer.
+5. **Ce que voient les autres rôles** : la partenaire est déconnectée ; à sa reconnexion, l’écran de connexion ferme
+   la session (« Votre compte est suspendu. Veuillez contacter le support. ») ; un onglet resté ouvert montre un tableau
+   de bord en erreur (01.8) ; ses événements disparaissent d’Explorer.
 6. **Refus** : motif manquant (code `REASON_REQUIRED`), transition interdite (`TRANSITION_NOT_ALLOWED`), permission
    absente : message de la route ; panne : « Mise à jour du partenaire momentanément impossible. »
    (`app/api/admin/partners/[id]/status/route.ts:13-20`, `:84-95`).
