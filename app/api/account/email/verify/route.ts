@@ -59,12 +59,26 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         if (!userId || !email) return refuse(new Error('email_verification_check : réponse incomplète'));
         const authUpdate = check.auth_update === true;
 
+        // Lot 9 quater (A9 : AUD-34) : adresse validée entre-temps par un autre compte. L'attente de ce compte n'a pas été
+        // retirée par l'autre validation : elle l'est maintenant, par le lien de son titulaire (la RPC constate
+        // EMAIL_TAKEN, vide l'attente et périme le lien), puis la route répond 409 EMAIL_TAKEN.
+        const takenElsewhere = async (): Promise<NextResponse> => {
+            const { data: released, error: releaseErr } = await supabase.rpc('email_verification_finalize', {
+                p: { token_hash: tokenHash, expected_email: check.current_email ?? null },
+            });
+            const code = (released as FinalizeReply | null)?.code;
+            if (releaseErr || code !== 'EMAIL_TAKEN') {
+                console.error(`[${CONTEXT}] attente non retirée pour le compte ${userId} :`, releaseErr ? releaseErr.message : (code ?? 'réponse vide'));
+            }
+            return refuse(REFUSALS.EMAIL_TAKEN);
+        };
+
         // 2. Ordre AR2 : identité libre (AM1), puis auth.users, puis la RPC de validation, compensation en cas d'échec.
         if (authUpdate) {
-            if ((await identityTaken(userId, email, null)).emailTaken) return refuse(REFUSALS.EMAIL_TAKEN);
+            if ((await identityTaken(userId, email, null)).emailTaken) return takenElsewhere();
             const { error } = await supabase.auth.admin.updateUserById(userId, { email, email_confirm: true });
             if (error) {
-                if (await authUpdateRefusedAsTaken(error, userId, email, null)) return refuse(REFUSALS.EMAIL_TAKEN);
+                if (await authUpdateRefusedAsTaken(error, userId, email, null)) return takenElsewhere();
                 return refuse(error);
             }
         }

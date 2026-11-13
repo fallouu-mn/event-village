@@ -225,7 +225,7 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), //
     ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B', 'SECURITY', ['/profile'], 'Mot de passe modifié'),
     ess('PHONE_CHANGED', [S, M], 'ANY', 'A', null, ['/profile'], null), // lot 9 : SMS à l'ancien numéro ; lot 9 bis (11.2 M22) : + EMAIL au compte
     // Lot 9 quater (A9 : AUD-34) : type ajouté (modification signalée au rapport)
-    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S], 'ANY', 'B', 'SECURITY', ['/profile'], 'Adresse email validée par un autre compte'),
+    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M], 'ANY', 'B', 'SECURITY', ['/profile'], 'Adresse email validée par un autre compte'),
     ess('PUSH_TEST', [P], 'ANY', 'B', 'SYSTEM', ['/profile/notifications'], null),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement validé'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement non validé'),

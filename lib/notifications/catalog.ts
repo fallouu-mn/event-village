@@ -896,7 +896,7 @@ const CATALOG = {
     // Lot 9 quater (A9 : AUD-34) : l'adresse en attente sur ce compte vient d'être validée par un autre compte ; elle
     // reste en attente ici jusqu'à la confirmation par le titulaire (son lien répond alors « adresse déjà utilisée »).
     EMAIL_CLAIMED_ELSEWHERE: define('EMAIL_CLAIMED_ELSEWHERE', {
-        label: 'Adresse email validée par un autre compte', channels: ['IN_APP', 'SMS'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
+        label: 'Adresse email validée par un autre compte', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
         link: () => '/profile',
         inApp: () => ({
             title: 'Adresse email validée par un autre compte',
@@ -1233,7 +1233,7 @@ const CATALOG = {
         link: () => '/admin/finance',
         // Lot 9 quater (C1 : AUD-20) : à partir du 3e doublon du compte en 30 jours, remboursé moins les frais SamirPay
         inApp: (d) => (Number(d.withheld ?? 0) > 0
-            ? { title: 'Paiements en double répétés', content: `Un ${formatInteger(num(d, 'duplicate_rank'))}e paiement en double de ${money(d, 'amount')} en 30 jours pour le même client : il est remboursé moins les frais SamirPay (${money(d, 'withheld')}). Vérifiez s'il s'agit d'un abus.` }
+            ? { title: 'Paiements en double répétés', content: `Un ${formatInteger(num(d, 'duplicate_rank'))}e paiement en double de ${money(d, 'amount')} en 30 jours pour le même client : il est remboursé moins les frais de l’opérateur de paiement, soit ${money(d, 'withheld')} retenus. Vérifiez s'il s'agit d'un abus.` }
             : { title: 'Paiement en double remboursé', content: `Un second paiement de ${money(d, 'amount')} a été encaissé pour le même panier : son remboursement au client est lancé.` }),
         sample: { payment_id: SAMPLE_ID.payment, duplicate_of: SAMPLE_ID.keptPayment, amount: 21_000 },
     }),

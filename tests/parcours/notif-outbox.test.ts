@@ -190,6 +190,9 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'events.read'),
     ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'events.read'),
     ess('SCAN_REFUSALS_ALERT', [I, P, M], 'PARTNER', 'B'),
+    // Lot 9 quater (A8 : AUD-05 ; A9 : AUD-34) : deux types nouveaux (migrations 20261111000002 et …04), modification signalée
+    ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'notifications.read'),
+    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M], 'ANY', 'B'),
 ];
 
 const LOT6_TABLES = ['notification_outbox', 'notification_types', 'notification_preferences', 'push_subscriptions'] as const;

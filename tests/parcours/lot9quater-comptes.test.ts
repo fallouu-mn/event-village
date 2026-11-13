@@ -27,7 +27,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
-import { inRolledBackTransaction } from '../helpers/db';
+import { inRolledBackTransaction, inspect } from '../helpers/db';
 import { assertLot9quaterInvariants } from '../helpers/lot9quater-invariants';
 import { BASE_URL, jsonRequest, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
 import { createSaleEvent, importModule, newBuyer, service, type Buyer } from './paiement-helpers';
@@ -88,6 +88,20 @@ async function mailsTo(address: string): Promise<number> {
     assert.ok(res.ok, `serveur de courrier local : HTTP ${res.status}`);
     const data = await res.json() as { messages_count?: number; messages?: unknown[] };
     return Number(data.messages_count ?? (data.messages ?? []).length);
+}
+
+/** Codes à 6 chiffres des messages captés par le serveur de courrier local pour cette adresse. */
+async function mailedCodes(address: string): Promise<string[]> {
+    const res = await fetch(`${MAIL_API}/search?query=${encodeURIComponent(`to:"${address}"`)}`);
+    assert.ok(res.ok, `serveur de courrier local : HTTP ${res.status}`);
+    const data = await res.json() as { messages?: Array<{ ID: string }> };
+    const codes: string[] = [];
+    for (const m of data.messages ?? []) {
+        const full = await (await fetch(`${MAIL_API}/message/${m.ID}`)).json() as { Text?: string; HTML?: string };
+        const code = `${full.Text ?? ''} ${full.HTML ?? ''}`.match(/\b(\d{6})\b/)?.[1];
+        if (code) codes.push(code);
+    }
+    return codes;
 }
 
 async function authEmail(userId: string): Promise<string> {
@@ -187,7 +201,7 @@ describe('A3 — mot de passe : jamais avec le seul jeton, avis toujours, /reset
         assert.equal(opened.error, null, `session de récupération : ${opened.error?.message}`);
         const recovery: Buyer = { ...user, accessToken: opened.data.session!.access_token };
 
-        const weak = await call('../../app/api/auth/reset-password/route', authed('/api/auth/reset-password', 'POST', recovery, { password: 'faible' }));
+        const weak = await call('../../app/api/auth/reset-password/route', authed('/api/auth/reset-password', 'POST', recovery, { password: 'a'.repeat(5) }));
         assert.equal(weak.status, 400, `mot de passe faible : ${show(weak)}`);
         const before = (await outboxRows({ type: 'PASSWORD_CHANGED', userId: user.userId })).length;
         const next = `Recup#${randomBytes(6).toString('hex')}A1`;
@@ -240,16 +254,27 @@ describe('A4 — adresse technique non routable, aucun code email', () => {
         assert.equal(again.start.status, 409, `inscription d’un numéro existant : HTTP ${again.start.status}`);
     });
 
-    test('GoTrue n’émet aucun code ni lien email vers l’adresse technique (/otp, /recover), aucun message', async () => {
+    test('GoTrue refuse tout code ou lien email vers l’adresse technique (/otp, /recover) : aucun jeton enregistré, aucun code utilisable', async () => {
         const flow = await registerClientFlow({ headers: ip() });
         const tech = await authEmail(flow.userId!);
         const otp = await gotrue('otp', 'POST', { email: tech, create_user: false });
         const recover = await gotrue('recover', 'POST', { email: tech });
         const mails = await mailsTo(tech);
-        console.log(`[A4] /otp ${tech} : HTTP ${otp.status} ${otp.text.slice(0, 100)} ; /recover : HTTP ${recover.status} ${recover.text.slice(0, 100)} ; messages : ${mails}`);
+        console.log(`[A4] /otp ${tech} : HTTP ${otp.status} ${otp.text.slice(0, 100)} ; /recover : HTTP ${recover.status} ${recover.text.slice(0, 100)} ; messages captés en local : ${mails}`);
         assert.notEqual(otp.status, 200, 'code de connexion émis');
         assert.notEqual(recover.status, 200, 'lien de récupération émis');
-        assert.equal(mails, 0, 'aucun message vers l’adresse technique');
+        // GoTrue envoie avant d'enregistrer le jeton : le serveur de courrier local capte la tentative (en production,
+        // le domaine réservé .invalid n'est jamais livrable, RFC 2606). Aucun jeton n'est enregistré (trigger
+        // auth_users_guard_writes) : le code du message n'ouvre aucune session.
+        const tokens = await inspect(async (c) => (await c.query(
+            `SELECT COALESCE(recovery_token, '') AS recovery, COALESCE(confirmation_token, '') AS confirmation FROM auth.users WHERE id = $1`,
+            [flow.userId])).rows[0] as { recovery: string; confirmation: string });
+        assert.deepEqual(tokens, { recovery: '', confirmation: '' }, 'aucun jeton email enregistré pour l’adresse technique');
+        for (const code of await mailedCodes(tech)) {
+            const v = await gotrue('verify', 'POST', { type: 'email', email: tech, token: code });
+            console.log(`[A4] code capté ${code} : /verify HTTP ${v.status}`);
+            assert.notEqual(v.status, 200, 'le code d’un message vers l’adresse technique n’ouvre aucune session');
+        }
     });
 
     test('connexion par code SMS : inchangée (lien de session interne, permis à usage unique)', async () => {

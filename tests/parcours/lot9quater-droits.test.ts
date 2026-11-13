@@ -136,9 +136,13 @@ describe('A9 — journal pseudonymisé, adresse en attente', () => {
         const hash = createHash('sha256').update(token).digest('hex');
         const issued = await service.rpc('email_verification_issue', { p: { user_id: squatter.userId, token_hash: hash, account_max: 100, address_max: 100 } });
         assert.equal(issued.error, null, `lien : ${issued.error?.message} ${JSON.stringify(issued.data)}`);
-        const { data: cur } = await service.from('users').select('email').eq('id', squatter.userId).single();
-        const fin = await service.rpc('email_verification_finalize', { p: { token_hash: hash, expected_email: cur?.email } });
-        assert.equal((fin.data as { ok?: boolean })?.ok, true, `validation : ${JSON.stringify(fin.data)} ${fin.error?.message}`);
+        // Validation par la route publique (adresse posée aussi dans auth.users, comme en vrai : invariant w14)
+        const fin = await call('../../app/api/account/email/verify/route', new NextRequest(`${BASE_URL}/api/account/email/verify`, {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }),
+        }));
+        assert.equal(fin.status, 200, `validation : ${show(fin)}`);
+        const { data: sq } = await service.from('users').select('email, email_verified_at').eq('id', squatter.userId).single();
+        assert.equal(sq?.email, address, 'adresse validée pour le compte qui a cliqué');
         const { data: o } = await service.from('users').select('email_pending').eq('id', owner.userId).single();
         assert.equal(o?.email_pending, address, 'l’attente du titulaire n’est pas retirée sans sa confirmation');
         const { data: notes } = await service.from('notification_outbox').select('channel').eq('type', 'EMAIL_CLAIMED_ELSEWHERE').eq('recipient_user_id', owner.userId);
@@ -158,7 +162,9 @@ describe('B1 — route des tarifs, services en préparation', () => {
         }
         const { data: afterRow } = await service.from('platform_settings').select('value').eq('key', 'features.halls_enabled').single();
         assert.deepEqual(afterRow?.value, before?.value, 'interrupteur inchangé');
-        const ok = await call('../../app/api/admin/pricing/route', authed('/api/admin/pricing', 'POST', admin, { key: 'aggregator_fees', value: { wave: 1.5 } }));
+        // Clé de la liste blanche : la valeur actuelle est réécrite telle quelle (aucune autre suite n'en dépend alors)
+        const { data: fees } = await service.from('platform_settings').select('value').eq('key', 'aggregator_fees').single();
+        const ok = await call('../../app/api/admin/pricing/route', authed('/api/admin/pricing', 'POST', admin, { key: 'aggregator_fees', value: fees?.value }));
         assert.equal(ok.status, 200, `clé tarifaire de la liste blanche : ${show(ok)}`);
     });
 
