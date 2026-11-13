@@ -45,6 +45,8 @@ const CONTRACT_RESULTS = [
     'valid', 'already_used', 'invalid', 'cancelled', 'refunded', 'wrong_event', 'event_cancelled', 'event_ended',
     'event_suspended', 'event_not_open', 'payment_required', 'qr_expired', 'dynamic_qr_required',
     'manual_entry_refused', 'transfer_pending', 'wrong_zone', 'not_entered', 'zone_ok', 'rate_limited', 'network_error', 'server_error', 'not_processed',
+    // Lot 9 quater (E2 : AUD-14) : billet déjà passé à ce contrôle de zone (modification signalée au rapport)
+    'zone_already_passed',
 ];
 
 let partner: TestPartner;
