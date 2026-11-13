@@ -345,3 +345,11 @@ Les 4 suites rouges :
 - `tests/partner-halls-m7.test.ts`, cas 2 (« Deux réservations simultanées… -> 1 Succès, 1 Échec ») : « Le message de rejet doit expliciter le conflit de calendrier (Reçu: Échec création réservation: deadlock detected) ». Le module des salles est fermé par défaut et cette branche n'y touche pas (`git diff origin/main..HEAD` ne change que `docs/`, `tests/audit-auth/` et le déclencheur de `.github/workflows/verify.yml`). La suite était verte au run 158 (même code, à une valeur de test près) et n'a échoué dans aucun des 40 runs précédents de `origin/ci-results` : **échec intermittent d'un test de concurrence existant**, sans lien avec l'audit. C'est néanmoins un constat : deux réservations concurrentes peuvent se bloquer mutuellement (« deadlock ») au lieu de donner un refus clair. À traiter avec AUD-28, avant l'ouverture des salles (lot 10).
 
 **Run de confirmation** : le run de ce commit doit montrer exactement les 3 suites `tests/audit-auth/` rouges ; son résultat est ajouté ci-dessous, dans un commit marqué `[skip ci]`.
+
+**Run 163** (`d02add3`, run de confirmation ; `runs/163-43482671372`, [lien](https://github.com/fallouu-mn/event-village/actions/runs/43482671372)) : job 3 826 s ; verify **347/350** ; e2e vert dans ses 10 phases (connexion, captures, emails, dev-page, fumée, terrain, pwa, fake-prod, perf, recette). **Seules les 3 suites `tests/audit-auth/` sont rouges, chacune pour la bonne raison** :
+
+- AUTH-01 : 20 mauvais mots de passe venus de 20 adresses, tous `401/INVALID_CREDENTIALS`, aucun 429 ;
+- AUTH-02 : `HTTP 200 « Utilisateur avec le rôle CLIENT créé avec succès. »` avec un mot de passe de 6 minuscules et chiffres ;
+- AUTH-03 : les 3 écrans (LoginForm, forgot-password, partner/register) lisent `remainingSeconds` ; le contrôle « aucune route ne rend remainingSeconds » passe.
+
+`partner-halls-m7` est de nouveau verte, ce qui confirme l'échec intermittent du run 160 (le constat reste valable, voir plus haut).
