@@ -23,6 +23,7 @@ import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { INVALID_SN_PHONE_MESSAGE, normalizePhoneNumber } from '@/lib/validations/auth';
+import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
 
 /**
  * Mot de passe oublié (lot 6, contrat A5 : écran sur le système de design, logique inchangée).
@@ -44,7 +45,8 @@ import { INVALID_SN_PHONE_MESSAGE, normalizePhoneNumber } from '@/lib/validation
 /** R88 : le code est accepté mais la session de récupération n'a pas pu s'ouvrir (même texte qu'à la connexion). */
 const RECOVERY_SESSION_FAILED = 'Code accepté, mais la connexion n’a pas pu s’ouvrir. Demandez un nouveau code et réessayez.';
 
-// Verrou du navigateur contre les essais répétés (le serveur reste l'autorité : 429 avec remainingSeconds)
+// Verrou du navigateur contre les essais répétés (le serveur reste l'autorité : 429 avec retryAfterSeconds ; lot 9 quinquies,
+// B3 : délai réel en secondes, minutes ou heures)
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 60;
 const STORAGE_KEY_LOCKOUT = 'ev_recovery_lockout_until';
@@ -263,8 +265,8 @@ export default function ForgotPasswordPage() {
             if (!res.ok) {
                 if (res.status === 429) {
                     setIsLockedOut(true);
-                    setLockoutRemaining(data.remainingSeconds || LOCKOUT_DURATION_SECONDS);
-                    setInitialLockoutDuration(data.remainingSeconds || LOCKOUT_DURATION_SECONDS);
+                    setLockoutRemaining(retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS);
+                    setInitialLockoutDuration(retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS);
                     setErrorMessage(null);
                     return;
                 }
@@ -323,8 +325,8 @@ export default function ForgotPasswordPage() {
             if (!res.ok) {
                 if (res.status === 429) {
                     setIsLockedOut(true);
-                    setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
-                    setInitialLockoutDuration(LOCKOUT_DURATION_SECONDS);
+                    setLockoutRemaining(retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS);
+                    setInitialLockoutDuration(retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS);
                     setErrorMessage(null);
                     return;
                 }
@@ -451,7 +453,7 @@ export default function ForgotPasswordPage() {
                                 Trop de tentatives infructueuses. La saisie est bloquée pendant quelques instants pour protéger votre compte.
                             </p>
                             <p className="mt-2 font-semibold tabular-nums">
-                                Nouvel essai possible dans {lockoutRemaining} s
+                                Nouvel essai possible dans {formatDelayWords(lockoutRemaining)}
                             </p>
                             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-danger-border" aria-hidden="true">
                                 <div
@@ -512,7 +514,7 @@ export default function ForgotPasswordPage() {
                                 leftIcon={isLockedOut ? <Lock size={18} /> : inputMode === 'email' ? <Send size={18} /> : inputMode === 'phone' ? <Phone size={18} /> : <KeyRound size={18} />}
                             >
                                 {isLockedOut
-                                    ? `Bloqué (${lockoutRemaining} s)`
+                                    ? `Bloqué (${formatDelayWords(lockoutRemaining)})`
                                     : inputMode === 'email'
                                         ? 'Envoyer le lien de récupération'
                                         : inputMode === 'phone'
@@ -548,7 +550,7 @@ export default function ForgotPasswordPage() {
                                 disabled={isLockedOut || isLoading || otpCode.length !== 6}
                                 leftIcon={isLockedOut ? <Lock size={18} /> : <ShieldCheck size={18} />}
                             >
-                                {isLockedOut ? `Bloqué (${lockoutRemaining} s)` : 'Valider le code'}
+                                {isLockedOut ? `Bloqué (${formatDelayWords(lockoutRemaining)})` : 'Valider le code'}
                             </Button>
 
                             <div className="flex flex-wrap items-center justify-between gap-2">

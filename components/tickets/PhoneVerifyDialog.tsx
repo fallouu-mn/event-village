@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
+import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
 
 /**
  * Confirmation du numéro du compte par un code SMS (lot 6, contrat B5 et amendement 2).
@@ -32,14 +33,11 @@ const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis r�
 
 async function serverMessage(res: Response, fallback: string): Promise<string> {
   try {
-    const body = await res.json() as { error?: unknown; retryAfterSeconds?: unknown; remainingSeconds?: unknown };
+    const body = await res.json() as { error?: unknown; retryAfterSeconds?: unknown };
     const base = typeof body.error === 'string' && body.error ? body.error : fallback;
-    const wait = typeof body.retryAfterSeconds === 'number' ? body.retryAfterSeconds
-      : typeof body.remainingSeconds === 'number' ? body.remainingSeconds : null;
-    if (res.status === 429 && wait !== null && wait > 0) {
-      const minutes = Math.ceil(wait / 60);
-      return `${base} Nouvel essai possible dans ${minutes} min.`;
-    }
+    // Lot 9 quinquies (B3 : E-56) : délai réel envoyé par le serveur, en secondes, minutes ou heures
+    const wait = retryAfterOf(body);
+    if (res.status === 429 && wait) return `${base} ${formatRetryDelay(wait)}`;
     return base;
   } catch (err) {
     console.error(`[PhoneVerifyDialog] réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));

@@ -10,6 +10,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { PASSWORD_HINT } from '@/lib/auth/password-rules';
+import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
 
 /**
  * Lot 9 bis, tâche 42 (R85 ; contrat 4.4, 5.42, B89) — « Changer mon mot de passe » une fois connecté.
@@ -49,8 +50,9 @@ const SUCCESS_FALLBACK = 'Mot de passe modifié. Vos autres appareils sont déco
 function refusalMessage(err: unknown): string {
   const base = errorMessage(err, 'Votre mot de passe n’a pas pu être changé. Réessayez dans un instant.');
   if (err instanceof ApiError && err.status === 429) {
-    const wait = err.body?.retryAfterSeconds;
-    if (typeof wait === 'number' && wait > 0) return `${base} Nouvel essai possible dans ${Math.ceil(wait / 60)} min.`;
+    // Lot 9 quinquies (B3 : E-56) : délai réel en secondes, minutes ou heures
+    const wait = retryAfterOf(err.body);
+    if (wait) return `${base} ${formatRetryDelay(wait)}`;
   }
   return base;
 }

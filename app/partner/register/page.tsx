@@ -15,6 +15,7 @@ import { PasswordStrengthChecklist } from '@/components/auth/PasswordStrengthChe
 import { useAuth } from '@/components/providers/AuthProvider';
 import { PartnerActivityTypes, RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { partnerActivityLabel } from '@/lib/partner/activity-labels';
+import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
 
 /**
  * Inscription d'un partenaire avec ses pièces (POST /api/partner/documents/upload, puis POST /api/partner/register en
@@ -320,7 +321,9 @@ export default function PartnerRegisterPage() {
       const body = await readJson(res, 'renvoi du code');
       if (!res.ok) {
         setOtpError(errorText(body, `Nouveau code non envoyé (erreur ${res.status}). Réessayez plus tard.`));
-        if (typeof body.remainingSeconds === 'number' && body.remainingSeconds > 0) setCountdown(Math.ceil(body.remainingSeconds));
+        // Lot 9 quinquies (B3 : AUTH-03) : délai réel envoyé par le serveur (retryAfterSeconds)
+        const wait = retryAfterOf(body);
+        if (wait) setCountdown(wait);
         return;
       }
       setOtpCode('');
@@ -470,7 +473,7 @@ export default function PartnerRegisterPage() {
               disabled={countdown > 0 || isVerifying}
               leftIcon={<RotateCcw size={16} aria-hidden="true" />}
             >
-              {countdown > 0 ? `Renvoyer le code (${countdown} s)` : 'Renvoyer le code'}
+              {countdown > 0 ? `Renvoyer le code (${formatDelayWords(countdown)})` : 'Renvoyer le code'}
             </Button>
           </form>
         </section>

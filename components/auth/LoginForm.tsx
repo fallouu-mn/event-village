@@ -26,6 +26,7 @@ import { INVALID_SN_PHONE_MESSAGE, normalizePhoneNumber } from '@/lib/validation
 import { useAuth } from '@/components/providers/AuthProvider';
 import { resolvePostLoginRoute } from '@/lib/auth/resolve-post-login-route';
 import { isForwardableRedirect } from '@/lib/auth/safe-redirect';
+import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
 
 /**
  * Formulaire de connexion (lot 6, contrat A5). Rendu par app/login/page.tsx, composant serveur qui lit
@@ -34,7 +35,8 @@ import { isForwardableRedirect } from '@/lib/auth/safe-redirect';
  * Logique reprise à l'identique de l'ancienne page :
  *  - verrou du navigateur : 5 échecs → saisie bloquée 60 s (clés localStorage ev_login_lockout_until et
  *    ev_login_failed_attempts, relues au montage) ; il n'est qu'un confort, l'autorité reste le serveur
- *    (429 avec remainingSeconds de /api/auth/resolve-phone, /send-otp et /verify-otp) ;
+ *    (429 avec retryAfterSeconds de /api/auth/resolve-phone, /send-otp et /verify-otp ; lot 9 quinquies, B3 : délai réel
+ *    affiché en secondes, minutes ou heures, lib/format-delay.ts) ;
  *  - lot 9 bis (R58, B36, contrat 4.2 et 5.14) : mot de passe envoyé à POST /api/auth/login { identifier, password }
  *    (numéro ou email) ; la correspondance numéro → compte reste côté serveur, la session est posée en cookies et vaut
  *    saisie récente du mot de passe (R57). Le navigateur relit cette session (refreshSession), puis la suite est la même.
@@ -327,14 +329,16 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             const data = (await res.json().catch((err: unknown) => {
                 console.error('[LoginForm] réponse de connexion illisible, code HTTP', res.status, err);
                 return null;
-            })) as { ok?: boolean; error?: string; code?: string; retryAfterSeconds?: number; remainingSeconds?: number } | null;
+            })) as { ok?: boolean; error?: string; code?: string; retryAfterSeconds?: number } | null;
 
             if (!res.ok || data?.ok !== true) {
                 if (res.status === 429) {
-                    const wait = data?.retryAfterSeconds ?? data?.remainingSeconds;
+                    // Lot 9 quinquies (B3, A1) : délai réel du serveur (quota par IP ou 10 échecs du compte), jamais le verrou local
+                    const wait = retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS;
                     setIsLockedOut(true);
-                    setLockoutRemaining(typeof wait === 'number' && wait > 0 ? Math.ceil(wait) : LOCKOUT_DURATION_SECONDS);
-                    recordFailedAttempt(data?.error || 'Trop de tentatives. Verrouillage temporaire.');
+                    setLockoutRemaining(wait);
+                    setInitialLockoutDuration(wait);
+                    setErrorMessage(data?.error || 'Trop de tentatives. Verrouillage temporaire.');
                 } else if (res.status === 401) {
                     recordFailedAttempt('Identifiant ou mot de passe incorrect.');
                 } else if (res.status === 403) {
@@ -393,7 +397,9 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             if (!resolveRes.ok) {
                 if (resolveRes.status === 429) {
                     setIsLockedOut(true);
-                    setLockoutRemaining(resolveData.remainingSeconds || LOCKOUT_DURATION_SECONDS);
+                    const wait = retryAfterOf(resolveData) ?? LOCKOUT_DURATION_SECONDS;
+                    setLockoutRemaining(wait);
+                    setInitialLockoutDuration(wait);
                 }
                 setErrorMessage(resolveData.error || 'Aucun compte associé à ce numéro de téléphone. Veuillez vous inscrire.');
                 return;
@@ -409,7 +415,9 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             if (!res.ok) {
                 if (res.status === 429) {
                     setIsLockedOut(true);
-                    setLockoutRemaining(data.remainingSeconds || LOCKOUT_DURATION_SECONDS);
+                    const wait = retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS;
+                    setLockoutRemaining(wait);
+                    setInitialLockoutDuration(wait);
                 }
                 // 502 : le texte vient du fournisseur de SMS (code réseau, statut HTTP), il reste au journal du serveur.
                 setErrorMessage(res.status === 502 ? 'Impossible d\'envoyer le code SMS. Réessayez dans un instant.' : data.error || 'Impossible d\'envoyer le code SMS.');
@@ -452,8 +460,10 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             const verifyData = await res.json();
             if (!res.ok) {
                 if (res.status === 429) {
+                    const wait = retryAfterOf(verifyData) ?? LOCKOUT_DURATION_SECONDS;
                     setIsLockedOut(true);
-                    setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
+                    setLockoutRemaining(wait);
+                    setInitialLockoutDuration(wait);
                 } else {
                     recordFailedAttempt('Code incorrect ou expiré.');
                 }
@@ -516,7 +526,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                         pendant quelques instants.
                     </p>
                     <p className="mt-2 font-semibold tabular-nums">
-                        Nouvel essai possible dans {lockoutRemaining} s
+                        Nouvel essai possible dans {formatDelayWords(lockoutRemaining)}
                     </p>
                     <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-danger-border" aria-hidden="true">
                         <div
@@ -624,7 +634,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                         disabled={inputsDisabled}
                         leftIcon={isLockedOut ? <Lock size={18} /> : <LogIn size={18} />}
                     >
-                        {isLockedOut ? `Bloqué (${lockoutRemaining} s)` : 'Se connecter'}
+                        {isLockedOut ? `Bloqué (${formatDelayWords(lockoutRemaining)})` : 'Se connecter'}
                     </Button>
                 </form>
             )}
@@ -656,7 +666,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                                 disabled={inputsDisabled}
                                 leftIcon={isLockedOut ? <Lock size={18} /> : <KeyRound size={18} />}
                             >
-                                {isLockedOut ? `Bloqué (${lockoutRemaining} s)` : 'Recevoir le code SMS'}
+                                {isLockedOut ? `Bloqué (${formatDelayWords(lockoutRemaining)})` : 'Recevoir le code SMS'}
                             </Button>
                         </form>
                     ) : (
@@ -682,7 +692,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                                 disabled={inputsDisabled || otpCode.length !== 6}
                                 leftIcon={isLockedOut ? <Lock size={18} /> : <ShieldCheck size={18} />}
                             >
-                                {isLockedOut ? `Bloqué (${lockoutRemaining} s)` : 'Valider et se connecter'}
+                                {isLockedOut ? `Bloqué (${formatDelayWords(lockoutRemaining)})` : 'Valider et se connecter'}
                             </Button>
 
                             <div className="flex flex-wrap items-center justify-between gap-2">

@@ -10,6 +10,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { INVALID_SN_PHONE_MESSAGE, toSenegaleseE164 } from '@/lib/validations/auth';
+import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
 
 /** Boîte « mot de passe » chargée à la demande (lot 9 bis, R57 ; contrat 5.13 : hors du premier chargement). */
 const PasswordConfirmDialog = dynamic(
@@ -45,8 +46,9 @@ const PHONE_FIELD_CODES = new Set(['INVALID_FIELD', 'PHONE_TAKEN', 'PHONE_UNCHAN
 function refusalMessage(err: unknown): string {
   const base = errorMessage(err);
   if (err instanceof ApiError && err.status === 429) {
-    const wait = err.body?.retryAfterSeconds;
-    if (typeof wait === 'number' && wait > 0) return `${base} Nouvel essai possible dans ${Math.ceil(wait / 60)} min.`;
+    // Lot 9 quinquies (B3 : E-56) : délai réel en secondes, minutes ou heures
+    const wait = retryAfterOf(err.body);
+    if (wait) return `${base} ${formatRetryDelay(wait)}`;
   }
   return base;
 }

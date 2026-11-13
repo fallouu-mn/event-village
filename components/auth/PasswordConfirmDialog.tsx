@@ -8,6 +8,7 @@ import { TextInput } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
+import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
 
 /**
  * Lot 9 bis, tâche 13 (R57 ; contrat 4.2, 5.13, B35) — saisie du mot de passe avant une action sensible.
@@ -47,8 +48,9 @@ export interface PasswordConfirmDialogProps {
 function refusalMessage(err: unknown): string {
   const base = errorMessage(err, 'Vérification impossible. Réessayez dans un instant.');
   if (err instanceof ApiError && err.status === 429) {
-    const wait = err.body?.retryAfterSeconds;
-    if (typeof wait === 'number' && wait > 0) return `${base} Nouvel essai possible dans ${Math.ceil(wait / 60)} min.`;
+    // Lot 9 quinquies (B3 : E-56) : délai réel en secondes, minutes ou heures
+    const wait = retryAfterOf(err.body);
+    if (wait) return `${base} ${formatRetryDelay(wait)}`;
   }
   return base;
 }
